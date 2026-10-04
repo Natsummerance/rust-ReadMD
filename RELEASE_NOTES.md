@@ -20,7 +20,7 @@
 | Linux x86_64 | `ReadMD-linux-x86_64.deb` / `ReadMD-linux-x86_64.tar.gz` |
 | 完整性校验 | `SHA256SUMS.txt` |
 
-Windows 便携版须解压整个 ZIP 后运行 `ReadMD.exe`；不要只移动其中的可执行文件。Linux 桌面版需要 GTK/WebKitGTK 运行库。macOS 包未做 Apple 公证。此版本不提供 Windows/Linux ARM64、AppImage、独立 VSIX 或 MCP ZIP；VS Code 扩展源码在仓库中，MCP 使用主程序的 `--mcp` 入口。
+Windows 便携版须解压整个 ZIP 后运行 `ReadMD.exe`；不要只移动其中的可执行文件。桌宠的全局键盘/鼠标监听和 BongoCat 敲击响应目前在 Windows 上可用，Linux/macOS 尚未提供全局输入监听。Linux 桌面版需要 GTK/WebKitGTK 运行库。macOS 包未做 Apple 公证。此版本不提供 Windows/Linux ARM64、AppImage、独立 VSIX 或 MCP ZIP；VS Code 扩展源码在仓库中，MCP 使用主程序的 `--mcp` 入口。
 
 从旧版本迁移时请先下载本版本安装包或完整便携包；旧版本内部版本号与原有发布标签不一致。本版本建立统一的后续更新基线。
 

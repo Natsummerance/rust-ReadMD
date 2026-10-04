@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 #[cfg(not(windows))]
 use std::time::Duration;
+#[cfg(any(windows, test))]
 mod pressed;
 #[cfg(windows)]
 mod windows;
