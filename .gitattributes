@@ -2,5 +2,7 @@
 # line endings during a Windows checkout.
 assets/upstream/** -text
 assets/providers/provider-catalog.json -text
+# Runtime chunks have pinned byte hashes for offline pet packaging.
+packages/readmd-pet-rust/runtime-assets/renderer/assets/*.js -text
 # This inventory is an exact recording input; keep its byte hash portable.
 docs/reviews/ui-function-inventory-2026-10-02/inventory.json -text

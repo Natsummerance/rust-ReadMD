@@ -1093,10 +1093,11 @@ mod tests {
 
     #[test]
     fn same_path_normalises_case_separators_and_dotdot() {
-        // measured: all four Python calls returned True
+        // Windows Python treats case and separators as equivalent. POSIX file
+        // names such as `nul` and `NUL` remain distinct.
         assert!(PetBatchQueue::same_path(&t("C:\\A\\b.md"), &t("c:/a/B.md")));
         assert!(PetBatchQueue::same_path(&t("C:\\A\\b.md"), &t("c:/a/B.MD")));
-        assert!(PetBatchQueue::same_path(&t("nul"), &t("NUL")));
+        assert_eq!(PetBatchQueue::same_path(&t("nul"), &t("NUL")), cfg!(windows));
         assert!(PetBatchQueue::same_path(&t("C:\\x\\..\\y.md"), &t("C:\\y.md")));
         assert!(!PetBatchQueue::same_path(&t("C:\\a.md"), &t("C:\\b.md")));
         // str vs bytes never compare equal, even for the same spelling
@@ -1260,7 +1261,8 @@ mod tests {
         //   submit(["C:\\a\\b.md\\."]) -> markdown, source C:\a\b.md
         // while classify() on the raw spelling is "unsupported" for all of them.
         let mut q = PetBatchQueue::new();
-        let made = q.submit(&[t("a.md/"), t("a.md\\"), t("dir.md/x"), t("C:\\a\\b.md\\.")]).unwrap();
+        let same = if cfg!(windows) { "a.md\\" } else { "./a.md" };
+        let made = q.submit(&[t("a.md/"), t(same), t("dir.md/x"), t("C:\\a\\b.md\\.")]).unwrap();
         let kinds: Vec<&str> = made.iter().map(|m| m.kind.as_str()).collect();
         assert_eq!(kinds, vec!["markdown", "markdown", "unsupported", "markdown"]);
         assert_eq!(made[0].source_path.lossy(), py_abspath("a.md/"));

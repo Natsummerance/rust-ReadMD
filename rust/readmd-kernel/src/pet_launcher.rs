@@ -1118,9 +1118,12 @@ pub fn resolved_target_str(target_dir: &Path) -> String {
 pub fn resolve_path_str(path: &Path) -> String {
     let text = path.to_string_lossy().into_owned();
     if cfg!(windows) {
-        // `py_realpath` already strips the `\\?\` verbatim prefix that
-        // `std::fs::canonicalize` adds, i.e. what `Path.resolve()` reports.
-        crate::pet_queue::py_realpath(&text)
+        // Resolve the existing ancestor even when the final component is absent,
+        // so Windows short-path aliases still identify the same package directory.
+        let absolute = crate::pet_queue::py_abspath(&text);
+        crate::paths::canonical_existing(Path::new(&absolute))
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| crate::pet_queue::py_realpath(&text))
     } else {
         match std::fs::canonicalize(path) {
             Ok(canonical) => canonical.to_string_lossy().into_owned(),

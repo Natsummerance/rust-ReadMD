@@ -102,7 +102,8 @@ fn wait_for_pipe(value: &str) -> Option<PipeRead> {
     use std::io::Read;
     use std::os::unix::io::FromRawFd;
 
-    let raw = value.parse::<i32>().ok().filter(|value| *value >= 0)?;
+    // Standard streams are never the dedicated parent-liveness pipe.
+    let raw = value.parse::<i32>().ok().filter(|value| *value > 2)?;
     let mut file = unsafe { File::from_raw_fd(raw) };
     let mut byte = [0u8; 1];
     loop {

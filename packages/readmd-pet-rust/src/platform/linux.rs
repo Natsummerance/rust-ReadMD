@@ -2,6 +2,7 @@ use super::{InteractionRegionSnapshot, PlatformBackend};
 use crate::error::{HostError, HostResult};
 use crate::protocol::SnapshotBounds;
 use gtk::{cairo, prelude::*};
+use gtk_layer_shell::LayerShell;
 use std::env;
 use std::io::Write;
 use std::os::unix::net::UnixStream;
@@ -163,15 +164,15 @@ impl PlatformBackend for LayerShellBackend {
         if !gtk_layer_shell::is_supported() {
             return Err(HostError::Backend("layer_shell_not_supported".into()));
         }
-        gtk_layer_shell::init_for_window(gtk_window);
-        gtk_layer_shell::set_namespace(gtk_window, &self.namespace);
-        gtk_layer_shell::set_layer(gtk_window, gtk_layer_shell::Layer::Overlay);
-        gtk_layer_shell::set_anchor(gtk_window, gtk_layer_shell::Edge::Left, false);
-        gtk_layer_shell::set_anchor(gtk_window, gtk_layer_shell::Edge::Right, false);
-        gtk_layer_shell::set_anchor(gtk_window, gtk_layer_shell::Edge::Top, false);
-        gtk_layer_shell::set_anchor(gtk_window, gtk_layer_shell::Edge::Bottom, false);
-        gtk_layer_shell::set_exclusive_zone(gtk_window, -1);
-        gtk_layer_shell::set_keyboard_interactivity(gtk_window, false);
+        gtk_window.init_layer_shell();
+        gtk_window.set_namespace(&self.namespace);
+        gtk_window.set_layer(gtk_layer_shell::Layer::Overlay);
+        gtk_window.set_anchor(gtk_layer_shell::Edge::Left, false);
+        gtk_window.set_anchor(gtk_layer_shell::Edge::Right, false);
+        gtk_window.set_anchor(gtk_layer_shell::Edge::Top, false);
+        gtk_window.set_anchor(gtk_layer_shell::Edge::Bottom, false);
+        gtk_window.set_exclusive_zone(-1);
+        gtk_window.set_keyboard_mode(gtk_layer_shell::KeyboardMode::None);
         self.initialized = true;
         Ok(())
     }
