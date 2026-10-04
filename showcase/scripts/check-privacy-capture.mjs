@@ -1,0 +1,40 @@
+/** Check captured pixels, underlying data and input behavior together. */
+import assert from'node:assert/strict';import path from'node:path';import fs from'node:fs';import{createRequire}from'node:module';import{fileURLToPath}from'node:url';import{protectCapture}from'./privacy-capture.mjs';
+import {installImmersiveCapture,restoreCapturePresentation,CAPTURE_PROFILE} from './capture-mode.mjs';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..'),require=createRequire(import.meta.url);
+const{chromium}=require(path.join(process.env.READMD_UI_NODE_MODULES||path.join(root,'ui-tests/node_modules'),'@playwright/test'));
+const sample=['C:','Users','Demo Person','Research Notes','note.md'].join(String.fromCharCode(92));
+const browser=await chromium.launch({headless:true});
+try{
+ const page=await browser.newPage({viewport:{width:900,height:600}});
+ await page.setContent('<style>body{background:white;font:18px system-ui;padding:20px}input{display:block;width:600px;height:44px;margin-top:40px}</style><p id="path"></p><input id="field"><p id="normal">Original demonstration document</p>');
+ await page.evaluate(p=>{document.querySelector('#path').textContent=p;document.querySelector('#field').value=p;},sample);
+ await protectCapture(page);
+ assert.equal(await page.locator('#path').textContent(),sample);assert.equal(await page.locator('#field').inputValue(),sample);
+ assert.equal(await page.locator('#normal').textContent(),'Original demonstration document');
+ assert.equal(await page.locator('#showcase-privacy-layer > div').count(),2);
+ const screenshot=await page.screenshot();
+ const pixel=await page.evaluate(async data=>{const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const c=canvas.getContext('2d');c.drawImage(img,0,0);const box=document.querySelector('#showcase-privacy-layer > div').getBoundingClientRect();return [...c.getImageData(Math.floor(box.x+box.width/2),Math.floor(box.y+box.height/2),1,1).data];},'data:image/png;base64,'+screenshot.toString('base64'));
+ assert.deepEqual(pixel,[232,232,237,255]);
+ await page.locator('#field').click();assert.equal(await page.evaluate(()=>document.activeElement.id),'field');
+ await page.locator('#field').fill('A normal demo filename');await protectCapture(page);assert.equal(await page.locator('#showcase-privacy-layer > div').count(),1);
+ await page.evaluate(()=>{const hint=document.createElement('div');hint.id='toast';hint.textContent='Temporary notification';const busy=document.createElement('div');busy.id='busy';busy.textContent='Busy';const modal=document.createElement('button');modal.id='functional-modal-action';modal.textContent='Save document';modal.onclick=()=>window.captureAction=true;document.body.append(hint,busy,modal);});
+ await installImmersiveCapture(page);await installImmersiveCapture(page);
+ assert.equal(await page.locator('#showcase-capture-style').count(),1);
+ assert.equal(await page.locator('#toast').isVisible(),false);
+ assert.equal(await page.locator('#busy').isVisible(),false);
+ assert.equal(await page.locator('#toast').textContent(),'Temporary notification');
+ await page.evaluate(sample=>{document.querySelector('#toast').textContent=sample;const clipped=document.createElement('div');clipped.style.cssText='height:20px;overflow:hidden;position:relative';const text=document.createElement('span');text.style.cssText='position:absolute;top:40px';text.textContent=sample;clipped.append(text);document.body.append(clipped);},sample);
+ await protectCapture(page);
+ assert.equal(await page.locator('#showcase-privacy-layer > div').count(),1,'Hidden notices and clipped text must not produce gray bars');
+ await page.evaluate(()=>{const url=document.createElement('input');url.value='http://127.0.0.1:8045/v1';const link=document.createElement('p');link.textContent='https://example.test/philosophy';document.body.append(url,link);});
+ await protectCapture(page);
+ assert.equal(await page.locator('#showcase-privacy-layer > div').count(),1,'Ordinary HTTP addresses must not be confused with Windows drive paths');
+ await page.locator('#functional-modal-action').click();assert.equal(await page.evaluate(()=>window.captureAction),true);
+ await restoreCapturePresentation(page);
+ assert.equal(await page.locator('#toast').isVisible(),true);
+ assert.equal(await page.locator('#busy').isVisible(),true);
+ assert.equal(await page.locator('#showcase-capture-style,#showcase-privacy-layer').count(),0);
+ fs.writeFileSync(path.join(root,'showcase/checks/capture-privacy.json'),JSON.stringify({date:new Date().toISOString(),capture_profile:CAPTURE_PROFILE,opaque_pixels:true,paths_with_spaces_masked:true,hidden_and_clipped_text_creates_no_mask:true,ordinary_http_addresses_remain_visible:true,underlying_data_unchanged:true,input_interaction_preserved:true,notifications_hidden_during_capture:true,functional_actions_preserved:true,presentation_restored:true,passed:true},null,2)+'\n');
+ console.log('Capture check passed: privacy, immersive pixels, unchanged data, working actions and restored notifications');
+}finally{await browser.close();}

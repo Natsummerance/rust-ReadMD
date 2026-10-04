@@ -38,10 +38,13 @@ test('all document AI entry points reuse the provider and opaque credential save
   await page.goto('/');
   await page.waitForFunction(() => typeof loadAiConfig === 'function' && typeof generateExportStyleWithAi === 'function');
   await page.evaluate(async () => {
+    await renderVirtual('clipboard', 'shared.md', '', '# document', []);
+    await toggleEdit();
+    openEditAiBar();
     await loadAiConfig();
     await generateExportStyleWithAi('clean reading layout');
     await runEditAiAction('polish', 'make this concise');
-    state.fixed = '# document';
+    closeEditAiBar();
     await handleAiDocumentFix();
   });
 

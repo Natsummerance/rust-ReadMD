@@ -216,7 +216,11 @@ fn round2(value: f64) -> f64 {
 fn as_finite_f64(value: &Value) -> Option<f64> {
     value
         .as_f64()
-        .or_else(|| value.as_str().and_then(|text| text.trim().parse::<f64>().ok()))
+        .or_else(|| {
+            value
+                .as_str()
+                .and_then(|text| text.trim().parse::<f64>().ok())
+        })
         .filter(|number| number.is_finite())
 }
 
@@ -233,10 +237,7 @@ pub fn safe_bounds(object: &Value) -> Option<Value> {
     ] {
         let number = as_finite_f64(object.get(key)?)?;
         let number = number.round_ties_even();
-        bounds.insert(
-            key.to_string(),
-            Value::from(number.clamp(low, high) as i64),
-        );
+        bounds.insert(key.to_string(), Value::from(number.clamp(low, high) as i64));
     }
     Some(Value::Object(bounds))
 }
@@ -245,9 +246,7 @@ pub fn safe_bounds(object: &Value) -> Option<Value> {
 /// (`hermes_adapter.py:144-241`).  `Err` means the bridge would delete the
 /// file, so the host must not write it and must not claim success.
 pub fn normalise_command(command: &Value) -> Result<Value, &'static str> {
-    let object = command
-        .as_object()
-        .ok_or("pet_command_must_be_object")?;
+    let object = command.as_object().ok_or("pet_command_must_be_object")?;
     let kind = object
         .get("type")
         .and_then(Value::as_str)
@@ -573,7 +572,10 @@ mod tests {
         assert!(command.image_png.len() <= MAX_CLIPBOARD_IMAGE_PNG_CHARS);
         assert_eq!(command.paths.len(), MAX_CLIPBOARD_PATHS);
         assert_eq!(command.paths[0], "C:\\notes\\file-0.md");
-        assert_eq!(command.paths[MAX_CLIPBOARD_PATHS - 1], "C:\\notes\\file-127.md");
+        assert_eq!(
+            command.paths[MAX_CLIPBOARD_PATHS - 1],
+            "C:\\notes\\file-127.md"
+        );
         assert!(command
             .paths
             .iter()
@@ -583,12 +585,11 @@ mod tests {
     #[test]
     fn page_messages_must_carry_the_current_session_and_generation() {
         let message = |payload: Value| RendererMessage::page("open-app", payload);
-        assert!(message(serde_json::json!({"session":"s", "generation":3}))
-            .authenticated("s", 3));
-        assert!(!message(serde_json::json!({"session":"s", "generation":4}))
-            .authenticated("s", 3));
-        assert!(!message(serde_json::json!({"session":"other", "generation":3}))
-            .authenticated("s", 3));
+        assert!(message(serde_json::json!({"session":"s", "generation":3})).authenticated("s", 3));
+        assert!(!message(serde_json::json!({"session":"s", "generation":4})).authenticated("s", 3));
+        assert!(
+            !message(serde_json::json!({"session":"other", "generation":3})).authenticated("s", 3)
+        );
         // The defect this closes: an unauthenticated frame used to pass simply
         // by sending no stamps at all.
         assert!(!message(serde_json::json!({})).authenticated("s", 3));
@@ -596,8 +597,10 @@ mod tests {
         assert!(!message(serde_json::json!({"generation":3})).authenticated("s", 3));
         assert!(!message(serde_json::json!({"session":3, "generation":3})).authenticated("s", 3));
         // Host-synthesised native input has no page session to present.
-        assert!(RendererMessage::host("drop", serde_json::json!({"paths":["a.md"]}))
-            .authenticated("s", 3));
+        assert!(
+            RendererMessage::host("drop", serde_json::json!({"paths":["a.md"]}))
+                .authenticated("s", 3)
+        );
     }
 
     #[test]
@@ -605,13 +608,23 @@ mod tests {
         for kind in CONSUMER_COMMANDS {
             assert!(
                 normalise_command(&serde_json::json!({"type":kind})).is_ok()
-                    || matches!(*kind, "bounds" | "scale" | "drop" | "interact" | "character"),
+                    || matches!(
+                        *kind,
+                        "bounds" | "scale" | "drop" | "interact" | "character"
+                    ),
                 "whitelisted type rejected: {kind}"
             );
         }
         // `close` is what the host used to invent: the overlay's hide request
         // was written as a durable command the bridge deletes unread.
-        for invented in ["close", "ready", "host-ready", "page-finished", "abi-ready", ""] {
+        for invented in [
+            "close",
+            "ready",
+            "host-ready",
+            "page-finished",
+            "abi-ready",
+            "",
+        ] {
             assert_eq!(
                 normalise_command(&serde_json::json!({"type":invented})),
                 Err("pet_command_type_unsupported"),
@@ -622,7 +635,10 @@ mod tests {
             normalise_command(&serde_json::json!({"type":"x".repeat(65)})),
             Err("pet_command_type_unsupported")
         );
-        assert_eq!(normalise_command(&Value::Null), Err("pet_command_must_be_object"));
+        assert_eq!(
+            normalise_command(&Value::Null),
+            Err("pet_command_must_be_object")
+        );
         assert_eq!(
             normalise_command(&serde_json::json!({})),
             Err("pet_command_type_missing")

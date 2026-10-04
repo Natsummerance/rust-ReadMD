@@ -3,18 +3,19 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "test:config": "node --test tests/capture-config.test.mjs",
-    "test:compose-lib": "node --test tests/compose-lib.test.mjs",
-    "test:poster-styles": "node --test tests/poster-styles.test.mjs",
-    "test:v237-update": "node --test tests/v237-update-deck.test.mjs",
-    "test:v238-update": "node --test tests/v238-update-deck.test.mjs",
-    "capture": "node ../ui-tests/node_modules/@playwright/test/cli.js test",
-    "build:v237-update": "node update-v237/render-deck.mjs",
-    "verify:v237-update": "node update-v237/render-deck.mjs --verify-only",
-    "build:v238-update": "node update-v238/render-deck.mjs",
-    "verify:v238-update": "node update-v238/render-deck.mjs --verify-only",
-    "record": "node ../ui-tests/node_modules/@playwright/test/cli.js test --config=recording.config.js",
-    "finalize-film": "node scripts/finalize-product-video.cjs",
-    "product-film": "npm run record && npm run finalize-film"
+    "materials": "node scripts/build-materials.mjs",
+    "materials:images": "node scripts/build-material-images.mjs",
+    "materials:audio": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-material-audio.ps1",
+    "record": "node scripts/record.mjs",
+    "record:native": "node scripts/record.mjs --native",
+    "compact": "node scripts/compact-waits.mjs",
+    "privacy": "node scripts/finish-privacy.mjs",
+    "privacy:check": "node scripts/check-privacy-capture.mjs",
+    "gallery": "node scripts/build-gallery.mjs && node scripts/build-home.mjs",
+    "verify": "node scripts/verify.mjs",
+    "preview": "node scripts/serve.mjs",
+    "report": "node scripts/build-report.mjs",
+    "promo": "node scripts/build-promo.mjs",
+    "cleanup": "node scripts/cleanup-runtime.mjs"
   }
 }

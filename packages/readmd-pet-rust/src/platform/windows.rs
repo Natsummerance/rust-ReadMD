@@ -13,7 +13,7 @@ use windows_sys::Win32::Foundation::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 #[allow(non_snake_case)]
-struct MARGINS {
+struct Margins {
     cxLeftWidth: i32,
     cxRightWidth: i32,
     cyTopHeight: i32,
@@ -22,7 +22,7 @@ struct MARGINS {
 
 #[link(name = "dwmapi")]
 extern "system" {
-    fn DwmExtendFrameIntoClientArea(hwnd: HWND, pMarInset: *const MARGINS) -> i32;
+    fn DwmExtendFrameIntoClientArea(hwnd: HWND, pMarInset: *const Margins) -> i32;
     fn DwmSetWindowAttribute(
         hwnd: HWND,
         dwAttribute: u32,
@@ -42,8 +42,8 @@ use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, GetClientRect, GetWindowLongPtrW, SetClassLongPtrW, SetWindowLongPtrW,
     SetWindowPos, SystemParametersInfoW, GCLP_HBRBACKGROUND, GWLP_WNDPROC, GWL_EXSTYLE, GWL_STYLE,
-    HWND_TOPMOST, HWND_NOTOPMOST, SPI_GETWORKAREA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    WM_ERASEBKGND, WM_NCACTIVATE, WM_NCPAINT, WNDPROC, WS_BORDER, WS_CAPTION,
+    HWND_NOTOPMOST, HWND_TOPMOST, SPI_GETWORKAREA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, WM_ERASEBKGND, WM_NCACTIVATE, WM_NCPAINT, WNDPROC, WS_BORDER, WS_CAPTION,
     WS_DLGFRAME, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
     WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
 };
@@ -231,7 +231,11 @@ impl WindowsBackend {
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style as isize);
             SetWindowPos(
                 hwnd,
-                if self.always_on_top { HWND_TOPMOST } else { HWND_NOTOPMOST },
+                if self.always_on_top {
+                    HWND_TOPMOST
+                } else {
+                    HWND_NOTOPMOST
+                },
                 0,
                 0,
                 0,
@@ -326,7 +330,7 @@ impl PlatformBackend for WindowsBackend {
 
         // 1. Extend DWM glass frame into the entire client area for true desktop transparency
         unsafe {
-            let margins = MARGINS {
+            let margins = Margins {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
                 cyTopHeight: -1,
@@ -349,7 +353,7 @@ impl PlatformBackend for WindowsBackend {
             SetClassLongPtrW(
                 hwnd,
                 GCLP_HBRBACKGROUND,
-                GetStockObject(NULL_BRUSH as i32) as isize,
+                GetStockObject(NULL_BRUSH) as isize,
             );
 
             // 3. Never paint caption chrome onto the glass (see overlay_wndproc).

@@ -802,7 +802,7 @@ test('v2.3.2 dirty tab close confirmation modal UI, styling, and actions', async
   await expect(modal).toBeVisible();
   await page.locator('#close-confirm-discard').click();
   await expect(modal).toBeHidden();
-  expect(await page.locator('.tab-item:visible').count()).toBe(0);
+  await expect(page.locator('.tab-item:visible')).toHaveCount(0);
   await expect(page.locator('#welcome')).toBeVisible();
 });
 
@@ -1741,13 +1741,16 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
   }
 
   for (const theme of ['light', 'dark', 'sepia']) {
-  const css = await (await page.request.get('/assets/style.css')).text();
-  const requiredTokens = {
-    light: ['--fg3:#5d6672', '--accent:#2f5fe8', '--accent-fg:#ffffff'],
-    dark: ['--fg3:#868fa0', '--accent-fg:#081226', '--danger:#ff9384'],
-    sepia: ['--fg3:#6d614e', '--accent:#8a571b', '--danger:#a32424'],
-  }[theme];
-  for (const token of requiredTokens) expect(css.replace(/\s+/g, '')).toContain(token);
+  const colors = await page.evaluate(theme => {
+    document.body.dataset.theme = theme;
+    const probe = document.createElement('span'); document.body.appendChild(probe);
+    probe.style.color = 'var(--fg3)';
+    const weak = getComputedStyle(probe).color;
+    const background = getComputedStyle(document.body).backgroundColor;
+    probe.style.color = 'var(--accent-fg)'; probe.style.backgroundColor = 'var(--accent)';
+    const button = getComputedStyle(probe).color, accent = getComputedStyle(probe).backgroundColor;
+    probe.remove(); return { weak, background, button, accent };
+  }, theme);
   const parse = value => value.match(/\d+/g).map(Number);
       const luminance = rgb => {
         const [r, g, b] = rgb.map(channel => {
@@ -1761,13 +1764,8 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
         const right = luminance(parse(b));
         return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
       };
-  const ratios = {
-    light: { weak: 4.702494727819796, button: 5.353059555238023 },
-    dark: { weak: 5.563332345907624, button: 6.919038855977312 },
-    sepia: { weak: 5.0564447035198095, button: 6.069786795263651 },
-  }[theme];
-    expect(ratios.weak).toBeGreaterThanOrEqual(4.5);
-    expect(ratios.button).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(colors.weak, colors.background), theme + ' muted text contrast').toBeGreaterThanOrEqual(4.5);
+    expect(ratio(colors.button, colors.accent), theme + ' button contrast').toBeGreaterThanOrEqual(4.5);
   }
 
   await page.evaluate(() => document.getElementById('cm-selection-toolbar')

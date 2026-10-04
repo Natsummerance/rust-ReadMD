@@ -65,3 +65,20 @@ test('HarmonyOS scaffold stays structurally buildable', () => {
   assert.ok(script.includes('resources/rawfile'));
   assert.ok(!exists(h + 'entry/src/main/resources/rawfile'));
 });
+
+test('release packages require the current pet runtime and aligned versions', () => {
+  const workflow=read('.github/workflows/release.yml');
+  assert.match(workflow,/cargo build --offline --locked/);
+  assert.match(workflow,/pet-package --platform/);
+  assert.match(workflow,/Copy-Item "dist\\pet\\ReadMD-Pet-Rust.zip".*-ErrorAction Stop/);
+  assert.match(workflow,/ReadMD-Pet-Rust-linux-x86_64.zip.*usr\/share\/readmd/);
+  assert.match(workflow,/ReadMD-Pet-Rust-macos-\*\.zip.*Contents\/Resources/);
+  assert.match(read('ReadMD.nsi'),/File "dist\\ReadMD-windows-x64\\ReadMD-Pet-Rust.zip"/);
+  const version=read('VERSION').trim();
+  assert.match(read('rust/Cargo.toml'),new RegExp('version = "'+version.replaceAll('.','\\.')+'"'));
+  assert.match(read('rust/readmd-kernel/src/updater.rs'),/GITHUB_REPO: &str = "Natsummerance\/rust-ReadMD"/);
+  const pin=JSON.parse(read('packages/readmd-pet-rust/runtime-assets/manifest.json'));
+  assert.equal(pin.files.length,4);
+  for(const file of pin.files)assert.ok(exists('packages/readmd-pet-rust/runtime-assets/'+file.path));
+  assert.ok(!exists('packages/readmd-pet-rust/runtime-assets/vendor/live2dcubismcore.min.js'));
+});

@@ -1,0 +1,2966 @@
+{
+  "schema": 1,
+  "date": "2026-10-04",
+  "capture_profile": "immersive-v2",
+  "ui_source_sha256": "00c6774216e1177d60f936c2d7792b56ce0472788d5e1749189cb287da97963c",
+  "burned_text": false,
+  "audio": false,
+  "captions_default": "off",
+  "clips": [
+    {
+      "id": "F001",
+      "title": "打开文档",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F001.mp4",
+      "poster": "posters/F001.webp",
+      "optional_captions": "captions/F001.vtt",
+      "seconds": 2.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 107663,
+      "sha256": "d3d53803249aecefc868a6a7a087550b38f9df3b73713a80b078f661432c705d",
+      "recorded_at": "2026-10-04T10:51:21.566Z",
+      "steps": [
+        {
+          "at": 0.454,
+          "text": "打开原创哲学阅读手册"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F002",
+      "title": "打开文件夹",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F002.mp4",
+      "poster": "posters/F002.webp",
+      "optional_captions": "captions/F002.vtt",
+      "seconds": 5.1,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 129644,
+      "sha256": "1c2b6ecac6a1717ed272d5c217c3244d3b8f8fc1bb888d66dba4b3e3e151e5be",
+      "recorded_at": "2026-10-04T11:22:26.286Z",
+      "steps": [
+        {
+          "at": 0.466,
+          "text": "从当前文档目录选择原创资料文件夹"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F003",
+      "title": "新建空白文档",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F003.mp4",
+      "poster": "posters/F003.webp",
+      "optional_captions": "captions/F003.vtt",
+      "seconds": 2.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 64194,
+      "sha256": "81ef9013a86045e916bf9742cff3895cce34fa42a8b2fedcc43efd08b2e946ee",
+      "recorded_at": "2026-10-04T10:51:26.915Z",
+      "steps": [
+        {
+          "at": 0.46,
+          "text": "新建文档并输入研究问题"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F004",
+      "title": "主页快捷卡片",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F004.mp4",
+      "poster": "posters/F004.webp",
+      "optional_captions": "captions/F004.vtt",
+      "seconds": 5.2,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 160694,
+      "sha256": "7ccd3fa6a3ebcd815025117af0f63d5a3ef1fe655aafbc07d2b4d9c9825ddbb7",
+      "recorded_at": "2026-10-04T10:51:35.043Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "快速开始：万物转 MD"
+        },
+        {
+          "at": 2.682,
+          "text": "快速开始：网页提取"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F005",
+      "title": "最近记录与清空",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F005.mp4",
+      "poster": "posters/F005.webp",
+      "optional_captions": "captions/F005.vtt",
+      "seconds": 4.35,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 73417,
+      "sha256": "d514917b6e50d9750e23951c9d0bd6f82d45d69d12b6486fc0a40b84fcd629b2",
+      "recorded_at": "2026-10-04T10:51:46.283Z",
+      "steps": [
+        {
+          "at": 0.46,
+          "text": "查看最近打开的资料"
+        },
+        {
+          "at": 1.57,
+          "text": "清空最近记录"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F006",
+      "title": "返回主页",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F006.mp4",
+      "poster": "posters/F006.webp",
+      "optional_captions": "captions/F006.vtt",
+      "seconds": 2.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 108142,
+      "sha256": "e06340d69a9214b7588742231fd540a38097761dfa7095bdce739aff403e7f74",
+      "recorded_at": "2026-10-04T10:51:55.779Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "返回主页，原文档保留在标签中"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F007",
+      "title": "更多菜单与分组",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F007.mp4",
+      "poster": "posters/F007.webp",
+      "optional_captions": "captions/F007.vtt",
+      "seconds": 4.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 119325,
+      "sha256": "28a8026a527120c572c5cb2d9eecb4b5386ad0abcf83971f51e2708f7ed939e0",
+      "recorded_at": "2026-10-04T10:52:08.021Z",
+      "steps": [
+        {
+          "at": 0.453,
+          "text": "展开更多菜单并查看功能分组"
+        },
+        {
+          "at": 2.368,
+          "text": "打开命令面板"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F008",
+      "title": "刷新文件列表/当前文件",
+      "category": "01 启动、主页与全局入口",
+      "video": "videos/F008.mp4",
+      "poster": "posters/F008.webp",
+      "optional_captions": "captions/F008.vtt",
+      "seconds": 2.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 63012,
+      "sha256": "cbcbe5c90b7bdb511a29fe2ca7b71565048790ffc8ee54d81f4e2252c4728993",
+      "recorded_at": "2026-10-04T10:52:17.773Z",
+      "steps": [
+        {
+          "at": 0.454,
+          "text": "刷新磁盘文件，显示新增记录"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F009",
+      "title": "切换、关闭及溢出标签",
+      "category": "02 多标签、标题和文件管理",
+      "video": "videos/F009.mp4",
+      "poster": "posters/F009.webp",
+      "optional_captions": "captions/F009.vtt",
+      "seconds": 3.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 100120,
+      "sha256": "35accc75c0240c28c56ff370b11c152522b0c9b360604ce606ac717ae5ee053c",
+      "recorded_at": "2026-10-04T10:52:29.663Z",
+      "steps": [
+        {
+          "at": 0.455,
+          "text": "切换阅读标签"
+        },
+        {
+          "at": 1.591,
+          "text": "关闭当前标签"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F010",
+      "title": "标签右键菜单和排序",
+      "category": "02 多标签、标题和文件管理",
+      "video": "videos/F010.mp4",
+      "poster": "posters/F010.webp",
+      "optional_captions": "captions/F010.vtt",
+      "seconds": 2.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 44604,
+      "sha256": "c79792cc4df19cf551d46abd614655ff0031ab5daf18d20af192ed1a824b4925",
+      "recorded_at": "2026-10-04T10:52:40.146Z",
+      "steps": [
+        {
+          "at": 0.46,
+          "text": "右键标签查看管理菜单"
+        },
+        {
+          "at": 0.993,
+          "text": "拖动标签调整顺序"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F011",
+      "title": "标题重命名",
+      "category": "02 多标签、标题和文件管理",
+      "video": "videos/F011.mp4",
+      "poster": "posters/F011.webp",
+      "optional_captions": "captions/F011.vtt",
+      "seconds": 2.2,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 73643,
+      "sha256": "0657976ff3f45daea0a351946501e27f80504c011264f74dbc730218bdc51b89",
+      "recorded_at": "2026-10-04T11:22:37.355Z",
+      "steps": [
+        {
+          "at": 0.454,
+          "text": "按 F2 重命名当前文档"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F012",
+      "title": "另存为 Markdown",
+      "category": "02 多标签、标题和文件管理",
+      "video": "videos/F012.mp4",
+      "poster": "posters/F012.webp",
+      "optional_captions": "captions/F012.vtt",
+      "seconds": 3.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 188899,
+      "sha256": "5bc7bc4adcd8206dd0f7d7e870c0942dfc245399765f920f9c297570099e0b75",
+      "recorded_at": "2026-10-04T10:52:53.010Z",
+      "steps": [
+        {
+          "at": 0.527,
+          "text": "另存为当前编辑内容"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F103",
+      "title": "恢复草稿与版本历史",
+      "category": "02 多标签、标题和文件管理",
+      "video": "videos/F103.mp4",
+      "poster": "posters/F103.webp",
+      "optional_captions": "captions/F103.vtt",
+      "seconds": 4.45,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 354109,
+      "sha256": "66f95c8d0f31908928fcd28e92c39bac5bf02737aa2907bb1584cfb354795315",
+      "recorded_at": "2026-10-04T10:53:06.591Z",
+      "steps": [
+        {
+          "at": 0.621,
+          "text": "查看恢复草稿"
+        },
+        {
+          "at": 2.87,
+          "text": "将草稿作为副本打开"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F013",
+      "title": "侧栏、大纲和文件树",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F013.mp4",
+      "poster": "posters/F013.webp",
+      "optional_captions": "captions/F013.vtt",
+      "seconds": 4.6,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 215791,
+      "sha256": "0e1c95d3364741b062bb5224d411f458b32702a5b4366c251b5054054bfae903",
+      "recorded_at": "2026-10-04T10:53:18.830Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "展开目录并定位章节"
+        },
+        {
+          "at": 2.39,
+          "text": "收起侧栏"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F014",
+      "title": "文内查找",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F014.mp4",
+      "poster": "posters/F014.webp",
+      "optional_captions": "captions/F014.vtt",
+      "seconds": 4.05,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 240977,
+      "sha256": "f32d8c9c4c02735cece37d4265e93fba6882f9c07bc03057a106160c8c48d9ed",
+      "recorded_at": "2026-10-04T10:53:30.243Z",
+      "steps": [
+        {
+          "at": 0.468,
+          "text": "查找“观察”并切换匹配项"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F015",
+      "title": "分页跳转与连续阅读",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F015.mp4",
+      "poster": "posters/F015.webp",
+      "optional_captions": "captions/F015.vtt",
+      "seconds": 5.4,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 365815,
+      "sha256": "a5144c8bcf4063e100c7fcccac7cd6dd482a9c8fddfb72a0d7c878d80556feb5",
+      "recorded_at": "2026-10-04T10:53:44.707Z",
+      "steps": [
+        {
+          "at": 0.45,
+          "text": "跳转下一页与末页"
+        },
+        {
+          "at": 3.202,
+          "text": "切换连续阅读"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F016",
+      "title": "主题、缩放和禅模式",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F016.mp4",
+      "poster": "posters/F016.webp",
+      "optional_captions": "captions/F016.vtt",
+      "seconds": 9.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 429413,
+      "sha256": "1bbd4fc925834333f889a32cd9b0e4971dff34f366100618cff1ba4495c2b169",
+      "recorded_at": "2026-10-04T10:53:58.796Z",
+      "steps": [
+        {
+          "at": 0.464,
+          "text": "在主页切换深色主题"
+        },
+        {
+          "at": 1.672,
+          "text": "在主页切换护眼主题"
+        },
+        {
+          "at": 2.862,
+          "text": "在主页切换自动主题"
+        },
+        {
+          "at": 4.079,
+          "text": "在主页切换浅色主题"
+        },
+        {
+          "at": 5.208,
+          "text": "打开阅读手册，调整字号"
+        },
+        {
+          "at": 7.398,
+          "text": "进入禅模式，专注阅读"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F017",
+      "title": "浮动阅读设置",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F017.mp4",
+      "poster": "posters/F017.webp",
+      "optional_captions": "captions/F017.vtt",
+      "seconds": 2.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 77645,
+      "sha256": "c4048d659d673029e443aba617c62fdd7ced81fe8b01b34725ec1d774ab8523c",
+      "recorded_at": "2026-10-04T10:54:08.574Z",
+      "steps": [
+        {
+          "at": 0.454,
+          "text": "打开阅读偏好，调整内容呈现"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F099",
+      "title": "回到顶部",
+      "category": "03 目录、搜索、分页和阅读偏好",
+      "video": "videos/F099.mp4",
+      "poster": "posters/F099.webp",
+      "optional_captions": "captions/F099.vtt",
+      "seconds": 2.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 180267,
+      "sha256": "83dd86b150392f98667823c26b154a41c7a9a717d693f473dcba6cb8421cb70f",
+      "recorded_at": "2026-10-04T10:54:18.310Z",
+      "steps": [
+        {
+          "at": 0.488,
+          "text": "一键回到文档顶部"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F018",
+      "title": "正文链接、双链和锚点",
+      "category": "04 正文内可操作元素和学术阅读",
+      "video": "videos/F018.mp4",
+      "poster": "posters/F018.webp",
+      "optional_captions": "captions/F018.vtt",
+      "seconds": 2.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 43930,
+      "sha256": "41be2591223f35f24f4845c571baedb51aef198012b0f5bb0c14f01bb8309e9a",
+      "recorded_at": "2026-10-04T10:54:27.348Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "点击双链，打开关联笔记"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F019",
+      "title": "代码块复制、折叠提示、脚注与图片",
+      "category": "04 正文内可操作元素和学术阅读",
+      "video": "videos/F019.mp4",
+      "poster": "posters/F019.webp",
+      "optional_captions": "captions/F019.vtt",
+      "seconds": 3.85,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 183779,
+      "sha256": "c220d3eb32575d79ef14d88b64053ad26691cc85d2dba20ab2fcf2ad6463accd",
+      "recorded_at": "2026-10-04T10:54:38.446Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "复制代码块"
+        },
+        {
+          "at": 1.565,
+          "text": "点击插图放大查看"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F020",
+      "title": "文献引用与参考文献交互",
+      "category": "04 正文内可操作元素和学术阅读",
+      "video": "videos/F020.mp4",
+      "poster": "posters/F020.webp",
+      "optional_captions": "captions/F020.vtt",
+      "seconds": 2.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 83126,
+      "sha256": "50db9e84e9fab5ebe7d4f92d55391031b15c0d85b51c8b22a6445ec2b2b603d6",
+      "recorded_at": "2026-10-04T10:54:47.405Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "查看正文书目引用与悬浮信息"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F098",
+      "title": "代码文件顶部四个操作",
+      "category": "04 正文内可操作元素和学术阅读",
+      "video": "videos/F098.mp4",
+      "poster": "posters/F098.webp",
+      "optional_captions": "captions/F098.vtt",
+      "seconds": 16.95,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 317291,
+      "sha256": "4bbaaafa33d9c3d58cf734c3454d96c9843ae7d9c31dc3ca621dbe1829433c6c",
+      "recorded_at": "2026-10-04T10:55:41.855Z",
+      "steps": [
+        {
+          "at": 0.459,
+          "text": "复制代码并打开源码编辑器"
+        },
+        {
+          "at": 3.057,
+          "text": "从代码文件打开 AI 深度解析"
+        },
+        {
+          "at": 4.837,
+          "text": "等待过程已加速；本次真实操作总用时 34.7 秒"
+        },
+        {
+          "at": 8.799,
+          "text": "将代码整理成结构化 Markdown 草稿"
+        },
+        {
+          "at": 10.462,
+          "text": "等待过程已加速；本次真实操作总用时 34.7 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 4.837,
+            "end": 18.409,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 6.786
+          },
+          {
+            "start": 22.034,
+            "end": 31.607,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 4.7865
+          }
+        ],
+        "realtime_seconds": 34.7,
+        "original_sha256": "b1e1758d5e93c23f66c5c77487be7668bcef65c63fdc6d94b0b1d8d214b4b54e"
+      }
+    },
+    {
+      "id": "F021",
+      "title": "编辑、保存和取消",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F021.mp4",
+      "poster": "posters/F021.webp",
+      "optional_captions": "captions/F021.vtt",
+      "seconds": 6.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 414901,
+      "sha256": "000f2660541c9a538bebeb226f65ab77048bbbf0adbdd0a1ead0de79172ce768",
+      "recorded_at": "2026-10-04T10:55:57.377Z",
+      "steps": [
+        {
+          "at": 0.459,
+          "text": "进入编辑，补充阅读结论"
+        },
+        {
+          "at": 1.763,
+          "text": "保存修改"
+        },
+        {
+          "at": 3.024,
+          "text": "取消编辑，保留恢复记录"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F022",
+      "title": "文字格式与结构工具",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F022.mp4",
+      "poster": "posters/F022.webp",
+      "optional_captions": "captions/F022.vtt",
+      "seconds": 4.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 178082,
+      "sha256": "12b61ce44d8347642f801f84466d8649e577d0fbe3effa0889e1b14830a4695b",
+      "recorded_at": "2026-10-04T10:56:11.466Z",
+      "steps": [
+        {
+          "at": 0.556,
+          "text": "使用工具栏插入加粗文字"
+        },
+        {
+          "at": 2.54,
+          "text": "插入任务列表"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F023",
+      "title": "编辑菜单、视图和撤销栈",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F023.mp4",
+      "poster": "posters/F023.webp",
+      "optional_captions": "captions/F023.vtt",
+      "seconds": 5.25,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 206470,
+      "sha256": "abf6d99f1c5b9495c8960634d1678a8746df7efcb7e2832d87bbd716e8e375f8",
+      "recorded_at": "2026-10-04T10:56:26.500Z",
+      "steps": [
+        {
+          "at": 0.556,
+          "text": "撤销刚才的输入"
+        },
+        {
+          "at": 1.746,
+          "text": "重做修改"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F024",
+      "title": "选区浮动工具条",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F024.mp4",
+      "poster": "posters/F024.webp",
+      "optional_captions": "captions/F024.vtt",
+      "seconds": 2.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 92159,
+      "sha256": "d788b9aa1bc4afd73832da419210231911dac40e63824bbe1bb98debfe8a8d79",
+      "recorded_at": "2026-10-04T10:56:37.618Z",
+      "steps": [
+        {
+          "at": 0.46,
+          "text": "选区工具条为文字加粗"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F025",
+      "title": "斜杠菜单与子选择器",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F025.mp4",
+      "poster": "posters/F025.webp",
+      "optional_captions": "captions/F025.vtt",
+      "seconds": 2.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 210916,
+      "sha256": "046ccb861fa81cc455cab01a980d39d9dcdc43cb9b7a4ba6db1f75eb48e5ed5f",
+      "recorded_at": "2026-10-04T10:56:47.902Z",
+      "steps": [
+        {
+          "at": 0.686,
+          "text": "斜杠菜单检索表格"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F026",
+      "title": "智能编辑、粘贴与任务勾选",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F026.mp4",
+      "poster": "posters/F026.webp",
+      "optional_captions": "captions/F026.vtt",
+      "seconds": 2.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 202235,
+      "sha256": "fea5bb4d4b97082dff1a4fa643bbcb6773f02f21be03370e963f52eca59c5974",
+      "recorded_at": "2026-10-04T10:56:58.093Z",
+      "steps": [
+        {
+          "at": 0.632,
+          "text": "粘贴电子表格，自动转换为 Markdown 表格"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F027",
+      "title": "预览布局与分栏拖动",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F027.mp4",
+      "poster": "posters/F027.webp",
+      "optional_captions": "captions/F027.vtt",
+      "seconds": 4.15,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 192096,
+      "sha256": "d75bb518c59c9f521d4777c94540d7fafb5d1245437af39e5b50e8fc19e1a782",
+      "recorded_at": "2026-10-04T10:57:11.383Z",
+      "steps": [
+        {
+          "at": 0.461,
+          "text": "切换左右对照预览"
+        },
+        {
+          "at": 2.416,
+          "text": "拖动分栏调整比例"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F102",
+      "title": "创建编辑副本",
+      "category": "05 Markdown 编辑工作台",
+      "video": "videos/F102.mp4",
+      "poster": "posters/F102.webp",
+      "optional_captions": "captions/F102.vtt",
+      "seconds": 3.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 229645,
+      "sha256": "28badf1713e1a1a4e3e68f1b47942603855ee1d1d795d2fd22667c39e7741f48",
+      "recorded_at": "2026-10-04T10:57:24.168Z",
+      "steps": [
+        {
+          "at": 0.549,
+          "text": "创建编辑副本，保留原文件"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F028",
+      "title": "图片输入及 URL 直接插入",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F028.mp4",
+      "poster": "posters/F028.webp",
+      "optional_captions": "captions/F028.vtt",
+      "seconds": 5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 176536,
+      "sha256": "a3eb9f9ec13db71e4b2d0fc29214d7e04d4a3e00440617dbca1df69242b804db",
+      "recorded_at": "2026-10-04T11:17:51.575Z",
+      "steps": [
+        {
+          "at": 0.459,
+          "text": "打开图片输入面板"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F029",
+      "title": "裁剪、旋转、翻转、尺寸及历史",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F029.mp4",
+      "poster": "posters/F029.webp",
+      "optional_captions": "captions/F029.vtt",
+      "seconds": 8.85,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 147376,
+      "sha256": "f5190ceba7369f181411177b311745e1bd449b848db9083b3869aa005ff9dc30",
+      "recorded_at": "2026-10-04T10:57:55.863Z",
+      "steps": [
+        {
+          "at": 0.453,
+          "text": "旋转和翻转图片"
+        },
+        {
+          "at": 3.423,
+          "text": "撤销、重做，再恢复原图"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F030",
+      "title": "图片生成、插入与关闭",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F030.mp4",
+      "poster": "posters/F030.webp",
+      "optional_captions": "captions/F030.vtt",
+      "seconds": 3.25,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 166656,
+      "sha256": "119e7c68b300ec03fc83910c3f5187c013a3ff09f4be9fbd7d23e98a1247709a",
+      "recorded_at": "2026-10-04T10:58:07.016Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "插入处理后的图片"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F031",
+      "title": "表格网格选择",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F031.mp4",
+      "poster": "posters/F031.webp",
+      "optional_captions": "captions/F031.vtt",
+      "seconds": 4.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 230587,
+      "sha256": "319b7b36f4af8f222119ccee980d45e9f914cf6de7d8d26c906209c0dadf8118",
+      "recorded_at": "2026-10-04T10:58:20.148Z",
+      "steps": [
+        {
+          "at": 0.45,
+          "text": "插入表格并选择 3 × 3 网格"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F032",
+      "title": "公式模板选择",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F032.mp4",
+      "poster": "posters/F032.webp",
+      "optional_captions": "captions/F032.vtt",
+      "seconds": 3.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 265809,
+      "sha256": "bd940e2fd72cd48e6322b57e28753a0bd4b111c777176b41c68261574d566e58",
+      "recorded_at": "2026-10-04T10:58:32.476Z",
+      "steps": [
+        {
+          "at": 0.45,
+          "text": "搜索并插入公式模板"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F033",
+      "title": "交互式代码块插入",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F033.mp4",
+      "poster": "posters/F033.webp",
+      "optional_captions": "captions/F033.vtt",
+      "seconds": 4.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 274568,
+      "sha256": "14bdfd0d1b45597eb10c035428b42663199d5ca44416c7ff7af6e7ce7eb3da0d",
+      "recorded_at": "2026-10-04T10:58:46.030Z",
+      "steps": [
+        {
+          "at": 0.462,
+          "text": "插入可运行的 JavaScript 代码"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F034",
+      "title": "科学图表插入",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F034.mp4",
+      "poster": "posters/F034.webp",
+      "optional_captions": "captions/F034.vtt",
+      "seconds": 4.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 290584,
+      "sha256": "4ab10a74ae284d6275f9980377bd108b5bbf33193ffcb3ae4f52cd3bdab3ed04",
+      "recorded_at": "2026-10-04T10:58:59.959Z",
+      "steps": [
+        {
+          "at": 0.463,
+          "text": "插入研究数据统计图"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F035",
+      "title": "引用子文档",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F035.mp4",
+      "poster": "posters/F035.webp",
+      "optional_captions": "captions/F035.vtt",
+      "seconds": 4.6,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 261876,
+      "sha256": "3e7643a598b299065eeb8403acd6567fd93ec13d0ee914a7d705e4b71f435681",
+      "recorded_at": "2026-10-04T10:59:13.470Z",
+      "steps": [
+        {
+          "at": 0.463,
+          "text": "引用研究方法子文档"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F036",
+      "title": "YAML/演示元数据",
+      "category": "06 插入图片、表格、公式和高级块",
+      "video": "videos/F036.mp4",
+      "poster": "posters/F036.webp",
+      "optional_captions": "captions/F036.vtt",
+      "seconds": 4.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 261829,
+      "sha256": "5f53a5328d7052de6858bcafb735dde032923168c41bfa6e8fa1dbe737bda305",
+      "recorded_at": "2026-10-04T10:59:27.010Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "编辑文档标题和演示主题"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F037",
+      "title": "单个代码块运行、复制输出、清空",
+      "category": "07 代码运行与图表渲染",
+      "video": "videos/F037.mp4",
+      "poster": "posters/F037.webp",
+      "optional_captions": "captions/F037.vtt",
+      "seconds": 4.3,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 64886,
+      "sha256": "e7ce2c626866014d9914136f8521c793aa037f7f691b58f43d36eb4bfcdae00e",
+      "recorded_at": "2026-10-04T10:59:39.387Z",
+      "steps": [
+        {
+          "at": 0.455,
+          "text": "运行代码块并检查真实计算结果"
+        },
+        {
+          "at": 2.29,
+          "text": "清空输出"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F038",
+      "title": "运行全部代码块",
+      "category": "07 代码运行与图表渲染",
+      "video": "videos/F038.mp4",
+      "poster": "posters/F038.webp",
+      "optional_captions": "captions/F038.vtt",
+      "seconds": 3.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 73868,
+      "sha256": "92bb2fa9f6cf11919d13c23048a11eb75b5377747ddaa4fbfb9ecf742034b6d7",
+      "recorded_at": "2026-10-04T10:59:50.057Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "运行文档中的全部代码块"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F039",
+      "title": "本地图表与失败回退",
+      "category": "07 代码运行与图表渲染",
+      "video": "videos/F039.mp4",
+      "poster": "posters/F039.webp",
+      "optional_captions": "captions/F039.vtt",
+      "seconds": 1.95,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 24095,
+      "sha256": "5b81dac5ace9c0808b84fa743d6ed91c1bf6c9116f10c7a6419092219a0ac9a6",
+      "recorded_at": "2026-10-04T10:59:58.608Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "查看离线渲染的论证关系图"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F040",
+      "title": "PlantUML 显式远程渲染",
+      "category": "07 代码运行与图表渲染",
+      "video": "videos/F040.mp4",
+      "poster": "posters/F040.webp",
+      "optional_captions": "captions/F040.vtt",
+      "seconds": 4.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 41237,
+      "sha256": "f0c8c91ffc159507db0a91e73d5ece4bd84ef0a4b9c21cf629683a1ac9045262",
+      "recorded_at": "2026-10-04T11:00:10.045Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "显式允许这一次 PlantUML 远程渲染"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F041",
+      "title": "打开、收起、全屏和调整 AI 面板",
+      "category": "08 AI 对话与文内改写",
+      "video": "videos/F041.mp4",
+      "poster": "posters/F041.webp",
+      "optional_captions": "captions/F041.vtt",
+      "seconds": 6.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 341391,
+      "sha256": "028d15166651057b0a32827b3efa3fe32a6d9597ef66a6ddc8e26ef5ddb5fb4f",
+      "recorded_at": "2026-10-04T11:00:25.369Z",
+      "steps": [
+        {
+          "at": 0.457,
+          "text": "打开 AI 侧栏"
+        },
+        {
+          "at": 1.617,
+          "text": "展开全屏对话"
+        },
+        {
+          "at": 3.95,
+          "text": "拖动调整对话宽度"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F042",
+      "title": "输入、模板、选区、无痕及发送",
+      "category": "08 AI 对话与文内改写",
+      "video": "videos/F042.mp4",
+      "poster": "posters/F042.webp",
+      "optional_captions": "captions/F042.vtt",
+      "seconds": 6.05,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 140915,
+      "sha256": "13ec484e6d767b920bf7d398695370f482bfa43cd1bc6accb51dfeabdf74365c",
+      "recorded_at": "2026-10-04T11:00:53.105Z",
+      "steps": [
+        {
+          "at": 0.499,
+          "text": "发送问题，读取当前文档并得到真实模型回复"
+        },
+        {
+          "at": 1.75,
+          "text": "等待过程已加速；本次真实操作总用时 15.9 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 1.75,
+            "end": 14.4,
+            "target": 1.4,
+            "reason": "unchanged_app_frames",
+            "speed": 9.035714285714286
+          }
+        ],
+        "realtime_seconds": 15.9,
+        "original_sha256": "b36c6c7532a63e73131babfa5327a66e69956f0d4d489e9ce238a67ba0ed1eac"
+      }
+    },
+    {
+      "id": "F043",
+      "title": "消息操作、文档上下文展开和重试",
+      "category": "08 AI 对话与文内改写",
+      "video": "videos/F043.mp4",
+      "poster": "posters/F043.webp",
+      "optional_captions": "captions/F043.vtt",
+      "seconds": 11.45,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 238761,
+      "sha256": "cb337b15f0f0a98ad992e4d0285bd42ab458364a7b8934d7142bf304fc093a08",
+      "recorded_at": "2026-10-04T11:01:59.118Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "复制模型回复和其中的代码块"
+        },
+        {
+          "at": 2.807,
+          "text": "展开再收起文档上下文"
+        },
+        {
+          "at": 3.959,
+          "text": "重新生成这条真实模型回复"
+        },
+        {
+          "at": 5.824,
+          "text": "等待过程已加速；本次真实操作总用时 27.8 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 5.824,
+            "end": 25.528,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 9.852
+          }
+        ],
+        "realtime_seconds": 27.75,
+        "original_sha256": "cccc411b796532e50e09035267faf6a40804a2517245b4bcdbaaa3e2ee055e5d"
+      }
+    },
+    {
+      "id": "F044",
+      "title": "应用回复及 AI 副本文档",
+      "category": "08 AI 对话与文内改写",
+      "video": "videos/F044.mp4",
+      "poster": "posters/F044.webp",
+      "optional_captions": "captions/F044.vtt",
+      "seconds": 2.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 113813,
+      "sha256": "3c74a823e5bfbcf41d3fe575606118f1697e03cb5210b7733c1d1873727c5bbb",
+      "recorded_at": "2026-10-04T11:02:40.055Z",
+      "steps": [
+        {
+          "at": 0.462,
+          "text": "将 AI 回复应用为未保存副本"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F045",
+      "title": "编辑内 AI 操作条",
+      "category": "08 AI 对话与文内改写",
+      "video": "videos/F045.mp4",
+      "poster": "posters/F045.webp",
+      "optional_captions": "captions/F045.vtt",
+      "seconds": 11.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 185112,
+      "sha256": "fd796ed53907812070fb37823440241596c744db242df0f54aaf281fb17af1b4",
+      "recorded_at": "2026-10-04T11:03:04.388Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "打开文内 AI，润色选中段落"
+        },
+        {
+          "at": 9.642,
+          "text": "应用润色结果，再撤销本次修改"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F046",
+      "title": "选择连接、官方预设和上游目录",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F046.mp4",
+      "poster": "posters/F046.webp",
+      "optional_captions": "captions/F046.vtt",
+      "seconds": 5.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 93272,
+      "sha256": "4c7eec5cc2a756b5c0a9f25b751d13f464e5fb874a2f03dd65cccace002256f2",
+      "recorded_at": "2026-10-04T11:18:05.457Z",
+      "steps": [
+        {
+          "at": 0.487,
+          "text": "展开高级参数与提供商目录"
+        },
+        {
+          "at": 3.878,
+          "text": "搜索官方连接与上游提供商目录"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F047",
+      "title": "创建/删除自定义连接及模型选择",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F047.mp4",
+      "poster": "posters/F047.webp",
+      "optional_captions": "captions/F047.vtt",
+      "seconds": 6.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 82041,
+      "sha256": "c1f7a23226749f7bfe3b9cb83f975f1ae78bc4f7e520ac2d7d3c823bab6fbd28",
+      "recorded_at": "2026-10-04T11:18:20.461Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "新建演示连接"
+        },
+        {
+          "at": 3.451,
+          "text": "删除刚创建的演示连接"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F048",
+      "title": "密钥输入、显示切换和清除",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F048.mp4",
+      "poster": "posters/F048.webp",
+      "optional_captions": "captions/F048.vtt",
+      "seconds": 5.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 46516,
+      "sha256": "a9c117dc5a6e95b108f07cdd3d5ee8e743e067d65482d022d832e29c75837be7",
+      "recorded_at": "2026-10-04T11:03:45.659Z",
+      "steps": [
+        {
+          "at": 0.458,
+          "text": "输入演示占位密钥，默认隐藏"
+        },
+        {
+          "at": 0.976,
+          "text": "显示刚输入的占位内容，再清空"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F049",
+      "title": "高级参数与连接保存",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F049.mp4",
+      "poster": "posters/F049.webp",
+      "optional_captions": "captions/F049.vtt",
+      "seconds": 6.4,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 161023,
+      "sha256": "c9a54bf6ab55535f9ac67645b1a617fc49e7d2d1722eb234b22e8406e0700b53",
+      "recorded_at": "2026-10-04T11:18:35.530Z",
+      "steps": [
+        {
+          "at": 0.463,
+          "text": "展开高级参数，检查所有配置可达"
+        },
+        {
+          "at": 2.624,
+          "text": "保存连接参数"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F050",
+      "title": "测试连接",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F050.mp4",
+      "poster": "posters/F050.webp",
+      "optional_captions": "captions/F050.vtt",
+      "seconds": 3.4,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 46980,
+      "sha256": "78616090e580f9c43c3053c7aa4b753bb4ba0d55068ece50fc5052fb702d5b8a",
+      "recorded_at": "2026-10-04T11:04:10.777Z",
+      "steps": [
+        {
+          "at": 0.458,
+          "text": "测试现有连接，等待明确反馈"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F051",
+      "title": "会话浏览、命名、保存、删除、复制及导出",
+      "category": "09 AI 连接设置与会话历史",
+      "video": "videos/F051.mp4",
+      "poster": "posters/F051.webp",
+      "optional_captions": "captions/F051.vtt",
+      "seconds": 10.6,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 336780,
+      "sha256": "75023947e72118d86ccabfb1503d0d90471c13bd505a9a33a43fd64149e25fa6",
+      "recorded_at": "2026-10-04T11:04:54.472Z",
+      "steps": [
+        {
+          "at": 0.47,
+          "text": "打开自动保存的会话，修改名称"
+        },
+        {
+          "at": 2.451,
+          "text": "搜索并重新打开已保存的会话"
+        },
+        {
+          "at": 5.149,
+          "text": "复制回答并导出会话 Markdown"
+        },
+        {
+          "at": 8.489,
+          "text": "删除刚才的演示会话"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F052",
+      "title": "搜索、浏览和技能说明",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F052.mp4",
+      "poster": "posters/F052.webp",
+      "optional_captions": "captions/F052.vtt",
+      "seconds": 3.65,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 122329,
+      "sha256": "ce9853e4c3e063ccc9a37ee337bc426d376d10a9692fe0b57c5b96943d823c72",
+      "recorded_at": "2026-10-04T11:05:06.738Z",
+      "steps": [
+        {
+          "at": 0.466,
+          "text": "搜索并浏览内置阅读 Skill"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F053",
+      "title": "新建、编辑、复制、保存和删除",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F053.mp4",
+      "poster": "posters/F053.webp",
+      "optional_captions": "captions/F053.vtt",
+      "seconds": 12.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 304571,
+      "sha256": "3cd86f0d8b61d36196ecaf5d75d4afc162655f046ad4d1538ea8cbbf8de4d185",
+      "recorded_at": "2026-10-04T11:05:30.441Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "新建并保存原创论证分析 Skill"
+        },
+        {
+          "at": 3.958,
+          "text": "复制为另一个可编辑模板"
+        },
+        {
+          "at": 7.309,
+          "text": "删除修订副本"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F054",
+      "title": "AI 生成草稿和示例",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F054.mp4",
+      "poster": "posters/F054.webp",
+      "optional_captions": "captions/F054.vtt",
+      "seconds": 10.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 260170,
+      "sha256": "4ec17fbbece81ae0b77d1ce37b7dcb6fa37a4fc263cf7bba49fe89990b6d5476",
+      "recorded_at": "2026-10-04T11:06:07.168Z",
+      "steps": [
+        {
+          "at": 0.471,
+          "text": "填写用途，请 AI 生成 Skill 草稿"
+        },
+        {
+          "at": 4.705,
+          "text": "等待过程已加速；本次真实操作总用时 18.9 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 4.705,
+            "end": 16.319,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 5.8069999999999995
+          }
+        ],
+        "realtime_seconds": 18.9,
+        "original_sha256": "705979fc40e29cf90a1d4be7d8580aafc48b2e2978d457b3922253f682adaa0e"
+      }
+    },
+    {
+      "id": "F055",
+      "title": "评估、发布、启用/停用和导出单个",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F055.mp4",
+      "poster": "posters/F055.webp",
+      "optional_captions": "captions/F055.vtt",
+      "seconds": 10.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 247319,
+      "sha256": "3adf15218ff5d061070af58fffe33e7582a798c8deae61757e0cb0bc9ffdb75c",
+      "recorded_at": "2026-10-04T11:06:30.083Z",
+      "steps": [
+        {
+          "at": 0.464,
+          "text": "评估并发布原创 Skill"
+        },
+        {
+          "at": 4.588,
+          "text": "停用再启用 Skill"
+        },
+        {
+          "at": 7.524,
+          "text": "导出单个 Skill"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F056",
+      "title": "导入 Markdown/JSON 及全部导出",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F056.mp4",
+      "poster": "posters/F056.webp",
+      "optional_captions": "captions/F056.vtt",
+      "seconds": 4.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 80037,
+      "sha256": "b1bda4f8995a95f4b7d73bf395ddd7eb671d1aa0fa3aca696c883efdd9a16135",
+      "recorded_at": "2026-10-04T11:06:43.115Z",
+      "steps": [
+        {
+          "at": 0.472,
+          "text": "导入原创 JSON 模板"
+        },
+        {
+          "at": 1.003,
+          "text": "导出全部模板"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F057",
+      "title": "GitHub、目录、ZIP来源预览和选择导入",
+      "category": "10 Prompt / Skill 工作台",
+      "video": "videos/F057.mp4",
+      "poster": "posters/F057.webp",
+      "optional_captions": "captions/F057.vtt",
+      "seconds": 9.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 235959,
+      "sha256": "b6db990341c4fce92874d71d6c21569ab0a7503951451122d0049bc310ce8230",
+      "recorded_at": "2026-10-04T11:07:02.806Z",
+      "steps": [
+        {
+          "at": 0.45,
+          "text": "从 ZIP 预览原创 Skill 包"
+        },
+        {
+          "at": 3.583,
+          "text": "选择有效 Skill 并确认导入"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F058",
+      "title": "打开面板、选文件、选文件夹和覆盖策略",
+      "category": "11 万物转 MD 与批量导入",
+      "video": "videos/F058.mp4",
+      "poster": "posters/F058.webp",
+      "optional_captions": "captions/F058.vtt",
+      "seconds": 8.55,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 98259,
+      "sha256": "0646c4f0449aafa6d9bf8b0ee4632ef7970d24e5d61768e03a3ae1b7c089acf7",
+      "recorded_at": "2026-10-04T11:22:56.322Z",
+      "steps": [
+        {
+          "at": 0.453,
+          "text": "选择演示资料文件夹，已有 Markdown 自动跳过"
+        },
+        {
+          "at": 4.04,
+          "text": "明确勾选覆盖，重新转换并保留旧版本"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F059",
+      "title": "任务行、进度、取消和结果目录",
+      "category": "11 万物转 MD 与批量导入",
+      "video": "videos/F059.mp4",
+      "poster": "posters/F059.webp",
+      "optional_captions": "captions/F059.vtt",
+      "seconds": 5.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 128823,
+      "sha256": "a2dd3c78353d2f41098a5351fef665fac9d569ebf95f35a0def4a1e69b9dc5eb",
+      "recorded_at": "2026-10-04T11:07:12.622Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "查看批量转换进度和结果"
+        },
+        {
+          "at": 2.991,
+          "text": "点击任务行打开生成的 Markdown"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F060",
+      "title": "单文件导入与同名输出决策",
+      "category": "11 万物转 MD 与批量导入",
+      "video": "videos/F060.mp4",
+      "poster": "posters/F060.webp",
+      "optional_captions": "captions/F060.vtt",
+      "seconds": 2.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 84246,
+      "sha256": "46e730c106f28c0becdc3142eae3f36478d6c52ea7f4296fd043fef06233950d",
+      "recorded_at": "2026-10-04T11:07:18.074Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "单文件导入 EPUB，只预览而不覆盖原书"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F061",
+      "title": "文件拖入、目录拖入和ZIP拆包",
+      "category": "11 万物转 MD 与批量导入",
+      "video": "videos/F061.mp4",
+      "poster": "posters/F061.webp",
+      "optional_captions": "captions/F061.vtt",
+      "seconds": 4.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 58253,
+      "sha256": "eefb2beec5e045e2f9ae86bc509ad7ec3b3fc459124ee7119a0a904be659442c",
+      "recorded_at": "2026-10-04T11:07:25.594Z",
+      "steps": [
+        {
+          "at": 0.461,
+          "text": "导入 ZIP，隔离解包并转换笔记"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F100",
+      "title": "音视频识别语言",
+      "category": "11 万物转 MD 与批量导入",
+      "video": "videos/F100.mp4",
+      "poster": "posters/F100.webp",
+      "optional_captions": "captions/F100.vtt",
+      "seconds": 7.3,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 96368,
+      "sha256": "d7df319098e6fee9fecc439ed5a2cd8d0e125f376ecff042985bf1b79c409566",
+      "recorded_at": "2026-10-04T11:07:37.112Z",
+      "steps": [
+        {
+          "at": 0.467,
+          "text": "选择英语识别模型，转写原创讨论录音"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F062",
+      "title": "插件搜索、分类和运行信息",
+      "category": "12 插件中心",
+      "video": "videos/F062.mp4",
+      "poster": "posters/F062.webp",
+      "optional_captions": "captions/F062.vtt",
+      "seconds": 10.95,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 181934,
+      "sha256": "f54a6a503df2f88f7a1a2a6995638bb12e6048cb83413c7a175beae3b362cac9",
+      "recorded_at": "2026-10-04T11:07:54.730Z",
+      "steps": [
+        {
+          "at": 0.464,
+          "text": "搜索 LaTeX 学术扩展"
+        },
+        {
+          "at": 1.026,
+          "text": "按功能分类浏览插件"
+        },
+        {
+          "at": 1.836,
+          "text": "切换为仅看已安装，再恢复全部插件"
+        },
+        {
+          "at": 5.656,
+          "text": "刷新插件状态并查看运行信息"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F063",
+      "title": "安装、重试及安装进度",
+      "category": "12 插件中心",
+      "video": "videos/F063.mp4",
+      "poster": "posters/F063.webp",
+      "optional_captions": "captions/F063.vtt",
+      "seconds": 6.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 160773,
+      "sha256": "eeef61af62f07c2546d393c521ae7b721f89ce24ff3590b1d5331cc6df31db8d",
+      "recorded_at": "2026-10-04T11:08:06.410Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "安装本地 Rust 学术扩展"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F064",
+      "title": "启用/停用和互斥切换",
+      "category": "12 插件中心",
+      "video": "videos/F064.mp4",
+      "poster": "posters/F064.webp",
+      "optional_captions": "captions/F064.vtt",
+      "seconds": 6.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 68610,
+      "sha256": "024b0da7f0b73bcb44fb46eadbc0f55a85a397a4c79ae381a2e95c42b8a8ecf6",
+      "recorded_at": "2026-10-04T11:08:17.676Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "切换扩展开关并检查持久化状态"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F065",
+      "title": "卸载及错误详情",
+      "category": "12 插件中心",
+      "video": "videos/F065.mp4",
+      "poster": "posters/F065.webp",
+      "optional_captions": "captions/F065.vtt",
+      "seconds": 6.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 147126,
+      "sha256": "5bad16a13256c9c47053eb31b4a73f368914e647334053f1c877cb7b5a4ebcb2",
+      "recorded_at": "2026-10-04T11:08:29.774Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "卸载扩展，确认后移除本地配置"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F066",
+      "title": "扫描识别入口",
+      "category": "13 OCR、网页提取和剪贴板",
+      "video": "videos/F066.mp4",
+      "poster": "posters/F066.webp",
+      "optional_captions": "captions/F066.vtt",
+      "seconds": 3.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 76608,
+      "sha256": "efd80f450866da7c6ce60768fcc449c5d2b0903adb558e3cb82b46a19caf37c6",
+      "recorded_at": "2026-10-04T11:08:36.329Z",
+      "steps": [
+        {
+          "at": 0.453,
+          "text": "识别扫描资料中的英文正文"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F067",
+      "title": "网页表单、粘贴、抓取页数和图片",
+      "category": "13 OCR、网页提取和剪贴板",
+      "video": "videos/F067.mp4",
+      "poster": "posters/F067.webp",
+      "optional_captions": "captions/F067.vtt",
+      "seconds": 6.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 125057,
+      "sha256": "78cd8eeaee39a18cb1ccdacc9ecf93c221f959a857dfe39245254f7da945c9de",
+      "recorded_at": "2026-10-04T11:18:49.580Z",
+      "steps": [
+        {
+          "at": 0.456,
+          "text": "填写网页网址，调整页数并选择图片策略"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F068",
+      "title": "智能提取、完整动态渲染及取消",
+      "category": "13 OCR、网页提取和剪贴板",
+      "video": "videos/F068.mp4",
+      "poster": "posters/F068.webp",
+      "optional_captions": "captions/F068.vtt",
+      "seconds": 11.55,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "4520/231",
+      "bytes": 312310,
+      "sha256": "5e19c2ac954bafeb71843b14d7cae717e3996218b5419357c1913bcce85388db",
+      "recorded_at": "2026-10-04T11:23:19.289Z",
+      "steps": [
+        {
+          "at": 0.63,
+          "text": "智能提取原创网页正文"
+        },
+        {
+          "at": 2.156,
+          "text": "用真实系统 WebView 提取动态内容"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F069",
+      "title": "剪贴新建与多类型分流",
+      "category": "13 OCR、网页提取和剪贴板",
+      "video": "videos/F069.mp4",
+      "poster": "posters/F069.webp",
+      "optional_captions": "captions/F069.vtt",
+      "seconds": 3.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 90481,
+      "sha256": "66b28f4597e608970df979c06299dc4ba52699f7498809bec077acbee857adeb",
+      "recorded_at": "2026-10-04T11:09:01.002Z",
+      "steps": [
+        {
+          "at": 0.461,
+          "text": "从真实剪贴板新建 Markdown 文档"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F101",
+      "title": "隔离网页窗口授权与提取",
+      "category": "13 OCR、网页提取和剪贴板",
+      "video": "videos/F101.mp4",
+      "poster": "posters/F101.webp",
+      "optional_captions": "captions/F101.vtt",
+      "seconds": 10.55,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "4100/211",
+      "bytes": 225305,
+      "sha256": "40ae9a874b977c41a106394c284cd664fc31d7be624d16cdb7f7ff370a18c484",
+      "recorded_at": "2026-10-04T11:23:40.555Z",
+      "steps": [
+        {
+          "at": 0.795,
+          "text": "打开隔离网页窗口，进入原创演示会话"
+        },
+        {
+          "at": 4.121,
+          "text": "明确授权本次提取，返回真实正文"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F070",
+      "title": "导出格式切换",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F070.mp4",
+      "poster": "posters/F070.webp",
+      "optional_captions": "captions/F070.vtt",
+      "seconds": 11.15,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 108547,
+      "sha256": "88711131c988a2a2a2e985cc11899f6a810b9d0ecfb79963343f94bf07025f46",
+      "recorded_at": "2026-10-04T11:09:21.132Z",
+      "steps": [
+        {
+          "at": 0.466,
+          "text": "切换导出格式 DOCX"
+        },
+        {
+          "at": 2.119,
+          "text": "切换导出格式 EPUB"
+        },
+        {
+          "at": 3.867,
+          "text": "切换导出格式 HTML"
+        },
+        {
+          "at": 5.443,
+          "text": "切换导出格式 TEX"
+        },
+        {
+          "at": 7.003,
+          "text": "切换导出格式 PRESENTATION"
+        },
+        {
+          "at": 8.583,
+          "text": "切换导出格式 PDF"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F071",
+      "title": "预设选择、重置、自定义保存",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F071.mp4",
+      "poster": "posters/F071.webp",
+      "optional_captions": "captions/F071.vtt",
+      "seconds": 7.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 90237,
+      "sha256": "c29d6810bdf28cac276f3835789c4d4949cb01aeb40608fc940e1753b6a6b9ab",
+      "recorded_at": "2026-10-04T11:09:36.504Z",
+      "steps": [
+        {
+          "at": 0.452,
+          "text": "加载商务预设"
+        },
+        {
+          "at": 2.361,
+          "text": "保存当前版式为自定义预设"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F072",
+      "title": "版式设置、实时预览和大预览",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F072.mp4",
+      "poster": "posters/F072.webp",
+      "optional_captions": "captions/F072.vtt",
+      "seconds": 7.95,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 248497,
+      "sha256": "b90e190f94318beec1cab986a86f6ab90b714c024aaf361f62b4e64295229e52",
+      "recorded_at": "2026-10-04T11:09:53.226Z",
+      "steps": [
+        {
+          "at": 0.474,
+          "text": "打开真实 PDF 页面的大预览"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F073",
+      "title": "AI 排版生成",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F073.mp4",
+      "poster": "posters/F073.webp",
+      "optional_captions": "captions/F073.vtt",
+      "seconds": 8.95,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 70269,
+      "sha256": "fbdac151b1eeda52f131a4a0f4f99564e8d90da83f88473d1b759f435c700837",
+      "recorded_at": "2026-10-04T11:21:22.549Z",
+      "steps": [
+        {
+          "at": 0.798,
+          "text": "AI 生成版式并应用到预览"
+        },
+        {
+          "at": 2.884,
+          "text": "等待过程已加速；本次真实操作总用时 123.5 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 2.884,
+            "end": 120.827,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 58.9715
+          }
+        ],
+        "realtime_seconds": 123.5,
+        "original_sha256": "8fbbdc3f43a2bb02e5052ac346d1f0c833b60287565c0fbf2511d012664d8be3"
+      }
+    },
+    {
+      "id": "F074",
+      "title": "执行、取消、打开结果和定位",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F074.mp4",
+      "poster": "posters/F074.webp",
+      "optional_captions": "captions/F074.vtt",
+      "seconds": 4.35,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 49309,
+      "sha256": "0f30c6568a2497c5710e9beaef8dc7ae750d7bd8b23b00f4e4c1823ca300afa9",
+      "recorded_at": "2026-10-04T11:23:54.331Z",
+      "steps": [
+        {
+          "at": 0.455,
+          "text": "导出 PDF 并选择保存位置"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F075",
+      "title": "系统浏览器打印",
+      "category": "14 多格式导出、预设和预览",
+      "video": "videos/F075.mp4",
+      "poster": "posters/F075.webp",
+      "optional_captions": "captions/F075.vtt",
+      "seconds": 5.7,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 65971,
+      "sha256": "1af513d4f31053db7b9bfd9c791ec8d7524395f0a8f8686c7f3c29fea0b9d9d4",
+      "recorded_at": "2026-10-04T11:24:09.512Z",
+      "steps": [
+        {
+          "at": 0.753,
+          "text": "打开系统打印预览，查看当前正文后取消"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F076",
+      "title": "演示开启与播放器",
+      "category": "15 演讲演示与局域网共享",
+      "video": "videos/F076.mp4",
+      "poster": "posters/F076.webp",
+      "optional_captions": "captions/F076.vtt",
+      "seconds": 5.6,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 127614,
+      "sha256": "b98e9b9c6850ec45ac5e987ef3f87da9ba28a2da041cc465e6debb0480945771",
+      "recorded_at": "2026-10-04T11:12:15.197Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "从 Markdown 开启演讲演示"
+        },
+        {
+          "at": 2.696,
+          "text": "翻到下一张幻灯片"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F077",
+      "title": "开启/关闭共享与扫码访问",
+      "category": "15 演讲演示与局域网共享",
+      "video": "videos/F077.mp4",
+      "poster": "posters/F077.webp",
+      "optional_captions": "captions/F077.vtt",
+      "seconds": 6.55,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 205526,
+      "sha256": "d386e47ce3d48409ade58c88427471f0a67c317aae23dc623e51d7876c152917",
+      "recorded_at": "2026-10-04T11:12:29.219Z",
+      "steps": [
+        {
+          "at": 0.463,
+          "text": "开启局域网共享，生成访问二维码"
+        },
+        {
+          "at": 3.84,
+          "text": "关闭共享会话"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F078",
+      "title": "图谱打开与视图控制",
+      "category": "16 知识图谱和双向链接",
+      "video": "videos/F078.mp4",
+      "poster": "posters/F078.webp",
+      "optional_captions": "captions/F078.vtt",
+      "seconds": 8.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 824188,
+      "sha256": "3f9827334cc36ebf3fbdf99df52dcfdde2b8f01a1479a0b26442652917a92551",
+      "recorded_at": "2026-10-04T11:12:46.785Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "打开真实笔记关系图"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F079",
+      "title": "图谱筛选、节点选择与手势",
+      "category": "16 知识图谱和双向链接",
+      "video": "videos/F079.mp4",
+      "poster": "posters/F079.webp",
+      "optional_captions": "captions/F079.vtt",
+      "seconds": 5.6,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 560858,
+      "sha256": "e0ac0703b750454ec98420ec6986f0b9e2fb2a6e0b7217aa4ee7f7612ead7a3f",
+      "recorded_at": "2026-10-04T11:13:00.452Z",
+      "steps": [
+        {
+          "at": 0.465,
+          "text": "筛选关联笔记并查看节点详情"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F080",
+      "title": "反向链接抽屉",
+      "category": "16 知识图谱和双向链接",
+      "video": "videos/F080.mp4",
+      "poster": "posters/F080.webp",
+      "optional_captions": "captions/F080.vtt",
+      "seconds": 5.5,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 89723,
+      "sha256": "74441376a24bba408d8fe439f613c25d93247f73c03f4349e05c690425408ef2",
+      "recorded_at": "2026-10-04T11:13:13.061Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "查看真实反向引用"
+        },
+        {
+          "at": 2.625,
+          "text": "切换正向链接并筛选目标"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F081",
+      "title": "自动修复报告和修复副本",
+      "category": "17 修复报告、样式定制和系统设置",
+      "video": "videos/F081.mp4",
+      "poster": "posters/F081.webp",
+      "optional_captions": "captions/F081.vtt",
+      "seconds": 4.75,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 85435,
+      "sha256": "34674225d1d5a559dedf2bc624677f113ecf717353c81890adf54d803e351c8a",
+      "recorded_at": "2026-10-04T11:24:23.355Z",
+      "steps": [
+        {
+          "at": 0.457,
+          "text": "查看显示层修复报告"
+        },
+        {
+          "at": 2.616,
+          "text": "另存修复版，保留原稿"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F082",
+      "title": "AI 深度排版自愈",
+      "category": "17 修复报告、样式定制和系统设置",
+      "video": "videos/F082.mp4",
+      "poster": "posters/F082.webp",
+      "optional_captions": "captions/F082.vtt",
+      "seconds": 8.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 111522,
+      "sha256": "5605313b854128482c245aef5183dd0ddd68989cf7b6864775ae1d22817597f7",
+      "recorded_at": "2026-10-04T11:13:48.323Z",
+      "steps": [
+        {
+          "at": 0.459,
+          "text": "AI 深度排版生成安全副本"
+        },
+        {
+          "at": 2.668,
+          "text": "等待过程已加速；本次真实操作总用时 23.3 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 2.668,
+            "end": 21.251,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 9.291500000000001
+          }
+        ],
+        "realtime_seconds": 23.3,
+        "original_sha256": "4495de3fe7650a7fc2507519b9692813882d70f5f4c4a0ef72be771e769efb96"
+      }
+    },
+    {
+      "id": "F083",
+      "title": "样式预设、CSS/Head和AI生成",
+      "category": "17 修复报告、样式定制和系统设置",
+      "video": "videos/F083.mp4",
+      "poster": "posters/F083.webp",
+      "optional_captions": "captions/F083.vtt",
+      "seconds": 14.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 260885,
+      "sha256": "f3cfbf404c66dca174bd7f022432bed7f6755a15e2a9e2156cb4057037583578",
+      "recorded_at": "2026-10-04T11:21:54.799Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "查看阅读字体与表格预设"
+        },
+        {
+          "at": 5.331,
+          "text": "请 AI 生成阅读样式"
+        },
+        {
+          "at": 7.705,
+          "text": "等待过程已加速；本次真实操作总用时 20.1 秒"
+        },
+        {
+          "at": 10.709999999999999,
+          "text": "保存样式并回到正文查看效果"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 7.705,
+            "end": 16.318,
+            "target": 2,
+            "reason": "explicit_operation_wait",
+            "speed": 4.306500000000001
+          }
+        ],
+        "realtime_seconds": 20.1,
+        "original_sha256": "d921fd550fe43147b2df6ae6747b1e9394dedad18c726ec9332f1dd0728850bc"
+      }
+    },
+    {
+      "id": "F084",
+      "title": "界面语言、默认关联和开机自启",
+      "category": "17 修复报告、样式定制和系统设置",
+      "video": "videos/F084.mp4",
+      "poster": "posters/F084.webp",
+      "optional_captions": "captions/F084.vtt",
+      "seconds": 10.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 234445,
+      "sha256": "f6e1d1fe381a696712ec006ebe064d7661fa4ed8bb6129c7da73b2435043a472",
+      "recorded_at": "2026-10-04T11:14:36.505Z",
+      "steps": [
+        {
+          "at": 0.45,
+          "text": "搜索并切换界面语言"
+        },
+        {
+          "at": 3.807,
+          "text": "查看默认关联的桌面版说明"
+        },
+        {
+          "at": 5.786,
+          "text": "切换真实开机自启设置"
+        },
+        {
+          "at": 7.016,
+          "text": "恢复原先的开机自启状态"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F085",
+      "title": "检查、下载、取消、应用和浏览器查看",
+      "category": "18 应用更新",
+      "video": "videos/F085.mp4",
+      "poster": "posters/F085.webp",
+      "optional_captions": "captions/F085.vtt",
+      "seconds": 3.8,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 76361,
+      "sha256": "065567c85a7c2a081ac39bac9d62bf5204d59862eb97e270af7a717f1221272c",
+      "recorded_at": "2026-10-04T11:15:07.489Z",
+      "steps": [
+        {
+          "at": 0.461,
+          "text": "向真实更新服务检查版本"
+        },
+        {
+          "at": 0.5,
+          "text": "等待过程已加速；本次真实操作总用时 19.5 秒"
+        }
+      ],
+      "wait_edit": {
+        "kind": "accelerated_wait",
+        "intervals": [
+          {
+            "start": 0.5,
+            "end": 19,
+            "target": 1.4,
+            "reason": "unchanged_app_frames",
+            "speed": 13.214285714285715
+          }
+        ],
+        "realtime_seconds": 19.5,
+        "original_sha256": "b1668047b660080bfd0d2157765bede3164da6c7d22ba2b8a07ee93cd09bc581"
+      }
+    },
+    {
+      "id": "F086",
+      "title": "桌宠工作台、预览和页签",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F086.mp4",
+      "poster": "posters/F086.webp",
+      "optional_captions": "captions/F086.vtt",
+      "seconds": 5.65,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 99794,
+      "sha256": "f506c2daf5750709d3be504914ee5fb9f24791666baacab091e3f90a58e86ffb",
+      "recorded_at": "2026-10-04T11:15:20.534Z",
+      "steps": [
+        {
+          "at": 0.457,
+          "text": "查看完整角色预览和三组设置"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F087",
+      "title": "角色搜索、分类渲染器、收藏和选择",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F087.mp4",
+      "poster": "posters/F087.webp",
+      "optional_captions": "captions/F087.vtt",
+      "seconds": 4.9,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 64157,
+      "sha256": "0bce9d15e19337ae76739281570803820f5fb922d8b698eab96ccb598d0047a9",
+      "recorded_at": "2026-10-04T11:15:32.221Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "搜索角色并单独收藏"
+        },
+        {
+          "at": 1.967,
+          "text": "选择原有精灵角色"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F088",
+      "title": "导入/删除自定义精灵图",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F088.mp4",
+      "poster": "posters/F088.webp",
+      "optional_captions": "captions/F088.vtt",
+      "seconds": 7.2,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 129734,
+      "sha256": "2c0b2c740814b02bf67741810684952307fba81488a8fc0c2edf6251e8421fc3",
+      "recorded_at": "2026-10-04T11:15:46.629Z",
+      "steps": [
+        {
+          "at": 0.465,
+          "text": "导入演示精灵图副本"
+        },
+        {
+          "at": 2.375,
+          "text": "删除刚导入的自定义副本"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F089",
+      "title": "运行位置、启用、尺寸、透明度和置顶",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F089.mp4",
+      "poster": "posters/F089.webp",
+      "optional_captions": "captions/F089.vtt",
+      "seconds": 6.85,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 67173,
+      "sha256": "e9745f95e0ccc95a2bbc400a376963edc707e78e5d95ec8ff1d6e995a028d85b",
+      "recorded_at": "2026-10-04T11:16:00.657Z",
+      "steps": [
+        {
+          "at": 1.705,
+          "text": "启用伴读角色并缩小尺寸"
+        },
+        {
+          "at": 3.397,
+          "text": "关闭置顶并保存窗口行为"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F090",
+      "title": "安装/卸载桌宠扩展与运行时更新",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F090.mp4",
+      "poster": "posters/F090.webp",
+      "optional_captions": "captions/F090.vtt",
+      "seconds": 5.7,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 70743,
+      "sha256": "42b179e52b1377e506f2573b8c7fff920b79d17415b13d5dbb1ea46d7bb81cbe",
+      "recorded_at": "2026-10-04T11:16:13.558Z",
+      "steps": [
+        {
+          "at": 1.782,
+          "text": "从本地随包资源安装桌宠扩展"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F091",
+      "title": "陪伴风格、气泡和养成动作",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F091.mp4",
+      "poster": "posters/F091.webp",
+      "optional_captions": "captions/F091.vtt",
+      "seconds": 10.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 96525,
+      "sha256": "73204865c100e627dd55ecfa44260eaf3ba190334c2318a23cdb2b702bb535ec",
+      "recorded_at": "2026-10-04T11:16:31.735Z",
+      "steps": [
+        {
+          "at": 1.597,
+          "text": "选择安静陪伴并打招呼"
+        },
+        {
+          "at": 4.364,
+          "text": "摸摸头、喂食与休息唤醒"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F092",
+      "title": "阅读器内点击、拖动和快捷条",
+      "category": "19 桌宠设置、角色库和伴读互动",
+      "video": "videos/F092.mp4",
+      "poster": "posters/F092.webp",
+      "optional_captions": "captions/F092.vtt",
+      "seconds": 3.35,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 102848,
+      "sha256": "aadb1a5a7eb64fc2df4c23001c70a461e4aaaca543a9c0e2bc06f0c131403171",
+      "recorded_at": "2026-10-04T11:16:42.349Z",
+      "steps": [
+        {
+          "at": 0.451,
+          "text": "点击原有精灵角色，播放互动与台词"
+        },
+        {
+          "at": 1.628,
+          "text": "拖动角色到新的阅读位置"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F093",
+      "title": "原生拖动、透明区域和Bongo输入动作",
+      "category": "20 独立桌宠窗口和快捷菜单",
+      "video": "videos/F093.mp4",
+      "poster": "posters/F093.webp",
+      "optional_captions": "captions/F093.vtt",
+      "seconds": 21.4,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "2095/107",
+      "bytes": 174801,
+      "sha256": "41f049302f15944fa0299402d787e2c0c04b42ae035f90fc70bfa04ac9973a6e",
+      "recorded_at": "2026-10-04T10:50:38.975Z",
+      "steps": [
+        {
+          "at": 0.509,
+          "text": "BongoCat 跟随真实键盘和鼠标输入"
+        },
+        {
+          "at": 4.08,
+          "text": "从角色实体拖动原生窗口"
+        },
+        {
+          "at": 6.922,
+          "text": "透明边缘允许点击穿透"
+        },
+        {
+          "at": 9.124,
+          "text": "原有精灵保留自己的动画与点击互动"
+        },
+        {
+          "at": 12.62,
+          "text": "Live2D 使用模型动作与视线跟随"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F094",
+      "title": "右键快捷菜单、角色子菜单和互动气泡",
+      "category": "20 独立桌宠窗口和快捷菜单",
+      "video": "videos/F094.mp4",
+      "poster": "posters/F094.webp",
+      "optional_captions": "captions/F094.vtt",
+      "seconds": 13,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "251/13",
+      "bytes": 217130,
+      "sha256": "a218a9ecd34bffc95b1aec3ef514503df1cb66ad0f7797b29b8aa248ab248138",
+      "recorded_at": "2026-10-04T11:24:54.839Z",
+      "steps": [
+        {
+          "at": 1.259,
+          "text": "右键角色，打开原生桌宠快捷菜单"
+        },
+        {
+          "at": 2.808,
+          "text": "进入角色子菜单，切换原创精灵"
+        },
+        {
+          "at": 5.053,
+          "text": "点击角色，触发动作和互动反馈"
+        },
+        {
+          "at": 8.623,
+          "text": "从快捷菜单回到 ReadMD 设置"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F095",
+      "title": "桌宠拖入文件与跨进程唤起",
+      "category": "20 独立桌宠窗口和快捷菜单",
+      "video": "videos/F095.mp4",
+      "poster": "posters/F095.webp",
+      "optional_captions": "captions/F095.vtt",
+      "seconds": 11.9,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "2330/119",
+      "bytes": 203173,
+      "sha256": "bfaab989230a85afed1f6c8df6ef88b0721afacf81ffca0094fd43be96cbed5c",
+      "recorded_at": "2026-10-04T11:25:26.135Z",
+      "steps": [
+        {
+          "at": 0.454,
+          "text": "选择原创阅读手册（系统文件窗口不录入）"
+        },
+        {
+          "at": 4.667,
+          "text": "把文件拖到独立桌宠，唤起 ReadMD"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F096",
+      "title": "全局命令面板及快捷键查询",
+      "category": "21 命令面板、快捷键和通用对话框",
+      "video": "videos/F096.mp4",
+      "poster": "posters/F096.webp",
+      "optional_captions": "captions/F096.vtt",
+      "seconds": 2.75,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 179472,
+      "sha256": "bfedfc4e7144fc86a0a5c0e9eb21bb3f7a0afebb8a3d0e9ff3ff45c86250d085",
+      "recorded_at": "2026-10-04T11:16:52.394Z",
+      "steps": [
+        {
+          "at": 0.458,
+          "text": "打开命令面板，搜索阅读功能"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F097",
+      "title": "保存、冲突、选择、确认和连续模式提示",
+      "category": "21 命令面板、快捷键和通用对话框",
+      "video": "videos/F097.mp4",
+      "poster": "posters/F097.webp",
+      "optional_captions": "captions/F097.vtt",
+      "seconds": 6.1,
+      "dimensions": {
+        "width": 1280,
+        "height": 800
+      },
+      "fps": "20/1",
+      "bytes": 478082,
+      "sha256": "5e91908d2cdcacf7e59bbf5d5381dbbd382b7cfc70b11531a6b9b02f711f1a5e",
+      "recorded_at": "2026-10-04T11:17:07.741Z",
+      "steps": [
+        {
+          "at": 0.612,
+          "text": "离开编辑时选择取消，保留当前输入"
+        },
+        {
+          "at": 2.79,
+          "text": "再次离开，放弃修改并保留恢复记录"
+        }
+      ],
+      "wait_edit": null
+    },
+    {
+      "id": "F104",
+      "title": "窗口控制、托盘驻留与退出恢复",
+      "category": "21 命令面板、快捷键和通用对话框",
+      "video": "videos/F104.mp4",
+      "poster": "posters/F104.webp",
+      "optional_captions": "captions/F104.vtt",
+      "seconds": 6.9,
+      "dimensions": {
+        "width": 1300,
+        "height": 850
+      },
+      "fps": "20/1",
+      "bytes": 472719,
+      "sha256": "c21bc726b5a71226073c93da43749547a9e549aa279f9907812f15e718e7c836",
+      "recorded_at": "2026-10-04T10:48:59.518Z",
+      "steps": [
+        {
+          "at": 0.571,
+          "text": "从顶栏退出应用，先取消关闭"
+        },
+        {
+          "at": 3.713,
+          "text": "查看已经保留的恢复草稿"
+        }
+      ],
+      "wait_edit": null
+    }
+  ]
+}

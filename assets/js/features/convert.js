@@ -8,10 +8,24 @@
 const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 let convertLastDir = null;
 
+function currentSpeechLanguage() {
+  try { return localStorage.getItem('readmd.transcribe.language') || 'auto'; }
+  catch (_) { return 'auto'; }
+}
+
+function initSpeechLanguage() {
+  const speech = $('convert-speech-language');
+  if (!speech) return;
+  speech.value = currentSpeechLanguage();
+  speech.onchange = () => { try { localStorage.setItem('readmd.transcribe.language', speech.value); } catch (_) {} };
+}
+
 async function openConvertModal() {
   const note = $('convert-note');
   if (note) note.textContent = state.win7 ? (_t('convert.noteWin7') || 'Win7 版仅支持 docx / pdf 转 Markdown；转换结果自动保存为源文件同目录同名 .md。') : (_t('convert.note') || '转换结果自动保存为源文件同目录同名 .md（如 report.docx → report.md）。docx 公式、PDF 表格走专用解析，其余格式自动回退通用转换；输出经过严格校验（表格 / 代码围栏 / 公式 / 图片引用）。');
   $('convert-modal').classList.remove('hidden');
+  initSpeechLanguage();
+  if (typeof batchFinished !== 'undefined' && !batchFinished && (batchJobId || Object.keys(batchRowsBySrc).length || (!batchOcrDone && $('convert-list').children.length))) return;
   $('convert-list').innerHTML = '';
   $('convert-status').textContent = '';
   $('batch-cancel')?.classList.add('hidden');
@@ -19,8 +33,6 @@ async function openConvertModal() {
 }
 
 function closeConvertModal() {
-  if (typeof stopBatchPoll === 'function') stopBatchPoll();
-  if (typeof setBatchTriggersBusy === 'function') setBatchTriggersBusy(false);
   $('convert-modal').classList.add('hidden');
 }
 
@@ -49,7 +61,7 @@ async function pickConvertFiles() {
 
 async function pickConvertFolder() {
   let dir = null;
-  try { dir = await py.choose_folder(); } catch (e) { dir = null; }
+  try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   try {
     const r = await apiFetch('/api/convert/collect?dir=' + encodeURIComponent(dir));
@@ -260,24 +272,39 @@ async function refreshPluginList() {
 let currentPluginCategory = 'all';
 let lastPluginsCache = {};
 let pluginTabsInitialized = false;
+let pluginInstalledOnly = false;
 
 function initPluginTabsOnce() {
   if (pluginTabsInitialized) return;
   const container = $('plugin-category-tabs');
   if (!container) return;
   pluginTabsInitialized = true;
+  $('plugin-search')?.addEventListener('input', () => renderPluginCards(lastPluginsCache));
+  $('plugin-installed-filter')?.addEventListener('click', () => {
+    pluginInstalledOnly = !pluginInstalledOnly;
+    $('plugin-installed-filter').setAttribute('aria-pressed', String(pluginInstalledOnly));
+    renderPluginCards(lastPluginsCache);
+  });
+  $('plugin-refresh')?.addEventListener('click', refreshPluginList);
+  container.addEventListener('keydown', e => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
+    const tabs = [...container.querySelectorAll('.plugin-tab-pill')], index = tabs.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    e.preventDefault(); tabs[next].click(); tabs[next].focus();
+  });
   container.addEventListener('click', (e) => {
     const btn = e.target.closest('.plugin-tab-pill');
     if (!btn) return;
     container.querySelectorAll('.plugin-tab-pill').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     currentPluginCategory = btn.dataset.category || 'all';
-    container.querySelectorAll('.plugin-tab-pill').forEach(t => t.setAttribute('aria-selected', String(t === btn)));
+    container.querySelectorAll('.plugin-tab-pill').forEach(t => { t.setAttribute('aria-selected', String(t === btn)); t.tabIndex = t === btn ? 0 : -1; });
     renderPluginCards(lastPluginsCache);
   });
   container.querySelectorAll('.plugin-tab-pill').forEach(t => {
     t.setAttribute('role', 'tab');
     t.setAttribute('aria-selected', String(t.classList.contains('active')));
+    t.tabIndex = t.classList.contains('active') ? 0 : -1;
   });
 }
 
@@ -314,6 +341,7 @@ function getPluginIconSvg(id, category, capability) {
 // 每个错误码对应一个字面量 _t() 调用：key 只有在调用点写成字面量时
 // tools/check-i18n.mjs 才能静态校验，变量形式的 _t(key) 会绕过门禁。
 const PLUGIN_ERROR_TEXT = {
+  native_install_failed: () => _t('plugin.error.native_install_failed'),
   pip_network: () => _t('plugin.error.pip_network'),
   pip_timeout: () => _t('plugin.error.pip_timeout'),
   pip_permission: () => _t('plugin.error.pip_permission'),
@@ -384,7 +412,14 @@ function renderPluginCards(plugins) {
   initPluginTabsOnce();
   const grid = $('plugin-cards-grid');
   if (!grid) return;
+  const scrollTop = grid.scrollTop;
+  const focused = document.activeElement?.closest('[data-plugin-id]');
+  const focusId = focused?.dataset.pluginId, focusAction = focused ? document.activeElement?.dataset.action : null;
   grid.innerHTML = '';
+  const query = ($('plugin-search')?.value || '').trim().toLocaleLowerCase();
+  const all = Object.values(plugins);
+  const builtin = p => Boolean(p.native?.builtin && !p.native?.installable);
+  if ($('plugin-summary')) $('plugin-summary').textContent = _t('plugin.summary', { total: all.length, installed: all.filter(p => p.installed || builtin(p)).length, active: all.filter(p => p.enabled || builtin(p)).length });
 
   for (const [id, p] of Object.entries(plugins)) {
     if (!matchesPluginCategory(p, currentPluginCategory)) {
@@ -394,8 +429,10 @@ function renderPluginCards(plugins) {
     card.className = 'plugin-card' + (p.enabled ? ' is-enabled' : '');
     card.dataset.pluginId = id;
 
-    const title = translatePluginText('plugin.' + id + '.name', p.name || p.name_key || id);
-    const desc = translatePluginText('plugin.' + id + '.desc', p.desc_key);
+    const title = translatePluginText(p.native?.name_key || ('plugin.' + id + '.name'), p.name || p.name_key || id);
+    const desc = translatePluginText(p.native?.desc_key || ('plugin.' + id + '.desc'), p.desc_key);
+    if (pluginInstalledOnly && !p.installed && !builtin(p)) continue;
+    if (query && ![id, title, desc, p.category, p.capability].filter(Boolean).join(' ').toLocaleLowerCase().includes(query)) continue;
     const category = PLUGIN_CATEGORY_TEXT[p.category] ? PLUGIN_CATEGORY_TEXT[p.category]() : (p.category || '');
     const capName = PLUGIN_CAPABILITY_TEXT[p.capability] ? PLUGIN_CAPABILITY_TEXT[p.capability]() : (p.capability || '');
     const isCached = Boolean(p.installed && p.cached);
@@ -403,6 +440,7 @@ function renderPluginCards(plugins) {
     const isExclusive = Boolean(p.alternatives && p.alternatives.length > 0);
 
     const metaParts = [];
+    if (p.native?.installable) metaParts.push(p.native.engine ? _t('plugin.native.engine', { engine: p.native.engine }) : _t('plugin.native.unavailable'));
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
@@ -450,7 +488,7 @@ function renderPluginCards(plugins) {
         <button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>
       `;
       if (p.install_error_code) progressHtml = pluginErrorMarkup(p);
-    } else if (p.native && p.native.builtin) {
+    } else if (p.native && p.native.builtin && !p.native.installable) {
       // The Rust kernel already ships this capability; nothing to install.
       footLeft = `
         <div class="plugin-status-dot-indicator is-builtin">
@@ -459,7 +497,7 @@ function renderPluginCards(plugins) {
         </div>
       `;
       footRight = `<span class="plugin-builtin-note">${escapeHtml(_t('plugin.builtinHint'))}</span>`;
-    } else if (p.native && !p.native.builtin) {
+    } else if (p.native && !p.native.builtin && !p.native.installable) {
       // No native engine and no package installer in this build: say so
       // instead of offering an Install button that can only fail.
       footLeft = `
@@ -527,7 +565,13 @@ function renderPluginCards(plugins) {
 
     grid.appendChild(card);
   }
-  setPluginListStatus(grid.children.length ? '' : _t('plugin.emptyList'));
+  setPluginListStatus(grid.children.length ? '' : _t(query || pluginInstalledOnly ? 'plugin.noMatches' : 'plugin.emptyList'));
+  if ($('plugin-refresh')) $('plugin-refresh').disabled = pluginTogglePending;
+  grid.scrollTop = scrollTop;
+  if (focusId && focusAction) {
+    const card = [...grid.children].find(card => card.dataset.pluginId === focusId);
+    card?.querySelector('[data-action="' + focusAction + '"]')?.focus({ preventScroll: true });
+  }
 }
 
 async function setPluginToggle(id, enabled, name) {
@@ -561,6 +605,7 @@ async function setPluginToggle(id, enabled, name) {
     showToast(message);
   } finally {
     pluginTogglePending = false;
+    if ($('plugin-refresh')) $('plugin-refresh').disabled = false;
     document.querySelectorAll('#plugin-cards-grid input[data-action="toggle"]').forEach(input => { input.disabled = false; });
   }
 }

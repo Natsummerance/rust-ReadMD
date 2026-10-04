@@ -27,13 +27,17 @@ function syncStateFromActiveTab() {
   state.file = tab.path;
   state.dir = tab.dir || '';
   state.mtime = tab.mtime || 0;
+  state.revision = tab.revision || '';
   state.size = tab.size || 0;
   state.encoding = tab.encoding || 'utf-8';
   state.fixed = tab.content || '';
-  state.original = tab.original || tab.content || '';
+  state.original = tab.original ?? tab.content ?? '';
   state.fixes = tab.fixes || [];
   state.stats = tab.stats || {};
   state.webAssets = tab.webAssets || [];
+  state.is_code = !!tab.is_code;
+  state.code_lang = tab.code_lang || '';
+  state.ext = tab.ext || '';
   if (tab.readerMode) state.pagination.mode = tab.readerMode;
 }
 
@@ -376,13 +380,16 @@ async function renameTab(tabId, newTitle) {
   if (tab.mode === 'file' && tab.path && hasPy && py.rename_file) {
     busy(true);
     try {
-      const r = await py.rename_file(tab.path, newTitle);
+      const ext = (tab.path.match(/\.[^\\/.]+$/) || [''])[0];
+      const stem = ext && newTitle.toLowerCase().endsWith(ext.toLowerCase()) ? newTitle.slice(0, -ext.length) : newTitle;
+      const r = await py.rename_file(tab.path, stem);
       if (r && r.ok) {
         tab.path = r.path;
         tab.name = r.name;
         tab.title = r.name;
         if (state.activeTabId === tab.id) {
-          state.file = r.path;
+            state.file = r.path;
+            state.sourceName = r.name;
           document.title = r.name + ' - ReadMD';
           setFileTitle(r.name, true, r.path);
         }
@@ -471,7 +478,7 @@ function syncActiveTabDirty() {
   const tab = getActiveTab();
   if (!tab) return;
   const dirty = hasUnsavedEditorChanges();
-  if (dirty) {
+  {
     tab.content = getEditContent();
     tab.fixed = tab.content;
   }
@@ -479,6 +486,7 @@ function syncActiveTabDirty() {
     tab.isDirty = dirty;
     renderTabsBar();
   }
+  window.ReadMDRecovery?.schedule();
 }
 
 async function activateTabForSave(tabId) {
@@ -662,9 +670,11 @@ function askChoice(title, desc, choices) {
 async function closeTab(tabId, force = false) {
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   if (tab.isDirty && !force) {
     const action = await promptDirtyClose(tab.title || tab.name);
     if (action === 'cancel') return;
+    if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(tab)) return;
     if (action === 'save') {
       await activateTabForSave(tabId);
       const saved = await saveEdit({ exitAfterSave: true });
@@ -672,16 +682,19 @@ async function closeTab(tabId, force = false) {
     }
   }
   const idx = state.tabs.findIndex(t => t.id === tabId);
+  if (idx < 0) return;
   const focusedTabId = document.activeElement instanceof Element ? document.activeElement.dataset.tabId : null;
   state.tabs.splice(idx, 1);
   if (state.activeTabId === tabId) {
+    exitEdit();
+    state.activeTabId = null;
     if (state.tabs.length > 0) {
       const nextIdx = Math.min(idx, state.tabs.length - 1);
       const nextTabId = state.tabs[nextIdx].id;
       switchTab(nextTabId).then(() => focusVisibleTab(nextTabId));
     } else {
       state.activeTabId = null;
-      goHome();
+      await goHome({ discardConfirmed: true });
     }
   }
   renderTabsBar();
@@ -694,40 +707,53 @@ async function closeTab(tabId, force = false) {
 async function closeOtherTabs(keepTabId) {
   const keepTab = state.tabs.find(t => t.id === keepTabId);
   if (!keepTab) return;
-  for (const t of [...state.tabs]) {
+  if (state.editing) syncActiveTabDirty();
+  const candidates = [...state.tabs], accepted = new Map();
+  const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
+  for (const t of candidates) {
     if (t.id !== keepTabId) {
       if (t.isDirty) {
         const action = await promptDirtyClose(t.title || t.name);
         if (action === 'cancel') return;
+        if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
         if (!saved || state.tabs.some(item => item.id === t.id && item.isDirty)) return;
         }
       }
+      accepted.set(t, text(t));
     }
   }
+  if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
   state.tabs = [keepTab];
   window.invalidateDocumentLoads?.();
+  if (state.activeTabId !== keepTabId) exitEdit();
   state.activeTabId = keepTabId;
   syncStateFromActiveTab();
   renderTabsBar();
 }
 
 async function closeAllTabs() {
-  for (const t of [...state.tabs]) {
+  if (state.editing) syncActiveTabDirty();
+  const candidates = [...state.tabs], accepted = new Map();
+  const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
+  for (const t of candidates) {
     if (t.isDirty) {
       const action = await promptDirtyClose(t.title || t.name);
       if (action === 'cancel') return;
+      if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
         if (!saved || (getActiveTab()?.isDirty || state.editing)) return;
       }
     }
+    accepted.set(t, text(t));
   }
+  if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
   state.tabs = [];
   state.activeTabId = null;
-  goHome();
+  await goHome({ discardConfirmed: true });
   renderTabsBar();
 }

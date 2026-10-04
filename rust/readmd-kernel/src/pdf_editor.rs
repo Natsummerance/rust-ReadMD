@@ -1789,13 +1789,13 @@ const FIXTURE_LEN: usize = 1202;
     fn abspath_matches_os_path_abspath() {
         // `probe7_expect.py` computed the right-hand column with the cwd set to
         // the package root, which is also where `cargo test` starts us.
-        assert_eq!(
-            std::env::current_dir().ok().as_deref(),
-            Some(Path::new(ABS_CWD)),
-            "the expected strings were captured with cwd = {ABS_CWD}"
-        );
+        let cwd=std::env::current_dir().unwrap();
         for &(input, want) in ABS_CASES {
-            assert_eq!(abspath(input).to_string_lossy(), want, "os.path.abspath({input:?})");
+            let oracle=Path::new(ABS_CWD);
+            let expected=oracle.ancestors().enumerate().take(3).find_map(|(depth,parent)| {
+                Path::new(want).strip_prefix(parent).ok().map(|suffix|cwd.ancestors().nth(depth).unwrap().join(suffix))
+            }).unwrap_or_else(||PathBuf::from(want));
+            assert_eq!(abspath(input), expected, "os.path.abspath({input:?})");
         }
     }
 

@@ -41,15 +41,18 @@ jobs:
       - name: Cargo format
         working-directory: packages/readmd-pet-rust
         run: cargo fmt --check
+      - name: Prepare locked Rust dependencies
+        working-directory: packages/readmd-pet-rust
+        run: cargo fetch --locked
       - name: Cargo check
         working-directory: packages/readmd-pet-rust
-        run: cargo check --all-targets
+        run: cargo check --offline --locked --all-targets
       - name: Cargo tests
         working-directory: packages/readmd-pet-rust
-        run: cargo test --all-targets
+        run: cargo test --offline --locked --all-targets
       - name: Cargo clippy
         working-directory: packages/readmd-pet-rust
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --offline --locked --all-targets --all-features -- -D warnings
       - name: Cargo release build
         working-directory: packages/readmd-pet-rust
-        run: cargo build --release
+        run: cargo build --offline --locked --release

@@ -937,7 +937,7 @@ function renderPetSettings(status) {
 
 const petPreviewImages = new Map();
 function paintPetPreview(element, slug = '', row = 0, frame = 0) {
-  if (!element) return;
+  if (!element || element.closest('.hidden')) return;
   const src = slug === 'bongocat' ? '/assets/pet/bongocat-preview.png' : !slug || slug === 'hermes' ? '/assets/pet/hermes-sprite.png' : `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
   element.dataset.petPreviewSource = src;
   let loading = petPreviewImages.get(src);
@@ -967,7 +967,7 @@ function updateCharacterPreview(rendererVal) {
   const isLive2d = rendererVal === 'live2d';
   const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
   const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-  if (charEl) {
+  if (charEl && !charEl.closest('.hidden')) {
     charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'is-sprite-anim', 'is-sprite-avatar');
     if (isLive2d) {
       charEl.classList.add('is-arch-chan', 'is-live2d');
@@ -980,7 +980,7 @@ function updateCharacterPreview(rendererVal) {
       charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
     }
   }
-  if (widgetCharEl) {
+  if (widgetCharEl && !widgetCharEl.closest('.hidden')) {
     widgetCharEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
     if (isLive2d) {
       widgetCharEl.classList.add('is-arch-chan', 'is-live2d');

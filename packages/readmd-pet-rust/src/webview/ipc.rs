@@ -1,4 +1,4 @@
-use crate::protocol::{RendererMessage, MessageOrigin, MAX_COMMAND_BODY_BYTES};
+use crate::protocol::{MessageOrigin, RendererMessage, MAX_COMMAND_BODY_BYTES};
 
 /// Maximum raw `postMessage` body the host will parse.  Anything larger cannot
 /// become a legal command anyway, so it is dropped before being deserialised.
@@ -45,19 +45,12 @@ mod tests {
         let message = parse_renderer_message(r#"{"type":"open-app"}"#).unwrap();
         assert_eq!(message.origin, MessageOrigin::Page);
         assert!(!message.authenticated("session", 1));
-        assert!(MAX_RENDERER_MESSAGE_BYTES <= crate::protocol::MAX_COMMAND_BODY_BYTES);
+        const { assert!(MAX_RENDERER_MESSAGE_BYTES <= crate::protocol::MAX_COMMAND_BODY_BYTES) };
     }
 
     #[test]
     fn ipc_parser_fails_closed_for_malformed_and_oversized_messages() {
-        let malformed = [
-            "",
-            "null",
-            "[]",
-            "{}",
-            r#"{"type":null}"#,
-            r#"{"type":""}"#,
-        ];
+        let malformed = ["", "null", "[]", "{}", r#"{"type":null}"#, r#"{"type":""}"#];
         for sample in malformed {
             assert!(
                 parse_renderer_message(sample).is_none(),
@@ -74,7 +67,8 @@ mod tests {
         let state = parse_renderer_message(&format!(
             r#"{{"type":"state","payload":"{}"}}"#,
             "x".repeat(100_000)
-        )).unwrap();
+        ))
+        .unwrap();
         assert_eq!(state.kind, "state");
 
         // Type length strictly limited to 64 bytes

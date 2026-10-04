@@ -4,6 +4,7 @@
 //! to this worker. Only snapshots cross threads; keyboard text is never read.
 use super::pressed::{smoothing_alpha, PressedInput};
 use super::{probe_cursor, BongoInputState, HitTestTarget, InputEvent};
+use std::cell::Cell;
 use std::ffi::c_void;
 use std::mem::{size_of, zeroed};
 use std::ptr::{null, null_mut};
@@ -21,7 +22,7 @@ use windows_sys::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
 };
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, MapVirtualKeyW};
 use windows_sys::Win32::UI::Input::{
     GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
     RIDEV_DEVNOTIFY, RIDEV_INPUTSINK, RIDEV_REMOVE, RID_INPUT,
@@ -32,6 +33,69 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 enum Packet {
     Key { scan: u16, flags: u16, vk: u16 },
     Mouse { flags: u16 },
+}
+
+// Accessibility tools and remote desktops use injected OS input, which does
+// not generate WM_INPUT. Observe only these additional edges; physical devices
+// continue through Raw Input. No characters, text or foreground titles are read.
+const INJECTED_KEY: u32 = WM_APP + 31;
+const INJECTED_MOUSE: u32 = WM_APP + 32;
+thread_local! { static INJECTED_TARGET: Cell<HWND> = const { Cell::new(null_mut()) }; }
+
+fn injected_key(scan: u16, vk: u16, flags: u32, message: u32) -> Option<Packet> {
+    if flags & 0x10 == 0 || !matches!(message, WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP)
+    {
+        return None;
+    }
+    Some(Packet::Key {
+        scan,
+        vk,
+        flags: u16::from(matches!(message, WM_KEYUP | WM_SYSKEYUP)) | ((flags as u16 & 1) << 1),
+    })
+}
+
+unsafe extern "system" fn injected_keyboard_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 {
+        let key = &*(lp as *const KBDLLHOOKSTRUCT);
+        let scan = if key.scanCode == 0 {
+            MapVirtualKeyW(key.vkCode, 0)
+        } else {
+            key.scanCode
+        };
+        if let Some(Packet::Key { scan, flags, vk }) =
+            injected_key(scan as u16, key.vkCode as u16, key.flags, wp as u32)
+        {
+            INJECTED_TARGET.with(|target| {
+                PostMessageW(
+                    target.get(),
+                    INJECTED_KEY,
+                    vk as usize,
+                    ((flags as usize) << 16 | scan as usize) as isize,
+                );
+            });
+        }
+    }
+    CallNextHookEx(null_mut(), code, wp, lp)
+}
+
+unsafe extern "system" fn injected_mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    if code >= 0 && (*(lp as *const MSLLHOOKSTRUCT)).flags & 1 != 0 {
+        let flags = match wp as u32 {
+            WM_LBUTTONDOWN => 1,
+            WM_LBUTTONUP => 2,
+            WM_RBUTTONDOWN => 4,
+            WM_RBUTTONUP => 8,
+            WM_MBUTTONDOWN => 16,
+            WM_MBUTTONUP => 32,
+            _ => 0,
+        };
+        if flags != 0 {
+            INJECTED_TARGET.with(|target| {
+                PostMessageW(target.get(), INJECTED_MOUSE, flags, 0);
+            });
+        }
+    }
+    CallNextHookEx(null_mut(), code, wp, lp)
 }
 
 // The upstream decoder validates the declared byte count before interpreting
@@ -100,16 +164,23 @@ struct Worker<F> {
 }
 
 fn cursor_exposed(hwnd: HWND, point: POINT) -> bool {
-    if hwnd.is_null() { return false; }
+    if hwnd.is_null() {
+        return false;
+    }
     // Query native z-order, rather than using WindowFromPoint: that API skips
     // the pet while WS_EX_TRANSPARENT is set over its transparent pixels.
     let mut above = unsafe { GetWindow(hwnd, GW_HWNDPREV) };
     while !above.is_null() {
         let mut rect: RECT = unsafe { zeroed() };
-        if unsafe { IsWindowVisible(above) } != 0 && unsafe { IsIconic(above) } == 0
+        if unsafe { IsWindowVisible(above) } != 0
+            && unsafe { IsIconic(above) } == 0
             && unsafe { GetWindowLongPtrW(above, GWL_EXSTYLE) } as u32 & WS_EX_TRANSPARENT == 0
             && unsafe { GetWindowRect(above, &mut rect) } != 0
-            && point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom {
+            && point.x >= rect.left
+            && point.x < rect.right
+            && point.y >= rect.top
+            && point.y < rect.bottom
+        {
             return false;
         }
         above = unsafe { GetWindow(above, GW_HWNDPREV) };
@@ -124,6 +195,7 @@ struct Gesture {
     draggable: bool,
     head: bool,
     started: bool,
+    release_observed: Option<Instant>,
 }
 
 impl<F: Fn(InputEvent)> Worker<F> {
@@ -203,8 +275,9 @@ impl<F: Fn(InputEvent)> Worker<F> {
             (point.x as f64, point.y as f64),
             true,
         );
+        let exposed = cursor_exposed(target.hwnd as HWND, point);
         // Test the current cursor at the down edge, never the previous hover.
-        if probe.head_clicked && cursor_exposed(target.hwnd as HWND, point) {
+        if probe.head_clicked && exposed {
             self.gesture = Some(Gesture {
                 x: point.x as f64,
                 y: point.y as f64,
@@ -212,6 +285,7 @@ impl<F: Fn(InputEvent)> Worker<F> {
                 draggable: !target.lock_position,
                 head: probe.head_clicked,
                 started: false,
+                release_observed: None,
             });
         }
     }
@@ -224,8 +298,43 @@ impl<F: Fn(InputEvent)> Worker<F> {
         }
     }
 
+    fn reconcile_gesture_release(&mut self, now: Instant, left_down: bool) {
+        if let Some(gesture) = self.gesture.as_mut() {
+            if left_down {
+                gesture.release_observed = None;
+            } else {
+                // Async state may be up before the queued release edge arrives.
+                // A missing edge still cancels without manufacturing a click.
+                let released = *gesture.release_observed.get_or_insert(now);
+                if now.duration_since(released) >= Duration::from_millis(80) {
+                    self.gesture = None;
+                }
+            }
+        }
+    }
+
+    fn advance_gesture(&mut self, point: (f64, f64), left_down: bool) {
+        // A queued release may arrive after polling sees the button up. Keep
+        // its click gesture, but never start a drag from post-release motion.
+        if !left_down {
+            return;
+        }
+        if let Some(gesture) = self.gesture.as_mut() {
+            if !gesture.started
+                && (point.0 - gesture.x).hypot(point.1 - gesture.y) > gesture.threshold
+            {
+                gesture.started = true;
+                if gesture.draggable {
+                    (self.emit)(InputEvent::Hover(true));
+                    (self.emit)(InputEvent::DragStart);
+                }
+            }
+        }
+    }
+
     fn tick(&mut self) {
         let now = Instant::now();
+        let refresh_hover = now.duration_since(self.last_reconcile) >= Duration::from_millis(150);
         let mut point: POINT = unsafe { zeroed() };
         // Losing the input desktop (lock screen/UAC) invalidates held state.
         if unsafe { GetCursorPos(&mut point) } == 0 {
@@ -240,23 +349,10 @@ impl<F: Fn(InputEvent)> Worker<F> {
             }
             return;
         }
-        if let Some(gesture) = self.gesture.as_mut() {
-            if !gesture.started
-                && ((point.x as f64 - gesture.x).hypot(point.y as f64 - gesture.y))
-                    > gesture.threshold
-            {
-                gesture.started = true;
-                if gesture.draggable {
-                    (self.emit)(InputEvent::Hover(true));
-                    (self.emit)(InputEvent::DragStart);
-                }
-            }
-            if unsafe { GetAsyncKeyState(1) as u16 & 0x8000 } == 0 {
-                // A missed up cancels the gesture; it must never create a pet.
-                self.gesture = None;
-            }
-        }
-        if now.duration_since(self.last_reconcile) >= Duration::from_millis(150) {
+        let left_down = unsafe { GetAsyncKeyState(1) as u16 & 0x8000 } != 0;
+        self.advance_gesture((point.x as f64, point.y as f64), left_down);
+        self.reconcile_gesture_release(now, left_down);
+        if refresh_hover {
             self.last_reconcile = now;
             if self
                 .pressed
@@ -281,8 +377,12 @@ impl<F: Fn(InputEvent)> Worker<F> {
         let probe = probe_cursor(&target, origin, (point.x as f64, point.y as f64), false);
         // Native user32 owns the drag. Hover must not turn the window transparent
         // or move it through a second coordinate path while capture is active.
-        if !crate::platform::native_drag_active() &&  (probe.hovering && cursor_exposed(target.hwnd as HWND, point)) != self.hovered {
-            self.hovered = probe.hovering && cursor_exposed(target.hwnd as HWND, point);
+        let hovered = probe.hovering && cursor_exposed(target.hwnd as HWND, point);
+        // The native move loop temporarily forces an opaque surface. Reassert
+        // the actual pointer state after it ends, even if the cursor moved out
+        // while the move loop was active and our cached hover is already false.
+        if !crate::platform::native_drag_active() && (hovered != self.hovered || refresh_hover) {
+            self.hovered = hovered;
             (self.emit)(InputEvent::Hover(self.hovered));
         }
         let elapsed = now.duration_since(self.last_frame);
@@ -341,6 +441,12 @@ unsafe extern "system" fn window_proc<F: Fn(InputEvent)>(
     if !state.is_null() {
         let state = &mut *state;
         match msg {
+            INJECTED_KEY => state.packet(Packet::Key {
+                scan: lp as u16,
+                flags: ((lp as usize) >> 16) as u16,
+                vk: wp as u16,
+            }),
+            INJECTED_MOUSE => state.packet(Packet::Mouse { flags: wp as u16 }),
             WM_INPUT => {
                 if let Some(packet) = read_packet(lp) {
                     state.packet(packet);
@@ -431,6 +537,10 @@ pub(super) fn run<F: Fn(InputEvent)>(
             && RegisterRawInputDevices(devices.as_ptr(), 2, size_of::<RAWINPUTDEVICE>() as u32)
                 != 0;
         if registered && SetTimer(hwnd, 1, 8, None) != 0 {
+            INJECTED_TARGET.with(|target| target.set(hwnd));
+            let keyboard_hook =
+                SetWindowsHookExW(WH_KEYBOARD_LL, Some(injected_keyboard_hook), module, 0);
+            let mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(injected_mouse_hook), module, 0);
             WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
             state.tick();
             let mut msg: MSG = zeroed();
@@ -438,6 +548,13 @@ pub(super) fn run<F: Fn(InputEvent)>(
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+            if !keyboard_hook.is_null() {
+                UnhookWindowsHookEx(keyboard_hook);
+            }
+            if !mouse_hook.is_null() {
+                UnhookWindowsHookEx(mouse_hook);
+            }
+            INJECTED_TARGET.with(|target| target.set(null_mut()));
             state.pressed.reset();
             state.publish();
             KillTimer(hwnd, 1);
@@ -545,6 +662,127 @@ fn scan_to_hid(scan: u16, flags: u16) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn gesture_worker(events: Arc<Mutex<Vec<InputEvent>>>) -> Worker<impl Fn(InputEvent)> {
+        let now = Instant::now();
+        Worker {
+            emit: move |event| events.lock().unwrap().push(event),
+            target: Arc::new(Mutex::new(HitTestTarget::default())),
+            running: Arc::new(AtomicBool::new(true)),
+            pressed: PressedInput::new(),
+            previous: None,
+            hovered: false,
+            last_frame: now,
+            last_reconcile: now,
+            pointer: None,
+            gesture: Some(Gesture {
+                x: 10.0,
+                y: 10.0,
+                threshold: 4.0,
+                draggable: true,
+                head: true,
+                started: false,
+                release_observed: None,
+            }),
+        }
+    }
+    #[test]
+    fn fast_release_survives_poll_before_queued_up_and_emits_once() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = gesture_worker(events.clone());
+        let now = Instant::now();
+        worker.reconcile_gesture_release(now, false);
+        worker.reconcile_gesture_release(now + Duration::from_millis(8), false);
+        worker.packet(Packet::Mouse { flags: 2 });
+        worker.packet(Packet::Mouse { flags: 2 });
+        assert_eq!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, InputEvent::PetClick))
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn release_grace_does_not_start_drag_from_later_pointer_motion() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = gesture_worker(events.clone());
+        worker.reconcile_gesture_release(Instant::now(), false);
+        worker.advance_gesture((40.0, 40.0), false);
+        assert!(!worker.gesture.as_ref().unwrap().started);
+        assert!(!events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, InputEvent::DragStart)));
+        worker.packet(Packet::Mouse { flags: 2 });
+        assert_eq!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|e| matches!(e, InputEvent::PetClick))
+                .count(),
+            1
+        );
+        worker.gesture = Some(Gesture {
+            x: 10.0,
+            y: 10.0,
+            threshold: 4.0,
+            draggable: true,
+            head: true,
+            started: false,
+            release_observed: None,
+        });
+        worker.advance_gesture((40.0, 40.0), true);
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, InputEvent::DragStart)));
+    }
+    #[test]
+    fn genuinely_missing_release_cancels_without_phantom_pet() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = gesture_worker(events.clone());
+        let now = Instant::now();
+        worker.reconcile_gesture_release(now, false);
+        worker.reconcile_gesture_release(now + Duration::from_millis(80), false);
+        worker.packet(Packet::Mouse { flags: 2 });
+        assert!(worker.gesture.is_none());
+        assert!(!events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, InputEvent::PetClick)));
+    }
+    #[test]
+    fn accessibility_edges_preserve_scan_codes_and_ignore_physical_hook_events() {
+        assert_eq!(injected_key(0x1e, 65, 0, WM_KEYDOWN), None);
+        assert_eq!(
+            injected_key(0x1e, 65, 0x10, WM_KEYDOWN),
+            Some(Packet::Key {
+                scan: 0x1e,
+                vk: 65,
+                flags: 0
+            })
+        );
+        assert_eq!(
+            injected_key(0x1d, 0xa3, 0x11, WM_KEYUP),
+            Some(Packet::Key {
+                scan: 0x1d,
+                vk: 0xa3,
+                flags: 3
+            })
+        );
+        let mut input = PressedInput::new();
+        input.key(4, 65, true);
+        assert!(!input.key(4, 65, true));
+        assert_eq!(input.snapshot().keyboard_taps, 1);
+        input.key(4, 65, false);
+        assert!(!input.snapshot().keyboard_down);
+    }
     #[test]
     fn scan_codes_distinguish_modifiers_numpad_and_layout() {
         assert_eq!(scan_to_hid(0x1d, 0), Some(0xe0));

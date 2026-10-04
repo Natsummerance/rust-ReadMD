@@ -173,6 +173,10 @@ async function webToMd(url, crawl, forceRender) {
       if (authorization && authorization.ok) {
         options.privateGrant = authorization.grant;
         webRun.privateGrant = authorization.grant;
+      } else {
+        const error = new Error(authorization?.error || _t('web.authorizationFailed'));
+        error.code = authorization?.code || 'private_authorization_required';
+        throw error;
       }
     }
 

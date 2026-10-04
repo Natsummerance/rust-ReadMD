@@ -5,7 +5,7 @@
 //! 2. CSV / TSV data tables rendered as Markdown: `@import "dataset.csv"`
 //! 3. source-file line-range slicing: `@import "app.py" {line_begin=10 line_end=30 lang=py}`
 //! 4. diagram / vector sources: `.puml` `.plantuml` `.dot` `.viz` `.wavedrom` `.tikz` `.less`
-//! 5. PDF page embedding: `.pdf` (see `PDF_RENDER_UNAVAILABLE` below)
+//! 5. PDF page embedding: `.pdf` through Windows.Data.Pdf
 //!
 //! Safety rails, all mirrored from Python: document-root containment after path
 //! resolution, circular-reference detection, the `MAX_IMPORT_DEPTH` recursion cap
@@ -31,13 +31,6 @@ pub const MAX_IMPORT_DEPTH: usize = 8;
 /// Python `import_processor.py:284` - emitted whenever the cumulative budget has
 /// already been blown, and also used as the truncation trailer.
 const MSG_BUDGET_EXCEEDED: &str = "\n> **[ReadMD 错误]**: import_budget_exceeded\n";
-
-/// The `.pdf` branch of Python renders a page to PNG with PyMuPDF (`fitz`) and
-/// embeds a `data:image/png;base64,…` URL.  The Rust kernel has no PDF
-/// rasterizer (`pdf-extract` only yields text), so the documented failure text
-/// is emitted instead, exactly like Python does when `import fitz` fails.
-const PDF_RENDER_UNAVAILABLE: &str =
-    "PDF 页面渲染不可用 (fitz/PyMuPDF has no Rust equivalent in the kernel)";
 
 /// A hard failure that aborts the whole request.  Python has exactly one such
 /// path (`os.path.getsize` raising out of `replace_import`); everything else is
@@ -891,13 +884,19 @@ impl ImportProcessor {
             let page_no = attrs
                 .get("page_no")
                 .or_else(|| attrs.get("page"))
-                .filter(|v| v.is_truthy())
                 .map(|v| v.display())
                 .unwrap_or_else(|| "1".to_string());
-            let chunk = format!(
-                "\n> **[ReadMD 错误]**: 提取 PDF 页面失败 `{}` (页码 {}): {}\n",
-                raw_path, page_no, PDF_RENDER_UNAVAILABLE
-            );
+            let chunk = match page_no.parse::<usize>().ok().filter(|p| *p > 0) {
+                Some(page) => match fs::read(&target_path).map_err(|e| e.to_string())
+                    .and_then(|bytes| crate::ocr_winrt::render_pdf_page_png(&bytes, page - 1)) {
+                    Ok(png) => {
+                        use base64::Engine;
+                        format!("\n![PDF page {}](data:image/png;base64,{})\n", page, base64::engine::general_purpose::STANDARD.encode(png))
+                    }
+                    Err(error) => format!("\n> **[ReadMD 错误]**: 提取 PDF 页面失败 `{}` (页码 {}): {}\n", raw_path, page_no, error),
+                },
+                None => "\n> **[ReadMD 错误]**: invalid_page_range\n".into(),
+            };
             if !st.budget.can_output(chunk.len()) {
                 return MSG_BUDGET_EXCEEDED.to_string();
             }
@@ -920,7 +919,7 @@ impl ImportProcessor {
         // only `UnicodeDecodeError`/`LookupError` are caught.  A non-`str`
         // `encoding` attribute (`{encoding=true}` parses to a `bool`) is a
         // `TypeError` Python does not catch, so it must abort the request.
-        let file_text = match python_decode_chain(attrs.get("encoding"), &raw_bytes) {
+        let mut file_text = match python_decode_chain(attrs.get("encoding"), &raw_bytes) {
             Ok(Some(text)) => text,
             Ok(None) => {
                 return format!(
@@ -937,7 +936,32 @@ impl ImportProcessor {
             }
         };
 
-        let res: String = match ext.as_str() {
+        // The insertion panel's mode/lines options must affect the output,
+        // including .md files which would otherwise always recurse.
+        let mode = attrs.get("mode").map(|v| v.display()).unwrap_or_default();
+        if !matches!(mode.as_str(), "" | "markdown" | "code" | "html") {
+            return "\n> **[ReadMD 错误]**: invalid_import_mode\n".to_string();
+        }
+        if let Some(value) = attrs.get("lines") {
+            let range = value.display();
+            let parts: Vec<_> = range.split('-').map(str::trim).collect();
+            let begin = parts.first().and_then(|v| v.parse::<u32>().ok()).filter(|n| *n > 0);
+            let end = if parts.len() == 1 { begin } else if parts.len() == 2 {
+                parts[1].parse::<u32>().ok().filter(|n| *n > 0)
+            } else { None };
+            let (Some(begin), Some(end)) = (begin, end) else {
+                return "\n> **[ReadMD 错误]**: invalid_line_range\n".to_string();
+            };
+            if end < begin { return "\n> **[ReadMD 错误]**: invalid_line_range\n".to_string(); }
+            file_text = splitlines_keepends(&file_text).into_iter().skip(begin as usize - 1)
+                .take((end - begin + 1) as usize).collect();
+        }
+        let res: String = if mode == "code" {
+            let lang = attrs.get("lang").map(|v| v.display()).unwrap_or_else(|| ext.clone());
+            slice_code_lines(&file_text, None, None, &lang)
+        } else if mode == "html" {
+            file_text
+        } else { match ext.as_str() {
             // 1. 导入子 Markdown
             "md" | "markdown" | "mdown" => {
                 let mut sub_visited = st.visited.clone();
@@ -1005,7 +1029,7 @@ impl ImportProcessor {
                 }
                 slice_code_lines(&file_text, lb, le, &lang)
             }
-        };
+        }};
 
         if !st.budget.can_output(res.len()) {
             return MSG_BUDGET_EXCEEDED.to_string();
@@ -1134,6 +1158,25 @@ pub fn process_markdown_imports(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn pdf_import_renders_real_page_and_checks_page_and_budget() {
+        use base64::Engine;
+        let dir = tempfile::tempdir().unwrap();
+        let pdf = dir.path().join("chapter.pdf");
+        crate::mdexport::export_pdf("# Imported PDF\n\nActual document page.", "", pdf.to_str().unwrap(),
+            &serde_json::json!({}), "chapter", dir.path()).unwrap();
+        let base = dir.path().to_str().unwrap();
+        let output = process_markdown_imports("@import \"chapter.pdf\" {page=1}\n", base, None, None, None).unwrap();
+        let encoded = output.split("data:image/png;base64,").nth(1).unwrap().split(')').next().unwrap();
+        let image = base64::engine::general_purpose::STANDARD.decode(encoded).unwrap();
+        assert!(image.starts_with(b"\x89PNG\r\n\x1a\n"));
+        let invalid = process_markdown_imports("@import \"chapter.pdf\" {page=0}\n", base, None, None, None).unwrap();
+        assert!(invalid.contains("invalid_page_range"));
+        let limited = process_markdown_imports("@import \"chapter.pdf\"\n", base, None, Some(128), Some(1)).unwrap();
+        assert!(limited.contains("import_budget_exceeded"));
+    }
 
     #[test]
     fn test_splitlines_covers_all_eleven_cpython_line_breaks() {
@@ -1406,6 +1449,31 @@ mod tests {
             "{out}"
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn insertion_panel_modes_and_line_ranges_affect_real_imports() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("child.md"), "# Heading\n@import \"nested.md\"\nlast\n").unwrap();
+        fs::write(dir.path().join("nested.md"), "NESTED\n").unwrap();
+        let base = dir.path().to_string_lossy();
+        let run = |attributes: &str| process_markdown_imports(
+            &format!("@import \"child.md\" {{{attributes}}}\n"), &base, None, None, None,
+        ).unwrap();
+        let recursive = run("mode=markdown lines=2");
+        assert!(recursive.contains("NESTED"), "{recursive}");
+        assert!(!recursive.contains("Heading") && !recursive.contains("last"));
+        let code = run("mode=code lines=1-2");
+        assert!(code.contains("```md\n# Heading\n@import \"nested.md\"\n```"), "{code}");
+        assert!(!code.contains("NESTED"));
+        let html = run("mode=html lines=2");
+        assert!(html.contains("@import \"nested.md\""), "{html}");
+        assert!(!html.contains("```") && !html.contains("NESTED"));
+        for invalid in ["0", "2-1", "1-2-3", "4294967296", "abc", "-1"] {
+            assert!(run(&format!("lines=\"{invalid}\"")).contains("invalid_line_range"), "{invalid}");
+        }
+        assert!(run("mode=unknown").contains("invalid_import_mode"));
+        assert!(run("lines=1-3 mode=code").contains("last"));
     }
 
     #[test]

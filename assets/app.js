@@ -669,6 +669,7 @@ function bindEvents() {
   $('btn-share').addEventListener('click', openShareModal);
   $('share-start').addEventListener('click', startShare);
   $('share-stop').addEventListener('click', stopShare);
+  $('share-refresh').addEventListener('click', refreshShareStatus);
   $('share-close').addEventListener('click', () => { $('share-modal').classList.add('hidden'); });
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
@@ -744,6 +745,7 @@ function bindEvents() {
   if ($('style-modal-close')) $('style-modal-close').addEventListener('click', closeStyleModal);
   if ($('style-modal-cancel')) $('style-modal-cancel').addEventListener('click', closeStyleModal);
   if ($('style-modal-save')) $('style-modal-save').addEventListener('click', saveStyleModal);
+  if ($('style-load-retry')) $('style-load-retry').addEventListener('click', openStyleModal);
   if ($('style-custom-modal')) $('style-custom-modal').addEventListener('click', e => { if (e.target === $('style-custom-modal')) closeStyleModal(); });
 
   async function generateCustomStyleWithAi() {
@@ -1025,7 +1027,10 @@ function bindEvents() {
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newDocument(); } // Ctrl+N: 新建文档
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); openWebDialog(); } // Ctrl+U: 网页抓取
     else if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); if (!$('btn-edit').disabled) toggleEdit(); } // Ctrl+E: 编辑模式
-    else if (mod && e.key.toLowerCase() === 's') { // Ctrl+S: 保存文档
+    else if (mod && e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+Shift+S: 另存为
+      e.preventDefault(); if (!$('btn-saveas').disabled) saveAs();
+    }
+    else if (mod && !e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+S: 保存文档
       if (state.editing) {
         e.preventDefault();
         saveEdit();
@@ -1045,10 +1050,6 @@ function bindEvents() {
       if (inField) return; // 输入框内放行浏览器原生粘贴
       e.preventDefault();
       createFromClipboard();
-    }
-    else if (mod && e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+Shift+S / Cmd+Shift+S: 即时行对齐
-      e.preventDefault();
-      if (window.alignEditorAndPreview) window.alignEditorAndPreview();
     }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleSide('toc'); } // Ctrl+Shift+F: 目录大纲
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); toggleTheme(); } // Ctrl+D: 主题切换
@@ -1144,6 +1145,7 @@ function getModalFocusable(modal) {
 }
 
 function setupModalAccessibility() {
+  if (window.ReadMDModal) return;
   const modalOpeners = new Map();
   const openModalStack = [];
   document.addEventListener('keydown', event => {
@@ -1235,6 +1237,7 @@ async function init() {
   // 2. Cache the welcome skeleton, then attach input paths without waiting on preferences.
   if ($('content')) state.welcomeHtml = $('content').innerHTML;
   bindEvents();
+  window.ReadMDRecovery?.init();
   updateStatus();
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
@@ -1250,6 +1253,9 @@ async function init() {
   await loadSettings();
   if (window.i18n) await window.i18n.init();
   syncBuildVersionLabels();
+  if (hasPy && py.get_app_info) {
+    try { if ((await py.get_app_info()).last_update_error) showToast(window.i18n.t('update.replaceFailed'), 10000); } catch (_) {}
+  }
   refreshRecent();
   updateModuleUi();
 }
@@ -1298,10 +1304,28 @@ async function restoreLastFile() {
 /* ----------------------------------------------------------------------------------------------
    自定义样式与 Head 模态框逻辑
    ---------------------------------------------------------------------------------------------- */
+let styleLoadEpoch = 0;
+let styleLoaded = false;
+function styleFeedback(text, error = false) {
+  const el = $('style-load-status');
+  el.textContent = text;
+  el.classList.toggle('err', error);
+  $('style-load-retry').classList.toggle('hidden', !error);
+}
+
+function styleFieldsBusy(busy) {
+  $('style-custom-modal').setAttribute('aria-busy', String(busy));
+  $('style-custom-modal').querySelectorAll('input, textarea, .btn-preset, #style-ai-gen-btn, #style-modal-save').forEach(el => { el.disabled = busy; });
+}
+
 async function openStyleModal() {
   const modal = $('style-custom-modal');
   if (!modal) return;
+  const epoch = ++styleLoadEpoch;
+  styleLoaded = false;
   modal.classList.remove('hidden');
+  styleFieldsBusy(true);
+  styleFeedback(window.i18n.t('audit.loading'));
   try {
     let res;
     if (hasPy && py.get_custom_styles) {
@@ -1309,15 +1333,30 @@ async function openStyleModal() {
     } else {
       const r = await apiFetch('/api/style/get');
       res = await r.json();
+      if (!r.ok) throw new Error(res?.error || 'HTTP ' + r.status);
     }
-    if (res && res.ok && res.data) {
-      if ($('style-custom-css')) $('style-custom-css').value = res.data.css || '';
-      if ($('style-custom-head')) $('style-custom-head').value = res.data.head || '';
+    if (epoch !== styleLoadEpoch) return;
+    if (!res?.ok || !res.data || typeof res.data.css !== 'string' || typeof res.data.head !== 'string') throw new Error(res?.error || window.i18n.t('audit.invalidResponse'));
+    $('style-custom-css').value = res.data.css;
+    $('style-custom-head').value = res.data.head;
+    styleLoaded = true;
+    styleFeedback('');
+    styleFieldsBusy(false);
+  } catch (e) {
+    if (epoch === styleLoadEpoch) {
+      modal.setAttribute('aria-busy', 'false');
+      styleFeedback(window.i18n.t('audit.loadFailed', { error: e.message }), true);
     }
-  } catch (e) {}
+  }
 }
 
 async function saveStyleModal() {
+  if (!styleLoaded) return false;
+  return window.ReadMDTask.run('style-save', runSaveStyleModal, { trigger: 'style-modal-save' });
+}
+
+async function runSaveStyleModal() {
+  const epoch = styleLoadEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const css = $('style-custom-css') ? $('style-custom-css').value : '';
   const head = $('style-custom-head') ? $('style-custom-head').value : '';
@@ -1332,6 +1371,7 @@ async function saveStyleModal() {
         body: JSON.stringify({ css: css, head: head })
       });
       res = await r.json();
+      if (!r.ok) throw new Error(res?.error || 'HTTP ' + r.status);
     }
     if (res && res.ok) {
       showToast(_t('toast.savedSuccess'), 1500);
@@ -1342,16 +1382,20 @@ async function saveStyleModal() {
         document.head.appendChild(dynStyle);
       }
       dynStyle.textContent = css;
-      closeStyleModal();
+      if (epoch === styleLoadEpoch && $('style-custom-css').value === css && $('style-custom-head').value === head) closeStyleModal();
+      return true;
     } else {
-      showToast(_t('toast.saveFailedSimple'));
+      throw new Error(res?.error || _t('toast.saveFailedSimple'));
     }
   } catch (e) {
     showToast(_t('toast.saveFailed', { error: e.message }));
+    if (epoch === styleLoadEpoch) styleFeedback(_t('toast.saveFailed', { error: e.message }));
+    return false;
   }
 }
 
 function closeStyleModal() {
+  ++styleLoadEpoch;
   const modal = $('style-custom-modal');
   if (modal) modal.classList.add('hidden');
 }
@@ -1376,7 +1420,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 function updateUnloadGuard() {
-  const dirty = typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges();
+  const dirty = state.tabs.some(tab => tab.isDirty) || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
   window.onbeforeunload = dirty ? event => {
     event.preventDefault();
     event.returnValue = '';

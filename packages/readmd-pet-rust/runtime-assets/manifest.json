@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "source": "Existing ReadMD pet runtime, pinned for offline packaging",
+  "libraries": {
+    "pixi": "6.5.10",
+    "pixi-live2d-display": "0.4.0"
+  },
+  "files": [
+    {
+      "path": "renderer/assets/cubism4.es-BKB7iFAR.js",
+      "sha256": "28e24c3b9ce41beb1b61e65664ada9b5f657ca5f120569d0f17a0c17c08bbab9"
+    },
+    {
+      "path": "renderer/assets/display-bVGOFp3A.js",
+      "sha256": "93d31c2d0c01f688471ed348a394ed543e33f0f3ec66ba1c72b20cabc0d77f90"
+    },
+    {
+      "path": "renderer/assets/pixi-DcFcEcQc.js",
+      "sha256": "946a6ab4777ac64403201e8ae104009b9edc69b7c0c1c97791d77b3fad53674c"
+    },
+    {
+      "path": "renderer/assets/rolldown-runtime-hePW80VL.js",
+      "sha256": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021"
+    }
+  ]
+}

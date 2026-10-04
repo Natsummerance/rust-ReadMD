@@ -282,9 +282,17 @@ test('plugin switch persistence reaches the native manifest', async ({ page }) =
   const temp = path.resolve(require('node:os').tmpdir()) + path.sep;
   expect(sandbox.toLowerCase().startsWith(temp.toLowerCase())).toBe(true);
   expect(sandbox).toContain('readmd-ui-test-');
-  // The native detector only needs local package metadata; no installer runs.
-  fs.mkdirSync(path.join(sandbox, 'site-packages', 'jieba'), { recursive: true });
-  fs.mkdirSync(path.join(sandbox, 'site-packages', 'jieba-0.0.dist-info'), { recursive: true });
+  // Use the real offline installer, including the profile and manifest. A
+  // metadata-only package cannot prove that a native extension is installed.
+  const installed = await page.evaluate(async () => (await apiFetch('/api/plugins/install', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plugin_id: 'jieba' }),
+  })).json());
+  expect(installed.ok).toBe(true);
+  await expect.poll(async () => (await page.evaluate(async () => (await apiFetch('/api/plugins/list')).json())).plugins.jieba.installed).toBe(true);
+  const disabled = await page.evaluate(async () => (await apiFetch('/api/plugins/toggle', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plugin_id: 'jieba', enabled: false }),
+  })).json());
+  expect(disabled.ok).toBe(true);
   await page.evaluate(() => openPluginModal());
   const toggle = page.locator('[data-plugin-id="jieba"] input[data-action="toggle"]');
   await expect(toggle).not.toBeChecked();

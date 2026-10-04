@@ -150,50 +150,22 @@ pub fn strip_bom(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// Atomic write: tmp file in the same directory then rename, falling back to a
-/// direct copy when the platform refuses to rename over an open handle.
+/// Flush a unique temporary file, then atomically replace the destination.
+/// A failed replacement keeps the destination intact; it never falls back to truncation.
 pub fn write_text_atomic(path: &Path, content: &str) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = sibling_tmp(path);
-    std::fs::write(&tmp, content)?;
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            let out = std::fs::write(path, content);
-            let _ = std::fs::remove_file(&tmp);
-            out.map_err(Error::from)
-        }
-    }
+    write_bytes_atomic(path, content.as_bytes())
 }
 
 pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = sibling_tmp(path);
-    std::fs::write(&tmp, bytes)?;
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            let out = std::fs::write(path, bytes);
-            let _ = std::fs::remove_file(&tmp);
-            out.map_err(Error::from)
-        }
-    }
-}
-
-fn sibling_tmp(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("readmd.tmp");
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    path.with_file_name(format!(".{name}.{nanos}.tmp"))
+    use std::io::Write;
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::Builder::new().prefix(".readmd-").tempfile_in(parent)?;
+    tmp.write_all(bytes)?;
+    if let Ok(meta) = std::fs::metadata(path) { tmp.as_file().set_permissions(meta.permissions())?; }
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| Error::from(e.error))?;
+    Ok(())
 }
 
 // ---------------------------------------------------- legacy contract surface

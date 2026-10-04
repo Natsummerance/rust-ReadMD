@@ -11,7 +11,7 @@
 //! * `engine` 规范化 = `str(body.get('engine','mermaid') or 'mermaid').strip().lower()`。
 //! * 分支：puml|plantuml → 本地 java / `allow_remote is True` 出网 / 422 依赖缺失；
 //!   tikz → 200 html（**没有** `engine` 键）；vega|vega-lite → 200 svg；
-//!   wsd|d2|ditaa → 422 `diagram_engine_unavailable`；其余（mermaid/wavedrom/viz/chart/未知）
+//!   wsd|d2|ditaa → Rust基础语法离线SVG；其余（mermaid/wavedrom/viz/chart/未知）
 //!   → 422 `diagram_client_renderer_required`。绝不把源码当渲染结果回显成 200。
 //! * capabilities **只接受 GET**（否则 405 `method_not_allowed`），且只探测随包文件与
 //!   可选本地进程，绝不出网。
@@ -77,10 +77,10 @@ fn diagram_render_response(req: &Request) -> Response {
             })),
             Err(err) => diagram_error_response(err),
         },
-        "wsd" | "d2" | "ditaa" => Response::json_status(
-            422,
-            &json!({ "ok": false, "error_code": "diagram_engine_unavailable", "engine": engine }),
-        ),
+        "wsd" | "d2" | "ditaa" => match crate::native_diagrams::render(&engine, &code_or_empty(&body)) {
+            Ok(svg) => Response::json(&json!({"ok":true,"type":"svg","svg":svg,"engine":engine,"requires_network":false,"syntax":"basic"})),
+            Err(error) => diagram_error_response(error),
+        },
         _ => Response::json_status(
             422,
             &json!({
@@ -387,9 +387,9 @@ mod tests {
             assert_eq!(payload(&res)["error_code"], json!("diagram_client_renderer_required"));
         }
         // 大小写与空白规范化（与本机是否有 PlantUML 无关的引擎）。
-        let wsd = render(r#"{"engine":"  WSD ","code":"x"}"#);
+        let wsd = render(r#"{"engine":"  WSD ","code":"Alice->Bob: Hello"}"#);
         assert_eq!(payload(&wsd)["engine"], json!("wsd"));
-        assert_eq!(payload(&wsd)["error_code"], json!("diagram_engine_unavailable"));
+        assert_eq!(payload(&wsd)["ok"], json!(true));
         let mixed = render(r#"{"engine":"  MeRmaId "}"#);
         assert_eq!(payload(&mixed)["engine"], json!("mermaid"));
         assert_eq!(
@@ -402,14 +402,14 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_engines_report_engine_unavailable() {
-        for engine in ["wsd", "d2", "ditaa"] {
-            let res = render(&format!(r#"{{"engine":"{engine}","code":"x"}}"#));
-            assert_eq!(res.status, 422, "{engine}");
-            assert_eq!(
-                payload(&res),
-                json!({ "ok": false, "error_code": "diagram_engine_unavailable", "engine": engine })
-            );
+    fn native_basic_engines_render_without_network() {
+        for (engine, code) in [("wsd", "Alice->Bob: Hello"), ("d2", "a -> b: Hello"), ("ditaa", "+---+\\n| A |\\n+---+")] {
+            let res = render(&format!(r#"{{"engine":"{engine}","code":"{code}"}}"#));
+            assert_eq!(res.status, 200, "{engine}");
+            let body = payload(&res);
+            assert_eq!(body["ok"], json!(true));
+            assert_eq!(body["requires_network"], json!(false));
+            assert!(body["svg"].as_str().unwrap().starts_with("<svg"));
         }
     }
 
@@ -602,27 +602,25 @@ mod tests {
                 json!(if diagrams::has_local_plantuml() { "java" } else { "remote" })
             );
         }
-        for engine in ["wsd", "d2"] {
+        for engine in ["wsd", "d2", "ditaa"] {
             assert_eq!(
                 engines[engine],
                 json!({
-                    "available": false,
-                    "offline": false,
-                    "renderer": "none",
+                    "available": true,
+                    "offline": true,
+                    "renderer": "rust",
                     "requires_network": false,
-                    "reason": "diagram_engine_unavailable"
+                    "syntax": "basic"
                 }),
                 "engine {engine}"
             );
         }
-        // ditaa 只在 render 分支里，capabilities 里没有它（与 Python 一致）。
-        assert!(engines.get("ditaa").is_none());
         let mut names: Vec<&str> = engines.keys().map(|s| s.as_str()).collect();
         names.sort();
         assert_eq!(
             names,
             vec![
-                "bitfield", "chart", "chart.js", "chartjs", "d2", "mermaid", "plantuml", "puml",
+                "bitfield", "chart", "chart.js", "chartjs", "d2", "ditaa", "mermaid", "plantuml", "puml",
                 "tikz", "vega", "vega-lite", "viz", "wavedrom", "wsd"
             ]
         );

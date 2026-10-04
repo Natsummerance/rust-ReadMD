@@ -46,9 +46,9 @@ async function extractDroppedZip(entry) {
       : /large|limit|size/.test(code) ? 'zip_too_large'
       : /unsupported|encrypt/.test(code) ? 'zip_unsupported' : 'server_error';
     showToast(_t('batch.zipFailed', { name: entry.name, reason: _t('batch.zipReason.' + kind) }) || `无法解压 ${entry.name}`);
-    return { paths: [], skipped: 0 };
+    return { ok: false, error_code: code, paths: [], skipped: 0 };
   }
-  return { paths: Array.isArray(res.paths) ? res.paths : [], skipped: Number(res.skipped) || 0 };
+  return { ok: true, paths: Array.isArray(res.paths) ? res.paths : [], skipped: Number(res.skipped) || 0 };
 }
 
 /**

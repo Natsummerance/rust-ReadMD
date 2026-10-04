@@ -2,3 +2,5 @@
 # line endings during a Windows checkout.
 assets/upstream/** -text
 assets/providers/provider-catalog.json -text
+# This inventory is an exact recording input; keep its byte hash portable.
+docs/reviews/ui-function-inventory-2026-10-02/inventory.json -text

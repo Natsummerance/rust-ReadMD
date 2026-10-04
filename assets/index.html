@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-version="2.3.9">
+<html lang="zh-CN" data-version="0.0.4">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -9,18 +9,27 @@
 <meta name="readmd-startup-probe" content="0">
 <title>ReadMD</title>
 <link rel="icon" type="image/x-icon" href="/assets/readmd.ico">
-<link rel="stylesheet" href="/assets/css/tokens.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/style.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/workspace-ui.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/skill-workbench.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/shell.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/reader.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/editor.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/ai.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/pet.css?v=2.3.9">
-<link rel="stylesheet" href="/assets/css/panels.css?v=2.3.9">
+<link rel="stylesheet" href="/assets/css/tokens.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/style.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/workspace-ui.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/skill-workbench.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/shell.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/reader.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/editor.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/ai.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/pet.css?v=0.0.4">
+<link rel="stylesheet" href="/assets/css/panels.css?v=0.0.4">
 </head>
 <body>
+<header id="app-titlebar" class="app-titlebar">
+  <div id="window-drag-region" class="window-drag-region"><img class="titlebar-mark" src="/assets/icon-256.png" width="26" height="26" alt="" aria-hidden="true" draggable="false"><span id="window-title">ReadMD</span></div>
+  <nav id="titlebar-actions" class="titlebar-actions" aria-label="全局操作" data-i18n-aria="window.globalActions"></nav>
+  <div id="window-controls" class="window-controls hidden">
+    <button id="window-minimize" type="button" data-i18n-aria="window.minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+    <button id="window-maximize" type="button" data-i18n-aria="window.maximize"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
+    <button id="window-close" type="button" data-i18n-aria="window.close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+  </div>
+</header>
 <header id="toolbar">
   <div class="tb-group tb-left">
     <button id="btn-toc" class="tb-btn icon" title="目录 (Ctrl+Shift+F)" aria-label="目录" data-i18n-title="sidebar.toc" data-i18n-aria="sidebar.toc">
@@ -97,6 +106,8 @@
           <button id="btn-run-all-chunks" class="more-item hidden" disabled role="menuitem"><span data-i18n="menu.runCode">运行代码</span><em data-i18n="menu.runCodeSub">执行代码块</em></button>
           <button id="btn-style-custom" class="more-item" role="menuitem"><span data-i18n="menu.customStyle">样式定制</span><em data-i18n="menu.customStyleSub">CSS / Head 注入</em></button>
           <button id="btn-saveas" class="more-item" disabled role="menuitem"><span data-i18n="menu.saveAs">另存为</span><em data-i18n="menu.saveAsSub">.md 文件</em></button>
+          <button id="btn-document-copy" class="more-item" disabled role="menuitem"><span data-i18n="storage.createCopy">创建编辑副本</span><em data-i18n="storage.copyDraft">先编辑，保存时再选位置</em></button>
+          <button id="btn-document-history" class="more-item" role="menuitem"><span data-i18n="storage.history">恢复与版本历史</span><em data-i18n="storage.historySub">草稿与保存前版本</em></button>
           <button id="btn-fix" class="more-item" disabled role="menuitem"><span data-i18n="menu.fix">修复详情</span><em data-i18n="menu.fixSub">自动修正报告</em></button>
           <button id="btn-share" class="more-item" disabled role="menuitem"><span data-i18n="menu.share">扫码共享</span><em data-i18n="menu.shareSub">局域网移动端</em></button>
         </div>
@@ -110,7 +121,9 @@
           <!-- <button id="btn-plugin-menu" class="more-item" role="menuitem"><span data-i18n="menu.plugins">插件中心</span><em data-i18n="menu.pluginsSub">扩展管理</em></button> -->
           <button id="btn-assoc" class="more-item" role="menuitem"><span data-i18n="menu.assoc">设为默认</span><em data-i18n="menu.assocSub">.md 打开方式</em></button>
           <button id="btn-autostart" class="more-item" role="menuitem"><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
-          <button id="btn-check-update" class="more-item" role="menuitem"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">当前版本 v2.3.9</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
+          <button id="btn-close-to-tray" class="more-item hidden" role="menuitemcheckbox" aria-checked="true"><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
+          <button id="btn-app-exit" class="more-item hidden" role="menuitem"><span data-i18n="window.exit">退出 ReadMD</span><em data-i18n="window.exitHint">保存修改后完全退出</em></button>
+          <button id="btn-check-update" class="more-item" role="menuitem"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">当前版本 v0.0.4</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
         </div>
       </div>
     </div>
@@ -202,6 +215,7 @@
     </div>
   </div>
   <button id="edit-save" class="tb-btn accent" data-i18n="editor.save">保存</button>
+  <span id="document-recovery-status" role="status" aria-live="polite"></span>
   <button id="edit-cancel" class="tb-btn" data-i18n="editor.cancel">取消</button>
 </div>
 
@@ -264,7 +278,7 @@
       <div id="welcome">
         <div class="welcome-inner">
           <header class="welcome-hero">
-            <svg class="welcome-mark" viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="3" width="42" height="42" rx="12"/><path d="M13 31V17l6 7 6-7v14"/><path d="M34 17v13m-4.5-4.5L34 30l4.5-4.5"/></svg>
+            <img class="welcome-mark" src="/assets/icon-256.png" width="44" height="44" alt="" aria-hidden="true" draggable="false">
             <h1 class="logo">Read<span>MD</span></h1>
             <p class="welcome-sub" data-i18n="shell.welcome.tagline">安静、专注地阅读与书写 Markdown</p>
           </header>
@@ -850,8 +864,8 @@
               <svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4-4"/></svg>
             </button>
           </div>
-          <div id="tpl-github-preview" class="tpl-github-preview" role="list" aria-live="polite"></div>
         </div>
+        <div id="tpl-github-preview" class="tpl-github-preview" role="list" aria-live="polite"></div>
       </div>
       <button id="tpl-export-btn" class="tb-btn" title="将全部模板导出为 .json 备份" data-i18n-title="tpl.exportHint">
         <svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -931,12 +945,13 @@
   <div id="share-box">
     <h3 id="share-title" data-i18n="share.title">&#128241; 移动端共享</h3>
     <p class="fix-note" data-i18n="share.desc">启动后手机连同一 Wi-Fi，扫描二维码即可在手机浏览器阅读当前文档（也支持转 MD / OCR / 网页 / AI）。局域网访问需携带本次随机令牌，关闭共享即失效。</p>
-    <div id="share-qr"></div>
+    <div id="share-qr" role="status" aria-live="polite"></div>
     <p id="share-url" class="share-url"></p>
     <p id="share-token" class="share-token"></p>
     <div class="url-actions">
       <button id="share-start" class="tb-btn accent" data-i18n="share.startServer">开启共享</button>
       <button id="share-stop" class="tb-btn" data-i18n="share.stopServer" disabled>关闭共享</button>
+      <button id="share-refresh" class="tb-btn" data-i18n="audit.refreshStatus">刷新状态</button>
       <button id="share-close" class="tb-btn" data-i18n="toolbar.close">关闭</button>
     </div>
   </div>
@@ -1268,6 +1283,13 @@
         </button>
         <label class="ai-sel"><input id="convert-overwrite" type="checkbox"> <span data-i18n="convert.overwrite">覆盖已存在的 .md</span></label>
       </div>
+      <label class="convert-speech-setting" for="convert-speech-language">
+        <span data-i18n="convert.speechLanguage">语音识别语言</span>
+        <select id="convert-speech-language">
+          <option value="auto" data-i18n="convert.speechAuto">系统语言</option>
+          <option value="zh">中文</option><option value="en">English</option><option value="ja">日本語</option>
+        </select>
+      </label>
       <div id="convert-list" class="convert-list"></div>
       <div class="convert-foot">
         <span id="convert-status" class="convert-status"></span>
@@ -1307,7 +1329,13 @@
         </div>
       </div>
     </details>
-    <div id="plugin-category-tabs" class="plugin-category-tabs" role="tablist" aria-label="插件能力分类">
+    <div class="plugin-discovery">
+      <label class="plugin-search"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="plugin-search" type="search" data-i18n-placeholder="plugin.search" data-i18n-aria="plugin.search" placeholder="搜索插件与功能" autocomplete="off"></label>
+      <button id="plugin-installed-filter" class="tb-btn" type="button" aria-pressed="false" data-i18n="plugin.installedOnly">已安装</button>
+      <button id="plugin-refresh" class="tb-btn" type="button" data-i18n="plugin.refresh">刷新</button>
+    </div>
+    <div id="plugin-summary" class="plugin-summary" role="status" aria-live="polite"></div>
+    <div id="plugin-category-tabs" class="plugin-category-tabs" role="tablist" aria-label="插件能力分类" data-i18n-aria="plugin.categories">
       <button class="plugin-tab-pill active" data-category="all" data-i18n="plugin.filter.all">全部</button>
       <button class="plugin-tab-pill" data-category="ocr" data-i18n="plugin.category.ocr">光学识别</button>
       <button class="plugin-tab-pill" data-category="document" data-i18n="plugin.category.document">文档与PDF</button>
@@ -1433,7 +1461,7 @@
 
 <footer id="statusbar">
   <div class="statusbar-left-group">
-    <span id="status-version" class="status-version" title="ReadMD 当前版本" data-i18n-title="status.version">v2.3.9</span>
+    <span id="status-version" class="status-version" title="ReadMD 当前版本" data-i18n-title="status.version">v0.0.4</span>
     <button id="status-pagination" type="button" class="status-pagination hidden" title="点击切换阅读模式" data-i18n-title="pagination.switchModeTitle"></button>
     <span id="status-left"></span>
   </div>
@@ -1460,6 +1488,10 @@
     </div>
     <div class="modal-body">
       <p class="style-modal-desc" data-i18n="dialog.styleCustomDesc">注入自定义 CSS 规则与 HTML Head 标签，即时应用于阅读、编辑与导出排版。</p>
+      <div class="panel-feedback-row">
+        <p id="style-load-status" role="status" aria-live="polite"></p>
+        <button id="style-load-retry" type="button" class="tb-btn hidden" data-i18n="audit.retryLoad">重新加载</button>
+      </div>
       
       <div class="style-presets-bar">
         <span class="style-presets-label" data-i18n="dialog.stylePresets">常用排版模板:</span>
@@ -1471,7 +1503,7 @@
 
       <div class="style-ai-bar">
         <input type="text" id="style-ai-prompt" class="style-ai-input" placeholder="输入排版风格诉求，例如：适合学术论文的衬线体与优雅边距..." data-i18n-placeholder="styleai.placeholder">
-        <button type="button" id="style-ai-gen-btn" class="tb-btn accent" data-i18n="styleai.generate">AI 生成样式</button>
+        <button type="button" id="style-ai-gen-btn" class="tb-btn" data-i18n="styleai.generate">AI 生成样式</button>
       </div>
       <div id="style-ai-status" class="style-ai-status hidden"></div>
 
@@ -1656,6 +1688,6 @@
   </div>
 </div>
 
-<script defer src="/assets/readmd.boot.js?v=2.3.9"></script>
+<script defer src="/assets/readmd.boot.js?v=0.0.4"></script>
 </body>
 </html>

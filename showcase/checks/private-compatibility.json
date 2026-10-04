@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-03T14:11:00.537Z",
+  "checks": [
+    {
+      "test": "real_remote_plantuml",
+      "status": 200,
+      "ok": true,
+      "svg_characters": 2352,
+      "contains_label": true
+    },
+    {
+      "test": "private_philosophy_book",
+      "format": ".epub",
+      "bytes": 478186,
+      "original_unchanged": true,
+      "status": 200,
+      "ok": true,
+      "characters": 43599,
+      "engine": "epub"
+    },
+    {
+      "test": "private_philosophy_book",
+      "format": ".pdf",
+      "bytes": 3242309,
+      "original_unchanged": true,
+      "status": 200,
+      "ok": true,
+      "characters": 243147,
+      "engine": "pdf"
+    }
+  ]
+}

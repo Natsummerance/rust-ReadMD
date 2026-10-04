@@ -96,9 +96,32 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   const stack = [];                       // [{ el, opener }]
   let lastOutside = null;                 // last focused element while no layer was open
   const guards = new Map();               // id -> () => boolean (true = may close)
+  // One observer preserves mutation order when two dialogs open in the same
+  // turn. Separate observers run in registration order and can invert layers.
+  const layerObserver = new MutationObserver(records => {
+    for (const record of records) sync(record.target);
+  });
+  let focusPending = false;
+  const focusObserver = new MutationObserver(() => {
+    const top = stack[stack.length - 1];
+    if (!top || focusPending) return;
+    const active = document.activeElement;
+    if (top.el.contains(active) && !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length) return;
+    focusPending = true;
+    requestAnimationFrame(() => {
+      focusPending = false;
+      const current = stack[stack.length - 1];
+      if (!current || !isShown(current.el)) return;
+      const active = document.activeElement;
+      if (current.el.contains(active) && !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length) return;
+      const target = initialFocus(current.el);
+      if (target) target.focus({ preventScroll: true });
+      else { current.el.setAttribute('tabindex', '-1'); current.el.focus({ preventScroll: true }); }
+    });
+  });
   const FOCUSABLE = [
     'a[href]', 'area[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
-    'select:not([disabled])', 'textarea:not([disabled])', 'iframe', 'audio[controls]', 'video[controls]',
+    'select:not([disabled])', 'textarea:not([disabled])', 'summary', 'iframe', 'audio[controls]', 'video[controls]',
     '[contenteditable]:not([contenteditable="false"])', '[tabindex]:not([tabindex="-1"])',
   ].join(',');
 
@@ -106,8 +129,15 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 
   function focusables(root) {
     return [...root.querySelectorAll(FOCUSABLE)].filter(el => {
-      if (el.closest('[inert]') && !root.contains(el.closest('[inert]'))) return false;
+      if (el.closest('[inert]')) return false;
       if (el.closest('.hidden')) return false;
+      // Browsers may give descendants of a closed details a client rect,
+      // although focus() is ignored. Only its summary is reachable.
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        if (!parent.matches('details:not([open])')) continue;
+        const summary = [...parent.children].find(child => child.tagName === 'SUMMARY');
+        if (!summary || !summary.contains(el)) return false;
+      }
       const rect = el.getClientRects();
       return rect.length > 0 && getComputedStyle(el).visibility !== 'hidden';
     });
@@ -266,7 +296,8 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     if (el.__rmModal) return;
     el.__rmModal = true;
     if (!el.hasAttribute('aria-modal')) el.setAttribute('aria-modal', 'true');
-    new MutationObserver(() => sync(el)).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    layerObserver.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    focusObserver.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'hidden'] });
     if (isShown(el)) push(el);
   }
 
@@ -311,7 +342,10 @@ if(__exports != exports)module.exports = exports;return module.exports}));
   const watchBody = () => new MutationObserver(records => {
     for (const r of records) for (const n of r.addedNodes) {
       if (n.nodeType !== 1) continue;
-      if (n.matches('[role="dialog"]')) { if (n.id && /-modal$/.test(n.id)) watch(n); }
+      if (n.matches('[role="dialog"]')) {
+        if ((n.id && /-modal$/.test(n.id)) || n.classList.contains('modal-overlay') || n.dataset.modalLayer === 'on') watch(n);
+        scan(n);
+      }
       else scan(n);
     }
   }).observe(document.body, { childList: true });
@@ -540,6 +574,7 @@ const state = {
   readingLeading: 'normal', // compact | normal | relaxed
   aiPanelWidth: 432,
   autoReload: true,
+  closeToTray: true,
   history: [],
   histIdx: -1,
   scrollPos: {},
@@ -654,7 +689,7 @@ function installAssoc() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
   py.install_association().then(ok => {
-    showToast(ok === true ? _t('toast.assocSuccess') : _t('toast.assocFailed', { error: ok }));
+    showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
   });
 }
 
@@ -1159,30 +1194,58 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
 
 /* ---------------- 设置 ---------------- */
 
+function sanitizeSettings(input) {
+  const result = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
+  const choices = {
+    theme: ['auto', 'light', 'dark', 'sepia'], pvLayout: ['left', 'right', 'top', 'bottom', 'none'],
+    readingFont: ['sans', 'serif'], readingWidth: ['narrow', 'normal', 'wide'], readingLeading: ['compact', 'normal', 'relaxed'],
+  };
+  for (const [key, values] of Object.entries(choices)) if (values.includes(input[key])) result[key] = input[key];
+  for (const key of ['autoReload', 'pvSync', 'closeToTray']) if (typeof input[key] === 'boolean') result[key] = input[key];
+  const limits = { fontSize: [70, 180], lineWidth: [320, 1800], aiPanelWidth: [320, 1400], pvSplitX: [25, 70], pvSplitY: [25, 70] };
+  for (const [key, [min, max]] of Object.entries(limits)) {
+    if (typeof input[key] === 'number' && Number.isFinite(input[key])) result[key] = Math.max(min, Math.min(max, input[key]));
+  }
+  return result;
+}
+
 async function loadSettings() {
   try {
     if (hasPy) {
       const s = await py.get_settings();
-      if (s && typeof s === 'object') Object.assign(state, s);
+      Object.assign(state, sanitizeSettings(s));
     } else {
       const s = JSON.parse(localStorage.getItem('readmd-settings') || '{}');
-      Object.assign(state, s);
+      Object.assign(state, sanitizeSettings(s));
     }
   } catch (e) { /* ignore */ }
   applySettings();
 }
 
-async function saveSettings() {
+let settingsSaveQueue = Promise.resolve();
+function saveSettings() {
   const s = {
     theme: state.theme, fontSize: state.fontSize, lineWidth: state.lineWidth, aiPanelWidth: state.aiPanelWidth,
     autoReload: state.autoReload, pvLayout: state.pvLayout, pvSync: state.pvSync,
+    closeToTray: state.closeToTray,
     pvSplitX: state.pvSplitX, pvSplitY: state.pvSplitY,
     readingFont: state.readingFont, readingWidth: state.readingWidth, readingLeading: state.readingLeading,
   };
-  try {
-    if (hasPy) await py.save_settings(s);
-    else localStorage.setItem('readmd-settings', JSON.stringify(s));
-  } catch (e) { /* ignore */ }
+  // Serialize native writes so a slower old request cannot persist over the latest choice.
+  settingsSaveQueue = settingsSaveQueue.then(async () => {
+    try {
+      if (hasPy) {
+        const result = await py.save_settings(sanitizeSettings(s));
+        if (result === false || result?.ok === false) throw new Error(result?.error || window.i18n.t('audit.invalidResponse'));
+      } else localStorage.setItem('readmd-settings', JSON.stringify(sanitizeSettings(s)));
+      return true;
+    } catch (e) {
+      showToast(window.i18n.t('toast.saveFailed', { error: e.message }));
+      return false;
+    }
+  });
+  return settingsSaveQueue;
 }
 
 function applySettings() {
@@ -1196,6 +1259,7 @@ function applySettings() {
   document.body.style.setProperty('--line-width', state.lineWidth + 'px');
   document.body.style.setProperty('--ai-panel-width', state.aiPanelWidth + 'px');
   updateThemeButton();
+  if (typeof syncWindowPreferences === 'function') syncWindowPreferences();
   if (window.ReadMDReader) window.ReadMDReader.applyReadingPrefs();
   if (prevTheme && prevTheme !== theme) {
     if (typeof reloadAllDiagrams === 'function') reloadAllDiagrams();
@@ -1444,13 +1508,17 @@ function syncStateFromActiveTab() {
   state.file = tab.path;
   state.dir = tab.dir || '';
   state.mtime = tab.mtime || 0;
+  state.revision = tab.revision || '';
   state.size = tab.size || 0;
   state.encoding = tab.encoding || 'utf-8';
   state.fixed = tab.content || '';
-  state.original = tab.original || tab.content || '';
+  state.original = tab.original ?? tab.content ?? '';
   state.fixes = tab.fixes || [];
   state.stats = tab.stats || {};
   state.webAssets = tab.webAssets || [];
+  state.is_code = !!tab.is_code;
+  state.code_lang = tab.code_lang || '';
+  state.ext = tab.ext || '';
   if (tab.readerMode) state.pagination.mode = tab.readerMode;
 }
 
@@ -1793,13 +1861,16 @@ async function renameTab(tabId, newTitle) {
   if (tab.mode === 'file' && tab.path && hasPy && py.rename_file) {
     busy(true);
     try {
-      const r = await py.rename_file(tab.path, newTitle);
+      const ext = (tab.path.match(/\.[^\\/.]+$/) || [''])[0];
+      const stem = ext && newTitle.toLowerCase().endsWith(ext.toLowerCase()) ? newTitle.slice(0, -ext.length) : newTitle;
+      const r = await py.rename_file(tab.path, stem);
       if (r && r.ok) {
         tab.path = r.path;
         tab.name = r.name;
         tab.title = r.name;
         if (state.activeTabId === tab.id) {
-          state.file = r.path;
+            state.file = r.path;
+            state.sourceName = r.name;
           document.title = r.name + ' - ReadMD';
           setFileTitle(r.name, true, r.path);
         }
@@ -1888,7 +1959,7 @@ function syncActiveTabDirty() {
   const tab = getActiveTab();
   if (!tab) return;
   const dirty = hasUnsavedEditorChanges();
-  if (dirty) {
+  {
     tab.content = getEditContent();
     tab.fixed = tab.content;
   }
@@ -1896,6 +1967,7 @@ function syncActiveTabDirty() {
     tab.isDirty = dirty;
     renderTabsBar();
   }
+  window.ReadMDRecovery?.schedule();
 }
 
 async function activateTabForSave(tabId) {
@@ -2079,9 +2151,11 @@ function askChoice(title, desc, choices) {
 async function closeTab(tabId, force = false) {
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   if (tab.isDirty && !force) {
     const action = await promptDirtyClose(tab.title || tab.name);
     if (action === 'cancel') return;
+    if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(tab)) return;
     if (action === 'save') {
       await activateTabForSave(tabId);
       const saved = await saveEdit({ exitAfterSave: true });
@@ -2089,16 +2163,19 @@ async function closeTab(tabId, force = false) {
     }
   }
   const idx = state.tabs.findIndex(t => t.id === tabId);
+  if (idx < 0) return;
   const focusedTabId = document.activeElement instanceof Element ? document.activeElement.dataset.tabId : null;
   state.tabs.splice(idx, 1);
   if (state.activeTabId === tabId) {
+    exitEdit();
+    state.activeTabId = null;
     if (state.tabs.length > 0) {
       const nextIdx = Math.min(idx, state.tabs.length - 1);
       const nextTabId = state.tabs[nextIdx].id;
       switchTab(nextTabId).then(() => focusVisibleTab(nextTabId));
     } else {
       state.activeTabId = null;
-      goHome();
+      await goHome({ discardConfirmed: true });
     }
   }
   renderTabsBar();
@@ -2111,41 +2188,54 @@ async function closeTab(tabId, force = false) {
 async function closeOtherTabs(keepTabId) {
   const keepTab = state.tabs.find(t => t.id === keepTabId);
   if (!keepTab) return;
-  for (const t of [...state.tabs]) {
+  if (state.editing) syncActiveTabDirty();
+  const candidates = [...state.tabs], accepted = new Map();
+  const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
+  for (const t of candidates) {
     if (t.id !== keepTabId) {
       if (t.isDirty) {
         const action = await promptDirtyClose(t.title || t.name);
         if (action === 'cancel') return;
+        if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
         if (!saved || state.tabs.some(item => item.id === t.id && item.isDirty)) return;
         }
       }
+      accepted.set(t, text(t));
     }
   }
+  if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
   state.tabs = [keepTab];
   window.invalidateDocumentLoads?.();
+  if (state.activeTabId !== keepTabId) exitEdit();
   state.activeTabId = keepTabId;
   syncStateFromActiveTab();
   renderTabsBar();
 }
 
 async function closeAllTabs() {
-  for (const t of [...state.tabs]) {
+  if (state.editing) syncActiveTabDirty();
+  const candidates = [...state.tabs], accepted = new Map();
+  const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
+  for (const t of candidates) {
     if (t.isDirty) {
       const action = await promptDirtyClose(t.title || t.name);
       if (action === 'cancel') return;
+      if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
         if (!saved || (getActiveTab()?.isDirty || state.editing)) return;
       }
     }
+    accepted.set(t, text(t));
   }
+  if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
   state.tabs = [];
   state.activeTabId = null;
-  goHome();
+  await goHome({ discardConfirmed: true });
   renderTabsBar();
 }
 
@@ -2340,16 +2430,28 @@ async function openHistoryModal() {
 }
 
 async function clearRecent() {
+  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+}
+
+async function runClearRecent() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  try {
   if (hasPy && py.clear_recent) {
-    await py.clear_recent();
+    const result = await py.clear_recent();
+    if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
   } else {
     const response = await apiFetch('/api/recent/clear', { method: 'POST' });
-    if (!response || !response.ok) return;
+    const result = await response.json();
+    if (!response.ok || result?.ok === false) throw new Error(result?.error || 'HTTP ' + response.status);
   }
   await refreshRecent();
   const list = $('history-list');
   if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
+  return true;
+  } catch (e) {
+    showToast(_t('audit.clearFailed', { error: e.message }));
+    return false;
+  }
 }
 
 async function addRecent(path) {
@@ -2440,12 +2542,13 @@ function updateStatus() {
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
   const canEdit = hasDoc && !state.editing;
   const canReload = state.mode === 'file';
-  const canSaveas = hasDoc && (state.mode === 'virtual' || state.fixed !== '');
+  const canSaveas = hasDoc;
   // 没有打开文档时禁用编辑；新建文档走 newDocument()。
   $('btn-edit').disabled = !hasDoc && !state.editing;
   setUnavailableReason($('btn-edit'), _t('toast.openDocumentToUse'));
   $('btn-reload').disabled = !canReload;
   $('btn-saveas').disabled = !canSaveas;
+  if ($('btn-document-copy')) $('btn-document-copy').disabled = !hasDoc;
   setUnavailableReason($('btn-saveas'), _t('toast.openDocumentToUse'));
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
@@ -2493,7 +2596,19 @@ function updateStatus() {
   }
 }
 
-function goHome() {
+let goingHome = false;
+async function goHome(options = {}) {
+  if (goingHome) return false;
+  goingHome = true;
+  const tabId = state.activeTabId;
+  try {
+    if (!options.discardConfirmed && state.editing && !await confirmExitEdit()) return false;
+    if (state.activeTabId !== tabId) return false;
+    return resetHome();
+  } finally { goingHome = false; }
+}
+
+function resetHome() {
   window.invalidateDocumentLoads?.();
   state.mode = 'welcome';
   state.file = null;
@@ -2550,6 +2665,7 @@ function goHome() {
   showPaginationBar(false);
   updateStatus();
   renderTabsBar();
+  return true;
 }
 
 
@@ -2641,8 +2757,8 @@ function installAssoc() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
   py.install_association().then(ok => {
-    showToast(ok === true ? _t('toast.assocSuccess') : _t('toast.assocFailed', { error: ok }));
-  });
+    showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
+  }).catch(e => showToast(_t('toast.assocFailed', { error: e.message })));
 }
 
 
@@ -2695,9 +2811,9 @@ async function extractDroppedZip(entry) {
       : /large|limit|size/.test(code) ? 'zip_too_large'
       : /unsupported|encrypt/.test(code) ? 'zip_unsupported' : 'server_error';
     showToast(_t('batch.zipFailed', { name: entry.name, reason: _t('batch.zipReason.' + kind) }) || `无法解压 ${entry.name}`);
-    return { paths: [], skipped: 0 };
+    return { ok: false, error_code: code, paths: [], skipped: 0 };
   }
-  return { paths: Array.isArray(res.paths) ? res.paths : [], skipped: Number(res.skipped) || 0 };
+  return { ok: true, paths: Array.isArray(res.paths) ? res.paths : [], skipped: Number(res.skipped) || 0 };
 }
 
 /**
@@ -3241,23 +3357,26 @@ function showFixModal() {
 }
 
 async function handleAiDocumentFix() {
+  return window.ReadMDTask.run('document-ai-fix', runAiDocumentFix, { trigger: 'fix-ai-btn' });
+}
+
+async function runAiDocumentFix() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const rawContent = state.editing && window.cmView ? window.cmView.state.doc.toString() : (state.fixed || state.original || '');
+  const rawContent = state.editing ? getEditContent() : (state.fixed ?? state.original ?? '');
+  const origin = { tabId: state.activeTabId, editor: window.cmView, name: state.sourceName || state.file, path: state.file, dir: state.dir };
   if (!rawContent || !rawContent.trim()) {
     showToast(_t('fixes.noDocContent') || '当前没有可修复的文档内容');
     return;
   }
 
-  const connection = typeof ensureAiConfigured === 'function'
-    ? await ensureAiConfigured()
-    : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
-  if (!connection) return;
-
-  const fixModal = $('fix-modal');
-  if (fixModal) fixModal.classList.add('hidden');
-  showToast(_t('fixes.aiFixing') || '正在进行 AI 深度格式排版自愈...', 2500);
-
   try {
+    const connection = typeof ensureAiConfigured === 'function'
+      ? await ensureAiConfigured()
+      : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
+    if (!connection) return;
+    const fixModal = $('fix-modal');
+    if (fixModal) fixModal.classList.add('hidden');
+    showToast(_t('fixes.aiFixing') || '正在进行 AI 深度格式排版自愈...', 2500);
     const resp = await apiFetch('/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3284,7 +3403,7 @@ async function handleAiDocumentFix() {
     });
 
     const data = await resp.json();
-    if (!data || !data.ok || !data.content) {
+    if (!resp.ok || !data || !data.ok || typeof data.content !== 'string' || !data.content.trim()) {
       showToast((_t('fixes.aiFixFail') || 'AI 修复失败：') + ((data && data.error) || '未返回有效内容'));
       return;
     }
@@ -3299,19 +3418,25 @@ async function handleAiDocumentFix() {
       fixedMd = fixedMd.slice(3, -3).trim();
     }
 
-    if (state.editing && window.cmView) {
+    if (!fixedMd) throw new Error(_t('audit.emptyAiResult'));
+    const unchangedEditor = origin.editor && state.activeTabId === origin.tabId && state.editing && window.cmView === origin.editor &&
+      window.cmView.state.doc.toString() === rawContent;
+    if (unchangedEditor) {
+      if (!await window.ReadMDRecovery?.checkpoint('ai_repair')) return;
+      if (state.activeTabId !== origin.tabId || window.cmView !== origin.editor || getEditContent() !== rawContent) {
+        await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
+        return;
+      }
       window.cmView.dispatch({
+        annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.repair'),
         changes: { from: 0, to: window.cmView.state.doc.length, insert: fixedMd }
       });
-      state.isDirty = true;
+      if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
       if (typeof updateEditorPreview === 'function') updateEditorPreview();
     } else {
-      state.fixed = fixedMd;
-      state.original = fixedMd;
-      if (typeof renderContent === 'function') {
-        renderContent(fixedMd, state.sourceName || state.file || 'document.md');
-      }
-      if (typeof updateStatus === 'function') updateStatus();
+      await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
+      showToast(_t('toast.appliedVirtualNotice') || '已创建副本标签页');
+      return;
     }
 
     showToast(_t('fixes.aiFixed') || 'AI 深度排版修复完成', 1800);
@@ -3969,21 +4094,31 @@ async function openFolder() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.openFolderBrowserNotice') || '浏览器模式下请使用“打开文件”'); return; }
   let dir;
-  try { dir = await py.choose_folder(); } catch (e) { dir = null; }
+  try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   await listFolder(dir);
 }
 
+let folderRequestEpoch = 0;
 async function listFolder(dir) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = ++folderRequestEpoch;
   try {
     const r = await apiFetch('/api/list?p=' + encodeURIComponent(dir));
     const d = await r.json();
+    if (epoch !== folderRequestEpoch) return false;
+    if (!r.ok || d.ok === false || typeof d.dir !== 'string' || !Array.isArray(d.files) || d.files.some(p => typeof p !== 'string')) {
+      throw new Error(d.error || 'HTTP ' + r.status);
+    }
     state.folder = d.dir;
     state.folderFiles = d.files || [];
     renderFolderList();
     showSide('files');
-  } catch (e) { showToast(_t('toast.readFolderFail') || '读取文件夹失败'); }
+    return true;
+  } catch (e) {
+    if (epoch === folderRequestEpoch) showToast((_t('toast.readFolderFail') || '读取文件夹失败') + ': ' + e.message);
+    return false;
+  }
 }
 
 
@@ -4365,13 +4500,13 @@ function openFileRename() {
 }
 
 
-async function loadFile(path, { force = false, browserCopy = null } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
   const existingTab = findTabByPath(path);
   const activeEditing = !!(existingTab && state.activeTabId === existingTab.id && state.editing);
   const activeDirty = activeEditing && hasUnsavedEditorChanges();
-  if (existingTab && (existingTab.isDirty || activeDirty)) {
+  if (existingTab && (existingTab.isDirty || activeDirty) && !discardConfirmed) {
     showToast(_t('toast.reloadBlockedDirty') || '未保存修改已保留，未重新加载外部更改');
     return;
   }
@@ -4416,6 +4551,7 @@ async function loadFile(path, { force = false, browserCopy = null } = {}) {
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
+      revision: d.revision || '',
       encoding: d.encoding,
       webAssets: [],
       is_code: d.is_code || false,
@@ -4430,7 +4566,7 @@ async function loadFile(path, { force = false, browserCopy = null } = {}) {
         ? state.pagination.currentPage
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
-      Object.assign(existingTab, fileFields, { isDirty: false });
+      Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
       if (wasActive) syncStateFromActiveTab();
       if (!wasActive) existingTab.scrollPos = previousScroll;
 
@@ -4605,6 +4741,10 @@ function transformAcademicCallouts(src) {
 
 /* Reader source pre-pass (footnote definitions); see reader/enhance.js. */
 function readerPrepare(src) {
+  // This must run before the first render, even while reader enhancements load.
+  // Blank metadata lines preserve the editor/preview source line mapping.
+  src = String(src || '').replace(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/, (block, fields) =>
+    /^[ \t]*[A-Za-z_][\w-]*[ \t]*:/m.test(fields) ? block.replace(/[^\r\n]/g, '') : block);
   return window.ReadMDReader && window.ReadMDReader.prepare ? window.ReadMDReader.prepare(src) : src;
 }
 
@@ -5584,7 +5724,7 @@ function bindCodeDocActions(content, name, lang) {
   }
   if (editBtn) {
     editBtn.addEventListener('click', () => {
-      if (typeof enterEdit === 'function') enterEdit();
+      if (typeof toggleEdit === 'function' && !state.editing) toggleEdit();
     });
   }
   if (aiBtn) {
@@ -6154,7 +6294,9 @@ window.renderAllCodeChunks = renderAllCodeChunks;
 async function persistCodeChunkOutput(card, outputText) {
   const sourceLine = Number(card && card.dataset && card.dataset.sourceLine);
   if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing) return false;
-  const current = getEditContent();
+  // Editor offsets count normalized newlines; preserve file line endings
+  // only when obtaining the save snapshot, not when calculating positions.
+  const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
   const lines = String(current || '').split('\n');
   const fenceStart = Math.max(0, Math.min(lines.length - 1, sourceLine - 1));
   if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
@@ -7283,6 +7425,8 @@ function openPath(p) {
 
 async function renderVirtual(source, name, dir, content, fixes, extras) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  // Import/AI results create another tab; keep the current editor draft intact.
+  if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();
   let cleanName = (name || '').trim();
   if (cleanName && !/\.md$/i.test(cleanName)) {
@@ -7305,14 +7449,16 @@ async function renderVirtual(source, name, dir, content, fixes, extras) {
     size: 0,
     mtime: 0,
     encoding: 'utf-8',
-    webAssets: source === 'url' ? (((extras || {}).assets) || []) : [],
+    webAssets: Array.isArray(extras?.assets) ? extras.assets.map(asset => ({ ...asset })) : [],
     originPath: (extras && extras.originPath) || state.file || null,
-    isDirty: source === 'clipboard' || source === 'ai',
+    isDirty: !['convert', 'ocr', 'url'].includes(source) && Boolean(content),
+    unsavedCreation: !['convert', 'ocr', 'url'].includes(source) && Boolean(content),
     scrollPos: 0,
     isVirtual: true,
   };
   window.invalidateDocumentLoads?.();
   state.tabs.push(newTab);
+  window.ReadMDRecovery?.schedule();
   state.activeTabId = newTab.id;
   syncStateFromActiveTab();
   setFixes(fixes || [], {});
@@ -7362,7 +7508,7 @@ async function convertFile(path, onExists) {
   busy(true);
   let d;
   try {
-    const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip');
+    const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip') + '&language=' + encodeURIComponent(typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto') + (onExists ? '' : '&preview=1');
     const r = await apiFetch(q);
     d = await r.json().catch(() => ({}));
     if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
@@ -7407,17 +7553,18 @@ function showConvertWarns(warns) {
 }
 
 
-function loadFileDialog() {
+async function loadFileDialog() {
   if (hasPy) {
-    py.choose_file().then(p => {
+    try {
+      const p = await py.choose_file();
       if (p) {
         if (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(p)) {
-          convertOrOcr(p, 'convert');
+          await convertOrOcr(p, 'convert');
         } else {
-          loadFile(p);
+          await loadFile(p);
         }
       }
-    });
+    } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
     return;
   }
   const input = $('file-input');
@@ -7425,9 +7572,11 @@ function loadFileDialog() {
   input.onchange = async () => {
     const f = input.files && input.files[0];
     if (!f) return;
-    const p = await uploadFile(f);
-    if (p && MD_RE.test(p)) loadFile(p, { browserCopy: true });
-    else if (p) convertOrOcr(p, 'convert');
+    try {
+      const p = await uploadFile(f);
+      if (p && MD_RE.test(p)) await loadFile(p, { browserCopy: true });
+      else if (p) await convertOrOcr(p, 'convert');
+    } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
   };
   input.click();
 }
@@ -7444,10 +7593,11 @@ let pvTimer = null;
 let pvLast = '';
 let pvEditorEl = null;
 let pvRenderEpoch = 0;
+let editorOpenEpoch = 0;
 
 function hasUnsavedEditorChanges() {
   if (!state.editing) return false;
-  return getEditContent() !== (state.original || '');
+  return getEditContent() !== (state.original || '') || Boolean(getActiveTab()?.isVirtual && getActiveTab()?.unsavedCreation);
 }
 
 function syncSavedTab(path, content) {
@@ -7488,7 +7638,13 @@ async function renderSavedDocument(content) {
 }
 
 function getEditContent() {
-  return cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || '');
+  const text = cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || '');
+  const original = state.original ?? '';
+  // Both editors normalize line endings; opening a file is not a change.
+  if (text === original.replace(/\r\n?/g, '\n')) return original;
+  if (original.includes('\r\n') && !/(^|[^\r])\n/.test(original)) return text.replace(/\r?\n/g, '\r\n');
+  if (original.includes('\r') && !original.includes('\n')) return text.replace(/\r?\n/g, '\r');
+  return text;
 }
 
 function setPvLayout(layout) {
@@ -7874,6 +8030,12 @@ async function toggleEdit() {
   }
   // 没有打开文档时不能编辑（新建文档请用 Ctrl+N / 欢迎页“新建”）；空文件可以编辑。
   if (state.original == null || (state.mode === 'welcome' && !state.file)) { showToast(_t('toast.noEditableContent') || '没有可编辑的内容'); return; }
+  const epoch = ++editorOpenEpoch;
+  const tabId = state.activeTabId;
+  const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const editorContent = activeTab?.isDirty ? (activeTab.content ?? state.original ?? '') : (state.original ?? '');
+  // The fallback is also the draft snapshot while CodeMirror is loading.
+  $('edit-area').value = editorContent;
   $('edit-bar').classList.remove('hidden');
   $('content').classList.add('hidden');
   state.editing = true;
@@ -7883,12 +8045,13 @@ async function toggleEdit() {
   try {
     await loadCodeMirror();
   } catch (e) { /* 退回 textarea */ }
+  if (epoch !== editorOpenEpoch || !state.editing || state.activeTabId !== tabId) return;
   let cmMounted = false;
   if (window.ReadMDCodeMirror) {
     $('edit-area').classList.add('hidden');
     $('edit-wrap').classList.remove('hidden');
     // 旧版或损坏的 CodeMirror 包会让 createEditor 抛错：退回 textarea，避免卡在空白编辑页。
-    try { createEditor(state.original || ''); cmMounted = !!cmView; } catch (e) {
+    try { createEditor(editorContent); cmMounted = !!cmView; } catch (e) {
       console.error(e);
       try { destroyEditor(); } catch (_) { /* ignore */ }
     }
@@ -7901,7 +8064,7 @@ async function toggleEdit() {
   } else {
     $('edit-wrap').classList.add('hidden');
     $('edit-area').classList.remove('hidden');
-    $('edit-area').value = state.original || '';
+    $('edit-area').value = editorContent;
     pvEditorEl = $('edit-area');
     pvEditorEl.addEventListener('scroll', pvSyncFromEditor);
     $('edit-area').focus();
@@ -7921,6 +8084,7 @@ async function confirmExitEdit() {
     return !state.editing;
   }
   const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  if (window.ReadMDRecovery && !await window.ReadMDRecovery.discard(activeTab)) return false;
   if (activeTab) {
     activeTab.content = state.original;
     activeTab.fixed = state.original;
@@ -7932,6 +8096,7 @@ async function confirmExitEdit() {
 }
 
 function exitEdit() {
+  ++editorOpenEpoch;
   if (state.editing) rememberEditPosition();
   if (typeof switchEditAiToChatPanel === 'function') switchEditAiToChatPanel();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -7953,6 +8118,8 @@ function exitEdit() {
     setEditBtn(_t('toolbar.edit') || '编辑');
     return;
   }
+  const tab = getActiveTab();
+  if (tab && cmView) { tab.editorState = cmView.state; tab.editorCompartments = cmCompartments; }
   destroyEditor();
   $('edit-bar').classList.add('hidden');
   $('edit-area').classList.add('hidden');
@@ -7963,148 +8130,90 @@ function exitEdit() {
   if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
 }
 
-async function saveEdit(options = {}) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const exitAfterSave = Boolean(options && options.exitAfterSave);
-  if (!state.editing) return false;
-  const saveBtn = $('edit-save');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add('btn-loading'); }
-  try {
-    const content = cmView ? cmView.state.doc.toString() : $('edit-area').value;
-    if (!state.file) {
-      const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
-      if (activeTab && activeTab.source === 'ai' && (activeTab.dir || state.dir)) {
-        return await autoSaveAiCopyTab(activeTab, { content, exitAfterSave });
-      }
+function documentSaveSnapshot(contentOverride = null) {
+  const tab = getActiveTab();
+  return { tab, id: tab?.id, started: Date.now(), path: tab?.path || state.file, content: contentOverride ?? (state.editing ? getEditContent() : (tab?.content ?? state.fixed ?? state.original ?? '')),
+    original: tab?.original ?? state.original ?? '', name: tab?.name || state.sourceName || 'document.md',
+    encoding: tab?.encoding || state.encoding || 'utf-8', mtime: tab?.mtime || state.mtime || null,
+    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey: tab?.recoveryKey || tab?.path || ('draft:' + tab?.id) };
+}
 
-      // 虚拟文档（转换 / OCR / 网页）：另存为 .md 后切换为文件模式
-      const name = (state.sourceName || 'document').replace(/[\\/]/g, '_');
-      const suggested = name.replace(/\.[^.]+$/, '') + '.md';
-      let out = null;
-      if (hasPy) {
-        busy(true);
-        try { out = await py.save_as(content, suggested, state.webAssets || []); }
-        catch (e) { showToast((_t('toast.saveFailed') || '保存失败：') + e.message); busy(false); return false; }
-        busy(false);
-        if (!out) { showToast(_t('toast.saveCancelled') || '已取消保存'); return false; }
-        showToast((_t('toast.savedPrefix') || '已保存：') + out);
-        exitEdit();
-        await loadFile(out);
-        return Boolean(out);
-      }
-      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = suggested;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-      showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-      return true;
+async function commitDocumentSave(snapshot, path, result, options = {}) {
+  const tab = snapshot.tab;
+  if (!tab || !state.tabs.includes(tab)) return true;
+  const active = getActiveTab() === tab;
+  let draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
+  const unchanged = draft === snapshot.content;
+  const savedContent = typeof result.saved_content === 'string' ? result.saved_content : snapshot.content;
+  if (unchanged && savedContent !== draft) {
+    draft = savedContent;
+    if (active && state.editing) {
+      if (cmView) cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft }, annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('save.assets') });
+      else $('edit-area').value = draft;
     }
-    busy(true);
-    let ok;
-    if (hasPy) {
-      ok = await py.save_file(state.file, content, state.encoding || 'utf-8', state.mtime || null);
-    } else {
-      const r = await apiFetch('/api/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: state.file,
-          content,
-          encoding: state.encoding || 'utf-8',
-          expected_mtime: state.mtime || null,
-        }),
-      });
-      if (r.status === 403) {
-        showToast(_t('toast.saveDenied') || '保存被拒绝：请重新打开文档后再保存');
-        return false;
-      }
-      ok = await r.json();
+  }
+  tab.path = path; tab.dir = String(path).replace(/[\\/][^\\/]*$/, '');
+  tab.mode = 'file'; tab.isVirtual = false;
+  tab.name = String(path).split(/[\\/]/).pop(); tab.title = tab.browserCopy && !options.retarget ? tab.title : tab.name;
+  if (options.retarget) tab.browserCopy = false;
+  tab.original = savedContent; tab.content = draft; tab.fixed = draft; tab.fixes = [];
+  if (Array.isArray(result.saved_assets)) tab.webAssets = unchanged ? result.saved_assets : [...(result.source_assets || snapshot.assets), ...result.saved_assets];
+  tab.isDirty = !unchanged; tab.mtime = result.mtime || 0; tab.revision = result.revision || ''; tab.encoding = snapshot.encoding;
+  if (active) {
+    state.file = path; state.dir = tab.dir; state.mode = 'file'; state.browserCopy = tab.browserCopy;
+    state.sourceName = tab.name; state.original = savedContent; state.fixed = draft;
+    state.mtime = tab.mtime; state.revision = tab.revision; state.encoding = tab.encoding;
+    state.webAssets = tab.webAssets || [];
+    if (options.retarget) { document.title = tab.name + ' - ReadMD'; setFileTitle(tab.name, true, path); addRecent(path); }
+    if (options.exitAfterSave && unchanged) { exitEdit(); await renderActiveTab({ restoreScroll: true }); }
+    else await renderActiveTab({ restoreScroll: true });
+  }
+  renderTabsBar(); updateUnloadGuard(); updateStatus();
+  await window.ReadMDRecovery?.saved(snapshot, tab);
+  showToast(window.i18n.t(unchanged ? 'storage.saved' : 'storage.savedEarlier'));
+  return !options.exitAfterSave || (active && unchanged);
+}
+
+async function saveEdit(options = {}) {
+  if (!state.editing) return false;
+  return window.ReadMDTask.run('document-save', () => saveEditOnce(options), { trigger: ['edit-save', 'btn-saveas'] });
+}
+
+async function saveEditOnce(options = {}) {
+  const snapshot = documentSaveSnapshot();
+  if (!snapshot.path) return saveAsSnapshot(snapshot, options);
+  const write = async () => {
+    // Use one acknowledgement shape for native and browser editing. The API is the Rust writer in both.
+    const response = await apiFetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding,
+        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null }) });
+    const result = await response.json();
+    if (!response.ok && !result.conflict && result.error_code !== 'encoding_unrepresentable') throw new Error(result.error || 'HTTP ' + response.status);
+    return result;
+  };
+  try {
+    let result = await write();
+    if (result.error_code === 'encoding_unrepresentable') {
+      if (!await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: result.char || '' }),
+        confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) return false;
+      snapshot.encoding = 'utf-8'; result = await write();
     }
-    // The file's original encoding cannot hold a character that was typed:
-    // offer to switch the document to UTF-8 instead of replacing it silently.
-    if (ok && ok.error_code === 'encoding_unrepresentable') {
-      busy(false);
-      const switchToUtf8 = await confirmAction({
-        title: _t('dialog.encodingTitle') || '无法按原编码保存',
-        message: _t('dialog.encodingMessage', { encoding: ok.encoding || state.encoding, char: ok.char || '' })
-          || `当前文件编码（${ok.encoding || state.encoding}）无法表示字符“${ok.char || ''}”。是否改为 UTF-8 保存？`,
-        confirmText: _t('dialog.encodingUseUtf8') || '改用 UTF-8 保存',
-        cancelText: _t('common.cancel') || '取消',
-      });
-      if (!switchToUtf8) return false;
-      state.encoding = 'utf-8';
-      const activeTab = getActiveTab();
-      if (activeTab) activeTab.encoding = 'utf-8';
-      busy(true);
-      if (hasPy) {
-        ok = await py.save_file(state.file, content, 'utf-8', state.mtime || null);
-      } else {
-        const r2 = await apiFetch('/api/save', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: state.file, content, encoding: 'utf-8', expected_mtime: state.mtime || null }),
-        });
-        ok = await r2.json();
-      }
-    }
-    if (ok && ok.ok !== false) {
-      syncSavedTab(state.file, content);
-      applySavedMtime(ok);
-      await renderSavedDocument(content);
-      if (typeof renderTabsBar === 'function') renderTabsBar();
-      if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
-      const savedTarget = state.browserCopy
-        ? `${state.sourceName || state.file} (${_t('app.browserCopy') || 'browser copy'})`
-        : (state.file || state.sourceName || 'document');
-      showToast(ok.backup
-        ? (_t('toast.savedWithBackup', { backup: ok.backup }) || ('已保存（备份：' + ok.backup + '）'))
-        : ((_t('toast.savedPrefix') || '已保存：') + savedTarget));
-      if (exitAfterSave) exitEdit();
-      return true;
-    } else {
-      if (ok && ok.conflict) {
-        const action = await promptSaveConflict();
-        if (action === 'save-as') {
-          const activeTab = getActiveTab();
-          const suggested = (state.sourceName || state.file || 'document')
-            .replace(/[\\/]/g, '_')
-            .replace(/\.[^.]+$/, '') + '.md';
-          if (activeTab) {
-            activeTab.content = content;
-            activeTab.fixed = content;
-          }
-          state.fixed = content;
-          const saved = await saveAs(content);
-          if (!hasPy && saved) {
-            showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-            return false;
-          }
-          if (!saved) return false;
-          exitEdit();
-          await loadFile(state.file, { force: true });
-          return true;
-        }
-        if (action === 'reload') {
-          exitEdit();
-          await loadFile(state.file, { force: true });
-          return true;
-        }
-        if (action === 'cancel') {
-          showToast(_t('toast.reloadBlockedDirty') || '未保存修改已保留，未重新加载外部更改');
-        }
-      } else {
-        showToast((_t('toast.saveFailed') || '保存失败：') + ((ok && ok.error) || (_t('toast.unknownError') || '未知错误')));
+    if (result.ok === true) return commitDocumentSave(snapshot, snapshot.path, result, options);
+    if (result.conflict) {
+      if (getActiveTab() !== snapshot.tab) { showToast(window.i18n.t('storage.conflictBackground')); return false; }
+      const action = await promptSaveConflict();
+      if (action === 'save-as') return saveAsSnapshot(snapshot, options);
+      if (action === 'reload' && getActiveTab() === snapshot.tab) {
+        // Preserve the draft before an explicit destructive reload.
+        const view = cmView, latest = getEditContent();
+        if (!await window.ReadMDRecovery?.checkpoint('conflict_reload', snapshot.tab)) return false;
+        if (getActiveTab() !== snapshot.tab || !state.editing || cmView !== view || getEditContent() !== latest) return false;
+        exitEdit(); await loadFile(snapshot.path, { force: true, discardConfirmed: true }); return !snapshot.tab.isDirty;
       }
       return false;
     }
-    return false;
-  } catch (e) {
-    showToast((_t('toast.saveFailed') || '保存失败：') + e.message);
-    return false;
-  } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('btn-loading'); }
-    busy(false);
-  }
+    throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
+  } catch (error) { showToast(window.i18n.t('toast.saveFailed') + error.message); return false; }
 }
 
 function promptSaveConflict() {
@@ -8150,114 +8259,54 @@ function promptSaveConflict() {
 }
 
 async function saveAs(contentOverride = null) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const content = contentOverride ?? state.fixed ?? state.original ?? '';
-  const sourceName = getActiveTab()?.name
-    || String(state.file || '').split(/[\\/]/).pop()
-    || state.sourceName
-    || 'document';
-  const name = String(sourceName).replace(/[\\/]/g, '_');
-  const extension = name.match(/\.[^.]+$/)?.[0] || '.md';
-  const suggested = name.replace(/\.[^.]+$/, '') + extension;
-  if (hasPy) {
-    const out = await py.save_as(content, suggested, state.webAssets || []);
-    if (out) {
-      const activeTab = getActiveTab();
-      if (activeTab) {
-        activeTab.path = out;
-        activeTab.dir = String(out).replace(/[\\/][^\\/]*$/, '');
-        activeTab.mode = 'file';
-        activeTab.isVirtual = false;
-        activeTab.isDirty = false;
-        activeTab.browserCopy = false;
-        activeTab.name = String(out).split(/[\\/]/).pop();
-        activeTab.title = activeTab.name;
-        activeTab.content = content;
-        activeTab.original = content;
-        activeTab.fixed = content;
-        state.file = out;
-        state.original = content;
-        state.fixed = content;
-        state.dir = activeTab.dir;
-        state.mode = 'file';
-        state.browserCopy = false;
-        state.sourceName = activeTab.name;
-        renderTabsBar();
-        document.title = activeTab.name + ' - ReadMD';
-        setFileTitle(activeTab.name, true, out);
-        addRecent(out);
-      }
-      showToast((_t('toast.savedPrefix') || '已保存：') + out);
-      return true;
-    }
-  } else {
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = suggested;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-    return true;
-  }
-  return false;
+  // DOM event listeners pass a MouseEvent, which is not document content.
+  const snapshot = documentSaveSnapshot(typeof contentOverride === 'string' ? contentOverride : null);
+  return window.ReadMDTask.run('document-save', () => saveAsSnapshot(snapshot, { retarget: true }), { trigger: ['edit-save', 'btn-saveas'] });
 }
 
-async function autoSaveAiCopyTab(tab, options = {}) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const currentTab = tab || (typeof getActiveTab === 'function' ? getActiveTab() : null);
-  if (!currentTab) return false;
-  const targetDir = currentTab.dir || state.dir;
-  if (!targetDir) {
-    if (typeof saveAs === 'function') return saveAs();
-    return false;
+async function saveAsSnapshot(snapshot, options = {}) {
+  const suggested = String(snapshot.name || 'document.md').replace(/[\\/]/g, '_');
+  if (!hasPy) {
+    const blob = new Blob([snapshot.content], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = suggested;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    await window.ReadMDRecovery?.flush();
+    showToast(window.i18n.t('storage.downloadDraft'));
+    // A download request is not proof that a file was written. Keep the dirty document and its recovery copy.
+    return !options.exitAfterSave;
   }
-  const content = options.content != null ? options.content : (currentTab.content || state.original || '');
-  const targetName = currentTab.name || state.name || 'AI-document.md';
-  const sep = targetDir.includes('/') ? '/' : '\\';
-  const targetPath = targetDir.replace(/[\\/]+$/, '') + sep + targetName;
-  busy(true);
-  let res = null;
   try {
-    if (hasPy) {
-      res = await py.save_file(targetPath, content, 'utf-8', null);
-    } else {
-      const originPath = currentTab.originPath || (currentTab.dir ? (currentTab.dir.replace(/[\\/]+$/, '') + sep + (state.sourceName || 'document.md')) : (state.file || ''));
-      const r = await apiFetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: targetPath, file: targetPath, origin_path: originPath, content: content, encoding: 'utf-8' })
-      });
-      res = await r.json().catch(() => ({ ok: r.ok }));
+    const outcome = await py.save_as(snapshot.content, suggested, snapshot.assets, { result: true,
+      dir: snapshot.tab?.dir || '', base_dir: snapshot.tab?.dir || '', encoding: snapshot.path ? snapshot.encoding : 'utf-8',
+      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path) });
+    if (!outcome || outcome.canceled) return false;
+    const result = typeof outcome === 'string' ? { ok: true, path: outcome } : outcome;
+    if (result.ok !== true || !result.path) throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
+    if (!result.mtime) {
+      const response = await apiFetch('/api/file?p=' + encodeURIComponent(result.path) + '&meta=1');
+      if (response.ok) Object.assign(result, await response.json(), { path: result.path });
     }
-  } catch (err) {
-    showToast((_t('toast.saveFailed') || '保存失败：') + err.message);
-    busy(false);
-    return false;
-  } finally {
-    busy(false);
+    if (!snapshot.path) snapshot.encoding = 'utf-8';
+    const committed = await commitDocumentSave(snapshot, result.path, result, { ...options, retarget: true });
+    if (result.warns?.length) showToast(result.warns.join('\n'), 6000);
+    return committed;
+  } catch (error) {
+    if (error.details?.error_code === 'encoding_unrepresentable' && snapshot.encoding !== 'utf-8') {
+      if (await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: error.details.char || '' }),
+        confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) {
+        snapshot.encoding = 'utf-8'; return saveAsSnapshot(snapshot, options);
+      }
+      return false;
+    }
+    const message = error.message === 'target_open_in_another_tab' ? window.i18n.t('storage.targetOpen') : error.message;
+    showToast(window.i18n.t('toast.saveFailed') + message); return false;
   }
-  const isSuccess = Boolean(res && (res === true || res.ok === true || (typeof res === 'object' && res.ok !== false && !res.error)));
-  if (isSuccess) {
-    state.file = targetPath;
-    currentTab.path = targetPath;
-    currentTab.mode = 'file';
-    currentTab.isVirtual = false;
-    currentTab.isDirty = false;
-    currentTab.content = content;
-    currentTab.original = content;
-    currentTab.fixed = content;
-    state.content = content;
-    state.original = content;
-    state.fixed = content;
-    if (typeof renderTabsBar === 'function') renderTabsBar();
-    showToast((_t('toast.savedPrefix') || '已保存：') + targetPath);
-    if (options.exitAfterSave && typeof exitEdit === 'function') exitEdit();
-    return true;
-  }
-  const errMsg = (res && res.error) ? res.error : (_t('toast.saveFailed') || '保存失败');
-  showToast((_t('toast.saveFailed') || '保存失败：') + errMsg);
-  return false;
+}
+
+// Older callers use this name. AI copies now use the same explicit Save As workflow as any unsaved document.
+async function autoSaveAiCopyTab(tab, options = {}) {
+  if (getActiveTab() !== tab) return false;
+  return saveAsSnapshot(documentSaveSnapshot(options.content ?? null), options);
 }
 window.autoSaveAiCopyTab = autoSaveAiCopyTab;
 
@@ -9408,7 +9457,9 @@ function createEditor(doc) {
   if (!window.ReadMDCodeMirror) return false;
   const CM = window.ReadMDCodeMirror;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const C = cmCompartments = {
+  const tab = getActiveTab();
+  const reusable = tab?.editorState?.doc.toString() === doc.replace(/\r\n?/g, '\n');
+  const C = cmCompartments = (reusable && tab.editorCompartments) || {
     theme: new CM.Compartment(), gutter: new CM.Compartment(),
     focus: new CM.Compartment(), typewriter: new CM.Compartment(),
   };
@@ -9469,6 +9520,7 @@ function createEditor(doc) {
       CM.EditorView.domEventHandlers({ mousedown: cmTaskMarkerClick }),
       CM.EditorView.updateListener.of(u => {
         if (u.docChanged) {
+          const tab = getActiveTab(); if (tab) tab.editGeneration = (tab.editGeneration || 0) + 1;
           schedulePreview();
           scheduleDocStatistics();
           if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
@@ -9481,7 +9533,9 @@ function createEditor(doc) {
       }),
     ],
   });
-  cmView = new CM.EditorView({ state: st, parent: $('edit-cm') });
+  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm') });
+  if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
+    C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
   applyEditorViewClasses();
   cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
@@ -10095,6 +10149,12 @@ const CODE_CHUNK_SAMPLES = {
   ruby: 'puts (1..5).map { |n| n ** 2 }.join(", ")'
 };
 
+function safeCodeFence(code) {
+  let length = 3;
+  for (const match of code.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
+  return '`'.repeat(length);
+}
+
 function openCodeChunkModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -10117,12 +10177,14 @@ function insertCodeChunkFromModal() {
   const isPlot = $('code-chunk-opt-plot') ? $('code-chunk-opt-plot').checked : true;
   const isHide = $('code-chunk-opt-hide') ? $('code-chunk-opt-hide').checked : false;
   const code = ($('code-chunk-code') && $('code-chunk-code').value) || '';
+  if (!code.trim()) { showToast(window.i18n.t('audit.codeRequired')); $('code-chunk-code').focus(); return; }
 
   const flags = ['cmd=true'];
   if (isPlot && lang === 'python') flags.push('matplotlib=true');
   if (isHide) flags.push('hide=true');
 
-  const chunkMd = `\n\`\`\`${lang} {${flags.join(' ')}}\n${code.trim()}\n\`\`\`\n`;
+  const fence = safeCodeFence(code);
+  const chunkMd = `\n${fence}${lang} {${flags.join(' ')}}\n${code.trim()}\n${fence}\n`;
   closeCodeChunkModal();
 
   if (cmView) {
@@ -10147,7 +10209,7 @@ function openDiagramModal() {
   closeMdPopups();
   const typeSel = $('diagram-type');
   const codeArea = $('diagram-code');
-  if (typeSel && codeArea) {
+  if (typeSel && codeArea && !codeArea.value.trim()) {
     codeArea.value = DIAGRAM_SAMPLES[typeSel.value] || DIAGRAM_SAMPLES.plantuml;
   }
   $('diagram-modal').classList.remove('hidden');
@@ -10162,7 +10224,9 @@ function closeDiagramModal() {
 function insertDiagramFromModal() {
   const type = ($('diagram-type') && $('diagram-type').value) || 'plantuml';
   const code = ($('diagram-code') && $('diagram-code').value) || '';
-  const diagramMd = `\n\`\`\`${type}\n${code.trim()}\n\`\`\`\n`;
+  if (!code.trim()) { showToast(window.i18n.t('audit.codeRequired')); $('diagram-code').focus(); return; }
+  const fence = safeCodeFence(code);
+  const diagramMd = `\n${fence}${type}\n${code.trim()}\n${fence}\n`;
   closeDiagramModal();
 
   if (cmView) {
@@ -10185,13 +10249,21 @@ function closeDocImportModal() {
 }
 
 function insertDocImportFromModal() {
-  const path = ($('doc-import-path') && $('doc-import-path').value.trim()) || 'chapter1.md';
+  const path = ($('doc-import-path') && $('doc-import-path').value.trim()) || '';
   const mode = ($('doc-import-mode') && $('doc-import-mode').value) || 'markdown';
   const lines = ($('doc-import-lines') && $('doc-import-lines').value.trim()) || '';
+  if (!path || /["'\r\n]/.test(path)) {
+    showToast(window.i18n.t('audit.importPathInvalid')); $('doc-import-path').focus(); return;
+  }
+  const range = lines.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+  if (lines && (!range || !Number.isSafeInteger(+range[1]) || +range[1] < 1 || +range[1] > 4294967295 ||
+      (range[2] && (!Number.isSafeInteger(+range[2]) || +range[2] < +range[1] || +range[2] > 4294967295)))) {
+    showToast(window.i18n.t('audit.importLinesInvalid')); $('doc-import-lines').focus(); return;
+  }
 
   const opts = [];
   if (mode !== 'markdown') opts.push(`mode="${mode}"`);
-  if (lines) opts.push(`lines="${lines}"`);
+  if (lines) opts.push(`lines="${range[1]}${range[2] ? '-' + range[2] : ''}"`);
 
   const optStr = opts.length ? ` {${opts.join(' ')}}` : '';
   const importMd = `\n@import "${path}"${optStr}\n`;
@@ -10231,6 +10303,84 @@ async function browseDocImportFile() {
   if (input) { input.value = docImportRelativePath(picked); input.focus(); }
 }
 
+// Patch only fields controlled by this form; retain comments, bibliography,
+// custom keys and the remaining presentation options verbatim.
+function frontmatterParts(text) {
+  const match = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
+  return match && match.index === 0 ? { body: match[1].replace(/\r\n/g, '\n'), end: match[0].length } : { body: '', end: 0 };
+}
+
+function yamlFieldBlock(body, key, indent = '') {
+  const lines = body.split('\n');
+  const start = lines.findIndex(line => new RegExp('^' + indent + '(?:' + key + '|"' + key + '"|\'' + key + '\')\\s*:').test(line));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && (!lines[end].trim() || /^\s*#/.test(lines[end]) || lines[end].startsWith(indent + ' '))) end++;
+  return { lines, start, end, raw: lines[start].slice(lines[start].indexOf(':') + 1).trim() };
+}
+
+function yamlScalar(raw) {
+  if (raw.startsWith('"') || raw.startsWith("'")) {
+    const quote = raw[0];
+    for (let i = 1; i < raw.length; i++) {
+      if (quote === '"' && raw[i] === '\\') { i++; continue; }
+      if (raw[i] !== quote) continue;
+      if (quote === "'" && raw[i + 1] === "'") { i++; continue; }
+      if (quote === "'") return raw.slice(1, i).replace(/''/g, "'");
+      try { return JSON.parse(raw.slice(0, i + 1)); } catch (_) { return raw; }
+    }
+    return raw;
+  }
+  return raw.replace(/\s+#.*$/, '');
+}
+
+function yamlPatchField(body, key, value, indent = '') {
+  const field = yamlFieldBlock(body, key, indent);
+  const line = indent + key + ': ' + JSON.stringify(value);
+  if (!field) return body.replace(/\n*$/, '\n') + line + '\n';
+  // Leave trailing blank lines and comments outside the changed value block.
+  let end = field.end;
+  while (end > field.start + 1 && (!field.lines[end - 1].trim() || /^\s*#/.test(field.lines[end - 1]))) end--;
+  field.lines.splice(field.start, end - field.start, line);
+  return field.lines.join('\n');
+}
+
+function presentationYaml(body) {
+  const block = yamlFieldBlock(body, 'presentation');
+  if (!block) return '';
+  if (!block.raw || block.raw.startsWith('#')) {
+    const lines = block.lines.slice(block.start + 1, block.end);
+    const first = lines.find(line => line.trim() && !/^\s*#/.test(line));
+    const indent = first?.match(/^\s+/)?.[0] || '  ';
+    return lines.map(line => line.startsWith(indent) ? '  ' + line.slice(indent.length) : line).join('\n');
+  }
+  // Flow mappings keep their other entries, including nested values.
+  const raw = block.raw.replace(/\s+#.*$/, '');
+  if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error(window.i18n.t('audit.metadataComplex'));
+  const fields = []; let start = 1, depth = 0, quote = '', escaped = false;
+  for (let i = 1; i < raw.length; i++) {
+    const ch = raw[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\' && quote === '"') escaped = true;
+      else if (ch === quote) {
+        if (quote === "'" && raw[i + 1] === "'") i++; else quote = '';
+      }
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '[' || ch === '{') depth++;
+    else if (ch === ']' || (ch === '}' && i < raw.length - 1)) depth--;
+    else if ((ch === ',' && depth === 0) || i === raw.length - 1) {
+      const field = raw.slice(start, i).trim();
+      if (field && !/^(?:[\w-]+|"[^"\n]+"|'[^'\n]+')\s*:/.test(field)) throw new Error(window.i18n.t('audit.metadataComplex'));
+      if (field) fields.push('  ' + field);
+      start = i + 1;
+    }
+  }
+  if (quote || depth) throw new Error(window.i18n.t('audit.metadataComplex'));
+  return fields.join('\n') + '\n';
+}
+
+let frontmatterFormSnapshot = null;
 function openFrontmatterModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -10238,10 +10388,26 @@ function openFrontmatterModal() {
   const modal = $('frontmatter-modal');
   if (!modal) return;
 
-  if ($('fm-input-title')) {
-    const defTitle = (state.mode === 'file' && state.file) ? state.file.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : (_t('editor.docTitleDefault') || '');
-    $('fm-input-title').value = defTitle;
+  const doc = cmView ? cmView.state.doc.toString() : '';
+  const parts = frontmatterParts(doc);
+  let presentation;
+  try { presentation = presentationYaml(parts.body); } catch (e) { showToast(e.message); return; }
+  const defTitle = (state.mode === 'file' && state.file) ? state.file.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : (_t('editor.docTitleDefault') || '');
+  const fieldValue = (body, key, fallback, indent = '') => { const field = yamlFieldBlock(body, key, indent); return field ? yamlScalar(field.raw) : fallback; };
+  const values = {
+    title: fieldValue(parts.body, 'title', defTitle), author: fieldValue(parts.body, 'author', 'ReadMD User'),
+    theme: fieldValue(presentation, 'theme', 'black', '  '), transition: fieldValue(presentation, 'transition', 'slide', '  '),
+  };
+  for (const key of ['title', 'author']) $('fm-input-' + key).value = values[key];
+  for (const key of ['theme', 'transition']) {
+    const select = $('fm-select-' + key);
+    select.querySelectorAll('[data-custom]').forEach(option => option.remove());
+    if (![...select.options].some(option => option.value === values[key])) {
+      const option = new Option(values[key], values[key]); option.dataset.custom = 'true'; select.add(option);
+    }
+    select.value = values[key];
   }
+  frontmatterFormSnapshot = { doc, values };
   modal.classList.remove('hidden');
   setTimeout(() => { if ($('fm-input-title')) $('fm-input-title').focus(); }, 50);
 }
@@ -10254,30 +10420,36 @@ function closeFrontmatterModal() {
 
 function insertFrontmatterFromModal() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const title = ($('fm-input-title') && $('fm-input-title').value.trim()) || (_t('editor.docTitleDefault') || '');
-  const author = ($('fm-input-author') && $('fm-input-author').value.trim()) || 'ReadMD User';
+  const title = $('fm-input-title')?.value.trim() || '';
+  const author = $('fm-input-author')?.value.trim() || '';
   const theme = ($('fm-select-theme') && $('fm-select-theme').value) || 'black';
   const transition = ($('fm-select-transition') && $('fm-select-transition').value) || 'slide';
 
-  const frontmatter = `---\ntitle: "${title}"\nauthor: "${author}"\npresentation:\n  theme: "${theme}"\n  transition: "${transition}"\n---\n\n`;
-  closeFrontmatterModal();
-
   if (cmView) {
     const currentDoc = cmView.state.doc.toString();
-    if (currentDoc.startsWith('---')) {
-      const secondDivider = currentDoc.indexOf('\n---', 3);
-      if (secondDivider !== -1) {
-        const endOfFm = currentDoc.indexOf('\n', secondDivider + 4);
-        const replaceLen = (endOfFm !== -1 ? endOfFm + 1 : secondDivider + 4);
-        cmView.dispatch({ changes: { from: 0, to: replaceLen, insert: frontmatter }, selection: { anchor: frontmatter.length } });
-        cmView.focus();
-        showToast(_t('toast.frontmatterUpdated') || '');
-        return;
-      }
+    if (frontmatterFormSnapshot && frontmatterFormSnapshot.doc !== currentDoc) { showToast(_t('audit.metadataChanged')); return; }
+    const parts = frontmatterParts(currentDoc);
+    let body = parts.body;
+    const values = { title, author, theme, transition };
+    for (const key of ['title', 'author']) {
+      if (!parts.end || values[key] !== frontmatterFormSnapshot?.values[key]) body = yamlPatchField(body, key, values[key]);
     }
-    cmView.dispatch({ changes: { from: 0, to: 0, insert: frontmatter }, selection: { anchor: frontmatter.length } });
+    if (!parts.end || theme !== frontmatterFormSnapshot?.values.theme || transition !== frontmatterFormSnapshot?.values.transition) {
+      let presentation;
+      try { presentation = presentationYaml(body); } catch (e) { showToast(e.message); return; }
+      for (const key of ['theme', 'transition']) {
+        if (!parts.end || values[key] !== frontmatterFormSnapshot?.values[key]) presentation = yamlPatchField(presentation, key, values[key], '  ');
+      }
+      const block = yamlFieldBlock(body, 'presentation');
+      const lines = block ? block.lines : body.replace(/\n*$/, '').split('\n');
+      lines.splice(block ? block.start : lines.length, block ? block.end - block.start : 0, 'presentation:', presentation.replace(/\n*$/, ''));
+      body = lines.join('\n');
+    }
+    const frontmatter = '---\n' + body.replace(/^\n|\n*$/g, '') + '\n---\n' + (parts.end ? '' : '\n');
+    cmView.dispatch({ changes: { from: 0, to: parts.end, insert: frontmatter }, selection: { anchor: frontmatter.length } });
+    closeFrontmatterModal();
     cmView.focus();
-    showToast(_t('toast.frontmatterInserted') || '');
+    showToast(_t(parts.end ? 'toast.frontmatterUpdated' : 'toast.frontmatterInserted') || '');
   }
 }
 
@@ -10508,11 +10680,13 @@ function initTableGridPicker() {
 
   for (let r = 1; r <= 10; r++) {
     for (let c = 1; c <= 10; c++) {
-      const cell = document.createElement('div');
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.setAttribute('aria-label', _t('editor.tableDimensions', { rows: r, cols: c }));
       cell.className = 'table-grid-cell' + (r <= 3 && c <= 3 ? ' highlight' : '');
       cell.dataset.row = r;
       cell.dataset.col = c;
-      cell.addEventListener('mouseenter', () => {
+      const highlight = () => {
         selectedRows = r;
         selectedCols = c;
         if (label) label.textContent = _t('editor.tableDimensions', { rows: r, cols: c }) || `${r} 行 × ${c} 列 表格`;
@@ -10521,9 +10695,17 @@ function initTableGridPicker() {
           const ec = +el.dataset.col;
           el.classList.toggle('highlight', er <= r && ec <= c);
         });
+      };
+      cell.addEventListener('mouseenter', highlight);
+      cell.addEventListener('focus', highlight);
+      cell.addEventListener('keydown', e => {
+        const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -10, ArrowDown: 10 }[e.key];
+        if (move === undefined) return;
+        e.preventDefault();
+        picker.children[Math.max(0, Math.min(99, (r - 1) * 10 + c - 1 + move))].focus();
       });
       cell.addEventListener('click', () => {
-        insertCustomTable(selectedRows, selectedCols);
+        insertCustomTable(r, c);
         closeTableModal();
       });
       picker.appendChild(cell);
@@ -10563,6 +10745,9 @@ function insertCustomTable(rows, cols) {
 
 let editAiCurrentResult = '';
 let editAiSelectionRange = null;
+let editAiRequestEpoch = 0;
+let editAiAborter = null;
+let editAiRunning = false;
 
 function openEditAiBar() {
   if (!state.editing || !cmView) return;
@@ -10587,6 +10772,13 @@ function openEditAiBar() {
 }
 
 function closeEditAiBar() {
+  ++editAiRequestEpoch;
+  editAiAborter?.abort();
+  editAiAborter = null;
+  editAiRunning = false;
+  const submit = $('edit-ai-submit');
+  if (submit) { submit.disabled = false; submit.classList.remove('btn-loading'); }
+  document.querySelectorAll('.edit-ai-act-chip').forEach(chip => { chip.disabled = false; });
   const bar = $('edit-ai-bar');
   if (bar) bar.classList.add('hidden');
   const preview = $('edit-ai-preview');
@@ -10619,6 +10811,10 @@ function switchEditAiToChatPanel() {
 window.switchEditAiToChatPanel = switchEditAiToChatPanel;
 
 async function runEditAiAction(act, customPrompt = '') {
+  if (editAiRunning || !state.editing || !cmView) return;
+  editAiRunning = true;
+  const epoch = ++editAiRequestEpoch;
+  const aborter = editAiAborter = new AbortController();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const preview = $('edit-ai-preview');
   const previewContent = $('edit-ai-preview-content');
@@ -10628,6 +10824,7 @@ async function runEditAiAction(act, customPrompt = '') {
   if (statusEl) statusEl.textContent = _t('editai.generating') || '';
   const submitBtn = $('edit-ai-submit');
   const chips = document.querySelectorAll('.edit-ai-act-chip');
+  ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = true; });
   if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); }
   chips.forEach(c => { c.disabled = true; });
 
@@ -10638,6 +10835,7 @@ async function runEditAiAction(act, customPrompt = '') {
     text: cmView ? cmView.state.sliceDoc(cmView.state.selection.main.from, cmView.state.selection.main.to) : ''
   };
   editAiSnapshot = {
+    tabId: state.activeTabId, name: state.sourceName, path: state.file, dir: state.dir,
     docText: currentDocStr,
     range: { ...range },
     hadSelection: range.from !== range.to && Boolean(range.text)
@@ -10669,7 +10867,9 @@ async function runEditAiAction(act, customPrompt = '') {
       if (statusEl) statusEl.textContent = _t('toast.noApiKeyNotice');
       return;
     }
+    if (epoch !== editAiRequestEpoch) return;
     const res = await apiFetch('/api/ai/chat', {
+      signal: aborter.signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -10689,7 +10889,7 @@ async function runEditAiAction(act, customPrompt = '') {
           context: range.context || '',
           output_format: 'Markdown'
         },
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [{ role: 'user', content: userMessage || 'Apply the requested editing action to the supplied Markdown.' }],
         stream: false
       })
     });
@@ -10710,6 +10910,7 @@ async function runEditAiAction(act, customPrompt = '') {
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const data = await res.json();
+      if (data.ok === false) throw new Error(data.error || _t('audit.invalidResponse'));
       resultText = data.content || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
     } else {
       const rawText = await res.text();
@@ -10730,26 +10931,44 @@ async function runEditAiAction(act, customPrompt = '') {
       resultText = chunks.length ? chunks.join('') : rawText;
     }
 
+    if (epoch !== editAiRequestEpoch) return;
+    if (!resultText.trim()) throw new Error(_t('audit.emptyAiResult'));
     editAiCurrentResult = resultText;
+    ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = false; });
     if (previewContent) {
       previewContent.textContent = resultText;
     }
     if (statusEl) statusEl.textContent = _t('editai.title') || '';
   } catch (err) {
+    if (epoch !== editAiRequestEpoch || err.name === 'AbortError') return;
     if (statusEl) statusEl.textContent = (_t('ai.reqFailMsg') || '') + err.message;
     if (previewContent) previewContent.textContent = err.message;
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
-    chips.forEach(c => { c.disabled = false; });
+    if (epoch === editAiRequestEpoch) {
+      editAiRunning = false;
+      editAiAborter = null;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
+      chips.forEach(c => { c.disabled = false; });
+    }
   }
 }
 
-function applyEditAiResult() {
+function preserveEditAiCopy() {
+  const result = editAiCurrentResult;
+  const origin = editAiSnapshot || {};
+  closeEditAiBar();
+  showToast(window.i18n.t('toast.appliedSelectionFallback'));
+  return renderVirtual('ai', getNextAiCopyTabName(origin.name || state.sourceName), origin.dir || '', result, [], { originPath: origin.path });
+}
+
+async function applyEditAiResult() {
+  if (editAiRunning) return;
   if (!cmView || !editAiCurrentResult) {
     closeEditAiBar();
     return;
   }
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
   const currentDoc = cmView.state.doc.toString();
   let from = 0, to = 0;
 
@@ -10757,7 +10976,7 @@ function applyEditAiResult() {
     const origText = editAiSnapshot.range.text;
     const snapFrom = editAiSnapshot.range.from;
     const snapTo = editAiSnapshot.range.to;
-    if (cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
+    if (snapFrom >= 0 && snapTo <= currentDoc.length && cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
       from = snapFrom;
       to = snapTo;
     } else {
@@ -10767,13 +10986,7 @@ function applyEditAiResult() {
         from = firstIdx;
         to = firstIdx + origText.length;
       } else {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        if (typeof renderVirtual === 'function' && typeof getNextAiCopyTabName === 'function') {
-          const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-          renderVirtual('ai', cleanName, state.dir || '', editAiCurrentResult, [], { originPath: state.file });
-        }
-        closeEditAiBar();
-        return;
+        return preserveEditAiCopy();
       }
     }
   } else {
@@ -10782,8 +10995,12 @@ function applyEditAiResult() {
     to = curSel ? curSel.to : 0;
   }
 
+  const view = cmView, tabId = state.activeTabId;
+  if (!await window.ReadMDRecovery?.checkpoint('ai_replace')) return;
+  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== currentDoc) return preserveEditAiCopy();
   cmView.dispatch({
     changes: { from, to, insert: editAiCurrentResult },
+    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
     selection: { anchor: from + editAiCurrentResult.length },
     scrollIntoView: true
   });
@@ -10791,15 +11008,21 @@ function applyEditAiResult() {
   showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
 }
 
-function insertEditAiResult() {
+async function insertEditAiResult() {
+  if (editAiRunning) return;
   if (!cmView || !editAiCurrentResult) {
     closeEditAiBar();
     return;
   }
+  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
   const sel = cmView.state.selection.main;
   const pos = sel ? sel.to : cmView.state.doc.length;
+  const view = cmView, tabId = state.activeTabId, before = cmView.state.doc.toString();
+  if (!await window.ReadMDRecovery?.checkpoint('ai_insert')) return;
+  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== before) return preserveEditAiCopy();
   cmView.dispatch({
     changes: { from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' },
+    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.insert'),
     selection: { anchor: pos + editAiCurrentResult.length + 2 }
   });
   closeEditAiBar();
@@ -11849,7 +12072,7 @@ async function loadAiPrompts() {
       return {
         id: old.id || s.id, skill_id: s.id, name: old.name || s.name,
         action: old.action || 'custom', user: old.user || '',
-        system: s.instructions || '', builtin: s.scope === 'builtin',
+        system: old.system || s.instructions || '', builtin: s.scope === 'builtin',
         scope: s.scope, metadata: s.metadata || {}, variables: s.variables || [],
         description: s.description || '', provenance: s.provenance || {},
         license: s.license || '', source_files: s.source_files || [],
@@ -12177,7 +12400,12 @@ function copyCurrentSkill() {
   const current = (state.ai.templates || []).find(x => x.id === $('tpl-id').value);
   if (!current) return;
   const base = String(current.skill_id || current.id || 'skill').replace(/[^a-z0-9-]/gi, '-').toLowerCase().replace(/^-+|-+$/g, '') || 'skill';
-  const copyId = (base + '-custom').slice(0, 64);
+  let copyId = base.slice(0, 57) + '-custom';
+  const existingIds = new Set((state.ai.templates || []).map(t => t.skill_id || t.id));
+  for (let n = 2; existingIds.has(copyId); n++) {
+    const suffix = '-custom-' + n;
+    copyId = base.slice(0, 64 - suffix.length) + suffix;
+  }
   selectTpl(null, true);
   $('tpl-id').value = copyId;
   $('tpl-name').value = current.name || copyId;
@@ -12330,8 +12558,12 @@ async function generateSkillDraft() {
 async function publishCurrentSkill() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const id = String($('tpl-id').value || '').trim();
-  const content = String($('tpl-system').value || '').trim();
+  let content = String($('tpl-system').value || '').trim();
   if (!id || !content) { showToast(_t('ai.aiError')); return; }
+  if (!/^---\r?\n/.test(content)) {
+    const description = String($('tpl-name').value || id).replace(/[\r\n]/g, ' ');
+    content = `---\nname: ${id}\ndescription: ${description}\n---\n\n${content}`;
+  }
   let evaluationToken = '';
   try {
     const evaluation = await apiFetch('/api/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -13713,6 +13945,8 @@ async function runAi(action) {
     isEditMode: Boolean(state.editing && window.cmView)
   } : null);
 
+  if (currentSelectionSnapshot) Object.assign(currentSelectionSnapshot, { tabId: state.activeTabId, name: state.sourceName,
+    path: state.file, dir: state.dir, generation: getActiveTab()?.editGeneration || 0 });
   state.ai.lastSelection = currentSelectionSnapshot;
   const isIncognito = $('ai-incognito').checked;
   const model = $('ai-model').value.trim() || (p.models || [''])[0] || '';
@@ -14147,6 +14381,10 @@ async function applyAi(targetResult, selectionContext) {
   if (!raw) return;
 
   const ctx = selectionContext || state.ai.lastSelection || null;
+  if (ctx && 'tabId' in ctx && (ctx.tabId !== state.activeTabId || (ctx.isContinue && ctx.generation !== (getActiveTab()?.editGeneration || 0)))) {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
+    showToast(_t('storage.aiSafeCopy')); return;
+  }
   const tpl = currentAiTemplate();
   const act = (tpl && tpl.action) || state.ai.lastAction || '';
   const tplId = (tpl && tpl.id) || '';
@@ -14269,9 +14507,15 @@ async function applyAi(targetResult, selectionContext) {
       insertText = (docLen > 0 ? sep : '') + raw;
     }
 
-    // 通过 CodeMirror 事务分发修改：自动进入撤回栈 (Ctrl+Z)，并触发 updateListener 标记未保存 (isDirty)
+    const view = cmView, tabId = state.activeTabId, previous = doc.toString();
+    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
+    if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== previous) {
+      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
+    }
+    // A bulk AI application is one independently undoable edit and never writes the source file.
     cmView.dispatch({
       changes: { from: insertFrom, to: insertTo, insert: insertText },
+      annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
       selection: { anchor: insertFrom + insertText.length },
       scrollIntoView: true
     });
@@ -14308,6 +14552,11 @@ async function applyAi(targetResult, selectionContext) {
       to = val.length;
       insert = (val ? sep : '') + raw;
     }
+    const tabId = state.activeTabId;
+    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
+    if (state.activeTabId !== tabId || !state.editing || cmView || ta.value !== val) {
+      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
+    }
     ta.setRangeText(insert, from, to, 'end');
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+S 保存）');
@@ -14315,21 +14564,13 @@ async function applyAi(targetResult, selectionContext) {
 }
 
 async function saveAiAs() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!state.ai.raw) return;
-  const base = (state.sourceName || state.file || 'document').replace(/[\\/]/g, '_');
-  const suggested = base.replace(/\.[^.]+$/, '') + '.ai.md';
-  if (hasPy) {
-    const out = await py.save_as(state.ai.raw, suggested);
-    if (out) showToast((_t('toast.savedPrefix') || '') + out);
-  } else {
-    const blob = new Blob([state.ai.raw], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = suggested;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-  }
+  const content = state.ai.raw, origin = getActiveTab();
+  const name = getNextAiCopyTabName(origin?.name || state.sourceName || 'document.md');
+  return window.ReadMDTask.run('ai-save-copy', async () => {
+    await renderVirtual('ai', name, origin?.dir || '', content, [], { originPath: origin?.path, assets: origin?.webAssets || [] });
+    return saveAs();
+  });
 }
 
 window.addEventListener('readmd:language-changed', () => {
@@ -14345,6 +14586,226 @@ window.addEventListener('readmd:language-changed', () => {
 
 ;
 'use strict';
+/* Recovery drafts and save checkpoints are separate from the original file. */
+(function () {
+  let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false;
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+  const keyFor = tab => tab.recoveryKey ||= (tab.path || 'draft:' + tab.id);
+  const capture = tab => ({ tab, key: keyFor(tab), path: tab.path || '', name: tab.name || tab.title || 'document.md',
+    context: { dir: tab.dir || '', assets: tab.webAssets || [] },
+    content: state.activeTabId === tab.id && state.editing ? getEditContent() : (tab.content ?? '') });
+  async function request(body) {
+    const response = await apiFetch('/api/documents/history', body ? {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    } : {});
+    const data = await response.json();
+    if (!response.ok || data.ok !== true) throw new Error(data.error === 'recovery_document_too_large' ? t('storage.tooLarge') : (data.error || 'HTTP ' + response.status));
+    return data;
+  }
+  function enqueue(body) {
+    const work = queue.then(() => request(body));
+    queue = work.catch(() => {});
+    return work;
+  }
+  function feedback(message, failed = false) {
+    const el = $('document-recovery-status');
+    if (el) { el.textContent = message; el.classList.toggle('err', failed); }
+  }
+  async function record(snapshot, kind, reason) {
+    try {
+      const result = await enqueue({ op: 'record', key: snapshot.key, path: snapshot.path, name: snapshot.name,
+        kind, reason, content: snapshot.content, context: snapshot.context });
+      if (kind === 'draft' && state.activeTabId === snapshot.tab.id) feedback(t('storage.draftKept'));
+      return result.entry;
+    } catch (error) {
+      feedback(t('storage.recoveryFailed', { error: error.message }), true);
+      if (Date.now() - lastFailure > 30000) { lastFailure = Date.now(); showToast(t('storage.recoveryFailed', { error: error.message })); }
+      return null;
+    }
+  }
+  function flush() {
+    if (flushPromise) return flushPromise;
+    flushPromise = flushDrafts().finally(() => { flushPromise = null; });
+    return flushPromise;
+  }
+  async function flushDrafts() {
+    flushing = true;
+    try {
+    clearTimeout(timer);
+    if (state.editing) syncActiveTabDirty();
+    for (const tab of state.tabs.filter(tab => !tab.isDirty && tab._recoveryContent !== undefined)) {
+      try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; }
+      catch (_) { /* Retry during maintenance. */ }
+    }
+    const pending = state.tabs.filter(tab => tab.isDirty && !tab._recoveryDiscarding);
+    for (const tab of pending) {
+      const snapshot = capture(tab);
+      if (tab._recoveryContent === snapshot.content) continue;
+      if (await record(snapshot, 'draft', 'edit')) {
+        tab._recoveryContent = snapshot.content;
+        if (capture(tab).content !== snapshot.content) setTimeout(schedule, 0);
+      }
+    }
+    } finally { flushing = false; }
+  }
+  function schedule() { if (flushing) return; clearTimeout(timer); timer = setTimeout(flush, 1500); }
+  async function checkpoint(reason = 'ai', tab = getActiveTab()) {
+    if (!tab) return null;
+    return record(capture(tab), 'checkpoint', reason);
+  }
+  async function saved(snapshot, tab) {
+    // The queued clear follows earlier autosaves. A newer draft is then queued again.
+    try { await enqueue({ op: 'clear_draft', key: snapshot.recoveryKey || keyFor(tab), content: snapshot.content, before: snapshot.started }); }
+    catch (e) { feedback(t('storage.recoveryFailed', { error: e.message }), true); }
+    tab._recoveryContent = undefined;
+    if (tab.isDirty) schedule(); else if (getActiveTab() === tab) feedback(t('storage.saved'));
+  }
+  async function discard(tab) {
+    if (!tab?.isDirty) return true;
+    tab._recoveryDiscarding = true;
+    const snapshot = capture(tab);
+    const entry = await record(snapshot, 'discarded', 'discard');
+    if (!entry) { tab._recoveryDiscarding = false; return false; }
+    if (capture(tab).content !== snapshot.content) { tab._recoveryDiscarding = false; showToast(t('storage.savedEarlier')); return false; }
+    try { await enqueue({ op: 'clear_draft', key: keyFor(tab) }); } catch (_) { /* stored discarded copy remains */ }
+    tab._recoveryDiscarding = false;
+    return true;
+  }
+  async function createCopy() {
+    const origin = getActiveTab(); if (!origin) return;
+    const snap = capture(origin);
+    const base = snap.name.replace(/\.[^.]+$/, '');
+    let name = base + '-' + t('storage.copySuffix') + '.md', n = 2;
+    while (state.tabs.some(tab => tab.name === name)) name = base + '-' + t('storage.copySuffix') + '-' + n++ + '.md';
+    await renderVirtual('copy', name, origin.dir || '', snap.content, [], { originPath: origin.path, assets: origin.webAssets || [] });
+    await toggleEdit();
+    showToast(t('storage.copyDraft'));
+  }
+  function ensureModal() {
+    if ($('document-history-modal')) return;
+    const modal = document.createElement('div'); modal.id = 'document-history-modal';
+    modal.className = 'modal-overlay hidden'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'document-history-title');
+    modal.innerHTML = '<div class="modal-box document-history-box"><div class="modal-header"><h2 id="document-history-title"></h2><button id="document-history-close" type="button" class="tb-btn" data-modal-close>×</button></div><p id="document-history-policy" class="hint"></p><div id="document-history-status" role="status" aria-live="polite"></div><div id="document-history-list" class="document-history-list"></div><div class="modal-actions"><button id="document-history-refresh" class="tb-btn" type="button"></button></div></div>';
+    document.body.appendChild(modal);
+    $('document-history-close').onclick = () => modal.classList.add('hidden');
+    $('document-history-refresh').onclick = refresh;
+    modal.addEventListener('click', event => { if (event.target === modal) modal.classList.add('hidden'); });
+  }
+  async function restore(id, apply) {
+    const expectedTab = getActiveTab();
+    const expectedView = cmView, previous = expectedTab ? capture(expectedTab).content : '';
+    const data = await enqueue({ op: 'read', id });
+    const baseDir = data.entry.context?.dir || (data.entry.path ? data.entry.path.replace(/[\\/][^\\/]*$/, '') : '');
+    const extras = { originPath: data.entry.path, assets: Array.isArray(data.entry.context?.assets) ? data.entry.context.assets : [] };
+    const sameOrigin = expectedTab?.path && data.entry.path && normalizePath(expectedTab.path) === normalizePath(data.entry.path);
+    if (apply && expectedTab === getActiveTab() && sameOrigin && state.editing && cmView) {
+      if (!await checkpoint('restore', expectedTab)) return;
+      if (getActiveTab() === expectedTab && state.editing && cmView === expectedView && getEditContent() === previous) {
+        cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: data.content },
+        annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('history.restore') });
+        syncActiveTabDirty(); schedule();
+      } else {
+        await renderVirtual('recovery', data.entry.name, baseDir, data.content, [], extras);
+        await toggleEdit();
+      }
+    } else {
+      await renderVirtual('recovery', data.entry.name, baseDir, data.content, [], extras);
+      await toggleEdit();
+    }
+    $('document-history-modal').classList.add('hidden');
+    showToast(t('storage.restoredDraft'));
+  }
+  async function refresh() {
+    const epoch = ++listEpoch;
+    $('document-history-status').textContent = t('storage.loading');
+    $('document-history-refresh').disabled = true;
+    try {
+      await flush();
+      const data = await request();
+      if (epoch !== listEpoch) return;
+      const list = $('document-history-list'); list.replaceChildren();
+      for (const entry of data.entries) {
+        const row = document.createElement('article'); row.className = 'document-history-row';
+        row.dataset.historyId = entry.id;
+        const title = document.createElement('strong'); title.textContent = entry.name;
+        const meta = document.createElement('p'); meta.className = 'hint';
+        meta.textContent = t('storage.kind.' + entry.kind) + ' · ' + new Date(entry.created).toLocaleString() + ' · ' + Math.ceil(entry.bytes / 1024) + ' KB';
+        const path = document.createElement('p'); path.className = 'hint'; path.textContent = entry.path || t('storage.unsaved');
+        row.append(title, meta, path);
+        const actions = document.createElement('div'); actions.className = 'document-history-actions';
+        const button = (label, action) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'tb-btn'; b.textContent = t(label);
+          b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { $('document-history-status').textContent = e.message; } finally { b.disabled = false; } };
+          actions.appendChild(b);
+        };
+        button('storage.openCopy', () => restore(entry.id, false));
+        const tab = getActiveTab();
+        if (state.editing && tab?.path && entry.path && normalizePath(tab.path) === normalizePath(entry.path)) button('storage.restoreEditor', () => restore(entry.id, true));
+        button('storage.delete', async () => {
+          if (!await confirmAction({ title: t('storage.delete'), message: t('storage.deleteConfirm'), confirmText: t('storage.delete'), cancelText: t('common.cancel') })) return;
+          await enqueue({ op: 'delete', id: entry.id }); await refresh();
+        });
+        row.appendChild(actions); list.appendChild(row);
+      }
+      $('document-history-status').textContent = data.entries.length ? t('storage.count', { count: data.entries.length }) : t('storage.empty');
+    } catch (e) { if (epoch === listEpoch) $('document-history-status').textContent = t('storage.recoveryFailed', { error: e.message }); }
+    finally { if (epoch === listEpoch) $('document-history-refresh').disabled = false; }
+  }
+  async function open() {
+    ensureModal();
+    $('document-history-title').textContent = t('storage.history');
+    $('document-history-policy').textContent = t('storage.policy');
+    $('document-history-close').setAttribute('aria-label', t('common.close'));
+    $('document-history-refresh').textContent = t('storage.refresh');
+    $('document-history-modal').classList.remove('hidden'); await refresh();
+  }
+  function init() {
+    if (initialized) return; initialized = true;
+    $('btn-document-history').addEventListener('click', open);
+    $('btn-document-copy').addEventListener('click', createCopy);
+    if (!window.__STARTUP_PROBE__) setTimeout(async () => {
+      try {
+        const data = await request();
+        const count = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
+        if (count) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count });
+      } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
+    }, 3000);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+    window.addEventListener('pagehide', () => flush());
+    // Idle maintenance also covers background dirty tabs. Never writes the original file.
+    setInterval(flush, 10000);
+  }
+  async function prepareClose() {
+    if (closing) return false;
+    closing = true;
+    try {
+      if (state.editing) syncActiveTabDirty();
+      await flush();
+      if (state.tabs.some(tab => tab.isDirty)) {
+        await closeAllTabs();
+        if (state.tabs.length) return false;
+      }
+      await queue;
+      window.ipc?.postMessage('readmd:quit');
+      return true;
+    } finally { closing = false; }
+  }
+  async function prepareInstall() {
+    if (state.editing) syncActiveTabDirty();
+    await flush();
+    if (state.tabs.some(tab => tab.isDirty)) {
+      await closeAllTabs();
+      if (state.tabs.some(tab => tab.isDirty)) return false;
+    }
+    await queue;
+    return true;
+  }
+  window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall };
+})();
+
+;
+'use strict';
 /* ============================================================
    ReadMD Features - Mobile LAN Sharing
    ============================================================ */
@@ -14352,6 +14813,27 @@ window.addEventListener('readmd:language-changed', () => {
 /* ---------------- 移动端共享 ---------------- */
 
 let qrLibraryLoader;
+let shareStatusEpoch = 0;
+const shareText = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+
+function shareBusy(busy) {
+  $('share-modal').setAttribute('aria-busy', String(busy));
+  if (busy) ['share-start', 'share-stop', 'share-refresh'].forEach(id => { $(id).disabled = true; });
+}
+
+function shareError(error) {
+  $('share-url').textContent = '';
+  $('share-token').textContent = '';
+  $('share-qr').textContent = shareText('audit.shareFailed', { error: error.message });
+  $('share-start').disabled = true;
+  $('share-stop').disabled = true;
+}
+
+async function shareResponse(response) {
+  const data = await response.json();
+  if (!response.ok || !data || data.ok === false || data.error) throw new Error(data?.error || data?.error_code || 'HTTP ' + response.status);
+  return data;
+}
 
 function loadQrLibrary() {
   if (typeof qrcode === 'function') return Promise.resolve();
@@ -14370,67 +14852,96 @@ function loadQrLibrary() {
 
 async function openShareModal() {
   $('share-modal').classList.remove('hidden');
-  refreshShareStatus();
+  return refreshShareStatus();
 }
 
 async function refreshShareStatus() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = ++shareStatusEpoch;
+  shareBusy(true);
   try {
     const r = await apiFetch('/api/share/status');
-    const d = await r.json();
+    const d = await shareResponse(r);
+    if (epoch !== shareStatusEpoch) return false;
+    if (typeof d.running !== 'boolean' || (d.running && (typeof d.url !== 'string' || !d.url))) throw new Error(_t('audit.invalidResponse'));
     if (d.running) {
+      const authenticated = new URL(d.url);
+      if (!['http:', 'https:'].includes(authenticated.protocol) || typeof d.token !== 'string' || !d.token) throw new Error(_t('audit.invalidResponse'));
+      authenticated.searchParams.set('token', d.token);
+      const url = authenticated.href;
       $('share-start').disabled = true;
       $('share-stop').disabled = false;
-      $('share-url').textContent = (_t('share.mobileUrlLabel') || '手机浏览器打开：') + d.url;
+      $('share-url').textContent = (_t('share.mobileUrlLabel') || '手机浏览器打开：') + url;
       $('share-token').textContent = (_t('share.tokenLabel') || '访问令牌：') + d.token;
-      await renderQr(d.url);
+      await renderQr(url, epoch);
     } else {
       $('share-start').disabled = false;
       $('share-stop').disabled = true;
       $('share-url').textContent = '';
       $('share-token').textContent = '';
       const q = $('share-qr');
-      q.innerHTML = '<p class="fix-note">' + (_t('share.notRunning') || '尚未开启共享') + '</p>';
+      q.textContent = _t('share.notRunning') || '尚未开启共享';
     }
-  } catch (e) { /* ignore */ }
+    return true;
+  } catch (e) {
+    if (epoch === shareStatusEpoch) shareError(e);
+    return false;
+  } finally {
+    if (epoch === shareStatusEpoch) {
+      shareBusy(false);
+      $('share-refresh').disabled = false;
+    }
+  }
 }
 
-async function renderQr(text) {
+async function renderQr(text, epoch = shareStatusEpoch) {
   const box = $('share-qr');
   box.innerHTML = '';
   try {
     await loadQrLibrary();
+    if (epoch !== shareStatusEpoch) return;
     const qr = qrcode(0, 'M');
     qr.addData(text);
     qr.make();
     box.innerHTML = qr.createImgTag(6, 10);
   } catch (e) {
-    box.textContent = text;
+    if (epoch === shareStatusEpoch) box.textContent = text;
   }
 }
 
 async function startShare() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  try {
-    const r = await apiFetch('/api/share/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current_file: state.file || null }),
-    });
-    const d = await r.json();
-    if (d.error) { showToast(d.error); return; }
-    showToast(_t('toast.shareStarted') || '共享已开启');
-  } catch (e) { showToast((_t('toast.shareStartFail') || '开启失败：') + e.message); }
-  refreshShareStatus();
+  return window.ReadMDTask.run('share-change', () => changeShare(true), { trigger: ['share-start', 'share-stop', 'share-refresh'] });
 }
 
 async function stopShare() {
+  return window.ReadMDTask.run('share-change', () => changeShare(false), { trigger: ['share-start', 'share-stop', 'share-refresh'] });
+}
+
+async function changeShare(start) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  ++shareStatusEpoch;
+  shareBusy(true);
   try {
-    await apiFetch('/api/share/stop', { method: 'POST' });
-    showToast(_t('toast.shareStopped') || '共享已关闭');
-  } catch (e) { showToast((_t('toast.shareStopFail') || '关闭失败：') + e.message); }
-  refreshShareStatus();
+    const r = await apiFetch(start ? '/api/share/start' : '/api/share/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_file: state.file || null,
+        current_content: (!state.file || (state.editing && hasUnsavedEditorChanges()))
+          ? (state.editing ? getEditContent() : (state.fixed ?? state.original ?? '')) : null,
+        language: window.i18n?.locale || 'en', theme: document.body.dataset.theme,
+        labels: { title: _t('share.title'), up: _t('audit.shareParent'), download: _t('audit.shareDownload') } }),
+    });
+    const data = await shareResponse(r);
+    if (data.ok !== true || data.running !== start) throw new Error(_t('audit.invalidResponse'));
+    showToast(_t(start ? 'toast.shareStarted' : 'toast.shareStopped'));
+    return true;
+  } catch (e) {
+    showToast(_t(start ? 'toast.shareStartFail' : 'toast.shareStopFail') + e.message);
+    return false;
+  } finally {
+    // Run after the task runner restores its trigger buttons.
+    setTimeout(() => refreshShareStatus(), 0);
+  }
 }
 
 
@@ -14445,10 +14956,24 @@ async function stopShare() {
 const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 let convertLastDir = null;
 
+function currentSpeechLanguage() {
+  try { return localStorage.getItem('readmd.transcribe.language') || 'auto'; }
+  catch (_) { return 'auto'; }
+}
+
+function initSpeechLanguage() {
+  const speech = $('convert-speech-language');
+  if (!speech) return;
+  speech.value = currentSpeechLanguage();
+  speech.onchange = () => { try { localStorage.setItem('readmd.transcribe.language', speech.value); } catch (_) {} };
+}
+
 async function openConvertModal() {
   const note = $('convert-note');
   if (note) note.textContent = state.win7 ? (_t('convert.noteWin7') || 'Win7 版仅支持 docx / pdf 转 Markdown；转换结果自动保存为源文件同目录同名 .md。') : (_t('convert.note') || '转换结果自动保存为源文件同目录同名 .md（如 report.docx → report.md）。docx 公式、PDF 表格走专用解析，其余格式自动回退通用转换；输出经过严格校验（表格 / 代码围栏 / 公式 / 图片引用）。');
   $('convert-modal').classList.remove('hidden');
+  initSpeechLanguage();
+  if (typeof batchFinished !== 'undefined' && !batchFinished && (batchJobId || Object.keys(batchRowsBySrc).length || (!batchOcrDone && $('convert-list').children.length))) return;
   $('convert-list').innerHTML = '';
   $('convert-status').textContent = '';
   $('batch-cancel')?.classList.add('hidden');
@@ -14456,8 +14981,6 @@ async function openConvertModal() {
 }
 
 function closeConvertModal() {
-  if (typeof stopBatchPoll === 'function') stopBatchPoll();
-  if (typeof setBatchTriggersBusy === 'function') setBatchTriggersBusy(false);
   $('convert-modal').classList.add('hidden');
 }
 
@@ -14486,7 +15009,7 @@ async function pickConvertFiles() {
 
 async function pickConvertFolder() {
   let dir = null;
-  try { dir = await py.choose_folder(); } catch (e) { dir = null; }
+  try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   try {
     const r = await apiFetch('/api/convert/collect?dir=' + encodeURIComponent(dir));
@@ -14697,24 +15220,39 @@ async function refreshPluginList() {
 let currentPluginCategory = 'all';
 let lastPluginsCache = {};
 let pluginTabsInitialized = false;
+let pluginInstalledOnly = false;
 
 function initPluginTabsOnce() {
   if (pluginTabsInitialized) return;
   const container = $('plugin-category-tabs');
   if (!container) return;
   pluginTabsInitialized = true;
+  $('plugin-search')?.addEventListener('input', () => renderPluginCards(lastPluginsCache));
+  $('plugin-installed-filter')?.addEventListener('click', () => {
+    pluginInstalledOnly = !pluginInstalledOnly;
+    $('plugin-installed-filter').setAttribute('aria-pressed', String(pluginInstalledOnly));
+    renderPluginCards(lastPluginsCache);
+  });
+  $('plugin-refresh')?.addEventListener('click', refreshPluginList);
+  container.addEventListener('keydown', e => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
+    const tabs = [...container.querySelectorAll('.plugin-tab-pill')], index = tabs.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    e.preventDefault(); tabs[next].click(); tabs[next].focus();
+  });
   container.addEventListener('click', (e) => {
     const btn = e.target.closest('.plugin-tab-pill');
     if (!btn) return;
     container.querySelectorAll('.plugin-tab-pill').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
     currentPluginCategory = btn.dataset.category || 'all';
-    container.querySelectorAll('.plugin-tab-pill').forEach(t => t.setAttribute('aria-selected', String(t === btn)));
+    container.querySelectorAll('.plugin-tab-pill').forEach(t => { t.setAttribute('aria-selected', String(t === btn)); t.tabIndex = t === btn ? 0 : -1; });
     renderPluginCards(lastPluginsCache);
   });
   container.querySelectorAll('.plugin-tab-pill').forEach(t => {
     t.setAttribute('role', 'tab');
     t.setAttribute('aria-selected', String(t.classList.contains('active')));
+    t.tabIndex = t.classList.contains('active') ? 0 : -1;
   });
 }
 
@@ -14751,6 +15289,7 @@ function getPluginIconSvg(id, category, capability) {
 // 每个错误码对应一个字面量 _t() 调用：key 只有在调用点写成字面量时
 // tools/check-i18n.mjs 才能静态校验，变量形式的 _t(key) 会绕过门禁。
 const PLUGIN_ERROR_TEXT = {
+  native_install_failed: () => _t('plugin.error.native_install_failed'),
   pip_network: () => _t('plugin.error.pip_network'),
   pip_timeout: () => _t('plugin.error.pip_timeout'),
   pip_permission: () => _t('plugin.error.pip_permission'),
@@ -14821,7 +15360,14 @@ function renderPluginCards(plugins) {
   initPluginTabsOnce();
   const grid = $('plugin-cards-grid');
   if (!grid) return;
+  const scrollTop = grid.scrollTop;
+  const focused = document.activeElement?.closest('[data-plugin-id]');
+  const focusId = focused?.dataset.pluginId, focusAction = focused ? document.activeElement?.dataset.action : null;
   grid.innerHTML = '';
+  const query = ($('plugin-search')?.value || '').trim().toLocaleLowerCase();
+  const all = Object.values(plugins);
+  const builtin = p => Boolean(p.native?.builtin && !p.native?.installable);
+  if ($('plugin-summary')) $('plugin-summary').textContent = _t('plugin.summary', { total: all.length, installed: all.filter(p => p.installed || builtin(p)).length, active: all.filter(p => p.enabled || builtin(p)).length });
 
   for (const [id, p] of Object.entries(plugins)) {
     if (!matchesPluginCategory(p, currentPluginCategory)) {
@@ -14831,8 +15377,10 @@ function renderPluginCards(plugins) {
     card.className = 'plugin-card' + (p.enabled ? ' is-enabled' : '');
     card.dataset.pluginId = id;
 
-    const title = translatePluginText('plugin.' + id + '.name', p.name || p.name_key || id);
-    const desc = translatePluginText('plugin.' + id + '.desc', p.desc_key);
+    const title = translatePluginText(p.native?.name_key || ('plugin.' + id + '.name'), p.name || p.name_key || id);
+    const desc = translatePluginText(p.native?.desc_key || ('plugin.' + id + '.desc'), p.desc_key);
+    if (pluginInstalledOnly && !p.installed && !builtin(p)) continue;
+    if (query && ![id, title, desc, p.category, p.capability].filter(Boolean).join(' ').toLocaleLowerCase().includes(query)) continue;
     const category = PLUGIN_CATEGORY_TEXT[p.category] ? PLUGIN_CATEGORY_TEXT[p.category]() : (p.category || '');
     const capName = PLUGIN_CAPABILITY_TEXT[p.capability] ? PLUGIN_CAPABILITY_TEXT[p.capability]() : (p.capability || '');
     const isCached = Boolean(p.installed && p.cached);
@@ -14840,6 +15388,7 @@ function renderPluginCards(plugins) {
     const isExclusive = Boolean(p.alternatives && p.alternatives.length > 0);
 
     const metaParts = [];
+    if (p.native?.installable) metaParts.push(p.native.engine ? _t('plugin.native.engine', { engine: p.native.engine }) : _t('plugin.native.unavailable'));
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
@@ -14887,7 +15436,7 @@ function renderPluginCards(plugins) {
         <button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>
       `;
       if (p.install_error_code) progressHtml = pluginErrorMarkup(p);
-    } else if (p.native && p.native.builtin) {
+    } else if (p.native && p.native.builtin && !p.native.installable) {
       // The Rust kernel already ships this capability; nothing to install.
       footLeft = `
         <div class="plugin-status-dot-indicator is-builtin">
@@ -14896,7 +15445,7 @@ function renderPluginCards(plugins) {
         </div>
       `;
       footRight = `<span class="plugin-builtin-note">${escapeHtml(_t('plugin.builtinHint'))}</span>`;
-    } else if (p.native && !p.native.builtin) {
+    } else if (p.native && !p.native.builtin && !p.native.installable) {
       // No native engine and no package installer in this build: say so
       // instead of offering an Install button that can only fail.
       footLeft = `
@@ -14964,7 +15513,13 @@ function renderPluginCards(plugins) {
 
     grid.appendChild(card);
   }
-  setPluginListStatus(grid.children.length ? '' : _t('plugin.emptyList'));
+  setPluginListStatus(grid.children.length ? '' : _t(query || pluginInstalledOnly ? 'plugin.noMatches' : 'plugin.emptyList'));
+  if ($('plugin-refresh')) $('plugin-refresh').disabled = pluginTogglePending;
+  grid.scrollTop = scrollTop;
+  if (focusId && focusAction) {
+    const card = [...grid.children].find(card => card.dataset.pluginId === focusId);
+    card?.querySelector('[data-action="' + focusAction + '"]')?.focus({ preventScroll: true });
+  }
 }
 
 async function setPluginToggle(id, enabled, name) {
@@ -14998,6 +15553,7 @@ async function setPluginToggle(id, enabled, name) {
     showToast(message);
   } finally {
     pluginTogglePending = false;
+    if ($('plugin-refresh')) $('plugin-refresh').disabled = false;
     document.querySelectorAll('#plugin-cards-grid input[data-action="toggle"]').forEach(input => { input.disabled = false; });
   }
 }
@@ -15096,6 +15652,11 @@ function batchT(k, p) {
 }
 
 function openBatchModal() {
+  if (isBatchRunning()) {
+    $('convert-modal')?.classList.remove('hidden');
+    return;
+  }
+  if (typeof initSpeechLanguage === 'function') initSpeechLanguage();
   stopBatchPoll();
   setBatchTriggersBusy(false);
   batchJobId = null;
@@ -15118,9 +15679,6 @@ function openBatchModal() {
 }
 
 function closeBatchModal() {
-  stopBatchPoll();
-  // Polling stops with the surface, so the lock must not outlive it.
-  setBatchTriggersBusy(false);
   $('convert-modal').classList.add('hidden');
 }
 
@@ -15171,8 +15729,27 @@ function countBatchRow(row, status) {
 }
 
 async function enqueueBatchFiles(paths, overwrite) {
-  const list = (paths || []).filter(p => typeof p === 'string' && p.trim());
-  if (!list.length) return;
+  if (isBatchRunning()) {
+    $('convert-modal')?.classList.remove('hidden');
+    showToast(batchT('batch.alreadyRunning'));
+    return;
+  }
+  const input = (paths || []).filter(p => typeof p === 'string' && p.trim());
+  const list = [];
+  // Selected/uploaded archives use the same guarded extractor as OS drops.
+  // Reserve the workbench during extraction, before either conversion lane.
+  setBatchTriggersBusy(true);
+  try {
+    for (const path of input) {
+      if (/\.zip$/i.test(path)) {
+        const result = await extractDroppedZip({ path, name: path.split(/[\\/]/).pop() });
+        if (!result || result.ok === false) return;
+        list.push(...(result.paths || []));
+      } else list.push(path);
+    }
+  } catch (error) { showToast(error.message); return; }
+  finally { setBatchTriggersBusy(false); }
+  if (!list.length) { if (input.length) showToast(batchT('convert.noConvertibleFiles')); return; }
   if (list.some(p => IMG_RE.test(p)) && moduleBlocked('ocr')) return;
   if (list.some(p => !IMG_RE.test(p)) && moduleBlocked('convert')) return;
   openBatchModal();
@@ -15199,7 +15776,7 @@ async function runBatchDocsLane(paths, overwrite) {
     if (!(await ensureModule('convert'))) throw new Error('convert_module_unavailable');
     const r = await apiFetch('/api/convert/batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true }),
+      body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true, language: typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto' }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error_code || ('http_' + r.status));
@@ -15277,8 +15854,7 @@ async function runBatchOcrLane(items) {
   }
   for (let i = 0; i < items.length; i++) {
     const [path, row] = items[i];
-    // 首项不检查取消标记：保证队列启动后至少处理一个任务，且取消语义可预期
-    if (i > 0 && batchOcrCanceled && !row.dataset.done) {
+    if (batchOcrCanceled && !row.dataset.done) {
       setBatchRow(row, 'canceled');
       countBatchRow(row, 'canceled');
       continue;
@@ -15363,7 +15939,7 @@ function isBatchRunning() {
 /** The pickers stay disabled while a batch is running (no parallel jobs). */
 function setBatchTriggersBusy(on) {
   batchActive = on;
-  ['convert-files', 'convert-folder'].forEach(id => {
+  ['convert-files', 'convert-folder', 'convert-speech-language', 'convert-overwrite'].forEach(id => {
     const el = $(id);
     if (!el) return;
     el.disabled = on;
@@ -16332,7 +16908,7 @@ function renderPetSettings(status) {
 
 const petPreviewImages = new Map();
 function paintPetPreview(element, slug = '', row = 0, frame = 0) {
-  if (!element) return;
+  if (!element || element.closest('.hidden')) return;
   const src = slug === 'bongocat' ? '/assets/pet/bongocat-preview.png' : !slug || slug === 'hermes' ? '/assets/pet/hermes-sprite.png' : `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
   element.dataset.petPreviewSource = src;
   let loading = petPreviewImages.get(src);
@@ -16362,7 +16938,7 @@ function updateCharacterPreview(rendererVal) {
   const isLive2d = rendererVal === 'live2d';
   const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
   const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-  if (charEl) {
+  if (charEl && !charEl.closest('.hidden')) {
     charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'is-sprite-anim', 'is-sprite-avatar');
     if (isLive2d) {
       charEl.classList.add('is-arch-chan', 'is-live2d');
@@ -16375,7 +16951,7 @@ function updateCharacterPreview(rendererVal) {
       charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
     }
   }
-  if (widgetCharEl) {
+  if (widgetCharEl && !widgetCharEl.closest('.hidden')) {
     widgetCharEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
     if (isLive2d) {
       widgetCharEl.classList.add('is-arch-chan', 'is-live2d');
@@ -17292,6 +17868,9 @@ async function refreshPetGallery() {
     }
   }
   function renderRoster() {
+    // Cache catalog/state at startup; build previews when settings is visible.
+    // Creating Image objects inside a hidden gallery downloads every sprite.
+    if (document.getElementById('pet-settings-modal')?.classList.contains('hidden')) return;
     const host = document.getElementById('pet-roster'); if (!host) return;
     const focused = host.contains(document.activeElement) ? document.activeElement.dataset : null;
     const focusedSlug = focused?.slug, focusedRenderer = focused?.renderer;
@@ -17753,6 +18332,10 @@ async function webToMd(url, crawl, forceRender) {
       if (authorization && authorization.ok) {
         options.privateGrant = authorization.grant;
         webRun.privateGrant = authorization.grant;
+      } else {
+        const error = new Error(authorization?.error || _t('web.authorizationFailed'));
+        error.code = authorization?.code || 'private_authorization_required';
+        throw error;
       }
     }
 
@@ -17901,12 +18484,20 @@ async function createFromClipboard() {
 
     const clipNamePrefix = _t('tabs.clipboard') || '剪贴板';
 
-    // 3. 如果剪贴板是富文本 HTML -> 优先通过 TurndownService 转换为 Markdown
-    if (clip.html && typeof TurndownService !== 'undefined') {
+    // 3. Convert rich clipboard content through the bundled Rust HTML parser.
+    if (clip.html) {
       try {
-        const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
-        const mdFromHtml = td.turndown(clip.html);
-        if (mdFromHtml && mdFromHtml.trim().length > (clip.text || '').trim().length) {
+        let mdFromHtml = '';
+        if (window.READMD_ENGINE === 'rust') {
+          const response = await apiFetch('/api/clipboard/convert-html', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: clip.html }) });
+          const result = await response.json();
+          if (response.ok && result.ok) mdFromHtml = result.content;
+        } else if (typeof TurndownService !== 'undefined') {
+          const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+          mdFromHtml = td.turndown(clip.html);
+        }
+        if (mdFromHtml && mdFromHtml.trim()) {
           const name = clipNamePrefix + '-' + new Date().toISOString().slice(0, 10) + '_' + String(Date.now()).slice(-4) + '.md';
           await renderVirtual('clipboard', name, '', mdFromHtml, []);
           showToast(_t('toast.clipHtmlConverted') || '已从剪贴板富文本转换为 Markdown（Ctrl+S 可保存）');
@@ -18155,9 +18746,7 @@ async function loadExportPresets() {
 
 function openExportModal() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const editorContent = typeof getEditContent === 'function' ? getEditContent() : '';
-  const exportContent = (state.editing ? editorContent : '') || state.original || state.fixed || '';
-  if (state.mode === 'welcome' || !exportContent) {
+  if (state.mode === 'welcome') {
     showToast(_t('toast.openDocumentToUse') || '');
     return;
   }
@@ -18172,18 +18761,18 @@ function openExportModal() {
   renderExportModal();
 }
 
-function closeExportModal() { $('export-modal').classList.add('hidden'); }
+function closeExportModal() { $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
 
 function currentExportContent() {
   if (state.editing) {
     if (typeof getEditContent === 'function') {
       const txt = getEditContent();
-      if (txt) return txt;
+      if (typeof txt === 'string') return txt;
     }
-    return ($('edit-area') && $('edit-area').value) || state.original || state.fixed || '';
+    return $('edit-area')?.value ?? '';
   }
-  if (state.mode === 'file') return state.original || state.fixed || '';
-  return state.fixed || state.original || '';
+  if (state.mode === 'file') return state.original ?? state.fixed ?? '';
+  return state.fixed ?? state.original ?? '';
 }
 function currentExportName() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -18722,6 +19311,130 @@ function paginateHtmlIntoExportSheets(fullHtml, opts = {}) {
   return pages.length > 0 ? pages : [fullHtml];
 }
 
+let nativeExportPreview = { generation: 0, signature: '', timer: null, controller: null, data: null, page: 1, pageCache: new Map(), blobUrl: '' };
+
+function cancelNativeExportPreview() {
+  nativeExportPreview.generation++;
+  clearTimeout(nativeExportPreview.timer);
+  nativeExportPreview.controller?.abort();
+  if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
+  nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.blobUrl = '';
+  $('export-preview-mini-page')?.classList.remove('is-native-preview');
+}
+
+function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
+  const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
+  const signature = JSON.stringify(payload);
+  if (nativeExportPreview.signature === signature) {
+    if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
+    return;
+  }
+  cancelNativeExportPreview();
+  const generation = nativeExportPreview.generation;
+  nativeExportPreview.signature = signature; nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
+  const mini = $('export-preview-mini-content');
+  if (mini) { mini.setAttribute('aria-busy', 'true'); mini.textContent = _t('export.previewGenerating'); }
+  $('export-preview-mini-page')?.classList.add('is-native-preview');
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = `${fmt.toUpperCase()} · ${presetName} · ${_t('export.previewGenerating')}`;
+  if (!$('export-preview-modal')?.classList.contains('hidden')) {
+    const wrapper = $('export-preview-modal').querySelector('.export-preview-paper-wrapper');
+    if (wrapper) { wrapper.textContent = _t('export.previewGenerating'); wrapper.setAttribute('aria-busy', 'true'); }
+  }
+  nativeExportPreview.timer = setTimeout(async () => {
+    const controller = new AbortController(); nativeExportPreview.controller = controller;
+    try {
+      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
+      const data = await response.json();
+      if (generation !== nativeExportPreview.generation) return;
+      if (!response.ok || !data.ok) throw new Error(data.error || _t('export.previewFailed'));
+      nativeExportPreview.data = data;
+      if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
+      if (!data.firstPage) {
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      }
+      renderNativeExportPreview(presetName, options);
+    } catch (error) {
+      if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
+      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + error.message; mini.setAttribute('aria-busy', 'false'); }
+      const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
+      if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }
+      nativeExportPreview.signature = '';
+    }
+  }, 300);
+}
+
+function renderNativeExportPreview(presetName, options) {
+  const data = nativeExportPreview.data;
+  if (!data) return;
+  const mini = $('export-preview-mini-content');
+  const miniPage = $('export-preview-mini-page');
+  if (miniPage) {
+    miniPage.classList.add('is-native-preview');
+    const viewport = miniPage.parentElement;
+    if (viewport) miniPage.style.transform = 'scale(' + Math.min(2.5, (viewport.clientWidth - 32) / 110, (viewport.clientHeight - 32) / 148) + ')';
+  }
+  const image = (png, className) => {
+    const img = document.createElement('img'); img.className = className;
+    img.src = 'data:image/png;base64,' + png; img.alt = _t('export.actualPreview'); return img;
+  };
+  const accessible = () => { const p = document.createElement('p'); p.className = 'export-preview-accessible'; p.textContent = data.text || ''; return p; };
+  if (mini) {
+    mini.replaceChildren(); mini.setAttribute('aria-busy', 'false');
+    if (data.firstPage) mini.appendChild(image(data.firstPage, 'export-native-page-image'));
+    else mini.appendChild(document.createTextNode(_t('export.actualPreview')));
+    mini.appendChild(accessible());
+  }
+  const pageText = _t('export.previewPagesMeta', { total: data.pages });
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = `${data.format.toUpperCase()} · ${options.page?.size || 'A4'} · ${pageText} · ${presetName}${data.mode === 'shared-layout' ? ' · ' + _t('export.docxLayoutReference') : ''}`;
+  let style = $('export-preview-dynamic-style');
+  if (!style) { style = document.createElement('style'); style.id = 'export-preview-dynamic-style'; document.head.appendChild(style); }
+  style.textContent = '';
+  const modal = $('export-preview-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  const wrapper = modal.querySelector('.export-preview-paper-wrapper');
+  if (!wrapper) return;
+  wrapper.setAttribute('aria-busy', 'false'); wrapper.replaceChildren();
+  const host = document.createElement('div'); host.id = 'export-preview-full-page';
+  const sheet = document.createElement('div'); sheet.className = 'export-preview-page-sheet export-native-sheet'; sheet.dataset.page = String(nativeExportPreview.page);
+  const dims = data.dimensions || [];
+  if (dims.length === 4) { sheet.style.width = (dims[2] - dims[0]) * 96 / 72 + 'px'; sheet.style.height = (dims[3] - dims[1]) * 96 / 72 + 'px'; }
+  const png = nativeExportPreview.pageCache.get(nativeExportPreview.page);
+  if (png) sheet.appendChild(image(png, 'export-native-page-image'));
+  else {
+    const frame = document.createElement('iframe'); frame.className = 'export-native-pdf-frame'; frame.title = _t('export.actualPreview');
+    frame.src = nativeExportPreview.blobUrl + '#page=' + nativeExportPreview.page + '&zoom=page-fit'; sheet.appendChild(frame);
+  }
+  sheet.appendChild(accessible()); host.appendChild(sheet); wrapper.appendChild(host);
+  const pagesMeta = $('export-preview-pages-meta');
+  if (pagesMeta) pagesMeta.textContent = `${nativeExportPreview.page} / ${data.pages}${data.mode === 'shared-layout' ? ' · ' + _t('export.docxLayoutReference') : ''}`;
+  const changePage = async delta => {
+    const page = Math.max(1, Math.min(data.pages, nativeExportPreview.page + delta));
+    if (page === nativeExportPreview.page) return;
+    const generation = nativeExportPreview.generation;
+    if (data.firstPage && !nativeExportPreview.pageCache.has(page)) {
+      wrapper.setAttribute('aria-busy', 'true');
+      try {
+        const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: data.key, page }) });
+        const result = await response.json();
+        if (generation !== nativeExportPreview.generation) return;
+        if (!response.ok || !result.ok) throw new Error(result.error || _t('export.previewFailed'));
+        nativeExportPreview.pageCache.set(page, result.png);
+      } catch (error) { if (generation === nativeExportPreview.generation) {wrapper.setAttribute('aria-busy', 'false'); showToast(error.message);} return; }
+    }
+    if (generation !== nativeExportPreview.generation) return;
+    nativeExportPreview.page = page; renderNativeExportPreview(presetName, options);
+  };
+  [['export-preview-prev-btn', -1], ['export-preview-next-btn', 1]].forEach(([id, delta]) => {
+    const button = $(id); if (!button) return;
+    button.classList.toggle('is-visible', data.pages > 1);
+    button.disabled = delta < 0 ? nativeExportPreview.page <= 1 : nativeExportPreview.page >= data.pages;
+    button.onclick = () => changePage(delta);
+  });
+}
+
 function updateExportLivePreview() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
@@ -18735,6 +19448,11 @@ function updateExportLivePreview() {
 
   const content = currentExportContent();
   const docTitle = currentExportName();
+  if (window.READMD_ENGINE === 'rust' && (fmt === 'pdf' || fmt === 'docx')) {
+    requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
+    return;
+  }
+  cancelNativeExportPreview();
 
   // 注入或更新动态样式表
   let styleEl = $('export-preview-dynamic-style');
@@ -19307,11 +20025,14 @@ function initExportAiDesigner() {
 }
 
 async function generateExportStyleWithAi(stylePrompt) {
+  const genButton = $('exp-ai-gen-btn');
+  if (genButton?.disabled) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!stylePrompt) {
     showToast(_t('exportai.placeholder') || '');
     return;
   }
+  if (genButton) genButton.disabled = true;
   const statusEl = $('exp-ai-status');
   if (statusEl) {
     statusEl.classList.remove('hidden');
@@ -19408,6 +20129,8 @@ async function generateExportStyleWithAi(stylePrompt) {
       statusEl.textContent = (_t('ai.reqFailMsg') || '') + e.message;
     }
     showToast((_t('toast.unknownError') || '') + e.message);
+  } finally {
+    if (genButton) genButton.disabled = false;
   }
 }
 
@@ -19427,11 +20150,44 @@ let updateInfo = null;
 let updateTimer = null;
 let isUpdating = false;
 let upgradeUrl = null;
+let updatePollPending = false;
+let updateStatusFailures = 0;
+let updateReadyFile = null;
+let updateJobEpoch = 0;
 
-async function checkUpdate(silent = true) {
+let updateCheckPromise = null;
+let updateRetryTimer = null;
+let updateCheckFailures = 0;
+function scheduleUpdateCheck(success) {
+  clearTimeout(updateRetryTimer);
+  updateCheckFailures = success ? 0 : Math.min(3, updateCheckFailures + 1);
+  const delay = success ? 6 * 60 * 60 * 1000 : [30000, 120000, 600000][updateCheckFailures - 1];
+  updateRetryTimer = setTimeout(() => checkUpdate(true), delay);
+}
+function checkUpdate(silent = true) {
+  if (window.__STARTUP_PROBE__ || isUpdating) return Promise.resolve();
+  if (updateCheckPromise) return updateCheckPromise.then(result => {
+    if (!silent) {
+      if (result?.has_update) openUpdateModal();
+      else if (!result?.ok) showToast(window.i18n.t(result?.error_code && result.error_code !== 'update_network_error' ? 'update.checkFail' : 'update.networkRetry'));
+      else showToast(window.i18n.t('update.latest', { ver:result.current_version, version:result.current_version }));
+    }
+    return result;
+  });
+  const button = $('btn-check-update');
+  if (button) { button.disabled = true; button.setAttribute('aria-busy', 'true'); }
+  updateCheckPromise = checkUpdateOnce(silent).finally(() => {
+    updateCheckPromise = null;
+    if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
+  });
+  return updateCheckPromise;
+}
+window.addEventListener('online', () => { clearTimeout(updateRetryTimer); updateRetryTimer = setTimeout(() => checkUpdate(true), 500); });
+async function checkUpdateOnce(silent = true) {
   if (window.__STARTUP_PROBE__) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   try {
+    if (navigator.onLine === false) { scheduleUpdateCheck(false); if (!silent) showToast(_t('update.networkRetry')); return {ok:false,error_code:'update_network_error'}; }
     let res = null;
     if (hasPy && py.check_update) {
       res = await py.check_update();
@@ -19440,17 +20196,19 @@ async function checkUpdate(silent = true) {
       res = await resp.json().catch(() => null);
     }
     if (!res || !res.ok) {
+      scheduleUpdateCheck(false);
       if (!silent) {
         let msg = _t('update.checkFail');
         if (res && res.error) {
           msg = _t('update.checkFail') + '：' + res.error;
         } else if (res && res.error_code === 'update_network_error') {
-          msg = _t('update.failed');
+          msg = _t('update.networkRetry');
         }
         showToast(msg);
       }
-      return;
+      return res;
     }
+    scheduleUpdateCheck(true);
     if (res && res.current_version) {
       if ($('status-version')) $('status-version').textContent = 'v' + res.current_version;
       if ($('menu-version-label')) $('menu-version-label').textContent = _t('update.currentVer', { ver: res.current_version }) || ('当前版本 v' + res.current_version);
@@ -19469,11 +20227,17 @@ async function checkUpdate(silent = true) {
         showToast(_t('update.foundNew', { ver: res.latest_version }) || ('发现新版本 ' + res.latest_version), 5000);
       }
     } else {
+      updateInfo = null; upgradeUrl = null;
+      $('status-update-badge')?.classList.add('hidden');
+      $('update-menu-dot')?.classList.add('hidden');
       const curVer = res.current_version || (typeof VERSION !== 'undefined' ? VERSION : (document.documentElement.getAttribute('data-version') || ''));
       if (!silent) showToast(_t('update.latest', { ver: curVer, version: curVer }) || ('当前已是最新版本 (v' + curVer + ')'));
     }
+    return res;
   } catch (e) {
-    if (!silent) showToast(_t('update.checkFail') + '：' + e.message);
+    scheduleUpdateCheck(false);
+    if (!silent) showToast(_t('update.networkRetry'));
+    return {ok:false,error_code:'update_network_error'};
   }
 }
 
@@ -19504,8 +20268,8 @@ function openUpdateModal() {
 
     $('update-asset-size').textContent = mb;
     const verifiable = !!updateInfo.asset.expected_sha;
-    $('btn-update-start').disabled = !verifiable;
-    $('btn-update-start').textContent = verifiable
+    $('btn-update-start').disabled = !verifiable || isUpdating;
+    $('btn-update-start').textContent = updateReadyFile ? _t('audit.updateInstallRetry') : verifiable
       ? (_t('update.installNow') || '立即下载并更新')
       : (_t('update.unverifiedPackage') || '无法验证更新包');
   } else {
@@ -19522,10 +20286,10 @@ function isUpdateDownloading() {
 }
 
 // Esc must not dismiss the dialog while a download is running.
-if (window.ReadMDModal) window.ReadMDModal.setGuard('update-modal', () => { if (isUpdating) { closeUpdateModal(); return false; } return true; });
+if (window.ReadMDModal) window.ReadMDModal.setGuard('update-modal', () => { if (isUpdating && updateStatusFailures < 3) { closeUpdateModal(); return false; } return true; });
 
 function closeUpdateModal() {
-  if (isUpdating) {
+  if (isUpdating && updateStatusFailures < 3) {
     const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
     showToast(_t('update.closeBlockedDownloading') || '更新正在下载，请先取消下载或等待完成');
     return;
@@ -19536,6 +20300,10 @@ function closeUpdateModal() {
 async function startUpdateDownload() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!updateInfo || !updateInfo.asset || isUpdating) return;
+  if (updateReadyFile) return applyReadyUpdate();
+  const epoch = ++updateJobEpoch;
+  updateStatusFailures = 0;
+  updatePollPending = false;
   const asset = updateInfo.asset;
   const useMirror = $('update-use-mirror') && $('update-use-mirror').checked;
   if (!asset.expected_sha) {
@@ -19569,6 +20337,7 @@ async function startUpdateDownload() {
         }),
       });
       startResult = await resp.json();
+      if (!resp.ok) throw new Error(startResult?.error || 'HTTP ' + resp.status);
       started = startResult && startResult.ok;
     }
 
@@ -19584,14 +20353,20 @@ async function startUpdateDownload() {
 
     if (updateTimer) clearInterval(updateTimer);
     updateTimer = setInterval(async () => {
+      if (updatePollPending || epoch !== updateJobEpoch) return;
+      updatePollPending = true;
+      try {
       let st = null;
       if (hasPy && py.get_download_status) {
         st = await py.get_download_status();
       } else {
         const resp = await fetch('/api/update/status');
-        if (resp.ok) st = await resp.json();
+        st = await resp.json();
+        if (!resp.ok) throw new Error(st?.error || 'HTTP ' + resp.status);
       }
-      if (!st) return;
+      if (epoch !== updateJobEpoch) return;
+      if (!st || st.ok === false || !['downloading', 'verifying', 'ready', 'error', 'cancelled', 'idle'].includes(st.status)) throw new Error(st?.error || _t('audit.invalidResponse'));
+      updateStatusFailures = 0;
 
       if (st.status === 'downloading') {
         const pct = st.percent || 0;
@@ -19606,29 +20381,21 @@ async function startUpdateDownload() {
       } else if (st.status === 'verifying') {
         $('update-progress-bar').setAttribute('aria-valuenow', '100');
         $('update-progress-fill').style.width = '100%';
-        $('update-progress-text').textContent = _t('update.verifying') || '正在校验文件完整性 (SHA256)…';
+        $('update-progress-text').textContent = _t('update.verifyingChecksum') || '正在校验文件完整性 (SHA256)…';
       } else if (st.status === 'ready') {
+        if (typeof st.target_file !== 'string' || !st.target_file.trim()) throw new Error(_t('audit.invalidResponse'));
         clearInterval(updateTimer);
         updateTimer = null;
         isUpdating = false;
+        updateReadyFile = st.target_file;
         $('update-progress-text').textContent = _t('update.downloadDone') || '下载校验完成！正在准备安装…';
         $('btn-update-start').textContent = _t('update.restarting') || '正在重启并安装…';
-        setTimeout(async () => {
-          if (hasPy && py.apply_update) {
-            await py.apply_update(st.target_file, updateInfo.flavor);
-          } else {
-            await fetch('/api/update/apply', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ file_path: st.target_file, flavor: updateInfo.flavor }),
-            });
-          }
-        }, 800);
+        setTimeout(() => { if (epoch === updateJobEpoch) applyReadyUpdate(); }, 800);
       } else if (st.status === 'error') {
         clearInterval(updateTimer);
         updateTimer = null;
         isUpdating = false;
-        $('update-progress-text').textContent = (_t('update.downloadFailPrefix') || '下载失败：') + (st.error || (_t('toast.unknownNetworkErr') || '未知网络错误'));
+        $('update-progress-text').textContent = (_t('update.downloadFailPrefix') || '下载失败：') + (st.error || _t('update.networkRetry'));
         $('btn-update-start').disabled = false;
         $('btn-update-start').textContent = _t('update.retryDownload') || '重试下载';
         $('btn-update-cancel').classList.add('hidden');
@@ -19640,6 +20407,13 @@ async function startUpdateDownload() {
         $('btn-update-start').disabled = false;
         $('btn-update-start').textContent = _t('update.redownload') || '重新下载';
         $('btn-update-cancel').classList.add('hidden');
+      }
+      } catch (error) {
+        if (epoch !== updateJobEpoch) return;
+        updateStatusFailures++;
+        $('update-progress-text').textContent = _t('audit.updateStatusFailed', { error: error.message });
+      } finally {
+        if (epoch === updateJobEpoch) updatePollPending = false;
       }
     }, 400);
 
@@ -19653,11 +20427,52 @@ async function startUpdateDownload() {
 }
 
 async function cancelUpdateDownload() {
+  return window.ReadMDTask.run('update-cancel', async () => {
+  try {
+  let result;
   if (hasPy && py.cancel_download) {
-    await py.cancel_download();
+    result = await py.cancel_download();
   } else {
-    await fetch('/api/update/cancel', { method: 'POST' });
+    const response = await apiFetch('/api/update/cancel', { method: 'POST' });
+    result = await response.json();
+    if (!response.ok) throw new Error(result?.error || 'HTTP ' + response.status);
   }
+  if (result === false || result?.ok === false) throw new Error(result?.error || window.i18n.t('audit.invalidResponse'));
+  return true;
+  } catch (error) { showToast(window.i18n.t('audit.updateCancelFailed', { error: error.message })); return false; }
+  }, { trigger: 'btn-update-cancel' });
+}
+
+async function applyReadyUpdate() {
+  if (!updateReadyFile || isUpdating) return;
+  isUpdating = true;
+  const _t = (key, params) => window.i18n.t(key, params);
+  $('btn-update-start').disabled = true;
+  $('btn-update-cancel').classList.add('hidden');
+  try {
+    let result;
+    if (window.ReadMDRecovery && !await window.ReadMDRecovery.prepareInstall()) {
+      $('update-progress-text').textContent = _t('update.keepDrafts');
+      $('btn-update-start').disabled = false;
+      $('btn-update-start').textContent = _t('audit.updateInstallRetry');
+      return;
+    }
+    if (hasPy && py.apply_update) result = await py.apply_update(updateReadyFile, updateInfo.flavor);
+    else {
+      const response = await apiFetch('/api/update/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: updateReadyFile, flavor: updateInfo.flavor }) });
+      result = await response.json();
+      if (!response.ok) throw new Error(result?.error || 'HTTP ' + response.status);
+    }
+    if (result !== true && result?.ok !== true) throw new Error(result?.error || _t('audit.invalidResponse'));
+    updateReadyFile = null;
+    if (result?.quit_required && hasPy) py.request_quit();
+  } catch (error) {
+    $('update-progress-text').textContent = _t('audit.updateApplyFailed', { error: error.message });
+    $('btn-update-start').textContent = _t('audit.updateInstallRetry');
+    $('btn-update-start').disabled = false;
+    showToast(_t('audit.updateApplyFailed', { error: error.message }));
+  } finally { isUpdating = false; }
 }
 
 
@@ -19708,7 +20523,7 @@ async function cancelUpdateDownload() {
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   });
-  const api = url => call(url);
+  const api = (url, opts) => call(url, opts);
   const HUES = [205, 275, 325, 165, 38, 120, 245, 190, 300, 15], WAVE = 170, TAU = Math.PI * 2;
   let modal, canvas, ctx, drawer, opener, tip, zoomOut, requestId = 0, backlinkRequest = 0;
   let nodes = [], edges = [], projected = [], byKey = new Map(), projMap = new Map();
@@ -20399,7 +21214,22 @@ async function cancelUpdateDownload() {
       updateVisibility(backlinkData.backlinks.length>0||backlinkData.forward_links.length>0||hasGraph());
     }catch(_){if(id===backlinkRequest){drawer.querySelector('#backlinks-content').textContent=t('ux.loadFailed');updateVisibility();}}
   }
-  function toggleDrawer(){if(!activeDoc())return;createDrawer();drawer.classList.toggle('hidden');if(!drawer.classList.contains('hidden')){refreshBacklinks(currentFile||state.file);drawer.querySelector('input').focus();}}
+  async function toggleDrawer(){
+    if(!activeDoc())return;createDrawer();drawer.classList.toggle('hidden');
+    if(!drawer.classList.contains('hidden')){
+      const file=currentFile||state.file, dir=file?.replace(/[\\/][^\\/]+$/, '');
+      drawer.querySelector('input').focus();
+      if(dir&&dir!==file){
+        drawer.querySelector('#backlinks-content').textContent=t('graph.loading');
+        try{
+          const bridge=window.pywebview?.api;
+          if(bridge?.index_directory_links)await bridge.index_directory_links(dir,false);
+          else await api('/api/links/index',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir,force:false})});
+        }catch(_){/* The previous index still remains readable. */}
+      }
+      if(!drawer.classList.contains('hidden'))await refreshBacklinks(file);
+    }
+  }
   const WIKILINK_RE=/\[\[([^\]\n|#]+)(?:#([^\]\n|]+))?(?:\|([^\]\n]+))?\]\]/;
   function hasGraph(content){if(typeof content==='string')return WIKILINK_RE.test(content);return activeDoc()&&WIKILINK_RE.test(state.fixed||state.original||'');}
   function updateVisibility(force){const btn=document.getElementById('btn-graph');if(btn){btn.disabled=!activeDoc();btn.classList.toggle('hidden',!activeDoc()||!(force??hasGraph()));}}
@@ -20568,6 +21398,7 @@ async function cancelUpdateDownload() {
   }
 
   function bindChrome() {
+    initWindowChrome();
     fillKbd();
     const contentEl = byId('content');
     if (contentEl) new MutationObserver(() => { if (byId('welcome')) fillKbd(contentEl); }).observe(contentEl, { childList: true });
@@ -20589,6 +21420,81 @@ async function cancelUpdateDownload() {
 
   window.ReadMDShell = { withThemeTransition };
 })();
+
+function syncWindowPreferences() {
+  if (!hasPy || !py.custom_titlebar || !py.window_control) return;
+  const t = key => window.i18n?.t(key) || key;
+  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')] });
+  $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
+  if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
+}
+function initWindowChrome() {
+  const actions = $('titlebar-actions');
+  if (!actions || actions.dataset.initialized) return;
+  actions.dataset.initialized = 'true';
+  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-more', 'more-menu']) {
+    if ($(id)) actions.appendChild($(id));
+  }
+  const title = $('window-title');
+  const native = !!(hasPy && py.custom_titlebar && py.window_control);
+  const command = (action, options) => { if (native) py.window_control(action, options); };
+  const updateTitle = () => {
+    title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
+    title.title = title.textContent;
+    command('title', { title: document.title });
+  };
+  new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true, characterData: true });
+  updateTitle();
+  // Keyboard access to global actions also reveals the document actions in zen mode.
+  actions.addEventListener('focusin', () => {
+    document.body.classList.remove('zen-toolbar-suppressed');
+    $('toolbar')?.classList.add('zen-toolbar-revealed');
+  });
+  actions.addEventListener('focusout', () => setTimeout(() => {
+    if (!actions.contains(document.activeElement)) $('toolbar')?.classList.remove('zen-toolbar-revealed');
+  }, 0));
+  if (!native) return;
+  document.body.classList.add('custom-titlebar');
+  $('window-controls').classList.remove('hidden');
+  $('btn-close-to-tray').classList.remove('hidden');
+  $('btn-app-exit').classList.remove('hidden');
+  $('window-minimize').onclick = () => command('minimize');
+  $('window-maximize').onclick = () => command('maximize');
+  $('window-close').onclick = () => command('close');
+  $('btn-app-exit').onclick = () => { closeMoreMenu(); py.request_quit(); };
+  $('btn-close-to-tray').onclick = async () => {
+    const previous = state.closeToTray; state.closeToTray = previous === false;
+    syncWindowPreferences();
+    if (!await saveSettings()) { state.closeToTray = previous; syncWindowPreferences(); }
+  };
+  const drag = $('window-drag-region');
+  let press = null;
+  drag.addEventListener('pointerdown', e => { if (e.button === 0) press = { x: e.screenX, y: e.screenY }; });
+  drag.addEventListener('pointermove', e => {
+    if (press && (e.buttons & 1) && Math.hypot(e.screenX - press.x, e.screenY - press.y) >= 4) { press = null; command('drag'); }
+  });
+  window.addEventListener('pointerup', () => { press = null; });
+  drag.addEventListener('dblclick', () => command('maximize'));
+  for (const edge of ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']) {
+    const handle = document.createElement('div'); handle.className = 'window-resize-edge edge-' + edge;
+    handle.setAttribute('aria-hidden', 'true');
+    handle.onpointerdown = e => { if (e.button === 0) { e.preventDefault(); command('resize', { edge }); } };
+    document.body.appendChild(handle);
+  }
+  window.__readmdWindowState = status => {
+    document.body.classList.toggle('window-maximized', !!status.maximized);
+    document.body.classList.toggle('window-fullscreen', !!status.fullscreen);
+    const button = $('window-maximize');
+    const label = window.i18n?.t(status.maximized ? 'window.restore' : 'window.maximize');
+    button.setAttribute('aria-label', label || 'Maximize'); button.title = label || '';
+    button.setAttribute('aria-pressed', String(!!status.maximized));
+    button.innerHTML = status.maximized ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M6 3v3h4v4h3"/><rect x="3" y="6" width="7" height="7"/></svg>' : '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>';
+    $('window-close').title = window.i18n?.t(status.trayAvailable && state.closeToTray !== false ? 'window.hide' : 'window.close') || '';
+    $('btn-close-to-tray').disabled = !status.trayAvailable;
+  };
+  syncWindowPreferences();
+  window.addEventListener('readmd:language-changed', syncWindowPreferences);
+}
 
 ;
 'use strict';
@@ -21268,6 +22174,7 @@ function bindEvents() {
   $('btn-share').addEventListener('click', openShareModal);
   $('share-start').addEventListener('click', startShare);
   $('share-stop').addEventListener('click', stopShare);
+  $('share-refresh').addEventListener('click', refreshShareStatus);
   $('share-close').addEventListener('click', () => { $('share-modal').classList.add('hidden'); });
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
@@ -21343,6 +22250,7 @@ function bindEvents() {
   if ($('style-modal-close')) $('style-modal-close').addEventListener('click', closeStyleModal);
   if ($('style-modal-cancel')) $('style-modal-cancel').addEventListener('click', closeStyleModal);
   if ($('style-modal-save')) $('style-modal-save').addEventListener('click', saveStyleModal);
+  if ($('style-load-retry')) $('style-load-retry').addEventListener('click', openStyleModal);
   if ($('style-custom-modal')) $('style-custom-modal').addEventListener('click', e => { if (e.target === $('style-custom-modal')) closeStyleModal(); });
 
   async function generateCustomStyleWithAi() {
@@ -21624,7 +22532,10 @@ function bindEvents() {
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); newDocument(); } // Ctrl+N: 新建文档
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); openWebDialog(); } // Ctrl+U: 网页抓取
     else if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); if (!$('btn-edit').disabled) toggleEdit(); } // Ctrl+E: 编辑模式
-    else if (mod && e.key.toLowerCase() === 's') { // Ctrl+S: 保存文档
+    else if (mod && e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+Shift+S: 另存为
+      e.preventDefault(); if (!$('btn-saveas').disabled) saveAs();
+    }
+    else if (mod && !e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+S: 保存文档
       if (state.editing) {
         e.preventDefault();
         saveEdit();
@@ -21644,10 +22555,6 @@ function bindEvents() {
       if (inField) return; // 输入框内放行浏览器原生粘贴
       e.preventDefault();
       createFromClipboard();
-    }
-    else if (mod && e.shiftKey && e.key.toLowerCase() === 's') { // Ctrl+Shift+S / Cmd+Shift+S: 即时行对齐
-      e.preventDefault();
-      if (window.alignEditorAndPreview) window.alignEditorAndPreview();
     }
     else if (mod && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); toggleSide('toc'); } // Ctrl+Shift+F: 目录大纲
     else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); toggleTheme(); } // Ctrl+D: 主题切换
@@ -21743,6 +22650,7 @@ function getModalFocusable(modal) {
 }
 
 function setupModalAccessibility() {
+  if (window.ReadMDModal) return;
   const modalOpeners = new Map();
   const openModalStack = [];
   document.addEventListener('keydown', event => {
@@ -21834,6 +22742,7 @@ async function init() {
   // 2. Cache the welcome skeleton, then attach input paths without waiting on preferences.
   if ($('content')) state.welcomeHtml = $('content').innerHTML;
   bindEvents();
+  window.ReadMDRecovery?.init();
   updateStatus();
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
@@ -21849,6 +22758,9 @@ async function init() {
   await loadSettings();
   if (window.i18n) await window.i18n.init();
   syncBuildVersionLabels();
+  if (hasPy && py.get_app_info) {
+    try { if ((await py.get_app_info()).last_update_error) showToast(window.i18n.t('update.replaceFailed'), 10000); } catch (_) {}
+  }
   refreshRecent();
   updateModuleUi();
 }
@@ -21897,10 +22809,28 @@ async function restoreLastFile() {
 /* ----------------------------------------------------------------------------------------------
    自定义样式与 Head 模态框逻辑
    ---------------------------------------------------------------------------------------------- */
+let styleLoadEpoch = 0;
+let styleLoaded = false;
+function styleFeedback(text, error = false) {
+  const el = $('style-load-status');
+  el.textContent = text;
+  el.classList.toggle('err', error);
+  $('style-load-retry').classList.toggle('hidden', !error);
+}
+
+function styleFieldsBusy(busy) {
+  $('style-custom-modal').setAttribute('aria-busy', String(busy));
+  $('style-custom-modal').querySelectorAll('input, textarea, .btn-preset, #style-ai-gen-btn, #style-modal-save').forEach(el => { el.disabled = busy; });
+}
+
 async function openStyleModal() {
   const modal = $('style-custom-modal');
   if (!modal) return;
+  const epoch = ++styleLoadEpoch;
+  styleLoaded = false;
   modal.classList.remove('hidden');
+  styleFieldsBusy(true);
+  styleFeedback(window.i18n.t('audit.loading'));
   try {
     let res;
     if (hasPy && py.get_custom_styles) {
@@ -21908,15 +22838,30 @@ async function openStyleModal() {
     } else {
       const r = await apiFetch('/api/style/get');
       res = await r.json();
+      if (!r.ok) throw new Error(res?.error || 'HTTP ' + r.status);
     }
-    if (res && res.ok && res.data) {
-      if ($('style-custom-css')) $('style-custom-css').value = res.data.css || '';
-      if ($('style-custom-head')) $('style-custom-head').value = res.data.head || '';
+    if (epoch !== styleLoadEpoch) return;
+    if (!res?.ok || !res.data || typeof res.data.css !== 'string' || typeof res.data.head !== 'string') throw new Error(res?.error || window.i18n.t('audit.invalidResponse'));
+    $('style-custom-css').value = res.data.css;
+    $('style-custom-head').value = res.data.head;
+    styleLoaded = true;
+    styleFeedback('');
+    styleFieldsBusy(false);
+  } catch (e) {
+    if (epoch === styleLoadEpoch) {
+      modal.setAttribute('aria-busy', 'false');
+      styleFeedback(window.i18n.t('audit.loadFailed', { error: e.message }), true);
     }
-  } catch (e) {}
+  }
 }
 
 async function saveStyleModal() {
+  if (!styleLoaded) return false;
+  return window.ReadMDTask.run('style-save', runSaveStyleModal, { trigger: 'style-modal-save' });
+}
+
+async function runSaveStyleModal() {
+  const epoch = styleLoadEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const css = $('style-custom-css') ? $('style-custom-css').value : '';
   const head = $('style-custom-head') ? $('style-custom-head').value : '';
@@ -21931,6 +22876,7 @@ async function saveStyleModal() {
         body: JSON.stringify({ css: css, head: head })
       });
       res = await r.json();
+      if (!r.ok) throw new Error(res?.error || 'HTTP ' + r.status);
     }
     if (res && res.ok) {
       showToast(_t('toast.savedSuccess'), 1500);
@@ -21941,16 +22887,20 @@ async function saveStyleModal() {
         document.head.appendChild(dynStyle);
       }
       dynStyle.textContent = css;
-      closeStyleModal();
+      if (epoch === styleLoadEpoch && $('style-custom-css').value === css && $('style-custom-head').value === head) closeStyleModal();
+      return true;
     } else {
-      showToast(_t('toast.saveFailedSimple'));
+      throw new Error(res?.error || _t('toast.saveFailedSimple'));
     }
   } catch (e) {
     showToast(_t('toast.saveFailed', { error: e.message }));
+    if (epoch === styleLoadEpoch) styleFeedback(_t('toast.saveFailed', { error: e.message }));
+    return false;
   }
 }
 
 function closeStyleModal() {
+  ++styleLoadEpoch;
   const modal = $('style-custom-modal');
   if (modal) modal.classList.add('hidden');
 }
@@ -21975,7 +22925,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 function updateUnloadGuard() {
-  const dirty = typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges();
+  const dirty = state.tabs.some(tab => tab.isDirty) || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
   window.onbeforeunload = dirty ? event => {
     event.preventDefault();
     event.returnValue = '';

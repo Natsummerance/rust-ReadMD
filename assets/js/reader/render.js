@@ -112,13 +112,13 @@ function openFileRename() {
 }
 
 
-async function loadFile(path, { force = false, browserCopy = null } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
   const existingTab = findTabByPath(path);
   const activeEditing = !!(existingTab && state.activeTabId === existingTab.id && state.editing);
   const activeDirty = activeEditing && hasUnsavedEditorChanges();
-  if (existingTab && (existingTab.isDirty || activeDirty)) {
+  if (existingTab && (existingTab.isDirty || activeDirty) && !discardConfirmed) {
     showToast(_t('toast.reloadBlockedDirty') || '未保存修改已保留，未重新加载外部更改');
     return;
   }
@@ -163,6 +163,7 @@ async function loadFile(path, { force = false, browserCopy = null } = {}) {
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
+      revision: d.revision || '',
       encoding: d.encoding,
       webAssets: [],
       is_code: d.is_code || false,
@@ -177,7 +178,7 @@ async function loadFile(path, { force = false, browserCopy = null } = {}) {
         ? state.pagination.currentPage
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
-      Object.assign(existingTab, fileFields, { isDirty: false });
+      Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
       if (wasActive) syncStateFromActiveTab();
       if (!wasActive) existingTab.scrollPos = previousScroll;
 
@@ -352,6 +353,10 @@ function transformAcademicCallouts(src) {
 
 /* Reader source pre-pass (footnote definitions); see reader/enhance.js. */
 function readerPrepare(src) {
+  // This must run before the first render, even while reader enhancements load.
+  // Blank metadata lines preserve the editor/preview source line mapping.
+  src = String(src || '').replace(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/, (block, fields) =>
+    /^[ \t]*[A-Za-z_][\w-]*[ \t]*:/m.test(fields) ? block.replace(/[^\r\n]/g, '') : block);
   return window.ReadMDReader && window.ReadMDReader.prepare ? window.ReadMDReader.prepare(src) : src;
 }
 
@@ -1331,7 +1336,7 @@ function bindCodeDocActions(content, name, lang) {
   }
   if (editBtn) {
     editBtn.addEventListener('click', () => {
-      if (typeof enterEdit === 'function') enterEdit();
+      if (typeof toggleEdit === 'function' && !state.editing) toggleEdit();
     });
   }
   if (aiBtn) {
@@ -1901,7 +1906,9 @@ window.renderAllCodeChunks = renderAllCodeChunks;
 async function persistCodeChunkOutput(card, outputText) {
   const sourceLine = Number(card && card.dataset && card.dataset.sourceLine);
   if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing) return false;
-  const current = getEditContent();
+  // Editor offsets count normalized newlines; preserve file line endings
+  // only when obtaining the save snapshot, not when calculating positions.
+  const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
   const lines = String(current || '').split('\n');
   const fenceStart = Math.max(0, Math.min(lines.length - 1, sourceLine - 1));
   if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
@@ -3030,6 +3037,8 @@ function openPath(p) {
 
 async function renderVirtual(source, name, dir, content, fixes, extras) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  // Import/AI results create another tab; keep the current editor draft intact.
+  if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();
   let cleanName = (name || '').trim();
   if (cleanName && !/\.md$/i.test(cleanName)) {
@@ -3052,14 +3061,16 @@ async function renderVirtual(source, name, dir, content, fixes, extras) {
     size: 0,
     mtime: 0,
     encoding: 'utf-8',
-    webAssets: source === 'url' ? (((extras || {}).assets) || []) : [],
+    webAssets: Array.isArray(extras?.assets) ? extras.assets.map(asset => ({ ...asset })) : [],
     originPath: (extras && extras.originPath) || state.file || null,
-    isDirty: source === 'clipboard' || source === 'ai',
+    isDirty: !['convert', 'ocr', 'url'].includes(source) && Boolean(content),
+    unsavedCreation: !['convert', 'ocr', 'url'].includes(source) && Boolean(content),
     scrollPos: 0,
     isVirtual: true,
   };
   window.invalidateDocumentLoads?.();
   state.tabs.push(newTab);
+  window.ReadMDRecovery?.schedule();
   state.activeTabId = newTab.id;
   syncStateFromActiveTab();
   setFixes(fixes || [], {});
@@ -3109,7 +3120,7 @@ async function convertFile(path, onExists) {
   busy(true);
   let d;
   try {
-    const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip');
+    const q = '/api/convert?p=' + encodeURIComponent(path) + '&on_exists=' + encodeURIComponent(onExists || 'skip') + '&language=' + encodeURIComponent(typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto') + (onExists ? '' : '&preview=1');
     const r = await apiFetch(q);
     d = await r.json().catch(() => ({}));
     if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
@@ -3154,17 +3165,18 @@ function showConvertWarns(warns) {
 }
 
 
-function loadFileDialog() {
+async function loadFileDialog() {
   if (hasPy) {
-    py.choose_file().then(p => {
+    try {
+      const p = await py.choose_file();
       if (p) {
         if (typeof CONVERT_BINARY_RE !== 'undefined' && CONVERT_BINARY_RE.test(p)) {
-          convertOrOcr(p, 'convert');
+          await convertOrOcr(p, 'convert');
         } else {
-          loadFile(p);
+          await loadFile(p);
         }
       }
-    });
+    } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
     return;
   }
   const input = $('file-input');
@@ -3172,9 +3184,11 @@ function loadFileDialog() {
   input.onchange = async () => {
     const f = input.files && input.files[0];
     if (!f) return;
-    const p = await uploadFile(f);
-    if (p && MD_RE.test(p)) loadFile(p, { browserCopy: true });
-    else if (p) convertOrOcr(p, 'convert');
+    try {
+      const p = await uploadFile(f);
+      if (p && MD_RE.test(p)) await loadFile(p, { browserCopy: true });
+      else if (p) await convertOrOcr(p, 'convert');
+    } catch (e) { showToast(window.i18n.t('audit.openFailed', { error: e.message })); }
   };
   input.click();
 }

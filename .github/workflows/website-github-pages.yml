@@ -5,13 +5,15 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/website-github-pages.yml"
-      - "showcase/reports/website_approval.json"
+      - "showcase/**"
+      - "docs/reviews/ui-function-inventory-2026-10-02/inventory.json"
       - "website/tools/validate-website.mjs"
       - "website/**"
   pull_request:
     paths:
       - ".github/workflows/website-github-pages.yml"
-      - "showcase/reports/website_approval.json"
+      - "showcase/**"
+      - "docs/reviews/ui-function-inventory-2026-10-02/inventory.json"
       - "website/tools/validate-website.mjs"
       - "website/**"
   workflow_dispatch:

@@ -108,8 +108,14 @@ impl WebViewHost {
         let drop_callback = callback;
         let drag_handler = move |event: DragDropEvent| {
             match &event {
-                DragDropEvent::Enter { .. } => drop_callback(RendererMessage::host("drop-hover",serde_json::json!({"active":true}))),
-                DragDropEvent::Leave => drop_callback(RendererMessage::host("drop-hover",serde_json::json!({"active":false}))),
+                DragDropEvent::Enter { .. } => drop_callback(RendererMessage::host(
+                    "drop-hover",
+                    serde_json::json!({"active":true}),
+                )),
+                DragDropEvent::Leave => drop_callback(RendererMessage::host(
+                    "drop-hover",
+                    serde_json::json!({"active":false}),
+                )),
                 _ => {}
             }
             if let DragDropEvent::Drop { paths, .. } = event {
@@ -271,7 +277,8 @@ fn asset_response(
     // mirrors `RustPetRuntime._safe_name`, refuses symlinked members the way
     // `_verify_tree` does, and caps a single served file.  The protocol must
     // not grow its own copy of these rules.
-    let router = crate::security::RendererAssetRouter::new(root).map_err(|error| error.to_string())?;
+    let router =
+        crate::security::RendererAssetRouter::new(root).map_err(|error| error.to_string())?;
     let candidate = router.serve(relative).map_err(|error| error.to_string())?;
     let bytes = std::fs::read(&candidate).map_err(|error| error.to_string())?;
     let content_type = match candidate

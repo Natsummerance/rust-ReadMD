@@ -10,6 +10,7 @@ pub mod bibtex;
 pub mod code_chunk_runner;
 pub mod codecs;
 pub mod content;
+pub mod document_history;
 pub mod convert;
 pub mod convert_ext;
 pub mod crypto;
@@ -19,6 +20,7 @@ pub mod import_processor;
 pub mod latex2omml;
 pub mod link_indexer;
 pub mod mdexport;
+pub mod native_diagrams;
 /// Shared pulldown-cmark AST for the DOCX / LaTeX / PDF exporters.
 pub mod md_ast;
 /// AST-based Markdown → LaTeX writer used by the LaTeX export.
@@ -66,6 +68,9 @@ pub mod readmd_fix;
 pub mod server;
 pub mod store;
 pub mod transcribe;
+pub mod speech;
+pub mod mail;
+pub mod export_preview;
 pub mod validators;
 pub mod version_spec;
 pub mod lan_guard;
@@ -85,6 +90,10 @@ pub mod toc_engine;
 pub mod source_map;
 pub mod epub_render;
 pub mod native_system;
+pub mod win_registry;
+pub mod update_install;
+#[cfg(all(windows, feature = "desktop"))]
+pub mod native_tray;
 
 pub mod pet_launcher;
 pub mod pet_probe;
@@ -99,6 +108,8 @@ pub mod formula_repair;
 pub mod export_styles;
 /// `src/readmd_modules/skill_import.py` — skill package import.
 pub mod skill_import;
+pub mod skill_workbench;
+pub mod conversation_history;
 /// `src/readmd_modules/ai.py` provider transports (skill_messages/chat_anthropic).
 pub mod ai_providers;
 /// `src/readmd_modules/mdexport/pdf_render.py` native PDF renderer.

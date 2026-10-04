@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "release": "V0.0.4",
+  "recorded_ui_sha256": "00c6774216e1177d60f936c2d7792b56ce0472788d5e1749189cb287da97963c",
+  "release_ui_sha256": "763dc0564e811863a4d93db741f07e6df392c96018e2efcd54475a93ae0b63d9",
+  "changes": [
+    {
+      "file": "assets/index.html",
+      "before_sha256": "a34b9ac1fc4bd5fe90bdd3dbdf3d12333c624fca9432263cf64d682cb6e4fb5f",
+      "after_sha256": "697e5d1f1309dd77d0c5a79d977c9d2f6e89c6243171d98028a7c98d2c622cad",
+      "reason": "Release version metadata only; captured pre-release UI is retained honestly",
+      "after_canonical_sha256": "7c15f054e280af4db88e331868a6c4f287a7ff91211ba65f641f4d716c4e2fe5"
+    }
+  ],
+  "release_ui_canonical_sha256": "519c8cdef5b39cf2145c096bd2138bd8fe757d2880c11faf550f6bf07ea5a915"
+}

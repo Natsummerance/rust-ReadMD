@@ -243,7 +243,9 @@ impl PetHost {
                     write_health(&health, &state, "degraded", code);
                 }
                 Event::UserEvent(UserEvent::DragStart) => {
-                    if state.lock_position { return; }
+                    if state.lock_position {
+                        return;
+                    }
                     if let Err(error) = backend.drag_window(&window) {
                         write_health(&health, &state, "degraded", &format_error(&error));
                     }
@@ -516,8 +518,19 @@ fn apply_snapshot(
         backend.set_bounds(window, bounds)?;
         state.bounds = backend.applied_bounds().unwrap_or(bounds);
     }
-    state.lock_position = snapshot.info.get("lock_position").and_then(Value::as_bool).unwrap_or(false);
-    backend.set_always_on_top(window, snapshot.info.get("always_on_top").and_then(Value::as_bool).unwrap_or(true))?;
+    state.lock_position = snapshot
+        .info
+        .get("lock_position")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    backend.set_always_on_top(
+        window,
+        snapshot
+            .info
+            .get("always_on_top")
+            .and_then(Value::as_bool)
+            .unwrap_or(true),
+    )?;
     backend.set_opacity(window, snapshot.opacity())?;
     state.visible = snapshot.visible && !snapshot.fullscreen;
     backend.set_visible(window, state.visible)?;
@@ -617,13 +630,20 @@ fn handle_renderer_message(
         "close" => {
             // Persist through the existing application command channel, so a
             // later preferences snapshot cannot restore a hidden pet.
-            publish(publisher, serde_json::json!({"type":"open-app","target":"hide-pet"}))?;
+            publish(
+                publisher,
+                serde_json::json!({"type":"open-app","target":"hide-pet"}),
+            )?;
             state.visible = false;
             backend.set_visible(window, false)?;
         }
-        "drop-hover" => webview.send_control(&serde_json::json!({"type":"drop-hover","active":payload["active"]}))?,
+        "drop-hover" => webview
+            .send_control(&serde_json::json!({"type":"drop-hover","active":payload["active"]}))?,
         "drop" => {
-            publish(publisher, serde_json::json!({"type":"drop","paths":payload.get("paths").cloned().unwrap_or(Value::Null)}))?;
+            publish(
+                publisher,
+                serde_json::json!({"type":"drop","paths":payload.get("paths").cloned().unwrap_or(Value::Null)}),
+            )?;
             webview.send_control(&serde_json::json!({"type":"drop-hover","active":false}))?;
             webview.send_control(&serde_json::json!({"type":"drop-received","count":payload["paths"].as_array().map(Vec::len).unwrap_or(0)}))?;
         }
@@ -687,7 +707,19 @@ fn handle_renderer_message(
                         .map(|items| items.iter().take(512).filter_map(value_rect).collect())
                         .unwrap_or_default();
                     state.interaction_generation = generation;
-                    state.pet_rects = control.get("petRects").or_else(|| control.get("rects")).and_then(Value::as_array).map(|items| items.iter().take(512).filter_map(value_rect).map(input_rect).collect()).unwrap_or_default();
+                    state.pet_rects = control
+                        .get("petRects")
+                        .or_else(|| control.get("rects"))
+                        .and_then(Value::as_array)
+                        .map(|items| {
+                            items
+                                .iter()
+                                .take(512)
+                                .filter_map(value_rect)
+                                .map(input_rect)
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     state.interaction_head =
                         control.get("head").and_then(value_rect).map(input_rect);
                     state.interaction_rects = rects
@@ -730,7 +762,19 @@ fn handle_renderer_message(
                 .map(|items| items.iter().take(512).filter_map(value_rect).collect())
                 .unwrap_or_default();
             state.interaction_generation = generation;
-            state.pet_rects = payload.get("petRects").or_else(|| payload.get("rects")).and_then(Value::as_array).map(|items| items.iter().take(512).filter_map(value_rect).map(input_rect).collect()).unwrap_or_default();
+            state.pet_rects = payload
+                .get("petRects")
+                .or_else(|| payload.get("rects"))
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .take(512)
+                        .filter_map(value_rect)
+                        .map(input_rect)
+                        .collect()
+                })
+                .unwrap_or_default();
             state.interaction_head = payload.get("head").and_then(value_rect).map(input_rect);
             state.interaction_rects = rects
                 .iter()
@@ -888,7 +932,9 @@ fn start_native_drag(
     _state: &mut HostState,
     _publisher: &DurableCommandPublisher,
 ) -> HostResult<()> {
-    if _state.lock_position { return Ok(()); }
+    if _state.lock_position {
+        return Ok(());
+    }
     backend.drag_window(window)?;
     // Other platforms retain their existing Tao drag/persistence path. Windows
     // publishes the final measured position after WM_EXITSIZEMOVE instead.

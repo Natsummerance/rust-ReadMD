@@ -75,6 +75,27 @@ pub struct Document {
 }
 
 impl Document {
+    /// Scalar, inline list or indented YAML list, without executing YAML tags.
+    pub fn meta_list(&self, key: &str) -> Vec<String> {
+        if let Some(value) = self.meta(key) {
+            return value.trim_matches(|c| c == '[' || c == ']').split(',')
+                .map(|s| s.trim().trim_matches(|c| c == '\'' || c == '"').to_string())
+                .filter(|s| !s.is_empty()).collect();
+        }
+        let mut found = false; let mut values = Vec::new();
+        for line in self.front_matter.as_deref().unwrap_or("").lines() {
+            if !found {
+                found = line.split_once(':').is_some_and(|(k,v)| k.trim().eq_ignore_ascii_case(key) && v.trim().is_empty());
+                continue;
+            }
+            if line.trim().is_empty() { continue; }
+            if !line.starts_with(char::is_whitespace) { break; }
+            if let Some(value) = line.trim().strip_prefix("- ") {
+                values.push(value.trim().trim_matches(|c| c == '\'' || c == '"').to_string());
+            }
+        }
+        values
+    }
     /// `title:` from the front matter, trimmed of quotes.
     pub fn meta(&self, key: &str) -> Option<String> {
         let fm = self.front_matter.as_deref()?;

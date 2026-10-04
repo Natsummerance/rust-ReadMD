@@ -213,7 +213,7 @@ async function loadAiPrompts() {
       return {
         id: old.id || s.id, skill_id: s.id, name: old.name || s.name,
         action: old.action || 'custom', user: old.user || '',
-        system: s.instructions || '', builtin: s.scope === 'builtin',
+        system: old.system || s.instructions || '', builtin: s.scope === 'builtin',
         scope: s.scope, metadata: s.metadata || {}, variables: s.variables || [],
         description: s.description || '', provenance: s.provenance || {},
         license: s.license || '', source_files: s.source_files || [],
@@ -541,7 +541,12 @@ function copyCurrentSkill() {
   const current = (state.ai.templates || []).find(x => x.id === $('tpl-id').value);
   if (!current) return;
   const base = String(current.skill_id || current.id || 'skill').replace(/[^a-z0-9-]/gi, '-').toLowerCase().replace(/^-+|-+$/g, '') || 'skill';
-  const copyId = (base + '-custom').slice(0, 64);
+  let copyId = base.slice(0, 57) + '-custom';
+  const existingIds = new Set((state.ai.templates || []).map(t => t.skill_id || t.id));
+  for (let n = 2; existingIds.has(copyId); n++) {
+    const suffix = '-custom-' + n;
+    copyId = base.slice(0, 64 - suffix.length) + suffix;
+  }
   selectTpl(null, true);
   $('tpl-id').value = copyId;
   $('tpl-name').value = current.name || copyId;
@@ -694,8 +699,12 @@ async function generateSkillDraft() {
 async function publishCurrentSkill() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const id = String($('tpl-id').value || '').trim();
-  const content = String($('tpl-system').value || '').trim();
+  let content = String($('tpl-system').value || '').trim();
   if (!id || !content) { showToast(_t('ai.aiError')); return; }
+  if (!/^---\r?\n/.test(content)) {
+    const description = String($('tpl-name').value || id).replace(/[\r\n]/g, ' ');
+    content = `---\nname: ${id}\ndescription: ${description}\n---\n\n${content}`;
+  }
   let evaluationToken = '';
   try {
     const evaluation = await apiFetch('/api/skills', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2077,6 +2086,8 @@ async function runAi(action) {
     isEditMode: Boolean(state.editing && window.cmView)
   } : null);
 
+  if (currentSelectionSnapshot) Object.assign(currentSelectionSnapshot, { tabId: state.activeTabId, name: state.sourceName,
+    path: state.file, dir: state.dir, generation: getActiveTab()?.editGeneration || 0 });
   state.ai.lastSelection = currentSelectionSnapshot;
   const isIncognito = $('ai-incognito').checked;
   const model = $('ai-model').value.trim() || (p.models || [''])[0] || '';
@@ -2511,6 +2522,10 @@ async function applyAi(targetResult, selectionContext) {
   if (!raw) return;
 
   const ctx = selectionContext || state.ai.lastSelection || null;
+  if (ctx && 'tabId' in ctx && (ctx.tabId !== state.activeTabId || (ctx.isContinue && ctx.generation !== (getActiveTab()?.editGeneration || 0)))) {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
+    showToast(_t('storage.aiSafeCopy')); return;
+  }
   const tpl = currentAiTemplate();
   const act = (tpl && tpl.action) || state.ai.lastAction || '';
   const tplId = (tpl && tpl.id) || '';
@@ -2633,9 +2648,15 @@ async function applyAi(targetResult, selectionContext) {
       insertText = (docLen > 0 ? sep : '') + raw;
     }
 
-    // 通过 CodeMirror 事务分发修改：自动进入撤回栈 (Ctrl+Z)，并触发 updateListener 标记未保存 (isDirty)
+    const view = cmView, tabId = state.activeTabId, previous = doc.toString();
+    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
+    if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== previous) {
+      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
+    }
+    // A bulk AI application is one independently undoable edit and never writes the source file.
     cmView.dispatch({
       changes: { from: insertFrom, to: insertTo, insert: insertText },
+      annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
       selection: { anchor: insertFrom + insertText.length },
       scrollIntoView: true
     });
@@ -2672,6 +2693,11 @@ async function applyAi(targetResult, selectionContext) {
       to = val.length;
       insert = (val ? sep : '') + raw;
     }
+    const tabId = state.activeTabId;
+    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
+    if (state.activeTabId !== tabId || !state.editing || cmView || ta.value !== val) {
+      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
+    }
     ta.setRangeText(insert, from, to, 'end');
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+S 保存）');
@@ -2679,21 +2705,13 @@ async function applyAi(targetResult, selectionContext) {
 }
 
 async function saveAiAs() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!state.ai.raw) return;
-  const base = (state.sourceName || state.file || 'document').replace(/[\\/]/g, '_');
-  const suggested = base.replace(/\.[^.]+$/, '') + '.ai.md';
-  if (hasPy) {
-    const out = await py.save_as(state.ai.raw, suggested);
-    if (out) showToast((_t('toast.savedPrefix') || '') + out);
-  } else {
-    const blob = new Blob([state.ai.raw], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = suggested;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-  }
+  const content = state.ai.raw, origin = getActiveTab();
+  const name = getNextAiCopyTabName(origin?.name || state.sourceName || 'document.md');
+  return window.ReadMDTask.run('ai-save-copy', async () => {
+    await renderVirtual('ai', name, origin?.dir || '', content, [], { originPath: origin?.path, assets: origin?.webAssets || [] });
+    return saveAs();
+  });
 }
 
 window.addEventListener('readmd:language-changed', () => {

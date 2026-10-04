@@ -128,3 +128,4 @@ packages/readmd-hermes-pet-adapter/readmd-pet-windows/
 packages/readmd-pet-rust/target/
 
 ReadMD.exe
+/test-results-pagination/

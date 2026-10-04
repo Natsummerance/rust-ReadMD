@@ -14,21 +14,31 @@ async function openFolder() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.openFolderBrowserNotice') || '浏览器模式下请使用“打开文件”'); return; }
   let dir;
-  try { dir = await py.choose_folder(); } catch (e) { dir = null; }
+  try { dir = await py.choose_folder(state.folder || state.dir || ''); } catch (e) { dir = null; }
   if (!dir) return;
   await listFolder(dir);
 }
 
+let folderRequestEpoch = 0;
 async function listFolder(dir) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = ++folderRequestEpoch;
   try {
     const r = await apiFetch('/api/list?p=' + encodeURIComponent(dir));
     const d = await r.json();
+    if (epoch !== folderRequestEpoch) return false;
+    if (!r.ok || d.ok === false || typeof d.dir !== 'string' || !Array.isArray(d.files) || d.files.some(p => typeof p !== 'string')) {
+      throw new Error(d.error || 'HTTP ' + r.status);
+    }
     state.folder = d.dir;
     state.folderFiles = d.files || [];
     renderFolderList();
     showSide('files');
-  } catch (e) { showToast(_t('toast.readFolderFail') || '读取文件夹失败'); }
+    return true;
+  } catch (e) {
+    if (epoch === folderRequestEpoch) showToast((_t('toast.readFolderFail') || '读取文件夹失败') + ': ' + e.message);
+    return false;
+  }
 }
 
 

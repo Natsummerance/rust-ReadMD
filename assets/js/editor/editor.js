@@ -55,7 +55,9 @@ function createEditor(doc) {
   if (!window.ReadMDCodeMirror) return false;
   const CM = window.ReadMDCodeMirror;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const C = cmCompartments = {
+  const tab = getActiveTab();
+  const reusable = tab?.editorState?.doc.toString() === doc.replace(/\r\n?/g, '\n');
+  const C = cmCompartments = (reusable && tab.editorCompartments) || {
     theme: new CM.Compartment(), gutter: new CM.Compartment(),
     focus: new CM.Compartment(), typewriter: new CM.Compartment(),
   };
@@ -116,6 +118,7 @@ function createEditor(doc) {
       CM.EditorView.domEventHandlers({ mousedown: cmTaskMarkerClick }),
       CM.EditorView.updateListener.of(u => {
         if (u.docChanged) {
+          const tab = getActiveTab(); if (tab) tab.editGeneration = (tab.editGeneration || 0) + 1;
           schedulePreview();
           scheduleDocStatistics();
           if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
@@ -128,7 +131,9 @@ function createEditor(doc) {
       }),
     ],
   });
-  cmView = new CM.EditorView({ state: st, parent: $('edit-cm') });
+  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm') });
+  if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
+    C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
   applyEditorViewClasses();
   cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
@@ -742,6 +747,12 @@ const CODE_CHUNK_SAMPLES = {
   ruby: 'puts (1..5).map { |n| n ** 2 }.join(", ")'
 };
 
+function safeCodeFence(code) {
+  let length = 3;
+  for (const match of code.matchAll(/`+/g)) length = Math.max(length, match[0].length + 1);
+  return '`'.repeat(length);
+}
+
 function openCodeChunkModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -764,12 +775,14 @@ function insertCodeChunkFromModal() {
   const isPlot = $('code-chunk-opt-plot') ? $('code-chunk-opt-plot').checked : true;
   const isHide = $('code-chunk-opt-hide') ? $('code-chunk-opt-hide').checked : false;
   const code = ($('code-chunk-code') && $('code-chunk-code').value) || '';
+  if (!code.trim()) { showToast(window.i18n.t('audit.codeRequired')); $('code-chunk-code').focus(); return; }
 
   const flags = ['cmd=true'];
   if (isPlot && lang === 'python') flags.push('matplotlib=true');
   if (isHide) flags.push('hide=true');
 
-  const chunkMd = `\n\`\`\`${lang} {${flags.join(' ')}}\n${code.trim()}\n\`\`\`\n`;
+  const fence = safeCodeFence(code);
+  const chunkMd = `\n${fence}${lang} {${flags.join(' ')}}\n${code.trim()}\n${fence}\n`;
   closeCodeChunkModal();
 
   if (cmView) {
@@ -794,7 +807,7 @@ function openDiagramModal() {
   closeMdPopups();
   const typeSel = $('diagram-type');
   const codeArea = $('diagram-code');
-  if (typeSel && codeArea) {
+  if (typeSel && codeArea && !codeArea.value.trim()) {
     codeArea.value = DIAGRAM_SAMPLES[typeSel.value] || DIAGRAM_SAMPLES.plantuml;
   }
   $('diagram-modal').classList.remove('hidden');
@@ -809,7 +822,9 @@ function closeDiagramModal() {
 function insertDiagramFromModal() {
   const type = ($('diagram-type') && $('diagram-type').value) || 'plantuml';
   const code = ($('diagram-code') && $('diagram-code').value) || '';
-  const diagramMd = `\n\`\`\`${type}\n${code.trim()}\n\`\`\`\n`;
+  if (!code.trim()) { showToast(window.i18n.t('audit.codeRequired')); $('diagram-code').focus(); return; }
+  const fence = safeCodeFence(code);
+  const diagramMd = `\n${fence}${type}\n${code.trim()}\n${fence}\n`;
   closeDiagramModal();
 
   if (cmView) {
@@ -832,13 +847,21 @@ function closeDocImportModal() {
 }
 
 function insertDocImportFromModal() {
-  const path = ($('doc-import-path') && $('doc-import-path').value.trim()) || 'chapter1.md';
+  const path = ($('doc-import-path') && $('doc-import-path').value.trim()) || '';
   const mode = ($('doc-import-mode') && $('doc-import-mode').value) || 'markdown';
   const lines = ($('doc-import-lines') && $('doc-import-lines').value.trim()) || '';
+  if (!path || /["'\r\n]/.test(path)) {
+    showToast(window.i18n.t('audit.importPathInvalid')); $('doc-import-path').focus(); return;
+  }
+  const range = lines.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+  if (lines && (!range || !Number.isSafeInteger(+range[1]) || +range[1] < 1 || +range[1] > 4294967295 ||
+      (range[2] && (!Number.isSafeInteger(+range[2]) || +range[2] < +range[1] || +range[2] > 4294967295)))) {
+    showToast(window.i18n.t('audit.importLinesInvalid')); $('doc-import-lines').focus(); return;
+  }
 
   const opts = [];
   if (mode !== 'markdown') opts.push(`mode="${mode}"`);
-  if (lines) opts.push(`lines="${lines}"`);
+  if (lines) opts.push(`lines="${range[1]}${range[2] ? '-' + range[2] : ''}"`);
 
   const optStr = opts.length ? ` {${opts.join(' ')}}` : '';
   const importMd = `\n@import "${path}"${optStr}\n`;
@@ -878,6 +901,84 @@ async function browseDocImportFile() {
   if (input) { input.value = docImportRelativePath(picked); input.focus(); }
 }
 
+// Patch only fields controlled by this form; retain comments, bibliography,
+// custom keys and the remaining presentation options verbatim.
+function frontmatterParts(text) {
+  const match = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
+  return match && match.index === 0 ? { body: match[1].replace(/\r\n/g, '\n'), end: match[0].length } : { body: '', end: 0 };
+}
+
+function yamlFieldBlock(body, key, indent = '') {
+  const lines = body.split('\n');
+  const start = lines.findIndex(line => new RegExp('^' + indent + '(?:' + key + '|"' + key + '"|\'' + key + '\')\\s*:').test(line));
+  if (start < 0) return null;
+  let end = start + 1;
+  while (end < lines.length && (!lines[end].trim() || /^\s*#/.test(lines[end]) || lines[end].startsWith(indent + ' '))) end++;
+  return { lines, start, end, raw: lines[start].slice(lines[start].indexOf(':') + 1).trim() };
+}
+
+function yamlScalar(raw) {
+  if (raw.startsWith('"') || raw.startsWith("'")) {
+    const quote = raw[0];
+    for (let i = 1; i < raw.length; i++) {
+      if (quote === '"' && raw[i] === '\\') { i++; continue; }
+      if (raw[i] !== quote) continue;
+      if (quote === "'" && raw[i + 1] === "'") { i++; continue; }
+      if (quote === "'") return raw.slice(1, i).replace(/''/g, "'");
+      try { return JSON.parse(raw.slice(0, i + 1)); } catch (_) { return raw; }
+    }
+    return raw;
+  }
+  return raw.replace(/\s+#.*$/, '');
+}
+
+function yamlPatchField(body, key, value, indent = '') {
+  const field = yamlFieldBlock(body, key, indent);
+  const line = indent + key + ': ' + JSON.stringify(value);
+  if (!field) return body.replace(/\n*$/, '\n') + line + '\n';
+  // Leave trailing blank lines and comments outside the changed value block.
+  let end = field.end;
+  while (end > field.start + 1 && (!field.lines[end - 1].trim() || /^\s*#/.test(field.lines[end - 1]))) end--;
+  field.lines.splice(field.start, end - field.start, line);
+  return field.lines.join('\n');
+}
+
+function presentationYaml(body) {
+  const block = yamlFieldBlock(body, 'presentation');
+  if (!block) return '';
+  if (!block.raw || block.raw.startsWith('#')) {
+    const lines = block.lines.slice(block.start + 1, block.end);
+    const first = lines.find(line => line.trim() && !/^\s*#/.test(line));
+    const indent = first?.match(/^\s+/)?.[0] || '  ';
+    return lines.map(line => line.startsWith(indent) ? '  ' + line.slice(indent.length) : line).join('\n');
+  }
+  // Flow mappings keep their other entries, including nested values.
+  const raw = block.raw.replace(/\s+#.*$/, '');
+  if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error(window.i18n.t('audit.metadataComplex'));
+  const fields = []; let start = 1, depth = 0, quote = '', escaped = false;
+  for (let i = 1; i < raw.length; i++) {
+    const ch = raw[i];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (ch === '\\' && quote === '"') escaped = true;
+      else if (ch === quote) {
+        if (quote === "'" && raw[i + 1] === "'") i++; else quote = '';
+      }
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '[' || ch === '{') depth++;
+    else if (ch === ']' || (ch === '}' && i < raw.length - 1)) depth--;
+    else if ((ch === ',' && depth === 0) || i === raw.length - 1) {
+      const field = raw.slice(start, i).trim();
+      if (field && !/^(?:[\w-]+|"[^"\n]+"|'[^'\n]+')\s*:/.test(field)) throw new Error(window.i18n.t('audit.metadataComplex'));
+      if (field) fields.push('  ' + field);
+      start = i + 1;
+    }
+  }
+  if (quote || depth) throw new Error(window.i18n.t('audit.metadataComplex'));
+  return fields.join('\n') + '\n';
+}
+
+let frontmatterFormSnapshot = null;
 function openFrontmatterModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -885,10 +986,26 @@ function openFrontmatterModal() {
   const modal = $('frontmatter-modal');
   if (!modal) return;
 
-  if ($('fm-input-title')) {
-    const defTitle = (state.mode === 'file' && state.file) ? state.file.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : (_t('editor.docTitleDefault') || '');
-    $('fm-input-title').value = defTitle;
+  const doc = cmView ? cmView.state.doc.toString() : '';
+  const parts = frontmatterParts(doc);
+  let presentation;
+  try { presentation = presentationYaml(parts.body); } catch (e) { showToast(e.message); return; }
+  const defTitle = (state.mode === 'file' && state.file) ? state.file.split(/[\\/]/).pop().replace(/\.[^.]+$/, '') : (_t('editor.docTitleDefault') || '');
+  const fieldValue = (body, key, fallback, indent = '') => { const field = yamlFieldBlock(body, key, indent); return field ? yamlScalar(field.raw) : fallback; };
+  const values = {
+    title: fieldValue(parts.body, 'title', defTitle), author: fieldValue(parts.body, 'author', 'ReadMD User'),
+    theme: fieldValue(presentation, 'theme', 'black', '  '), transition: fieldValue(presentation, 'transition', 'slide', '  '),
+  };
+  for (const key of ['title', 'author']) $('fm-input-' + key).value = values[key];
+  for (const key of ['theme', 'transition']) {
+    const select = $('fm-select-' + key);
+    select.querySelectorAll('[data-custom]').forEach(option => option.remove());
+    if (![...select.options].some(option => option.value === values[key])) {
+      const option = new Option(values[key], values[key]); option.dataset.custom = 'true'; select.add(option);
+    }
+    select.value = values[key];
   }
+  frontmatterFormSnapshot = { doc, values };
   modal.classList.remove('hidden');
   setTimeout(() => { if ($('fm-input-title')) $('fm-input-title').focus(); }, 50);
 }
@@ -901,30 +1018,36 @@ function closeFrontmatterModal() {
 
 function insertFrontmatterFromModal() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const title = ($('fm-input-title') && $('fm-input-title').value.trim()) || (_t('editor.docTitleDefault') || '');
-  const author = ($('fm-input-author') && $('fm-input-author').value.trim()) || 'ReadMD User';
+  const title = $('fm-input-title')?.value.trim() || '';
+  const author = $('fm-input-author')?.value.trim() || '';
   const theme = ($('fm-select-theme') && $('fm-select-theme').value) || 'black';
   const transition = ($('fm-select-transition') && $('fm-select-transition').value) || 'slide';
 
-  const frontmatter = `---\ntitle: "${title}"\nauthor: "${author}"\npresentation:\n  theme: "${theme}"\n  transition: "${transition}"\n---\n\n`;
-  closeFrontmatterModal();
-
   if (cmView) {
     const currentDoc = cmView.state.doc.toString();
-    if (currentDoc.startsWith('---')) {
-      const secondDivider = currentDoc.indexOf('\n---', 3);
-      if (secondDivider !== -1) {
-        const endOfFm = currentDoc.indexOf('\n', secondDivider + 4);
-        const replaceLen = (endOfFm !== -1 ? endOfFm + 1 : secondDivider + 4);
-        cmView.dispatch({ changes: { from: 0, to: replaceLen, insert: frontmatter }, selection: { anchor: frontmatter.length } });
-        cmView.focus();
-        showToast(_t('toast.frontmatterUpdated') || '');
-        return;
-      }
+    if (frontmatterFormSnapshot && frontmatterFormSnapshot.doc !== currentDoc) { showToast(_t('audit.metadataChanged')); return; }
+    const parts = frontmatterParts(currentDoc);
+    let body = parts.body;
+    const values = { title, author, theme, transition };
+    for (const key of ['title', 'author']) {
+      if (!parts.end || values[key] !== frontmatterFormSnapshot?.values[key]) body = yamlPatchField(body, key, values[key]);
     }
-    cmView.dispatch({ changes: { from: 0, to: 0, insert: frontmatter }, selection: { anchor: frontmatter.length } });
+    if (!parts.end || theme !== frontmatterFormSnapshot?.values.theme || transition !== frontmatterFormSnapshot?.values.transition) {
+      let presentation;
+      try { presentation = presentationYaml(body); } catch (e) { showToast(e.message); return; }
+      for (const key of ['theme', 'transition']) {
+        if (!parts.end || values[key] !== frontmatterFormSnapshot?.values[key]) presentation = yamlPatchField(presentation, key, values[key], '  ');
+      }
+      const block = yamlFieldBlock(body, 'presentation');
+      const lines = block ? block.lines : body.replace(/\n*$/, '').split('\n');
+      lines.splice(block ? block.start : lines.length, block ? block.end - block.start : 0, 'presentation:', presentation.replace(/\n*$/, ''));
+      body = lines.join('\n');
+    }
+    const frontmatter = '---\n' + body.replace(/^\n|\n*$/g, '') + '\n---\n' + (parts.end ? '' : '\n');
+    cmView.dispatch({ changes: { from: 0, to: parts.end, insert: frontmatter }, selection: { anchor: frontmatter.length } });
+    closeFrontmatterModal();
     cmView.focus();
-    showToast(_t('toast.frontmatterInserted') || '');
+    showToast(_t(parts.end ? 'toast.frontmatterUpdated' : 'toast.frontmatterInserted') || '');
   }
 }
 
@@ -1155,11 +1278,13 @@ function initTableGridPicker() {
 
   for (let r = 1; r <= 10; r++) {
     for (let c = 1; c <= 10; c++) {
-      const cell = document.createElement('div');
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.setAttribute('aria-label', _t('editor.tableDimensions', { rows: r, cols: c }));
       cell.className = 'table-grid-cell' + (r <= 3 && c <= 3 ? ' highlight' : '');
       cell.dataset.row = r;
       cell.dataset.col = c;
-      cell.addEventListener('mouseenter', () => {
+      const highlight = () => {
         selectedRows = r;
         selectedCols = c;
         if (label) label.textContent = _t('editor.tableDimensions', { rows: r, cols: c }) || `${r} 行 × ${c} 列 表格`;
@@ -1168,9 +1293,17 @@ function initTableGridPicker() {
           const ec = +el.dataset.col;
           el.classList.toggle('highlight', er <= r && ec <= c);
         });
+      };
+      cell.addEventListener('mouseenter', highlight);
+      cell.addEventListener('focus', highlight);
+      cell.addEventListener('keydown', e => {
+        const move = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -10, ArrowDown: 10 }[e.key];
+        if (move === undefined) return;
+        e.preventDefault();
+        picker.children[Math.max(0, Math.min(99, (r - 1) * 10 + c - 1 + move))].focus();
       });
       cell.addEventListener('click', () => {
-        insertCustomTable(selectedRows, selectedCols);
+        insertCustomTable(r, c);
         closeTableModal();
       });
       picker.appendChild(cell);
@@ -1210,6 +1343,9 @@ function insertCustomTable(rows, cols) {
 
 let editAiCurrentResult = '';
 let editAiSelectionRange = null;
+let editAiRequestEpoch = 0;
+let editAiAborter = null;
+let editAiRunning = false;
 
 function openEditAiBar() {
   if (!state.editing || !cmView) return;
@@ -1234,6 +1370,13 @@ function openEditAiBar() {
 }
 
 function closeEditAiBar() {
+  ++editAiRequestEpoch;
+  editAiAborter?.abort();
+  editAiAborter = null;
+  editAiRunning = false;
+  const submit = $('edit-ai-submit');
+  if (submit) { submit.disabled = false; submit.classList.remove('btn-loading'); }
+  document.querySelectorAll('.edit-ai-act-chip').forEach(chip => { chip.disabled = false; });
   const bar = $('edit-ai-bar');
   if (bar) bar.classList.add('hidden');
   const preview = $('edit-ai-preview');
@@ -1266,6 +1409,10 @@ function switchEditAiToChatPanel() {
 window.switchEditAiToChatPanel = switchEditAiToChatPanel;
 
 async function runEditAiAction(act, customPrompt = '') {
+  if (editAiRunning || !state.editing || !cmView) return;
+  editAiRunning = true;
+  const epoch = ++editAiRequestEpoch;
+  const aborter = editAiAborter = new AbortController();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const preview = $('edit-ai-preview');
   const previewContent = $('edit-ai-preview-content');
@@ -1275,6 +1422,7 @@ async function runEditAiAction(act, customPrompt = '') {
   if (statusEl) statusEl.textContent = _t('editai.generating') || '';
   const submitBtn = $('edit-ai-submit');
   const chips = document.querySelectorAll('.edit-ai-act-chip');
+  ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = true; });
   if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); }
   chips.forEach(c => { c.disabled = true; });
 
@@ -1285,6 +1433,7 @@ async function runEditAiAction(act, customPrompt = '') {
     text: cmView ? cmView.state.sliceDoc(cmView.state.selection.main.from, cmView.state.selection.main.to) : ''
   };
   editAiSnapshot = {
+    tabId: state.activeTabId, name: state.sourceName, path: state.file, dir: state.dir,
     docText: currentDocStr,
     range: { ...range },
     hadSelection: range.from !== range.to && Boolean(range.text)
@@ -1316,7 +1465,9 @@ async function runEditAiAction(act, customPrompt = '') {
       if (statusEl) statusEl.textContent = _t('toast.noApiKeyNotice');
       return;
     }
+    if (epoch !== editAiRequestEpoch) return;
     const res = await apiFetch('/api/ai/chat', {
+      signal: aborter.signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1336,7 +1487,7 @@ async function runEditAiAction(act, customPrompt = '') {
           context: range.context || '',
           output_format: 'Markdown'
         },
-        messages: [{ role: 'user', content: userMessage }],
+        messages: [{ role: 'user', content: userMessage || 'Apply the requested editing action to the supplied Markdown.' }],
         stream: false
       })
     });
@@ -1357,6 +1508,7 @@ async function runEditAiAction(act, customPrompt = '') {
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
       const data = await res.json();
+      if (data.ok === false) throw new Error(data.error || _t('audit.invalidResponse'));
       resultText = data.content || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
     } else {
       const rawText = await res.text();
@@ -1377,26 +1529,44 @@ async function runEditAiAction(act, customPrompt = '') {
       resultText = chunks.length ? chunks.join('') : rawText;
     }
 
+    if (epoch !== editAiRequestEpoch) return;
+    if (!resultText.trim()) throw new Error(_t('audit.emptyAiResult'));
     editAiCurrentResult = resultText;
+    ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = false; });
     if (previewContent) {
       previewContent.textContent = resultText;
     }
     if (statusEl) statusEl.textContent = _t('editai.title') || '';
   } catch (err) {
+    if (epoch !== editAiRequestEpoch || err.name === 'AbortError') return;
     if (statusEl) statusEl.textContent = (_t('ai.reqFailMsg') || '') + err.message;
     if (previewContent) previewContent.textContent = err.message;
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
-    chips.forEach(c => { c.disabled = false; });
+    if (epoch === editAiRequestEpoch) {
+      editAiRunning = false;
+      editAiAborter = null;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
+      chips.forEach(c => { c.disabled = false; });
+    }
   }
 }
 
-function applyEditAiResult() {
+function preserveEditAiCopy() {
+  const result = editAiCurrentResult;
+  const origin = editAiSnapshot || {};
+  closeEditAiBar();
+  showToast(window.i18n.t('toast.appliedSelectionFallback'));
+  return renderVirtual('ai', getNextAiCopyTabName(origin.name || state.sourceName), origin.dir || '', result, [], { originPath: origin.path });
+}
+
+async function applyEditAiResult() {
+  if (editAiRunning) return;
   if (!cmView || !editAiCurrentResult) {
     closeEditAiBar();
     return;
   }
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
   const currentDoc = cmView.state.doc.toString();
   let from = 0, to = 0;
 
@@ -1404,7 +1574,7 @@ function applyEditAiResult() {
     const origText = editAiSnapshot.range.text;
     const snapFrom = editAiSnapshot.range.from;
     const snapTo = editAiSnapshot.range.to;
-    if (cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
+    if (snapFrom >= 0 && snapTo <= currentDoc.length && cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
       from = snapFrom;
       to = snapTo;
     } else {
@@ -1414,13 +1584,7 @@ function applyEditAiResult() {
         from = firstIdx;
         to = firstIdx + origText.length;
       } else {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        if (typeof renderVirtual === 'function' && typeof getNextAiCopyTabName === 'function') {
-          const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-          renderVirtual('ai', cleanName, state.dir || '', editAiCurrentResult, [], { originPath: state.file });
-        }
-        closeEditAiBar();
-        return;
+        return preserveEditAiCopy();
       }
     }
   } else {
@@ -1429,8 +1593,12 @@ function applyEditAiResult() {
     to = curSel ? curSel.to : 0;
   }
 
+  const view = cmView, tabId = state.activeTabId;
+  if (!await window.ReadMDRecovery?.checkpoint('ai_replace')) return;
+  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== currentDoc) return preserveEditAiCopy();
   cmView.dispatch({
     changes: { from, to, insert: editAiCurrentResult },
+    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
     selection: { anchor: from + editAiCurrentResult.length },
     scrollIntoView: true
   });
@@ -1438,15 +1606,21 @@ function applyEditAiResult() {
   showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
 }
 
-function insertEditAiResult() {
+async function insertEditAiResult() {
+  if (editAiRunning) return;
   if (!cmView || !editAiCurrentResult) {
     closeEditAiBar();
     return;
   }
+  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
   const sel = cmView.state.selection.main;
   const pos = sel ? sel.to : cmView.state.doc.length;
+  const view = cmView, tabId = state.activeTabId, before = cmView.state.doc.toString();
+  if (!await window.ReadMDRecovery?.checkpoint('ai_insert')) return;
+  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== before) return preserveEditAiCopy();
   cmView.dispatch({
     changes: { from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' },
+    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.insert'),
     selection: { anchor: pos + editAiCurrentResult.length + 2 }
   });
   closeEditAiBar();

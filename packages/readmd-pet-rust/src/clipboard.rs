@@ -193,7 +193,7 @@ pub fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let (width, height) = (width as u32, height as u32);
-    let stride = ((width as u64 * bit_count as u64 + 31) / 32 * 4) as usize;
+    let stride = ((width as u64 * bit_count as u64).div_ceil(32) * 4) as usize;
     let palette_entries = if indexed {
         if colors_used == 0 {
             1usize << bit_count
@@ -211,19 +211,30 @@ pub fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
     let bottom_up = raw_height > 0;
     let mut rgba = vec![0u8; (width as usize * height as usize) * 4];
     for y in 0..height as usize {
-        let source_row = if bottom_up { height as usize - 1 - y } else { y };
-        let row = &dib[bits_offset + source_row * stride..bits_offset + source_row * stride + stride];
+        let source_row = if bottom_up {
+            height as usize - 1 - y
+        } else {
+            y
+        };
+        let row =
+            &dib[bits_offset + source_row * stride..bits_offset + source_row * stride + stride];
         for x in 0..width as usize {
             let (r, g, b, a) = if bit_count == 32 {
                 let pixel = &row[x * 4..x * 4 + 4];
-                (pixel[2], pixel[1], pixel[0], if alpha_is_meaningful { pixel[3] } else { 255 })
+                (
+                    pixel[2],
+                    pixel[1],
+                    pixel[0],
+                    if alpha_is_meaningful { pixel[3] } else { 255 },
+                )
             } else if bit_count == 24 {
                 let pixel = &row[x * 3..x * 3 + 3];
                 (pixel[2], pixel[1], pixel[0], 255)
             } else {
                 let index = indexed_index(row, x, bit_count)? as usize;
                 let entry = index.min(palette_entries.saturating_sub(1)) * 4;
-                let color = dib.get(header_size as usize + entry..header_size as usize + entry + 4)?;
+                let color =
+                    dib.get(header_size as usize + entry..header_size as usize + entry + 4)?;
                 (color[2], color[1], color[0], 255)
             };
             let target = (y * width as usize + x) * 4;
@@ -343,7 +354,7 @@ fn hdrop_paths(bytes: &[u8]) -> Vec<String> {
 
 #[cfg(windows)]
 mod windows {
-    use super::{ClipboardCapture, dib_to_png, hdrop_paths, image_png_or_empty, utf16_to_string};
+    use super::{dib_to_png, hdrop_paths, image_png_or_empty, utf16_to_string, ClipboardCapture};
     use crate::protocol::MAX_CLIPBOARD_TEXT_BYTES;
     use windows_sys::Win32::Foundation::{HANDLE, HWND};
     use windows_sys::Win32::System::DataExchange::{
@@ -474,8 +485,8 @@ mod tests {
         assert_eq!(&top_down[12..16], b"IHDR");
         // A positive height stores row 0 last, so the visual rows swap.
         let bottom_up = dib_to_png(&dib_24bpp_top_down(&rows, 2, 2)).expect("encodable DIB");
-        let reversed = dib_to_png(&dib_24bpp_top_down(&[rows[1], rows[0]], 2, -2))
-            .expect("encodable DIB");
+        let reversed =
+            dib_to_png(&dib_24bpp_top_down(&[rows[1], rows[0]], 2, -2)).expect("encodable DIB");
         assert_ne!(bottom_up, top_down);
         assert_eq!(bottom_up, reversed);
     }
@@ -544,7 +555,10 @@ mod tests {
         }
         assert_eq!(
             hdrop_paths(&block),
-            vec!["C:\\notes\\a.md".to_string(), "C:\\notes\\b.txt".to_string()]
+            vec![
+                "C:\\notes\\a.md".to_string(),
+                "C:\\notes\\b.txt".to_string()
+            ]
         );
         let mut ansi = block.clone();
         ansi[16..20].copy_from_slice(&0i32.to_le_bytes());
@@ -585,7 +599,12 @@ mod tests {
         // These four keys are the complete set the authority reads
         // (`hermes_adapter.py:223-236`, `readmd.py:5754-5756`) and `type` must
         // be `clipboard`, never the renderer's `toggle-app`.
-        let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         keys.sort_unstable();
         assert_eq!(keys, vec!["image_png", "paths", "text", "type"]);
         assert_eq!(json["type"], "clipboard");
@@ -615,7 +634,12 @@ mod tests {
         // "nothing copied" from a malformed command
         // (`readmd.py:5758-5761`).
         let json = serde_json::to_value(ClipboardCommand::empty()).unwrap();
-        let mut keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         keys.sort_unstable();
         assert_eq!(keys, vec!["image_png", "paths", "text", "type"]);
         assert_eq!(json["type"], "clipboard");

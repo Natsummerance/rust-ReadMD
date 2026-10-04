@@ -52,7 +52,10 @@ test('editor opens with live preview and scroll sync on, and remembers the caret
   expect(await page.evaluate(() => [state.pvLayout, state.pvSync])).toEqual(['right', true]);
   await expect(page.locator('#preview-wrap')).toBeVisible();
   await page.evaluate(() => { cmView.dispatch({ selection: { anchor: 9 } }); });
-  await page.evaluate(() => toggleEdit());
+  await page.evaluate(() => { window.exitPreviewResult = toggleEdit(); });
+  await expect(page.locator('#close-confirm-modal')).toBeVisible();
+  await page.locator('#close-confirm-discard').click();
+  await page.evaluate(() => window.exitPreviewResult);
   await page.waitForFunction(() => !state.editing);
   await page.evaluate(() => toggleEdit());
   await page.waitForFunction(() => window.cmView);
@@ -76,6 +79,7 @@ test('welcome offers New document, and Ctrl+N opens a blank editor', async ({ pa
 });
 
 test('AI empty state shows six starters and a connect card when no key is set', async ({ page }) => {
+  await page.route('**/api/ai/config', r => r.fulfill({status:200,contentType:'application/json',body:'{"ok":true,"providers":[],"current":{}}'}));
   await page.evaluate(() => renderVirtual('clipboard', 'doc.md', '', '# Doc\n\nText.\n', []));
   await page.evaluate(() => toggleAiPanel());
   await expect(page.locator('#ai-output .ai-starter-grid button')).toHaveCount(6);

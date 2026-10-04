@@ -4,9 +4,14 @@ function median(values) {
   return [...values].sort((left, right) => left - right)[Math.floor(values.length / 2)];
 }
 
-test('welcome startup stays lightweight and interactive below one second', async ({ browser }, testInfo) => {
+test('welcome startup stays lightweight and interactive below one second', async ({ browser, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Startup budget is measured once on the desktop project.');
   const samples = [];
+  // Earlier persistence tests intentionally enable pets on the shared server.
+  // Restore the real default configuration rather than fetching and rewriting
+  // intercepted responses while a sample's browser context is closing.
+  const reset = await request.post('/api/pets/configure', { data: { enabled: false, in_app: true } });
+  expect(reset.ok()).toBe(true);
 
   for (let index = 0; index < 3; index += 1) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -34,12 +39,13 @@ test('welcome startup stays lightweight and interactive below one second', async
         domContentLoaded: navigation.domContentLoadedEventEnd,
         load: navigation.loadEventEnd,
         firstContentfulPaint: paint?.startTime ?? Number.POSITIVE_INFINITY,
-        transferredBytes: resources.reduce((total, entry) => total + (entry.decodedBodySize || entry.transferSize || 0), 0),
+        transferredBytes: resources.reduce((total, entry) => total + (entry.transferSize || entry.encodedBodySize || 0), 0),
         requestCount: resources.length,
       };
     });
     metrics.initialRequests = initialRequests;
     samples.push(metrics);
+    await page.unrouteAll({ behavior: 'wait' });
     await context.close();
   }
 
@@ -53,5 +59,6 @@ test('welcome startup stays lightweight and interactive below one second', async
   for (const sample of samples) {
     expect(sample.initialRequests.some(url => url.includes('/vendor/qrcode.min.js'))).toBe(false);
     expect(sample.initialRequests.some(url => url.includes('cdn.jsdelivr'))).toBe(false);
+    expect(sample.initialRequests.some(url => url.includes('/api/pets/thumb'))).toBe(false);
   }
 });

@@ -43,15 +43,15 @@
 
 ## 直接ダウンロード
 
-[Windows インストーラー](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMDSetup-v0.0.1.exe) ·
-[Windows ポータブル版](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-portable-v0.0.1.exe) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-arm64-v0.0.1.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-x64-v0.0.1.zip) ·
-[Linux AppImage](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-x86_64-v0.0.1.AppImage) ·
-[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-aarch64-v0.0.1.AppImage) ·
-[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_amd64.deb) ·
-[麒麟 V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_arm64.deb) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/SHA256SUMS.txt)
+[Windows インストーラー](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) ·
+[Windows ポータブル版](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) ·
+[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) ·
+[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) ·
+[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) ·
+[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
+[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) ·
+[麒麟 V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
+[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt)
 
 ## 3 ステップで開始
 
@@ -93,17 +93,13 @@ ReadMD は、長期間保管する資料で起こりやすい問題に取り組�
 
 | プラットフォーム | アーキテクチャ / 形式 | 直接ダウンロードリンク (GitHub Release) | 概要 |
 | :--- | :--- | :--- | :--- |
-| **Windows** | x64 (インストーラー) | [⬇️ **ReadMDSetup-v0.0.1.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMDSetup-v0.0.1.exe) | `.md` 関連付けを自動登録するセットアップ版 |
-| **Windows** | x64 (ポータブル版) | [⬇️ **ReadMD-portable-v0.0.1.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-portable-v0.0.1.exe) | インストール不要の単一実行ファイル |
-| **macOS** | Apple Silicon (M1〜M4) | [⬇️ **ReadMD-macos-arm64-v0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-arm64-v0.0.1.zip) | Apple Silicon Mac 向けネイティブビルド (Vision OCR 内蔵) |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64-v0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-x64-v0.0.1.zip) | Intel Mac 向けネイティブビルド (Vision OCR 内蔵) |
-| **Linux** | x86_64 (AppImage) | [⬇️ **ReadMD-linux-x86_64-v0.0.1.AppImage**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-x86_64-v0.0.1.AppImage) | インストール不要の Linux AppImage パッケージ |
-| **Linux** | ARM64 (AppImage) | [⬇️ **ReadMD-linux-aarch64-v0.0.1.AppImage**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-aarch64-v0.0.1.AppImage) | Phytium / Kunpeng など ARM64 端末向けパッケージ |
-| **Linux / 国産 OS** | Debian / Ubuntu / UOS / 麒麟 | [⬇️ **readmd_0.0.1_amd64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_amd64.deb) | Deb ネイティブインストールパッケージ |
-| ️ **麒麟 V10 / 飛騰** | ARM64 (aarch64) | [⬇️ **readmd_0.0.1_arm64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_arm64.deb) | ARM64 ネイティブ Deb パッケージ |
-| **VSCode 拡張** | VSIX パッケージ | [⬇️ **readmd-vscode-0.0.1.vsix**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd-vscode-0.0.1.vsix) | オフラインインストール用 VSIX 拡張機能 |
-| **MCP Server** | FastMCP stdio パッケージ | [⬇️ **readmd-mcp-server-0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd-mcp-server-0.0.1.zip) | Claude Desktop / Cursor 連携用 FastMCP パッケージ |
-| **チェックサム** | SHA-256 リスト | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/SHA256SUMS.txt) | 配布ファイルの整合性検証用チェックサム |
+| **Windows** | x64 (インストーラー) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) | `.md` 関連付けを自動登録するセットアップ版 |
+| **Windows** | x64 (ポータブル版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) | インストール不要の単一実行ファイル |
+| **macOS** | Apple Silicon (M1〜M4) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) | Apple Silicon Mac 向けネイティブビルド (Vision OCR 内蔵) |
+| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) | Intel Mac 向けネイティブビルド (Vision OCR 内蔵) |
+| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) | インストール不要の Linux tar.gz パッケージ |
+| **Linux / 国産 OS** | Debian / Ubuntu / UOS / 麒麟 | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) | Deb ネイティブインストールパッケージ |
+| **チェックサム** | SHA-256 リスト | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt) | 配布ファイルの整合性検証用チェックサム |
 
 ---
 

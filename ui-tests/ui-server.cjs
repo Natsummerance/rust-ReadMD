@@ -17,11 +17,12 @@ const http = require('node:http');
 const ROOT = path.resolve(__dirname, '..');
 
 function serverCommand(port, dataDir) {
-  const args = ['--no-window', '--port', String(port), '--data-dir', dataDir, '--assets', path.join(ROOT, 'assets')];
+  const args = ['--no-window', '--port', String(port), '--data-dir', dataDir, '--assets', process.env.READMD_ASSETS_DIR || path.join(ROOT, 'assets')];
+  if (process.env.READMD_WORKSPACE) args.push('--workspace', process.env.READMD_WORKSPACE);
   if (process.env.READMD_BIN) return { cmd: process.env.READMD_BIN, args };
   return {
     cmd: 'cargo',
-    args: ['run', '--quiet', '--release', '--manifest-path', path.join(ROOT, 'rust', 'Cargo.toml'), '-p', 'readmd-kernel', '--', ...args],
+    args: ['run', '--offline', '--locked', '--quiet', '--release', '--manifest-path', path.join(ROOT, 'rust', 'Cargo.toml'), '-p', 'readmd-kernel', '--', ...args],
   };
 }
 
@@ -49,17 +50,19 @@ async function startUiServer(port = Number(process.env.READMD_UI_PORT || 28473),
   const child = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', stdio, stdio], env: { ...process.env, READMD_DATA_DIR: dataDir } });
   let exited = false;
   child.on('exit', () => { exited = true; });
-  const stop = () => {
-    if (!exited) child.kill();
-    if (ownDir) fs.rmSync(dataDir, { recursive: true, force: true });
-  };
+  let stopping;
+  const stop = () => stopping ||= (async () => {
+    if (!exited) await new Promise(resolve => { child.once('exit', resolve); child.kill(); });
+    // SQLite must release its files before the isolated fixture is removed.
+    if (ownDir) await fs.promises.rm(dataDir, { recursive:true, force:true, maxRetries:10, retryDelay:200 });
+  })();
   try {
     await Promise.race([
       waitReady(port, timeoutMs),
       new Promise((_, reject) => child.on('exit', code => reject(new Error(`kernel exited early (${code})`)))),
     ]);
   } catch (e) {
-    stop();
+    await stop();
     throw e;
   }
   return { child, port, dataDir, stop };
@@ -71,8 +74,8 @@ if (require.main === module) {
   const port = Number(process.argv[2] || process.env.READMD_UI_PORT || 28473);
   startUiServer(port).then(s => {
     console.log(`ReadMD UI test server ready on ${port}`);
-    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { s.stop(); process.exit(0); });
-    s.child.on('exit', code => { s.stop(); process.exit(code ?? 0); });
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { s.stop().then(() => process.exit(0)); });
+    s.child.on('exit', code => { s.stop().then(() => process.exit(code ?? 0)); });
   }, e => {
     console.error(e.message);
     process.exit(1);

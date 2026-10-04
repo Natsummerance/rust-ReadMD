@@ -80,8 +80,7 @@ impl HealthWriter {
             .parent()
             .ok_or_else(|| "health_parent_missing".to_string())?;
         fs::create_dir_all(parent).map_err(|error| format!("health_mkdir:{error}"))?;
-        let bytes =
-            serde_json::to_vec(state).map_err(|error| format!("health_encode:{error}"))?;
+        let bytes = serde_json::to_vec(state).map_err(|error| format!("health_encode:{error}"))?;
         let temp = self.path.with_extension("json.tmp");
         let mut file = OpenOptions::new()
             .write(true)

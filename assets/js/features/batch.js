@@ -22,6 +22,11 @@ function batchT(k, p) {
 }
 
 function openBatchModal() {
+  if (isBatchRunning()) {
+    $('convert-modal')?.classList.remove('hidden');
+    return;
+  }
+  if (typeof initSpeechLanguage === 'function') initSpeechLanguage();
   stopBatchPoll();
   setBatchTriggersBusy(false);
   batchJobId = null;
@@ -44,9 +49,6 @@ function openBatchModal() {
 }
 
 function closeBatchModal() {
-  stopBatchPoll();
-  // Polling stops with the surface, so the lock must not outlive it.
-  setBatchTriggersBusy(false);
   $('convert-modal').classList.add('hidden');
 }
 
@@ -97,8 +99,27 @@ function countBatchRow(row, status) {
 }
 
 async function enqueueBatchFiles(paths, overwrite) {
-  const list = (paths || []).filter(p => typeof p === 'string' && p.trim());
-  if (!list.length) return;
+  if (isBatchRunning()) {
+    $('convert-modal')?.classList.remove('hidden');
+    showToast(batchT('batch.alreadyRunning'));
+    return;
+  }
+  const input = (paths || []).filter(p => typeof p === 'string' && p.trim());
+  const list = [];
+  // Selected/uploaded archives use the same guarded extractor as OS drops.
+  // Reserve the workbench during extraction, before either conversion lane.
+  setBatchTriggersBusy(true);
+  try {
+    for (const path of input) {
+      if (/\.zip$/i.test(path)) {
+        const result = await extractDroppedZip({ path, name: path.split(/[\\/]/).pop() });
+        if (!result || result.ok === false) return;
+        list.push(...(result.paths || []));
+      } else list.push(path);
+    }
+  } catch (error) { showToast(error.message); return; }
+  finally { setBatchTriggersBusy(false); }
+  if (!list.length) { if (input.length) showToast(batchT('convert.noConvertibleFiles')); return; }
   if (list.some(p => IMG_RE.test(p)) && moduleBlocked('ocr')) return;
   if (list.some(p => !IMG_RE.test(p)) && moduleBlocked('convert')) return;
   openBatchModal();
@@ -125,7 +146,7 @@ async function runBatchDocsLane(paths, overwrite) {
     if (!(await ensureModule('convert'))) throw new Error('convert_module_unavailable');
     const r = await apiFetch('/api/convert/batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true }),
+      body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true, language: typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto' }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error_code || ('http_' + r.status));
@@ -203,8 +224,7 @@ async function runBatchOcrLane(items) {
   }
   for (let i = 0; i < items.length; i++) {
     const [path, row] = items[i];
-    // 首项不检查取消标记：保证队列启动后至少处理一个任务，且取消语义可预期
-    if (i > 0 && batchOcrCanceled && !row.dataset.done) {
+    if (batchOcrCanceled && !row.dataset.done) {
       setBatchRow(row, 'canceled');
       countBatchRow(row, 'canceled');
       continue;
@@ -289,7 +309,7 @@ function isBatchRunning() {
 /** The pickers stay disabled while a batch is running (no parallel jobs). */
 function setBatchTriggersBusy(on) {
   batchActive = on;
-  ['convert-files', 'convert-folder'].forEach(id => {
+  ['convert-files', 'convert-folder', 'convert-speech-language', 'convert-overwrite'].forEach(id => {
     const el = $(id);
     if (!el) return;
     el.disabled = on;

@@ -1188,7 +1188,7 @@ pub fn export_tex(
             .and_then(|v| v.as_bool())
     };
     let defaults = crate::latex_writer::LatexOptions::default();
-    let lopts = crate::latex_writer::LatexOptions {
+    let mut lopts = crate::latex_writer::LatexOptions {
         title,
         author,
         date: doc.meta("date"),
@@ -1198,6 +1198,10 @@ pub fn export_tex(
         margin: opt_str(&["/tex/margin", "/latex/margin"]).unwrap_or(defaults.margin),
         use_ctex: tex_bool("useCtex"),
         toc: tex_bool("toc").unwrap_or(false),
+        bib_engine: opt_str(&["/tex/bibEngine", "/latex/bibEngine"])
+            .filter(|v| matches!(v.as_str(), "biblatex" | "natbib" | "bibtex"))
+            .unwrap_or_else(|| "biblatex".into()),
+        bibliography: Vec::new(),
     };
 
     // `<stem>.assets/` beside the output, created only if an image is copied.
@@ -1242,6 +1246,24 @@ pub fn export_tex(
         copied.borrow_mut().push((src.to_string(), rel.clone()));
         Some(rel)
     };
+    {
+        let root = Path::new(base_dir).canonicalize().ok();
+        for (index, name) in doc.meta_list("bibliography").iter().enumerate() {
+            let name = name.as_str();
+            if name.is_empty() { continue; }
+            let source = Path::new(base_dir).join(name).canonicalize().ok();
+            let source = source.filter(|p| root.as_ref().is_some_and(|r| p.starts_with(r)) && p.extension().is_some_and(|e| e.eq_ignore_ascii_case("bib")));
+            let Some(source) = source else {
+                warns.borrow_mut().push(format!("参考文献文件不可读取或超出文档目录：{name}"));
+                continue;
+            };
+            let target = format!("references{}.bib", index + 1);
+            match fs::create_dir_all(&assets_dir).and_then(|_| fs::copy(&source, assets_dir.join(&target))) {
+                Ok(_) => lopts.bibliography.push(format!("{assets_name}/{target}")),
+                Err(e) => warns.borrow_mut().push(format!("参考文献复制失败：{name}（{e}）")),
+            }
+        }
+    }
     let tex = crate::latex_writer::render_document(&doc, &lopts, &images);
 
     crate::content::write_bytes_atomic(out, tex.as_bytes())
@@ -4549,6 +4571,25 @@ mod tests {
         let content = fs::read_to_string(out_tex).unwrap();
         assert!(content.contains(r"\section{Academic Paper}"));
         assert!(content.contains(r"\begin{lstlisting}"));
+    }
+
+    #[test]
+    fn tex_bibliography_copies_local_resources_and_rejects_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("source");
+        fs::create_dir(&base).unwrap();
+        fs::write(base.join("refs.bib"), b"@book{alpha,title={Local reference}}\n").unwrap();
+        fs::write(dir.path().join("outside.bib"), b"outside reference").unwrap();
+        let target = dir.path().join("paper.tex");
+        let md = "---\nbibliography: [refs.bib, ../outside.bib, missing.bib]\n---\n\nA citation [@alpha].";
+        let result = export_tex(md, base.to_str().unwrap(), target.to_str().unwrap(),
+            &serde_json::json!({"tex":{"bibEngine":"biblatex"}}), "paper").unwrap();
+        let text = fs::read_to_string(target).unwrap();
+        assert!(text.contains(r"\autocite{alpha}"));
+        assert!(text.contains(r"\addbibresource{paper.assets/references1.bib}"));
+        assert_eq!(fs::read(base.join("refs.bib")).unwrap(), fs::read(dir.path().join("paper.assets/references1.bib")).unwrap());
+        assert!(!dir.path().join("paper.assets/references2.bib").exists());
+        assert_eq!(result.warns.unwrap().len(), 2);
     }
 
     // ------------------------------------------------------------ PDF (native)

@@ -27,7 +27,7 @@ mod imp {
         ColorManagementMode, ExifOrientationMode, SoftwareBitmap,
     };
     use windows::Media::Ocr::OcrEngine;
-    use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
+    use windows::Storage::Streams::{DataReader, DataWriter, InMemoryRandomAccessStream};
 
     fn init() {
         // S_FALSE / RPC_E_CHANGED_MODE are fine: the thread already has an apartment.
@@ -125,6 +125,32 @@ mod imp {
 
     pub fn available() -> bool {
         on_mta(|| engine().is_some()).unwrap_or(false)
+    }
+
+    /// Render a requested PDF page using the same OS renderer as scanned OCR.
+    pub fn render_pdf_page_png(bytes: &[u8], page_no: usize) -> Result<Vec<u8>, String> {
+        let data = bytes.to_vec();
+        on_mta(move || -> Result<Vec<u8>, String> {
+            let source = stream_of(&data).map_err(|e| e.to_string())?;
+            let doc = PdfDocument::LoadFromStreamAsync(&source).and_then(|op| op.join()).map_err(|e| e.to_string())?;
+            if page_no >= doc.PageCount().map_err(|e| e.to_string())? as usize { return Err("invalid_page_range".into()); }
+            let page = doc.GetPage(page_no as u32).map_err(|e| e.to_string())?;
+            let size = page.Size().map_err(|e| e.to_string())?;
+            let scale = (150.0_f64 / 72.0).min(1600.0 / (size.Width.max(size.Height) as f64).max(1.0));
+            let options = PdfPageRenderOptions::new().map_err(|e| e.to_string())?;
+            options.SetDestinationWidth((size.Width as f64 * scale).round().max(1.0) as u32).map_err(|e| e.to_string())?;
+            options.SetDestinationHeight((size.Height as f64 * scale).round().max(1.0) as u32).map_err(|e| e.to_string())?;
+            let png = InMemoryRandomAccessStream::new().map_err(|e| e.to_string())?;
+            page.RenderWithOptionsToStreamAsync(&png, &options).and_then(|op| op.join()).map_err(|e| e.to_string())?;
+            let length = png.Size().map_err(|e| e.to_string())?;
+            if length > 8 * 1024 * 1024 { return Err("pdf_page_too_large".into()); }
+            png.Seek(0).map_err(|e| e.to_string())?;
+            let reader = DataReader::CreateDataReader(&png).map_err(|e| e.to_string())?;
+            reader.LoadAsync(length as u32).and_then(|op| op.join()).map_err(|e| e.to_string())?;
+            let mut output = vec![0; length as usize];
+            reader.ReadBytes(&mut output).map_err(|e| e.to_string())?;
+            Ok(output)
+        })?
     }
 
     pub fn ocr_image_bytes(bytes: &[u8]) -> Result<Lines, String> {
@@ -232,6 +258,9 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::*;
+    pub fn render_pdf_page_png(_bytes: &[u8], _page_no: usize) -> Result<Vec<u8>, String> {
+        Err("pdf_renderer_unavailable".into())
+    }
     pub fn available() -> bool {
         false
     }
@@ -248,7 +277,7 @@ mod imp {
     }
 }
 
-pub use imp::{available, ocr_image_bytes, ocr_pdf_bytes};
+pub use imp::{available, ocr_image_bytes, ocr_pdf_bytes, render_pdf_page_png};
 
 #[cfg(test)]
 mod tests {

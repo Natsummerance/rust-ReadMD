@@ -29,6 +29,7 @@ pub const SOURCES: &[&str] = &[
     "js/editor/md-transforms.js",
     "js/editor/editor.js",
     "js/features/ai.js",
+    "js/features/document-history.js",
     "js/features/share.js",
     "js/features/convert.js",
     "js/features/batch.js",

@@ -17,6 +17,9 @@ use readmd_kernel::paths::AppPaths;
 use readmd_kernel::server;
 use readmd_kernel::App;
 
+#[cfg(feature = "desktop")]
+mod desktop_web;
+
 // Replication lane `port-registry-ffi-s14`: the Win32 registry / shell FFI that
 // replaced `install_association()`'s eight `reg add` children, its
 // `ie4uinit.exe -show`, and the WebView2 `reg query`.  The module lives in
@@ -2458,8 +2461,8 @@ fn associate_markdown(paths: &AppPaths) -> (bool, String) {
         // The eight `reg add` arguments of `readmd.py:6044-6055` as data: keys,
         // `/ve` (default value), `/t` types and `/d` payloads are all decided by
         // the pure planner, which is what the `win_registry` tests pin.
-        let writes =
-            win_registry::association_writes(&exe.to_string_lossy(), &icon_file);
+        let assets = paths.assets_dir.canonicalize().unwrap_or_else(|_| paths.assets_dir.clone());
+        let writes = win_registry::modern_association_writes_with_assets(&exe.to_string_lossy(), &icon_file, &assets.to_string_lossy());
         // Python runs every `reg add` through `subprocess.run(capture_output=True)`,
         // which looks at a non-zero exit code and discards it: only a failed
         // *spawn* raises, and only that raise turns into the returned error
@@ -2468,7 +2471,8 @@ fn associate_markdown(paths: &AppPaths) -> (bool, String) {
         // same swallow, one layer down.  Surfacing them would make the kernel
         // report failure for a state the authority reports as `True`, which is
         // why `_failures` is a binder and not a `?`.
-        let _failures = win_registry::apply(&writes);
+        let failures = win_registry::apply(&writes);
+        if !failures.is_empty() { return (false, "association_registration_failed".into()); }
         // Shell association/icon cache refresh (`readmd.py:6056-6059`).  The
         // `try/except: pass` around the `ie4uinit.exe -show` spawn swallowed
         // every failure it could report; `SHChangeNotify` has no failure
@@ -2478,7 +2482,8 @@ fn associate_markdown(paths: &AppPaths) -> (bool, String) {
         // `(True, "OK")` is what `install_association()` returns on every path
         // that reaches the end of its `try`, whether or not the individual
         // writes reported an error.
-        return (true, "OK".to_string());
+        let opened = readmd_kernel::native_system::shell_open(win_registry::DEFAULT_APPS_URI);
+        return (opened, if opened { "Choose ReadMD in Windows Default apps" } else { "association_settings_failed" }.to_string());
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -2907,7 +2912,7 @@ mod registry_ffi_tests {
 
     /// Text from `marker` up to the next column-zero `}` — i.e. one item body.
     fn item_body(marker: &str) -> String {
-        let text = source();
+        let text = source().replace("\r\n", "\n");
         let start = text.find(marker).unwrap_or_else(|| panic!("no {}", marker));
         let rest = &text[start..];
         let end = rest
@@ -3002,9 +3007,11 @@ use super::*;
 static NATIVE_DROPS: Mutex<std::collections::VecDeque<String>> = Mutex::new(std::collections::VecDeque::new());
 
 /// Wakes the `ControlFlow::Wait` loop when a drop is queued.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum HostEvent {
     Drop,
+    Web,
+    Window(String, serde_json::Value),
 }
 
 fn drop_payload(event: &wry::DragDropEvent) -> Option<String> {
@@ -3061,6 +3068,8 @@ fn build_webview<'a>(
     fullscreen: Arc<AtomicUsize>,
     proxy: tao::event_loop::EventLoopProxy<HostEvent>,
 ) -> wry::WebViewBuilder<'a> {
+    let render_proxy = proxy.clone();
+    let reader_origin = crate::desktop_web::origin(url);
     wry::WebViewBuilder::new_with_web_context(web_context)
         .with_url(url.to_string())
         // OS file drops carry real paths (the DOM only sees nameless blobs),
@@ -3083,15 +3092,29 @@ fn build_webview<'a>(
             }
         })
         .with_ipc_handler(move |request: wry::http::Request<String>| {
+            if crate::desktop_web::origin(&request.uri().to_string()) != reader_origin { return; }
             match request.body().as_str() {
                 "readmd:page-ready" => page_ready.store(true, Ordering::SeqCst),
-                "readmd:quit" => quit.store(true, Ordering::SeqCst),
-                "readmd:show-window" => show.store(true, Ordering::SeqCst),
+                "readmd:quit" => { quit.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
+                "readmd:show-window" => { show.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
                 "readmd:fullscreen-on" => {
                     fullscreen.store(FULLSCREEN_ENTER, Ordering::SeqCst)
                 }
                 "readmd:fullscreen-off" => fullscreen.store(FULLSCREEN_EXIT, Ordering::SeqCst),
-                _ => {}
+                _ => {
+                    if request.body().len() < 64 * 1024 && crate::desktop_web::origin(&request.uri().to_string()) == reader_origin {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) {
+                            if let Some(action) = value.get("readmd_window").and_then(serde_json::Value::as_str) {
+                                let _ = render_proxy.send_event(HostEvent::Window(action.to_string(), value));
+                                return;
+                            }
+                            if value.get("readmd_web").and_then(serde_json::Value::as_bool) == Some(true) {
+                                crate::desktop_web::QUEUE.lock().unwrap_or_else(|e| e.into_inner()).push_back(crate::desktop_web::Message::Reader(value));
+                                let _ = render_proxy.send_event(HostEvent::Web);
+                            }
+                        }
+                    }
+                }
             }
         })
 }
@@ -3113,6 +3136,10 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
 
     let event_loop = tao::event_loop::EventLoopBuilder::<HostEvent>::with_user_event().build();
     let drop_proxy = event_loop.create_proxy();
+    #[cfg(windows)] {
+        let proxy = drop_proxy.clone();
+        readmd_kernel::native_tray::set_wake(move || { let _ = proxy.send_event(HostEvent::Window("show".into(), serde_json::Value::Null)); });
+    }
     // `webview.create_window('ReadMD', url, width=1160, height=820,
     // min_size=(720,480), ..., background_color='#f7f7f5')`
     // (`readmd.py:6546-6549`).
@@ -3122,6 +3149,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         .with_background_color((0xf7, 0xf7, 0xf5, 255))
         .with_inner_size(LogicalSize::new(1160.0, 820.0))
         .with_min_inner_size(LogicalSize::new(720.0, 480.0));
+    #[cfg(windows)] { win_builder = win_builder.with_decorations(false); }
 
     let icon_bytes = include_bytes!("icon_32.bin");
     if let Ok(icon) = tao::window::Icon::from_rgba(icon_bytes.to_vec(), 32, 32) {
@@ -3207,11 +3235,33 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             // bit, so both sides only ever drift the way they already drift in
             // the Python app (an OS-level exit from borderless fullscreen).
             var nativeFullscreen = false;
+            var webSequence = 0, webPending = new Map();
+            window.__readmdWebResolve = function(message) {
+                const entry = webPending.get(message.id);
+                if (!entry) return;
+                clearTimeout(entry.timer); webPending.delete(message.id); entry.resolve(message.result);
+            };
+            function nativeWeb(op, args) {
+                const id = ++webSequence;
+                return new Promise(resolve => {
+                    const message = Object.assign({ readmd_web: true, id, op }, args || {});
+                    const timer = setTimeout(() => {
+                        webPending.delete(id); resolve({ok:false,code:'render_timeout'});
+                        if(op==='render'||op==='authorize') window.ipc.postMessage(JSON.stringify({readmd_web:true,id:++webSequence,op:'cancel',task:message.task}));
+                    }, Math.min(300000, message.timeout || (op==='authorize'?300000:25000)) + 3000);
+                    webPending.set(id, {resolve,timer});
+                    window.ipc.postMessage(JSON.stringify(message));
+                });
+            }
             window.pywebview = {
             api: {
-                choose_folder: async function() {
+                window_control: function(action, options) {
+                    window.ipc.postMessage(JSON.stringify(Object.assign({}, options || {}, {readmd_window:action})));
+                },
+                custom_titlebar: @@READMD_CUSTOM_TITLEBAR@@,
+                choose_folder: async function(initial_dir) {
                     try {
-                        const res = await fetch('/api/dialog/choose-folder', { method: 'POST', headers: bridgeHeaders(false) });
+                        const res = await fetch('/api/dialog/choose-folder', { method: 'POST', headers: bridgeHeaders(true), body: JSON.stringify({initial_dir:initial_dir||''}) });
                         const data = await res.json();
                         return data.path;
                     } catch(e) { return null; }
@@ -3252,7 +3302,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         return data.path;
                     } catch(e) { return null; }
                 },
-                save_as: async function(content, suggested, assets) {
+                save_as: async function(content, suggested, assets, options) {
                     try {
                         let bodyData;
                         if (assets !== undefined || (typeof content === 'string' && content.length > 50 && typeof suggested === 'string')) {
@@ -3262,14 +3312,19 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         } else {
                             bodyData = { content: content || '', suggested: suggested || 'document.md', assets: assets || [] };
                         }
+                        if (options) Object.assign(bodyData, options);
                         const res = await fetch('/api/dialog/save-as', {
                             method: 'POST',
                             headers: bridgeHeaders(true),
                             body: JSON.stringify(bodyData)
                         });
                         const data = await res.json();
-                        return data.path || null;
-                    } catch(e) { return null; }
+                        if (data.canceled) return null;
+                        if (!res.ok || data.ok !== true) {
+                            const error = new Error(data.error || data.error_code || ('HTTP ' + res.status)); error.details = data; throw error;
+                        }
+                        return options && options.result ? data : (data.path || null);
+                    } catch(e) { throw e; }
                 },
                 // `Api.save_file(path, content, encoding, expected_mtime=None)`
                 // (`readmd.py:4826`) forwards all four into `save_text_atomic`;
@@ -3309,7 +3364,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     try {
                         const res = await fetch('/api/system/assoc', { method: 'POST', headers: bridgeHeaders(false) });
                         const data = await res.json();
-                        return data.ok === true ? true : (data.error || false);
+                        return data;
                     } catch(e) { return false; }
                 },
                 authorize_clipboard_read: async function() {
@@ -3369,8 +3424,9 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 },
                 clear_recent: async function() {
                     try {
-                        await fetch('/api/recent/clear', { method: 'POST', headers: bridgeHeaders(false) });
-                        return true;
+                        const response = await fetch('/api/recent/clear', { method: 'POST', headers: bridgeHeaders(false) });
+                        const result = await response.json();
+                        return response.ok && result.ok === true;
             } catch(e) { return false; }
                 },
                 check_recent_status: async function(paths) {
@@ -3730,7 +3786,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     } catch(e) { return 'zh-CN'; }
                 },
                 get_app_info: async function() {
-                    return { version: '@@READMD_VERSION@@', engine: 'rust-wry', platform: '@@READMD_PLATFORM@@' };
+                    return { version: '@@READMD_VERSION@@', engine: 'rust-wry', platform: '@@READMD_PLATFORM@@', last_update_error: @@READMD_UPDATE_ERROR@@ };
                 },
                 check_upgrade: async function() {
                     return { ok: false };
@@ -3878,40 +3934,14 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         return await res.json();
                     } catch(e) { return { pending: false, paths: [] }; }
                 },
-                // R7 §M2.  Python's `Api.render_web_page(url, task_id,
-                // timeout_ms, interactive, private_grant, source_html)`
-                // (`readmd.py:4551`) really opens a *second* native reader window
-                // (`readmd.py:4587`) behind a network guard
-                // (`readmd.py:3874`) and hands back
-                // `{ok, html, final_url, defuddle, readability}`;
-                // `Api.authorize_private_web(url, task_id)` (`readmd.py:3828`)
-                // opens a login window and returns `{ok, grant}`.  The kernel has
-                // no such renderer -- `POST /api/web/extract` is a plain HTTP
-                // fetch, and the old shim's `{ok:true}` from it made
-                // `assets/js/features/web.js:107` proceed with
-                // `html: rendered.html || ''`, i.e. import an *empty* document
-                // while the diagnostics labelled `system-webview` as the engine
-                // that produced it.  That is worse than having no renderer, so
-                // `render_web_page`/`cancel_web_render` are deliberately not
-                // advertised: `web.js:93-98` is the front end's own
-                // "no dynamic renderer" guard and raises `render_unavailable`
-                // with the honest 该页面需要 JavaScript wording, exactly what the
-                // browser-mode client shows.  Cancellation still reaches the
-                // kernel, because `cancelWebTask()` (`web.js:141-147`) posts
-                // `/api/web/cancel {task_id}` itself.  The grant shims used to
-                // return the bare boolean `true`, which looks successful to a
-                // caller but carries no `ok`/`grant` member -- `web.js:172-175`
-                // reads `authorization.ok` then `authorization.grant`, so
-                // `options.privateGrant` stayed empty and 需要登录/内网页面 silently
-                // fell back to the unauthenticated fetch.  They now answer
-                // Python's object shape with an explicit `ok:false`, and
-                // `web.js:173` leaves the grant empty for the honest reason.
-                authorize_private_web: async function() {
-                    return { ok: false, code: 'renderer_unavailable' };
+                render_web_page: function(url, task, timeout, interactive, grant) {
+                    return nativeWeb('render', {url, task, timeout, interactive:!!interactive, grant:grant||'', label:window.i18n?window.i18n.t('web.capturePage'):'提取此页'});
                 },
-                revoke_private_web: async function() {
-                    return { ok: false, code: 'renderer_unavailable' };
+                cancel_web_render: function(task) { return nativeWeb('cancel', {task}); },
+                authorize_private_web: function(url, task) {
+                    return nativeWeb('authorize', {url, task, timeout:300000, label:window.i18n?window.i18n.t('web.authorizeSite'):'授权此站点'});
                 },
+                revoke_private_web: function(task) { return nativeWeb('revoke', {task}); },
                 // `Api.rename_file(self, path, new_stem)` (`readmd.py:4732`)
                 // receives a *stem*: `new_path = os.path.join(os.path.dirname(
                 // old_path), stem + os.path.splitext(old_path)[1])`, i.e. the
@@ -4051,6 +4081,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     // There is no `/api/system/quit` route in the kernel, so the
                     // old fetch() always 404'd; the IPC message reaches the event
                     // loop, which runs the shutdown tail and exits.
+                    if (window.ReadMDRecovery) return window.ReadMDRecovery.prepareClose();
                     try { window.ipc.postMessage('readmd:quit'); } catch(e) {}
                 }
             }
@@ -4062,9 +4093,12 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
     // have a single source of truth in the kernel, so splice them in here, and
     // `@@READMD_PROBE_MODE@@` carries Python's `_STARTUP_PROBE['enabled']`
     // (`readmd.py:4996`, `readmd.py:1540`) into the updater shim.
+    let update_error = serde_json::to_string(&readmd_kernel::update_install::take_result(&data_dir)).unwrap_or_else(|_| "null".into());
     let bridge_init_script = bridge_init_script
+        .replace("@@READMD_UPDATE_ERROR@@", &update_error)
         .replace("@@READMD_VERSION@@", server::VERSION)
         .replace("@@READMD_PLATFORM@@", std::env::consts::OS)
+        .replace("@@READMD_CUSTOM_TITLEBAR@@", if cfg!(windows) { "true" } else { "false" })
         .replace("@@READMD_PROBE_MODE@@", if probe.is_some() { "true" } else { "false" });
 
     let webview_dir = data_dir.join("webview");
@@ -4169,20 +4203,94 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
     let done = Arc::new(AtomicBool::new(false));
     let mut next_poll = Instant::now();
     let mut window_handle = Some(window);
-    event_loop.run(move |event, _target, control_flow| {
+    #[cfg(windows)]
+    let mut tray = {
+        let proxy = drop_proxy.clone();
+        readmd_kernel::native_tray::Tray::new(move |action| {
+            use readmd_kernel::native_tray::Action;
+            let action = match action { Action::Show => "show", Action::Open => "open", Action::Quit => "exit" };
+            let _ = proxy.send_event(HostEvent::Window(action.into(), serde_json::Value::Null));
+        })
+    };
+    let mut close_to_tray = true;
+    let mut renders = crate::desktop_web::Manager::new(&shared_url, &data_dir);
+    let render_proxy = drop_proxy.clone();
+    let render_wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || { let _ = render_proxy.send_event(HostEvent::Web); });
+    event_loop.run(move |event, target, control_flow| {
         if done.load(Ordering::SeqCst) {
             // `ControlFlow::Exit*` is sticky; stay out of the way.
             *control_flow = ControlFlow::Exit;
             return;
         }
         *control_flow = ControlFlow::Wait;
-        let closing = matches!(
-            event,
-            Event::WindowEvent { event: WindowEvent::CloseRequested { .. }, .. }
-        );
-        if !closing && !matches!(event, Event::MainEventsCleared) {
-            return;
+        if let Event::WindowEvent { window_id, event: WindowEvent::CloseRequested { .. }, .. } = &event {
+            if let Some(reader) = webview.as_ref() {
+                if renders.close_window(*window_id, reader) { return; }
+            }
         }
+        let mut closing = matches!(&event, Event::WindowEvent { window_id, event: WindowEvent::CloseRequested { .. }, .. }
+            if window_handle.as_ref().is_some_and(|w| w.id() == *window_id));
+        if let Event::UserEvent(HostEvent::Window(action, options)) = &event {
+            if let Some(window) = window_handle.as_ref() {
+                match action.as_str() {
+                    "minimize" => window.set_minimized(true),
+                    "title" => { if let Some(title) = options.get("title").and_then(serde_json::Value::as_str).filter(|s| s.len() < 1024) { window.set_title(title); } },
+                    "maximize" => window.set_maximized(!window.is_maximized()),
+                    "drag" => { let _ = window.drag_window(); },
+                    "resize" => {
+                        use tao::window::ResizeDirection::*;
+                        let direction = match options.get("edge").and_then(serde_json::Value::as_str) {
+                            Some("n") => Some(North), Some("ne") => Some(NorthEast), Some("e") => Some(East), Some("se") => Some(SouthEast),
+                            Some("s") => Some(South), Some("sw") => Some(SouthWest), Some("w") => Some(West), Some("nw") => Some(NorthWest), _ => None,
+                        };
+                        if !window.is_maximized() { if let Some(edge) = direction { let _ = window.drag_resize_window(edge); } }
+                    }
+                    "close" => closing = true,
+                    "show" | "open" | "exit" => {
+                        window.set_visible(true); window.set_minimized(false); window.set_focus();
+                        if let Some(reader) = webview.as_ref() {
+                            let script = if action == "open" { "window.__trayOpenFile?.();" } else if action == "exit" {
+                                "if(window.ReadMDRecovery){window.ReadMDRecovery.prepareClose();}else{window.ipc.postMessage('readmd:quit');}"
+                            } else { "window.pollControl?.();" };
+                            let _ = reader.evaluate_script(script);
+                        }
+                    }
+                    "preferences" => {
+                        close_to_tray = options.get("closeToTray").and_then(serde_json::Value::as_bool).unwrap_or(true);
+                        #[cfg(windows)] if let Some(tray) = tray.as_mut() {
+                            if let Some(labels) = options.get("labels").and_then(serde_json::Value::as_array) {
+                                if labels.len() == 3 { tray.set_labels([labels[0].as_str().unwrap_or("ReadMD"), labels[1].as_str().unwrap_or("Open"), labels[2].as_str().unwrap_or("Exit")]); }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        #[cfg(windows)]
+        let tray_available = tray.as_ref().is_some_and(|tray| tray.available());
+        #[cfg(not(windows))]
+        let tray_available = false;
+        if closing && close_to_tray && tray_available && deadline.is_none() && !quit_flag.load(Ordering::SeqCst) {
+            if let Some(reader) = webview.as_ref() { let _ = reader.evaluate_script("window.ReadMDRecovery?.flush();"); }
+            if let Some(window) = window_handle.as_ref() { window.set_visible(false); }
+            closing = false;
+        }
+        if matches!(&event, Event::WindowEvent { event: WindowEvent::Resized(_) | WindowEvent::Focused(_) | WindowEvent::ScaleFactorChanged { .. }, .. } | Event::UserEvent(HostEvent::Window(..))) {
+            if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
+                let state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available});
+                let _ = reader.evaluate_script(&format!("window.__readmdWindowState?.({state});"));
+            }
+        }
+        if closing && deadline.is_none() && page_ready_flag.load(Ordering::SeqCst) && !quit_flag.load(Ordering::SeqCst) {
+            if let Some(reader) = webview.as_ref() {
+                if reader.evaluate_script("if(window.ReadMDRecovery){window.ReadMDRecovery.prepareClose();}else{window.ipc.postMessage('readmd:quit');}").is_ok() { return; }
+            }
+        }
+        if renders.active() { *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100)); }
+        if !closing && !matches!(event, Event::MainEventsCleared | Event::UserEvent(_)) { return; }
+        if let Some(reader) = webview.as_ref() { renders.tick(target, reader, render_wake.clone()); }
+        if renders.active() { *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100)); }
         // Hand queued native drops to the page.  The payload is serde_json
         // output, which is a valid JS expression — no string splicing of paths.
         loop {
@@ -4264,6 +4372,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             return;
         }
         drop(webview.take());
+        #[cfg(windows)] drop(tray.take());
         drop(window_handle.take());
         if let Some(dir) = retry_profile.take() {
             let _ = std::fs::remove_dir_all(dir);
@@ -4300,6 +4409,11 @@ fn enable_share(port: u16) {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--install-update") {
+        let result = std::env::args_os().nth(2).map(PathBuf::from).ok_or_else(|| "update_plan_missing".to_string())
+            .and_then(|path| readmd_kernel::update_install::run_helper(&path));
+        exit(if result.is_ok() { 0 } else { 1 });
+    }
     #[cfg(target_os = "windows")]
     attach_console();
 
@@ -4355,6 +4469,7 @@ fn main() {
         exit(if ok { 0 } else { 1 });
     }
 
+    readmd_kernel::update_install::cleanup_previous_helper();
     let app = match App::bootstrap(paths) {
         Ok(a) => Arc::new(a),
         Err(err) => {
@@ -4394,7 +4509,7 @@ fn main() {
         match &opts.file {
             // `if not args.file or forward_open(...)`: with no document there is
             // nothing to forward and the resident window is left alone.
-            None => exit(0),
+            None => { if forward_open(port, &token, "") { exit(0); } },
             Some(raw) => {
                 // `os.path.abspath(args.file)` — forwarded even when the file is
                 // missing; the resident instance reports that, not this process.

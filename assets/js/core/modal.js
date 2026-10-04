@@ -25,9 +25,32 @@
   const stack = [];                       // [{ el, opener }]
   let lastOutside = null;                 // last focused element while no layer was open
   const guards = new Map();               // id -> () => boolean (true = may close)
+  // One observer preserves mutation order when two dialogs open in the same
+  // turn. Separate observers run in registration order and can invert layers.
+  const layerObserver = new MutationObserver(records => {
+    for (const record of records) sync(record.target);
+  });
+  let focusPending = false;
+  const focusObserver = new MutationObserver(() => {
+    const top = stack[stack.length - 1];
+    if (!top || focusPending) return;
+    const active = document.activeElement;
+    if (top.el.contains(active) && !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length) return;
+    focusPending = true;
+    requestAnimationFrame(() => {
+      focusPending = false;
+      const current = stack[stack.length - 1];
+      if (!current || !isShown(current.el)) return;
+      const active = document.activeElement;
+      if (current.el.contains(active) && !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length) return;
+      const target = initialFocus(current.el);
+      if (target) target.focus({ preventScroll: true });
+      else { current.el.setAttribute('tabindex', '-1'); current.el.focus({ preventScroll: true }); }
+    });
+  });
   const FOCUSABLE = [
     'a[href]', 'area[href]', 'button:not([disabled])', 'input:not([disabled]):not([type="hidden"])',
-    'select:not([disabled])', 'textarea:not([disabled])', 'iframe', 'audio[controls]', 'video[controls]',
+    'select:not([disabled])', 'textarea:not([disabled])', 'summary', 'iframe', 'audio[controls]', 'video[controls]',
     '[contenteditable]:not([contenteditable="false"])', '[tabindex]:not([tabindex="-1"])',
   ].join(',');
 
@@ -35,8 +58,15 @@
 
   function focusables(root) {
     return [...root.querySelectorAll(FOCUSABLE)].filter(el => {
-      if (el.closest('[inert]') && !root.contains(el.closest('[inert]'))) return false;
+      if (el.closest('[inert]')) return false;
       if (el.closest('.hidden')) return false;
+      // Browsers may give descendants of a closed details a client rect,
+      // although focus() is ignored. Only its summary is reachable.
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        if (!parent.matches('details:not([open])')) continue;
+        const summary = [...parent.children].find(child => child.tagName === 'SUMMARY');
+        if (!summary || !summary.contains(el)) return false;
+      }
       const rect = el.getClientRects();
       return rect.length > 0 && getComputedStyle(el).visibility !== 'hidden';
     });
@@ -195,7 +225,8 @@
     if (el.__rmModal) return;
     el.__rmModal = true;
     if (!el.hasAttribute('aria-modal')) el.setAttribute('aria-modal', 'true');
-    new MutationObserver(() => sync(el)).observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    layerObserver.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+    focusObserver.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'disabled', 'hidden'] });
     if (isShown(el)) push(el);
   }
 
@@ -240,7 +271,10 @@
   const watchBody = () => new MutationObserver(records => {
     for (const r of records) for (const n of r.addedNodes) {
       if (n.nodeType !== 1) continue;
-      if (n.matches('[role="dialog"]')) { if (n.id && /-modal$/.test(n.id)) watch(n); }
+      if (n.matches('[role="dialog"]')) {
+        if ((n.id && /-modal$/.test(n.id)) || n.classList.contains('modal-overlay') || n.dataset.modalLayer === 'on') watch(n);
+        scan(n);
+      }
       else scan(n);
     }
   }).observe(document.body, { childList: true });

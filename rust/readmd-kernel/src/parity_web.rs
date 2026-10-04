@@ -1770,7 +1770,10 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
                 let (saved, skipped) = if target.exists() && mode != "overwrite" && mode != "rename" {
                     (false, true)
                 } else {
-                    (crate::convert::write_md(&target.to_string_lossy(), &fixed.text).is_ok(), false)
+                    match crate::convert::write_md_managed(&app.paths.data_dir, &target.to_string_lossy(), &fixed.text, mode == "overwrite") {
+                        Ok(()) => (true, false),
+                        Err(error) => return Response::json_status(500, &json!({"ok": false, "content": fixed.text, "saved": false, "out": target, "error": error, "error_code": "save_failed"})),
+                    }
                 };
                 body["out"] = json!(target.to_string_lossy());
                 body["saved"] = json!(saved);

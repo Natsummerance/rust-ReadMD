@@ -1,11 +1,8 @@
 //! 音视频转写：`src/readmd_modules/transcribe.py` 的 Rust 对等实现。
 //!
-//! Python 侧的真实转写依赖插件沙箱里的 `faster_whisper` / `whisper` 加系统
-//! ffmpeg。Rust 内核不加载 Python 插件、也不把音频丢给外部二进制，因此永远落在
-//! Python 自己的降级分支上：`transcribe_to_md()` 返回
-//! `_make_whisper_notice()` 生成的安装指引 Markdown **加**一个 warning，
-//! 于是 `_api_transcribe` 走 200 `{ok, content, path, warning}`——不是错误码。
-//! 这条降级路径本身就是要对等的目标（见 `parity_web::h_transcribe`）。
+//! 通过Rust管理的系统离线识别器处理文件；非WAV由已有ffmpeg转PCM。
+//! 不加载Python插件。没有引擎时保留明确的降级说明；真实解码/识别失败
+//! 返回错误，不能用说明Markdown冒充成功转写。
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -172,7 +169,7 @@ pub fn make_whisper_notice(path: &str, details: &str) -> String {
         "---\ntitle: \"{title}\"\nformat: \"{ext}\"\nstatus: \"unprocessed\"\n---\n\n\
          # 音频/视频转写：{title}\n\n\
          > **{details}**\n>\n\
-         > 当前版本尚未内置本地语音转写引擎，音视频文件暂时无法转为文字。\n\
+         > 系统离线语音识别器不可用，当前文件未转写为文字。\n\
          > 可以先用其他工具导出字幕（`.srt` / `.vtt` / `.txt`），再用 ReadMD 打开或转换。\n"
     )
 }
@@ -190,13 +187,20 @@ pub fn transcribe_to_md(
     if !is_supported_media(path) {
         return (None, Some("unsupported_media_format".to_string()));
     }
-    let _ = (language, model_name);
-    // 无 faster_whisper，且 whisper/ffmpeg 不成对可用：Python 在这一步直接返回
-    // 安装指引 + warning，HTTP 层看到的是 200。
-    (
-        Some(make_whisper_notice(path, "未检测到本地语音转写引擎")),
-        Some(TRANSCRIBE_UNAVAILABLE.to_string()),
-    )
+    let _ = model_name;
+    if crate::speech::capabilities().get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        return (None, Some(TRANSCRIBE_UNAVAILABLE.to_string()));
+    }
+    match crate::speech::transcribe(path, language) {
+        Ok(result) => {
+            let segments: Vec<Segment> = result.get("segments").and_then(serde_json::Value::as_array).into_iter().flatten()
+                .filter_map(|s| Some(Segment { start:s.get("start")?.as_f64()?, text:s.get("text")?.as_str()?.to_string() })).collect();
+            if segments.iter().all(|s|s.text.trim().is_empty()) {return (None,Some("speech_no_result".into()));}
+            (Some(format_segments(&segments, Some(&basename(path)), result.get("language").and_then(serde_json::Value::as_str),
+                result.get("duration").and_then(serde_json::Value::as_f64), Some(&extension_stripped(path)), Some("system-speech"))), None)
+        }
+        Err(error) => (None, Some(error)),
+    }
 }
 
 /// 既有内核调用点（`convert.rs` 的音视频分支、`batch2::h_transcribe`）使用的
@@ -209,7 +213,7 @@ pub fn transcribe_audio(
     let model_name = model.unwrap_or("base");
     let (text, err) = transcribe_to_md(audio_path, language, model_name);
     match text {
-        Some(t) if !t.trim().is_empty() => Ok(t),
+        Some(t) if err.is_none() && !t.trim().is_empty() => Ok(t),
         _ => Err(TranscribeError {
             code: err.unwrap_or_else(|| "transcribe_empty".to_string()),
             error_code: if !Path::new(audio_path).is_file() {
@@ -261,12 +265,10 @@ mod tests {
     }
 
     #[test]
-    fn degraded_run_returns_notice_plus_warning() {
+    fn degraded_notice_is_explicitly_unprocessed() {
         let file = temp_media("degraded.mp3");
         let path = file.to_str().unwrap();
-        let (text, err) = transcribe_to_md(path, None, "base");
-        let notice = text.unwrap();
-        assert_eq!(err.as_deref(), Some(TRANSCRIBE_UNAVAILABLE));
+        let notice = make_whisper_notice(path, "未检测到可用的系统离线语音识别器");
         assert!(notice.starts_with("---\ntitle: \"degraded.mp3\"\nformat: \"mp3\"\nstatus: \"unprocessed\"\n---\n\n"), "{notice}");
         assert!(notice.contains("# 音频/视频转写：degraded.mp3"), "{notice}");
         let lower = notice.to_lowercase();

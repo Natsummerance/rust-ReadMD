@@ -256,6 +256,9 @@
     }
   }
   function renderRoster() {
+    // Cache catalog/state at startup; build previews when settings is visible.
+    // Creating Image objects inside a hidden gallery downloads every sprite.
+    if (document.getElementById('pet-settings-modal')?.classList.contains('hidden')) return;
     const host = document.getElementById('pet-roster'); if (!host) return;
     const focused = host.contains(document.activeElement) ? document.activeElement.dataset : null;
     const focusedSlug = focused?.slug, focusedRenderer = focused?.renderer;

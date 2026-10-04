@@ -71,10 +71,7 @@ impl AssetSandbox {
     /// Same as [`AssetSandbox::new`] but tolerant of an absent directory, which
     /// is normal for optional runtime siblings such as `models/`.
     pub fn try_new(root: impl AsRef<Path>) -> Option<Self> {
-        match Self::new(root) {
-            Ok(sandbox) => Some(sandbox),
-            Err(_) => None,
-        }
+        Self::new(root).ok()
     }
 
     pub fn root(&self) -> &Path {
@@ -98,7 +95,9 @@ impl AssetSandbox {
         if !canonical.starts_with(&self.root) {
             return Err(HostError::UnsafeAssetPath);
         }
-        if !canonical.is_file() || canonical.metadata().map(|m| m.len()).unwrap_or(u64::MAX) > MAX_SERVED_ASSET_BYTES {
+        if !canonical.is_file()
+            || canonical.metadata().map(|m| m.len()).unwrap_or(u64::MAX) > MAX_SERVED_ASSET_BYTES
+        {
             return Err(HostError::UnsafeAssetPath);
         }
         Ok(canonical)
@@ -176,11 +175,7 @@ pub fn route_asset(relative: &str) -> Result<AssetRoute, &'static str> {
                 "vendor" | "models" => AssetRoute::Sibling(prefix, rest),
                 // `assets/` prefers the bundle copy so a renderer can ship an
                 // override for a package-level file.
-                _ => AssetRoute::BundleThenSibling(
-                    prefix,
-                    relative.to_string(),
-                    rest.clone(),
-                ),
+                _ => AssetRoute::BundleThenSibling(prefix, relative.to_string(), rest.clone()),
             });
         }
     }
@@ -337,9 +332,18 @@ mod tests {
             "index.html"
         );
         // The bundle copy wins over the package copy.
-        assert_eq!(fs::read(router.serve("assets/local.png").unwrap()).unwrap(), b"local");
-        assert_eq!(fs::read(router.serve("assets/shared.svg").unwrap()).unwrap(), b"shared");
-        assert_eq!(fs::read(router.serve("vendor/cubm.js").unwrap()).unwrap(), b"vendor");
+        assert_eq!(
+            fs::read(router.serve("assets/local.png").unwrap()).unwrap(),
+            b"local"
+        );
+        assert_eq!(
+            fs::read(router.serve("assets/shared.svg").unwrap()).unwrap(),
+            b"shared"
+        );
+        assert_eq!(
+            fs::read(router.serve("vendor/cubm.js").unwrap()).unwrap(),
+            b"vendor"
+        );
         assert_eq!(
             fs::read(router.serve("models/m.model3.json").unwrap()).unwrap(),
             b"model"

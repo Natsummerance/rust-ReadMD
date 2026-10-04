@@ -9,10 +9,11 @@ let pvTimer = null;
 let pvLast = '';
 let pvEditorEl = null;
 let pvRenderEpoch = 0;
+let editorOpenEpoch = 0;
 
 function hasUnsavedEditorChanges() {
   if (!state.editing) return false;
-  return getEditContent() !== (state.original || '');
+  return getEditContent() !== (state.original || '') || Boolean(getActiveTab()?.isVirtual && getActiveTab()?.unsavedCreation);
 }
 
 function syncSavedTab(path, content) {
@@ -53,7 +54,13 @@ async function renderSavedDocument(content) {
 }
 
 function getEditContent() {
-  return cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || '');
+  const text = cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || '');
+  const original = state.original ?? '';
+  // Both editors normalize line endings; opening a file is not a change.
+  if (text === original.replace(/\r\n?/g, '\n')) return original;
+  if (original.includes('\r\n') && !/(^|[^\r])\n/.test(original)) return text.replace(/\r?\n/g, '\r\n');
+  if (original.includes('\r') && !original.includes('\n')) return text.replace(/\r?\n/g, '\r');
+  return text;
 }
 
 function setPvLayout(layout) {
@@ -439,6 +446,12 @@ async function toggleEdit() {
   }
   // 没有打开文档时不能编辑（新建文档请用 Ctrl+N / 欢迎页“新建”）；空文件可以编辑。
   if (state.original == null || (state.mode === 'welcome' && !state.file)) { showToast(_t('toast.noEditableContent') || '没有可编辑的内容'); return; }
+  const epoch = ++editorOpenEpoch;
+  const tabId = state.activeTabId;
+  const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const editorContent = activeTab?.isDirty ? (activeTab.content ?? state.original ?? '') : (state.original ?? '');
+  // The fallback is also the draft snapshot while CodeMirror is loading.
+  $('edit-area').value = editorContent;
   $('edit-bar').classList.remove('hidden');
   $('content').classList.add('hidden');
   state.editing = true;
@@ -448,12 +461,13 @@ async function toggleEdit() {
   try {
     await loadCodeMirror();
   } catch (e) { /* 退回 textarea */ }
+  if (epoch !== editorOpenEpoch || !state.editing || state.activeTabId !== tabId) return;
   let cmMounted = false;
   if (window.ReadMDCodeMirror) {
     $('edit-area').classList.add('hidden');
     $('edit-wrap').classList.remove('hidden');
     // 旧版或损坏的 CodeMirror 包会让 createEditor 抛错：退回 textarea，避免卡在空白编辑页。
-    try { createEditor(state.original || ''); cmMounted = !!cmView; } catch (e) {
+    try { createEditor(editorContent); cmMounted = !!cmView; } catch (e) {
       console.error(e);
       try { destroyEditor(); } catch (_) { /* ignore */ }
     }
@@ -466,7 +480,7 @@ async function toggleEdit() {
   } else {
     $('edit-wrap').classList.add('hidden');
     $('edit-area').classList.remove('hidden');
-    $('edit-area').value = state.original || '';
+    $('edit-area').value = editorContent;
     pvEditorEl = $('edit-area');
     pvEditorEl.addEventListener('scroll', pvSyncFromEditor);
     $('edit-area').focus();
@@ -486,6 +500,7 @@ async function confirmExitEdit() {
     return !state.editing;
   }
   const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  if (window.ReadMDRecovery && !await window.ReadMDRecovery.discard(activeTab)) return false;
   if (activeTab) {
     activeTab.content = state.original;
     activeTab.fixed = state.original;
@@ -497,6 +512,7 @@ async function confirmExitEdit() {
 }
 
 function exitEdit() {
+  ++editorOpenEpoch;
   if (state.editing) rememberEditPosition();
   if (typeof switchEditAiToChatPanel === 'function') switchEditAiToChatPanel();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -518,6 +534,8 @@ function exitEdit() {
     setEditBtn(_t('toolbar.edit') || '编辑');
     return;
   }
+  const tab = getActiveTab();
+  if (tab && cmView) { tab.editorState = cmView.state; tab.editorCompartments = cmCompartments; }
   destroyEditor();
   $('edit-bar').classList.add('hidden');
   $('edit-area').classList.add('hidden');
@@ -528,148 +546,90 @@ function exitEdit() {
   if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
 }
 
-async function saveEdit(options = {}) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const exitAfterSave = Boolean(options && options.exitAfterSave);
-  if (!state.editing) return false;
-  const saveBtn = $('edit-save');
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add('btn-loading'); }
-  try {
-    const content = cmView ? cmView.state.doc.toString() : $('edit-area').value;
-    if (!state.file) {
-      const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
-      if (activeTab && activeTab.source === 'ai' && (activeTab.dir || state.dir)) {
-        return await autoSaveAiCopyTab(activeTab, { content, exitAfterSave });
-      }
+function documentSaveSnapshot(contentOverride = null) {
+  const tab = getActiveTab();
+  return { tab, id: tab?.id, started: Date.now(), path: tab?.path || state.file, content: contentOverride ?? (state.editing ? getEditContent() : (tab?.content ?? state.fixed ?? state.original ?? '')),
+    original: tab?.original ?? state.original ?? '', name: tab?.name || state.sourceName || 'document.md',
+    encoding: tab?.encoding || state.encoding || 'utf-8', mtime: tab?.mtime || state.mtime || null,
+    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey: tab?.recoveryKey || tab?.path || ('draft:' + tab?.id) };
+}
 
-      // 虚拟文档（转换 / OCR / 网页）：另存为 .md 后切换为文件模式
-      const name = (state.sourceName || 'document').replace(/[\\/]/g, '_');
-      const suggested = name.replace(/\.[^.]+$/, '') + '.md';
-      let out = null;
-      if (hasPy) {
-        busy(true);
-        try { out = await py.save_as(content, suggested, state.webAssets || []); }
-        catch (e) { showToast((_t('toast.saveFailed') || '保存失败：') + e.message); busy(false); return false; }
-        busy(false);
-        if (!out) { showToast(_t('toast.saveCancelled') || '已取消保存'); return false; }
-        showToast((_t('toast.savedPrefix') || '已保存：') + out);
-        exitEdit();
-        await loadFile(out);
-        return Boolean(out);
-      }
-      const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = suggested;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-      showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-      return true;
+async function commitDocumentSave(snapshot, path, result, options = {}) {
+  const tab = snapshot.tab;
+  if (!tab || !state.tabs.includes(tab)) return true;
+  const active = getActiveTab() === tab;
+  let draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
+  const unchanged = draft === snapshot.content;
+  const savedContent = typeof result.saved_content === 'string' ? result.saved_content : snapshot.content;
+  if (unchanged && savedContent !== draft) {
+    draft = savedContent;
+    if (active && state.editing) {
+      if (cmView) cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft }, annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('save.assets') });
+      else $('edit-area').value = draft;
     }
-    busy(true);
-    let ok;
-    if (hasPy) {
-      ok = await py.save_file(state.file, content, state.encoding || 'utf-8', state.mtime || null);
-    } else {
-      const r = await apiFetch('/api/save', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: state.file,
-          content,
-          encoding: state.encoding || 'utf-8',
-          expected_mtime: state.mtime || null,
-        }),
-      });
-      if (r.status === 403) {
-        showToast(_t('toast.saveDenied') || '保存被拒绝：请重新打开文档后再保存');
-        return false;
-      }
-      ok = await r.json();
+  }
+  tab.path = path; tab.dir = String(path).replace(/[\\/][^\\/]*$/, '');
+  tab.mode = 'file'; tab.isVirtual = false;
+  tab.name = String(path).split(/[\\/]/).pop(); tab.title = tab.browserCopy && !options.retarget ? tab.title : tab.name;
+  if (options.retarget) tab.browserCopy = false;
+  tab.original = savedContent; tab.content = draft; tab.fixed = draft; tab.fixes = [];
+  if (Array.isArray(result.saved_assets)) tab.webAssets = unchanged ? result.saved_assets : [...(result.source_assets || snapshot.assets), ...result.saved_assets];
+  tab.isDirty = !unchanged; tab.mtime = result.mtime || 0; tab.revision = result.revision || ''; tab.encoding = snapshot.encoding;
+  if (active) {
+    state.file = path; state.dir = tab.dir; state.mode = 'file'; state.browserCopy = tab.browserCopy;
+    state.sourceName = tab.name; state.original = savedContent; state.fixed = draft;
+    state.mtime = tab.mtime; state.revision = tab.revision; state.encoding = tab.encoding;
+    state.webAssets = tab.webAssets || [];
+    if (options.retarget) { document.title = tab.name + ' - ReadMD'; setFileTitle(tab.name, true, path); addRecent(path); }
+    if (options.exitAfterSave && unchanged) { exitEdit(); await renderActiveTab({ restoreScroll: true }); }
+    else await renderActiveTab({ restoreScroll: true });
+  }
+  renderTabsBar(); updateUnloadGuard(); updateStatus();
+  await window.ReadMDRecovery?.saved(snapshot, tab);
+  showToast(window.i18n.t(unchanged ? 'storage.saved' : 'storage.savedEarlier'));
+  return !options.exitAfterSave || (active && unchanged);
+}
+
+async function saveEdit(options = {}) {
+  if (!state.editing) return false;
+  return window.ReadMDTask.run('document-save', () => saveEditOnce(options), { trigger: ['edit-save', 'btn-saveas'] });
+}
+
+async function saveEditOnce(options = {}) {
+  const snapshot = documentSaveSnapshot();
+  if (!snapshot.path) return saveAsSnapshot(snapshot, options);
+  const write = async () => {
+    // Use one acknowledgement shape for native and browser editing. The API is the Rust writer in both.
+    const response = await apiFetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding,
+        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null }) });
+    const result = await response.json();
+    if (!response.ok && !result.conflict && result.error_code !== 'encoding_unrepresentable') throw new Error(result.error || 'HTTP ' + response.status);
+    return result;
+  };
+  try {
+    let result = await write();
+    if (result.error_code === 'encoding_unrepresentable') {
+      if (!await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: result.char || '' }),
+        confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) return false;
+      snapshot.encoding = 'utf-8'; result = await write();
     }
-    // The file's original encoding cannot hold a character that was typed:
-    // offer to switch the document to UTF-8 instead of replacing it silently.
-    if (ok && ok.error_code === 'encoding_unrepresentable') {
-      busy(false);
-      const switchToUtf8 = await confirmAction({
-        title: _t('dialog.encodingTitle') || '无法按原编码保存',
-        message: _t('dialog.encodingMessage', { encoding: ok.encoding || state.encoding, char: ok.char || '' })
-          || `当前文件编码（${ok.encoding || state.encoding}）无法表示字符“${ok.char || ''}”。是否改为 UTF-8 保存？`,
-        confirmText: _t('dialog.encodingUseUtf8') || '改用 UTF-8 保存',
-        cancelText: _t('common.cancel') || '取消',
-      });
-      if (!switchToUtf8) return false;
-      state.encoding = 'utf-8';
-      const activeTab = getActiveTab();
-      if (activeTab) activeTab.encoding = 'utf-8';
-      busy(true);
-      if (hasPy) {
-        ok = await py.save_file(state.file, content, 'utf-8', state.mtime || null);
-      } else {
-        const r2 = await apiFetch('/api/save', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: state.file, content, encoding: 'utf-8', expected_mtime: state.mtime || null }),
-        });
-        ok = await r2.json();
-      }
-    }
-    if (ok && ok.ok !== false) {
-      syncSavedTab(state.file, content);
-      applySavedMtime(ok);
-      await renderSavedDocument(content);
-      if (typeof renderTabsBar === 'function') renderTabsBar();
-      if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
-      const savedTarget = state.browserCopy
-        ? `${state.sourceName || state.file} (${_t('app.browserCopy') || 'browser copy'})`
-        : (state.file || state.sourceName || 'document');
-      showToast(ok.backup
-        ? (_t('toast.savedWithBackup', { backup: ok.backup }) || ('已保存（备份：' + ok.backup + '）'))
-        : ((_t('toast.savedPrefix') || '已保存：') + savedTarget));
-      if (exitAfterSave) exitEdit();
-      return true;
-    } else {
-      if (ok && ok.conflict) {
-        const action = await promptSaveConflict();
-        if (action === 'save-as') {
-          const activeTab = getActiveTab();
-          const suggested = (state.sourceName || state.file || 'document')
-            .replace(/[\\/]/g, '_')
-            .replace(/\.[^.]+$/, '') + '.md';
-          if (activeTab) {
-            activeTab.content = content;
-            activeTab.fixed = content;
-          }
-          state.fixed = content;
-          const saved = await saveAs(content);
-          if (!hasPy && saved) {
-            showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-            return false;
-          }
-          if (!saved) return false;
-          exitEdit();
-          await loadFile(state.file, { force: true });
-          return true;
-        }
-        if (action === 'reload') {
-          exitEdit();
-          await loadFile(state.file, { force: true });
-          return true;
-        }
-        if (action === 'cancel') {
-          showToast(_t('toast.reloadBlockedDirty') || '未保存修改已保留，未重新加载外部更改');
-        }
-      } else {
-        showToast((_t('toast.saveFailed') || '保存失败：') + ((ok && ok.error) || (_t('toast.unknownError') || '未知错误')));
+    if (result.ok === true) return commitDocumentSave(snapshot, snapshot.path, result, options);
+    if (result.conflict) {
+      if (getActiveTab() !== snapshot.tab) { showToast(window.i18n.t('storage.conflictBackground')); return false; }
+      const action = await promptSaveConflict();
+      if (action === 'save-as') return saveAsSnapshot(snapshot, options);
+      if (action === 'reload' && getActiveTab() === snapshot.tab) {
+        // Preserve the draft before an explicit destructive reload.
+        const view = cmView, latest = getEditContent();
+        if (!await window.ReadMDRecovery?.checkpoint('conflict_reload', snapshot.tab)) return false;
+        if (getActiveTab() !== snapshot.tab || !state.editing || cmView !== view || getEditContent() !== latest) return false;
+        exitEdit(); await loadFile(snapshot.path, { force: true, discardConfirmed: true }); return !snapshot.tab.isDirty;
       }
       return false;
     }
-    return false;
-  } catch (e) {
-    showToast((_t('toast.saveFailed') || '保存失败：') + e.message);
-    return false;
-  } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('btn-loading'); }
-    busy(false);
-  }
+    throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
+  } catch (error) { showToast(window.i18n.t('toast.saveFailed') + error.message); return false; }
 }
 
 function promptSaveConflict() {
@@ -715,113 +675,53 @@ function promptSaveConflict() {
 }
 
 async function saveAs(contentOverride = null) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const content = contentOverride ?? state.fixed ?? state.original ?? '';
-  const sourceName = getActiveTab()?.name
-    || String(state.file || '').split(/[\\/]/).pop()
-    || state.sourceName
-    || 'document';
-  const name = String(sourceName).replace(/[\\/]/g, '_');
-  const extension = name.match(/\.[^.]+$/)?.[0] || '.md';
-  const suggested = name.replace(/\.[^.]+$/, '') + extension;
-  if (hasPy) {
-    const out = await py.save_as(content, suggested, state.webAssets || []);
-    if (out) {
-      const activeTab = getActiveTab();
-      if (activeTab) {
-        activeTab.path = out;
-        activeTab.dir = String(out).replace(/[\\/][^\\/]*$/, '');
-        activeTab.mode = 'file';
-        activeTab.isVirtual = false;
-        activeTab.isDirty = false;
-        activeTab.browserCopy = false;
-        activeTab.name = String(out).split(/[\\/]/).pop();
-        activeTab.title = activeTab.name;
-        activeTab.content = content;
-        activeTab.original = content;
-        activeTab.fixed = content;
-        state.file = out;
-        state.original = content;
-        state.fixed = content;
-        state.dir = activeTab.dir;
-        state.mode = 'file';
-        state.browserCopy = false;
-        state.sourceName = activeTab.name;
-        renderTabsBar();
-        document.title = activeTab.name + ' - ReadMD';
-        setFileTitle(activeTab.name, true, out);
-        addRecent(out);
-      }
-      showToast((_t('toast.savedPrefix') || '已保存：') + out);
-      return true;
-    }
-  } else {
-    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = suggested;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-    showToast((_t('toast.downloadedPrefix') || '已下载：') + suggested);
-    return true;
-  }
-  return false;
+  // DOM event listeners pass a MouseEvent, which is not document content.
+  const snapshot = documentSaveSnapshot(typeof contentOverride === 'string' ? contentOverride : null);
+  return window.ReadMDTask.run('document-save', () => saveAsSnapshot(snapshot, { retarget: true }), { trigger: ['edit-save', 'btn-saveas'] });
 }
 
-async function autoSaveAiCopyTab(tab, options = {}) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const currentTab = tab || (typeof getActiveTab === 'function' ? getActiveTab() : null);
-  if (!currentTab) return false;
-  const targetDir = currentTab.dir || state.dir;
-  if (!targetDir) {
-    if (typeof saveAs === 'function') return saveAs();
-    return false;
+async function saveAsSnapshot(snapshot, options = {}) {
+  const suggested = String(snapshot.name || 'document.md').replace(/[\\/]/g, '_');
+  if (!hasPy) {
+    const blob = new Blob([snapshot.content], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = suggested;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    await window.ReadMDRecovery?.flush();
+    showToast(window.i18n.t('storage.downloadDraft'));
+    // A download request is not proof that a file was written. Keep the dirty document and its recovery copy.
+    return !options.exitAfterSave;
   }
-  const content = options.content != null ? options.content : (currentTab.content || state.original || '');
-  const targetName = currentTab.name || state.name || 'AI-document.md';
-  const sep = targetDir.includes('/') ? '/' : '\\';
-  const targetPath = targetDir.replace(/[\\/]+$/, '') + sep + targetName;
-  busy(true);
-  let res = null;
   try {
-    if (hasPy) {
-      res = await py.save_file(targetPath, content, 'utf-8', null);
-    } else {
-      const originPath = currentTab.originPath || (currentTab.dir ? (currentTab.dir.replace(/[\\/]+$/, '') + sep + (state.sourceName || 'document.md')) : (state.file || ''));
-      const r = await apiFetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: targetPath, file: targetPath, origin_path: originPath, content: content, encoding: 'utf-8' })
-      });
-      res = await r.json().catch(() => ({ ok: r.ok }));
+    const outcome = await py.save_as(snapshot.content, suggested, snapshot.assets, { result: true,
+      dir: snapshot.tab?.dir || '', base_dir: snapshot.tab?.dir || '', encoding: snapshot.path ? snapshot.encoding : 'utf-8',
+      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path) });
+    if (!outcome || outcome.canceled) return false;
+    const result = typeof outcome === 'string' ? { ok: true, path: outcome } : outcome;
+    if (result.ok !== true || !result.path) throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
+    if (!result.mtime) {
+      const response = await apiFetch('/api/file?p=' + encodeURIComponent(result.path) + '&meta=1');
+      if (response.ok) Object.assign(result, await response.json(), { path: result.path });
     }
-  } catch (err) {
-    showToast((_t('toast.saveFailed') || '保存失败：') + err.message);
-    busy(false);
-    return false;
-  } finally {
-    busy(false);
+    if (!snapshot.path) snapshot.encoding = 'utf-8';
+    const committed = await commitDocumentSave(snapshot, result.path, result, { ...options, retarget: true });
+    if (result.warns?.length) showToast(result.warns.join('\n'), 6000);
+    return committed;
+  } catch (error) {
+    if (error.details?.error_code === 'encoding_unrepresentable' && snapshot.encoding !== 'utf-8') {
+      if (await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: error.details.char || '' }),
+        confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) {
+        snapshot.encoding = 'utf-8'; return saveAsSnapshot(snapshot, options);
+      }
+      return false;
+    }
+    const message = error.message === 'target_open_in_another_tab' ? window.i18n.t('storage.targetOpen') : error.message;
+    showToast(window.i18n.t('toast.saveFailed') + message); return false;
   }
-  const isSuccess = Boolean(res && (res === true || res.ok === true || (typeof res === 'object' && res.ok !== false && !res.error)));
-  if (isSuccess) {
-    state.file = targetPath;
-    currentTab.path = targetPath;
-    currentTab.mode = 'file';
-    currentTab.isVirtual = false;
-    currentTab.isDirty = false;
-    currentTab.content = content;
-    currentTab.original = content;
-    currentTab.fixed = content;
-    state.content = content;
-    state.original = content;
-    state.fixed = content;
-    if (typeof renderTabsBar === 'function') renderTabsBar();
-    showToast((_t('toast.savedPrefix') || '已保存：') + targetPath);
-    if (options.exitAfterSave && typeof exitEdit === 'function') exitEdit();
-    return true;
-  }
-  const errMsg = (res && res.error) ? res.error : (_t('toast.saveFailed') || '保存失败');
-  showToast((_t('toast.saveFailed') || '保存失败：') + errMsg);
-  return false;
+}
+
+// Older callers use this name. AI copies now use the same explicit Save As workflow as any unsaved document.
+async function autoSaveAiCopyTab(tab, options = {}) {
+  if (getActiveTab() !== tab) return false;
+  return saveAsSnapshot(documentSaveSnapshot(options.content ?? null), options);
 }
 window.autoSaveAiCopyTab = autoSaveAiCopyTab;

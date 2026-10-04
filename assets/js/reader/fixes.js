@@ -31,23 +31,26 @@ function showFixModal() {
 }
 
 async function handleAiDocumentFix() {
+  return window.ReadMDTask.run('document-ai-fix', runAiDocumentFix, { trigger: 'fix-ai-btn' });
+}
+
+async function runAiDocumentFix() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const rawContent = state.editing && window.cmView ? window.cmView.state.doc.toString() : (state.fixed || state.original || '');
+  const rawContent = state.editing ? getEditContent() : (state.fixed ?? state.original ?? '');
+  const origin = { tabId: state.activeTabId, editor: window.cmView, name: state.sourceName || state.file, path: state.file, dir: state.dir };
   if (!rawContent || !rawContent.trim()) {
     showToast(_t('fixes.noDocContent') || '当前没有可修复的文档内容');
     return;
   }
 
-  const connection = typeof ensureAiConfigured === 'function'
-    ? await ensureAiConfigured()
-    : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
-  if (!connection) return;
-
-  const fixModal = $('fix-modal');
-  if (fixModal) fixModal.classList.add('hidden');
-  showToast(_t('fixes.aiFixing') || '正在进行 AI 深度格式排版自愈...', 2500);
-
   try {
+    const connection = typeof ensureAiConfigured === 'function'
+      ? await ensureAiConfigured()
+      : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
+    if (!connection) return;
+    const fixModal = $('fix-modal');
+    if (fixModal) fixModal.classList.add('hidden');
+    showToast(_t('fixes.aiFixing') || '正在进行 AI 深度格式排版自愈...', 2500);
     const resp = await apiFetch('/api/ai/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -74,7 +77,7 @@ async function handleAiDocumentFix() {
     });
 
     const data = await resp.json();
-    if (!data || !data.ok || !data.content) {
+    if (!resp.ok || !data || !data.ok || typeof data.content !== 'string' || !data.content.trim()) {
       showToast((_t('fixes.aiFixFail') || 'AI 修复失败：') + ((data && data.error) || '未返回有效内容'));
       return;
     }
@@ -89,19 +92,25 @@ async function handleAiDocumentFix() {
       fixedMd = fixedMd.slice(3, -3).trim();
     }
 
-    if (state.editing && window.cmView) {
+    if (!fixedMd) throw new Error(_t('audit.emptyAiResult'));
+    const unchangedEditor = origin.editor && state.activeTabId === origin.tabId && state.editing && window.cmView === origin.editor &&
+      window.cmView.state.doc.toString() === rawContent;
+    if (unchangedEditor) {
+      if (!await window.ReadMDRecovery?.checkpoint('ai_repair')) return;
+      if (state.activeTabId !== origin.tabId || window.cmView !== origin.editor || getEditContent() !== rawContent) {
+        await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
+        return;
+      }
       window.cmView.dispatch({
+        annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.repair'),
         changes: { from: 0, to: window.cmView.state.doc.length, insert: fixedMd }
       });
-      state.isDirty = true;
+      if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
       if (typeof updateEditorPreview === 'function') updateEditorPreview();
     } else {
-      state.fixed = fixedMd;
-      state.original = fixedMd;
-      if (typeof renderContent === 'function') {
-        renderContent(fixedMd, state.sourceName || state.file || 'document.md');
-      }
-      if (typeof updateStatus === 'function') updateStatus();
+      await renderVirtual('ai', getNextAiCopyTabName(origin.name), origin.dir || '', fixedMd, [], { originPath: origin.path });
+      showToast(_t('toast.appliedVirtualNotice') || '已创建副本标签页');
+      return;
     }
 
     showToast(_t('fixes.aiFixed') || 'AI 深度排版修复完成', 1800);

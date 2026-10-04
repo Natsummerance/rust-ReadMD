@@ -43,15 +43,15 @@
 
 ## Direct downloads
 
-[Windows Setup](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMDSetup-v0.0.1.exe) ·
-[Windows Portable](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-portable-v0.0.1.exe) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-arm64-v0.0.1.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-x64-v0.0.1.zip) ·
-[Linux AppImage](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-x86_64-v0.0.1.AppImage) ·
-[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-aarch64-v0.0.1.AppImage) ·
-[Deb for UOS/Kylin](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_amd64.deb) ·
-[Kylin V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_arm64.deb) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/SHA256SUMS.txt)
+[Windows Setup](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) ·
+[Windows Portable](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) ·
+[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) ·
+[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) ·
+[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) ·
+[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
+[Deb for UOS/Kylin](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) ·
+[Kylin V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
+[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt)
 
 ## Start in three steps
 
@@ -93,24 +93,20 @@ Only platforms with release evidence belong in this matrix. Windows 7 is a separ
 
 | OS / Platform | Architecture / Format | Direct Download Link (GitHub Release) | Description |
 | :--- | :--- | :--- | :--- |
-| **Windows** | x64 (Installer) | [⬇️ **ReadMDSetup-v0.0.1.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMDSetup-v0.0.1.exe) | Setup wizard with automatic `.md` file associations |
-| **Windows** | x64 (Portable) | [⬇️ **ReadMD-portable-v0.0.1.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-portable-v0.0.1.exe) | Standalone single executable, no installation needed |
-| **macOS** | Apple Silicon (M-Series) | [⬇️ **ReadMD-macos-arm64-v0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-arm64-v0.0.1.zip) | Native build for Apple Silicon Macs with Vision OCR |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64-v0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-macos-x64-v0.0.1.zip) | Native build for Intel Macs with Vision OCR |
-| **Linux** | x86_64 (AppImage) | [⬇️ **ReadMD-linux-x86_64-v0.0.1.AppImage**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-x86_64-v0.0.1.AppImage) | Portable Linux AppImage for the tested Ubuntu/Debian matrix |
-| **Linux** | ARM64 (AppImage) | [⬇️ **ReadMD-linux-aarch64-v0.0.1.AppImage**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-aarch64-v0.0.1.AppImage) | Portable build for Phytium, Kunpeng, and other ARM64 devices |
-| **Domestic OS / Linux** | UOS / Kylin / Deepin / Debian / Ubuntu | [⬇️ **readmd_0.0.1_amd64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_amd64.deb) | Native Deb package with desktop entry & MIME association |
-| ️ **Kylin V10 / Phytium** | ARM64 (aarch64) | [⬇️ **readmd_0.0.1_arm64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_arm64.deb) | Native build for D2000/E2000 boards with UKUI/X11 software-render fallback |
-| **VSCode Extension** | Universal VSIX | [⬇️ **readmd-vscode-0.0.1.vsix**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd-vscode-0.0.1.vsix) | Offline VSIX extension with sync preview & auto-repair |
-| **MCP Server** | FastMCP stdio Package | [⬇️ **readmd-mcp-server-0.0.1.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd-mcp-server-0.0.1.zip) | Standalone FastMCP server for Claude Desktop / Cursor |
-| **SHA-256 Hashes** | Checksum List | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/SHA256SUMS.txt) | Complete SHA-256 integrity verification list |
+| **Windows** | x64 (Installer) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) | Setup wizard with automatic `.md` file associations |
+| **Windows** | x64 (Portable) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) | Standalone single executable, no installation needed |
+| **macOS** | Apple Silicon (M-Series) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) | Native build for Apple Silicon Macs with Vision OCR |
+| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) | Native build for Intel Macs with Vision OCR |
+| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) | Portable Linux tar.gz for the tested Ubuntu/Debian matrix |
+| **Domestic OS / Linux** | UOS / Kylin / Deepin / Debian / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) | Native Deb package with desktop entry & MIME association |
+| **SHA-256 Hashes** | Checksum List | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt) | Complete SHA-256 integrity verification list |
 
 ---
 
 ## Multi-System & Native OS Integration
 
 ### 1. Linux & Chinese Domestic OS (KylinOS / UOS / Deepin)
-- **Direct Installation**: Download [`readmd_0.0.1_amd64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/readmd_0.0.1_amd64.deb) to install directly, or run [`ReadMD-linux-x86_64-v0.0.1.AppImage`](https://github.com/Natsummerance/rust-ReadMD/releases/download/v0.0.1/ReadMD-linux-x86_64-v0.0.1.AppImage).
+- **Direct Installation**: Download [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) to install directly, or run [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz).
 - **Environment Detection**: 100% pure native Rust kernel (`native_system`) detects OS distributions and dynamically adapts Wayland / X11 display backends.
 - **Desktop Themes**: Probes DDE, UKUI, GNOME, and KDE dark mode settings via `gsettings`.
 - **Desktop Entry**: Includes FreeDesktop launcher and MIME XML declaration.

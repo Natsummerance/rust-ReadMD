@@ -5,30 +5,58 @@
 
 /* ---------------- 设置 ---------------- */
 
+function sanitizeSettings(input) {
+  const result = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return result;
+  const choices = {
+    theme: ['auto', 'light', 'dark', 'sepia'], pvLayout: ['left', 'right', 'top', 'bottom', 'none'],
+    readingFont: ['sans', 'serif'], readingWidth: ['narrow', 'normal', 'wide'], readingLeading: ['compact', 'normal', 'relaxed'],
+  };
+  for (const [key, values] of Object.entries(choices)) if (values.includes(input[key])) result[key] = input[key];
+  for (const key of ['autoReload', 'pvSync', 'closeToTray']) if (typeof input[key] === 'boolean') result[key] = input[key];
+  const limits = { fontSize: [70, 180], lineWidth: [320, 1800], aiPanelWidth: [320, 1400], pvSplitX: [25, 70], pvSplitY: [25, 70] };
+  for (const [key, [min, max]] of Object.entries(limits)) {
+    if (typeof input[key] === 'number' && Number.isFinite(input[key])) result[key] = Math.max(min, Math.min(max, input[key]));
+  }
+  return result;
+}
+
 async function loadSettings() {
   try {
     if (hasPy) {
       const s = await py.get_settings();
-      if (s && typeof s === 'object') Object.assign(state, s);
+      Object.assign(state, sanitizeSettings(s));
     } else {
       const s = JSON.parse(localStorage.getItem('readmd-settings') || '{}');
-      Object.assign(state, s);
+      Object.assign(state, sanitizeSettings(s));
     }
   } catch (e) { /* ignore */ }
   applySettings();
 }
 
-async function saveSettings() {
+let settingsSaveQueue = Promise.resolve();
+function saveSettings() {
   const s = {
     theme: state.theme, fontSize: state.fontSize, lineWidth: state.lineWidth, aiPanelWidth: state.aiPanelWidth,
     autoReload: state.autoReload, pvLayout: state.pvLayout, pvSync: state.pvSync,
+    closeToTray: state.closeToTray,
     pvSplitX: state.pvSplitX, pvSplitY: state.pvSplitY,
     readingFont: state.readingFont, readingWidth: state.readingWidth, readingLeading: state.readingLeading,
   };
-  try {
-    if (hasPy) await py.save_settings(s);
-    else localStorage.setItem('readmd-settings', JSON.stringify(s));
-  } catch (e) { /* ignore */ }
+  // Serialize native writes so a slower old request cannot persist over the latest choice.
+  settingsSaveQueue = settingsSaveQueue.then(async () => {
+    try {
+      if (hasPy) {
+        const result = await py.save_settings(sanitizeSettings(s));
+        if (result === false || result?.ok === false) throw new Error(result?.error || window.i18n.t('audit.invalidResponse'));
+      } else localStorage.setItem('readmd-settings', JSON.stringify(sanitizeSettings(s)));
+      return true;
+    } catch (e) {
+      showToast(window.i18n.t('toast.saveFailed', { error: e.message }));
+      return false;
+    }
+  });
+  return settingsSaveQueue;
 }
 
 function applySettings() {
@@ -42,6 +70,7 @@ function applySettings() {
   document.body.style.setProperty('--line-width', state.lineWidth + 'px');
   document.body.style.setProperty('--ai-panel-width', state.aiPanelWidth + 'px');
   updateThemeButton();
+  if (typeof syncWindowPreferences === 'function') syncWindowPreferences();
   if (window.ReadMDReader) window.ReadMDReader.applyReadingPrefs();
   if (prevTheme && prevTheme !== theme) {
     if (typeof reloadAllDiagrams === 'function') reloadAllDiagrams();

@@ -3,6 +3,9 @@
 
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
+!ifndef APP_VERSION
+  !define APP_VERSION "0.0.4"
+!endif
 
 Name "ReadMD"
 OutFile "dist\ReadMDSetup-windows-x64.exe"
@@ -32,6 +35,7 @@ Section "ReadMD Core" SEC01
   SetOverwrite on
   
   File "dist\ReadMD-windows-x64\ReadMD.exe"
+  File "dist\ReadMD-windows-x64\ReadMD-Pet-Rust.zip"
   File /r "dist\ReadMD-windows-x64\assets"
   File "dist\ReadMD-windows-x64\LICENSE"
   File "dist\ReadMD-windows-x64\README.md"
@@ -57,7 +61,7 @@ Section "ReadMD Core" SEC01
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "DisplayName" "ReadMD - Markdown Editor & Reader"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "DisplayIcon" "$INSTDIR\ReadMD.exe,0"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "DisplayVersion" "0.0.1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "Publisher" "Natsummerance"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "URLInfoAbout" "https://rust.readmd.asia"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ReadMD" "NoModify" 1
@@ -72,6 +76,7 @@ Section "Uninstall"
   
   RMDir /r "$INSTDIR\assets"
   Delete "$INSTDIR\ReadMD.exe"
+  Delete "$INSTDIR\ReadMD-Pet-Rust.zip"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\README.md"
   Delete "$INSTDIR\Uninstall.exe"

@@ -135,9 +135,7 @@ fn wait_for_parent_pid(pid: u32) -> bool {
 /// handle lost `PROCESS_SYNCHRONIZE`.
 #[cfg(windows)]
 fn parent_process_gone(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{
-        CloseHandle, GetLastError, STILL_ACTIVE,
-    };
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
         GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
@@ -200,9 +198,11 @@ mod tests {
     fn an_unusable_pipe_never_ends_the_host_without_a_pid_verdict() {
         // Regression: the shipped watcher returned "parent gone" for every read
         // error, so a handle that was never inherited killed the host at once.
-        assert!(!resolve_parent_liveness(Some(PipeRead::Unusable), None, |_| {
-            panic!("must not probe without a pid")
-        }));
+        assert!(!resolve_parent_liveness(
+            Some(PipeRead::Unusable),
+            None,
+            |_| { panic!("must not probe without a pid") }
+        ));
         assert!(!resolve_parent_liveness(
             Some(PipeRead::Unusable),
             Some(4242),
@@ -220,7 +220,9 @@ mod tests {
 
     #[test]
     fn a_pipe_eof_always_ends_the_host() {
-        assert!(resolve_parent_liveness(Some(PipeRead::Eof), None, |_| false));
+        assert!(resolve_parent_liveness(Some(PipeRead::Eof), None, |_| {
+            false
+        }));
         assert!(resolve_parent_liveness(
             Some(PipeRead::Eof),
             Some(1),
@@ -258,9 +260,6 @@ mod tests {
         // ERROR_INVALID_HANDLE (6) immediately, so this cannot block: the
         // watcher must classify it as "no evidence" instead of "parent gone".
         let dead = usize::MAX;
-        assert_eq!(
-            wait_for_pipe(&dead.to_string()),
-            Some(PipeRead::Unusable)
-        );
+        assert_eq!(wait_for_pipe(&dead.to_string()), Some(PipeRead::Unusable));
     }
 }

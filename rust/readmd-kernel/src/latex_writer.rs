@@ -23,6 +23,10 @@ pub struct LatexOptions {
     /// `None` → enable `ctex` iff the body contains CJK.
     pub use_ctex: Option<bool>,
     pub toc: bool,
+    /// Export panel selection: biblatex / natbib / bibtex.
+    pub bib_engine: String,
+    /// Relative, copied .bib resources; never raw user-supplied LaTeX.
+    pub bibliography: Vec<String>,
 }
 
 impl Default for LatexOptions {
@@ -37,6 +41,8 @@ impl Default for LatexOptions {
             margin: "2.5cm".into(),
             use_ctex: None,
             toc: false,
+            bib_engine: "biblatex".into(),
+            bibliography: Vec::new(),
         }
     }
 }
@@ -140,11 +146,12 @@ struct Writer<'a> {
     footnotes: HashMap<String, Vec<Block>>,
     /// Footnote labels currently being expanded (guards self-reference).
     fn_stack: Vec<String>,
+    bib_engine: String,
 }
 
 /// Render the full standalone `.tex` document.
 pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) -> String {
-    let body = render_body(doc, images);
+    let body = render_body_with_bibliography(doc, images, &opts.bib_engine);
     let wants_ctex = opts.use_ctex.unwrap_or_else(|| {
         body.chars().any(is_cjk) || opts.title.chars().any(is_cjk) || opts.author.chars().any(is_cjk)
     });
@@ -160,6 +167,16 @@ pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) ->
         s.push_str("\\usepackage[UTF8]{ctex}\n");
     }
     s.push_str(&format!("\\usepackage[margin={}]{{geometry}}\n", opts.margin));
+    match opts.bib_engine.as_str() {
+        "natbib" => s.push_str("\\usepackage[round,authoryear]{natbib}\n"),
+        "bibtex" => s.push_str("% Bibliography engine: BibTeX\n"),
+        _ => {
+            s.push_str("\\usepackage[backend=biber]{biblatex}\n");
+            for path in &opts.bibliography {
+                s.push_str(&format!("\\addbibresource{{{}}}\n", escape_url(path)));
+            }
+        }
+    }
     s.push_str(concat!(
         "\\usepackage{amsmath,amssymb,amsfonts,mathtools}\n",
         "\\usepackage{graphicx}\n",
@@ -196,15 +213,30 @@ pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) ->
     }
     s.push('\n');
     s.push_str(body.trim_end());
+    if !opts.bibliography.is_empty() {
+        if matches!(opts.bib_engine.as_str(), "natbib" | "bibtex") {
+            s.push_str("\n\\bibliographystyle{plain");
+            if opts.bib_engine == "natbib" { s.push_str("nat"); }
+            s.push_str("}\n\\bibliography{");
+            s.push_str(&opts.bibliography.iter().map(|p| escape_url(p.trim_end_matches(".bib"))).collect::<Vec<_>>().join(","));
+            s.push_str("}\n");
+        } else {
+            s.push_str("\n\\printbibliography\n");
+        }
+    }
     s.push_str("\n\n\\end{document}\n");
     s
 }
 
 /// Render only the body (no preamble).
 pub fn render_body(doc: &Document, images: ImageMap) -> String {
+    render_body_with_bibliography(doc, images, "biblatex")
+}
+
+fn render_body_with_bibliography(doc: &Document, images: ImageMap, bib_engine: &str) -> String {
     let mut footnotes = HashMap::new();
     collect_footnotes(&doc.blocks, &mut footnotes);
-    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new() };
+    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new(), bib_engine: bib_engine.into() };
     w.blocks(&doc.blocks, 0);
     w.out
 }
@@ -445,9 +477,14 @@ impl<'a> Writer<'a> {
 
     fn inlines(&mut self, v: &[Inline]) -> String {
         let mut s = String::new();
+        let mut text = String::new();
         for i in v {
+            if let Inline::Text(t) = i { text.push_str(t); continue; }
+            s.push_str(&citation_text(&text, &self.bib_engine));
+            text.clear();
             self.inline(i, &mut s);
         }
+        s.push_str(&citation_text(&text, &self.bib_engine));
         s
     }
 
@@ -521,6 +558,21 @@ impl<'a> Writer<'a> {
     }
 }
 
+/// Pandoc-style bracket citations. Only safe BibTeX keys become commands;
+/// ordinary brackets and code spans remain ordinary text.
+fn citation_text(text: &str, engine: &str) -> String {
+    let re = regex::Regex::new(r"\[\s*@([A-Za-z0-9_:.+/-]+)(?:\s*;\s*@[A-Za-z0-9_:.+/-]+)*\s*\]").expect("citation regex");
+    let command = match engine { "natbib" => "citep", "bibtex" => "cite", _ => "autocite" };
+    let mut out = String::new(); let mut cursor = 0;
+    for m in re.find_iter(text) {
+        out.push_str(&escape_text(&text[cursor..m.start()]));
+        let keys = m.as_str().trim_matches(|c| c == '[' || c == ']').split(';')
+            .map(|key| key.trim().trim_start_matches('@')).collect::<Vec<_>>().join(",");
+        out.push_str(&format!("\\{command}{{{keys}}}")); cursor = m.end();
+    }
+    out.push_str(&escape_text(&text[cursor..])); out
+}
+
 /// Display math: environments pass through, everything else goes in `\[ \]`.
 fn display_math(m: &str) -> String {
     let t = m.trim();
@@ -541,6 +593,19 @@ fn trim_trailing_blank(s: &mut String) {
 mod tests {
     use super::*;
     use crate::md_ast::parse;
+
+    #[test]
+    fn selected_bibliography_engines_and_citations_are_real_output() {
+        let doc=parse("---\nbibliography:\n  - refs.bib\n---\nCitation [@alpha; @beta] and `[@literal]`.\n");
+        assert_eq!(doc.meta_list("bibliography"),vec!["refs.bib"]);
+        for (engine,command) in [("biblatex","autocite"),("natbib","citep"),("bibtex","cite")] {
+            let tex=render_document(&doc,&LatexOptions{bib_engine:engine.into(),bibliography:vec!["refs.bib".into()],..Default::default()},&|_|None);
+            assert!(tex.contains(&format!("\\{command}{{alpha,beta}}")),"{tex}");
+            assert!(tex.contains("\\texttt{[@literal]}"));
+            if engine=="biblatex" {assert!(tex.contains("\\addbibresource{refs.bib}"));assert!(tex.contains("\\printbibliography"));}
+            else {assert!(tex.contains("\\bibliography{refs}"));}
+        }
+    }
 
     fn body(md: &str) -> String {
         render_body(&parse(md), &|_| None)

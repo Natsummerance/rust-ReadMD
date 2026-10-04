@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-04T11:32:48.739Z",
+  "capture_profile": "immersive-v2",
+  "completed": true,
+  "runtime_files": 5465,
+  "runtime_logical_bytes": 929937037,
+  "runtime_unique_bytes_reclaimed": 790617567,
+  "runtime_removed": true,
+  "per_clip_and_credentials_fixtures_removed": true,
+  "failed_recording_fixtures_removed": true,
+  "shared_build_and_dependency_caches_preserved": true,
+  "media_duplicates_avoided_by_hardlinks": 104,
+  "final_video_files": 104
+}

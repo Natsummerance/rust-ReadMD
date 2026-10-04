@@ -1,4 +1,4 @@
-# ReadMD v2.3.9 更新说明
+# ReadMD v0.0.4 更新说明
 
 ReadMD 是本地优先的 Markdown 阅读、编辑与格式转换工具。v2.3.9 在延续本地优先、全语种母语化与格式转换能力的基础上，正式推出 **CC0 许可的 Arch-Chan Live2D 与 73 款 Petdex 精灵图桌面伴读宠物系统（含活态微呼吸自适应引擎与全端台词联动）**，重构 **纯正苹果风原生拖动条（Apple HIG 4px 细轨道与 18px 物理触觉旋钮）**，新增 **原生矢量高保真 PDF 编辑器及 FastMCP 21 项扩展工具链**，强化 **纯 Python Word .doc 二进制流（FIB/CLX）与复杂表格聚类重构**，达成 **46 种语言 100% 字典对齐（1563 词条零裸露、零空值、零英文照搬）**，并实现 **打包彻底瘦身至 28.2MB 与 2 秒极速冷启动**。
 
@@ -6,12 +6,12 @@ ReadMD 是本地优先的 Markdown 阅读、编辑与格式转换工具。v2.3.9
 
 | 系统 | 架构 | 交付物 | 资产文件名 |
 | --- | --- | --- | --- |
-| Windows 10/11 | x64、ARM64 | 安装版、便携版 | `ReadMDSetup-v2.3.9.exe`、`ReadMD-portable-v2.3.9.exe`（x64）；`ReadMDSetup-arm64-v2.3.9.exe`、`ReadMD-portable-arm64-v2.3.9.exe`（ARM64） |
-| macOS 13+ | Intel x64、Apple Silicon ARM64 | 原生压缩包 | `ReadMD-macos-x64-v2.3.9.zip` / `ReadMD-macos-arm64-v2.3.9.zip` |
-| Ubuntu 22.04/24.04、Debian 12 | x64、ARM64 | AppImage、Deb | `ReadMD-linux-x86_64-v2.3.9.AppImage` / `ReadMD-linux-aarch64-v2.3.9.AppImage`；`readmd_2.3.9_amd64.deb` / `readmd_2.3.9_arm64.deb` |
-| 统信 UOS 20、银河麒麟 V10、Deepin 23 | x64、ARM64 | 目标 Deb | `readmd_2.3.9_amd64.deb` / `readmd_2.3.9_arm64.deb`；真实系统证据完成前不构成正式支持承诺 |
-| VS Code | Extension Host 支持的桌面架构 | VSIX | `readmd-vscode-2.3.9.vsix` |
-| MCP 客户端 | Python 3.11+ / stdio | MCP ZIP | `readmd-mcp-server-2.3.9.zip` |
+| Windows 10/11 | x64、ARM64 | 安装版、便携版 | `ReadMDSetup-v0.0.4.exe`、`ReadMD-portable-v0.0.4.exe`（x64）；`ReadMDSetup-arm64-v0.0.4.exe`、`ReadMD-portable-arm64-v0.0.4.exe`（ARM64） |
+| macOS 13+ | Intel x64、Apple Silicon ARM64 | 原生压缩包 | `ReadMD-macos-x64-v0.0.4.zip` / `ReadMD-macos-arm64-v0.0.4.zip` |
+| Ubuntu 22.04/24.04、Debian 12 | x64、ARM64 | AppImage、Deb | `ReadMD-linux-x86_64-v0.0.4.AppImage` / `ReadMD-linux-aarch64-v0.0.4.AppImage`；`readmd_0.0.4_amd64.deb` / `readmd_0.0.4_arm64.deb` |
+| 统信 UOS 20、银河麒麟 V10、Deepin 23 | x64、ARM64 | 目标 Deb | `readmd_0.0.4_amd64.deb` / `readmd_0.0.4_arm64.deb`；真实系统证据完成前不构成正式支持承诺 |
+| VS Code | Extension Host 支持的桌面架构 | VSIX | `readmd-vscode-0.0.4.vsix` |
+| MCP 客户端 | Python 3.11+ / stdio | MCP ZIP | `readmd-mcp-server-0.0.4.zip` |
 | 校验清单 | 全架构 | SHA-256 | `SHA256SUMS.txt` |
 
 本版本经 `READMD_SELF_USE_RELEASE` 自用通道发布（仅 `v2.3.9` tag 生效）：资产未做 Authenticode / macOS codesign 签名，原生平台证据清单按参考口径（informational）提供；多平台原生构建、冒烟自检、隐私扫描与校验和生成照常执行。首次运行如遇系统"未知发布者"提示，请先核对 `SHA256SUMS.txt` 再安装。

@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-04",
+  "results": [
+    {
+      "scenario": "current-network",
+      "elapsedMs": 3897,
+      "ok": true,
+      "hasUpdate": false,
+      "latestVersion": "v2.3.9",
+      "errorCode": null
+    },
+    {
+      "scenario": "unreachable-proxy",
+      "elapsedMs": 10519,
+      "ok": false,
+      "hasUpdate": null,
+      "latestVersion": null,
+      "errorCode": "update_network_error"
+    }
+  ]
+}

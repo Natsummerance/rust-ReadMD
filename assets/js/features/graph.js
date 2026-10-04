@@ -44,7 +44,7 @@
     if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   });
-  const api = url => call(url);
+  const api = (url, opts) => call(url, opts);
   const HUES = [205, 275, 325, 165, 38, 120, 245, 190, 300, 15], WAVE = 170, TAU = Math.PI * 2;
   let modal, canvas, ctx, drawer, opener, tip, zoomOut, requestId = 0, backlinkRequest = 0;
   let nodes = [], edges = [], projected = [], byKey = new Map(), projMap = new Map();
@@ -735,7 +735,22 @@
       updateVisibility(backlinkData.backlinks.length>0||backlinkData.forward_links.length>0||hasGraph());
     }catch(_){if(id===backlinkRequest){drawer.querySelector('#backlinks-content').textContent=t('ux.loadFailed');updateVisibility();}}
   }
-  function toggleDrawer(){if(!activeDoc())return;createDrawer();drawer.classList.toggle('hidden');if(!drawer.classList.contains('hidden')){refreshBacklinks(currentFile||state.file);drawer.querySelector('input').focus();}}
+  async function toggleDrawer(){
+    if(!activeDoc())return;createDrawer();drawer.classList.toggle('hidden');
+    if(!drawer.classList.contains('hidden')){
+      const file=currentFile||state.file, dir=file?.replace(/[\\/][^\\/]+$/, '');
+      drawer.querySelector('input').focus();
+      if(dir&&dir!==file){
+        drawer.querySelector('#backlinks-content').textContent=t('graph.loading');
+        try{
+          const bridge=window.pywebview?.api;
+          if(bridge?.index_directory_links)await bridge.index_directory_links(dir,false);
+          else await api('/api/links/index',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dir,force:false})});
+        }catch(_){/* The previous index still remains readable. */}
+      }
+      if(!drawer.classList.contains('hidden'))await refreshBacklinks(file);
+    }
+  }
   const WIKILINK_RE=/\[\[([^\]\n|#]+)(?:#([^\]\n|]+))?(?:\|([^\]\n]+))?\]\]/;
   function hasGraph(content){if(typeof content==='string')return WIKILINK_RE.test(content);return activeDoc()&&WIKILINK_RE.test(state.fixed||state.original||'');}
   function updateVisibility(force){const btn=document.getElementById('btn-graph');if(btn){btn.disabled=!activeDoc();btn.classList.toggle('hidden',!activeDoc()||!(force??hasGraph()));}}

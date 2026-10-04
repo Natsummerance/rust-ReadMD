@@ -1,0 +1,1056 @@
+{
+  "date": "2026-10-04T11:30:51.755Z",
+  "clips": 104,
+  "posters": 104,
+  "frames_inspected": 2664,
+  "reviewed_this_run": [
+    "F001",
+    "F002",
+    "F003",
+    "F004",
+    "F005",
+    "F006",
+    "F007",
+    "F008",
+    "F009",
+    "F010",
+    "F011",
+    "F012",
+    "F103",
+    "F013",
+    "F014",
+    "F015",
+    "F016",
+    "F017",
+    "F099",
+    "F018",
+    "F019",
+    "F020",
+    "F098",
+    "F021",
+    "F022",
+    "F023",
+    "F024",
+    "F025",
+    "F026",
+    "F027",
+    "F102",
+    "F028",
+    "F029",
+    "F030",
+    "F031",
+    "F032",
+    "F033",
+    "F034",
+    "F035",
+    "F036",
+    "F037",
+    "F038",
+    "F039",
+    "F040",
+    "F041",
+    "F042",
+    "F043",
+    "F044",
+    "F045",
+    "F046",
+    "F047",
+    "F048",
+    "F049",
+    "F050",
+    "F051",
+    "F052",
+    "F053",
+    "F054",
+    "F055",
+    "F056",
+    "F057",
+    "F058",
+    "F059",
+    "F060",
+    "F061",
+    "F100",
+    "F062",
+    "F063",
+    "F064",
+    "F065",
+    "F066",
+    "F067",
+    "F068",
+    "F069",
+    "F101",
+    "F070",
+    "F071",
+    "F072",
+    "F073",
+    "F074",
+    "F075",
+    "F076",
+    "F077",
+    "F078",
+    "F079",
+    "F080",
+    "F081",
+    "F082",
+    "F083",
+    "F084",
+    "F085",
+    "F086",
+    "F087",
+    "F088",
+    "F089",
+    "F090",
+    "F091",
+    "F092",
+    "F093",
+    "F094",
+    "F095",
+    "F096",
+    "F097",
+    "F104"
+  ],
+  "redacted_clips": [],
+  "redacted_this_review": [],
+  "verification_frames": 0,
+  "private_path_matches_remaining": 0,
+  "native_capture": "own WebView surfaces only; no desktop, Explorer or OS file-picker pixels",
+  "private_text_persisted": false,
+  "recordings": [
+    {
+      "id": "F001",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "d3d53803249aecefc868a6a7a087550b38f9df3b73713a80b078f661432c705d",
+      "poster_sha256": "05dabeaf2d424b607acab1e6ea4c76d946d03dfa17d6054a72791fb081e4e6f7"
+    },
+    {
+      "id": "F002",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 21,
+      "redacted_regions": 0,
+      "sha256": "1c2b6ecac6a1717ed272d5c217c3244d3b8f8fc1bb888d66dba4b3e3e151e5be",
+      "poster_sha256": "ece072be685e9e2f067e0a9eb8aefcee5950afd321d6a0b06ef5b97eac71539c"
+    },
+    {
+      "id": "F003",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "81ef9013a86045e916bf9742cff3895cce34fa42a8b2fedcc43efd08b2e946ee",
+      "poster_sha256": "bb233d87fc80d7b92585c093f8163e862c2e9c866ac36306d8708fd81e42df52"
+    },
+    {
+      "id": "F004",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 22,
+      "redacted_regions": 0,
+      "sha256": "7ccd3fa6a3ebcd815025117af0f63d5a3ef1fe655aafbc07d2b4d9c9825ddbb7",
+      "poster_sha256": "91ee0ec3f49f3d38ab4baebb202215c2a48198f86a390be42d051640edab8a5f"
+    },
+    {
+      "id": "F005",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 18,
+      "redacted_regions": 0,
+      "sha256": "d514917b6e50d9750e23951c9d0bd6f82d45d69d12b6486fc0a40b84fcd629b2",
+      "poster_sha256": "312dd9e912d38ab0efd4190487db72203f26aeeef9b084737efc1b27e89f00ed"
+    },
+    {
+      "id": "F006",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 11,
+      "redacted_regions": 0,
+      "sha256": "e06340d69a9214b7588742231fd540a38097761dfa7095bdce739aff403e7f74",
+      "poster_sha256": "4b478402fd55aa6af72ac3552b4f19f04195607e9f5f702102e74748152f583a"
+    },
+    {
+      "id": "F007",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "28a8026a527120c572c5cb2d9eecb4b5386ad0abcf83971f51e2708f7ed939e0",
+      "poster_sha256": "500eabb273efb8c2bbc0560131be0a2d46bd69ac9e281281679a08663b252d96"
+    },
+    {
+      "id": "F008",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "cbcbe5c90b7bdb511a29fe2ca7b71565048790ffc8ee54d81f4e2252c4728993",
+      "poster_sha256": "287aedb569a266eb6f34f6882dd4723b35f7b6cf027dc6d9fc55a5e6308751ba"
+    },
+    {
+      "id": "F009",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "35accc75c0240c28c56ff370b11c152522b0c9b360604ce606ac717ae5ee053c",
+      "poster_sha256": "4b53dd2f6dcc16e7bca64ba43d8c9ae4928ebb446e51e2e3e596304263e3ddf6"
+    },
+    {
+      "id": "F010",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 11,
+      "redacted_regions": 0,
+      "sha256": "c79792cc4df19cf551d46abd614655ff0031ab5daf18d20af192ed1a824b4925",
+      "poster_sha256": "e0e96e95c4199a240199298514f9271b719d2658048a6ed0cad4ff009ffc66ab"
+    },
+    {
+      "id": "F011",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 10,
+      "redacted_regions": 0,
+      "sha256": "0657976ff3f45daea0a351946501e27f80504c011264f74dbc730218bdc51b89",
+      "poster_sha256": "85f85ec4e9207e826057f667fe498586c592db698564f13e0bc6453629b20e82"
+    },
+    {
+      "id": "F012",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 17,
+      "redacted_regions": 0,
+      "sha256": "5bc7bc4adcd8206dd0f7d7e870c0942dfc245399765f920f9c297570099e0b75",
+      "poster_sha256": "f223a29689a0f537d145c161b4343873a563a8149f4248638694f6aa67ebd6c3"
+    },
+    {
+      "id": "F103",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 19,
+      "redacted_regions": 0,
+      "sha256": "66f95c8d0f31908928fcd28e92c39bac5bf02737aa2907bb1584cfb354795315",
+      "poster_sha256": "9a9a8ca6d7c9b2c15fac59b1870a45af73ac77a3e30180669db7e51cec3a836d"
+    },
+    {
+      "id": "F013",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 19,
+      "redacted_regions": 0,
+      "sha256": "0e1c95d3364741b062bb5224d411f458b32702a5b4366c251b5054054bfae903",
+      "poster_sha256": "7084eca609c092d5a800565b1fedac63d3e040b7fab16cb86447b0822188f94b"
+    },
+    {
+      "id": "F014",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 17,
+      "redacted_regions": 0,
+      "sha256": "f32d8c9c4c02735cece37d4265e93fba6882f9c07bc03057a106160c8c48d9ed",
+      "poster_sha256": "c33ff4daad06f4d16c4215178789605db250b320ca4c8c64f56f20a9ee560aef"
+    },
+    {
+      "id": "F015",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 23,
+      "redacted_regions": 0,
+      "sha256": "a5144c8bcf4063e100c7fcccac7cd6dd482a9c8fddfb72a0d7c878d80556feb5",
+      "poster_sha256": "f8892c359310273da7db2aa7b1a6a213fde72704831c7c44041b261ff8cefda0"
+    },
+    {
+      "id": "F016",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 39,
+      "redacted_regions": 0,
+      "sha256": "1bbd4fc925834333f889a32cd9b0e4971dff34f366100618cff1ba4495c2b169",
+      "poster_sha256": "328a8ab3f8a292182c3e3305183025ea7cca40f9e2f348f16ec268179a4fc5cb"
+    },
+    {
+      "id": "F017",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 11,
+      "redacted_regions": 0,
+      "sha256": "c4048d659d673029e443aba617c62fdd7ced81fe8b01b34725ec1d774ab8523c",
+      "poster_sha256": "36e36e74043ffdcf25f2bc78dc445e22cb1b9b07a4898244ea64663f2b11fb65"
+    },
+    {
+      "id": "F099",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "83dd86b150392f98667823c26b154a41c7a9a717d693f473dcba6cb8421cb70f",
+      "poster_sha256": "a63fd377d16d88c2a89fda46f77b1df2eaeb126897214a6b84214b4dbf9a1476"
+    },
+    {
+      "id": "F018",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 11,
+      "redacted_regions": 0,
+      "sha256": "41be2591223f35f24f4845c571baedb51aef198012b0f5bb0c14f01bb8309e9a",
+      "poster_sha256": "a5ccebff18341a107a0dd0362b216ea368bfe383b81a646f718892bfa3c028d2"
+    },
+    {
+      "id": "F019",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "c220d3eb32575d79ef14d88b64053ad26691cc85d2dba20ab2fcf2ad6463accd",
+      "poster_sha256": "3708a4805133f9f403b3d4500096ffbbd3046ed75e301289f4e4263fe4f590bc"
+    },
+    {
+      "id": "F020",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 9,
+      "redacted_regions": 0,
+      "sha256": "50db9e84e9fab5ebe7d4f92d55391031b15c0d85b51c8b22a6445ec2b2b603d6",
+      "poster_sha256": "349f24bdf95446f12512895e64b341ad5ebecece6c561030841a6cdfd0b6f340"
+    },
+    {
+      "id": "F098",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 69,
+      "redacted_regions": 0,
+      "sha256": "4bbaaafa33d9c3d58cf734c3454d96c9843ae7d9c31dc3ca621dbe1829433c6c",
+      "poster_sha256": "c2a4ef9fe57ffdca0cd1c79b8862291cf66298566bdcbe53d7b3e825493cd77b"
+    },
+    {
+      "id": "F021",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 27,
+      "redacted_regions": 0,
+      "sha256": "000f2660541c9a538bebeb226f65ab77048bbbf0adbdd0a1ead0de79172ce768",
+      "poster_sha256": "5f281b15a73344ea54dd9809bc9381a5a094ca7672a368e097995ae91fad4a7a"
+    },
+    {
+      "id": "F022",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "12b61ce44d8347642f801f84466d8649e577d0fbe3effa0889e1b14830a4695b",
+      "poster_sha256": "4ea5898dbddf64189b6245291535b3ba59c1018e58a3fdfe13b8462ea5b44d83"
+    },
+    {
+      "id": "F023",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 22,
+      "redacted_regions": 0,
+      "sha256": "abf6d99f1c5b9495c8960634d1678a8746df7efcb7e2832d87bbd716e8e375f8",
+      "poster_sha256": "914736c6137d7fd21e77f4e6c50bfaf0bac2fda1356da7d58953d76bb3509667"
+    },
+    {
+      "id": "F024",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "d788b9aa1bc4afd73832da419210231911dac40e63824bbe1bb98debfe8a8d79",
+      "poster_sha256": "4005fc27f4f58463aaf1362e5b86071a1672cda119fda73bb322a21c22230796"
+    },
+    {
+      "id": "F025",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 9,
+      "redacted_regions": 0,
+      "sha256": "046ccb861fa81cc455cab01a980d39d9dcdc43cb9b7a4ba6db1f75eb48e5ed5f",
+      "poster_sha256": "2733a46c67ed9f3855641cfe7971b461bc547fa7f22b62fc221756026108413e"
+    },
+    {
+      "id": "F026",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 9,
+      "redacted_regions": 0,
+      "sha256": "fea5bb4d4b97082dff1a4fa643bbcb6773f02f21be03370e963f52eca59c5974",
+      "poster_sha256": "28acf539fdab147bd837ac670317f9730e53d022aa6cb98c1d7a940666695b72"
+    },
+    {
+      "id": "F027",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 18,
+      "redacted_regions": 0,
+      "sha256": "d75bb518c59c9f521d4777c94540d7fafb5d1245437af39e5b50e8fc19e1a782",
+      "poster_sha256": "10e2e3118aa19cb053164e272de355f6550102200851eca830d78264865b8b69"
+    },
+    {
+      "id": "F102",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 17,
+      "redacted_regions": 0,
+      "sha256": "28badf1713e1a1a4e3e68f1b47942603855ee1d1d795d2fd22667c39e7741f48",
+      "poster_sha256": "4a1bc9fe16c4322501cf54e323b7e43adbf977a4d8a063ca957dbd41283f508f"
+    },
+    {
+      "id": "F028",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 21,
+      "redacted_regions": 0,
+      "sha256": "a3eb9f9ec13db71e4b2d0fc29214d7e04d4a3e00440617dbca1df69242b804db",
+      "poster_sha256": "1c2ccd3be9b8030a17ffb3629a653243faa9defeb8676121405341c6ad8fe51d"
+    },
+    {
+      "id": "F029",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 36,
+      "redacted_regions": 0,
+      "sha256": "f5190ceba7369f181411177b311745e1bd449b848db9083b3869aa005ff9dc30",
+      "poster_sha256": "f11453feaac9e23cdc20f0b9d2caab40eb7f441ee86753c22a8e673876c208f3"
+    },
+    {
+      "id": "F030",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 14,
+      "redacted_regions": 0,
+      "sha256": "119e7c68b300ec03fc83910c3f5187c013a3ff09f4be9fbd7d23e98a1247709a",
+      "poster_sha256": "eddabc90d14e4fe8702c7231f339a556ee803576d7f3f6b8ac2f37810d8c76fa"
+    },
+    {
+      "id": "F031",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 19,
+      "redacted_regions": 0,
+      "sha256": "319b7b36f4af8f222119ccee980d45e9f914cf6de7d8d26c906209c0dadf8118",
+      "poster_sha256": "3cae608da99505fbcc065101a6f0fe80567d4c79966081992c9b1d735b3901ab"
+    },
+    {
+      "id": "F032",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "bd940e2fd72cd48e6322b57e28753a0bd4b111c777176b41c68261574d566e58",
+      "poster_sha256": "46597364fe27f60e197c60af5f40b45209b1136e7bffa9db83d30405b8cd4683"
+    },
+    {
+      "id": "F033",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "14bdfd0d1b45597eb10c035428b42663199d5ca44416c7ff7af6e7ce7eb3da0d",
+      "poster_sha256": "82be7515c02591e9d018c44a48fca62bacec72a3aa4216e362c70b65e38873bc"
+    },
+    {
+      "id": "F034",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "4ab10a74ae284d6275f9980377bd108b5bbf33193ffcb3ae4f52cd3bdab3ed04",
+      "poster_sha256": "f4c9bc137fc5e6eb53586cd9267dc41386df8385ce34fb1df344be233b9cf9ea"
+    },
+    {
+      "id": "F035",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 19,
+      "redacted_regions": 0,
+      "sha256": "3e7643a598b299065eeb8403acd6567fd93ec13d0ee914a7d705e4b71f435681",
+      "poster_sha256": "efca724bade235d7f3bf09a4f0ff0c1e8fea3dde1c96892a5c8e25f4f0117114"
+    },
+    {
+      "id": "F036",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "5f53a5328d7052de6858bcafb735dde032923168c41bfa6e8fa1dbe737bda305",
+      "poster_sha256": "a84b7074315220ea25abcb680222741e1addf5253469eb045a286db961867547"
+    },
+    {
+      "id": "F037",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 18,
+      "redacted_regions": 0,
+      "sha256": "e7ce2c626866014d9914136f8521c793aa037f7f691b58f43d36eb4bfcdae00e",
+      "poster_sha256": "ac8a1e1c808cc4f8c75c8156dc77e34cc13e9df8f51e191701cb2f0537044c67"
+    },
+    {
+      "id": "F038",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "92bb2fa9f6cf11919d13c23048a11eb75b5377747ddaa4fbfb9ecf742034b6d7",
+      "poster_sha256": "84e05acfe3a1cd428467ad5db97dea64c478cd7abac16403da2b54a8fadba00d"
+    },
+    {
+      "id": "F039",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 9,
+      "redacted_regions": 0,
+      "sha256": "5b81dac5ace9c0808b84fa743d6ed91c1bf6c9116f10c7a6419092219a0ac9a6",
+      "poster_sha256": "d5a73157836504d07117396627c8a34f57eee3965749ade19c355cfc21976d9e"
+    },
+    {
+      "id": "F040",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 19,
+      "redacted_regions": 0,
+      "sha256": "f0c8c91ffc159507db0a91e73d5ece4bd84ef0a4b9c21cf629683a1ac9045262",
+      "poster_sha256": "6310103e174b131baa74306b542dd70e65efbac0c125c6970690af201f6a3c50"
+    },
+    {
+      "id": "F041",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 29,
+      "redacted_regions": 0,
+      "sha256": "028d15166651057b0a32827b3efa3fe32a6d9597ef66a6ddc8e26ef5ddb5fb4f",
+      "poster_sha256": "944a0045b8f45f0dfabc09fcd3c4def383720b13bf38ecaf15a19aecdec51e71"
+    },
+    {
+      "id": "F042",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 25,
+      "redacted_regions": 0,
+      "sha256": "13ec484e6d767b920bf7d398695370f482bfa43cd1bc6accb51dfeabdf74365c",
+      "poster_sha256": "12b0473de753ceb3ceac2f03355b512ca9009800cf5c2da1a307c822b4e3f593"
+    },
+    {
+      "id": "F043",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 47,
+      "redacted_regions": 0,
+      "sha256": "cb337b15f0f0a98ad992e4d0285bd42ab458364a7b8934d7142bf304fc093a08",
+      "poster_sha256": "65933cb707924b866f244c3d80ddb286b14f8b1a95741e8de4ce35e88a979723"
+    },
+    {
+      "id": "F044",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "3c74a823e5bfbcf41d3fe575606118f1697e03cb5210b7733c1d1873727c5bbb",
+      "poster_sha256": "289103bc3706eb1f115be6a321060e9160c83c39899b1405fbf7b2aea9735114"
+    },
+    {
+      "id": "F045",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 48,
+      "redacted_regions": 0,
+      "sha256": "fd796ed53907812070fb37823440241596c744db242df0f54aaf281fb17af1b4",
+      "poster_sha256": "a16bfa86413f353b8b49ce66993d49921dd3187f63dd1c149ce2ff6025659070"
+    },
+    {
+      "id": "F046",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "4c7eec5cc2a756b5c0a9f25b751d13f464e5fb874a2f03dd65cccace002256f2",
+      "poster_sha256": "5a947f61a8f0ed909b28b930662c8959fa18665845188984e7743731bc81a260"
+    },
+    {
+      "id": "F047",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 29,
+      "redacted_regions": 0,
+      "sha256": "c1f7a23226749f7bfe3b9cb83f975f1ae78bc4f7e520ac2d7d3c823bab6fbd28",
+      "poster_sha256": "5bf14ea3c4a072c1b9f6549cccf91fbd88c6f6e92579bdf0ba6cc78d56d329a4"
+    },
+    {
+      "id": "F048",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "a9c117dc5a6e95b108f07cdd3d5ee8e743e067d65482d022d832e29c75837be7",
+      "poster_sha256": "2efa36f82e501d01d0d97ba298d5e00173ed492d5f2d2019e2d546b037f5c906"
+    },
+    {
+      "id": "F049",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 27,
+      "redacted_regions": 0,
+      "sha256": "c9a54bf6ab55535f9ac67645b1a617fc49e7d2d1722eb234b22e8406e0700b53",
+      "poster_sha256": "ccbe2568b2816ded7904a021d0ae240e6595e7cd162b227dfc9e537574e36ac5"
+    },
+    {
+      "id": "F050",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 15,
+      "redacted_regions": 0,
+      "sha256": "78616090e580f9c43c3053c7aa4b753bb4ba0d55068ece50fc5052fb702d5b8a",
+      "poster_sha256": "f27f29e400a43537672b040d61b0b0105ca21bc76796b004397f959b5e8a60db"
+    },
+    {
+      "id": "F051",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 43,
+      "redacted_regions": 0,
+      "sha256": "75023947e72118d86ccabfb1503d0d90471c13bd505a9a33a43fd64149e25fa6",
+      "poster_sha256": "36eb2625a9dc15b94d4f179f6b0b663dfabd1dfa08cbd77beeec4faa631be5dd"
+    },
+    {
+      "id": "F052",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "ce9853e4c3e063ccc9a37ee337bc426d376d10a9692fe0b57c5b96943d823c72",
+      "poster_sha256": "699eb2e5312ac8bad84498feeccf1b0d71262335ad54c22b365f8de416cc4a15"
+    },
+    {
+      "id": "F053",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 52,
+      "redacted_regions": 0,
+      "sha256": "3cd86f0d8b61d36196ecaf5d75d4afc162655f046ad4d1538ea8cbbf8de4d185",
+      "poster_sha256": "47b172c5df3ed64957ec686da9148da7e1722d7951436944bad08e1fea12cbcf"
+    },
+    {
+      "id": "F054",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 44,
+      "redacted_regions": 0,
+      "sha256": "4ec17fbbece81ae0b77d1ce37b7dcb6fa37a4fc263cf7bba49fe89990b6d5476",
+      "poster_sha256": "1b8ebbc1ad3100929255acaaba2143ddd2bb45fe65b20bb42b2cec24af322034"
+    },
+    {
+      "id": "F055",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 45,
+      "redacted_regions": 0,
+      "sha256": "3adf15218ff5d061070af58fffe33e7582a798c8deae61757e0cb0bc9ffdb75c",
+      "poster_sha256": "ac8a334f6c091bcfdc38768f47be2fb135a70ecf7cb88e4f0dcfed74cc3ed3c8"
+    },
+    {
+      "id": "F056",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 17,
+      "redacted_regions": 0,
+      "sha256": "b1bda4f8995a95f4b7d73bf395ddd7eb671d1aa0fa3aca696c883efdd9a16135",
+      "poster_sha256": "130bda07b3397d1ef430674e0dbd106ab1d18e252c907b273f3220293f02d53f"
+    },
+    {
+      "id": "F057",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 37,
+      "redacted_regions": 0,
+      "sha256": "b6db990341c4fce92874d71d6c21569ab0a7503951451122d0049bc310ce8230",
+      "poster_sha256": "31013795292d91b0b1c2c0a3c8b806a88d2b223ec8e2ca926bb101397d06b5f2"
+    },
+    {
+      "id": "F058",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 35,
+      "redacted_regions": 0,
+      "sha256": "0646c4f0449aafa6d9bf8b0ee4632ef7970d24e5d61768e03a3ae1b7c089acf7",
+      "poster_sha256": "eade3053b4e69ccb2cb2b066d81bfcff6be7e889f173a95e06d36e215b56c890"
+    },
+    {
+      "id": "F059",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "a2dd3c78353d2f41098a5351fef665fac9d569ebf95f35a0def4a1e69b9dc5eb",
+      "poster_sha256": "a852447b58443ffddbbfe99c36fb013649deb6b439db6a661efba7ea431bca4e"
+    },
+    {
+      "id": "F060",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "46e730c106f28c0becdc3142eae3f36478d6c52ea7f4296fd043fef06233950d",
+      "poster_sha256": "47f980a3abe6c09953c5550c690e50afe1b1ca1994a5555c096667f6c8c8ec43"
+    },
+    {
+      "id": "F061",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 17,
+      "redacted_regions": 0,
+      "sha256": "eefb2beec5e045e2f9ae86bc509ad7ec3b3fc459124ee7119a0a904be659442c",
+      "poster_sha256": "59a264ee199de440bea956494b0ace0e2bd0577ce525b7daffa4ba9666db5d45"
+    },
+    {
+      "id": "F100",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 30,
+      "redacted_regions": 0,
+      "sha256": "d7df319098e6fee9fecc439ed5a2cd8d0e125f376ecff042985bf1b79c409566",
+      "poster_sha256": "0a05cf1f110a0254c3f39f642901fc5ac7adcc130280c5cb58681d37a7e409b3"
+    },
+    {
+      "id": "F062",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 45,
+      "redacted_regions": 0,
+      "sha256": "f54a6a503df2f88f7a1a2a6995638bb12e6048cb83413c7a175beae3b362cac9",
+      "poster_sha256": "8dbdf0691af69891528757b0cdc0fa56b9c7d270eac85230d8e989af0a44069c"
+    },
+    {
+      "id": "F063",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 28,
+      "redacted_regions": 0,
+      "sha256": "eeef61af62f07c2546d393c521ae7b721f89ce24ff3590b1d5331cc6df31db8d",
+      "poster_sha256": "c79d43fdb71bc8084d8dbce0ebd2525ead356004498b369cdf26d39911a4f297"
+    },
+    {
+      "id": "F064",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 25,
+      "redacted_regions": 0,
+      "sha256": "024b0da7f0b73bcb44fb46eadbc0f55a85a397a4c79ae381a2e95c42b8a8ecf6",
+      "poster_sha256": "593c62283b390c38db0973ffe40fc616f182f0f23cc74630612071a849bfd03e"
+    },
+    {
+      "id": "F065",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 29,
+      "redacted_regions": 0,
+      "sha256": "5bad16a13256c9c47053eb31b4a73f368914e647334053f1c877cb7b5a4ebcb2",
+      "poster_sha256": "60cb8550117851a0e1feed834f9e42d40ac0aed5488c7c1b5775b7cd57038f06"
+    },
+    {
+      "id": "F066",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 15,
+      "redacted_regions": 0,
+      "sha256": "efd80f450866da7c6ce60768fcc449c5d2b0903adb558e3cb82b46a19caf37c6",
+      "poster_sha256": "80bc6c0001a4d980c0226c5352630082c4c46b621e3046204c6b0843bc20cc90"
+    },
+    {
+      "id": "F067",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 27,
+      "redacted_regions": 0,
+      "sha256": "78cd8eeaee39a18cb1ccdacc9ecf93c221f959a857dfe39245254f7da945c9de",
+      "poster_sha256": "7ce315053bbd24326e559bdf3dea7c903ef1c7a7639bc7ec3dca9352c86a1ed0"
+    },
+    {
+      "id": "F068",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 47,
+      "redacted_regions": 0,
+      "sha256": "5e19c2ac954bafeb71843b14d7cae717e3996218b5419357c1913bcce85388db",
+      "poster_sha256": "cc6f49703563005f9a7d61ec694978c0ca1a94f5260229d6527738ac9f5c3559"
+    },
+    {
+      "id": "F069",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "66b28f4597e608970df979c06299dc4ba52699f7498809bec077acbee857adeb",
+      "poster_sha256": "ae2d07d83fbc390e33fcecb6c4897fb05d393ee55bd0859b99f20438d6485b62"
+    },
+    {
+      "id": "F101",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 43,
+      "redacted_regions": 0,
+      "sha256": "40ae9a874b977c41a106394c284cd664fc31d7be624d16cdb7f7ff370a18c484",
+      "poster_sha256": "87b49308d14b4388e38200443d15da52cc20088fb099107eb98116fc527632de"
+    },
+    {
+      "id": "F070",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 46,
+      "redacted_regions": 0,
+      "sha256": "88711131c988a2a2a2e985cc11899f6a810b9d0ecfb79963343f94bf07025f46",
+      "poster_sha256": "13cc08e099889e117769ad0a6770ac377e0f3e03f48eba6a6cba32d0b6351059"
+    },
+    {
+      "id": "F071",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 31,
+      "redacted_regions": 0,
+      "sha256": "c29d6810bdf28cac276f3835789c4d4949cb01aeb40608fc940e1753b6a6b9ab",
+      "poster_sha256": "c5aad04169ebf8ac4551f89a072576fb7ec76157bfb30fbf324d57698a1180ec"
+    },
+    {
+      "id": "F072",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 33,
+      "redacted_regions": 0,
+      "sha256": "b90e190f94318beec1cab986a86f6ab90b714c024aaf361f62b4e64295229e52",
+      "poster_sha256": "7d584ee1243bafcc61b50db18d2ac05232e71dab1df37e54a05dc10ac824848e"
+    },
+    {
+      "id": "F073",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 37,
+      "redacted_regions": 0,
+      "sha256": "fbdac151b1eeda52f131a4a0f4f99564e8d90da83f88473d1b759f435c700837",
+      "poster_sha256": "0cf5f310596420eb0bba4a79f579a514c07fafa7407075ce269a5ae404704b12"
+    },
+    {
+      "id": "F074",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 18,
+      "redacted_regions": 0,
+      "sha256": "0f30c6568a2497c5710e9beaef8dc7ae750d7bd8b23b00f4e4c1823ca300afa9",
+      "poster_sha256": "10d3e6fd8a00d2e92e3d07e5fcfad568c7331cd8182cf6065dfcc8ce2c055a49"
+    },
+    {
+      "id": "F075",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "1af513d4f31053db7b9bfd9c791ec8d7524395f0a8f8686c7f3c29fea0b9d9d4",
+      "poster_sha256": "e45a2851a48dc0e4c04e872500d18bcce7b1bbf09eb38bae9e4409a26a036cc0"
+    },
+    {
+      "id": "F076",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 23,
+      "redacted_regions": 0,
+      "sha256": "b98e9b9c6850ec45ac5e987ef3f87da9ba28a2da041cc465e6debb0480945771",
+      "poster_sha256": "3a6270c8ff52eece648f3e70b3aa0cfe91be1e9517231cfc3367aa2b1888a57e"
+    },
+    {
+      "id": "F077",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 27,
+      "redacted_regions": 0,
+      "sha256": "d386e47ce3d48409ade58c88427471f0a67c317aae23dc623e51d7876c152917",
+      "poster_sha256": "5880afefe8d43680e6048181c561d75541815fb18772a83aaf10f9c730e76e59"
+    },
+    {
+      "id": "F078",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 36,
+      "redacted_regions": 0,
+      "sha256": "3f9827334cc36ebf3fbdf99df52dcfdde2b8f01a1479a0b26442652917a92551",
+      "poster_sha256": "ddcf24541b4fdb4e780e59091f05eb7d5fd38bc2f06f7a47350ea18b52c4067b"
+    },
+    {
+      "id": "F079",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 23,
+      "redacted_regions": 0,
+      "sha256": "e0ac0703b750454ec98420ec6986f0b9e2fb2a6e0b7217aa4ee7f7612ead7a3f",
+      "poster_sha256": "53654697f78ba6115eb9b65bc253c5e28ce30018938483a61b2dd5d21c5febf6"
+    },
+    {
+      "id": "F080",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 23,
+      "redacted_regions": 0,
+      "sha256": "74441376a24bba408d8fe439f613c25d93247f73c03f4349e05c690425408ef2",
+      "poster_sha256": "038be5c7a85884fbc14b40ce49144d85c8f03f982b8eafbb4c974065f261eaeb"
+    },
+    {
+      "id": "F081",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 20,
+      "redacted_regions": 0,
+      "sha256": "34674225d1d5a559dedf2bc624677f113ecf717353c81890adf54d803e351c8a",
+      "poster_sha256": "7f37f8a68af737a37420d53eab287a15f56458c28675b40d106d0d881e9b1963"
+    },
+    {
+      "id": "F082",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 33,
+      "redacted_regions": 0,
+      "sha256": "5605313b854128482c245aef5183dd0ddd68989cf7b6864775ae1d22817597f7",
+      "poster_sha256": "bc0a147caaaee12887da7b0e5741a8dd5ae8007fd17538facf67939c0c0ea93f"
+    },
+    {
+      "id": "F083",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 61,
+      "redacted_regions": 0,
+      "sha256": "f3cfbf404c66dca174bd7f022432bed7f6755a15e2a9e2156cb4057037583578",
+      "poster_sha256": "4f9673a81ac431dfffca07711b5ea2196a98a7cf6fe03699a812731e6f4e2d19"
+    },
+    {
+      "id": "F084",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 41,
+      "redacted_regions": 0,
+      "sha256": "f6e1d1fe381a696712ec006ebe064d7661fa4ed8bb6129c7da73b2435043a472",
+      "poster_sha256": "bafc620ef3819d92241aef8595a56ec29ce5386eb9a2858e7f787248aacd95f2"
+    },
+    {
+      "id": "F085",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 16,
+      "redacted_regions": 0,
+      "sha256": "065567c85a7c2a081ac39bac9d62bf5204d59862eb97e270af7a717f1221272c",
+      "poster_sha256": "aec532dfb182c1e4a7083869f70f62c50e9d915a0938a638bf4db365fcf263ff"
+    },
+    {
+      "id": "F086",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "f506c2daf5750709d3be504914ee5fb9f24791666baacab091e3f90a58e86ffb",
+      "poster_sha256": "30719254c77c4649af00a4d7391a797a79b6d6d97cb759662a98a01d03b8c81b"
+    },
+    {
+      "id": "F087",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 21,
+      "redacted_regions": 0,
+      "sha256": "0bce9d15e19337ae76739281570803820f5fb922d8b698eab96ccb598d0047a9",
+      "poster_sha256": "e3877a09d7e2823261ce1f5fb2fbc70185de1af152568d66838c16a6310deec6"
+    },
+    {
+      "id": "F088",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 30,
+      "redacted_regions": 0,
+      "sha256": "2c0b2c740814b02bf67741810684952307fba81488a8fc0c2edf6251e8421fc3",
+      "poster_sha256": "43d321a92354e37413ab4069529d277fb3a683ac0069bbc7b6e30620cfdf34c5"
+    },
+    {
+      "id": "F089",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 28,
+      "redacted_regions": 0,
+      "sha256": "e9745f95e0ccc95a2bbc400a376963edc707e78e5d95ec8ff1d6e995a028d85b",
+      "poster_sha256": "830fbb46a670e41eed08937d8abd8a228e6e00199489fd97b1fd2a9ba542b5d6"
+    },
+    {
+      "id": "F090",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 24,
+      "redacted_regions": 0,
+      "sha256": "42b179e52b1377e506f2573b8c7fff920b79d17415b13d5dbb1ea46d7bb81cbe",
+      "poster_sha256": "55d301422e4d30ae1e6ad066b6e2a6e77f544c16d880160c0d2a82e490d25a2c"
+    },
+    {
+      "id": "F091",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 41,
+      "redacted_regions": 0,
+      "sha256": "73204865c100e627dd55ecfa44260eaf3ba190334c2318a23cdb2b702bb535ec",
+      "poster_sha256": "29c2edff8c7b924a3cb5ff7f88834b94d5a5d2609b0a36997ded650b85c35d42"
+    },
+    {
+      "id": "F092",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 14,
+      "redacted_regions": 0,
+      "sha256": "aadb1a5a7eb64fc2df4c23001c70a461e4aaaca543a9c0e2bc06f0c131403171",
+      "poster_sha256": "33ebf6801fa4ef4cc8021be3dafdc896007e39afc3bd4090f46a8abea1e50ee2"
+    },
+    {
+      "id": "F093",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 87,
+      "redacted_regions": 0,
+      "sha256": "41f049302f15944fa0299402d787e2c0c04b42ae035f90fc70bfa04ac9973a6e",
+      "poster_sha256": "ba59ca5efe1e731c5f10a4ee8d4cd22a6b0d82f15cdfa1870b48f04d224368c0"
+    },
+    {
+      "id": "F094",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 53,
+      "redacted_regions": 0,
+      "sha256": "a218a9ecd34bffc95b1aec3ef514503df1cb66ad0f7797b29b8aa248ab248138",
+      "poster_sha256": "558740d968ed63e2121daddb16f487e3d36b53976cb7963173de00751d414cf7"
+    },
+    {
+      "id": "F095",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 49,
+      "redacted_regions": 0,
+      "sha256": "bfaab989230a85afed1f6c8df6ef88b0721afacf81ffca0094fd43be96cbed5c",
+      "poster_sha256": "5295d0f19095565b2870492a11e3ac8d8ac072c91979908881eec1209c59c2d6"
+    },
+    {
+      "id": "F096",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 12,
+      "redacted_regions": 0,
+      "sha256": "bfedfc4e7144fc86a0a5c0e9eb21bb3f7a0afebb8a3d0e9ff3ff45c86250d085",
+      "poster_sha256": "bc3227303a5524a298044546d7aaa0782db71c0b8a75d042ce9309d11b42cf14"
+    },
+    {
+      "id": "F097",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 25,
+      "redacted_regions": 0,
+      "sha256": "5e91908d2cdcacf7e59bbf5d5381dbbd382b7cfc70b11531a6b9b02f711f1a5e",
+      "poster_sha256": "a00bf2a6d05a776816e165d3bde77965691dfc148d5079742986e6240fcad3d2"
+    },
+    {
+      "id": "F104",
+      "approved": true,
+      "method": "isolated-webview-capture-and-opaque-path-redaction",
+      "sampled_frames": 29,
+      "redacted_regions": 0,
+      "sha256": "c21bc726b5a71226073c93da43749547a9e549aa279f9907812f15e718e7c836",
+      "poster_sha256": "55e94f2479118f28cf17728278e2e2481561b464839698e97dd9771ff297534d"
+    }
+  ]
+}

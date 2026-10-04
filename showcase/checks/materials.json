@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-03T14:56:42.222Z",
+  "checks": [
+    {
+      "name": "证据与论证.pdf",
+      "status": 200,
+      "characters": 519,
+      "engine": "pdf",
+      "contains_method": true
+    },
+    {
+      "name": "哲学阅读工作坊.epub",
+      "status": 200,
+      "characters": 99,
+      "engine": "epub",
+      "contains_method": true
+    },
+    {
+      "name": "原创研究Skill.zip",
+      "status": 200,
+      "ok": true,
+      "skills": 1
+    }
+  ]
+}

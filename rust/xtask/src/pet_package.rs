@@ -187,14 +187,15 @@ pub fn main(root: &Path, argv: &[String]) -> Result<(), String> {
 
     let crate_dir = root.join("packages").join("readmd-pet-rust");
     let adapter_dist = root.join("packages").join("readmd-hermes-pet-adapter").join("dist");
-    let renderer = adapter_dist.join("renderer");
+    // Release builds use the pinned repository cache, never a developer's dist.
+    let renderer = crate_dir.join("runtime-assets").join("renderer");
 
     if !skip_build {
         // Always name the target: a host-default build on a cross runner
         // would silently ship the wrong architecture.
         let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
         let status = Command::new(cargo)
-            .args(["build", "--offline", "--release", "--manifest-path"])
+            .args(["build", "--offline", "--locked", "--release", "--manifest-path"])
             .arg(crate_dir.join("Cargo.toml"))
             .args(["--target", target])
             .current_dir(root)
@@ -216,7 +217,7 @@ pub fn main(root: &Path, argv: &[String]) -> Result<(), String> {
     if !executable.is_file() {
         return Err(format!("built Rust executable is missing: {}", executable.display()));
     }
-    if !renderer.join("index.html").is_file() {
+    if !renderer.join("assets").is_dir() {
         return Err(format!("renderer bundle is missing: {}", renderer.display()));
     }
 
@@ -238,9 +239,27 @@ pub fn main(root: &Path, argv: &[String]) -> Result<(), String> {
     if !status.success() { return Err(format!("offline renderer build failed ({status})")); }
     // Without sprites/models/Cubism vendor files the window starts but never
     // becomes renderer-ready, so these are mandatory.
-    for name in ["assets", "models", "vendor"] {
-        copy_tree(&adapter_dist.join(name), &stage.join(name))?;
+    let sprite_dir = stage.join("assets");
+    std::fs::create_dir_all(&sprite_dir).map_err(|e| e.to_string())?;
+    for name in ["amber", "hermes", "mochi", "moss"] {
+        let file = format!("{name}-sprite.png");
+        std::fs::copy(root.join("assets/pet").join(&file), sprite_dir.join(&file)).map_err(|e| e.to_string())?;
     }
+    for name in ["cache-capy", "niu-lai"] {
+        std::fs::copy(root.join("assets/pet").join(name).join("spritesheet.webp"), sprite_dir.join(format!("{name}-sprite.webp"))).map_err(|e| e.to_string())?;
+    }
+    copy_tree(&sprite_dir, &stage.join("renderer/assets"))?;
+    copy_tree(&root.join("assets/pet/model"), &stage.join("models/arch-chan"))?;
+    let core = std::env::var_os("READMD_PET_CUBISM_CORE").map(PathBuf::from)
+        .unwrap_or_else(|| adapter_dist.join("vendor/live2dcubismcore.min.js"));
+    let bytes = std::fs::read(&core).map_err(|e| format!("Prepare pinned Cubism Core before offline packaging: {e}"))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != "25ae938cb4fe282ce189b357bcc97e603d1e1f7ec78bf04150d401c23cdc792f" {
+        return Err("Cubism Core digest mismatch".into());
+    }
+    std::fs::create_dir_all(stage.join("vendor")).map_err(|e| e.to_string())?;
+    std::fs::write(stage.join("vendor/live2dcubismcore.min.js"), bytes).map_err(|e| e.to_string())?;
+    copy_tree(&crate_dir.join("runtime-assets/licenses"), &stage.join("licenses/runtime"))?;
+    std::fs::copy(root.join("packages/readmd-hermes-pet-adapter/assets/NOTICE.md"), stage.join("licenses/NOTICE.md")).map_err(|e| e.to_string())?;
     copy_tree(&crate_dir.join("models"), &stage.join("models"))?;
     let notice_dir = stage.join("licenses").join("bongocat");
     std::fs::create_dir_all(&notice_dir).map_err(|e| e.to_string())?;

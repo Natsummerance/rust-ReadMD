@@ -1,0 +1,29 @@
+﻿category,name,aliases,tex
+常用,平方根,sqrt root,\sqrt{x}
+常用,分式,fraction frac,\frac{a}{b}
+常用,幂与下标,power subscript,x^{n}_{i}
+常用,二次公式,quadratic,x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}
+希腊,阿尔法,alpha,\alpha
+希腊,贝塔,beta,\beta
+希腊,伽马,gamma,\gamma
+希腊,派,pi,\pi
+希腊,西塔,theta,\theta
+希腊,欧米伽,omega,\omega
+运算,加减,plus minus,\pm
+运算,乘号,times multiply,\times
+运算,除号,divide,\div
+关系,小于等于,less equal,\le
+关系,大于等于,greater equal,\ge
+关系,不等于,not equal,\ne
+关系,约等于,approx,\approx
+箭头,右箭头,right arrow,A\rightarrow B
+箭头,双向箭头,leftright arrow,A\leftrightarrow B
+箭头,推出,implies,A\Rightarrow B
+函数,正弦,sin,\sin x
+函数,对数,log,\log_{a}x
+函数,指数,exp,e^{x}
+结构,求和,sum,\sum_{i=1}^{n} x_i
+结构,积分,integral,"\int_{a}^{b} f(x)\,dx"
+结构,极限,limit,\lim_{x\to 0} f(x)
+结构,矩阵,matrix,\begin{bmatrix}a&b\\c&d\end{bmatrix}
+结构,分段函数,cases,"f(x)=\begin{cases}x,&x\ge0\\-x,&x<0\end{cases}"

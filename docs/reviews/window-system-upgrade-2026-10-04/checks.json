@@ -1,0 +1,109 @@
+{
+  "date": "2026-10-04",
+  "build": {
+    "offline": true,
+    "locked": true,
+    "dependencies_added": false,
+    "binary": "Z:/readmd-target/main/release/readmd.exe"
+  },
+  "rust": {
+    "library_passed": 1846,
+    "library_ignored": 3,
+    "entry_passed": 116,
+    "download_failover_final_passed": 2,
+    "association_final_passed": 2
+  },
+  "ui": {
+    "distinct_cases_covered": 143,
+    "final_feature_and_window_passed": 35,
+    "final_update_passed": 4,
+    "sizes": [
+      [
+        1160,
+        820
+      ],
+      [
+        1024,
+        680
+      ],
+      [
+        720,
+        480
+      ]
+    ]
+  },
+  "native": {
+    "tray_and_window_smoke": "passed",
+    "web_capture_and_exit_smoke": "passed",
+    "unmodified_editor_full_exit": "passed",
+    "replacement_failure_notification": "passed",
+    "default_association": "plan tests and read-only effective state; no system selection changed",
+    "association_cold_start": "resource path preserved in both shell commands; quoting and registration plans tested"
+  },
+  "network": [
+    {
+      "scenario": "current-network",
+      "elapsedMs": 3897,
+      "ok": true,
+      "hasUpdate": false,
+      "latestVersion": "v2.3.9",
+      "errorCode": null
+    },
+    {
+      "scenario": "unreachable-proxy",
+      "elapsedMs": 10519,
+      "ok": false,
+      "hasUpdate": null,
+      "latestVersion": null,
+      "errorCode": "update_network_error"
+    }
+  ],
+  "gates": [
+    "assets",
+    "wiring",
+    "styles",
+    "i18n (46 locales,2034 keys)",
+    "no-python",
+    "inventory (104 flows,399 controls,80 dynamic,100 routes)",
+    "diff-check"
+  ],
+  "showcase": {
+    "recordings": 104,
+    "recordings_rerecorded": 104,
+    "capture_profile": "immersive-v2",
+    "privacy_reverified": true,
+    "privacy_frames_inspected": 2664,
+    "decoded_videos": 104,
+    "layouts": 30,
+    "website_pages": 45,
+    "captions_default": "hidden",
+    "burned_text": false,
+    "recording_scope": "All 104 flows refreshed; F104 records explicit quit protection; individual window and tray branches remain covered by native smoke tests",
+    "ui_source_sha256": "00c6774216e1177d60f936c2d7792b56ce0472788d5e1749189cb287da97963c",
+    "notifications_restored": 104
+  },
+  "previews": {
+    "titlebar-home.png": {
+      "capture": "isolated app WebView only",
+      "sha256": "165c5aa2ce355b7e23e74a87b6d50b33b7f19aa7de3a62661a30d6d30bfd088c"
+    },
+    "plugin-center.png": {
+      "capture": "isolated app WebView only",
+      "sha256": "f8cfaccdfbd30e53fbfc8a0dbbc8f75130e427a1744c5486d2b2e48af552c2e0"
+    }
+  },
+  "branding": {
+    "asset": "assets/icon-256.png",
+    "source_sha256": "fc20ab3701777b54a29d0c39fafb9d24d2de9ae9bd77d181ebfe042d821bba3d",
+    "native_render_cases": 9,
+    "themes": [
+      "light",
+      "dark",
+      "sepia"
+    ],
+    "ico_256_matches_source": true,
+    "website_and_vscode_match_source": true,
+    "window_icon_artwork": "Existing 32px RGBA icon visually checked against the canonical ICO frame; rasterization differs",
+    "tray_icon_source": "Canonical readmd.ico compiled as Windows resource 1"
+  }
+}

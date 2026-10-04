@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-04T11:09:41.314Z",
+  "capture_profile": "immersive-v2",
+  "opaque_pixels": true,
+  "paths_with_spaces_masked": true,
+  "hidden_and_clipped_text_creates_no_mask": true,
+  "ordinary_http_addresses_remain_visible": true,
+  "underlying_data_unchanged": true,
+  "input_interaction_preserved": true,
+  "notifications_hidden_during_capture": true,
+  "functional_actions_preserved": true,
+  "presentation_restored": true,
+  "passed": true
+}

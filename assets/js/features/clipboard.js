@@ -61,12 +61,20 @@ async function createFromClipboard() {
 
     const clipNamePrefix = _t('tabs.clipboard') || '剪贴板';
 
-    // 3. 如果剪贴板是富文本 HTML -> 优先通过 TurndownService 转换为 Markdown
-    if (clip.html && typeof TurndownService !== 'undefined') {
+    // 3. Convert rich clipboard content through the bundled Rust HTML parser.
+    if (clip.html) {
       try {
-        const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
-        const mdFromHtml = td.turndown(clip.html);
-        if (mdFromHtml && mdFromHtml.trim().length > (clip.text || '').trim().length) {
+        let mdFromHtml = '';
+        if (window.READMD_ENGINE === 'rust') {
+          const response = await apiFetch('/api/clipboard/convert-html', { method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ html: clip.html }) });
+          const result = await response.json();
+          if (response.ok && result.ok) mdFromHtml = result.content;
+        } else if (typeof TurndownService !== 'undefined') {
+          const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+          mdFromHtml = td.turndown(clip.html);
+        }
+        if (mdFromHtml && mdFromHtml.trim()) {
           const name = clipNamePrefix + '-' + new Date().toISOString().slice(0, 10) + '_' + String(Date.now()).slice(-4) + '.md';
           await renderVirtual('clipboard', name, '', mdFromHtml, []);
           showToast(_t('toast.clipHtmlConverted') || '已从剪贴板富文本转换为 Markdown（Ctrl+S 可保存）');

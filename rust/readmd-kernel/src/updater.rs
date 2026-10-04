@@ -57,14 +57,14 @@ use std::time::Duration;
 // ------------------------------------------------------------------ constants
 
 /// `updater.GITHUB_REPO` (`updater.py:30`).
-pub const GITHUB_REPO: &str = "Natsummerance/readMD";
+pub const GITHUB_REPO: &str = "Natsummerance/rust-ReadMD";
 
 /// `updater.GITHUB_API_LATEST` (`updater.py:31`).
-pub const GITHUB_API_LATEST: &str = "https://api.github.com/repos/Natsummerance/readMD/releases/latest";
+pub const GITHUB_API_LATEST: &str = "https://api.github.com/repos/Natsummerance/rust-ReadMD/releases/latest";
 
 /// `updater.GITHUB_API_RELEASES` (`updater.py:32`).
 pub const GITHUB_API_RELEASES: &str =
-    "https://api.github.com/repos/Natsummerance/readMD/releases?per_page=100";
+    "https://api.github.com/repos/Natsummerance/rust-ReadMD/releases?per_page=100";
 
 /// `updater.MIRROR_PREFIXES` (`updater.py:35-39`).  A mirror is a *prefix on the
 /// official URL*, never a host of its own, which is why
@@ -203,7 +203,7 @@ fn tag_stop_char(c: char) -> bool {
 ///
 /// Note two deliberate non-behaviours, both Python's:
 /// * a **relative** `Location` still works.  The regex only searches, so
-///   `/Natsummerance/readMD/releases/tag/v9.9.9` yields `v9.9.9`.  Nothing
+///   `/Natsummerance/rust-ReadMD/releases/tag/v9.9.9` yields `v9.9.9`.  Nothing
 ///   resolves it against the request URL.
 /// * the capture is **not** percent-decoded.  `.../tag/%20v2` yields the literal
 ///   string `%20v2`.
@@ -788,7 +788,8 @@ pub fn match_release_asset(
     for asset in assets {
         let name = python_asset_name(asset)?.to_lowercase();
         if flavor == "win_portable" {
-            if name.contains("portable") && (name.ends_with(".exe") || name.ends_with(".zip")) {
+            if name == "readmd-windows-x64.zip"
+                || (name.contains("portable") && (name.ends_with(".exe") || name.ends_with(".zip"))) {
                 selected = Some(asset.clone());
                 break;
             }
@@ -1215,12 +1216,7 @@ pub fn check_latest_release(
 /// is the whole payload — so both arms are folded into one [`Reply`] and only a
 /// `Error::Request` (DNS, TLS, timeout) is a [`FetchError::Transport`].
 pub fn sniff_reply_via_ureq(url: &str, timeout: Duration) -> Result<Reply, FetchError> {
-    let agent = ureq::AgentBuilder::new()
-        .redirects(0)
-        .timeout_connect(timeout)
-        .timeout_read(timeout)
-        .user_agent(UPDATE_USER_AGENT)
-        .build();
+    let agent = update_agent(timeout, 0);
     to_reply(agent.get(url).call())
 }
 
@@ -1228,12 +1224,50 @@ pub fn sniff_reply_via_ureq(url: &str, timeout: Duration) -> Result<Reply, Fetch
 /// followed, because `_fetch_manifest_assets` uses plain `urlopen` and GitHub's
 /// `/releases/download/…` answers with a 302 to a CDN.
 pub fn redirecting_reply_via_ureq(url: &str, timeout: Duration) -> Result<Reply, FetchError> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(timeout)
-        .timeout_read(timeout)
-        .user_agent(UPDATE_USER_AGENT)
-        .build();
+    let agent = update_agent(timeout, 5);
     to_reply(agent.get(url).call())
+}
+
+/// Share proxy selection between metadata and package downloads. Credentials never reach logs.
+pub fn update_agent(timeout: Duration, redirects: u32) -> ureq::Agent {
+    let mut builder = ureq::AgentBuilder::new()
+        .try_proxy_from_env(true)
+        .redirects(redirects)
+        .timeout(timeout)
+        .timeout_connect(timeout.min(Duration::from_secs(6)))
+        .timeout_read(timeout.min(Duration::from_secs(30)))
+        .https_only(true)
+        .user_agent(UPDATE_USER_AGENT);
+    let has_environment_proxy = ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"].iter()
+        .any(|key| std::env::var(key).is_ok_and(|v| !v.is_empty()));
+    #[cfg(windows)] if !has_environment_proxy {
+        let key = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+        let enabled = crate::win_registry::query_value(crate::win_registry::HKCU, key, Some("ProxyEnable"))
+            .is_some_and(|(kind, bytes)| kind == 4 && bytes.get(..4).is_some_and(|value| value != [0,0,0,0]));
+        if enabled {
+            if let Some(server) = crate::win_registry::query_string(crate::win_registry::HKCU, key, "ProxyServer") {
+                if let Some(proxy) = https_proxy_address(&server).and_then(|address| ureq::Proxy::new(address).ok()) { builder = builder.proxy(proxy); }
+            }
+        }
+    }
+    #[cfg(not(windows))] let _ = has_environment_proxy;
+    builder.build()
+}
+
+pub fn https_proxy_address(server: &str) -> Option<String> {
+    let server = if server.contains('=') {
+        server.split(';').find_map(|entry| entry.trim().strip_prefix("https="))?
+    } else { server.trim() };
+    if server.is_empty() || server.chars().any(char::is_whitespace) { return None; }
+    Some(if server.contains("://") { server.to_string() } else { format!("http://{server}") })
+}
+
+pub fn download_candidates(official: &str, prefer_mirror: bool) -> Vec<String> {
+    let mut urls = Vec::new();
+    if !prefer_mirror { urls.push(official.to_string()); }
+    urls.extend(MIRROR_PREFIXES.iter().map(|prefix| format!("{prefix}{official}")));
+    if prefer_mirror { urls.push(official.to_string()); }
+    urls
 }
 
 fn to_reply(
@@ -1262,10 +1296,11 @@ fn to_reply(
         })
         .collect();
     let mut body: Vec<u8> = Vec::new();
-    let mut reader = response.into_reader();
-    reader
+    let reader = response.into_reader();
+    reader.take(4 * 1024 * 1024 + 1)
         .read_to_end(&mut body)
         .map_err(|e| FetchError::Transport(format!("update_network_error: {e}")))?;
+    if body.len() > 4 * 1024 * 1024 { return Err(FetchError::Invalid("update_response_too_large".into())); }
     Ok(Reply {
         status,
         headers,
@@ -1284,13 +1319,13 @@ pub fn real_sleep(period: Duration) {
 pub fn live_sha_manifest(timeout: Duration) -> impl FnMut(&str) -> Option<String> {
     move |url: &str| {
         let mut sleeper = real_sleep;
-        fetch_text(
-            url,
-            &mut |target| redirecting_reply_via_ureq(target, timeout),
-            &mut sleeper,
-        )
-        .ok()
-        .flatten()
+        for target in download_candidates(url, false) {
+            if let Ok(Some(text)) = fetch_text(&target, &mut |target| redirecting_reply_via_ureq(target, timeout), &mut sleeper) {
+                if !text.lines().any(|line| manifest_line_parts(line).is_some()) { continue; }
+                return Some(text);
+            }
+        }
+        None
     }
 }
 
@@ -1300,13 +1335,30 @@ pub fn live_sha_manifest(timeout: Duration) -> impl FnMut(&str) -> Option<String
 /// `/api/update/check` handler calls, so all three tiers run on the wire.
 pub fn check_update_live(current_version: &str, timeout: Duration) -> Value {
     let ci = is_ci_environment();
-    let mut sha_manifest = live_sha_manifest(timeout);
+    let deadline = std::time::Instant::now() + Duration::from_secs(45);
+    let budget = || deadline.saturating_duration_since(std::time::Instant::now()).min(timeout);
+    let fetch = |url: &str, redirects| {
+        let remaining = budget();
+        if remaining.is_zero() { return Err(FetchError::Transport("update_network_error".into())); }
+        to_reply(update_agent(remaining, redirects).get(url).call())
+    };
+    let mut sha_manifest = |url: &str| {
+        for target in download_candidates(url, false) {
+            if let Ok(reply) = fetch(&target, 5) {
+                if reply.status == 200 {
+                    let text = String::from_utf8_lossy(&reply.body).into_owned();
+                    if text.lines().any(|line| manifest_line_parts(line).is_some()) { return Some(text); }
+                }
+            }
+        }
+        None
+    };
     check_update(
         current_version,
         ci,
-        &mut |url| redirecting_reply_via_ureq(url, timeout),
-        &mut |url| sniff_reply_via_ureq(url, timeout),
-        &mut |url| redirecting_reply_via_ureq(url, timeout),
+        &mut |url| fetch(url, 5),
+        &mut |url| fetch(url, 0),
+        &mut |url| fetch(url, 5),
         &mut sha_manifest,
         &mut real_sleep,
     )
@@ -1314,7 +1366,33 @@ pub fn check_update_live(current_version: &str, timeout: Duration) -> Value {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rust_release_assets_select_windows_packages_and_checksum() {
+        let assets = vec![
+            serde_json::json!({"name":"ReadMD-macos-arm64.zip"}),
+            serde_json::json!({"name":"ReadMD-windows-x64.zip"}),
+            serde_json::json!({"name":"ReadMDSetup-windows-x64.exe"}),
+            serde_json::json!({"name":"SHA256SUMS.txt"}),
+        ];
+        let (portable, sha) = super::match_release_asset(&assets, "win_portable").unwrap();
+        assert_eq!(portable.unwrap()["name"], "ReadMD-windows-x64.zip");
+        assert_eq!(sha.unwrap()["name"], "SHA256SUMS.txt");
+        let (installer, _) = super::match_release_asset(&assets, "win_installer").unwrap();
+        assert_eq!(installer.unwrap()["name"], "ReadMDSetup-windows-x64.exe");
+    }
     use super::*;
+    #[test] fn proxy_settings_select_https_without_exposing_credentials() {
+        assert_eq!(https_proxy_address("http=localhost:80;https=localhost:8080"),Some("http://localhost:8080".into()));
+        assert_eq!(https_proxy_address("localhost:7890"),Some("http://localhost:7890".into()));
+        assert_eq!(https_proxy_address("http=localhost:80"),None);
+        assert_eq!(https_proxy_address("invalid host"),None);
+    }
+    #[test] fn official_and_mirror_preferences_both_retain_all_failover_candidates() {
+        let url="https://github.com/Natsummerance/rust-ReadMD/releases/download/v3/ReadMDSetup.exe";
+        assert_eq!(download_candidates(url,false).first().unwrap(),url);
+        assert_eq!(download_candidates(url,true).last().unwrap(),url);
+        assert_eq!(download_candidates(url,true).len(),4);
+    }
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -1472,7 +1550,7 @@ mod tests {
     #[test]
     fn tag_keeps_the_v_prefix_it_was_given() {
         assert_eq!(
-            extract_release_tag("https://github.com/Natsummerance/readMD/releases/tag/v2.4.0"),
+            extract_release_tag("https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.0"),
             Some("v2.4.0".to_string())
         );
     }
@@ -1480,7 +1558,7 @@ mod tests {
     #[test]
     fn tag_without_a_v_prefix_is_returned_unchanged() {
         assert_eq!(
-            extract_release_tag("https://github.com/Natsummerance/readMD/releases/tag/2.4.0"),
+            extract_release_tag("https://github.com/Natsummerance/rust-ReadMD/releases/tag/2.4.0"),
             Some("2.4.0".to_string())
         );
     }
@@ -1532,7 +1610,7 @@ mod tests {
         // `search` never resolves against the request URL, and Python does not
         // either — this is a real behaviour, not an accident.
         assert_eq!(
-            extract_release_tag("/Natsummerance/readMD/releases/tag/v9.9.9"),
+            extract_release_tag("/Natsummerance/rust-ReadMD/releases/tag/v9.9.9"),
             Some("v9.9.9".to_string())
         );
     }
@@ -1546,7 +1624,7 @@ mod tests {
     fn mirror_prefixed_location_sniffs_through_the_prefix() {
         assert_eq!(
             extract_release_tag(
-                "https://ghfast.top/https://github.com/Natsummerance/readMD/releases/tag/v2.3.9"
+                "https://ghfast.top/https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.3.9"
             ),
             Some("v2.3.9".to_string())
         );
@@ -1662,10 +1740,10 @@ mod tests {
         assert_eq!(
             urls,
             vec![
-                "https://github.com/Natsummerance/readMD/releases/latest".to_string(),
-                "https://ghfast.top/https://github.com/Natsummerance/readMD/releases/latest"
+                "https://github.com/Natsummerance/rust-ReadMD/releases/latest".to_string(),
+                "https://ghfast.top/https://github.com/Natsummerance/rust-ReadMD/releases/latest"
                     .to_string(),
-                "https://ghproxy.net/https://github.com/Natsummerance/readMD/releases/latest"
+                "https://ghproxy.net/https://github.com/Natsummerance/rust-ReadMD/releases/latest"
                     .to_string(),
             ]
         );
@@ -1675,7 +1753,7 @@ mod tests {
     fn ci_sniffs_the_official_endpoint_only() {
         assert_eq!(
             sniff_candidates(true),
-            vec!["https://github.com/Natsummerance/readMD/releases/latest".to_string()]
+            vec!["https://github.com/Natsummerance/rust-ReadMD/releases/latest".to_string()]
         );
     }
 
@@ -1695,7 +1773,7 @@ mod tests {
     #[test]
     fn manifest_candidates_interpolate_the_tag_unescaped() {
         let urls = manifest_candidates("v2.4.0", false);
-        assert_eq!(urls[0], "https://github.com/Natsummerance/readMD/releases/download/v2.4.0/SHA256SUMS.txt");
+        assert_eq!(urls[0], "https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/SHA256SUMS.txt");
         assert_eq!(urls.len(), 3);
         assert_eq!(manifest_candidates("v2.4.0", true).len(), 1);
     }
@@ -1713,7 +1791,7 @@ mod tests {
     fn sniff_returns_the_first_location_tag() {
         let rec = Recorder::default();
         let mut transport = rec.transport(vec![Some(redirect(
-            "https://github.com/Natsummerance/readMD/releases/tag/v2.4.0",
+            "https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.0",
         ))]);
         assert_eq!(
             sniff_latest_tag_redirect(false, &mut transport),
@@ -1722,7 +1800,7 @@ mod tests {
         assert_eq!(rec.count(), 1);
         assert_eq!(
             rec.calls()[0],
-            "https://github.com/Natsummerance/readMD/releases/latest"
+            "https://github.com/Natsummerance/rust-ReadMD/releases/latest"
         );
     }
 
@@ -1759,8 +1837,8 @@ mod tests {
     fn sniff_skips_a_location_that_carries_no_tag() {
         let rec = Recorder::default();
         let mut transport = rec.transport(vec![
-            Some(redirect("https://github.com/Natsummerance/readMD")),
-            Some(redirect("https://github.com/Natsummerance/readMD/releases/tag/v2.0.0")),
+            Some(redirect("https://github.com/Natsummerance/rust-ReadMD")),
+            Some(redirect("https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.0.0")),
         ]);
         assert_eq!(
             sniff_latest_tag_redirect(false, &mut transport),
@@ -2064,11 +2142,11 @@ mod tests {
         assert_eq!(assets[0]["size"], json!(0));
         assert_eq!(
             assets[0]["browser_download_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/download/v2.4.0/ReadMDSetup.exe")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/ReadMDSetup.exe")
         );
         assert_eq!(
             assets[1]["browser_download_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/download/v2.4.0/ReadMD-portable.zip")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/ReadMD-portable.zip")
         );
     }
 
@@ -2081,7 +2159,7 @@ mod tests {
         assert_eq!(sums["size"], json!(body.chars().count()));
         assert_eq!(
             sums["browser_download_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/download/v2.4.0/SHA256SUMS.txt")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/SHA256SUMS.txt")
         );
     }
 
@@ -2113,7 +2191,7 @@ mod tests {
         assert_eq!(assets[0]["name"], json!(""));
         assert_eq!(
             assets[0]["browser_download_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/download/v2.4.0/")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/")
         );
     }
 
@@ -2123,7 +2201,7 @@ mod tests {
         let assets = parse_manifest_assets(&body, "v2.4.0");
         assert_eq!(
             assets[0]["browser_download_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/download/v2.4.0/ReadMD Setup.exe")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.0/ReadMD Setup.exe")
         );
     }
 
@@ -2275,7 +2353,7 @@ mod tests {
         let sniff = Recorder::default();
         let manifest = Recorder::default();
         let mut s = sniff.transport(vec![Some(redirect(
-            "https://github.com/Natsummerance/readMD/releases/tag/v2.4.1",
+            "https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.1",
         ))]);
         let mut m = manifest.transport(vec![Some(reply(200, &manifest_body()))]);
         let data = check_update_fallback(false, &mut s, &mut m).unwrap();
@@ -2299,7 +2377,7 @@ mod tests {
         assert_eq!(data["published_at"], json!(""));
         assert_eq!(
             data["html_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/tag/v2.4.1")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.1")
         );
         assert_eq!(data["assets"].as_array().unwrap().len(), 3);
     }
@@ -2780,7 +2858,7 @@ mod tests {
         assert_eq!(payload["error_code"], json!("update_network_error"));
         assert_eq!(
             payload["html_url"],
-            json!("https://github.com/Natsummerance/readMD/releases")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases")
         );
         assert_eq!(payload.as_object().unwrap().len(), 3);
     }
@@ -3119,7 +3197,7 @@ mod tests {
             "name": format!("ReadMD {}", tag),
             "body": "notes",
             "published_at": "2026-01-02T03:04:05Z",
-            "html_url": format!("https://github.com/Natsummerance/readMD/releases/tag/{}", tag),
+            "html_url": format!("https://github.com/Natsummerance/rust-ReadMD/releases/tag/{}", tag),
             "prerelease": false,
             "draft": false,
             "assets": assets,
@@ -3147,7 +3225,7 @@ mod tests {
             let (_, mut sleep) = sleeper();
             let mut api = self.api.transport(answers);
             let mut sniff = self.sniff.transport(vec![
-                Some(redirect("https://github.com/Natsummerance/readMD/releases/tag/v2.4.1")),
+                Some(redirect("https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.1")),
             ]);
             let mut manifest = self.manifest.transport(vec![Some(reply(200, &manifest_body()))]);
             let mut sha = self.sha.text_transport(sha_bodies);
@@ -3191,13 +3269,13 @@ mod tests {
         assert_eq!(payload["release_notes"], json!("ReadMD v2.4.1"));
         assert_eq!(
             payload["html_url"],
-            json!("https://github.com/Natsummerance/readMD/releases/tag/v2.4.1")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.1")
         );
         assert_eq!(h.sniff.count(), 1);
         assert_eq!(h.manifest.count(), 1);
         assert_eq!(
             h.manifest.calls()[0],
-            "https://github.com/Natsummerance/readMD/releases/download/v2.4.1/SHA256SUMS.txt"
+            "https://github.com/Natsummerance/rust-ReadMD/releases/download/v2.4.1/SHA256SUMS.txt"
         );
     }
 
@@ -3223,7 +3301,7 @@ mod tests {
         let sha = Recorder::default();
         let mut api_t = api.transport(vec![Some(json_reply(403, "{}"))]);
         let mut sniff_t = sniff.transport(vec![Some(redirect(
-            "https://github.com/Natsummerance/readMD/releases/tag/v2.4.1",
+            "https://github.com/Natsummerance/rust-ReadMD/releases/tag/v2.4.1",
         ))]);
         let mut manifest_t = manifest.transport(vec![Some(reply(200, "no digests here at all"))]);
         let mut sha_t = sha.text_transport(vec![]);
@@ -3240,7 +3318,7 @@ mod tests {
         assert_eq!(payload["error_code"], json!("update_network_error"));
         assert_eq!(
             payload["html_url"],
-            json!("https://github.com/Natsummerance/readMD/releases")
+            json!("https://github.com/Natsummerance/rust-ReadMD/releases")
         );
     }
 
@@ -3325,7 +3403,7 @@ mod tests {
         let sha = Recorder::default();
         let mut api_t = api.transport(vec![Some(json_reply(403, "{}"))]);
         let mut sniff_t = sniff.transport(vec![Some(redirect(
-            "https://github.com/Natsummerance/readMD/releases/tag/2.4.0",
+            "https://github.com/Natsummerance/rust-ReadMD/releases/tag/2.4.0",
         ))]);
         let mut manifest_t = manifest.transport(vec![Some(reply(200, &manifest_body()))]);
         let mut sha_t = sha.text_transport(vec![]);
@@ -3354,8 +3432,8 @@ mod tests {
     fn tier_one_sha_asset_triggers_exactly_one_digest_fetch() {
         let h = Harness::new();
         let assets = json!([
-            {"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/readMD/releases/download/2.5.0/ReadMDSetup.exe"},
-            {"name": "SHA256SUMS.txt", "size": 2, "browser_download_url": "https://github.com/Natsummerance/readMD/releases/download/2.5.0/SHA256SUMS.txt"},
+            {"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/ReadMDSetup.exe"},
+            {"name": "SHA256SUMS.txt", "size": 2, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/SHA256SUMS.txt"},
         ]);
         let body = api_body("2.5.0", assets);
         let sha_body = format!("{}  ReadMDSetup.exe\n", DIGEST);
@@ -3364,7 +3442,7 @@ mod tests {
             vec![Some(json_reply(200, &body))],
             vec![Some(sha_body)],
         );
-        assert_eq!(payload["sha_url"], json!("https://github.com/Natsummerance/readMD/releases/download/2.5.0/SHA256SUMS.txt"));
+        assert_eq!(payload["sha_url"], json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/SHA256SUMS.txt"));
         assert_eq!(h.sha.count(), 1);
         if cfg!(windows) {
             assert_eq!(payload["asset"]["expected_sha"], json!(DIGEST));
@@ -3374,7 +3452,7 @@ mod tests {
     #[test]
     fn missing_sha_url_means_no_digest_request_at_all() {
         let h = Harness::new();
-        let assets = json!([{"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/readMD/releases/download/2.5.0/ReadMDSetup.exe"}]);
+        let assets = json!([{"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/ReadMDSetup.exe"}]);
         let body = api_body("2.5.0", assets);
         let payload = h.run("2.4.0", vec![Some(json_reply(200, &body))], vec![Some("unused".to_string())]);
         assert_eq!(payload["sha_url"], Value::Null);
@@ -3385,8 +3463,8 @@ mod tests {
     fn a_digest_fetch_failure_degrades_to_a_null_expected_sha() {
         let h = Harness::new();
         let assets = json!([
-            {"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/readMD/releases/download/2.5.0/ReadMDSetup.exe"},
-            {"name": "SHA256SUMS.txt", "size": 2, "browser_download_url": "https://github.com/Natsummerance/readMD/releases/download/2.5.0/SHA256SUMS.txt"},
+            {"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/ReadMDSetup.exe"},
+            {"name": "SHA256SUMS.txt", "size": 2, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/SHA256SUMS.txt"},
         ]);
         let body = api_body("2.5.0", assets);
         let payload = h.run("2.4.0", vec![Some(json_reply(200, &body))], vec![None]);
@@ -3423,7 +3501,7 @@ mod tests {
         let h = Harness::new();
         h.run("2.4.0", vec![Some(json_reply(403, "{}"))], vec![]);
         assert_eq!(h.api.calls(), vec![GITHUB_API_LATEST.to_string()]);
-        assert_eq!(h.sniff.calls(), vec!["https://github.com/Natsummerance/readMD/releases/latest".to_string()]);
+        assert_eq!(h.sniff.calls(), vec!["https://github.com/Natsummerance/rust-ReadMD/releases/latest".to_string()]);
         assert_eq!(h.manifest.count(), 1);
         assert!(!h.manifest.calls()[0].contains("ghfast"));
     }

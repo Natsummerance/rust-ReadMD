@@ -60,7 +60,7 @@ fn temp_update_dir() -> std::path::PathBuf {
 // ============================================================================
 
 /// `updater.GITHUB_REPO` (`updater.py:30`).
-const GITHUB_REPO: &str = "Natsummerance/readMD";
+const GITHUB_REPO: &str = "Natsummerance/rust-ReadMD";
 
 /// `updater.check_update(..., timeout=2.5)` — the same budget on every tier,
 /// handed to [`crate::updater::check_update_live`].
@@ -229,6 +229,7 @@ pub(crate) fn h_update_check(_app: &Arc<App>, req: &Request) -> ApiResult<Respon
 #[derive(Debug, Clone)]
 struct DownloadJob {
     url: String,
+    prefer_mirror: bool,
     save_path: PathBuf,
     part_path: PathBuf,
     expected_sha: String,
@@ -305,8 +306,7 @@ fn validate_update_source(
 
 fn url_host_prefix_ok(_prefix: &str) -> bool {
     // `MIRROR_PREFIXES[0]` is a constant `https://ghfast.top/`, so Python's
-    // scheme/host assertion always passes for it.  The mirror is nevertheless
-    // never *tried* by this crate: no new egress hosts (see `check_update`).
+    // scheme/host assertion always passes; live downloads try every approved candidate.
     true
 }
 
@@ -455,6 +455,7 @@ fn begin_download(
 
     let job = DownloadJob {
         url,
+        prefer_mirror: use_mirror,
         save_path,
         part_path,
         expected_sha: expected.clone(),
@@ -488,35 +489,33 @@ fn begin_download(
 }
 
 /// `updater.py:535-621` — the worker's fetch half: the official URL first, then
-/// the mirror prefixes.  This crate keeps only the official candidate (no new
-/// egress hosts), so a failed official attempt is the `update_download_failed`
-/// answer Python reaches at the end of its candidate loop.
+/// the approved mirror prefixes (or mirrors first when requested). Every candidate
+/// must pass SHA-256 before publication; an exhausted loop reports download failure.
 fn run_download(job: DownloadJob) {
     let _running = RunningDownloadGuard;
-    let resp = ureq::get(&job.url)
-        .set("User-Agent", "ReadMD-Updater")
-        .timeout(std::time::Duration::from_secs(25))
-        .call();
-    let resp = match resp {
-        Ok(resp) => resp,
-        Err(_) => {
-            fail_download("update_download_failed");
-            cleanup_part(&job.part_path);
-            return;
+    download_with(&job, &mut |url| {
+        // Release packages exceed 200 MiB: keep the 30-second inactivity timeout,
+        // but allow slow, progressing transfers up to two hours per source.
+        let transfer_budget = std::time::Duration::from_secs(2 * 60 * 60);
+        let resp = crate::updater::update_agent(transfer_budget, 5).get(url)
+            .timeout(transfer_budget).call().map_err(|_| ())?;
+        let total = resp.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        Ok((resp.into_reader(), total))
+    });
+}
+
+fn download_with(job: &DownloadJob, transport: &mut dyn FnMut(&str) -> Result<(Box<dyn std::io::Read + Send + Sync>, u64), ()>) {
+    for url in crate::updater::download_candidates(&job.url, job.prefer_mirror) {
+        if download_state().cancel_requested { with_download_state(|state| { state.status = "cancelled".into(); state.running = false; }); cleanup_part(&job.part_path); return; }
+        with_download_state(|state| { state.status = "downloading".into(); state.downloaded_bytes = 0; state.percent = 0; state.speed_bps = 0; });
+        if let Ok((mut reader, total)) = transport(&url) {
+            with_download_state(|state| state.total_bytes = total);
+            if land_download(&mut reader, job, total).is_ok() { return; }
         }
-    };
-    let total = resp
-        .header("Content-Length")
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    with_download_state(|state| state.total_bytes = total);
-    let mut reader = resp.into_reader();
-    if let Err(detail) = land_download(&mut reader, &job, total) {
-        // `updater.py:696-714` — the download's own `except Exception` branch.
-        log::debug!("download update failed: {}", detail);
-        fail_download("update_download_failed");
         cleanup_part(&job.part_path);
     }
+    fail_download("update_download_failed");
+    cleanup_part(&job.part_path);
 }
 
 /// `updater.py:623-694` — stream to the `.part` file, `fsync`, re-read its
@@ -560,6 +559,7 @@ fn land_download<R: std::io::Read>(
         out.write_all(&chunk[..n])
             .map_err(|e| format!("write failed: {e}"))?;
         written += n as u64;
+        if written > 512 * 1024 * 1024 { return Err("update_package_too_large".into()); }
         if start.elapsed().as_millis() >= 300 && last_tick.elapsed().as_millis() >= 300 {
             let dt = last_tick.elapsed().as_secs_f64().max(0.001);
             let speed = ((written - last_bytes) as f64 / dt) as u64;
@@ -598,6 +598,11 @@ fn land_download<R: std::io::Read>(
             "SHA256 校验失败：期望 {}，实际 {}",
             job.expected_sha, actual
         ));
+    }
+    if download_state().cancel_requested {
+        cleanup_part(&job.part_path);
+        with_download_state(|state| { state.status = "cancelled".into(); state.running = false; });
+        return Ok(String::new());
     }
     std::fs::rename(&job.part_path, &job.save_path)
         .map_err(|e| format!("rename failed: {e}"))?;
@@ -879,7 +884,7 @@ fn absolute_path(raw: &str) -> PathBuf {
 /// (`updater.py:839`), which is a 400 `{ok:false,message}`.  It never echoes
 /// `'正在启动安装器并重启…'` — that string is a promise about a process this
 /// handler did not start.
-pub(crate) fn h_update_apply(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+pub(crate) fn h_update_apply(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let body = match update_request_body(req) {
         Ok(value) => value,
         Err(()) => return Ok(api_error(500, "update_apply_failed")),
@@ -895,13 +900,10 @@ pub(crate) fn h_update_apply(_app: &Arc<App>, req: &Request) -> ApiResult<Respon
         )),
         // Verified, trusted, present — and still not applied, because applying it
         // means starting a process this kernel is not allowed to start.
-        Ok(_) => Ok(Response::json_status(
-            400,
-            &json!({
-                "ok": false,
-                "message": "当前平台暂不支持自动替换，请手动解压运行"
-            }),
-        )),
+        Ok(path) => match crate::update_install::launch(&path, &download_state().expected_sha, &app.paths) {
+            Ok(quit_required) => Ok(Response::json(&json!({"ok":true,"quit_required":quit_required}))),
+            Err(code) => Ok(Response::json_status(400, &json!({"ok":false,"error_code":code}))),
+        },
     }
 }
 
@@ -1045,11 +1047,10 @@ pub(crate) fn h_diagram_render(_app: &Arc<App>, req: &Request) -> ApiResult<Resp
     }
 
     if engine == "wsd" || engine == "d2" || engine == "ditaa" {
-        return Ok(Response::json_status(422, &json!({
-            "ok": false,
-            "error_code": "diagram_engine_unavailable",
-            "engine": engine,
-        })));
+        return match crate::native_diagrams::render(&engine, &code_text) {
+            Ok(svg) => ok_json(json!({"ok":true,"type":"svg","svg":svg,"engine":engine,"requires_network":false,"syntax":"basic"})),
+            Err(error) => Ok(diagram_error(&error)),
+        };
     }
 
     Ok(Response::json_status(422, &json!({
@@ -2536,11 +2537,11 @@ fn auto_fixes(warns: &[Value]) -> Vec<String> {
 /// `readmd.py:3164-3174` / `readmd.py:3199-3209`: `out = _md_output_path(p)`,
 /// `overwrite = qs['overwrite'] == '1' or _is_upload_path(p)`, then the autosave
 /// whose failure Python only logs (`saved` stays `false`, status still 200).
-fn autosave_md(fixed: &str, out: &Path, overwrite: bool) -> (bool, bool) {
+fn autosave_md(data_dir: &Path, fixed: &str, out: &Path, overwrite: bool) -> (bool, bool) {
     if out.exists() && !overwrite {
         return (false, true);
     }
-    match crate::convert::write_md(&out.to_string_lossy(), fixed) {
+    match crate::convert::write_md_managed(data_dir, &out.to_string_lossy(), fixed, overwrite) {
         Ok(()) => (true, false),
         Err(_) => (false, false),
     }
@@ -2586,15 +2587,16 @@ pub(crate) fn free_output_path(out: &Path) -> PathBuf {
 
 /// Resolve the output path and write it according to `mode`.
 /// Returns `(out, saved, skipped, existed)`.
-fn save_converted(fixed: &str, out: PathBuf, mode: OnExists, force: bool) -> (PathBuf, bool, bool, bool) {
+fn save_converted(data_dir: &Path, fixed: &str, out: PathBuf, mode: OnExists, force: bool, preview: bool) -> (PathBuf, bool, bool, bool) {
     let existed = out.exists();
+    if preview { return (out, false, false, existed); }
     let (target, overwrite) = match mode {
         _ if force => (out, true),
         OnExists::Overwrite => (out, true),
-        OnExists::Rename => (free_output_path(&out), true),
+        OnExists::Rename => (free_output_path(&out), false),
         OnExists::Skip => (out, false),
     };
-    let (saved, skipped) = autosave_md(fixed, &target, overwrite);
+    let (saved, skipped) = autosave_md(data_dir, fixed, &target, overwrite);
     (target, saved, skipped, existed)
 }
 
@@ -2606,7 +2608,7 @@ fn mdcheck_base_dir(working: &Path) -> String {
 
 /// `readmd.py:3184 Handler._convert_txt(p)` — TXT intelligence, no convert
 /// module involved.
-fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists) -> Response {
+fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, preview: bool) -> Response {
     let name = crate::convert::basename(p);
     let dir = crate::convert::dirname(p);
     let ws = working.to_string_lossy().into_owned();
@@ -2632,7 +2634,8 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists) -> 
     let fixes = auto_fixes(&warns);
     let out = PathBuf::from(crate::convert::md_output_path(&ws));
     let force = crate::convert::is_upload_path(&ws, &app.paths.data_dir);
-    let (out, saved, skipped, out_exists) = save_converted(&fixed, out, mode, force);
+    let (out, saved, skipped, out_exists) = save_converted(&app.paths.data_dir, &fixed, out, mode, force, preview);
+    if !preview && !saved && !skipped { return Response::json_status(500, &json!({"ok": false, "content": fixed, "saved": false, "out": out, "error_code": "save_failed", "error": "转换成功，但输出文件未保存；原文件未覆盖"})); }
 
     Response::json(&json!({
         "content": fixed,
@@ -2668,11 +2671,11 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         // switch on this route, the module is always called with its default.
         let mode = OnExists::from_request(req);
         if ext == ".txt" {
-            return Ok(convert_txt_lane(app, &p, &target, mode));
+            return Ok(convert_txt_lane(app, &p, &target, mode, req.q("preview") == Some("1")));
         }
 
         let ws = target.to_string_lossy().into_owned();
-        let res = crate::convert::convert_triple(&ws, true);
+        let res = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &ws, true, req.q("language"));
         let err = res.error.clone().unwrap_or_default();
         if !err.is_empty() && res.text.is_empty() {
             // readmd.py:3152 `if err and not text:`
@@ -2706,7 +2709,8 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         let fixes = auto_fixes(&warns);
         let out = PathBuf::from(crate::convert::md_output_path(&ws));
         let force = crate::convert::is_upload_path(&ws, &app.paths.data_dir);
-        let (out, saved, skipped, out_exists) = save_converted(&fixed, out, mode, force);
+        let (out, saved, skipped, out_exists) = save_converted(&app.paths.data_dir, &fixed, out, mode, force, req.q("preview") == Some("1"));
+        if req.q("preview") != Some("1") && !saved && !skipped { return Ok(Response::json_status(500, &json!({"ok": false, "content": fixed, "saved": false, "out": out, "error_code": "save_failed", "error": "转换成功，但输出文件未保存；原文件未覆盖"}))); }
 
         return Ok(Response::json(&json!({
             "content": fixed,
@@ -2791,7 +2795,8 @@ pub(crate) fn h_convert_batch(app: &Arc<App>, req: &Request) -> ApiResult<Respon
         .map(crate::link_indexer::py_truthy)
         .unwrap_or(false);
     let total = paths.len();
-    let jid = start_convert_job(app, paths, overwrite);
+    let language = body.get("language").and_then(Value::as_str).map(str::to_string);
+    let jid = start_convert_job_with_language(app, paths, overwrite, language);
     Ok(Response::json(&json!({ "job": jid, "total": total })))
 }
 
@@ -2800,6 +2805,10 @@ pub(crate) fn h_convert_batch(app: &Arc<App>, req: &Request) -> ApiResult<Respon
 /// file, the id is `'c%d'` off a process counter, and the worker thread walks
 /// the registered job.
 fn start_convert_job(app: &Arc<App>, paths: Vec<String>, overwrite: bool) -> String {
+    start_convert_job_with_language(app, paths, overwrite, None)
+}
+
+fn start_convert_job_with_language(app: &Arc<App>, paths: Vec<String>, overwrite: bool, language: Option<String>) -> String {
     static CONVERT_JOB_SEQ: std::sync::atomic::AtomicUsize =
         std::sync::atomic::AtomicUsize::new(0);
     let jid = format!(
@@ -2837,7 +2846,7 @@ fn start_convert_job(app: &Arc<App>, paths: Vec<String>, overwrite: bool) -> Str
     }
     let worker_id = jid.clone();
     let data_dir = app.paths.data_dir.clone();
-    std::thread::spawn(move || convert_worker(&worker_id, &data_dir));
+    std::thread::spawn(move || convert_worker_with_language(&worker_id, &data_dir, language.as_deref()));
     jid
 }
 
@@ -2845,6 +2854,10 @@ fn start_convert_job(app: &Arc<App>, paths: Vec<String>, overwrite: bool) -> Str
 /// cancel flag between items exactly like Python's `for it in items:` loop does,
 /// and writing the **mdcheck-fixed** text to the planned path.
 fn convert_worker(job_id: &str, data_dir: &Path) {
+    convert_worker_with_language(job_id, data_dir, None)
+}
+
+fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<&str>) {
     let mut idx = 0usize;
     loop {
         let (src, planned_out, overwrite) = {
@@ -2879,7 +2892,9 @@ fn convert_worker(job_id: &str, data_dir: &Path) {
         // `mod.convert_verbose(it['src'])` — the raw client path, verbatim.
         // A converter panic on one malformed file becomes that item's error;
         // without the guard the worker thread dies and the job never finishes.
-        let res = std::panic::catch_unwind(|| crate::convert::convert_triple(&src, true)).unwrap_or_else(|_| {
+        let cancel_id=job_id.to_string();
+        let check=Arc::new(move || CONVERT_JOBS.lock().unwrap_or_else(|e|e.into_inner()).as_ref().and_then(|m|m.get(&cancel_id)).is_none_or(|job|job.cancel));
+        let res = std::panic::catch_unwind(|| crate::speech::with_cancel(check,||crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::new(data_dir), &src, true, language))).unwrap_or_else(|_| {
             crate::convert::ConvertTriple {
                 text: String::new(),
                 engine: String::new(),
@@ -2915,7 +2930,7 @@ fn convert_worker(job_id: &str, data_dir: &Path) {
                 status = "skipped".to_string();
                 error_code = Some("output_exists".to_string());
             } else {
-                match crate::convert::write_md(&target, &fixed) {
+                match crate::convert::write_md_managed(data_dir, &target, &fixed, allow_overwrite) {
                     Ok(()) => status = "ok".to_string(),
                     Err(e) => {
                         error = Some(format!("写入失败：{e}"));
@@ -3043,6 +3058,36 @@ mod tests {
         *DOWNLOAD_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
     }
 
+    #[test]
+    fn download_failover_rejects_corrupt_mirror_before_publishing_verified_bytes() {
+        let _lane = lock_update_lane();
+        set_download_state(DownloadState::default());
+        let name = unique_package_name("mirror-failover");
+        let url = official_asset_url(&name); let payload = b"verified package".to_vec();
+        let job = begin_download(Some(&json!(url)), Some(&json!(name)), Some(&json!(crate::crypto::sha256_hex(&payload))), true).unwrap();
+        let mut attempts = Vec::new();
+        download_with(&job, &mut |url| {
+            attempts.push(url.to_string());
+            match attempts.len() {
+                1 => Err(()),
+                2 => Ok((Box::new(std::io::Cursor::new(b"corrupt gateway response".to_vec())), 24)),
+                _ => Ok((Box::new(std::io::Cursor::new(payload.clone())), payload.len() as u64)),
+            }
+        });
+        assert_eq!(attempts.len(),3); assert_eq!(download_state().status,"ready");
+        assert_eq!(std::fs::read(&job.save_path).unwrap(),payload);assert!(!job.part_path.exists());
+        std::fs::remove_file(job.save_path).unwrap();
+    }
+    #[test]
+    fn cancellation_during_failover_never_publishes_or_tries_another_source() {
+        let _lane = lock_update_lane();set_download_state(DownloadState::default());
+        let name=unique_package_name("cancel-failover"); let url=official_asset_url(&name);
+        let job=begin_download(Some(&json!(url)),Some(&json!(name)),Some(&json!(crate::crypto::sha256_hex(b"payload"))),false).unwrap();
+        let mut calls=0;
+        download_with(&job,&mut |_| {calls+=1;with_download_state(|s|s.cancel_requested=true);Err(())});
+        assert_eq!(calls,1);assert_eq!(download_state().status,"cancelled");assert!(!job.save_path.exists());assert!(!job.part_path.exists());
+    }
+
     /// A package name legal for both filename gates (`_UPDATE_FILENAME_RE` and
     /// `_safe_update_target`): alnum first char, `[A-Za-z0-9._-]` body, `.exe`.
     fn unique_package_name(tag: &str) -> String {
@@ -3148,7 +3193,7 @@ mod tests {
             "name": "ReadMD v9.9.9",
             "published_at": "2026-01-01T00:00:00Z",
             "body": "notes",
-            "html_url": "https://github.com/Natsummerance/readMD/releases/tag/v9.9.9",
+            "html_url": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/v9.9.9",
             "assets": [
                 {
                     "name": asset,
@@ -3268,6 +3313,7 @@ mod tests {
         let failure = {
             let mut copy = DownloadJob {
                 url: job.url.clone(),
+                prefer_mirror: job.prefer_mirror,
                 save_path: job.save_path.clone(),
                 part_path: job.part_path.clone(),
                 expected_sha: job.expected_sha.clone(),
@@ -3428,7 +3474,7 @@ mod tests {
             json!({
                 "ok": false,
                 "error_code": "update_network_error",
-                "html_url": "https://github.com/Natsummerance/readMD/releases",
+                "html_url": "https://github.com/Natsummerance/rust-ReadMD/releases",
             })
         );
         assert_eq!(plain, forced, "force changed the answer");
@@ -3721,10 +3767,9 @@ mod tests {
         set_download_state(state);
         let (status, body, _) = post(json!({"file_path": good.to_string_lossy()}));
         assert_eq!(status, 400);
-        assert_eq!(key_set(&body), vec!["message", "ok"]);
+        assert_eq!(key_set(&body), vec!["error_code", "ok"]);
         assert_eq!(body["ok"], json!(false));
-        assert_ne!(body["message"], "正在启动安装器并重启…");
-        assert_eq!(body["message"], "当前平台暂不支持自动替换，请手动解压运行");
+        assert_eq!(body["error_code"], "update_package_invalid");
         // No invented keys either — the old shape had `applied` and
         // `restart_required`/`no_update_downloaded` coinages.
         assert!(body.get("applied").is_none());
@@ -4032,12 +4077,12 @@ mod tests {
             ))
         };
 
-        // Control: these bytes *do* verify, and the only reason apply still says no
-        // is that this kernel may not start an installer.
+        // These bytes pass the digest gate, but are not a Windows executable.
+        // The package validator must refuse them without launching any process.
         set_download_state(base.clone());
         let (status, body, _) = post(file_path.clone());
         assert_eq!(status, 400);
-        assert_eq!(body["message"], "当前平台暂不支持自动替换，请手动解压运行");
+        assert_eq!(body["error_code"], "update_package_invalid");
 
         // A whitespace-padded expectation is not the digest `compute_file_sha256`
         // answers with.
@@ -4069,7 +4114,7 @@ mod tests {
         // that passes.
         set_download_state(base);
         let (_, body, _) = post(file_path);
-        assert_eq!(body["message"], "当前平台暂不支持自动替换，请手动解压运行");
+        assert_eq!(body["error_code"], "update_package_invalid");
 
         let _ = std::fs::remove_file(&package);
     }
@@ -4182,19 +4227,15 @@ mod tests {
             (400, Some("unsupported_media_format"))
         );
 
-        // 5. No whisper/ffmpeg: Python's 200 with the install notice as `content`
-        //    and the reason surfaced as `warning` — never dropped, never a 422.
+        // 5. Invalid audio or an unavailable system recogniser is an error;
+        // an installation notice is never counted as transcribed speech.
         let req = json_request("POST", "/api/transcribe", &json!({"path": audio_path}), None);
         let (status, body, _) = render(h_transcribe(&app, &req));
-        assert_eq!(status, 200, "{body}");
-        assert_eq!(body.as_object().map(|m| m.len()), Some(4));
-        assert_eq!(body["ok"], json!(true));
-        assert_eq!(body["path"], json!(audio_path));
-        assert!(!body["content"].as_str().unwrap_or("").is_empty());
-        assert_eq!(
-            body["warning"].as_str(),
-            Some(crate::transcribe::TRANSCRIBE_UNAVAILABLE)
-        );
+        assert_eq!(status, 422, "{body}");
+        assert_eq!(body["ok"], false);
+        assert_eq!(body["error_code"], "transcribe_failed");
+        assert!(body.get("content").is_none());
+        assert!(!body["error_detail"].as_str().unwrap_or("").is_empty());
 
         // 6. `_read_json_body`'s `ValueError` is a 400 whose `error_code` is
         //    `str(exc)` — CPython's message, not a shortened Rust coinage.
@@ -4243,20 +4284,19 @@ mod tests {
             );
         }
 
-        // No pinned, redistributable offline renderer for these three.
+        // Native SVG engines are available without another executable.
         for engine in ["wsd", "d2", "ditaa"] {
+            let code = if engine == "wsd" { "Alice->Bob: Hello" } else { "a -> b" };
             let req = json_request(
                 "POST",
                 "/api/diagram/render",
-                &json!({"engine": engine, "code": "x"}),
+                &json!({"engine": engine, "code": code}),
                 None,
             );
             let (status, body, _) = render(h_diagram_render(&app, &req));
-            assert_eq!(status, 422);
-            assert_eq!(
-                body["error_code"].as_str(),
-                Some("diagram_engine_unavailable")
-            );
+            assert_eq!(status, 200);
+            assert_eq!(body["ok"].as_bool(), Some(true));
+            assert!(body["svg"].as_str().unwrap().starts_with("<svg"));
             assert_eq!(body["engine"].as_str(), Some(engine));
         }
 

@@ -273,7 +273,7 @@ pub struct ConvertTriple {
 }
 
 impl ConvertTriple {
-    fn ok(text: impl Into<String>, engine: impl Into<String>) -> ConvertTriple {
+    pub(crate) fn ok(text: impl Into<String>, engine: impl Into<String>) -> ConvertTriple {
         ConvertTriple { text: text.into(), engine: engine.into(), error: None }
     }
     fn err(error: impl Into<String>) -> ConvertTriple {
@@ -351,7 +351,13 @@ pub fn dirname(path: &str) -> String {
 
 /// Python `convert_verbose(path, form_tables=True)` (src/readmd_modules/convert.py:524).
 pub fn convert_triple(path: &str, form_tables: bool) -> ConvertTriple {
+    convert_triple_with_language(path, form_tables, None)
+}
+
+pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Option<&str>) -> ConvertTriple {
     let ext = ext_of(path);
+    if ext == ".eml" { return match crate::mail::eml_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"mime"),Err(e)=>ConvertTriple::err(e) }; }
+    if ext == ".msg" { return match crate::mail::msg_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"outlook-msg"),Err(e)=>ConvertTriple::err(e) }; }
 
     if ext == ".docx" {
         return match docx_to_md(path, form_tables) {
@@ -431,16 +437,16 @@ pub fn convert_triple(path: &str, form_tables: bool) -> ConvertTriple {
     if MEDIA_EXTS.iter().any(|m| *m == ext) {
         // Python: transcribe.transcribe_to_md -> (text, err). Without a local
         // whisper runtime the honest answer is the same "not ready" error.
-        return match crate::transcribe::transcribe_audio(path, None, None) {
-            Ok(text) if !text.trim().is_empty() => ConvertTriple::ok(text, "whisper"),
+        return match crate::transcribe::transcribe_audio(path, language, None) {
+            Ok(text) if !text.trim().is_empty() => ConvertTriple::ok(text, "system-speech"),
             Ok(_) => ConvertTriple {
                 text: String::new(),
-                engine: "whisper".to_string(),
+                engine: "system-speech".to_string(),
                 error: Some("音视频转写未产生内容".to_string()),
             },
             Err(e) => ConvertTriple {
                 text: String::new(),
-                engine: "whisper".to_string(),
+                engine: "system-speech".to_string(),
                 error: Some(format!("音视频转写未就绪或失败：{e}")),
             },
         };
@@ -629,7 +635,7 @@ pub fn convert_verbose(path: &str, form_tables: bool) -> Result<ConvertResult, S
     })
 }
 
-fn is_code_ext(ext: &str) -> bool {
+pub(crate) fn is_code_ext(ext: &str) -> bool {
     EXT_TO_LANG.iter().any(|(e, _)| *e == ext)
 }
 
@@ -890,7 +896,17 @@ pub fn is_upload_path(src: &str, data_dir: &Path) -> bool {
 /// parent-directory creation (a missing directory must fail exactly like
 /// Python's `open(path, 'w')`).
 pub fn write_md(path: &str, content: &str) -> Result<(), String> {
-    fs::write(path, content.as_bytes()).map_err(|e| format!("{e}"))
+    if !Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).is_dir() { return Err("output_directory_missing".into()); }
+    crate::content::write_text_atomic(Path::new(path), content).map_err(|e| e.to_string())
+}
+
+pub fn write_md_managed(data_dir: &Path, path: &str, content: &str, overwrite: bool) -> Result<(), String> {
+    let _guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let target = Path::new(path);
+    if target.exists() && !overwrite { return Err("output_exists".into()); }
+    if target.is_file() && fs::read(target).ok().as_deref() == Some(content.as_bytes()) { return Ok(()); }
+    crate::document_history::checkpoint_file(data_dir, target, "conversion_overwrite")?;
+    write_md(path, content)
 }
 
 fn sha256_hex(data: &[u8]) -> String {
@@ -2760,6 +2776,7 @@ pub(crate) struct CfbReader<'a> {
     fat: Vec<u32>,
     mini_fat: Vec<u32>,
     entries: HashMap<String, CfbEntry>,
+    paths: HashMap<String, CfbEntry>,
     root_stream: Vec<u8>,
 }
 
@@ -2923,6 +2940,30 @@ impl<'a> CfbReader<'a> {
             );
         }
 
+        // Preserve storage hierarchy for MSG attachments and embedded messages;
+        // duplicate property stream names in different storages are distinct.
+        let chunks: Vec<_> = dir_data.chunks_exact(128).collect();
+        let mut paths = HashMap::new();
+        let mut stack = Vec::new();
+        if let Some(root) = chunks.iter().find(|c| c[66] == 5) {
+            stack.push((u32::from_le_bytes(root[76..80].try_into().unwrap()), String::new()));
+        }
+        let mut visited = std::collections::HashSet::new();
+        while let Some((sid, parent)) = stack.pop() {
+            if !visited.insert(sid) { continue; }
+            let Some(chunk) = chunks.get(sid as usize) else { continue; };
+            for offset in [68,72] { stack.push((u32::from_le_bytes(chunk[offset..offset+4].try_into().unwrap()), parent.clone())); }
+            let count = (u16::from_le_bytes(chunk[64..66].try_into().unwrap()) as usize / 2).saturating_sub(1).min(31);
+            let units: Vec<_> = chunk[..count*2].chunks_exact(2).map(|p|u16::from_le_bytes([p[0],p[1]])).collect();
+            let name = String::from_utf16_lossy(&units).to_lowercase();
+            let path = if parent.is_empty() { name.clone() } else { format!("{parent}/{name}") };
+            let entry = CfbEntry { _name:name, entry_type:chunk[66], start_sector:u32::from_le_bytes(chunk[116..120].try_into().unwrap()), size:u64::from_le_bytes(chunk[120..128].try_into().unwrap()) };
+            if entry.entry_type == 1 && path.split('/').count() <= 16 {
+                stack.push((u32::from_le_bytes(chunk[76..80].try_into().unwrap()), path.clone()));
+            }
+            paths.insert(path, entry);
+        }
+
         // Read root stream (contains mini stream data)
         let root_chain = get_chain(root_start_sect, &fat);
         let root_stream = read_stream(&root_chain, root_size as usize);
@@ -2934,12 +2975,26 @@ impl<'a> CfbReader<'a> {
             fat,
             mini_fat,
             entries,
+            paths,
             root_stream,
         })
     }
 
     pub fn get_stream(&self, name: &str) -> Option<Vec<u8>> {
         let entry = self.entries.get(&name.to_lowercase())?;
+        self.read_entry(entry)
+    }
+
+    pub fn stream_paths(&self) -> Vec<String> {
+        let mut paths: Vec<_> = self.paths.iter().filter(|(_,entry)|entry.entry_type==2).map(|(name,_)|name.clone()).collect();
+        paths.sort(); paths
+    }
+
+    pub fn get_path_stream(&self, path: &str) -> Option<Vec<u8>> {
+        self.read_entry(self.paths.get(&path.to_lowercase())?)
+    }
+
+    fn read_entry(&self, entry: &CfbEntry) -> Option<Vec<u8>> {
         // `entry.size` is the raw u64 read out of the directory record at `chunk[120
         // ..128]`, i.e. fully attacker-controlled, and it is the only thing feeding the
         // capacity hints below.  No stream can be longer than the file storing it, so a
@@ -6489,6 +6544,22 @@ fn detect_csv_delimiter(text: &str) -> char {
     }
 }
 
+#[cfg(test)]
+mod showcase_crlf_regression {
+    use super::*;
+
+    #[test]
+    fn windows_csv_and_multibyte_line_boundaries_do_not_panic() {
+        let text = "主题,阅读分钟\r\n认识与经验,35\r\n自由与责任,28\r\n";
+        assert_eq!(py_splitlines(text), ["主题,阅读分钟", "认识与经验,35", "自由与责任,28"]);
+        assert_eq!(detect_csv_delimiter(text), ',');
+        let rows = parse_csv_records(text, detect_csv_delimiter(text));
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1], ["认识与经验", "35"]);
+        assert_eq!(py_splitlines("甲\r\n\r\n乙\r丙\n丁\u{2028}戊"), ["甲", "", "乙", "丙", "丁", "戊"]);
+    }
+}
+
 /// Python `csv.reader` over the whole document: quoted fields, doubled quotes,
 /// and CR / LF / CRLF as record terminators.
 fn parse_csv_records(text: &str, delimiter: char) -> Vec<Vec<String>> {
@@ -6562,6 +6633,11 @@ pub fn py_splitlines(text: &str) -> Vec<&str> {
     // No second cursor: `start` alone carries the next-slice offset, so the `\r\n`
     // two-byte advance and the per-char `len_utf8` advance stay byte-identical.
     for (pos, ch) in text.char_indices() {
+        // The CR branch already consumed the following LF. Do not slice
+        // start..pos again for that LF: start is one byte beyond pos.
+        if pos < start {
+            continue;
+        }
         if ch == '\r' && pos + 1 < bytes.len() && bytes[pos + 1] == b'\n' {
             out.push(&text[start..pos]);
             start = pos + 2;
@@ -6670,7 +6746,7 @@ fn rtf_to_md(path: &str) -> Result<ConvertResult, String> {
     })
 }
 
-fn extract_rtf_text(rtf: &str) -> String {
+pub(crate) fn extract_rtf_text(rtf: &str) -> String {
     // Simple RTF text extraction - ignores formatting controls
     let mut result = String::new();
     let mut skip = false;

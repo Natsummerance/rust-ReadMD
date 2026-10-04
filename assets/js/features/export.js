@@ -208,9 +208,7 @@ async function loadExportPresets() {
 
 function openExportModal() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const editorContent = typeof getEditContent === 'function' ? getEditContent() : '';
-  const exportContent = (state.editing ? editorContent : '') || state.original || state.fixed || '';
-  if (state.mode === 'welcome' || !exportContent) {
+  if (state.mode === 'welcome') {
     showToast(_t('toast.openDocumentToUse') || '');
     return;
   }
@@ -225,18 +223,18 @@ function openExportModal() {
   renderExportModal();
 }
 
-function closeExportModal() { $('export-modal').classList.add('hidden'); }
+function closeExportModal() { $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
 
 function currentExportContent() {
   if (state.editing) {
     if (typeof getEditContent === 'function') {
       const txt = getEditContent();
-      if (txt) return txt;
+      if (typeof txt === 'string') return txt;
     }
-    return ($('edit-area') && $('edit-area').value) || state.original || state.fixed || '';
+    return $('edit-area')?.value ?? '';
   }
-  if (state.mode === 'file') return state.original || state.fixed || '';
-  return state.fixed || state.original || '';
+  if (state.mode === 'file') return state.original ?? state.fixed ?? '';
+  return state.fixed ?? state.original ?? '';
 }
 function currentExportName() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -775,6 +773,130 @@ function paginateHtmlIntoExportSheets(fullHtml, opts = {}) {
   return pages.length > 0 ? pages : [fullHtml];
 }
 
+let nativeExportPreview = { generation: 0, signature: '', timer: null, controller: null, data: null, page: 1, pageCache: new Map(), blobUrl: '' };
+
+function cancelNativeExportPreview() {
+  nativeExportPreview.generation++;
+  clearTimeout(nativeExportPreview.timer);
+  nativeExportPreview.controller?.abort();
+  if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
+  nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.blobUrl = '';
+  $('export-preview-mini-page')?.classList.remove('is-native-preview');
+}
+
+function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
+  const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
+  const signature = JSON.stringify(payload);
+  if (nativeExportPreview.signature === signature) {
+    if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
+    return;
+  }
+  cancelNativeExportPreview();
+  const generation = nativeExportPreview.generation;
+  nativeExportPreview.signature = signature; nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
+  const mini = $('export-preview-mini-content');
+  if (mini) { mini.setAttribute('aria-busy', 'true'); mini.textContent = _t('export.previewGenerating'); }
+  $('export-preview-mini-page')?.classList.add('is-native-preview');
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = `${fmt.toUpperCase()} · ${presetName} · ${_t('export.previewGenerating')}`;
+  if (!$('export-preview-modal')?.classList.contains('hidden')) {
+    const wrapper = $('export-preview-modal').querySelector('.export-preview-paper-wrapper');
+    if (wrapper) { wrapper.textContent = _t('export.previewGenerating'); wrapper.setAttribute('aria-busy', 'true'); }
+  }
+  nativeExportPreview.timer = setTimeout(async () => {
+    const controller = new AbortController(); nativeExportPreview.controller = controller;
+    try {
+      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: controller.signal });
+      const data = await response.json();
+      if (generation !== nativeExportPreview.generation) return;
+      if (!response.ok || !data.ok) throw new Error(data.error || _t('export.previewFailed'));
+      nativeExportPreview.data = data;
+      if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
+      if (!data.firstPage) {
+        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+        nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      }
+      renderNativeExportPreview(presetName, options);
+    } catch (error) {
+      if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
+      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + error.message; mini.setAttribute('aria-busy', 'false'); }
+      const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
+      if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }
+      nativeExportPreview.signature = '';
+    }
+  }, 300);
+}
+
+function renderNativeExportPreview(presetName, options) {
+  const data = nativeExportPreview.data;
+  if (!data) return;
+  const mini = $('export-preview-mini-content');
+  const miniPage = $('export-preview-mini-page');
+  if (miniPage) {
+    miniPage.classList.add('is-native-preview');
+    const viewport = miniPage.parentElement;
+    if (viewport) miniPage.style.transform = 'scale(' + Math.min(2.5, (viewport.clientWidth - 32) / 110, (viewport.clientHeight - 32) / 148) + ')';
+  }
+  const image = (png, className) => {
+    const img = document.createElement('img'); img.className = className;
+    img.src = 'data:image/png;base64,' + png; img.alt = _t('export.actualPreview'); return img;
+  };
+  const accessible = () => { const p = document.createElement('p'); p.className = 'export-preview-accessible'; p.textContent = data.text || ''; return p; };
+  if (mini) {
+    mini.replaceChildren(); mini.setAttribute('aria-busy', 'false');
+    if (data.firstPage) mini.appendChild(image(data.firstPage, 'export-native-page-image'));
+    else mini.appendChild(document.createTextNode(_t('export.actualPreview')));
+    mini.appendChild(accessible());
+  }
+  const pageText = _t('export.previewPagesMeta', { total: data.pages });
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = `${data.format.toUpperCase()} · ${options.page?.size || 'A4'} · ${pageText} · ${presetName}${data.mode === 'shared-layout' ? ' · ' + _t('export.docxLayoutReference') : ''}`;
+  let style = $('export-preview-dynamic-style');
+  if (!style) { style = document.createElement('style'); style.id = 'export-preview-dynamic-style'; document.head.appendChild(style); }
+  style.textContent = '';
+  const modal = $('export-preview-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  const wrapper = modal.querySelector('.export-preview-paper-wrapper');
+  if (!wrapper) return;
+  wrapper.setAttribute('aria-busy', 'false'); wrapper.replaceChildren();
+  const host = document.createElement('div'); host.id = 'export-preview-full-page';
+  const sheet = document.createElement('div'); sheet.className = 'export-preview-page-sheet export-native-sheet'; sheet.dataset.page = String(nativeExportPreview.page);
+  const dims = data.dimensions || [];
+  if (dims.length === 4) { sheet.style.width = (dims[2] - dims[0]) * 96 / 72 + 'px'; sheet.style.height = (dims[3] - dims[1]) * 96 / 72 + 'px'; }
+  const png = nativeExportPreview.pageCache.get(nativeExportPreview.page);
+  if (png) sheet.appendChild(image(png, 'export-native-page-image'));
+  else {
+    const frame = document.createElement('iframe'); frame.className = 'export-native-pdf-frame'; frame.title = _t('export.actualPreview');
+    frame.src = nativeExportPreview.blobUrl + '#page=' + nativeExportPreview.page + '&zoom=page-fit'; sheet.appendChild(frame);
+  }
+  sheet.appendChild(accessible()); host.appendChild(sheet); wrapper.appendChild(host);
+  const pagesMeta = $('export-preview-pages-meta');
+  if (pagesMeta) pagesMeta.textContent = `${nativeExportPreview.page} / ${data.pages}${data.mode === 'shared-layout' ? ' · ' + _t('export.docxLayoutReference') : ''}`;
+  const changePage = async delta => {
+    const page = Math.max(1, Math.min(data.pages, nativeExportPreview.page + delta));
+    if (page === nativeExportPreview.page) return;
+    const generation = nativeExportPreview.generation;
+    if (data.firstPage && !nativeExportPreview.pageCache.has(page)) {
+      wrapper.setAttribute('aria-busy', 'true');
+      try {
+        const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: data.key, page }) });
+        const result = await response.json();
+        if (generation !== nativeExportPreview.generation) return;
+        if (!response.ok || !result.ok) throw new Error(result.error || _t('export.previewFailed'));
+        nativeExportPreview.pageCache.set(page, result.png);
+      } catch (error) { if (generation === nativeExportPreview.generation) {wrapper.setAttribute('aria-busy', 'false'); showToast(error.message);} return; }
+    }
+    if (generation !== nativeExportPreview.generation) return;
+    nativeExportPreview.page = page; renderNativeExportPreview(presetName, options);
+  };
+  [['export-preview-prev-btn', -1], ['export-preview-next-btn', 1]].forEach(([id, delta]) => {
+    const button = $(id); if (!button) return;
+    button.classList.toggle('is-visible', data.pages > 1);
+    button.disabled = delta < 0 ? nativeExportPreview.page <= 1 : nativeExportPreview.page >= data.pages;
+    button.onclick = () => changePage(delta);
+  });
+}
+
 function updateExportLivePreview() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
@@ -788,6 +910,11 @@ function updateExportLivePreview() {
 
   const content = currentExportContent();
   const docTitle = currentExportName();
+  if (window.READMD_ENGINE === 'rust' && (fmt === 'pdf' || fmt === 'docx')) {
+    requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
+    return;
+  }
+  cancelNativeExportPreview();
 
   // 注入或更新动态样式表
   let styleEl = $('export-preview-dynamic-style');
@@ -1360,11 +1487,14 @@ function initExportAiDesigner() {
 }
 
 async function generateExportStyleWithAi(stylePrompt) {
+  const genButton = $('exp-ai-gen-btn');
+  if (genButton?.disabled) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!stylePrompt) {
     showToast(_t('exportai.placeholder') || '');
     return;
   }
+  if (genButton) genButton.disabled = true;
   const statusEl = $('exp-ai-status');
   if (statusEl) {
     statusEl.classList.remove('hidden');
@@ -1461,6 +1591,8 @@ async function generateExportStyleWithAi(stylePrompt) {
       statusEl.textContent = (_t('ai.reqFailMsg') || '') + e.message;
     }
     showToast((_t('toast.unknownError') || '') + e.message);
+  } finally {
+    if (genButton) genButton.disabled = false;
   }
 }
 

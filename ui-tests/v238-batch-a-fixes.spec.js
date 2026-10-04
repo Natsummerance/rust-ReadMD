@@ -70,6 +70,8 @@ test('provider search input filters provider cards', async ({ page }) => {
     fillAiProviders(state.ai.providers, { provider_id: 'openai' });
   });
   await expect(page.locator('#ai-provider-cards .ai-provider-card')).toHaveCount(2);
+  await page.locator('#ai-settings-modal .conn-advanced > summary').click();
+  await page.locator('#ai-settings-modal .ai-provider-directory > summary').click();
   await page.locator('#ai-provider-search').fill('deepseek');
   await expect(page.locator('#ai-provider-cards .ai-provider-card')).toHaveCount(1);
   await expect(page.locator('#ai-provider-cards')).toContainText('DeepSeek');

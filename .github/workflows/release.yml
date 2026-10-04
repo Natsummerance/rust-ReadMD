@@ -45,10 +45,14 @@ jobs:
             archive_ext: zip
 
     env:
-      # Tag builds take their version from the tag; branch and PR builds use 0.0.0.
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v0.0.0' }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+      READMD_PET_CUBISM_CORE: ${{ github.workspace }}/.cache/readmd-release-core.js
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Normalise version
         shell: bash
@@ -59,6 +63,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
 
       - name: Install Linux build dependencies (WebKitGTK)
         if: runner.os == 'Linux'
@@ -66,8 +73,33 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
+      # Prepare already locked dependencies separately; every compilation is offline.
+      - name: Prepare locked dependency caches
+        shell: bash
+        run: |
+          cargo fetch --locked --manifest-path rust/Cargo.toml
+          cargo fetch --locked --manifest-path packages/readmd-pet-rust/Cargo.toml
+          node tools/prepare-pet-core.mjs
+
+      - name: Verify release version and frontend bundle
+        shell: bash
+        run: |
+          test "$(tr -d '\r\n' < VERSION)" = "$APP_VERSION"
+          cargo run --offline --locked --manifest-path rust/Cargo.toml -p xtask -- bundle-boot --check
+
       - name: Build release binary with Cargo
-        run: cargo build --manifest-path rust/Cargo.toml --release -p readmd-kernel --target ${{ matrix.platform.target }}
+        run: cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --target ${{ matrix.platform.target }}
+
+      - name: Build and verify desktop pet package
+        shell: bash
+        run: |
+          case "${{ matrix.platform.target }}" in
+            *windows*) platform=windows; arch=x86_64 ;;
+            *linux*) platform=linux; arch=x86_64 ;;
+            aarch64*) platform=macos; arch=aarch64 ;;
+            *) platform=macos; arch=x86_64 ;;
+          esac
+          cargo run --offline --locked --manifest-path rust/Cargo.toml -p xtask -- pet-package --platform "$platform" --arch "$arch" --output dist/pet
 
       - name: Install Windows Installer Tools (NSIS)
         if: runner.os == 'Windows'
@@ -82,11 +114,10 @@ jobs:
           Copy-Item "assets" -Destination "$pkgDir\assets" -Recurse
           Copy-Item "LICENSE" -Destination "$pkgDir\LICENSE"
           Copy-Item "README.md" -Destination "$pkgDir\README.md"
-          # Desktop pet runtime: the kernel installs it from ReadMD-Pet-Rust.zip beside the exe.
-          cargo run --manifest-path rust/Cargo.toml -p xtask --release -- pet-package --platform windows --arch x86_64 --output dist\pet
-          if (Test-Path "dist\pet\ReadMD-Pet-Rust.zip") { Copy-Item "dist\pet\ReadMD-Pet-Rust.zip" -Destination "$pkgDir\ReadMD-Pet-Rust.zip" } else { Write-Warning "desktop pet package not built" }
+          Copy-Item "dist\pet\ReadMD-Pet-Rust.zip" -Destination "$pkgDir\ReadMD-Pet-Rust.zip" -ErrorAction Stop
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "dist\${{ matrix.platform.asset_name }}.zip"
-          & "C:\Program Files (x86)\NSIS\makensis.exe" ReadMD.nsi
+          & "C:\Program Files (x86)\NSIS\makensis.exe" "/DAPP_VERSION=$env:APP_VERSION" ReadMD.nsi
+          if ($LASTEXITCODE -ne 0) { throw "NSIS packaging failed" }
 
       - name: Package Linux Artifacts
         if: runner.os == 'Linux'
@@ -96,6 +127,7 @@ jobs:
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$PKG_DIR/ReadMD"
           cp -r assets "$PKG_DIR/assets"
           cp LICENSE README.md "$PKG_DIR/"
+          cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$PKG_DIR/"
           tar -czvf "dist/${{ matrix.platform.asset_name }}.tar.gz" -C dist/ReadMD-linux-x86_64 .
 
           # Build Debian / Ubuntu / UOS / Kylin .deb package
@@ -107,6 +139,7 @@ jobs:
           mkdir -p "$DEB_DIR/usr/share/icons/hicolor/512x512/apps"
 
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$DEB_DIR/usr/bin/readmd"
+          cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$DEB_DIR/usr/share/readmd/"
           chmod +x "$DEB_DIR/usr/bin/readmd"
           cp -r assets "$DEB_DIR/usr/share/readmd/"
           if [ -f "assets/icon-256.png" ]; then
@@ -145,6 +178,7 @@ jobs:
           mkdir -p "$APP_DIR/Contents/MacOS"
           mkdir -p "$APP_DIR/Contents/Resources"
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$APP_DIR/Contents/MacOS/ReadMD"
+          cp dist/pet/ReadMD-Pet-Rust-macos-*.zip "$APP_DIR/Contents/Resources/"
           chmod +x "$APP_DIR/Contents/MacOS/ReadMD"
           if [ -f "assets/ReadMD.icns" ]; then
             cp "assets/ReadMD.icns" "$APP_DIR/Contents/Resources/readmd.icns"
@@ -188,6 +222,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform.asset_name }}
+          if-no-files-found: error
           path: |
             dist/*.zip
             dist/*.tar.gz
@@ -218,8 +253,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.2' }}
-          name: ReadMD ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.2' }} - 纯 Rust 原生全平台架构版 (Pure Rust Edition)
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
+          name: ReadMD ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
+          fail_on_unmatched_files: true
           body_path: RELEASE_NOTES.md
           files: |
             release-assets/*

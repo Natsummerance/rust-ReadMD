@@ -203,6 +203,88 @@ pub fn association_writes(exe: &str, icon_file: &str) -> Vec<RegistryWrite> {
     writes
 }
 
+/// Advertise ReadMD without overwriting another application's default or UserChoice.
+pub fn modern_association_writes(exe: &str, icon_file: &str) -> Vec<RegistryWrite> {
+    let mut writes = Vec::new();
+    let mut write = |key: String, name: Option<&str>, data: String| writes.push(RegistryWrite {
+        root: HKCU, sub_key: key, value_name: name.map(str::to_string), kind: REG_SZ, data,
+    });
+    let class = format!(r"Software\Classes\{MARKDOWN_CLASS}");
+    write(class.clone(), None, MARKDOWN_CLASS_DESCRIPTION.into());
+    write(format!(r"{class}\DefaultIcon"), None, default_icon_data(icon_file));
+    write(format!(r"{class}\shell\open\command"), None, open_command_data(exe));
+    let app = r"Software\Classes\Applications\ReadMD.exe";
+    write(app.into(), Some("FriendlyAppName"), "ReadMD".into());
+    write(format!(r"{app}\shell\open\command"), None, open_command_data(exe));
+    let capabilities = r"Software\ReadMD\Capabilities";
+    write(capabilities.into(), Some("ApplicationName"), "ReadMD".into());
+    write(capabilities.into(), Some("ApplicationDescription"), MARKDOWN_CLASS_DESCRIPTION.into());
+    write(capabilities.into(), Some("ApplicationIcon"), default_icon_data(icon_file));
+    write(r"Software\RegisteredApplications".into(), Some("ReadMD"), capabilities.into());
+    for ext in MARKDOWN_EXTENSIONS {
+        write(format!(r"Software\Classes\{ext}\OpenWithProgids"), Some(MARKDOWN_CLASS), String::new());
+        write(format!(r"{app}\SupportedTypes"), Some(ext), String::new());
+        write(format!(r"{capabilities}\FileAssociations"), Some(ext), MARKDOWN_CLASS.into());
+    }
+    writes
+}
+
+pub const DEFAULT_APPS_URI: &str = "ms-settings:defaultapps?registeredAppUser=ReadMD";
+
+/// Shell launches have no guaranteed working directory, including split development builds.
+pub fn association_command_with_assets(exe: &str, assets: &str) -> String {
+    format!("{} --assets {}", open_command_data(exe), py_quote(assets))
+}
+
+pub fn modern_association_writes_with_assets(exe: &str, icon_file: &str, assets: &str) -> Vec<RegistryWrite> {
+    let command = association_command_with_assets(exe, assets);
+    let mut writes = modern_association_writes(exe, icon_file);
+    for write in &mut writes {
+        if write.sub_key.ends_with(r"\shell\open\command") { write.data.clone_from(&command); }
+    }
+    writes
+}
+
+#[cfg(test)] mod modern_tests {
+    use super::*;
+    #[test] fn split_installation_quotes_resources_and_document_independently() {
+        let exe=r"C:\Program Files\ReadMD\ReadMD.exe";let assets=r"Z:\Reader Kit\assets";
+        let command=format!("\"{exe}\" \"%1\" --assets \"{assets}\"");
+        let writes=modern_association_writes_with_assets(exe,exe,assets);
+        let commands:Vec<_>=writes.iter().filter(|w|w.sub_key.ends_with(r"\shell\open\command")).collect();
+        assert_eq!(commands.len(),2);
+        assert!(commands.iter().all(|w|w.data==command && w.kind==REG_SZ));
+        assert!(writes.iter().all(|w|!w.sub_key.contains("UserChoice")));
+    }
+    #[test] fn registration_advertises_types_without_overwriting_default_choices() {
+        let writes=modern_association_writes(r"C:\Program Files\ReadMD\ReadMD.exe",r"C:\Program Files\ReadMD\ReadMD.exe");
+        assert!(writes.iter().any(|w|w.sub_key==r"Software\RegisteredApplications" && w.value_name.as_deref()==Some("ReadMD")));
+        assert!(writes.iter().all(|w|!w.sub_key.contains("UserChoice")));
+        for ext in MARKDOWN_EXTENSIONS {
+            assert!(!writes.iter().any(|w|w.sub_key==format!(r"Software\Classes\{ext}") && w.value_name.is_none()));
+            assert!(writes.iter().any(|w|w.sub_key.ends_with("FileAssociations") && w.value_name.as_deref()==Some(ext)));
+        }
+        let command=writes.iter().find(|w|w.sub_key==r"Software\Classes\ReadMD.markdown\shell\open\command").unwrap();
+        assert_eq!(command.data,"\"C:\\Program Files\\ReadMD\\ReadMD.exe\" \"%1\"");assert_eq!(command.kind,REG_SZ);
+    }
+}
+
+/// Ask the Shell for the effective default, including Windows' protected UserChoice.
+#[cfg(windows)]
+pub fn default_executable(extension: &str) -> Option<String> {
+    #[link(name = "shlwapi")] extern "system" {
+        fn AssocQueryStringW(flags: u32, kind: u32, association: *const u16, extra: *const u16, output: *mut u16, length: *mut u32) -> i32;
+    }
+    let extension = to_wide(extension);
+    let mut buffer = vec![0u16; 32768]; let mut len = buffer.len() as u32;
+    let result = unsafe { AssocQueryStringW(0, 2, extension.as_ptr(), std::ptr::null(), buffer.as_mut_ptr(), &mut len) };
+    if result != 0 { return None; }
+    let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..end]))
+}
+#[cfg(not(windows))]
+pub fn default_executable(_extension: &str) -> Option<String> { None }
+
 /// Exactly what the two `advapi32` calls receive for one [`RegistryWrite`],
 /// computed without a registry: the wide sub-key, the wide value name (an
 /// empty `Vec` standing in for the `NULL` that `/ve` maps to), the type, and
@@ -496,7 +578,7 @@ mod win {
             key: HKey,
             sub_key: *const u16,
             reserved: u32,
-            class: *const u16,
+            class: *mut u16,
             options: u32,
             sam_desired: u32,
             security_attributes: *mut c_void,
@@ -577,7 +659,7 @@ mod win {
             root as HKey,
             sub_key.as_ptr(),
             0,
-            std::ptr::null(),
+            std::ptr::null_mut(),
             options,
             access,
             std::ptr::null_mut(),

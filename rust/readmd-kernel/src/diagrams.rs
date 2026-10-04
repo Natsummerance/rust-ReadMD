@@ -4,7 +4,7 @@
 //! 1. Mermaid / WaveDrom / Bitfield / Viz / TikZ / Chart：浏览器端懒加载离线渲染（服务端只探测资产是否存在）；
 //! 2. PlantUML：双通道 —— 本地 Java/plantuml 进程，或 `allow_remote` 显式授权后的公网 SVG 代理；
 //! 3. Vega & Vega-Lite：随包的 Node 运行时离线渲染（spec 走 stdin，不进命令行）；
-//! 4. wsd / d2 / ditaa：本版本明确不可用，避免误判为联网成功。
+//! 4. wsd / d2 / ditaa：Rust离线基础语法渲染，复杂未知语法明确失败。
 //!
 //! Parity 契约（权威依据 `scratch/rust_parity/contract.json` + `readmd.py:1879`/`1942`）：
 //! * 失败分两类，绝不混用：
@@ -530,10 +530,10 @@ pub fn diagram_capabilities(root: &Path) -> Value {
     engines.insert("plantuml".into(), plantuml.clone());
     engines.insert("puml".into(), plantuml);
 
-    // WebSequenceDiagrams 有意不映射到 PlantUML：两种语言不可互换，给明确的不可用项。
-    for engine in ["wsd", "d2"] {
-        let entry = engine_entry(false, "none", false);
-        engines.insert(engine.into(), with_reason(entry, "diagram_engine_unavailable"));
+    for engine in ["wsd", "d2", "ditaa"] {
+        let mut entry = engine_entry(true, "rust", false);
+        entry["syntax"] = json!("basic");
+        engines.insert(engine.into(), entry);
     }
 
     let all_offline = engines
@@ -710,6 +710,7 @@ mod tests {
                 "chart.js",
                 "chartjs",
                 "d2",
+                "ditaa",
                 "mermaid",
                 "plantuml",
                 "puml",
@@ -722,12 +723,12 @@ mod tests {
             ]
         );
         // 离线不可用项必须给出与 Python 一致的 reason。
-        for name in ["wsd", "d2"] {
-            assert_eq!(engines[name]["available"], json!(false));
-            assert_eq!(engines[name]["offline"], json!(false));
-            assert_eq!(engines[name]["renderer"], json!("none"));
+        for name in ["wsd", "d2", "ditaa"] {
+            assert_eq!(engines[name]["available"], json!(true));
+            assert_eq!(engines[name]["offline"], json!(true));
+            assert_eq!(engines[name]["renderer"], json!("rust"));
             assert_eq!(engines[name]["requires_network"], json!(false));
-            assert_eq!(engines[name]["reason"], json!("diagram_engine_unavailable"));
+            assert_eq!(engines[name]["syntax"], json!("basic"));
         }
         let plantuml = &engines["plantuml"];
         assert_eq!(plantuml["remote_available"], json!(true));

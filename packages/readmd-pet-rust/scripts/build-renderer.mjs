@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripTypeScriptTypes } from 'node:module';
+import crypto from 'node:crypto';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../..');
@@ -15,6 +16,11 @@ const argument = name => {
   return path.resolve(process.argv[at + 1]);
 };
 const cache = argument('--renderer-cache');
+const pin=JSON.parse(fs.readFileSync(path.join(cache,'../manifest.json'),'utf8'));
+for(const file of pin.files){
+  const actual=crypto.createHash('sha256').update(fs.readFileSync(path.join(cache,'..',file.path))).digest('hex');
+  if(actual!==file.sha256)throw new Error('Pinned renderer library digest mismatch: '+file.path);
+}
 const output = argument('--output');
 if (cache === output) throw new Error('Renderer cache and output must differ');
 const libraries = fs.readdirSync(path.join(cache, 'assets')).filter(name =>

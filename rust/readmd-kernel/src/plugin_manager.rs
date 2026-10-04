@@ -5,14 +5,9 @@
 //! `plugins.json` manifest, the exclusive-capability activation rules and the
 //! sandbox artefact removal used by `/api/plugins/*`.
 //!
-//! The Python module installs packages with `pip` into
-//! `DATA_DIR/plugins/site-packages`, always inside its own process for a frozen
-//! build (`_run_pip` → `runpy.run_module('pip')`, `plugin_manager.py:661-737`).
-//! The Rust kernel owns the *contract* (manifest shape, enable/disable
-//! arbitration, honest uninstall results) but has no bundled `pip` to run and
-//! spawns nothing, so [`install_plugin_async`] publishes the exact task state
-//! Python reserves for that case (`pip_unavailable`,
-//! `plugin_manager.py:873-883`) instead of inventing one or pretending.
+//! Optional Rust extension profiles are installed atomically in the sandbox.
+//! Legacy identifiers remain readable; installed Python artefacts are never run.
+//! Enabled profiles participate in conversion and report actual runtime results.
 
 use crate::App;
 use serde_json::{json, Map, Value};
@@ -348,6 +343,7 @@ pub fn alternatives(plugin_id: &str) -> Vec<&'static str> {
 
 // -------------------------------------------------------------- sandbox paths
 
+#[derive(Clone)]
 pub struct Sandbox {
     pub plugins_root: PathBuf,
     pub site_packages: PathBuf,
@@ -591,7 +587,7 @@ pub fn is_plugin_installed(sandbox: &Sandbox, plugin_id: &str) -> bool {
     {
         return false;
     }
-    sandbox_plugin_installed(sandbox, spec)
+    native_profile_installed(sandbox, plugin_id) || sandbox_plugin_installed(sandbox, spec)
 }
 
 fn entry_bool(entry: Option<&Value>, key: &str) -> Option<bool> {
@@ -640,9 +636,7 @@ fn expand_user(sandbox: &Sandbox, path: &str) -> PathBuf {
 }
 
 /// `load_manifest()` — the per-plugin view the UI renders.
-/// What the Rust kernel itself provides for a plugin's capability.  The
-/// plugin center shows these as built in instead of offering a pip install
-/// this build can never run (`pip_unavailable`).
+/// Available Rust engines for each optional, persisted extension profile.
 pub fn native_support(spec: &PluginSpec) -> Value {
     let engine = match spec.capability {
         "ocr" if crate::ocr::pick_engine().is_some() => Some("system-ocr"),
@@ -652,9 +646,140 @@ pub fn native_support(spec: &PluginSpec) -> Value {
         "pdf" => Some("pdf-text"),
         "web" => Some("readability"),
         "encoding" => Some("encoding-detect"),
+        "table" => Some("native-table-layout"),
+        "keywords" => Some("native-keyphrases"),
+        "audio" if crate::speech::capabilities().get("ok").and_then(Value::as_bool) == Some(true) => Some("system-speech"),
         _ => None,
     };
-    json!({ "builtin": engine.is_some(), "engine": engine })
+    json!({ "builtin": engine.is_some(), "engine": engine, "installable": true,
+        "name_key":format!("plugin.native.{}.name",spec.id),
+        "desc_key":format!("plugin.native.{}.desc",spec.id) })
+}
+
+fn native_profile_path(sandbox: &Sandbox, id: &str) -> PathBuf {
+    sandbox.plugins_root.join("native").join(format!("{id}.json"))
+}
+
+pub fn native_profile_installed(sandbox: &Sandbox, id: &str) -> bool {
+    let Some(spec) = plugin_spec(id) else { return false; };
+    let Ok(bytes) = fs::read(native_profile_path(sandbox, id)) else { return false; };
+    if bytes.len() > 16 * 1024 { return false; }
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else { return false; };
+    value.get("id").and_then(Value::as_str) == Some(id)
+        && value.get("capability").and_then(Value::as_str) == Some(spec.capability)
+        && value.get("runtime").and_then(Value::as_str) == Some("readmd-rust")
+        && value.get("version").and_then(Value::as_str).is_some()
+}
+
+static MANIFEST_MUTATIONS: Mutex<()> = Mutex::new(());
+
+/// Execute registered Rust extension profiles around the real converter.
+/// The core reader remains available when optional profiles are uninstalled.
+pub fn convert_document(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>) -> crate::convert::ConvertTriple {
+    // Select and reserve under the same lock as uninstall. Otherwise a
+    // profile could disappear between selection and registering its use.
+    let selection_guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e|e.into_inner());
+    let manifest = read_manifest_data(sandbox);
+    let ext = crate::convert::ext_of(path);
+    let ids: Vec<&str> = PLUGIN_SPECS.iter().filter(|s| {
+        native_profile_installed(sandbox,s.id)
+            && manifest.get(s.id).and_then(|p|p.get("enabled")).and_then(Value::as_bool)==Some(true)
+            && match s.capability {
+                "keywords"|"encoding" => true,
+                "audio" => crate::transcribe::is_supported_media(path),
+                "pdf" => ext==".pdf",
+                "latex" => matches!(ext.as_str(),".tex"|".latex"),
+                "ocr"|"table" => crate::ocr::OCR_IMAGE_EXTS.contains(&ext.as_str()) || ext==".pdf",
+                "web" => matches!(ext.as_str(),".html"|".htm"|".xhtml"),
+                "document" => matches!(ext.as_str(),".doc"|".docx"|".xls"|".xlsx"|".ppt"|".pptx"|".odt"|".rtf"|".epub"),
+                "highlight" => crate::convert::is_code_ext(&ext),
+                _=>false,
+            }
+    }).map(|s|s.id).collect();
+    struct Uses(Vec<String>);
+    impl Drop for Uses {
+        fn drop(&mut self) {
+            let mut uses=active_uses().lock().unwrap_or_else(|e|e.into_inner());
+            for id in &self.0 { if let Some(n)=uses.get_mut(id) { *n=(*n-1).max(0); } }
+        }
+    }
+    let _uses=Uses(ids.iter().map(|s|s.to_string()).collect());
+    {
+        let mut uses=active_uses().lock().unwrap_or_else(|e|e.into_inner());
+        for id in &ids { *uses.entry(id.to_string()).or_default()+=1; }
+    }
+    drop(selection_guard);
+    let mut result=if ids.contains(&"docling") {
+        match crate::ocr::ocr_pdf_to_md(path, 200) {
+            Ok(text) if !text.trim().is_empty() && !text.trim().starts_with(crate::ocr::OCR_PDF_EMPTY_PLACEHOLDER) => crate::convert::ConvertTriple::ok(text,"system-ocr"),
+            _ => crate::convert::convert_triple_with_language(path,form_tables,language),
+        }
+    } else if ids.contains(&"trafilatura") {
+        crate::convert::read_text_smart(path).ok()
+            .and_then(|(html,_)|crate::headless_renderer::extract_article(&html,false))
+            .filter(|text|!text.trim().is_empty())
+            .map(|text|crate::convert::ConvertTriple::ok(text,"native-article"))
+            .unwrap_or_else(||crate::convert::convert_triple_with_language(path,form_tables,language))
+    } else {crate::convert::convert_triple_with_language(path,form_tables,language)};
+    if result.error.is_none() && !result.text.trim().is_empty() {
+        if ids.contains(&"jieba") {
+            let words=keyphrases(&result.text);
+            if !words.is_empty() {
+                result.text.push_str("\n## 关键词\n\n");
+                result.text.push_str(&words.join(" · ")); result.text.push('\n');
+            }
+        }
+        if ids.contains(&"rapid_table") { result.text=aligned_tables(&result.text); }
+        if ids.contains(&"whisper") {
+            if let Ok(re)=regex::Regex::new(r"(?m)^\*\*\[\d{2}:\d{2}(?::\d{2})?\]\*\*\s*") { result.text=re.replace_all(&result.text,"").into_owned(); }
+        }
+    }
+    for id in ids {
+        report_runtime_status(id,json!({"engine":result.engine,"ok":result.error.is_none(),"error":result.error,"source":path,"runtime":"readmd-rust"}));
+    }
+    result
+}
+
+fn keyphrases(text: &str) -> Vec<String> {
+    let re=regex::Regex::new(r"[A-Za-z][A-Za-z'-]{2,}|[\p{Han}]{2,}").expect("keyphrase regex");
+    let mut counts=BTreeMap::<String,usize>::new();
+    for m in re.find_iter(text) {
+        let word=m.as_str().to_lowercase();
+        if ["the","and","for","with","this","that","from","are","was","not"].contains(&word.as_str()) { continue; }
+        if word.chars().all(|c| c as u32>=0x3400) && word.chars().count()>6 {
+            let chars:Vec<char>=word.chars().collect();
+            for window in chars.windows(3) { *counts.entry(window.iter().collect()).or_default()+=1; }
+        } else { *counts.entry(word).or_default()+=1; }
+    }
+    let mut rows:Vec<_>=counts.into_iter().collect();
+    rows.sort_by(|a,b|b.1.cmp(&a.1).then_with(||b.0.len().cmp(&a.0.len())).then_with(||a.0.cmp(&b.0)));
+    rows.into_iter().take(8).map(|(s,_)|s).collect()
+}
+
+fn aligned_tables(text: &str) -> String {
+    let re=regex::Regex::new(r"\t+| {2,}").expect("table column regex");
+    let lines:Vec<_>=text.lines().collect(); let mut out=String::new(); let mut index=0;let mut fence=false;
+    while index<lines.len() {
+        let line=lines[index];
+        if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") { fence=!fence; }
+        let cols:Vec<_>=re.split(line.trim()).collect();
+        if !fence && !line.trim_start().starts_with('|') && (2..=20).contains(&cols.len()) {
+            let mut rows=vec![cols];let mut end=index+1;
+            while end<lines.len() {
+                let cells:Vec<_>=re.split(lines[end].trim()).collect();
+                if cells.len()!=rows[0].len() { break; } rows.push(cells);end+=1;
+            }
+            if rows.len()>=3 {
+                for (n,row) in rows.iter().enumerate() {
+                    out.push('|');for cell in row { out.push_str(&format!(" {} |",crate::convert::md_cell(cell))); }out.push('\n');
+                    if n==0 { out.push('|');for _ in row {out.push_str(" --- |");}out.push('\n'); }
+                }
+                index=end;continue;
+            }
+        }
+        out.push_str(line);out.push('\n');index+=1;
+    }
+    out
 }
 
 pub fn plugin_manifest(sandbox: &Sandbox) -> Map<String, Value> {
@@ -678,7 +803,7 @@ pub fn plugin_manifest(sandbox: &Sandbox) -> Map<String, Value> {
         let entry = data.get(spec.id);
         let task = tasks.get(spec.id);
         let installed = is_plugin_installed(sandbox, spec.id);
-        let cached = check_model_cached(sandbox, spec.id);
+        let cached = native_profile_installed(sandbox, spec.id) || check_model_cached(sandbox, spec.id);
         let saved_enabled = entry.and_then(|value| value.get("enabled")).and_then(Value::as_bool);
         let enabled = if installed {
             saved_enabled.unwrap_or_else(|| DEFAULT_ENABLED.contains(&spec.id))
@@ -702,18 +827,18 @@ pub fn plugin_manifest(sandbox: &Sandbox) -> Map<String, Value> {
         };
         let value = json!({
             "id": spec.id,
-            "runtime_connected": spec.runtime_connected,
+            "runtime_connected": native_profile_installed(sandbox, spec.id),
             "name": spec.name,
             "capability": spec.capability,
             "alternatives": alternatives(spec.id),
-            "requires_model": spec.requires_model,
+            "requires_model": false,
             "runtime": runtime_value,
             "busy": busy,
             "name_key": spec.name_key,
             "desc_key": spec.desc_key,
             "category": spec.category,
             "weight": spec.weight,
-            "approx_size": spec.approx_size,
+            "approx_size": "< 16 KB · Rust",
             "installed": installed,
             "cached": cached,
             "enabled": enabled,
@@ -819,6 +944,7 @@ fn disable_competing_plugins(manifest: &mut Map<String, Value>, plugin_id: &str)
 
 /// `set_plugin_enabled`.
 pub fn set_plugin_enabled(sandbox: &Sandbox, plugin_id: &str, enabled: bool) -> bool {
+    let _guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
     if plugin_spec(plugin_id).is_none() || !is_plugin_installed(sandbox, plugin_id) {
         return false;
     }
@@ -834,10 +960,8 @@ pub fn set_plugin_enabled(sandbox: &Sandbox, plugin_id: &str, enabled: bool) -> 
     }
     save_manifest(sandbox, &manifest);
     let saved = read_manifest_data(sandbox);
-    manifest.iter().all(|(pid, info)| {
-        let expected = info.get("enabled").and_then(Value::as_bool).unwrap_or(false);
-        saved.get(pid).and_then(|entry| entry.get("enabled")).and_then(Value::as_bool) == Some(expected)
-    })
+    manifest.iter().filter_map(|(pid,info)|info.get("enabled").and_then(Value::as_bool).map(|expected|(pid,expected)))
+        .all(|(pid,expected)|saved.get(pid).and_then(|entry|entry.get("enabled")).and_then(Value::as_bool)==Some(expected))
 }
 
 /// `is_plugin_enabled`.
@@ -916,6 +1040,7 @@ pub fn requested_requirement(spec: &PluginSpec) -> String {
 /// plugin uninstalled.  Any leftover file means `false` plus an
 /// `uninstall_locked` task, never a optimistic "已卸载".
 pub fn uninstall_plugin(sandbox: &Sandbox, plugin_id: &str) -> bool {
+    let _guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
     let spec = match plugin_spec(plugin_id) {
         Some(spec) => spec,
         None => return false,
@@ -933,6 +1058,10 @@ pub fn uninstall_plugin(sandbox: &Sandbox, plugin_id: &str) -> bool {
         return false;
     }
     let mut failures: Vec<String> = Vec::new();
+    let native = native_profile_path(sandbox, plugin_id);
+    if native.exists() {
+        if let Err(error) = fs::remove_file(&native) { failures.push(error.to_string()); }
+    }
     for artifact in sandbox_artifacts(sandbox, spec.import_name, spec.package) {
         let removed = if artifact.is_dir() && !artifact.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
             fs::remove_dir_all(&artifact)
@@ -960,6 +1089,9 @@ pub fn uninstall_plugin(sandbox: &Sandbox, plugin_id: &str) -> bool {
         object.insert("enabled".to_string(), json!(false));
     }
     save_manifest(sandbox, &manifest);
+    if read_manifest_data(sandbox).get(plugin_id).and_then(|p|p.get("uninstalled")).and_then(Value::as_bool)!=Some(true) {
+        set_task(plugin_id,"error",0,"Could not persist uninstall.","native_install_failed",&[]);return false;
+    }
     if let Ok(mut map) = tasks().lock() {
         map.remove(plugin_id);
     }
@@ -970,25 +1102,9 @@ pub fn uninstall_plugin(sandbox: &Sandbox, plugin_id: &str) -> bool {
 /// was scheduled for a known plugin id", nothing more.  The final state is only
 /// ever reported through `/api/plugins/list`, exactly like the Python thread.
 ///
-/// Python never shells out to a package installer it happens to find on `PATH`:
-/// `_run_pip` (`plugin_manager.py:733-737`) routes a frozen build through
-/// `runpy.run_module('pip', run_name='__main__', alter_sys=True)`
-/// (`plugin_manager.py:661-730`) inside its own process, and only a *source
-/// checkout* may fall back to a `sys.executable -m pip` child
-/// (`plugin_manager.py:646-658`).  The Rust kernel is neither case — there is no
-/// bundled `pip` module to run in-process and spawning one is exactly what the
-/// native-independence rule forbids — so the faithful state is the one the
-/// authority already defines for "this build has no pip": the `except
-/// ImportError` arm at `plugin_manager.py:873-883`, copied verbatim
-/// (`pip_unavailable` / `'pip is unavailable in this build.'` /
-/// `['pip module not found in this build']`).
-///
-/// That code — not an invented one — is what the UI translates:
-/// `PLUGIN_ERROR_TEXT` (`assets/js/features/convert.js:270-278`) is a closed set
-/// of seven keys and `pip_unavailable` is among them, resolving to
-/// `plugin.error.pip_unavailable` = "The bundled package installer is unavailable
-/// in this build." (`assets/i18n/en.json:817`, mirrored in every locale).
+/// Installs the compiled Rust extension profile without network or dependencies.
 pub fn install_plugin_async(sandbox: Sandbox, plugin_id: &str) -> bool {
+    let _start_guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
     if plugin_spec(plugin_id).is_none() {
         return false;
     }
@@ -1002,54 +1118,48 @@ pub fn install_plugin_async(sandbox: Sandbox, plugin_id: &str) -> bool {
     // `plugin_manager.py:799-804`.
     set_task(plugin_id, "installing", 0, "Starting installation...", "", &[]);
 
-    // `plugin_manager.py:806-810`: installing again clears the uninstall marker.
-    let was_uninstalled = manifest_flag(&sandbox, plugin_id, "uninstalled");
-    if was_uninstalled {
-        let mut manifest = read_manifest_data(&sandbox);
-        if let Some(entry) = manifest.get_mut(plugin_id).and_then(Value::as_object_mut) {
-            entry.insert("uninstalled".to_string(), json!(false));
-        }
-        save_manifest(&sandbox, &manifest);
-    }
-
     let id = plugin_id.to_string();
     let worker = std::thread::Builder::new()
         .name(format!("readmd-plugin-install-{id}"))
         .spawn(move || {
             // `_worker()` opens with `_ensure_dirs()` (`plugin_manager.py:813`).
             sandbox.ensure_dirs();
-            report_pip_unavailable(&id);
+            let spec = plugin_spec(&id).expect("validated plugin id");
+            let result = (|| -> Result<(), String> {
+                let _guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
+                set_task(&id, "installing", 30, "Registering Rust extension...", "", &[]);
+                let path = native_profile_path(&sandbox, &id);
+                let parent = path.parent().ok_or("native_profile_path_invalid")?;
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                let root = sandbox.plugins_root.canonicalize().map_err(|e| e.to_string())?;
+                if !parent.canonicalize().map_err(|e| e.to_string())?.starts_with(root) { return Err("native_profile_path_invalid".into()); }
+                let value = json!({"id":id,"capability":spec.capability,"runtime":"readmd-rust","version":env!("CARGO_PKG_VERSION"),"native":native_support(spec)});
+                let previous_profile=fs::read(&path).ok();
+                let previous_manifest=read_manifest_data(&sandbox);
+                crate::content::write_bytes_atomic(&path, &serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                if !native_profile_installed(&sandbox, &id) { return Err("native_profile_validation_failed".into()); }
+                let mut manifest = read_manifest_data(&sandbox);
+                manifest.insert(id.clone(), json!({"enabled":true,"uninstalled":false,"version":env!("CARGO_PKG_VERSION"),"runtime":"readmd-rust"}));
+                disable_competing_plugins(&mut manifest, &id);
+                save_manifest(&sandbox, &manifest);
+                if read_manifest_data(&sandbox).get(&id).and_then(|p|p.get("enabled")).and_then(Value::as_bool) != Some(true) {
+                    if let Some(bytes)=previous_profile {let _=crate::content::write_bytes_atomic(&path,&bytes);}else{let _=fs::remove_file(&path);}
+                    save_manifest(&sandbox,&previous_manifest);
+                    return Err("native_profile_save_failed".into());
+                }
+                Ok(())
+            })();
+            match result {
+                Ok(()) => set_task(&id,"done",100,"Rust extension installed.","",&[]),
+                Err(error) => set_task(&id,"error",0,&error,"native_install_failed",&[error.clone()]),
+            }
         });
     if worker.is_err() {
         // Python has no such branch; keep the task out of a permanent
         // "installing" state with the same authoritative triple.
-        report_pip_unavailable(plugin_id);
+        set_task(plugin_id,"error",0,"Could not start extension worker.","native_install_failed",&[]);
     }
     true
-}
-
-/// The one degraded outcome, shared by the worker thread and by a failed spawn.
-/// Field-for-field `plugin_manager.py:874-882`.
-fn report_pip_unavailable(plugin_id: &str) {
-    set_task(
-        plugin_id,
-        "error",
-        0,
-        "pip is unavailable in this build.",
-        "pip_unavailable",
-        &["pip module not found in this build".to_string()],
-    );
-    // `logging.error('Plugin %s install failed: pip is unavailable', plugin_id)`
-    log::error!("Plugin {plugin_id} install failed: pip is unavailable");
-}
-
-/// `manifest_data.get(plugin_id, {}).get(name)` for a boolean manifest key.
-fn manifest_flag(sandbox: &Sandbox, plugin_id: &str, name: &str) -> bool {
-    read_manifest_data(sandbox)
-        .get(plugin_id)
-        .and_then(|entry| entry.get(name))
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
 }
 
 /// `get_ffmpeg_path`: the sandbox bundle first, then `PATH`.
@@ -1332,8 +1442,9 @@ mod tests {
             assert!(keys.contains(&expected), "missing {expected}");
         }
         assert_eq!(keys.len(), 25);
-        assert_eq!(manifest["pymupdf4llm"]["native"], json!({ "builtin": true, "engine": "pdf-text" }));
-        assert_eq!(manifest["whisper"]["native"], json!({ "builtin": false, "engine": null }));
+        assert_eq!(manifest["pymupdf4llm"]["native"]["engine"], "pdf-text");
+        assert_eq!(manifest["pymupdf4llm"]["native"]["installable"], true);
+        assert_eq!(manifest["whisper"]["native"]["installable"], true);
         // Nothing is installed in a fresh sandbox, so nothing is enabled.
         assert_eq!(easyocr["installed"], json!(false));
         assert_eq!(easyocr["enabled"], json!(false));
@@ -1648,54 +1759,40 @@ mod tests {
         assert_eq!(json_of(&res), method_not_allowed());
     }
 
-    /// The detached install worker settles in Python's own words and code, not
-    /// invented prose: `plugin_manager.py:874-882` gives status `error`, progress
-    /// `0`, `last_log` `'pip is unavailable in this build.'`, `error_code`
-    /// `pip_unavailable` and the single detail line
-    /// `'pip module not found in this build'`.  `pip_unavailable` is one of the
-    /// seven keys of `PLUGIN_ERROR_TEXT` (`assets/js/features/convert.js:270-278`)
-    /// and resolves to `plugin.error.pip_unavailable` in every locale; a code
-    /// outside that set would render as the UI's generic fallback.
     #[test]
-    fn install_reports_pythons_pip_unavailable_task_state() {
-        let (_box_, app) = fixture("pip-unavailable");
-        let plugin_id = "rapidocr";
-        assert!(install_plugin_async(Sandbox::for_app(&app), plugin_id));
-
-        // `plugin_manager.py:806-810` on top of the guard below, checked with ids
-        // no other test puts into the process-global task map.
-        let busy = "pymupdf4llm";
-        set_task(busy, "installing", 42, "Collecting pymupdf4llm", "", &[]);
-        assert!(install_plugin_async(Sandbox::for_app(&app), busy));
-        let kept = task_of(busy).unwrap();
-        assert_eq!(kept.progress, 42, "794-797 must not restart a running install");
-        assert_eq!(kept.last_log, "Collecting pymupdf4llm");
-
-        let cleared = "charset_normalizer";
-        let mut manifest = read_manifest_data(&Sandbox::for_app(&app));
-        manifest.insert(
-            cleared.to_string(),
-            json!({ "enabled": false, "uninstalled": true, "version": "" }),
-        );
-        save_manifest(&Sandbox::for_app(&app), &manifest);
-        assert!(manifest_flag(&Sandbox::for_app(&app), cleared, "uninstalled"));
-        assert!(install_plugin_async(Sandbox::for_app(&app), cleared));
-        assert!(
-            !manifest_flag(&Sandbox::for_app(&app), cleared, "uninstalled"),
-            "scheduling an install clears the uninstalled marker"
-        );
-
+    fn native_extension_lifecycle_and_real_conversion() {
+        let (box_, app) = fixture("native-lifecycle");
+        let sandbox = Sandbox::for_app(&app);
+        let plugin_id = "charset_normalizer";
+        assert!(install_plugin_async(sandbox.clone(), plugin_id));
         let task = wait_for_settled(plugin_id);
-        assert_eq!(task.status, "error");
-        assert_eq!(task.progress, 0);
-        assert_eq!(task.last_log, "pip is unavailable in this build.");
-        assert_eq!(task.error_code, "pip_unavailable");
-        assert_eq!(task.error, "pip_unavailable", "`error` mirrors the code in _set_task");
-        assert_eq!(task.error_detail, "pip module not found in this build");
+        assert_eq!(task.status, "done", "{}", task.last_log);
+        assert_eq!(task.progress, 100);
+        assert!(native_profile_installed(&sandbox,plugin_id));
+        assert!(is_plugin_enabled(&Sandbox::for_app(&app),plugin_id));
+        assert!(set_plugin_enabled(&sandbox,plugin_id,false));
+        assert!(!is_plugin_enabled(&Sandbox::for_app(&app),plugin_id));
+        assert!(set_plugin_enabled(&sandbox,plugin_id,true));
+        let source = box_.plugins_root.parent().unwrap().join("encoded.txt");
+        fs::write(&source, b"A real readable document.").unwrap();
+        let converted=convert_document(&sandbox,source.to_str().unwrap(),true,None);
+        assert!(converted.error.is_none());assert!(converted.text.contains("readable"));
+        assert_eq!(plugin_manifest(&sandbox)[plugin_id]["runtime"]["ok"],true);
+        assert!(uninstall_plugin(&sandbox,plugin_id));
+        assert!(!native_profile_installed(&sandbox,plugin_id));
+        assert!(!is_plugin_installed(&Sandbox::for_app(&app),plugin_id));
+        assert!(install_plugin_async(sandbox.clone(),plugin_id));
+        assert_eq!(wait_for_settled(plugin_id).status,"done");
+        assert!(is_plugin_enabled(&sandbox,plugin_id));
+    }
 
-        wait_for_settled(cleared);
-        // `busy` never got a worker — that is the guard working.
-        assert_eq!(task_of(busy).unwrap().progress, 42);
+    #[test]
+    fn native_postprocessors_preserve_code_and_extract_real_structure() {
+        let words=keyphrases("Reader converts documents. Reader converts files. 中文阅读中文阅读");
+        assert!(words.contains(&"reader".to_string()));
+        let table=aligned_tables("Name  Value\nAlpha  One\nBeta  Two\n\n```txt\nA  B\nC  D\nE  F\n```\n");
+        assert!(table.contains("| Name | Value |\n| --- | --- |"));
+        assert!(table.contains("```txt\nA  B\nC  D\nE  F\n```"));
     }
 
     /// `install_plugin_async` returns before the worker is done — the same
@@ -1925,15 +2022,16 @@ mod tests {
         for pid in ["pylatexenc", "jieba", "pygments", "pandoc_bridge"] {
             assert!(!plugin_spec(pid).unwrap().runtime_connected, "{pid}");
         }
-        // And `/api/plugins/list` surfaces the flag unchanged.
+        // The Rust profile is connected when its actual installed artifact
+        // exists; legacy Python catalog flags alone do not advertise execution.
         let box_ = sandbox("connected");
         let manifest = plugin_manifest(&box_);
-        assert_eq!(manifest["pymupdf4llm"]["runtime_connected"], json!(true));
+        assert_eq!(manifest["pymupdf4llm"]["runtime_connected"], json!(false));
         assert_eq!(manifest["jieba"]["runtime_connected"], json!(false));
         let payload = plugins_list_payload_for(&box_);
         assert_eq!(
             payload["plugins"]["pymupdf4llm"]["runtime_connected"],
-            json!(true)
+            json!(false)
         );
     }
 

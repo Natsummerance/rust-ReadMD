@@ -188,16 +188,28 @@ async function openHistoryModal() {
 }
 
 async function clearRecent() {
+  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+}
+
+async function runClearRecent() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  try {
   if (hasPy && py.clear_recent) {
-    await py.clear_recent();
+    const result = await py.clear_recent();
+    if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
   } else {
     const response = await apiFetch('/api/recent/clear', { method: 'POST' });
-    if (!response || !response.ok) return;
+    const result = await response.json();
+    if (!response.ok || result?.ok === false) throw new Error(result?.error || 'HTTP ' + response.status);
   }
   await refreshRecent();
   const list = $('history-list');
   if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
+  return true;
+  } catch (e) {
+    showToast(_t('audit.clearFailed', { error: e.message }));
+    return false;
+  }
 }
 
 async function addRecent(path) {
@@ -288,12 +300,13 @@ function updateStatus() {
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
   const canEdit = hasDoc && !state.editing;
   const canReload = state.mode === 'file';
-  const canSaveas = hasDoc && (state.mode === 'virtual' || state.fixed !== '');
+  const canSaveas = hasDoc;
   // 没有打开文档时禁用编辑；新建文档走 newDocument()。
   $('btn-edit').disabled = !hasDoc && !state.editing;
   setUnavailableReason($('btn-edit'), _t('toast.openDocumentToUse'));
   $('btn-reload').disabled = !canReload;
   $('btn-saveas').disabled = !canSaveas;
+  if ($('btn-document-copy')) $('btn-document-copy').disabled = !hasDoc;
   setUnavailableReason($('btn-saveas'), _t('toast.openDocumentToUse'));
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
@@ -341,7 +354,19 @@ function updateStatus() {
   }
 }
 
-function goHome() {
+let goingHome = false;
+async function goHome(options = {}) {
+  if (goingHome) return false;
+  goingHome = true;
+  const tabId = state.activeTabId;
+  try {
+    if (!options.discardConfirmed && state.editing && !await confirmExitEdit()) return false;
+    if (state.activeTabId !== tabId) return false;
+    return resetHome();
+  } finally { goingHome = false; }
+}
+
+function resetHome() {
   window.invalidateDocumentLoads?.();
   state.mode = 'welcome';
   state.file = null;
@@ -398,6 +423,7 @@ function goHome() {
   showPaginationBar(false);
   updateStatus();
   renderTabsBar();
+  return true;
 }
 
 
@@ -489,7 +515,7 @@ function installAssoc() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
   py.install_association().then(ok => {
-    showToast(ok === true ? _t('toast.assocSuccess') : _t('toast.assocFailed', { error: ok }));
-  });
+    showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
+  }).catch(e => showToast(_t('toast.assocFailed', { error: e.message })));
 }
 

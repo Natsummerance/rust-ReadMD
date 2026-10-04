@@ -69,6 +69,7 @@ const state = {
   readingLeading: 'normal', // compact | normal | relaxed
   aiPanelWidth: 432,
   autoReload: true,
+  closeToTray: true,
   history: [],
   histIdx: -1,
   scrollPos: {},
@@ -183,7 +184,7 @@ function installAssoc() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
   py.install_association().then(ok => {
-    showToast(ok === true ? _t('toast.assocSuccess') : _t('toast.assocFailed', { error: ok }));
+    showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
   });
 }
 

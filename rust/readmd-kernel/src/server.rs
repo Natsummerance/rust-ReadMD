@@ -647,7 +647,7 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/autostart/get", h_autostart_get),
     ("/api/autostart/set", h_autostart_set),
     ("/api/modules", h_modules),
-    ("/api/skills", h_skills),
+    ("/api/skills", crate::skill_workbench::handle),
     ("/api/pets", parity_pets::h_pets),
     ("/api/pets/status", parity_pets::h_pets_status),
     ("/api/plugins/list", h_plugins_list),
@@ -656,7 +656,7 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/ai/models", h_ai_models),
     ("/api/ai/chat", h_ai_chat),
     ("/api/ai/history", h_ai_history),
-    ("/api/ai/prompts", h_ai_prompts),
+    ("/api/ai/prompts", crate::skill_workbench::prompts),
     ("/api/image/save", h_image_save),
     ("/api/url", h_url_parity), // `readmd.py:3373` via `parity_web`
     ("/api/web/extract", h_web_extract_parity), // `readmd.py:3393` via `parity_web`
@@ -681,6 +681,7 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/pets/interact", parity_pets::h_pet_interact),
     ("/api/pets/import", parity_pets::h_pet_import),
     ("/api/export", h_export), // KERNEL BRIDGE — non-parity, see its doc comment
+    ("/api/export/preview", h_export_preview),
     ("/api/task/cancel", h_task_cancel),
     ("/api/export/presets", h_export_presets), // KERNEL BRIDGE — `Api.get/save_export_presets`
     // Wave E1 (F1) first planned to delete this row because `readmd.py:_route()`
@@ -702,9 +703,9 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/diagram/render", parity_diagram::h_diagram_render),
     ("/api/export/epub", batch2::h_export_epub),
     ("/api/plugins/uninstall", crate::plugin_manager::h_plugins_uninstall),
-    ("/api/skill-imports", batch2::h_skill_imports_list),
-    ("/api/skill-imports/preview", batch2::h_skill_imports_preview),
-    ("/api/skill-imports/apply", batch2::h_skill_imports_apply),
+    ("/api/skill-imports", h_skill_sources_list),
+    ("/api/skill-imports/preview", h_skill_source_preview),
+    ("/api/skill-imports/apply", h_skill_source_apply),
     ("/api/convert/collect", batch2::h_convert_collect),
     ("/api/convert/progress", batch2::h_convert_progress),
     ("/api/convert/cancel", batch2::h_convert_cancel),
@@ -745,6 +746,8 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/system/reveal-path", h_system_reveal_path), // KERNEL BRIDGE — no `readmd.py` route; shell reveal
     ("/api/system/assoc", h_system_assoc), // KERNEL BRIDGE — no `readmd.py` route; `--assoc` front
     ("/api/clipboard/read", h_clipboard_read), // KERNEL BRIDGE — no `readmd.py` route; clipboard read
+    ("/api/clipboard/convert-html", h_clipboard_convert_html),
+    ("/api/documents/history", h_document_history),
 
 ];
 
@@ -1640,22 +1643,51 @@ fn immutable_hint(path: &Path, versioned: bool) -> bool {
     (versioned && (name.contains("/vendor/") || name.contains("/dist/"))) || matches!(content::ext_of(path).as_str(), "woff2" | "woff" | "ttf" | "png" | "jpg" | "svg" | "ico" | "gif" | "webp")
 }
 
+fn accepts_gzip(req: &Request) -> bool {
+    let mut wildcard = false;
+    for item in req.header("accept-encoding").unwrap_or("").split(',') {
+        let mut parts = item.trim().split(';');
+        let encoding = parts.next().unwrap_or("").trim();
+        let quality = parts.find_map(|part| {
+            let (key, value) = part.trim().split_once('=')?;
+            key.trim().eq_ignore_ascii_case("q").then(|| value.trim().parse::<f32>().unwrap_or(0.0))
+        }).unwrap_or(1.0);
+        let allowed = quality.is_finite() && quality > 0.0 && quality <= 1.0;
+        if encoding.eq_ignore_ascii_case("gzip") { return allowed; }
+        if encoding == "*" { wildcard = allowed; }
+    }
+    wildcard
+}
+
 fn send_file(req: &Request, path: &Path, cache: bool) -> ApiResult<Response> {
     // `_send_file` (`readmd.py:2969`) has no local handler: a failing `os.stat()`
     // escapes to `do_GET`'s blanket `except Exception`
     // (`readmd.py:1059-1066`) -> `500 text/plain "internal error"`.
     let meta = std::fs::metadata(path).map_err(|_| ApiError::plain_text(500, "internal error"))?;
+    let ctype = mime_of(&content::ext_of(path));
+    let compressible = meta.len() >= 1024 && meta.len() <= 16 * 1024 * 1024
+        && (ctype.starts_with("text/") || matches!(ctype, "application/javascript" | "application/json" | "image/svg+xml"));
+    let gzip = compressible && accepts_gzip(req);
     let etag = format!(
-        "\"{:x}-{:x}\"",
+        "\"{:x}-{:x}{}\"",
         meta.len(),
-        content::modified_millis(path)
+        content::modified_millis(path),
+        if gzip { "-gzip" } else { "" }
     );
     if req.header("if-none-match") == Some(etag.as_str()) {
-        return Ok(Response::empty(304).header("ETag", &etag));
+        let mut res = Response::empty(304).header("ETag", &etag);
+        if compressible { res = res.header("Vary", "Accept-Encoding"); }
+        return Ok(res);
     }
-    let bytes = std::fs::read(path).map_err(|_| ApiError::plain_text(500, "internal error"))?;
-    let ctype = mime_of(&content::ext_of(path));
+    let mut bytes = std::fs::read(path).map_err(|_| ApiError::plain_text(500, "internal error"))?;
+    if gzip {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&bytes).map_err(|_| ApiError::plain_text(500, "internal error"))?;
+        bytes = encoder.finish().map_err(|_| ApiError::plain_text(500, "internal error"))?;
+    }
     let mut res = Response::raw_bytes(200, ctype, bytes).header("ETag", &etag);
+    if compressible { res = res.header("Vary", "Accept-Encoding"); }
+    if gzip { res = res.header("Content-Encoding", "gzip"); }
     if cache {
         res = res.header("Cache-Control", "public, max-age=31536000, immutable");
     } else {
@@ -1962,6 +1994,12 @@ fn h_file(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let mut value = content::describe(app, &path, !meta_only)
         .map_err(|_| ApiError::plain_text(500, "internal error"))?;
     if let Some(obj) = value.as_object_mut() {
+        if let Some(original) = obj.get("original").and_then(Value::as_str).or_else(|| obj.get("content").and_then(Value::as_str)) {
+            let revision = document_revision(original);
+            obj.insert("revision".into(), json!(revision));
+        } else if content::is_readable(&path) {
+            if let Ok(original) = content::read_text(&path) { obj.insert("revision".into(), json!(document_revision(&original))); }
+        }
         // `readmd.py:3029-3031` — `name`/`dir`/`path` are cut out of the string
         // the client sent, not of the resolved path.
         obj.insert("dir".into(), json!(py_dirname(&raw)));
@@ -2062,6 +2100,30 @@ fn h_list(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 /// are Content-Type / Content-Length / `Cache-Control: no-cache` only: no ETag,
 /// no conditional 304 and no `X-Frame-Options`, which is why it does not go
 /// through [`send_file`] (that one mirrors `_send_file`, `readmd.py:2969-2996`).
+fn document_revision(text: &str) -> String {
+    use sha2::Digest;
+    format!("{:x}", sha2::Sha256::digest(text.as_bytes()))
+}
+
+fn h_document_history(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    let data = &app.paths.data_dir;
+    let result: Result<Value, String> = if req.method == "GET" {
+        crate::document_history::list(data, req.q("key")).map(|entries| json!({"ok": true, "entries": entries,
+            "max_bytes": 64 * 1024 * 1024, "retention_days": 30, "per_document": 10}))
+    } else if req.method == "POST" {
+        let body = body_value(req);
+        let field = |name: &str| body.get(name).and_then(Value::as_str).unwrap_or("");
+        match field("op") {
+            "record" => crate::document_history::record_with_context(data, field("key"), field("path"), field("name"), field("kind"), field("reason"), field("content"), body.get("context").cloned().unwrap_or(Value::Null)).map(|entry| json!({"ok": true, "entry": entry})),
+            "read" => crate::document_history::read(data, field("id")).map(|(entry, content)| json!({"ok": true, "entry": entry, "content": content})),
+            "delete" => crate::document_history::delete(data, field("id")).map(|_| json!({"ok": true})),
+            "clear_draft" => crate::document_history::clear_draft_if(data, field("key"), body.get("content").and_then(Value::as_str), body.get("before").and_then(Value::as_i64)).map(|_| json!({"ok": true})),
+            _ => Err("invalid_history_operation".into()),
+        }
+    } else { return Ok(Response::json_status(405, &json!({"ok": false, "error": "method_not_allowed"}))); };
+    match result { Ok(v) => ok_json(v), Err(e) => Ok(Response::json_status(400, &json!({"ok": false, "error": e}))) }
+}
+
 fn h_raw(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let _ = app;
     let raw = raw_path_arg(req, &Value::Null, &["p"]).unwrap_or_default();
@@ -2085,7 +2147,7 @@ fn h_raw(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 /// It never raises for ordinary I/O: every failure comes back as
 /// `{'ok': False, 'error': <str(exc)>}`, and a stale editor state comes back as
 /// the four-key `conflict` dict.  `_do_save` maps those onto 500 / 409.
-fn py_save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtime: Option<f64>) -> Value {
+fn save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtime: Option<f64>, history_dir: &Path) -> Value {
     // Encode first: an unrepresentable character must fail the save *before*
     // any backup or write happens, never be replaced silently.
     let bytes = match crate::text_encoding::encode(content, encoding) {
@@ -2110,9 +2172,6 @@ fn py_save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtim
     };
     // `path = os.path.abspath(path)` (`file_writer.py:24`).
     let abspath = paths::canonicalize_or_clean(path);
-    // `shutil.copy2(path, path + '.bak')` — string concatenation, so the backup
-    // is a sibling named after the *whole* path (`note.md.bak`).
-    let backup_path = PathBuf::from(format!("{}.bak", abspath.to_string_lossy()));
     let old_exists = abspath.is_file();
     if expected_mtime.is_some() && !old_exists {
         return json!({
@@ -2138,22 +2197,20 @@ fn py_save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtim
             });
         }
     }
-    let mut backup = Value::Null;
-    if old_exists && !backup_path.exists() {
-        match std::fs::copy(&abspath, &backup_path) {
-            Ok(_) => backup = json!(backup_path.to_string_lossy().into_owned()),
-            Err(e) => return json!({ "ok": false, "error": e.to_string() }),
-        }
+    if old_exists && std::fs::read(&abspath).ok().as_deref() == Some(bytes.as_slice()) {
+        return json!({"ok": true, "path": abspath, "backup": null, "mtime": old_mtime, "revision": document_revision(content)});
+    }
+    if let Err(e) = crate::document_history::checkpoint_file(history_dir, &abspath, "save") {
+        return json!({"ok": false, "error": e, "error_code": "recovery_failed"});
     }
     match content::write_bytes_atomic(&abspath, &bytes) {
-        Ok(()) => json!({
+        Ok(()) => { let mut result = json!({
             "ok": true,
-            // `readmd.py:3557-3562` reports `save_text_atomic`'s dict verbatim:
-            // exactly `ok`, `path`, `backup`, `mtime`.
+            // Preserve the legacy acknowledgement fields, with a content revision.
             "path": abspath.to_string_lossy().into_owned(),
-            "backup": backup,
+            "backup": null,
             "mtime": content::modified_millis(&abspath) as f64 / 1000.0,
-        }),
+        }); result["revision"] = json!(document_revision(content)); result },
         Err(e) => json!({ "ok": false, "error": e.to_string() }),
     }
 }
@@ -2302,7 +2359,13 @@ fn h_save(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         // API, in LegacyError shape: `{'error': '文件未被授权保存'}`.
         return Err(ApiError::legacy_error(403, "文件未被授权保存"));
     }
-    let result = py_save_text_atomic(&safe_path, &text, &enc, expected_mtime);
+    let _save_guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(expected) = payload.get("expected_revision").and_then(Value::as_str) {
+        if !expected.is_empty() && content::read_text(&safe_path).map(|s| document_revision(&s)).ok().as_deref() != Some(expected) {
+            return Ok(Response::json_status(409, &json!({"ok": false, "conflict": true, "error": "文件内容已在编辑后变化，未覆盖", "current_mtime": content::modified_millis(&safe_path) as f64 / 1000.0})));
+        }
+    }
+    let result = save_text_atomic(&safe_path, &text, &enc, expected_mtime, &app.paths.data_dir);
     let status = if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         200
     } else if result.get("conflict").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -3997,6 +4060,7 @@ fn ai_chat(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transpor
 }
 
 fn h_ai_history(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if let Some(result) = crate::conversation_history::handle(app, req) { return result; }
     // `_api_ai_history` (`readmd.py:2936`-`2966`) wraps the whole body in one
     // `except Exception -> _send_api_error(500, 'ai_history_failed')`, so every
     // internal failure — even a body that will not JSON-decode — uses that code.
@@ -4153,6 +4217,14 @@ fn h_web_cancel_parity(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 
 
 fn h_bibtex(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.field("content").is_none() {
+        let path = resolve_arg(app, req, &["p", "path", "file"])?;
+        if content::ext_of(&path) != "bib" {
+            let entries = crate::bibtex::find_and_load_bib_for_file(&path);
+            let citations: serde_json::Map<String, Value> = entries.into_iter().map(|(key, e)| (key, json!({"cite_key":e.cite_key,"entry_type":e.entry_type,"title":e.title,"author":e.author,"year":e.year,"journal":e.journal,"publisher":e.publisher,"doi":e.doi,"url":e.url,"short_cite":e.short_cite,"full_reference":e.full_reference}))).collect();
+            return ok_json(json!({"ok":true,"count":citations.len(),"entries":[],"citations":citations}));
+        }
+    }
     let text = match req.field("content") {
         Some(t) => t,
         None => {
@@ -4318,6 +4390,7 @@ fn h_control_open(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         .unwrap_or_else(|e| e.into_inner())
         .open_queue
         .push_back(file.to_string());
+    #[cfg(all(windows, feature = "desktop"))] crate::native_tray::wake_reader();
     ok_json(json!({ "ok": true }))
 }
 
@@ -4864,6 +4937,42 @@ mod tests {
     /// `readmd.py:1104` refuses every `/api/` call before routing.
     const LOOPBACK_HOST: &str = "127.0.0.1";
 
+    #[test]
+    fn static_gzip_negotiates_and_keeps_etags_separate() {
+        let app = sample_app("static-gzip");
+        let path = app.paths.assets_dir.join("large.js");
+        let source = "const example = 'ReadMD';\n".repeat(2048);
+        std::fs::write(&path, &source).unwrap();
+        let header = |res: &Response, key: &str| res.headers.iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(key)).map(|(_, value)| value.clone());
+        let mut req = request("GET", "/assets/large.js", &[]);
+        let identity = send_file(&req, &path, false).unwrap();
+        assert_eq!(identity.body, source.as_bytes());
+        assert_eq!(header(&identity, "Vary").as_deref(), Some("Accept-Encoding"));
+        req.headers.insert("accept-encoding".into(), "br, GZip; q=1".into());
+        let compressed = send_file(&req, &path, false).unwrap();
+        assert_eq!(header(&compressed, "Content-Encoding").as_deref(), Some("gzip"));
+        assert!(compressed.body.len() < source.len() / 4);
+        let mut decoded = String::new();
+        flate2::read::GzDecoder::new(compressed.body.as_slice()).read_to_string(&mut decoded).unwrap();
+        assert_eq!(decoded, source);
+        let compressed_etag = header(&compressed, "ETag").unwrap();
+        assert_ne!(header(&identity, "ETag"), Some(compressed_etag.clone()));
+        req.headers.insert("if-none-match".into(), compressed_etag);
+        let not_modified = send_file(&req, &path, false).unwrap();
+        assert_eq!(not_modified.status, 304);
+        assert_eq!(header(&not_modified, "Vary").as_deref(), Some("Accept-Encoding"));
+        req.headers.insert("accept-encoding".into(), "gzip;q=0, *;q=1".into());
+        let uncompressed = send_file(&req, &path, false).unwrap();
+        assert_eq!(uncompressed.status, 200);
+        assert_eq!(header(&uncompressed, "Content-Encoding"), None);
+        assert_eq!(uncompressed.body, source.as_bytes());
+        for (encoding, expected) in [("*;q=0.5", true), ("gzip;q=NaN", false), ("gzip;q=2", false), ("br", false)] {
+            req.headers.insert("accept-encoding".into(), encoding.into());
+            assert_eq!(accepts_gzip(&req), expected, "{encoding}");
+        }
+    }
+
     fn app_request(app: &App, method: &str, target: &str, body: &[u8]) -> Request {
         let mut req = request(method, target, body);
         req.headers
@@ -5259,8 +5368,71 @@ mod tests {
         assert!(value["path"].as_str().unwrap().replace('\\', "/").ends_with("draft.md"));
         assert!(value.get("backup").is_some());
         assert!(value.get("mtime").is_some());
-        assert_eq!(value.as_object().unwrap().len(), 4);
+        assert_eq!(value["backup"], Value::Null);
+        assert_eq!(value["revision"].as_str().unwrap().len(), 64);
         assert_eq!(std::fs::read_to_string(&doc).unwrap(), "# Draft\n\n新正文");
+    }
+
+    #[test]
+    fn managed_save_keeps_versions_and_content_conflicts_without_sibling_files() {
+        let _env = env_guard();
+        let app = sample_app("lifecycle-revision");
+        let doc = app.paths.workspace.join("lifecycle.md");
+        std::fs::write(&doc, "ORIGINAL").unwrap();
+        let read = dispatch(&app, &request("GET", &format!("/api/file?p={}", pquery(&doc)), &[]), true);
+        let original: Value = serde_json::from_slice(&read.body).unwrap();
+        std::fs::write(&doc, "EXTERNAL").unwrap();
+        let payload = serde_json::to_vec(&json!({"path": doc, "content": "DRAFT", "expected_revision": original["revision"],
+            "expected_mtime": content::modified_millis(&doc) as f64 / 1000.0})).unwrap();
+        let refused = dispatch(&app, &app_request(&app, "POST", "/api/save", &payload), true);
+        assert_eq!(refused.status, 409); assert_eq!(std::fs::read_to_string(&doc).unwrap(), "EXTERNAL");
+        let payload = serde_json::to_vec(&json!({"path": doc, "content": "DRAFT", "expected_revision": document_revision("EXTERNAL")})).unwrap();
+        let saved = dispatch(&app, &app_request(&app, "POST", "/api/save", &payload), true);
+        assert_eq!(saved.status, 200); assert!(!PathBuf::from(format!("{}.bak", doc.display())).exists());
+        let list = crate::document_history::list(&app.paths.data_dir, None).unwrap(); assert_eq!(list.len(), 1);
+        assert_eq!(crate::document_history::read(&app.paths.data_dir, &list[0].id).unwrap().1, "EXTERNAL");
+    }
+
+    #[test]
+    fn failed_encoding_and_unchanged_save_leave_versions_and_original_intact() {
+        let data = tempfile::tempdir().unwrap(); let dir = tempfile::tempdir().unwrap(); let doc = dir.path().join("note.md");
+        std::fs::write(&doc, "ASCII").unwrap();
+        let unchanged = save_text_atomic(&doc, "ASCII", "utf-8", None, data.path()); assert_eq!(unchanged["ok"], true);
+        assert!(crate::document_history::list(data.path(), None).unwrap().is_empty());
+        let failed = save_text_atomic(&doc, "中文", "ascii", None, data.path());
+        assert_eq!(failed["ok"], false); assert_eq!(std::fs::read_to_string(&doc).unwrap(), "ASCII");
+        assert!(crate::document_history::list(data.path(), None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn save_as_assets_preserve_collisions_reuse_identical_files_and_rollback_failures() {
+        let _env = env_guard(); let app = sample_app("save-copy-assets");
+        let dir = tempfile::tempdir().unwrap(); let source = dir.path().join("source.png");
+        std::fs::write(&source, "NEW ASSET").unwrap();
+        let target = dir.path().join("note.md"); let assets = dir.path().join("note.assets");
+        std::fs::create_dir(&assets).unwrap(); std::fs::write(assets.join("photo.png"), "USER ASSET").unwrap();
+        let body = json!({"content": format!("![image]({})", source.to_string_lossy()), "assets": [{"path": source, "name": "photo.png"}]});
+        let saved = save_document_copy(&app, &body, target.to_str().unwrap()).unwrap();
+        let result: Value = serde_json::from_slice(&saved.body).unwrap(); assert_eq!(result["ok"], true);
+        assert_eq!(result["saved_content"], "![image](note.assets/photo-2.png)");
+        assert_eq!(std::fs::read_to_string(assets.join("photo.png")).unwrap(), "USER ASSET");
+        save_document_copy(&app, &body, target.to_str().unwrap()).unwrap();
+        assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 2);
+        let blocked = json!({"content":"blocked", "blocked_paths":[target]});
+        assert_eq!(save_document_copy(&app, &blocked, target.to_str().unwrap()).unwrap().status, 409);
+        let failed_target = dir.path().join("failed.md"); std::fs::create_dir(&failed_target).unwrap();
+        let failed = save_document_copy(&app, &body, failed_target.to_str().unwrap()).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&failed.body).unwrap()["ok"], false);
+        assert!(!dir.path().join("failed.assets").exists());
+        let invalid = json!({"content":"中文", "encoding":"ascii", "assets": body["assets"]});
+        let _ = save_document_copy(&app, &invalid, dir.path().join("bad.md").to_str().unwrap()).unwrap();
+        assert!(!dir.path().join("bad.assets").exists()); assert!(!dir.path().join("bad.md").exists());
+        let export = dir.path().join("export"); std::fs::create_dir(&export).unwrap();
+        let relative = json!({"content":"![relative](source.png)", "base_dir": dir.path()});
+        let copied = save_document_copy(&app, &relative, export.join("relative.md").to_str().unwrap()).unwrap();
+        let copied: Value = serde_json::from_slice(&copied.body).unwrap();
+        assert_eq!(copied["saved_content"], "![relative](relative.assets/source.png)");
+        assert_eq!(std::fs::read_to_string(export.join("relative.assets/source.png")).unwrap(), "NEW ASSET");
     }
 
     /// A GBK file keeps its bytes' encoding through open → edit → save, and a
@@ -6555,10 +6727,11 @@ struct ShareSession {
     port: u16,
     token: String,
     _root: PathBuf,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    _snapshot: Option<Arc<tempfile::TempDir>>,
 }
 
 static SHARE: OnceLock<std::sync::Mutex<Option<ShareSession>>> = OnceLock::new();
-static SHARE_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn kernel_share_state() -> &'static std::sync::Mutex<Option<ShareSession>> {
     SHARE.get_or_init(|| std::sync::Mutex::new(None))
@@ -6609,9 +6782,9 @@ fn kernel_share_query(target: &str, key: &str) -> Option<String> {
 
 fn kernel_share_respond(stream: &mut TcpStream, status: u16, ctype: &str, body: &[u8], head: bool) {
     let text = format!(
-        "HTTP/1.1 {status} {}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n\r\n",
+        "HTTP/1.1 {status} {}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self' data:\r\n\r\n",
         reason(status),
-        if head { 0 } else { body.len() }
+        body.len()
     );
     let _ = stream.write_all(text.as_bytes());
     if !head {
@@ -6620,7 +6793,48 @@ fn kernel_share_respond(stream: &mut TcpStream, status: u16, ctype: &str, body: 
     let _ = stream.flush();
 }
 
-fn kernel_serve_share_conn(mut stream: TcpStream, root: &Path, token: &str) {
+fn share_href(path: &str, current: &str, token: &str) -> String {
+    if path.starts_with('#') { return path.to_string(); }
+    if path.to_lowercase().starts_with("mailto:") { return path.to_string(); }
+    let Some(url) = crate::headless_renderer::absolute_url(&format!("http://readmd.invalid{current}"), path) else { return "#".into(); };
+    if !crate::headless_renderer::is_http(&url) { return "#".into(); }
+    if let Some(local) = url.strip_prefix("http://readmd.invalid/") {
+        let (target, fragment) = local.split_once('#').map_or((local, ""), |(target, fragment)| (target, fragment));
+        let (target, query) = target.split_once('?').unwrap_or((target, ""));
+        let mut pairs: Vec<_> = query.split('&').filter(|part| !part.is_empty() && part.split('=').next().unwrap_or("") != "token").map(str::to_string).collect();
+        pairs.push(format!("token={}", percent_encoding::utf8_percent_encode(token, percent_encoding::NON_ALPHANUMERIC)));
+        return format!("/{target}?{}{}", pairs.join("&"), if fragment.is_empty() { String::new() } else { format!("#{fragment}") });
+    }
+    url
+}
+
+fn share_markdown_html(markdown: &str, current: &str, token: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser, Tag};
+    let parser = Parser::new_ext(markdown, Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS);
+    let events = parser.map(|event| match event {
+        Event::Html(text) | Event::InlineHtml(text) => Event::Text(text),
+        Event::Start(mut tag) => {
+            if let Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } = &mut tag {
+                *dest_url = share_href(dest_url, current, token).into();
+            }
+            Event::Start(tag)
+        }
+        other => other,
+    });
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, events);
+    html
+}
+
+fn share_page(title: &str, body: &str, assets: &Path, presentation: &Value) -> String {
+    let esc = |s: &str| crate::mdexport::html_escape(s, true);
+    let theme = presentation.get("theme").and_then(Value::as_str).filter(|s| matches!(*s, "light" | "dark" | "sepia")).unwrap_or("light");
+    let language = presentation.get("language").and_then(Value::as_str).unwrap_or("en");
+    let css = ["css/tokens.css", "css/panels.css"].iter().map(|path| std::fs::read_to_string(assets.join(path)).unwrap_or_default()).collect::<String>();
+    format!("<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>{}</title><style>{}</style></head><body class=\"share-reader\" data-theme=\"{}\"><main><h1>{}</h1>{body}</main></body></html>", esc(language), esc(title), css.replace("</style", "<\\/style"), esc(theme), esc(title))
+}
+
+fn kernel_serve_share_conn(mut stream: TcpStream, root: &Path, token: &str, assets: &Path, presentation: &Value) {
     let Ok(peer) = stream.try_clone() else { return };
     let _ = peer.set_read_timeout(Some(Duration::from_secs(10)));
     let mut reader = BufReader::new(peer);
@@ -6682,18 +6896,41 @@ fn kernel_serve_share_conn(mut stream: TcpStream, root: &Path, token: &str) {
         return;
     }
     if canonical.is_dir() {
-        let mut listing = format!("Index of /{}\n", rel);
+        let title = presentation["labels"]["title"].as_str().unwrap_or("ReadMD");
+        let esc = |s: &str| crate::mdexport::html_escape(s, true);
+        let mut listing = format!("<p class=\"share-reader-path\">/{}</p><ul class=\"share-reader-files\">", esc(&rel));
+        if !rel.is_empty() {
+            listing.push_str(&format!("<li><a href=\"{}\">{}</a></li>", esc(&share_href("../", &format!("{path_part}/"), token)), esc(presentation["labels"]["up"].as_str().unwrap_or("Parent folder"))));
+        }
         if let Ok(entries) = std::fs::read_dir(&canonical) {
-            for entry in entries.flatten() {
-                let kind = if entry.path().is_dir() { "d" } else { "-" };
-                listing.push_str(&format!("{kind} {}\n", entry.file_name().to_string_lossy()));
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|entry| (!entry.path().is_dir(), entry.file_name().to_string_lossy().to_lowercase()));
+            for entry in entries {
+                if !paths::canonicalize_or_clean(&entry.path()).starts_with(&root_c) { continue; }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let encoded = percent_encoding::utf8_percent_encode(&name, percent_encoding::NON_ALPHANUMERIC).to_string();
+                let suffix = if entry.path().is_dir() { "/" } else { "" };
+                let href = share_href(&format!("{encoded}{suffix}"), &format!("{}/", path_part.trim_end_matches('/')), token);
+                listing.push_str(&format!("<li><a href=\"{}\">{}{suffix}</a></li>", esc(&href), esc(&name)));
             }
         }
-        kernel_share_respond(&mut stream, 200, "text/plain; charset=utf-8", listing.as_bytes(), method == "HEAD");
+        listing.push_str("</ul>");
+        let page = share_page(title, &listing, assets, presentation);
+        kernel_share_respond(&mut stream, 200, "text/html; charset=utf-8", page.as_bytes(), method == "HEAD");
         return;
     }
     match std::fs::read(&canonical) {
         Ok(bytes) => {
+            if matches!(content::ext_of(&canonical).as_str(), "md" | "markdown" | "mdown" | "mkd") && kernel_share_query(&target, "raw").as_deref() != Some("1") {
+                let esc = |s: &str| crate::mdexport::html_escape(s, true);
+                let markdown = String::from_utf8_lossy(&bytes);
+                let rendered = share_markdown_html(&markdown, &path_part, token);
+                let title = canonical.file_name().unwrap_or_default().to_string_lossy();
+                let nav = format!("<nav><a href=\"{}\">{}</a><a href=\"{}\" download>{}</a></nav>", esc(&share_href("./", &path_part, token)), esc(presentation["labels"]["up"].as_str().unwrap_or("Parent folder")), esc(&share_href("?raw=1", &path_part, token)), esc(presentation["labels"]["download"].as_str().unwrap_or("Download source")));
+                let page = share_page(&title, &format!("{nav}<article>{rendered}</article>"), assets, presentation);
+                kernel_share_respond(&mut stream, 200, "text/html; charset=utf-8", page.as_bytes(), method == "HEAD");
+                return;
+            }
             let ctype = mime_of(&content::ext_of(&canonical));
             kernel_share_respond(&mut stream, 200, ctype, &bytes, method == "HEAD");
         }
@@ -6712,8 +6949,22 @@ fn h_share_start(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return Err(ApiError::bad_request("method_not_allowed"));
     }
     let payload = body_value(req);
+    let mut share_state = kernel_share_state().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(sess) = share_state.as_ref() {
+        return ok_json(json!({
+            "ok": true, "running": true, "port": sess.port, "token": sess.token, "url": kernel_share_url(sess),
+        }));
+    }
     let current = kernel_pet_string(&payload, "current_file");
-    let root = if current.is_empty() {
+    let mut snapshot = None;
+    let root = if let Some(markdown) = payload.get("current_content").and_then(Value::as_str) {
+        if markdown.len() > MAX_BODY { return Err(ApiError::bad_request("share_document_too_large")); }
+        let dir = Arc::new(tempfile::tempdir().map_err(|_| ApiError::internal("share_start_failed"))?);
+        std::fs::write(dir.path().join("shared-document.md"), markdown).map_err(|_| ApiError::internal("share_start_failed"))?;
+        let root = dir.path().to_path_buf();
+        snapshot = Some(dir);
+        root
+    } else if current.is_empty() {
         app.paths.workspace.clone()
     } else {
         let file = app.paths.resolve_doc(&current).map_err(|_| ApiError::internal("share_start_failed"))?;
@@ -6722,11 +6973,6 @@ fn h_share_start(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let Ok(canonical) = paths::canonical_existing(&root) else {
         return Err(ApiError::internal("share_start_failed"));
     };
-    if let Some(sess) = share_state_snapshot() {
-        return ok_json(json!({
-            "ok": true, "running": true, "port": sess.port, "token": sess.token, "url": kernel_share_url(&sess),
-        }));
-    }
     let listener = match TcpListener::bind(("0.0.0.0", 0)) {
         Ok(l) => l,
         // `readmd.py:1285-1292` — one blanket `except Exception` for the whole
@@ -6738,19 +6984,22 @@ fn h_share_start(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     };
     let port = addr.port();
     let token = kernel_share_token(app, port);
-    let session = ShareSession { port, token: token.clone(), _root: canonical.clone() };
-    SHARE_STOP.store(false, Ordering::SeqCst);
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let session = ShareSession { port, token: token.clone(), _root: canonical.clone(), stop: stop.clone(), _snapshot: snapshot.clone() };
+    let share_assets = app.paths.assets_dir.clone();
+    let presentation = payload.clone();
     std::thread::spawn(move || {
+        let _snapshot_lifetime = snapshot;
         for incoming in listener.incoming() {
-            if SHARE_STOP.load(Ordering::SeqCst) {
+            if stop.load(Ordering::SeqCst) {
                 break;
             }
             if let Ok(stream) = incoming {
-                kernel_serve_share_conn(stream, &canonical, &token);
+                kernel_serve_share_conn(stream, &canonical, &token, &share_assets, &presentation);
             }
         }
     });
-    *kernel_share_state().lock().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());
+    *share_state = Some(session.clone());
     ok_json(json!({
         "ok": true, "running": true, "port": session.port, "token": session.token, "url": kernel_share_url(&session),
     }))
@@ -6771,8 +7020,8 @@ fn h_share_status(_app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
 
 fn h_share_stop(_app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
     let taken = kernel_share_state().lock().unwrap_or_else(|e| e.into_inner()).take();
-    SHARE_STOP.store(true, Ordering::SeqCst);
     if let Some(sess) = taken {
+        sess.stop.store(true, Ordering::SeqCst);
         let _ = TcpStream::connect(("127.0.0.1", sess.port));
     }
     ok_json(json!({ "ok": true, "running": false }))
@@ -6898,13 +7147,11 @@ fn h_system_reveal_path(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 }
 
 /// Save-as: pick a target, copy web-clipped assets next to it, then write the
-/// document atomically (with the same `.bak` / encoding rules as `/api/save`).
+/// document atomically, retaining a bounded central version and preserving its encoding.
 fn h_dialog_save_as(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     use crate::native_dialogs::{run, DialogOutcome, DialogShape, Request as Dlg};
     let body = body_value(req);
-    let mut content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let suggested = body.get("suggested").and_then(|v| v.as_str()).unwrap_or("document.md");
-    let encoding = body.get("encoding").and_then(|v| v.as_str()).unwrap_or("utf-8").to_string();
 
     let target_str = match run(&Dlg::new(DialogShape::SaveAs).name(suggested).dir(&dialog_start_dir(&body))) {
         DialogOutcome::Picked(v) if !v.is_empty() => v[0].clone(),
@@ -6913,20 +7160,76 @@ fn h_dialog_save_as(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         }
         _ => return ok_json(json!({ "ok": false, "canceled": true })),
     };
-    let target_path = PathBuf::from(&target_str);
+    save_document_copy(app, &body, &target_str)
+}
 
+fn h_skill_sources_list(app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
+    let sources=skill_import::list_sources(&skill_import_ctx(app)).map_err(skill_import_failure)?;
+    Ok(skill_import_json(200,&skill_import::obj(&[("ok",JVal::Bool(true)),("sources",JVal::List(sources))])))
+}
+fn h_skill_source_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    let body=skill_import_body(req)?;
+    let get=|k:&str|body.get(k).map(|v|v.py_str()).unwrap_or_default();
+    let preview=skill_import::preview_source(&skill_import_ctx(app),&get("source_type"),&get("source"),&get("credential_id")).map_err(skill_import_failure)?;
+    Ok(skill_import_json(200,&skill_import::obj(&[("ok",JVal::Bool(true)),("preview",preview)])))
+}
+fn h_skill_source_apply(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    let body=skill_import_body(req)?;
+    let preview=body.get("preview").ok_or_else(||ApiError::bad_request("preview_required"))?;
+    let selections=match body.get("selections"){Some(JVal::List(s))=>s,_=>return Err(ApiError::bad_request("selection_required"))};
+    let credential=body.get("credential_id").map(|v|v.py_str()).unwrap_or_default();
+    let result=skill_import::apply_source_import(&skill_import_ctx(app),preview,selections,&credential,body.get("confirm").is_some_and(|v|v.is_true())).map_err(skill_import_failure)?;
+    Ok(skill_import_json(200,&result))
+}
+
+fn save_document_copy(app: &Arc<App>, body: &Value, target_str: &str) -> ApiResult<Response> {
+    let mut content = body.get("content").and_then(Value::as_str).unwrap_or("").to_string();
+    let encoding = body.get("encoding").and_then(Value::as_str).unwrap_or("utf-8");
+    let target_path = PathBuf::from(&target_str);
+    if body.get("blocked_paths").and_then(Value::as_array).map(|paths| paths.iter().filter_map(Value::as_str)
+        .any(|p| real_key(&paths::canonicalize_or_clean(Path::new(p))) == real_key(&paths::canonicalize_or_clean(&target_path)))).unwrap_or(false) {
+        return Ok(Response::json_status(409, &json!({"ok": false, "error": "target_open_in_another_tab"})));
+    }
+
+    // Validate before creating any companion assets or history records.
+    if crate::text_encoding::encode(&content, encoding).is_err() {
+        return ok_json(save_text_atomic(&target_path, &content, encoding, None, &app.paths.data_dir));
+    }
+    let _save_guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut warns: Vec<String> = Vec::new();
-    if let Some(assets) = body.get("assets").and_then(|v| v.as_array()) {
+    let mut created_assets = Vec::new();
+    let mut created_folder = None;
+    let mut assets = body.get("assets").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut saved_assets = Vec::new();
+    if let Some(base) = body.get("base_dir").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+        if target_path.parent().map(paths::canonicalize_or_clean).as_ref() != Some(&paths::canonicalize_or_clean(Path::new(base))) {
+            use pulldown_cmark::{Event, Parser, Tag};
+            for event in Parser::new(&content) {
+                if let Event::Start(Tag::Image { dest_url, .. }) = event {
+                    let reference = dest_url.to_string();
+                    if reference.starts_with("data:") || reference.starts_with("blob:") || reference.starts_with("//") || reference.contains("://") && !reference.starts_with("file://") { continue; }
+                    let source = if reference.starts_with("file://") {
+                        let decoded = percent_encoding::percent_decode_str(&reference[7..]).decode_utf8_lossy();
+                        let mut raw = decoded.strip_prefix("localhost").unwrap_or(&decoded);
+                        if cfg!(windows) && raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') { raw = &raw[1..]; }
+                        PathBuf::from(raw)
+                    } else { let p = PathBuf::from(percent_encoding::percent_decode_str(&reference).decode_utf8_lossy().as_ref()); if p.is_absolute() { p } else { Path::new(base).join(p) } };
+                    if let Some(name) = source.file_name().and_then(|s| s.to_str()) {
+                        assets.push(json!({"path": source, "name": name, "reference": reference}));
+                    }
+                }
+            }
+        }
+    }
+    {
         if !assets.is_empty() {
             let stem = target_path.file_stem().and_then(|s| s.to_str()).unwrap_or("doc");
             let asset_folder_name = format!("{}.assets", stem);
             if let Some(parent) = target_path.parent() {
                 let asset_dir = parent.join(&asset_folder_name);
-                if let Err(e) = std::fs::create_dir_all(&asset_dir) {
-                    warns.push(format!("无法创建资源目录：{e}"));
-                }
-                for item in assets {
+                for item in &assets {
                     let source = item.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                    let reference = item.get("reference").and_then(Value::as_str).unwrap_or(source);
                     let raw_name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     // The name is a single path segment; anything else is dropped.
                     let name = Path::new(raw_name).file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -6936,12 +7239,28 @@ fn h_dialog_save_as(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                         }
                         continue;
                     }
-                    let dest = asset_dir.join(name);
-                    match std::fs::copy(source, &dest) {
+                    if !content.contains(reference) && !content.contains(source) && !content.contains(&source.replace('\\', "/")) { continue; }
+                    let bytes = match std::fs::read(source) { Ok(bytes) => bytes, Err(e) => { warns.push(format!("资源复制失败：{name}（{e}）")); continue; } };
+                    if !asset_dir.exists() {
+                        if let Err(e) = std::fs::create_dir_all(&asset_dir) { warns.push(format!("无法创建资源目录：{e}")); continue; }
+                        created_folder = Some(asset_dir.clone());
+                    }
+                    // Existing user assets are reused only if identical; otherwise choose a new name.
+                    let mut dest = asset_dir.join(name); let mut n = 2;
+                    while dest.exists() && std::fs::read(&dest).ok().as_deref() != Some(bytes.as_slice()) {
+                        let p = Path::new(name); let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("asset");
+                        let ext = p.extension().and_then(|s| s.to_str()).map(|s| format!(".{s}")).unwrap_or_default();
+                        dest = asset_dir.join(format!("{stem}-{n}{ext}")); n += 1;
+                    }
+                    let existed = dest.exists();
+                    match if existed { Ok(()) } else { content::write_bytes_atomic(&dest, &bytes) } {
                         Ok(_) => {
-                            let rel = format!("{}/{}", asset_folder_name, name);
+                            if !existed { created_assets.push(dest.clone()); }
+                            let rel = format!("{}/{}", asset_folder_name, dest.file_name().unwrap().to_string_lossy());
                             content = content.replace(&source.replace('\\', "/"), &rel);
                             content = content.replace(source, &rel);
+                            content = content.replace(reference, &rel);
+                            saved_assets.push(json!({"path": dest, "name": dest.file_name().unwrap().to_string_lossy(), "reference": rel}));
                         }
                         Err(e) => warns.push(format!("资源复制失败：{name}（{e}）")),
                     }
@@ -6950,8 +7269,10 @@ fn h_dialog_save_as(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         }
     }
 
-    let mut saved = py_save_text_atomic(&target_path, &content, &encoding, None);
+    let mut saved = save_text_atomic(&target_path, &content, &encoding, None, &app.paths.data_dir);
     if saved.get("ok") != Some(&Value::Bool(true)) {
+        for path in created_assets { let _ = std::fs::remove_file(path); }
+        if let Some(dir) = created_folder { let _ = std::fs::remove_dir(dir); }
         return ok_json(saved);
     }
     let display_title = target_path.file_name().and_then(|n| n.to_str()).unwrap_or(&target_str).to_string();
@@ -6959,6 +7280,9 @@ fn h_dialog_save_as(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     if let Some(map) = saved.as_object_mut() {
         map.insert("path".to_string(), json!(target_str));
         map.insert("warns".to_string(), json!(warns));
+        map.insert("saved_content".to_string(), json!(content));
+        map.insert("saved_assets".to_string(), json!(saved_assets));
+        map.insert("source_assets".to_string(), json!(assets));
     }
     crate::api_codes::attach_warn_items(&mut saved);
     ok_json(saved)
@@ -7054,6 +7378,63 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 /// than Python's `{ok: false, stage: "options", error: "不支持的导出格式"}`, and the
 /// save dialog is a PowerShell `SaveFileDialog` instead of
 /// `window.create_file_dialog`.
+fn h_clipboard_convert_html(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::new(405, "method_not_allowed")); }
+    let body = body_value(req);
+    let html = body.get("html").and_then(Value::as_str).unwrap_or("");
+    if html.len() > 8 * 1024 * 1024 { return Err(ApiError::bad_request("clipboard_html_too_large")); }
+    // Parse inert HTML locally. Never execute scripts or fetch linked resources.
+    let content = crate::headless_renderer::html_to_markdown(html);
+    ok_json(json!({"ok": !content.trim().is_empty(), "content": content, "engine": "native-html"}))
+}
+
+#[cfg(test)]
+mod sharing_validation {
+    use super::*;
+
+    #[test]
+    fn local_links_keep_authorization_without_leaking_to_external_sites() {
+        assert_eq!(share_href("chapter.md#heading", "/folder/current.md", "fixture"), "/folder/chapter.md?token=fixture#heading");
+        assert_eq!(share_href("?raw=1&token=old", "/folder/current.md", "fixture"), "/folder/current.md?raw=1&token=fixture");
+        assert_eq!(share_href("./", "/folder/current.md", "fixture"), "/folder/?token=fixture");
+        assert_eq!(share_href("../", "/folder/sub/", "fixture"), "/folder/?token=fixture");
+        assert_eq!(share_href("#local", "/current.md", "fixture"), "#local");
+        assert_eq!(share_href("https://example.test/path", "/current.md", "fixture"), "https://example.test/path");
+        for unsafe_url in ["javascript:alert(1)", "data:text/html,x", "file:///private"] {
+            assert_eq!(share_href(unsafe_url, "/current.md", "fixture"), "#");
+        }
+    }
+
+    #[test]
+    fn mobile_reader_renders_markdown_and_keeps_active_html_inert() {
+        let html = share_markdown_html("# Heading\n\n**Bold** [child](child.md) ![image](image.png)\n\n<script>bad()</script>\n\n[x](javascript:alert)\n", "/folder/current.md", "fixture");
+        assert!(html.contains("<h1>Heading</h1>") && html.contains("<strong>Bold</strong>"), "{html}");
+        assert!(html.contains("child.md?token=fixture") && html.contains("image.png?token=fixture"), "{html}");
+        assert!(!html.contains("<script>") && !html.contains("href=\"javascript:"), "{html}");
+    }
+}
+
+fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" {return Err(ApiError::new(405,"method_not_allowed"));}
+    let body = body_value(req);
+    if let Some(key) = body.get("key").and_then(Value::as_str) {
+        let artifact = crate::export_preview::cached(key).ok_or_else(||ApiError::bad_request("preview_expired"))?;
+        let page = body.get("page").and_then(Value::as_u64).unwrap_or(1);
+        return match crate::export_preview::page_payload(&artifact, page as usize) {
+            Ok(value)=>ok_json(value),Err(error)=>ok_json(json!({"ok":false,"error":error})),
+        };
+    }
+    let format=body.get("format").and_then(Value::as_str).unwrap_or("pdf");
+    let content=body.get("content").and_then(Value::as_str).unwrap_or("");
+    let base=body.get("baseDir").and_then(Value::as_str).unwrap_or("");
+    let name=body.get("suggestedName").and_then(Value::as_str).unwrap_or("export");
+    let options=body.get("options").cloned().unwrap_or_else(||json!({}));
+    match crate::export_preview::prepare(format,content,base,&options,name,&app.paths.assets_dir)
+        .and_then(|artifact|crate::export_preview::payload(&artifact)) {
+        Ok(value)=>ok_json(value),Err(error)=>ok_json(json!({"ok":false,"error":error})),
+    }
+}
+
 fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let body = body_value(req);
     let format = body.get("format").and_then(|v| v.as_str()).unwrap_or("pdf").to_lowercase();
@@ -7173,7 +7554,14 @@ fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         };
     }
 
-    match crate::mdexport::export_document(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir) {
+    let cached_key = crate::export_preview::key(&format, &content, &base_dir, &options, &suggested_name);
+    let result = if let Some(artifact) = crate::export_preview::cached(&cached_key) {
+        std::fs::read(&artifact.file).map_err(|e|e.to_string()).and_then(|bytes| {
+            content::write_bytes_atomic(Path::new(&out_path), &bytes).map_err(|e|e.to_string())?;
+            Ok(crate::mdexport::ExportResult { ok:true, path:Some(out_path.clone()), size:Some(bytes.len() as u64), warns:Some(artifact.warnings.clone()), error:None, canceled:Some(false) })
+        })
+    } else {crate::mdexport::export_document(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir)};
+    match result {
         Ok(res) => {
             if let Err(body) = commit(res.ok) {
                 return ok_json(body);
@@ -7254,54 +7642,41 @@ fn h_file_save_fixed(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 }
 
 
-fn h_system_assoc(_app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(exe_path) = std::env::current_exe() {
-            let exe_str = exe_path.to_string_lossy();
-            let cmd = format!("\"{}\" \"%1\"", exe_str);
-            for ext in [".md", ".markdown", ".mdown", ".mkd"] {
-                crate::native_system::win_set_reg_string(
-                    crate::native_system::HKCU,
-                    &format!(r"Software\Classes\{}", ext),
-                    "",
-                    "ReadMD.markdown",
-                    false,
-                );
-            }
-            crate::native_system::win_set_reg_string(
-                crate::native_system::HKCU,
-                r"Software\Classes\ReadMD.markdown",
-                "",
-                "ReadMD Markdown 阅读器",
-                false,
-            );
-            crate::native_system::win_set_reg_string(
-                crate::native_system::HKCU,
-                r"Software\Classes\ReadMD.markdown\DefaultIcon",
-                "",
-                &format!("\"{}\",0", exe_str),
-                false,
-            );
-            crate::native_system::win_set_reg_string(
-                crate::native_system::HKCU,
-                r"Software\Classes\ReadMD.markdown\shell\open\command",
-                "",
-                &cmd,
-                true,
-            );
-            crate::native_system::win_set_reg_string(
-                crate::native_system::HKCU,
-                r"Software\Classes\Applications\ReadMD.exe\shell\open\command",
-                "",
-                &cmd,
-                true,
-            );
-            return ok_json(json!({ "ok": true }));
+fn h_system_assoc(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    #[cfg(windows)] {
+        let exe = std::env::current_exe().map_err(|_| ApiError::new(500, "association_executable_missing"))?;
+        let params = Params::new(req);
+        let op = params.body().get("op").and_then(Value::as_str).unwrap_or("register");
+        if !matches!(op, "register" | "status") { return Err(ApiError::new(400, "association_operation_invalid")); }
+        let status_only = op == "status";
+        let mut opened = false;
+        if !status_only {
+            let assets = app.paths.assets_dir.canonicalize().unwrap_or_else(|_| app.paths.assets_dir.clone());
+            let writes = crate::win_registry::modern_association_writes_with_assets(&exe.to_string_lossy(), &exe.to_string_lossy(), &assets.to_string_lossy());
+            let failures = crate::win_registry::apply(&writes);
+            if !failures.is_empty() { return ok_json(json!({"ok":false,"error_code":"association_registration_failed"})); }
+            crate::win_registry::notify_association_changed();
+            opened = crate::native_system::shell_open(crate::win_registry::DEFAULT_APPS_URI);
+            if !opened { opened = crate::native_system::shell_open("ms-settings:defaultapps"); }
         }
+        let extensions: Vec<Value> = crate::win_registry::MARKDOWN_EXTENSIONS.iter().map(|ext| {
+            let selected = crate::win_registry::default_executable(ext).is_some_and(|path| path.eq_ignore_ascii_case(&exe.to_string_lossy()));
+            json!({"extension":ext,"is_default":selected})
+        }).collect();
+        let all_default = extensions.iter().all(|v| v["is_default"] == true);
+        let registered = crate::win_registry::query_string(crate::win_registry::HKCU, r"Software\RegisteredApplications", "ReadMD")
+            .is_some_and(|value| value.eq_ignore_ascii_case(r"Software\ReadMD\Capabilities"))
+            && crate::win_registry::query_string(crate::win_registry::HKCU, r"Software\Classes\ReadMD.markdown\shell\open\command", "")
+                .is_some_and(|value| {
+                    let assets = app.paths.assets_dir.canonicalize().unwrap_or_else(|_| app.paths.assets_dir.clone());
+                    value.eq_ignore_ascii_case(&crate::win_registry::association_command_with_assets(&exe.to_string_lossy(), &assets.to_string_lossy()))
+                });
+        return ok_json(json!({"ok":status_only || opened || all_default,"registered":registered,"settings_opened":opened,"all_default":all_default,"extensions":extensions,
+            "error_code":if !status_only && !opened && !all_default { "association_settings_failed" } else { "" }}));
     }
-    ok_json(json!({ "ok": true }))
+    #[cfg(not(windows))] { let _ = (app, req); ok_json(json!({"ok":false,"error_code":"association_platform_unsupported"})) }
 }
+
 
 fn h_clipboard_read(_app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
     #[cfg(target_os = "windows")]

@@ -5810,7 +5810,7 @@ body.zen-mode .zen-hover-trigger {
 
 body.zen-mode #toolbar {
   position: fixed !important;
-  top: 0 !important;
+  top: var(--window-titlebar-height, 0px) !important;
   left: 0 !important;
   right: 0 !important;
   z-index: 999 !important;
@@ -5851,7 +5851,7 @@ body.zen-mode .zen-exit-btn,
 }
 
 body.zen-mode #content {
-  padding: var(--zen-toolbar-height, var(--toolbar-h)) 0 0 !important;
+  padding: calc(var(--window-titlebar-height, 0px) + var(--zen-toolbar-height, var(--toolbar-h))) 0 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
