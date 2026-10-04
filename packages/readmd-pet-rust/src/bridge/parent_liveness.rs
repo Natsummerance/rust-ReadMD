@@ -180,7 +180,7 @@ fn parent_process_gone(pid: u32) -> bool {
         if libc::kill(pid as i32, 0) == 0 {
             return false;
         }
-        *libc::__errno_location() == 3
+        std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
     }
 }
 

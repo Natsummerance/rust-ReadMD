@@ -229,6 +229,7 @@ fn font_file(names: &[(&str, u32)]) -> Vec<(PathBuf, u32)> {
                 "/usr/share/fonts/texlive-lm-math",
                 "/usr/share/fonts/opentype/freefont",
                 "/usr/share/fonts/truetype/dejavu",
+                "/usr/share/fonts/opentype/noto",
             ]
             .map(PathBuf::from),
         );
@@ -286,6 +287,7 @@ fn fonts() -> Option<&'static Fonts> {
                 ("Songti.ttc", 0),
                 ("wqy-microhei.ttc", 0),
                 ("NotoSansSC-Regular.ttf", 0),
+                ("NotoSansCJK-Regular.ttc", 0),
                 ("DroidSansFallbackFull.ttf", 0),
             ]);
             if let Some(t) = text.into_iter().find_map(|(p, i)| open(&p, i, false)) {

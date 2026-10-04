@@ -661,8 +661,8 @@ fn abspath(raw: &str) -> PathBuf {
 /// `dunce::canonicalize` mirrors `Path.resolve(strict=False)` - it fails for
 /// missing paths, in which case Python falls back to the cleaned absolute path.
 pub fn is_inside_root(root: &Path, target: &Path) -> bool {
-    let root_resolved = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let target_resolved = dunce::canonicalize(target).unwrap_or_else(|_| target.to_path_buf());
+    let root_resolved = crate::paths::canonical_existing(root).unwrap_or_else(|_| root.to_path_buf());
+    let target_resolved = crate::paths::canonical_existing(target).unwrap_or_else(|_| target.to_path_buf());
     target_resolved.starts_with(&root_resolved)
 }
 

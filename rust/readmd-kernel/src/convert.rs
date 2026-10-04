@@ -812,6 +812,9 @@ fn split_path_prefix(s: &str) -> (String, &str) {
 /// segments and duplicate separators dropped, `..` folded away on absolute
 /// paths.
 pub fn py_normpath(p: &str) -> String {
+    if !cfg!(windows) && p.starts_with('/') {
+        return crate::link_indexer::py_normpath(p);
+    }
     let s = p.replace('/', "\\");
     let (prefix, body) = split_path_prefix(&s);
     let mut parts: Vec<&str> = Vec::new();

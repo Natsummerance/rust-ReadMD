@@ -1566,6 +1566,7 @@ mod tests {
         let bin_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
         let bundled = box_.bin_dir.join(bin_name);
         fs::write(&bundled, b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; fs::set_permissions(&bundled,fs::Permissions::from_mode(0o755)).unwrap(); }
         assert_eq!(get_ffmpeg_path(&box_).as_deref(), Some(bundled.as_path()));
         let _ = fs::remove_file(&bundled);
         // Falls back to PATH; either answer is legitimate for the sandbox user.

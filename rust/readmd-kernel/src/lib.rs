@@ -635,6 +635,8 @@ pub mod paths {
 
         /// Stable UI-facing path: relative to the nearest allowed root, `/` separated.
         pub fn display_path(&self, canonical: &Path) -> String {
+            let resolved=canonicalize_or_clean(canonical);
+            let canonical=resolved.as_path();
             for root in self.roots() {
                 let rc = canonicalize_or_clean(&root);
                 if let Ok(rel) = canonical.strip_prefix(&rc) {

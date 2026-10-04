@@ -343,7 +343,7 @@ pub fn abspath(p: &str) -> PathBuf {
                 pops.clear();
             }
             Component::RootDir => {
-                out.push("\\");
+                out.push(std::path::MAIN_SEPARATOR_STR);
                 pops.clear();
             }
             Component::CurDir => {}
@@ -1786,6 +1786,7 @@ const FIXTURE_LEN: usize = 1202;
     // ------------------------------------------------------------- abspath law
 
     #[test]
+    #[cfg(windows)]
     fn abspath_matches_os_path_abspath() {
         // `probe7_expect.py` computed the right-hand column with the cwd set to
         // the package root, which is also where `cargo test` starts us.
@@ -1811,12 +1812,11 @@ const FIXTURE_LEN: usize = 1202;
     // ---------------------------------------------------------------- fonts
 
     #[test]
-    fn resolve_system_font_matches_the_authority_line_for_line() {
-        if windows_fonts_dir() != FONTS_DIR {
-            panic!("probe 7 ran against {FONTS_DIR}, this host reports {}", windows_fonts_dir());
-        }
-        for &(input, want) in FONT_CASES {
-            assert_eq!(resolve_system_font(input), want, "resolve_system_font({input:?})");
+    fn resolve_system_font_matches_recorded_windows_font_inventory() {
+        // Replay the recorded inventory without requiring this machine's fonts.
+        let exists=|path: &Path|FONT_CASES.iter().any(|(_,available)|path.to_string_lossy().eq_ignore_ascii_case(available));
+        for &(input,want) in FONT_CASES {
+            assert_eq!(resolve_system_font_in(input,FONTS_DIR,&exists),want,"resolve_system_font({input:?})");
         }
     }
 

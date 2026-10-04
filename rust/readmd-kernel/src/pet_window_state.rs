@@ -561,7 +561,7 @@ mod tests {
         state.add_recent_file(&absolute, 20);
         let messy = py_abspath("./docs//a.md");
         assert_eq!(py_normpath(&messy), py_normpath(&absolute));
-        state.add_recent_file("docs\\a.md", 20);
+        state.add_recent_file(if cfg!(windows) { "docs\\a.md" } else { "docs/a.md" }, 20);
         let recents = state.load_recent_files(20);
         assert_eq!(recents.len(), 1, "the same path must not appear twice");
     }

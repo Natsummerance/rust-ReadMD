@@ -162,6 +162,7 @@ fn utf8_for_fspath(bytes: &[u8]) -> Result<String, QueueError> {
 /// them to `i̇`/`ß`; only non-ASCII path comparisons can tell, and the crate
 /// already accepts `to_lowercase()` (`// WIRING:` `convert.rs:676 py_normcase`).
 pub fn py_normcase(p: &str) -> String {
+    if !cfg!(windows) && p.starts_with('/') { return p.to_string(); }
     p.replace('/', "\\").to_lowercase()
 }
 
@@ -206,6 +207,7 @@ fn split_path_prefix(s: &str) -> (String, &str) {
 /// `os.path.normpath(p)` -- lexical only: separators, `//`, and `.` folded,
 /// `..` popped.  `'...'` and `'..md'` are ordinary names (measured).
 pub fn py_normpath(p: &str) -> String {
+    if !cfg!(windows) && p.starts_with('/') { return crate::link_indexer::py_normpath(p); }
     let s = p.replace('/', "\\");
     let (prefix, body) = split_path_prefix(&s);
     if body.is_empty() {
@@ -330,6 +332,10 @@ const DOS_DEVICES: [&str; 22] = [
 ///   drive root is used (`// WIRING:` `convert.rs:754 py_abspath`).
 /// * the drive letter is upper-cased like Win32 does (`'c:x.md' -> 'C:\x.md'`).
 pub fn py_abspath(p: &str) -> String {
+    let drive=p.as_bytes().get(1)==Some(&b':') && p.as_bytes()[0].is_ascii_alphabetic();
+    if !cfg!(windows) && (p.starts_with('/') || (!p.contains('\\') && !drive)) {
+        return crate::convert::py_abspath(p);
+    }
     let norm = py_normpath(p);
     // A bare DOS device name as the whole relative path wins a verbatim
     // prefix: measured `abspath('con') == '\\.\con'`, `abspath('nul') ==
@@ -1023,6 +1029,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn abspath_and_normpath_quirks_are_reproduced() {
         // ntpath.normpath (measured, ps1/measure_paths.py)
         assert_eq!(py_normpath("sub./dir ./x.md"), "sub.\\dir .\\x.md");

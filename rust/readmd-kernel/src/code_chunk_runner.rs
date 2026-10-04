@@ -2265,7 +2265,8 @@ mod tests {
         }
         // 与 probe_authority.py 逐字相同的两个 chunk；期望值就是 CPython 的记录。
         let res = execute_code_chunk("import sys\nsys.stdout.write('a\\rb\\nc\\r\\nd')\n", "python", false, 5, None);
-        assert_eq!(get_str(&res, "stdout"), "a\nb\nc\n\nd", "通用换行翻译必须与 text 模式一致");
+        let expected=if cfg!(windows) { "a\nb\nc\n\nd" } else { "a\nb\nc\nd" };
+        assert_eq!(get_str(&res, "stdout"), expected, "通用换行翻译必须与当前平台的 text 模式一致");
 
         let res = execute_code_chunk(
             "import sys\nsys.stdout.buffer.write(b'\\xff\\xfeabc\\xc3\\x28a\\xc3\\x29')\n",

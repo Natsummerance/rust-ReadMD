@@ -3430,6 +3430,7 @@ mod tests {
 
     #[test]
     fn tier_one_sha_asset_triggers_exactly_one_digest_fetch() {
+        // The fixture below is an installer for Windows; other platforms must not fetch its checksum.
         let h = Harness::new();
         let assets = json!([
             {"name": "ReadMDSetup.exe", "size": 1, "browser_download_url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/ReadMDSetup.exe"},
@@ -3443,7 +3444,7 @@ mod tests {
             vec![Some(sha_body)],
         );
         assert_eq!(payload["sha_url"], json!("https://github.com/Natsummerance/rust-ReadMD/releases/download/2.5.0/SHA256SUMS.txt"));
-        assert_eq!(h.sha.count(), 1);
+        assert_eq!(h.sha.count(), if cfg!(windows) { 1 } else { 0 });
         if cfg!(windows) {
             assert_eq!(payload["asset"]["expected_sha"], json!(DIGEST));
         }

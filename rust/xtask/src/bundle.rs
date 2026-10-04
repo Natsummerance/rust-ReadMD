@@ -1,6 +1,6 @@
 //! `assets/readmd.boot.js`: the classic-script sources joined with `\n;\n`,
-//! byte for byte (no newline normalisation), plus one trailing `\n` when the
-//! last source does not already end with a line break.
+//! with canonical LF line endings, plus one trailing `\n` when needed.
+//! Windows CRLF checkouts and Unix LF checkouts must produce the same bundle.
 
 use std::fs;
 use std::path::Path;
@@ -54,12 +54,19 @@ pub fn build(root: &Path) -> Vec<u8> {
     let chunks: Vec<Vec<u8>> = SOURCES
         .iter()
         .filter_map(|s| fs::read(assets.join(s)).ok())
+        .map(|bytes| normalize_crlf(&bytes))
         .collect();
     let mut body = chunks.join(&b"\n;\n"[..]);
     if !matches!(body.last(), Some(b'\n') | Some(b'\r')) {
         body.push(b'\n');
     }
     body
+}
+
+fn normalize_crlf(bytes: &[u8]) -> Vec<u8> {
+    bytes.iter().enumerate().filter_map(|(i, &byte)| {
+        (byte != b'\r' || bytes.get(i + 1) != Some(&b'\n')).then_some(byte)
+    }).collect()
 }
 
 /// Write (or, with `check`, compare) the bundle.  `Ok(false)` = out of date.
@@ -72,7 +79,7 @@ pub fn bundle(root: &Path, check: bool) -> Result<bool, String> {
     let body = build(root);
     if check {
         let current = fs::read(&out).unwrap_or_default();
-        if current == body {
+        if normalize_crlf(&current) == body {
             println!("[OK] assets/readmd.boot.js is up to date");
             return Ok(true);
         }
@@ -82,4 +89,28 @@ pub fn bundle(root: &Path, check: bool) -> Result<bool, String> {
     fs::write(&out, &body).map_err(|e| format!("write {}: {e}", out.display()))?;
     println!("[SYNC] Rebundled assets/readmd.boot.js ({} bytes)", body.len());
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn boot_bundle_is_identical_across_checkouts_and_detects_source_changes() {
+        let root=std::env::temp_dir().join(format!("readmd-bundle-checkout-{}",std::process::id()));
+        let unix=root.join("unix");let windows=root.join("windows");
+        for source in SOURCES {
+            let text=format!("// {source}\nwindow.bundleCheck = 1;\n");
+            for (tree,content) in [(&unix,text.clone()),(&windows,text.replace('\n',"\r\n"))] {
+                let file=tree.join("assets").join(source);
+                fs::create_dir_all(file.parent().unwrap()).unwrap();fs::write(file,content).unwrap();
+            }
+        }
+        let expected=build(&unix);
+        assert_eq!(expected,build(&windows));
+        fs::write(windows.join("assets/readmd.boot.js"),String::from_utf8(expected).unwrap().replace('\n',"\r\n")).unwrap();
+        assert!(bundle(&windows,true).unwrap());
+        fs::write(windows.join("assets/app.js"),"window.bundleCheck = 2;\r\n").unwrap();
+        assert!(!bundle(&windows,true).unwrap());
+        fs::remove_dir_all(root).unwrap();
+    }
 }

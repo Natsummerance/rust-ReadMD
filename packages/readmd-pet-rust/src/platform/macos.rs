@@ -1,6 +1,7 @@
 use super::{InteractionRegionSnapshot, PlatformBackend};
 use crate::error::HostResult;
 use crate::protocol::SnapshotBounds;
+use objc2::runtime::NSObjectProtocol;
 use objc2::ClassType;
 use objc2_app_kit::{
     NSFloatingWindowLevel, NSPanel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,

@@ -98,8 +98,9 @@ fn configure_builder_platform(builder: WindowBuilder) -> WindowBuilder {
 
 #[cfg(target_os = "macos")]
 fn configure_builder_platform(builder: WindowBuilder) -> WindowBuilder {
-    use tao::platform::macos::WindowBuilderExtMacOS;
-    builder.with_skip_taskbar(true)
+    // macOS has no per-window taskbar flag; the non-activating panel is
+    // configured through AppKit after Tao creates the native NSWindow.
+    builder
 }
 
 #[cfg(target_os = "linux")]

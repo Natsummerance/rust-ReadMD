@@ -26,7 +26,7 @@ jobs:
             asset_name: ReadMD-windows-x64
             archive_ext: zip
           - name: Linux x64
-            os: ubuntu-latest
+            os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             bin_name: readmd
             asset_name: ReadMD-linux-x86_64
@@ -71,7 +71,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-layer-shell-dev
 
       # Prepare already locked dependencies separately; every compilation is offline.
       - name: Prepare locked dependency caches
@@ -152,6 +152,7 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
+          Depends: libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, libgtk-layer-shell0
           Maintainer: Natsummerance <https://github.com/Natsummerance/rust-ReadMD>
           Description: 100% Pure Rust Native Markdown Reader and Editor
            ReadMD is a local-first cross-platform Markdown reader and editor.

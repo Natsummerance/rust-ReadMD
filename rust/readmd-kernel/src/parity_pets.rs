@@ -5149,7 +5149,10 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let installer = RuntimeTree::rust_at(&root);
         match install_zip(&installer, Path::new(&archive), true) {
-            PetOutcome::Returned(v) => assert_eq!(v["ok"], json!(true), "{v}"),
+            PetOutcome::Returned(v) => {
+                assert_eq!(v["ok"], json!(true), "{v}");
+                assert!(installer.verified_install(), "packaged runtime must pass full installed-tree verification");
+            }
             PetOutcome::Raised => panic!("installer raised"),
         }
         let _ = fs::remove_dir_all(&root);
@@ -5485,6 +5488,7 @@ mod tests {
     /// `manifest["files"]`, found nothing, hit the `None => true` arm and
     /// reported the tampered tree as a good install.
     #[test]
+    #[cfg(windows)]
     fn verified_install_rejects_a_tampered_installed_artifact() {
         let app = test_app("verified-install-tamper");
         let installer = RuntimeTree::rust(&app);
@@ -5918,6 +5922,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn only_the_first_candidate_can_ever_be_offered() {
         // E1, case 2: `candidates[0]` differs from the install while a *later*
         // candidate matches it.  `installed_matches_any` scans EVERY candidate

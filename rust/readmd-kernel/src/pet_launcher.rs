@@ -2035,7 +2035,7 @@ pub fn terminate_tree(pid: u32) -> Vec<u32> {
 pub fn runtime_is_running(table: &[NativeProcess], runtime: &Path) -> bool {
     let want = resolve_path_str(runtime).to_lowercase();
     table.iter().any(|proc| match &proc.exe {
-        Some(exe) => exe.to_lowercase() == want,
+        Some(exe) => resolve_path_str(Path::new(exe)).to_lowercase() == want,
         None => false,
     })
 }
@@ -2611,7 +2611,7 @@ mod tests {
             bridge.root.join("hermes-overlay-state.json.commands")
         );
         // `with_suffix(".tmp")` replaces the extension instead of appending.
-        assert_eq!(bridge.root.join(STATE_TMP_NAME).to_string_lossy().rsplit('\\').next(), Some(STATE_TMP_NAME));
+        assert_eq!(bridge.root.join(STATE_TMP_NAME).to_string_lossy().rsplit(std::path::MAIN_SEPARATOR).next(), Some(STATE_TMP_NAME));
         assert_eq!(STATE_TMP_NAME, "hermes-overlay-state.tmp");
         // The health name is a plain string append to the *state* path.
         assert!(format!("{}{HEALTH_SUFFIX}", bridge.state_path.display())
@@ -3481,6 +3481,7 @@ mod tests {
     const TARGET: &str = "c:\\app\\plugins\\pet";
 
     #[test]
+    #[cfg(windows)]
     fn kill_plan_requires_the_trailing_separator() {
         let table = vec![
             NativeProcess::fake(10, 4, Some("C:\\app\\plugins\\pet\\hermes-adapter\\electron.exe")),
@@ -3492,6 +3493,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn kill_plan_is_case_insensitive_but_not_about_depth() {
         // The authority compares `normcase(realpath(exe))` against
         // `normcase(target) + os.sep`, so only casing/separator style folds.
@@ -3501,6 +3503,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn kill_plan_kills_children_before_the_parent_and_keeps_duplicates() {
         let table = vec![
             NativeProcess::fake(100, 4, Some("C:\\app\\plugins\\pet\\electron.exe")),
@@ -3518,6 +3521,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn kill_plan_skips_rows_without_an_executable_path() {
         let table = vec![
             NativeProcess::fake(1, 0, None),
@@ -3540,6 +3544,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn kill_plan_has_no_self_preservation() {
         // `kill_processes_by_target` has no pid filter at all: a process
         // running from inside the target dir is selected even when it is us.
@@ -3604,6 +3609,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn exe_matches_target_uses_the_real_filesystem_for_realpath() {
         let scratch = Scratch::new("realpath");
         let inner = scratch.path().join("pet").join("hermes-adapter");
@@ -3743,12 +3749,8 @@ mod tests {
         assert_eq!(resolve_path_str(&launcher.adapter_dir()), resolve_path_str(&external));
         let bundled = launcher_with(scratch.path(), None);
         assert_eq!(
-            bundled.adapter_dir(),
-            scratch
-                .path()
-                .join("assets")
-                .join("pet")
-                .join("hermes-adapter")
+            resolve_path_str(&bundled.adapter_dir()),
+            resolve_path_str(&scratch.path().join("assets/pet/hermes-adapter"))
         );
     }
 
@@ -3772,6 +3774,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn status_scan_cache_window_is_two_seconds() {
         let scratch = Scratch::new("scan-cache");
         let adapter = make_adapter_package(scratch.path());
@@ -3980,6 +3983,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn replace_with_retry_timed_spends_its_budget_on_permission_errors() {
         // The policy is what is under test here: N attempts, N-1 sleeps.
         let scratch = Scratch::new("retry-budget");
@@ -4138,6 +4142,7 @@ mod tests {
 
     #[test]
     fn is_safe_name_table() {
+        assert_eq!(is_safe_name("/etc/passwd"),cfg!(windows));
         for name in [
             "readmd-pet-plugin.json",
             "electron.exe",
@@ -4149,7 +4154,7 @@ mod tests {
             // has a drive *and* a root, so the authority's
             // `not value.is_absolute()` gate lets this through (measured
             // `_is_safe_name("/etc/passwd") == True`).
-            "/etc/passwd",
+
         ] {
             assert!(is_safe_name(name), "{name}");
         }

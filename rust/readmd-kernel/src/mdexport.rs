@@ -301,7 +301,8 @@ fn py_join(a: &str, b: &str) -> String {
     if a.ends_with('\\') || a.ends_with('/') {
         format!("{a}{b}")
     } else {
-        format!("{a}\\{b}")
+        let separator=if !cfg!(windows) && a.starts_with('/') { "/" } else { "\\" };
+        format!("{a}{separator}{b}")
     }
 }
 
