@@ -41,6 +41,23 @@ async function localized(page, extra = {}) {
 }
 async function regionPayload(page) { return page.evaluate(()=>window.__petCommands.filter(c=>c.payload?.type==='interaction-regions').at(-1).payload); }
 
+test('awake and resting pets leave the surrounding desktop fully transparent', async ({page}) => {
+  await mount(page,'mochi');
+  for(const resting of [false,true]) {
+    await localized(page,{quiet:true,bubbles:false,companion:{resting}});
+    await page.waitForTimeout(250);
+    const png=(await page.screenshot({omitBackground:true})).toString('base64');
+    const opaque=await page.evaluate(async encoded=>{
+      const image=await createImageBitmap(new Blob([Uint8Array.from(atob(encoded),c=>c.charCodeAt(0))],{type:'image/png'}));
+      const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+      const context=canvas.getContext('2d');context.drawImage(image,0,0);
+      const pixels=context.getImageData(0,0,image.width,Math.floor(image.height/2)).data;
+      let count=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i]>1)count++;image.close();return count;
+    },png);
+    expect(opaque).toBe(0);
+  }
+});
+
 test('opaque pixel runs leave most of the pet window free and include current authored paws', async ({page}) => {
   await mount(page,'hermes'); await localized(page);
   await page.waitForTimeout(200);

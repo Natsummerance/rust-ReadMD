@@ -41,7 +41,8 @@ test('release workflow builds every desktop target from the Rust workspace', () 
   assert.match(workflow, /tags:\s*\[\s*'v\*',\s*'V\*'\s*\]/);
   for (const os of ['windows', 'ubuntu', 'macos']) assert.match(workflow, new RegExp(os + '-'), os);
   assert.match(workflow, /cargo build/);
-  assert.match(workflow, /body_path:\s*RELEASE_NOTES\.md/);
+  assert.match(workflow, /node tools\/publish-release\.mjs --assets-dir release-assets/);
+  assert.match(read('tools/publish-release.mjs'), /readFileSync\(path.join\(root,'RELEASE_NOTES.md'\)/);
   assert.ok(exists('RELEASE_NOTES.md'));
 });
 

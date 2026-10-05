@@ -15050,6 +15050,9 @@ async function ocrFile(path) {
 }
 
 async function ocrFileOnce(path) {
+  // Windows separators are Markdown escapes in the kernel's original-image link.
+  // Forward slashes keep both the filesystem path and the generated link valid.
+  if (/^[A-Za-z]:[\\/]/.test(path)) path = path.replace(/\\/g, '/');
   if (!(await ensureModule('ocr'))) return;
   busy(true);
   try {

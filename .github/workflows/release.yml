@@ -45,7 +45,7 @@ jobs:
             archive_ext: zip
 
     env:
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
       READMD_PET_CUBISM_CORE: ${{ github.workspace }}/.cache/readmd-release-core.js
     steps:
@@ -56,8 +56,13 @@ jobs:
 
       - name: Normalise version
         shell: bash
-        # `V0.0.2` → `0.0.2` for the .deb control file and Info.plist.
-        run: echo "APP_VERSION=${RELEASE_TAG#[vV]}" >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          tag="${RELEASE_TAG:-V$version}"
+          test "${tag#[vV]}" = "$version"
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -239,6 +244,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -251,13 +260,10 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
-          name: ReadMD ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'V0.0.4' }}
-          fail_on_unmatched_files: true
-          body_path: RELEASE_NOTES.md
-          files: |
-            release-assets/*
-          generate_release_notes: false
+      - name: Verify candidates and replace release downloads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: node tools/publish-release.mjs --assets-dir release-assets
