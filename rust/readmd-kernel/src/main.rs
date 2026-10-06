@@ -4602,6 +4602,10 @@ fn main() {
 
     // `run_window` never returns: tao's `EventLoop::run` is `-> !` and exits the
     // process with the code its handler leaves in `ControlFlow`.
+    let pet_restored = readmd_kernel::parity_pets::restore_pet_runtime(&app);
+    if pet_restored.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+        log::warn!("desktop companion restore failed: {}", pet_restored.get("code").and_then(serde_json::Value::as_str).unwrap_or("unknown"));
+    }
     #[cfg(feature = "desktop")]
     desktop::run(url, app.paths.data_dir.clone(), probe, opts.startup_probe_json.clone());
 

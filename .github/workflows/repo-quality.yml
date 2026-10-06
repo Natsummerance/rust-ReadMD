@@ -97,4 +97,4 @@ jobs:
         working-directory: ui-tests
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js --project=desktop --project=mobile
+        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js --project=desktop --project=mobile

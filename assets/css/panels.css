@@ -1012,7 +1012,56 @@ body { scrollbar-color:var(--border) transparent;scrollbar-width:thin; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--border);border:2px solid transparent;background-clip:padding-box;border-radius:8px; }
 ::-webkit-scrollbar-thumb:hover { background:var(--fg3);border:2px solid transparent;background-clip:padding-box; }
-input[type="checkbox"] { accent-color:var(--accent);border-radius:4px;cursor:pointer; }
+/* Compact controls; the label retains the larger click / keyboard target.
+   Switch inputs stay hidden behind their existing track. */
+input[type="checkbox"]:not(.plugin-switch-input):not(.plugin-switch input):not(.apple-switch input) {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  max-width: 14px;
+  max-height: 14px;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 14px;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  background-color: var(--bg2);
+  cursor: pointer;
+  vertical-align: middle;
+}
+input[type="checkbox"]:checked:not(.plugin-switch-input):not(.plugin-switch input):not(.apple-switch input) {
+  border-color: var(--accent);
+  background-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent 38%, var(--accent-fg) 38% 62%, transparent 62%), linear-gradient(135deg, transparent 38%, var(--accent-fg) 38% 62%, transparent 62%);
+  background-size: 4px 6px, 7px 7px;
+  background-position: 2px 4px, 5px 2px;
+  background-repeat: no-repeat;
+}
+input[type="checkbox"]:indeterminate:not(.plugin-switch-input):not(.plugin-switch input):not(.apple-switch input) {
+  border-color: var(--accent);
+  background: linear-gradient(var(--accent-fg), var(--accent-fg)) center / 7px 2px no-repeat var(--accent);
+}
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
+#ai-panel .composer-input-card { background: var(--bg2); border-radius: var(--radius-m); }
+#ai-panel .composer-textarea {
+  min-height: 64px;
+  max-height: 160px;
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1.6;
+}
+#ai-panel .composer-toolbar { flex-wrap: wrap; gap: var(--space-1); padding: 0 var(--space-2) var(--space-2); background: transparent; }
+#ai-panel .composer-toolbar-left { flex-wrap: wrap; gap: var(--space-1); }
+#ai-panel .checkbox-label { min-height: 44px; padding: var(--space-1) var(--space-2); gap: var(--space-2); font-size: var(--text-xs); }
+#ai-panel .checkbox-label:hover { background: var(--color-hover); }
+#ai-panel .checkbox-label:has(input:checked) { color: var(--accent); }
+#ai-panel .send-btn { min-height: 44px; border-radius: var(--radius-s); }
 @media(max-width:640px) {
   #pet-settings-box.pet-workbench { padding:16px;height:calc(100dvh - 32px);max-height:calc(100dvh - 32px); }
   #pet-settings-box .pet-sheet-body { display:block;overflow-y:auto; }

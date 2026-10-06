@@ -13819,7 +13819,7 @@ async function loadAiModels() {
   if (!local && !key && !(p && p.has_key)) { showToast(_t('toast.enterApiKeyFirst') || ''); return; }
   // Persist a newly entered key before discovery so the provider endpoint
   // receives only an opaque credential_id, never a raw secret.
-  if (!local && key && p && !p.credential_id) {
+  if (key && p) {
     if (!(await saveAiSelection(true))) return;
     p = currentAiProvider() || p;
   }
@@ -13840,12 +13840,12 @@ async function loadAiModels() {
       body: JSON.stringify({ provider: (p && p.id) || '', credential_id: (p && p.credential_id) || undefined, base_url: baseUrl, mode: mode, endpoint_mode: endpointMode, headers: requestHeaders })
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    if (!r.ok || d.ok === false || d.error) throw new Error(d.error || ('HTTP ' + r.status));
     const ids = d.models || [];
     if (ids.length) {
       p.models = ids;
       fillAiModels(ids, $('ai-model').value);
-      await saveAiSelection(true);
+      if (!(await saveAiSelection(true))) return;
       if (status) status.textContent = _t('toast.fetchedModels', { count: ids.length }) || ('已获取 ' + ids.length + ' 个模型');
       showToast(_t('toast.fetchedModels', { count: ids.length }) || ('已获取 ' + ids.length + ' 个模型'));
     } else {
@@ -17049,27 +17049,18 @@ function savePetSettings() {
   return petSettingsQueue;
 }
 async function applyPetSettings(config,version) {
-    const {enabled,renderer}=config;
+    const {enabled}=config;
     const stateChanged = Boolean(activePetSettingsStatus && activePetSettingsStatus.enabled !== enabled);
     if (enabled && !config.in_app && !activePetSettingsStatus?.adapter?.available) {
       const installed = await installDefaultPetRuntime();
-      if (!installed.ok) {
-        // 桌面运行时装不上时退回应用内桌宠。
-        config.in_app = true;
-        if ($('pet-runtime')) $('pet-runtime').value = 'in-app';
-        if (typeof showToast === 'function') showToast(petT('pet.desktopFallback', { code: installed.code || 'install_failed' }), 3200);
+      if (!installed || !installed.ok) {
+        const code = installed?.code || installed?.error_code || 'install_failed';
+        if (typeof showToast === 'function') showToast(petT('pet.configFailed', { code }), 3200);
+        if (version === petSettingsVersion) renderPetSettings(await fetchPetRuntimeStatus());
+        return installed || { ok: false, code };
       }
     }
     let result = await requestConfigurePet(config);
-    if (enabled && !config.in_app && (!result || !result.ok)) {
-      // 桌面窗口启动失败时退回应用内桌宠，而不是让桌宠直接消失。
-      const fallback = await requestConfigurePet(Object.assign({}, config, { in_app: true }));
-      if (fallback && fallback.ok) {
-        if ($('pet-runtime')) $('pet-runtime').value = 'in-app';
-        if (typeof showToast === 'function') showToast(petT('pet.desktopFallback', { code: (result && result.code) || 'unknown' }), 3200);
-        result = fallback;
-      }
-    }
     if (!result || !result.ok) {
       const code = (result && result.code) || 'unknown';
       if (typeof showToast === 'function') showToast(petT('pet.configFailed', { code }));
@@ -17356,8 +17347,9 @@ function initPetSystem() {
     if (action === 'install') {
       btn.disabled = true;
       try {
-        await installDefaultPetRuntime();
-        renderPetSettings(await fetchPetRuntimeStatus());
+        const installed = await installDefaultPetRuntime();
+        if (installed?.ok) await savePetSettings();
+        else renderPetSettings(await fetchPetRuntimeStatus());
       } finally {
         btn.disabled = false;
       }
@@ -17558,8 +17550,9 @@ async function installDefaultPetRuntime() {
       const result = nativeApi && typeof nativeApi.install_default_pet_plugin === 'function'
         ? await nativeApi.install_default_pet_plugin()
         : await petGalleryRequest('/api/pets/runtime/install', { confirm: true });
-      showToast(result.ok ? petT('pet.installSuccess') : petT('pet.configFailed', { code: result.code || result.error_code }));
-      return result;
+      const outcome = result || { ok: false, code: 'install_failed' };
+      showToast(outcome.ok ? petT('pet.installSuccess') : petT('pet.configFailed', { code: outcome.code || outcome.error_code }));
+      return outcome;
     } finally {
       if (button) button.disabled = false;
       petRuntimeInstallPromise = null;

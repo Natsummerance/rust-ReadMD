@@ -328,6 +328,7 @@ pub struct AIClient {
     agent: Agent,
     provider: Provider,
     api_key: Option<String>,
+    model_headers: crate::ai_providers::Headers,
 }
 
 impl AIClient {
@@ -338,7 +339,52 @@ impl AIClient {
             .timeout_write(std::time::Duration::from_secs(60))
             .build();
 
-        Ok(AIClient { agent, provider, api_key })
+        Ok(AIClient { agent, provider, api_key, model_headers: Vec::new() })
+    }
+
+    /// Model discovery uses the same saved connections and opaque credentials
+    /// as chat. It must also work before any model has been selected.
+    pub fn for_model_request(payload: &Value, dir: &dyn crate::ai_providers::ProviderDirectory) -> Result<Self, String> {
+        use crate::ai_providers::{is_local_provider, request_headers, resolve_key};
+        let current = dir.current_config();
+        let text = |value: Option<&Value>| value.and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let mut name = text(payload.get("provider"));
+        if name.is_empty() { name = text(current.get("provider_id").or_else(|| current.get("provider"))); }
+        let mut record = if name.is_empty() { json!({}) } else { dir.find_provider(&name) };
+        if !name.is_empty() && !record.is_object() { return Err("未知提供商".into()); }
+        let credential = text(payload.get("credential_id"));
+        if !credential.is_empty() {
+            let owner = dir.find_provider_by_credential(&credential).ok_or("凭据与提供商不匹配")?;
+            if !name.is_empty() && text(record.get("credential_id")) != credential {
+                return Err("凭据与提供商不匹配".into());
+            }
+            record = owner;
+        }
+        let mut base_url = text(payload.get("base_url"));
+        if base_url.is_empty() { base_url = text(record.get("base_url")); }
+        if base_url.is_empty() { return Err("请先填写 Base URL".into()); }
+        let mut effective = record.clone();
+        if let Some(map) = effective.as_object_mut() { map.insert("base_url".into(), json!(base_url)); }
+        let mut key = text(payload.get("api_key"));
+        if key.is_empty() { key = resolve_key(&record, dir).map_err(|_| "无法读取已保存的凭据")?; }
+        let local = is_local_provider(&effective);
+        if key.is_empty() && !local { return Err("未配置 API Key，请在连接设置中保存密钥".into()); }
+        let mut mode = text(payload.get("mode"));
+        if mode.is_empty() { mode = text(record.get("mode")); }
+        let anthropic = mode == "messages" || mode == "anthropic"
+            || (mode.is_empty() || mode == "auto") && text(record.get("format")) == "anthropic";
+        let provider = Provider {
+            id: name.clone(), name, base_url, models: Vec::new(), requires_api_key: !local,
+            auth_header: if anthropic { "x-api-key" } else { "Authorization" }.into(),
+            auth_prefix: if anthropic { "" } else { "Bearer " }.into(),
+        };
+        let mut client = Self::new(provider, if key.is_empty() { None } else { Some(key) })?;
+        client.agent = AgentBuilder::new().timeout_connect(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(20)).redirects(0).build();
+        let mut headers = vec![("Accept".into(), "application/json".into())];
+        if anthropic { headers.push(("anthropic-version".into(), "2023-06-01".into())); }
+        client.model_headers = request_headers(&headers, payload.get("headers").filter(|v| v.is_object()).or_else(|| record.get("headers")));
+        Ok(client)
     }
 
     /// Set the API key for this client.
@@ -501,29 +547,23 @@ impl AIClient {
         }
 
         let mut last_error: Option<String> = None;
-        let mut body: Option<String> = None;
         for url in candidates {
             match self.http_get_json(&url) {
                 Ok(text) => {
-                    if !text.trim().is_empty() {
-                        body = Some(text);
-                        break;
+                    match model_ids_from_json(&text) {
+                        Ok(ids) => return Ok(ids),
+                        Err(_) => last_error = Some("接口未返回有效的模型列表".into()),
                     }
                 }
-                Err(e) => last_error = Some(e),
+                Err(e) => {
+                    // An authentication failure must not be disguised by a
+                    // later 404 from an alternative endpoint.
+                    if e == "HTTP 401" || e == "HTTP 403" { return Err(AiRoute::Models.raised_error(e)); }
+                    last_error = Some(e);
+                }
             }
         }
-        // `ai.py:918-922` — re-raise the transport error verbatim.
-        let text = match body {
-            Some(text) => text,
-            None => {
-                return Err(AiRoute::Models.raised_error(match last_error {
-                    Some(e) => e,
-                    None => "未能连接到模型接口".to_string(),
-                }))
-            }
-        };
-        model_ids_from_json(&text).map_err(|message| AiRoute::Models.raised_error(message))
+        Err(AiRoute::Models.raised_error(last_error.unwrap_or_else(|| "未能连接到模型接口".into())))
     }
 
     /// `ai.py:868-880 _http_get_json` — the GET half of the HTTP layer.
@@ -532,6 +572,7 @@ impl AIClient {
     /// puts it in `detail`, so a provider body never reaches the client.
     fn http_get_json(&self, url: &str) -> Result<String, String> {
         let mut request = self.agent.get(url);
+        for (name, value) in &self.model_headers { request = request.set(name, value); }
         if let Some(ref api_key) = self.api_key {
             let header = if self.provider.auth_header.is_empty() {
                 "Authorization".to_string()
@@ -544,21 +585,17 @@ impl AIClient {
             Ok(response) => {
                 let status = response.status();
                 let mut text = String::new();
-                let _ = response
+                response
                     .into_reader()
                     .read_to_string(&mut text)
-                    .map_err(|e| format!("网络错误：{e}"));
+                    .map_err(|_| "读取模型列表失败".to_string())?;
                 if status != 200 {
-                    return Err(format!("HTTP {status}：{}", truncate(&text)));
+                    return Err(format!("HTTP {status}"));
                 }
                 Ok(text)
             }
-            Err(ureq::Error::Status(code, response)) => {
-                let mut text = String::new();
-                let _ = response.into_reader().read_to_string(&mut text);
-                Err(format!("HTTP {code}：{}", truncate(&text)))
-            }
-            Err(e) => Err(format!("网络错误：{e}")),
+            Err(ureq::Error::Status(code, _)) => Err(format!("HTTP {code}")),
+            Err(_) => Err("无法连接模型服务，请检查地址、网络和服务状态".into()),
         }
     }
 }
@@ -1912,6 +1949,89 @@ pub fn system_language() -> crate::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct DiscoveryDirectory(Value);
+    impl crate::ai_providers::ProviderDirectory for DiscoveryDirectory {
+        fn current_config(&self) -> Value { json!({"provider_id":"custom:relay"}) }
+        fn find_provider(&self, name: &str) -> Value { if name == "custom:relay" { self.0.clone() } else { Value::Null } }
+        fn find_provider_by_credential(&self, cid: &str) -> Option<Value> {
+            if self.0["credential_id"] == cid { Some(self.0.clone()) } else { None }
+        }
+        fn load_credential(&self, _: &str) -> String { "test-discovery-secret".into() }
+        fn decrypt_secret(&self, _: &str) -> String { String::new() }
+        fn env_var(&self, _: &str) -> String { String::new() }
+    }
+
+    fn discovery_server(responses: Vec<(&'static str, &'static str)>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body) in responses {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+                let mut bytes = Vec::new();
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0]; socket.read_exact(&mut byte).unwrap(); bytes.push(byte[0]);
+                }
+                requests.push(String::from_utf8(bytes).unwrap());
+                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+            requests
+        });
+        (base, handle)
+    }
+
+    #[test]
+    fn discovery_reads_current_saved_credential_without_a_selected_model() {
+        let (base, server) = discovery_server(vec![("200 OK", r#"{"data":[{"id":"relay-model"}]}"#)]);
+        let dir = DiscoveryDirectory(json!({"id":"custom:relay","base_url":format!("{base}/v1"),"credential_id":"cred:relay","headers":{"X-Region":"test","Authorization":"forbidden"}}));
+        let client = AIClient::for_model_request(&json!({}), &dir).unwrap();
+        assert_eq!(client.list_models().unwrap(), vec!["relay-model"]);
+        let wire = server.join().unwrap()[0].to_lowercase();
+        assert!(wire.starts_with("get /v1/models "));
+        assert!(wire.contains("authorization: bearer test-discovery-secret"));
+        assert!(wire.contains("x-region: test"));
+        assert!(!wire.contains("forbidden"));
+    }
+
+    #[test]
+    fn discovery_rejects_foreign_credentials_before_any_network_request() {
+        let dir = DiscoveryDirectory(json!({"id":"custom:relay","base_url":"https://example.invalid/v1","credential_id":"cred:relay"}));
+        assert!(AIClient::for_model_request(&json!({"provider":"custom:relay","credential_id":"cred:other"}), &dir).is_err());
+        assert!(AIClient::for_model_request(&json!({"provider":"missing"}), &dir).is_err());
+    }
+
+    #[test]
+    fn discovery_uses_anthropic_auth_and_endpoint_normalization() {
+        let (base, server) = discovery_server(vec![("200 OK", r#"{"data":[{"id":"claude-test"}]}"#)]);
+        let dir = DiscoveryDirectory(json!({"id":"custom:relay","base_url":format!("{base}/v1/messages"),"format":"anthropic","credential_id":"cred:relay"}));
+        assert_eq!(AIClient::for_model_request(&json!({}), &dir).unwrap().list_models().unwrap(), vec!["claude-test"]);
+        let wire = server.join().unwrap()[0].to_lowercase();
+        assert!(wire.contains("x-api-key: test-discovery-secret"));
+        assert!(wire.contains("anthropic-version: 2023-06-01"));
+        assert!(!wire.contains("authorization:"));
+    }
+
+    #[test]
+    fn discovery_skips_html_and_supports_keyless_local_ollama() {
+        let (base, server) = discovery_server(vec![("200 OK", "<html>landing</html>"), ("404 Not Found", "missing"), ("200 OK", r#"{"models":[{"name":"local-model"}]}"#)]);
+        let dir = DiscoveryDirectory(json!({"id":"custom:relay","base_url":base}));
+        assert_eq!(AIClient::for_model_request(&json!({}), &dir).unwrap().list_models().unwrap(), vec!["local-model"]);
+        let wire = server.join().unwrap();
+        assert!(wire[2].starts_with("GET /api/tags "));
+        assert!(wire.iter().all(|r| !r.to_lowercase().contains("authorization:")));
+    }
+
+    #[test]
+    fn discovery_auth_failure_is_not_a_cached_success_or_a_secret_echo() {
+        let (base, server) = discovery_server(vec![("401 Unauthorized", "echo test-discovery-secret")]);
+        let dir = DiscoveryDirectory(json!({"id":"custom:relay","base_url":base,"credential_id":"cred:relay","models":["stale"]}));
+        let error = AIClient::for_model_request(&json!({}), &dir).unwrap().list_models().unwrap_err();
+        assert_eq!(error.detail.as_deref(), Some("HTTP 401"));
+        server.join().unwrap();
+    }
 
     #[test]
     fn test_provider_catalog() {

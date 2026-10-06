@@ -1336,8 +1336,9 @@ pub enum RuntimeKind {
 
 impl RuntimeTree {
     fn install_root(app: &App) -> PathBuf {
-        // `get_default_pet_install_root()` == `<APP_DIR>/plugins`, created eagerly.
-        let root = app_dir(app).join("plugins");
+        // Extensions and their bridge/cache are mutable user data. Installed
+        // applications live in protected Program Files / .app / /usr paths.
+        let root = app.paths.data_dir.join("plugins");
         let _ = fs::create_dir_all(&root);
         root
     }
@@ -3734,6 +3735,19 @@ pub fn configure_pet(app: &App, settings: &Value) -> Value {
     })
 }
 
+/// Restore the persisted desktop choice when starting the native application.
+pub fn restore_pet_runtime(app: &App) -> Value {
+    let enabled = app.setting("pet_enabled").as_bool().unwrap_or(false);
+    let in_app = app.setting("pet_in_app").as_bool().unwrap_or(true);
+    if enabled && !in_app {
+        let installed = install_default_pet_plugin(app);
+        if installed.value().and_then(|v| v.get("ok")).and_then(Value::as_bool) != Some(true) {
+            return installed.value().cloned().unwrap_or_else(|| json!({"ok":false,"code":"pet_plugin_install_failed"}));
+        }
+    }
+    configure_pet(app, &json!({"enabled":enabled,"in_app":in_app}))
+}
+
 /// `PetRuntimeOrchestrator.start()` in `rust-strict`, delegating to
 /// `RustPetRuntime.start()` (`runtime.py:536-608`).
 ///
@@ -4646,6 +4660,26 @@ mod tests {
         fs::create_dir_all(dir.join("assets")).unwrap();
         let paths = paths::AppPaths::with_dirs(&dir.join("data"), &dir, &dir.join("assets"));
         Arc::new(App::bootstrap(paths).unwrap())
+    }
+
+    #[test]
+    fn desktop_extension_installs_into_user_data_without_mutating_app_directory() {
+        let app = test_app("user-runtime-install");
+        fs::write(app_dir(&app).join("ReadMD-Pet-Rust.zip"), bundle_zip()).unwrap();
+        let result = install_default_pet_plugin(&app);
+        assert_eq!(result.value().unwrap()["ok"], true);
+        assert!(RuntimeTree::rust(&app).target.starts_with(&app.paths.data_dir));
+        assert!(!app_dir(&app).join("plugins").exists());
+        assert!(RuntimeTree::rust(&app).available());
+    }
+
+    #[test]
+    fn desktop_choice_restores_even_when_companion_is_disabled() {
+        let app = test_app("restore-desktop-choice");
+        app.update_settings(&json!({"pet_enabled":false,"pet_in_app":false}));
+        assert_eq!(restore_pet_runtime(&app)["ok"], true);
+        assert_eq!(pet_runtime_status(&app)["in_app"], false);
+        configure_pet(&app, &json!({"enabled":false,"in_app":true}));
     }
 
     #[test]
@@ -5907,7 +5941,7 @@ mod tests {
         // computes `installed_matches_any` over EVERY candidate, so the whole
         // bundled branch is skipped and nothing is reported.
         let app = test_app("we-e1-match");
-        let installer = RuntimeTree::rust_at(&app_dir(&app).join("plugins"));
+        let installer = RuntimeTree::rust(&app);
         fs::create_dir_all(&installer.target).unwrap();
         fs::write(installer.target.join("readmd-pet-rust.exe"), b"pe").unwrap();
         fs::write(installer.target.join("runtime-manifest.json"), b"{\"installed\":1}").unwrap();
@@ -5943,7 +5977,7 @@ mod tests {
         // (verified fixture: Python answers `source: none`, `has_update:
         // false`, `installed: true`).
         let app = test_app("we-e1-first");
-        let installer = RuntimeTree::rust_at(&app_dir(&app).join("plugins"));
+        let installer = RuntimeTree::rust(&app);
         let (manifest, exe, html) = bundle_parts();
         fs::create_dir_all(installer.target.join("renderer")).unwrap();
         fs::write(installer.target.join("runtime-manifest.json"), &manifest).unwrap();

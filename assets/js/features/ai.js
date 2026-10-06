@@ -1960,7 +1960,7 @@ async function loadAiModels() {
   if (!local && !key && !(p && p.has_key)) { showToast(_t('toast.enterApiKeyFirst') || ''); return; }
   // Persist a newly entered key before discovery so the provider endpoint
   // receives only an opaque credential_id, never a raw secret.
-  if (!local && key && p && !p.credential_id) {
+  if (key && p) {
     if (!(await saveAiSelection(true))) return;
     p = currentAiProvider() || p;
   }
@@ -1981,12 +1981,12 @@ async function loadAiModels() {
       body: JSON.stringify({ provider: (p && p.id) || '', credential_id: (p && p.credential_id) || undefined, base_url: baseUrl, mode: mode, endpoint_mode: endpointMode, headers: requestHeaders })
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    if (!r.ok || d.ok === false || d.error) throw new Error(d.error || ('HTTP ' + r.status));
     const ids = d.models || [];
     if (ids.length) {
       p.models = ids;
       fillAiModels(ids, $('ai-model').value);
-      await saveAiSelection(true);
+      if (!(await saveAiSelection(true))) return;
       if (status) status.textContent = _t('toast.fetchedModels', { count: ids.length }) || ('已获取 ' + ids.length + ' 个模型');
       showToast(_t('toast.fetchedModels', { count: ids.length }) || ('已获取 ' + ids.length + ' 个模型'));
     } else {

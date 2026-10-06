@@ -3492,63 +3492,35 @@ fn h_ai_config(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     ok_json(view)
 }
 
-fn ai_config(app: &Arc<App>) -> Value {
-    let stored = app.setting("aiConfig");
-    let mut base = json!({
-        "provider": "openai",
-        "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-4o-mini",
-        "apiKey": "",
-        "temperature": 0.7,
-        "maxTokens": 2048,
-        "systemPrompt": "You are ReadMD's markdown writing assistant.",
-    });
-    if let (Some(obj), Some(patch)) = (base.as_object_mut(), stored.as_object()) {
-        for (k, v) in patch {
-            obj.insert(k.clone(), v.clone());
-        }
-    }
-    base
-}
-
-
 fn h_ai_models(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
-    let config = ai_config(app);
-    let base = config.get("baseUrl").and_then(|v| v.as_str()).unwrap_or("").trim_end_matches('/').to_string();
-    let key = config.get("apiKey").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let fallback: Vec<String> = config
-        .get("models")
-        .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
-    if base.is_empty() || key.is_empty() {
-        return ok_json(json!({
-            "ok": true,
-            "models": fallback,
-            "source": "config",
-            "message": "Configure baseUrl and apiKey to query the provider model list.",
-        }));
+    if req.q("api_key").is_some() || req.q("apiKey").is_some() {
+        return Ok(Response::json_status(400, &json!({ "ok": false, "error": "API Key 不得出现在 URL，请使用连接设置" })));
     }
-    let url = if req.q("full") == Some("1") { format!("{base}/models") } else { format!("{base}/models") };
-    match http_get(&url, &[format!("Authorization: Bearer {key}")], 20) {
-        Ok((status, bytes)) if (200..300).contains(&status) => {
-            let parsed: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!([]));
-            let models = parsed
-                .get("data")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
-                        .collect::<Vec<String>>()
-                })
-                .unwrap_or(fallback);
-            ok_json(json!({ "ok": true, "models": models, "source": "provider" }))
+    let mut payload = body_value(req);
+    if !payload.is_object() { return Err(ApiError::bad_request("invalid_request")); }
+    if req.method == "GET" {
+        for field in ["provider", "credential_id", "base_url", "mode"] {
+            if let Some(value) = req.q(field) { payload[field] = json!(value); }
         }
-        Ok((status, bytes)) => Ok(Response::json_status(
-            502,
-            &json!({ "ok": false, "error": "provider_error", "status": status, "detail": truncate_text(&String::from_utf8_lossy(&bytes), 400), "models": fallback }),
-        )),
-        Err(e) => ok_json(json!({ "ok": true, "models": fallback, "source": "config", "warning": e.to_string() })),
+    }
+    let client = match crate::ai::AIClient::for_model_request(&payload, &AiProviderDirectory::new(app)) {
+        Ok(client) => client,
+        Err(message) => return Ok(Response::json_status(if message == "凭据与提供商不匹配" { 403 } else { 400 },
+            &json!({ "ok": false, "error_code": "model_list_failed", "error": message }))),
+    };
+    match client.list_models() {
+        Ok(models) => ok_json(json!({ "ok": true, "models": models, "source": "provider" })),
+        Err(error) => {
+            // Discovery diagnostics contain controlled text only, never a
+            // provider body that could echo the Authorization header.
+            let detail = error.detail.as_deref().unwrap_or("模型列表获取失败");
+            let message = match detail {
+                "HTTP 401" => "模型服务拒绝了密钥（HTTP 401），请检查连接密钥",
+                "HTTP 403" => "模型服务拒绝访问（HTTP 403），请检查密钥权限",
+                _ => detail,
+            };
+            Ok(Response::json_status(502, &json!({ "ok": false, "error_code": "model_list_failed", "error": message })))
+        }
     }
 }
 
