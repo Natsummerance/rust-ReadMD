@@ -13,9 +13,25 @@ fn startup_skips_large_documents_without_disabling_full_graph_indexing() {
     let app = crate::App::bootstrap(paths).unwrap();
     assert_eq!(app.store.stats().unwrap()["docs"], 0);
     let indexed = crate::content::reindex_workspace(&app, 4000).unwrap();
-    assert_eq!(indexed["indexed"], 1);
+    assert_eq!(indexed["indexed"], 1, "{indexed}");
     assert_eq!(app.store.stats().unwrap()["docs"], 1);
     assert_eq!(std::fs::read_to_string(&file).unwrap().lines().count(), 11001);
+}
+
+#[test]
+fn graph_scan_normalizes_workspace_aliases_before_authorization() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(directory.path().join("intermediate")).unwrap();
+    let workspace = directory.path().join("intermediate").join("..").join("documents");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::write(workspace.join("notes.md"), "# Canonical workspace\n\nReadable graph document.\n").unwrap();
+    let app = crate::App::bootstrap(paths::AppPaths::with_dirs(
+        &directory.path().join("data"), &workspace, &directory.path().join("assets"),
+    )).unwrap();
+    let indexed = crate::content::reindex_workspace(&app, 4000).unwrap();
+    assert_eq!(indexed["indexed"], 1, "{indexed}");
+    assert_eq!(indexed["skipped"], 0, "{indexed}");
+    assert_eq!(app.store.stats().unwrap()["docs"], 1);
 }
 
 #[test]

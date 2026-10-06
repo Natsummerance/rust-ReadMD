@@ -31,7 +31,8 @@
     "supplementary": {
       "newKernelGraphSaveLanguage": 25,
       "mobileUniqueChecks": 9,
-      "foreignLocaleAllDialogs": 8
+      "foreignLocaleAllDialogs": 8,
+      "postCiCanonicalPathRegressions": 8
     },
     "nativeWindow": "passed",
     "nativeWeb": "passed",

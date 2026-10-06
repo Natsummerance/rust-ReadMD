@@ -1162,7 +1162,10 @@ fn reindex_workspace_impl(app: &App, limit: usize, startup: bool) -> Result<Valu
         if !entry.file_type().is_file() {
             continue;
         }
-        let path = entry.path();
+        // Authorization compares canonical roots. Windows Temp aliases and
+        // explicitly supplied paths containing `..` must be normalized too.
+        let canonical = paths::canonicalize_or_clean(entry.path());
+        let path = canonical.as_path();
         if !is_readable(path) {
             skipped += 1;
             continue;
