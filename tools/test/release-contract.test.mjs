@@ -67,6 +67,17 @@ test('HarmonyOS scaffold stays structurally buildable', () => {
   assert.ok(!exists(h + 'entry/src/main/resources/rawfile'));
 });
 
+test('formal release waits for shared quality checks and every build', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const quality = read('.github/workflows/repo-quality.yml');
+  assert.match(quality, /^  workflow_call:\s*$/m);
+  assert.match(workflow, /^  quality:[\s\S]*?uses: \.\/\.github\/workflows\/repo-quality\.yml/m);
+  const publishing = workflow.slice(workflow.indexOf('\n  release:'));
+  assert.match(publishing, /needs:\s*\[build,\s*quality\]/);
+  assert.ok(!/always\(\)|continue-on-error:\s*true/.test(publishing));
+  for (const stage of ['Test kernel and xtask', 'Frontend gates', 'UI quality (Playwright)']) assert.ok(quality.includes(stage), stage);
+});
+
 test('release packages require the current pet runtime and aligned versions', () => {
   const workflow=read('.github/workflows/release.yml');
   assert.match(workflow,/cargo build --offline --locked/);

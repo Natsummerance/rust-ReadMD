@@ -5,9 +5,13 @@
   "frontendBundleSha256": "8851af07dfd406b7054a41fc3592695da7d4149b31580c00ae7d0f13f82154d3",
   "tests": {
     "kernel": {
-      "passed": 1862,
+      "passed": 1863,
       "failed": 0,
       "ignored": 3
+    },
+    "kernelCli": {
+      "passed": 116,
+      "failed": 0
     },
     "xtask": {
       "passed": 12,
@@ -19,7 +23,7 @@
       "pdfEditorEmissionFixture": "not run"
     },
     "node": {
-      "passed": 45,
+      "passed": 46,
       "failed": 0
     },
     "fullDesktopUi": {
