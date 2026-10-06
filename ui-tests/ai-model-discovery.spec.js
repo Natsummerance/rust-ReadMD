@@ -1,6 +1,7 @@
 // Exercise the real Rust routes and a local OpenAI-compatible provider.
 const { test, expect } = require('@playwright/test');
 const http = require('node:http');
+const path = require('node:path');
 let upstream, baseUrl, failure = false, calls = [];
 const providerId = 'custom:discovery-regression';
 
@@ -91,7 +92,11 @@ test('bundled desktop extension installs in user data and launches the real Rust
     return { installed, configured, status: await fetchPetRuntimeStatus() };
   });
   expect(result.installed.ok).toBe(true);
-  expect(result.installed.install_path).toContain('readmd-ui-test-');
+  if (process.env.READMD_DATA_DIR) {
+    expect(path.resolve(result.installed.install_path)).toBe(path.resolve(process.env.READMD_DATA_DIR, 'plugins', 'pet', 'readmd-rust-host'));
+  } else {
+    expect(result.installed.install_path).toContain('readmd-ui-test-');
+  }
   expect(result.configured.ok).toBe(true);
   expect(result.status.in_app).toBe(false);
   expect(result.status.adapter.rust.running).toBe(true);

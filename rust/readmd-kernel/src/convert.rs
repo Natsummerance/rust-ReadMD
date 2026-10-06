@@ -355,6 +355,9 @@ pub fn convert_triple(path: &str, form_tables: bool) -> ConvertTriple {
 }
 
 pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Option<&str>) -> ConvertTriple {
+    if crate::speech::cancelled() {
+        return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()) };
+    }
     let ext = ext_of(path);
     if ext == ".eml" { return match crate::mail::eml_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"mime"),Err(e)=>ConvertTriple::err(e) }; }
     if ext == ".msg" { return match crate::mail::msg_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"outlook-msg"),Err(e)=>ConvertTriple::err(e) }; }
@@ -396,6 +399,9 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
                 // MarkItDown, and only then reports the error.  An OCR answer that is nothing
                 // but the "no text" placeholder is remembered and returned last.
                 let err = err_text(r);
+                if crate::speech::cancelled() {
+                    return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()) };
+                }
                 let mut ocr_fallback_text: Option<String> = None;
                 if let Ok(ocr_text) = crate::ocr::ocr_pdf_to_md(path, 200) {
                     let trimmed = ocr_text.trim();
@@ -579,7 +585,11 @@ fn html_file_to_md(path: &str) -> Result<String, String> {
         }
         _ => decode_text_preferred(&bytes)?.0,
     };
-    let md = crate::headless_renderer::html_to_markdown(&html);
+    let document = crate::headless_renderer::parse_html(&html);
+    // ReadMD exports retain their original Markdown as inert JSON and render
+    // the article with JavaScript. Recover that data without executing scripts.
+    let md = readmd_export_source(&document)
+        .unwrap_or_else(|| crate::headless_renderer::markdown_of(&document));
     let md = crate::headless_renderer::sanitize_markdown(&md, "");
     let md = crate::headless_renderer::normalize_markdown(&md);
     let title = regex::Regex::new(r"(?is)<title[^>]*>(.*?)</title>")
@@ -674,6 +684,11 @@ pub fn looks_binary(path: &str) -> bool {
 /// in this lane (markdown, csv-ish, html, unknown text). MarkItDown returns the
 /// text content stripped of leading/trailing whitespace for those.
 fn markitdown_text(path: &str) -> Option<String> {
+    // A failed structured/binary document parser must not become "success"
+    // merely because its corrupt bytes happen to decode as plain text.
+    if [".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".epub", ".odt", ".mobi", ".azw3"].contains(&ext_of(path).as_str()) {
+        return None;
+    }
     let (text, _enc) = read_text_smart(path).ok()?;
     Some(text.trim().to_string())
 }
@@ -901,6 +916,21 @@ pub fn is_upload_path(src: &str, data_dir: &Path) -> bool {
 pub fn write_md(path: &str, content: &str) -> Result<(), String> {
     if !Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).is_dir() { return Err("output_directory_missing".into()); }
     crate::content::write_text_atomic(Path::new(path), content).map_err(|e| e.to_string())
+}
+
+fn readmd_export_source(document: &crate::headless_renderer::Element) -> Option<String> {
+    use crate::headless_renderer::{Element, Node};
+    fn find(element: &Element, predicate: fn(&Element) -> bool) -> Option<&Element> {
+        if predicate(element) { return Some(element); }
+        element.children.iter().find_map(|node| match node {
+            Node::El(child) => find(child, predicate),
+            _ => None,
+        })
+    }
+    find(document, |element| element.name == "meta" && element.attr("name") == Some("generator") && element.attr("content") == Some("ReadMD"))?;
+    let source = find(document, |element| element.name == "script" && element.attr("id") == Some("md-source") && element.attr("type") == Some("application/json"))?;
+    let json: String = source.children.iter().filter_map(|node| match node { Node::Text(text) => Some(text.as_str()), _ => None }).collect();
+    serde_json::from_str::<String>(&json).ok()
 }
 
 pub fn write_md_managed(data_dir: &Path, path: &str, content: &str, overwrite: bool) -> Result<(), String> {
@@ -3672,9 +3702,9 @@ fn pdf_page_xobject_dict<'a>(
 
 /// Render page `page_number` (1-based) with the system PDF renderer and OCR it.
 fn pdf_page_render_ocr(path_obj: &Path, page_number: usize) -> Option<String> {
-    static NEVER: fn() -> bool = || false;
+    if crate::speech::cancelled() { return None; }
     let bytes = fs::read(path_obj).ok()?;
-    let done = crate::ocr_winrt::ocr_pdf_bytes(&bytes, 1, Some(vec![page_number.checked_sub(1)?]), &NEVER).ok()?;
+    let done = crate::ocr_winrt::ocr_pdf_bytes(&bytes, 1, Some(vec![page_number.checked_sub(1)?]), crate::speech::cancellation_check()).ok()?;
     let text = done.into_iter().next()?.1.join("\n");
     let formatted = crate::ocr::normalize_ocr_text(&text);
     let body = if formatted.trim().is_empty() { text } else { formatted };
@@ -3853,6 +3883,7 @@ fn pdf_per_page_markdown(
         let pages: Vec<(u32, lopdf::ObjectId)> = doc.get_pages().into_iter().collect();
         let mut parts: Vec<String> = Vec::new();
         for (number, page_id) in pages {
+            if crate::speech::cancelled() { return None; }
             let page_number = number as usize;
             let mappable = page_has_usable_font(&doc, page_id);
             let page_text = if mappable {
@@ -3889,6 +3920,7 @@ fn pdf_per_page_markdown(
 /// images, gets one OCR pass; the OCR text wins only when it carries clearly
 /// more readable characters than the text layer.
 fn pdf_ocr_upgrade(path: &str, text: &str) -> Option<String> {
+    if crate::speech::cancelled() { return None; }
     let image_only = text.contains("OCR unavailable; page image preserved");
     if !(image_only || crate::ocr::text_looks_garbled(text)) || crate::ocr::pick_engine().is_none() {
         return None;
@@ -3903,7 +3935,9 @@ fn pdf_ocr_upgrade(path: &str, text: &str) -> Option<String> {
 }
 
 fn pdf_to_md(path: &str, form_tables: bool) -> Result<ConvertResult, String> {
+    if crate::speech::cancelled() { return Err("cancelled".into()); }
     let res = pdf_tier_ladder(path, form_tables)?;
+    if crate::speech::cancelled() { return Err("cancelled".into()); }
     if !res.success {
         return Ok(res);
     }
@@ -3943,6 +3977,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
     // can, the per-page hybrid lane answers instead, which is the mixed-deck case this
     // gate used to lose.
     let page_font_map = pdf_page_font_map(path);
+    if crate::speech::cancelled() { return Err("cancelled".into()); }
     let text_layer_trusted = page_font_map
         .as_ref()
         .map_or(false, |map| !map.is_empty() && map.iter().all(|mappable| *mappable));
@@ -4054,6 +4089,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
             let mut page_sections: Vec<String> = Vec::new();
 
             for (page_idx, (_page_num, page_id)) in pages.into_iter().enumerate() {
+                if crate::speech::cancelled() { return None; }
                 if let Some(section) =
                     pdf_page_scanned_part(&doc, path_obj, page_id, page_idx + 1)
                 {
@@ -4080,6 +4116,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
         });
     }
 
+    if crate::speech::cancelled() { return Err("cancelled".into()); }
     // Tier 6: Native stream operator decompression fallback
     if let Ok(mut file) = fs::File::open(path) {
         let mut data = Vec::new();
@@ -5619,6 +5656,9 @@ fn worksheet_table_md(xml: &[u8], shared: &[String]) -> Result<Option<Vec<String
         return Ok(None);
     }
     let width = width as usize;
+    if width.checked_mul(row_nodes.len()).is_none_or(|count| count > 1_000_000) {
+        return Err("xlsx_table_too_large: 工作表展开超过100万个单元格，请先拆分工作表".into());
+    }
     let mut rows: Vec<Vec<String>> = (0..row_nodes.len())
         .map(|r| {
             (0..width)

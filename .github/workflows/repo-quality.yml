@@ -70,7 +70,7 @@ jobs:
       - name: Privacy scan
         run: node tools/privacy-scan.mjs
       - name: Node tests
-        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs
+        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs
 
   ui:
     name: UI quality (Playwright)
@@ -97,4 +97,5 @@ jobs:
         working-directory: ui-tests
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js --project=desktop --project=mobile
+          READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
+        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js --project=desktop --project=mobile

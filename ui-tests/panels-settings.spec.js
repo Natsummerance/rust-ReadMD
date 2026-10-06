@@ -280,8 +280,12 @@ test('plugin switch persistence reaches the native manifest', async ({ page }) =
   const list = await page.evaluate(async () => (await apiFetch('/api/plugins/list')).json());
   const sandbox = path.resolve(list.sandbox_dir);
   const temp = path.resolve(require('node:os').tmpdir()) + path.sep;
-  expect(sandbox.toLowerCase().startsWith(temp.toLowerCase())).toBe(true);
-  expect(sandbox).toContain('readmd-ui-test-');
+  if (process.env.READMD_DATA_DIR) {
+    expect(sandbox).toBe(path.resolve(process.env.READMD_DATA_DIR, 'plugins'));
+  } else {
+    expect(sandbox.toLowerCase().startsWith(temp.toLowerCase())).toBe(true);
+    expect(sandbox).toContain('readmd-ui-test-');
+  }
   // Use the real offline installer, including the profile and manifest. A
   // metadata-only package cannot prove that a native extension is installed.
   const installed = await page.evaluate(async () => (await apiFetch('/api/plugins/install', {

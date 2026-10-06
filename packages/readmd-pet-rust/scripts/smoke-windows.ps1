@@ -88,7 +88,7 @@ try {
     [void][PetSmokeWin32]::SetCursorPos($x + 3, $y)
     Start-Sleep -Milliseconds 100
     $smallMove = [PetSmokeWin32]::Bounds($window)
-    Require ($smallMove.Left -eq $before.Left -and $smallMove.Top -eq $before.Top) 'Below-threshold motion moved the window'
+    Require ($smallMove.Left -eq $before.Left -and $smallMove.Top -eq $before.Top) "Below-threshold motion moved the window: before=$($before.Left),$($before.Top),$($before.Right),$($before.Bottom); after=$($smallMove.Left),$($smallMove.Top),$($smallMove.Right),$($smallMove.Bottom); hit=$x,$y; fixture $fixture"
     [void][PetSmokeWin32]::SetCursorPos($x + 18, $y + 8)
     Start-Sleep -Milliseconds 180
     for ($step = 1; $step -le 10; $step++) {

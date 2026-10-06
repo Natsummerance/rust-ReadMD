@@ -7648,13 +7648,18 @@ function getEditContent() {
 }
 
 function setPvLayout(layout) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (['none', 'left', 'right', 'bottom', 'top'].indexOf(layout) < 0) layout = 'none';
   if (layout === 'none' && typeof switchEditAiToChatPanel === 'function') {
     switchEditAiToChatPanel();
   }
   state.pvLayout = layout;
   document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === layout));
+  updatePvLabel(layout);
+  applyPvLayout();
+}
+
+function updatePvLabel(layout = state.pvLayout || 'none') {
+  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const names = {
     none: _t('editor.previewNone') || '无',
     left: _t('editor.previewLeft') || '左',
@@ -7676,6 +7681,10 @@ function setPvLayout(layout) {
     trigger.setAttribute('aria-label', full);
     trigger.classList.toggle('is-on', layout !== 'none');
   }
+}
+
+function applyPvLayout() {
+  const layout = state.pvLayout || 'none';
   const mc = $('main-col');
 
   const pw = $('preview-wrap');
@@ -10538,7 +10547,7 @@ function updateDocStatistics() {
   const T = window.ReadMDTransforms;
   const docText = typeof getEditContent === 'function' ? getEditContent() : (cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || ''));
   const stats = T && T.textStats ? T.textStats(docText) : { words: 0, chars: docText.length, minutes: 0 };
-  const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.locale) || undefined); } catch (e) { return String(n); } };
+  const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
     const ranges = cmView.state.selection.ranges.filter(r => !r.empty);
@@ -11814,6 +11823,96 @@ function editMenuArrowNav(e) {
   if (next) { e.preventDefault(); next.focus(); }
 }
 
+// Move the original controls, including their bound handlers, into a single
+// overflow menu. Measure translated labels instead of assuming English widths.
+function bindEditorToolbarOverflow() {
+  const bar = $('edit-bar'), menu = $('edit-overflow-menu'), more = $('edit-overflow-wrap'), trigger = $('edit-overflow-trigger');
+  if (!bar || !menu || !more || !trigger || bar.dataset.overflowBound) return;
+  bar.dataset.overflowBound = '1';
+  menu.addEventListener('click', event => { if (event.target.closest('button')) closeMdPopups(); });
+  const candidates = [
+    ['[data-menu="md-text-menu"]', 'editor.text'],
+    ['#formula-open'], ['#edit-slash-btn'],
+    ['#edit-view-trigger', 'editor.view'],
+    ['.md-fmt-group [data-md="strike"]'], ['.md-fmt-group [data-md="code"]'],
+    ['[data-menu="md-structure-menu"]', 'editor.structure'],
+    ['[data-menu="md-insert-menu"]', 'editor.insert'],
+    ['#edit-redo'], ['#edit-undo'], ['.md-fmt-group [data-md="link"]'],
+    ['.md-fmt-group [data-md="italic"]']
+  ].map(([selector, heading]) => {
+    const button = bar.querySelector(selector);
+    if (!button) return null;
+    const popup = heading ? $(button.dataset.menu || 'edit-view-menu') : null;
+    const original = popup ? button.closest('.md-menu-wrap') : button;
+    const anchor = document.createComment('editor toolbar position');
+    original.before(anchor);
+    const section = document.createElement('div');
+    section.className = 'editor-overflow-group';
+    const nodes = popup ? [...popup.childNodes] : [button];
+    if (popup) {
+      const caption = document.createElement('span');
+      caption.className = 'editor-overflow-heading';
+      caption.dataset.i18n = heading;
+      caption.textContent = window.i18n ? i18n.t(heading) : button.textContent;
+      section.append(caption);
+    } else if (button.classList.contains('icon') || button.id === 'edit-slash-btn') {
+      const label = document.createElement('span');
+      label.className = 'editor-overflow-label';
+      label.dataset.i18n = button.dataset.i18nAria;
+      label.textContent = button.getAttribute('aria-label');
+      button.append(label);
+    }
+    return { button, popup, original, anchor, section, nodes, moved:false };
+  }).filter(Boolean);
+  const restore = candidate => {
+    if (!candidate.moved) return;
+    if (candidate.popup) {
+      candidate.popup.append(...candidate.nodes);
+      candidate.original.classList.remove('editor-overflowed');
+    } else candidate.anchor.after(candidate.original);
+    candidate.section.remove(); candidate.moved = false;
+  };
+  const move = candidate => {
+    if (candidate.popup) candidate.original.classList.add('editor-overflowed');
+    candidate.section.append(...candidate.nodes);
+    menu.append(candidate.section); candidate.moved = true;
+  };
+  const required = () => {
+    const style = getComputedStyle(bar);
+    const children = [...bar.children].filter(el => getComputedStyle(el).display !== 'none');
+    return children.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0)
+      + Math.max(0, children.length - 1) * (parseFloat(style.columnGap) || 0)
+      + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  };
+  let frame = 0;
+  const schedule = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!bar.getBoundingClientRect().width) return;
+      const focused = document.activeElement;
+      closeMdPopups(); candidates.forEach(restore);
+      more.classList.add('hidden');
+      const width = bar.clientWidth;
+      if (required() > width + .5) {
+        more.classList.remove('hidden');
+        for (const candidate of candidates) {
+          move(candidate);
+          if (required() <= width + .5) break;
+        }
+      }
+      // Floating menus open inward when their anchor is close to the edge.
+      const r = more.getBoundingClientRect();
+      more.classList.toggle('editor-menu-end', r.left > window.innerWidth / 2);
+      if (focused && focused !== document.activeElement && focused.getClientRects().length) focused.focus({ preventScroll:true });
+    });
+  };
+  new ResizeObserver(schedule).observe(bar);
+  window.addEventListener('readmd:language-changed', schedule);
+  document.fonts?.ready.then(schedule);
+  schedule();
+}
+
 function bindEditBarExtras() {
   const trig = $('edit-view-trigger');
   const menu = $('edit-view-menu');
@@ -11854,6 +11953,7 @@ function bindEditBarExtras() {
     }));
   });
   applyEditorViewClasses();
+  bindEditorToolbarOverflow();
 }
 
 ;
@@ -14575,6 +14675,7 @@ async function saveAiAs() {
 
 window.addEventListener('readmd:language-changed', () => {
   fillAiTemplates();
+  renderAiEmptyState();
   if ($('tpl-modal') && !$('tpl-modal').classList.contains('hidden')) {
     renderTplList();
     const curId = $('tpl-id') && $('tpl-id').value;
@@ -14588,7 +14689,7 @@ window.addEventListener('readmd:language-changed', () => {
 'use strict';
 /* Recovery drafts and save checkpoints are separate from the original file. */
 (function () {
-  let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false;
+  let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false, lastFeedback, recoveryCount = 0;
   const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
   const keyFor = tab => tab.recoveryKey ||= (tab.path || 'draft:' + tab.id);
   const capture = tab => ({ tab, key: keyFor(tab), path: tab.path || '', name: tab.name || tab.title || 'document.md',
@@ -14607,18 +14708,19 @@ window.addEventListener('readmd:language-changed', () => {
     queue = work.catch(() => {});
     return work;
   }
-  function feedback(message, failed = false) {
+  function feedback(key, params = {}, failed = false) {
+    lastFeedback = { key, params, failed };
     const el = $('document-recovery-status');
-    if (el) { el.textContent = message; el.classList.toggle('err', failed); }
+    if (el) { el.textContent = t(key, params); el.title = el.textContent; el.classList.toggle('err', failed); }
   }
   async function record(snapshot, kind, reason) {
     try {
       const result = await enqueue({ op: 'record', key: snapshot.key, path: snapshot.path, name: snapshot.name,
         kind, reason, content: snapshot.content, context: snapshot.context });
-      if (kind === 'draft' && state.activeTabId === snapshot.tab.id) feedback(t('storage.draftKept'));
+      if (kind === 'draft' && state.activeTabId === snapshot.tab.id) feedback('storage.draftKept');
       return result.entry;
     } catch (error) {
-      feedback(t('storage.recoveryFailed', { error: error.message }), true);
+      feedback('storage.recoveryFailed', { error: error.message }, true);
       if (Date.now() - lastFailure > 30000) { lastFailure = Date.now(); showToast(t('storage.recoveryFailed', { error: error.message })); }
       return null;
     }
@@ -14656,9 +14758,9 @@ window.addEventListener('readmd:language-changed', () => {
   async function saved(snapshot, tab) {
     // The queued clear follows earlier autosaves. A newer draft is then queued again.
     try { await enqueue({ op: 'clear_draft', key: snapshot.recoveryKey || keyFor(tab), content: snapshot.content, before: snapshot.started }); }
-    catch (e) { feedback(t('storage.recoveryFailed', { error: e.message }), true); }
+    catch (e) { feedback('storage.recoveryFailed', { error: e.message }, true); }
     tab._recoveryContent = undefined;
-    if (tab.isDirty) schedule(); else if (getActiveTab() === tab) feedback(t('storage.saved'));
+    if (tab.isDirty) schedule(); else if (getActiveTab() === tab) feedback('storage.saved');
   }
   async function discard(tab) {
     if (!tab?.isDirty) return true;
@@ -14767,8 +14869,8 @@ window.addEventListener('readmd:language-changed', () => {
     if (!window.__STARTUP_PROBE__) setTimeout(async () => {
       try {
         const data = await request();
-        const count = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
-        if (count) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count });
+        recoveryCount = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
+        if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
       } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
     }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -14802,6 +14904,11 @@ window.addEventListener('readmd:language-changed', () => {
     return true;
   }
   window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall };
+  window.addEventListener('readmd:language-changed', () => {
+    if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
+    if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+    if ($('document-history-modal') && !$('document-history-modal').classList.contains('hidden')) open();
+  });
 })();
 
 ;
@@ -17416,8 +17523,11 @@ function initPetSystem() {
   $('pet-renderer')?.addEventListener('change', (e) => {
     updateCharacterPreview(e.target.value);
   });
-  $('pet-scale')?.addEventListener('input', updatePetRangeLabels);
-  $('pet-opacity')?.addEventListener('input', updatePetRangeLabels);
+  // A range drag is already a local edit before its final change event.
+  // Invalidate an older status response so it cannot reset the thumb mid-drag.
+  const rangeInput = () => { ++petSettingsVersion; updatePetRangeLabels(); };
+  $('pet-scale')?.addEventListener('input', rangeInput);
+  $('pet-opacity')?.addEventListener('input', rangeInput);
   $('pet-scale')?.addEventListener('change', () => { void savePetSettings(); });
   $('pet-opacity')?.addEventListener('change', () => { void savePetSettings(); });
 
@@ -21453,11 +21563,9 @@ function initWindowChrome() {
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
   $('btn-close-to-tray').classList.remove('hidden');
-  $('btn-app-exit').classList.remove('hidden');
   $('window-minimize').onclick = () => command('minimize');
   $('window-maximize').onclick = () => command('maximize');
   $('window-close').onclick = () => command('close');
-  $('btn-app-exit').onclick = () => { closeMoreMenu(); py.request_quit(); };
   $('btn-close-to-tray').onclick = async () => {
     const previous = state.closeToTray; state.closeToTray = previous === false;
     syncWindowPreferences();
@@ -22444,6 +22552,7 @@ function bindEvents() {
     }
     updateStatus();
     updateDocStatistics();
+    updatePvLabel();
     syncBuildVersionLabels();
     ['formula-mode', 'tpl-action', 'img-ratio'].forEach(id => {
       const select = $(id);

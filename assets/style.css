@@ -5822,7 +5822,7 @@ body.zen-mode #toolbar {
 }
 
 body.zen-mode.zen-toolbar-suppressed #toolbar:not(:focus-within) {
-  transform: translateY(-100%) !important;
+  transform: translateY(-100%);
 }
 
 body.zen-mode.zen-entering #toolbar { transition: none; }

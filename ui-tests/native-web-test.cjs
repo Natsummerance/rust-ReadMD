@@ -15,6 +15,12 @@ async function until(fn, ms = 30000) {
   while (Date.now() < end) { const value = await fn(); if (value) return value; await delay(100); }
   throw new Error('Timed out waiting for native WebView fixture');
 }
+
+async function waitForNative(page, predicate, argument, options = {}) {
+  // Poll through Runtime.callFunctionOn; preserve the application's real CSP.
+  return until(() => page.evaluate(predicate, argument), options.timeout || 30000);
+}
+
 function debugPorts(dir, depth = 0) {
   if (depth > 5 || !fs.existsSync(dir)) return [];
   const ports = [];
@@ -76,7 +82,7 @@ if(![ReadMDCaptureFixture]::Close([uint32]$request.pid,[bool]$request.main)){exi
     await new Promise(resolve => fixture.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${fixture.address().port}/fixture`;
     child = spawn(process.env.READMD_BIN || path.join(root, 'target', 'debug', 'readmd.exe'),
-      ['--port', String(appPort), '--data-dir', data, '--assets', path.join(root, 'assets'), '--workspace', data],
+      ['--port', String(appPort), '--data-dir', data, '--assets', process.env.READMD_ASSETS_DIR || path.join(root, 'assets'), '--workspace', data],
       { cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
         WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=0 --remote-debugging-address=127.0.0.1' } });
     let stderr = '';
@@ -88,7 +94,7 @@ if(![ReadMDCaptureFixture]::Close([uint32]$request.pid,[bool]$request.main)){exi
     const readerBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPorts(data)[0]}`);
     browsers.push(readerBrowser);
     const reader = await until(() => readerBrowser.contexts().flatMap(c => c.pages()).find(p => p.url().startsWith(`http://127.0.0.1:${appPort}`)));
-    await reader.waitForFunction(() => !!window.pywebview?.api?.authorize_private_web);
+    await waitForNative(reader, () => !!window.pywebview?.api?.authorize_private_web);
     assert.deepEqual(await reader.evaluate(url => pywebview.api.render_web_page(url, 'denied', 5000, false), url),
       { ok: false, code: 'private_authorization_required' });
     const initialPorts = new Set(debugPorts(data));

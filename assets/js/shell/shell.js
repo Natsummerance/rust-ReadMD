@@ -125,11 +125,9 @@ function initWindowChrome() {
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
   $('btn-close-to-tray').classList.remove('hidden');
-  $('btn-app-exit').classList.remove('hidden');
   $('window-minimize').onclick = () => command('minimize');
   $('window-maximize').onclick = () => command('maximize');
   $('window-close').onclick = () => command('close');
-  $('btn-app-exit').onclick = () => { closeMoreMenu(); py.request_quit(); };
   $('btn-close-to-tray').onclick = async () => {
     const previous = state.closeToTray; state.closeToTray = previous === false;
     syncWindowPreferences();

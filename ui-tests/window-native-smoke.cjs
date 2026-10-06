@@ -4,6 +4,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
 const {spawn}=require('node:child_process');const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(fn,ms=30000){const end=Date.now()+ms;while(Date.now()<end){const value=await fn();if(value)return value;await delay(100);}throw Error('Native fixture timed out');}
+
+async function waitForNative(page, predicate, argument, options = {}) {
+  // Poll through Runtime.callFunctionOn; preserve the application's real CSP.
+  return until(() => page.evaluate(predicate, argument), options.timeout || 30000);
+}
+
 function ps(file,request){return new Promise((resolve,reject)=>{const process=spawn('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{windowsHide:true,stdio:['pipe','pipe','pipe']});let output='',error='';process.stdout.on('data',b=>output+=b);process.stderr.on('data',b=>error+=b);process.on('error',reject);process.on('exit',code=>code?reject(Error(error.slice(-700))):resolve(JSON.parse(output.trim())));process.stdin.end(JSON.stringify(request));});}
 (async()=>{
  const data=fs.mkdtempSync(path.join(os.tmpdir(),'readmd-window-smoke-')),port=28656;let child,browser;
@@ -11,10 +17,10 @@ function ps(file,request){return new Promise((resolve,reject)=>{const process=sp
  try {
   fs.writeFileSync(path.join(data,'settings.json'),JSON.stringify({lang:'en',closeToTray:true}));
   fs.writeFileSync(path.join(data,'update-result.json'),JSON.stringify({ok:false,error_code:'update_replace_failed'}));
-  const {startNative}=await import('../showcase/scripts/native-session.mjs');
+  const {startNative}=require('./native-session.cjs');
   const session=await startNative(root,data,chromium,port);child=session.server.child;browser=session.browser;const page=session.page;
-  await page.waitForFunction(()=>document.body.classList.contains('custom-titlebar')&&window.ReadMDRecovery);
-  await page.waitForFunction(()=>!document.getElementById('btn-close-to-tray').disabled);
+  await waitForNative(page, ()=>document.body.classList.contains('custom-titlebar')&&window.ReadMDRecovery);
+  await waitForNative(page, ()=>!document.getElementById('btn-close-to-tray').disabled);
   assert.equal((await page.evaluate(()=>py.get_app_info())).last_update_error,'update_replace_failed');
   await until(()=>page.locator('#toast').textContent().then(text=>/previous version|原版本/.test(text)));
   assert.equal(fs.existsSync(path.join(data,'update-result.json')),false);
@@ -22,7 +28,7 @@ function ps(file,request){return new Promise((resolve,reject)=>{const process=sp
   assert.ok(initial.clientTop <= 8 * initial.dpi / 96, 'the actual client area contains no native caption');
   // OS maximize and restore, including icon/accessible-name synchronization.
   await page.locator('#window-maximize').click();await until(async()=>(await control('state')).maximized);
-  await page.waitForFunction(()=>document.getElementById('window-maximize').getAttribute('aria-pressed')==='true');
+  await waitForNative(page, ()=>document.getElementById('window-maximize').getAttribute('aria-pressed')==='true');
   await page.locator('#window-maximize').click();await until(async()=>!(await control('state')).maximized);
   await page.locator('#window-minimize').click();await until(async()=>(await control('state')).minimized);
   await control('tray-show');await until(async()=>{const s=await control('state');return s.visible&&!s.minimized;});
@@ -39,12 +45,12 @@ function ps(file,request){return new Promise((resolve,reject)=>{const process=sp
   // Create a control descriptor for this custom-port fixture; never touches a real user's instance.
   fs.writeFileSync(path.join(data,'instance.json'),JSON.stringify({port,token:'fixture-resident-token',pid:child.pid}));
   await control('close');await until(async()=>!(await control('state')).visible);
-  const second=spawn(process.env.READMD_BIN,['--data-dir',data,'--assets',path.join(root,'assets')],{windowsHide:true,stdio:'ignore'});
+  const second=spawn(process.env.READMD_BIN,['--data-dir',data,'--assets',process.env.READMD_ASSETS_DIR || path.join(root,'assets')],{windowsHide:true,stdio:'ignore'});
   await until(()=>second.exitCode!==null);assert.equal(second.exitCode,0);await until(async()=>(await control('state')).visible);
   const file=path.join(data,'Opened-from-shell.md');fs.writeFileSync(file,'# Shell handoff\n');
   await page.evaluate(()=>{syncActiveTabDirty();exitEdit();});
   // Resident activation must not create a second process/window.
-  const fileLaunch=spawn(process.env.READMD_BIN,[file,'--data-dir',data,'--assets',path.join(root,'assets')],{windowsHide:true,stdio:'ignore'});
+  const fileLaunch=spawn(process.env.READMD_BIN,[file,'--data-dir',data,'--assets',process.env.READMD_ASSETS_DIR || path.join(root,'assets')],{windowsHide:true,stdio:'ignore'});
   await until(()=>fileLaunch.exitCode!==null);assert.equal(fileLaunch.exitCode,0);
   await until(()=>page.evaluate(()=>state.tabs.some(t=>t.name==='Opened-from-shell.md')));
   const associations=await page.evaluate(async()=>(await(await apiFetch('/api/system/assoc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:'status'})})).json()));
@@ -58,7 +64,7 @@ function ps(file,request){return new Promise((resolve,reject)=>{const process=sp
   const cleanData=path.join(data,'clean-session');fs.mkdirSync(cleanData);
   fs.writeFileSync(path.join(cleanData,'settings.json'),JSON.stringify({lang:'en',closeToTray:false}));
   const clean=await startNative(root,cleanData,chromium,port);child=clean.server.child;browser=clean.browser;
-  await clean.page.waitForFunction(()=>window.__readmdAppReady && window.ReadMDRecovery);
+  await waitForNative(clean.page, ()=>window.__readmdAppReady && window.ReadMDRecovery);
   await clean.page.evaluate(async file=>{await loadFile(file);await toggleEdit();state.closeToTray=false;syncWindowPreferences();},file);
   assert.equal(await clean.page.evaluate(()=>hasUnsavedEditorChanges()),false);
   await clean.page.locator('#window-close').click();await until(()=>child.exitCode!==null,20000);assert.equal(child.exitCode,0);

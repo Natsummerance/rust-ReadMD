@@ -5,6 +5,8 @@
 //! loopback HTTP contract consumed by the web UI.
 
 pub mod ai;
+#[cfg(test)]
+mod production_audit_tests;
 pub mod batch2;
 pub mod bibtex;
 pub mod code_chunk_runner;
@@ -471,6 +473,24 @@ pub mod paths {
         }
     }
 
+    /// A packaged Windows caller may see a merged AppData directory while an
+    /// opened file resolves into its MSIX LocalCache. Resolve the trusted entry
+    /// file before using its directory as the static-assets containment root.
+    /// An explicit index symlink must not grant access to its target directory.
+    pub fn resolve_assets_directory(directory: &Path) -> PathBuf {
+        let index = directory.join("index.html");
+        if std::fs::symlink_metadata(&index)
+            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+        {
+            if let Ok(resolved) = std::fs::canonicalize(&index) {
+                if let Some(parent) = strip_verbatim(resolved).parent() {
+                    return parent.to_path_buf();
+                }
+            }
+        }
+        canonicalize_or_clean(directory)
+    }
+
     pub fn path_starts_with(path: &Path, prefix: &Path) -> bool {
         if path.starts_with(prefix) {
             return true;
@@ -931,7 +951,8 @@ pub mod modules {
 }
 
 impl App {
-    pub fn bootstrap(paths: paths::AppPaths) -> Result<App> {
+    pub fn bootstrap(mut paths: paths::AppPaths) -> Result<App> {
+        paths.assets_dir = paths::resolve_assets_directory(&paths.assets_dir);
         let store = store::Store::open(&paths.db_path)?;
         let settings = settings::Settings::load(&paths.data_dir.join("settings.json"));
         let app = App {
@@ -944,7 +965,7 @@ impl App {
             modules: Mutex::new(modules::Registry::fresh()),
             paths,
         };
-        let _ = content::reindex_workspace(&app, BOOT_INDEX_LIMIT);
+        let _ = content::index_workspace_at_startup(&app, BOOT_INDEX_LIMIT);
         Ok(app)
     }
 

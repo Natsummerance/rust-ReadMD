@@ -1,7 +1,7 @@
 'use strict';
 /* Recovery drafts and save checkpoints are separate from the original file. */
 (function () {
-  let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false;
+  let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false, lastFeedback, recoveryCount = 0;
   const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
   const keyFor = tab => tab.recoveryKey ||= (tab.path || 'draft:' + tab.id);
   const capture = tab => ({ tab, key: keyFor(tab), path: tab.path || '', name: tab.name || tab.title || 'document.md',
@@ -20,18 +20,19 @@
     queue = work.catch(() => {});
     return work;
   }
-  function feedback(message, failed = false) {
+  function feedback(key, params = {}, failed = false) {
+    lastFeedback = { key, params, failed };
     const el = $('document-recovery-status');
-    if (el) { el.textContent = message; el.classList.toggle('err', failed); }
+    if (el) { el.textContent = t(key, params); el.title = el.textContent; el.classList.toggle('err', failed); }
   }
   async function record(snapshot, kind, reason) {
     try {
       const result = await enqueue({ op: 'record', key: snapshot.key, path: snapshot.path, name: snapshot.name,
         kind, reason, content: snapshot.content, context: snapshot.context });
-      if (kind === 'draft' && state.activeTabId === snapshot.tab.id) feedback(t('storage.draftKept'));
+      if (kind === 'draft' && state.activeTabId === snapshot.tab.id) feedback('storage.draftKept');
       return result.entry;
     } catch (error) {
-      feedback(t('storage.recoveryFailed', { error: error.message }), true);
+      feedback('storage.recoveryFailed', { error: error.message }, true);
       if (Date.now() - lastFailure > 30000) { lastFailure = Date.now(); showToast(t('storage.recoveryFailed', { error: error.message })); }
       return null;
     }
@@ -69,9 +70,9 @@
   async function saved(snapshot, tab) {
     // The queued clear follows earlier autosaves. A newer draft is then queued again.
     try { await enqueue({ op: 'clear_draft', key: snapshot.recoveryKey || keyFor(tab), content: snapshot.content, before: snapshot.started }); }
-    catch (e) { feedback(t('storage.recoveryFailed', { error: e.message }), true); }
+    catch (e) { feedback('storage.recoveryFailed', { error: e.message }, true); }
     tab._recoveryContent = undefined;
-    if (tab.isDirty) schedule(); else if (getActiveTab() === tab) feedback(t('storage.saved'));
+    if (tab.isDirty) schedule(); else if (getActiveTab() === tab) feedback('storage.saved');
   }
   async function discard(tab) {
     if (!tab?.isDirty) return true;
@@ -180,8 +181,8 @@
     if (!window.__STARTUP_PROBE__) setTimeout(async () => {
       try {
         const data = await request();
-        const count = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
-        if (count) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count });
+        recoveryCount = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
+        if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
       } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
     }, 3000);
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
@@ -215,4 +216,9 @@
     return true;
   }
   window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall };
+  window.addEventListener('readmd:language-changed', () => {
+    if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
+    if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
+    if ($('document-history-modal') && !$('document-history-modal').classList.contains('hidden')) open();
+  });
 })();

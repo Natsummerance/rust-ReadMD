@@ -1442,8 +1442,11 @@ function initPetSystem() {
   $('pet-renderer')?.addEventListener('change', (e) => {
     updateCharacterPreview(e.target.value);
   });
-  $('pet-scale')?.addEventListener('input', updatePetRangeLabels);
-  $('pet-opacity')?.addEventListener('input', updatePetRangeLabels);
+  // A range drag is already a local edit before its final change event.
+  // Invalidate an older status response so it cannot reset the thumb mid-drag.
+  const rangeInput = () => { ++petSettingsVersion; updatePetRangeLabels(); };
+  $('pet-scale')?.addEventListener('input', rangeInput);
+  $('pet-opacity')?.addEventListener('input', rangeInput);
   $('pet-scale')?.addEventListener('change', () => { void savePetSettings(); });
   $('pet-opacity')?.addEventListener('change', () => { void savePetSettings(); });
 

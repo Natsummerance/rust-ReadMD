@@ -1082,13 +1082,17 @@ pub fn save(app: &App, canonical: &Path, content: &str) -> Result<Value> {
 
 /// (Re)index an existing file into the derived store.
 pub fn index(app: &App, canonical: &Path) -> Result<i64> {
+    if !is_readable(canonical) { return Ok(0); }
+    index_text(app, canonical, &read_text(canonical).unwrap_or_default())
+}
+
+fn index_text(app: &App, canonical: &Path, text: &str) -> Result<i64> {
     let display = app.paths.display_path(canonical);
     let kind = kind_of(canonical);
     let meta = std::fs::metadata(canonical).ok();
     let size = meta.as_ref().map(|m| m.len() as i64).unwrap_or(0);
     let mtime = modified_millis(canonical);
     if matches!(kind, "markdown" | "code") {
-        let text = read_text(canonical).unwrap_or_default();
         let title = title_of(canonical, &text);
         let id = app.store.upsert_document(
             &display,
@@ -1126,6 +1130,20 @@ pub fn resolve_link_targets(app: &App, source: &Path, targets: &[String]) -> Vec
 
 /// Full workspace rescan used by `/api/links/index`.
 pub fn reindex_workspace(app: &App, limit: usize) -> Result<Value> {
+    reindex_workspace_impl(app, limit, false)
+}
+
+/// Startup warms small documents only. An explicit graph rescan or opening a
+/// document still indexes its full content; large workspaces must not keep the
+/// native window behind a synchronous Markdown/FTS scan.
+pub(crate) fn index_workspace_at_startup(app: &App, limit: usize) -> Result<Value> {
+    reindex_workspace_impl(app, limit, true)
+}
+
+fn reindex_workspace_impl(app: &App, limit: usize, startup: bool) -> Result<Value> {
+    let started = std::time::Instant::now();
+    let mut visited = 0usize;
+    let mut bytes_indexed = 0usize;
     let mut indexed = 0usize;
     let mut skipped = 0usize;
     let mut errors = Vec::new();
@@ -1137,6 +1155,10 @@ pub fn reindex_workspace(app: &App, limit: usize) -> Result<Value> {
             !(name.starts_with('.') || name == "node_modules" || name == "__pycache__" || name == "target" || name == "dist")
         });
     for entry in walker.flatten() {
+        if startup && (visited >= limit || started.elapsed() >= std::time::Duration::from_millis(250)) {
+            break;
+        }
+        visited += 1;
         if !entry.file_type().is_file() {
             continue;
         }
@@ -1152,7 +1174,22 @@ pub fn reindex_workspace(app: &App, limit: usize) -> Result<Value> {
         if indexed >= limit {
             break;
         }
-        match index(app, path) {
+        let result = if startup {
+            use std::io::Read;
+            let size = entry.metadata().map(|metadata| metadata.len()).unwrap_or(u64::MAX);
+            if size > 128 * 1024 || bytes_indexed.saturating_add(size as usize) > 1024 * 1024 {
+                skipped += 1;
+                continue;
+            }
+            // Recheck the actual read size: a file can grow after metadata was
+            // read, so the startup budget cannot rely on metadata alone.
+            let mut bytes = Vec::new();
+            let read = std::fs::File::open(path).and_then(|file| file.take(128 * 1024 + 1).read_to_end(&mut bytes));
+            if bytes.len() > 128 * 1024 { skipped += 1; continue; }
+            bytes_indexed += bytes.len();
+            read.map_err(Error::from).and_then(|_| index_text(app, path, &crate::text_encoding::detect_and_decode(&bytes).0))
+        } else { index(app, path) };
+        match result {
             Ok(_) => indexed += 1,
             Err(e) => {
                 if errors.len() < 20 {

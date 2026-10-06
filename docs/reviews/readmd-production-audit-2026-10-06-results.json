@@ -1,0 +1,1583 @@
+{
+  "date": "2026-10-06",
+  "scope": "Windows installed payload, real system WebView2, isolated copies, bounded workloads",
+  "locallyTestedKernelSha256": "d7b4bd7749511febd00434634b68addeb54ab57297ae6a1880d021a3f1207b2d",
+  "frontendBundleSha256": "8851af07dfd406b7054a41fc3592695da7d4149b31580c00ae7d0f13f82154d3",
+  "tests": {
+    "kernel": {
+      "passed": 1862,
+      "failed": 0,
+      "ignored": 3
+    },
+    "xtask": {
+      "passed": 12,
+      "failed": 0
+    },
+    "explicitConditionalKernel": {
+      "petPackage": "passed with READMD_PET_ZIP",
+      "publicHttpsEgress": "passed",
+      "pdfEditorEmissionFixture": "not run"
+    },
+    "node": {
+      "passed": 45,
+      "failed": 0
+    },
+    "fullDesktopUi": {
+      "passed": 306,
+      "failed": 0,
+      "skipped": 1,
+      "flaky": 0
+    },
+    "supplementary": {
+      "newKernelGraphSaveLanguage": 25,
+      "mobileUniqueChecks": 9,
+      "foreignLocaleAllDialogs": 8
+    },
+    "nativeWindow": "passed",
+    "nativeWeb": "passed",
+    "physicalPetWindows": [
+      "mochi/hermes-sprite",
+      "live2d-haru/live2d",
+      "bongocat/hermes-sprite"
+    ]
+  },
+  "native": {
+    "scenarioCount": 21,
+    "pageErrors": 0,
+    "failedAssets": 0,
+    "originalsUnchanged": true,
+    "scenarios": [
+      {
+        "name": "native-installed-bootstrap-and-bridge",
+        "passed": true,
+        "elapsedMs": 447,
+        "ready": true
+      },
+      {
+        "name": "real-large-markdown-native-reading",
+        "passed": true,
+        "elapsedMs": 1290,
+        "inputBytes": 1836325,
+        "renderedDomNodes": 2033
+      },
+      {
+        "name": "real-document-native-save-undo-copy-and-recovery",
+        "passed": true,
+        "elapsedMs": 858,
+        "savedAndReadBack": true,
+        "undoPreserved": true,
+        "sourceRestored": true
+      },
+      {
+        "name": "saved-antigravity-discovery-and-real-small-chat",
+        "passed": true,
+        "elapsedMs": 9143,
+        "modelCount": 23,
+        "actualReplyReceived": true,
+        "privateDocumentSent": false
+      },
+      {
+        "name": "convert-real-01-real-epub",
+        "passed": true,
+        "elapsedMs": 4462,
+        "inputBytes": 18308627,
+        "outputCharacters": 5116845
+      },
+      {
+        "name": "convert-real-02-real-epub",
+        "passed": true,
+        "elapsedMs": 497,
+        "inputBytes": 5811063,
+        "outputCharacters": 398360
+      },
+      {
+        "name": "convert-real-11-real-docx",
+        "passed": true,
+        "elapsedMs": 50,
+        "inputBytes": 260303,
+        "outputCharacters": 12201
+      },
+      {
+        "name": "convert-real-12-real-pptx",
+        "passed": true,
+        "elapsedMs": 22,
+        "inputBytes": 2099,
+        "outputCharacters": 10
+      },
+      {
+        "name": "convert-real-13-real-xlsx",
+        "passed": true,
+        "elapsedMs": 13,
+        "inputBytes": 2798,
+        "invalidContainerRefused": true
+      },
+      {
+        "name": "convert-generated-valid-xlsx-fixture-xlsx",
+        "passed": true,
+        "elapsedMs": 15,
+        "inputBytes": 1431,
+        "outputCharacters": 91
+      },
+      {
+        "name": "convert-generated-wide-grid-fixture-xlsx",
+        "passed": true,
+        "elapsedMs": 15,
+        "inputBytes": 1817,
+        "invalidContainerRefused": true
+      },
+      {
+        "name": "real-large-converted-epub-native-paginated-reading",
+        "passed": true,
+        "elapsedMs": 2358,
+        "markdownBytes": 14006259,
+        "openMs": 2358,
+        "renderedDomNodes": 2435
+      },
+      {
+        "name": "real-image-offline-ocr-and-empty-result-contract",
+        "passed": true,
+        "elapsedMs": 281,
+        "inputBytes": 2608732,
+        "outputCharacters": 123,
+        "noTextRecognized": false
+      },
+      {
+        "name": "real-wav-offline-transcription",
+        "passed": true,
+        "elapsedMs": 5108,
+        "inputBytes": 1536044,
+        "boundedSeconds": null,
+        "recognizedCharacters": 221
+      },
+      {
+        "name": "real-mp3-offline-transcription",
+        "passed": true,
+        "elapsedMs": 5722,
+        "inputBytes": 12223824,
+        "boundedSeconds": 20,
+        "recognizedCharacters": 487
+      },
+      {
+        "name": "real-zip-extraction-and-contained-output",
+        "passed": true,
+        "elapsedMs": 20,
+        "extractedFiles": 2,
+        "contained": true
+      },
+      {
+        "name": "all-six-real-export-formats-and-reimport",
+        "passed": true,
+        "elapsedMs": 2699,
+        "outputs": [
+          {
+            "format": "pdf",
+            "bytes": 1323
+          },
+          {
+            "format": "docx",
+            "bytes": 5903
+          },
+          {
+            "format": "epub",
+            "bytes": 3366
+          },
+          {
+            "format": "html",
+            "bytes": 2153176
+          },
+          {
+            "format": "tex",
+            "bytes": 1523
+          },
+          {
+            "format": "presentation",
+            "bytes": 2927638
+          }
+        ]
+      },
+      {
+        "name": "all-fourteen-plugin-install-disable-reenable-uninstall",
+        "passed": true,
+        "elapsedMs": 4302,
+        "pluginCount": 14
+      },
+      {
+        "name": "real-scanned-pdf-cancellation-and-no-output-commit",
+        "passed": true,
+        "elapsedMs": 2780,
+        "inputBytes": 26626424,
+        "cancellationMs": 1261,
+        "outputCommitted": false
+      },
+      {
+        "name": "desktop-runtime-install-start-interact-and-shutdown",
+        "passed": true,
+        "elapsedMs": 3431,
+        "nativeRuntimeReady": true
+      },
+      {
+        "name": "native-default-association-status-and-live-update-metadata",
+        "passed": true,
+        "elapsedMs": 8389,
+        "associationStatusRead": true,
+        "updateMetadataFetched": true
+      }
+    ]
+  },
+  "finalNativeUi": {
+    "passed": true,
+    "realNativeCsp": true,
+    "modelCount": 23,
+    "languagesSwitched": 7,
+    "editorHeight": 56,
+    "startupMs": 1479,
+    "documentPreserved": true,
+    "pageErrors": 0
+  },
+  "stress": {
+    "binarySha256": "d7b4bd7749511febd00434634b68addeb54ab57297ae6a1880d021a3f1207b2d",
+    "scenarios": [
+      {
+        "name": "read-cycle-1",
+        "count": 400,
+        "concurrency": 8,
+        "p50Ms": 14,
+        "p95Ms": 19,
+        "maxMs": 32
+      },
+      {
+        "name": "read-cycle-2",
+        "count": 400,
+        "concurrency": 8,
+        "p50Ms": 13,
+        "p95Ms": 15,
+        "maxMs": 17
+      },
+      {
+        "name": "read-cycle-3",
+        "count": 400,
+        "concurrency": 8,
+        "p50Ms": 13,
+        "p95Ms": 15,
+        "maxMs": 17
+      },
+      {
+        "name": "64-concurrent-authorized-saves-and-disk-readback",
+        "count": 64,
+        "concurrency": 8,
+        "p50Ms": 354,
+        "p95Ms": 459,
+        "maxMs": 476
+      },
+      {
+        "name": "same-document-save-conflict",
+        "writers": 8,
+        "committed": 1,
+        "conflicts": 7
+      },
+      {
+        "name": "200-file-eight-format-batch",
+        "uniqueInputs": 200,
+        "duplicateInputs": 10,
+        "completed": 200,
+        "elapsedMs": 1293
+      },
+      {
+        "name": "damaged-document-is-not-false-success",
+        "status": 422
+      }
+    ],
+    "before": {
+      "rssBytes": 10215424,
+      "peakBytes": 10600448,
+      "cpuSeconds": 0
+    },
+    "after": {
+      "rssBytes": 16257024,
+      "peakBytes": 17117184,
+      "cpuSeconds": 0.078125
+    },
+    "passed": true
+  },
+  "fullScannedPdf": {
+    "scenario": "full-real-272-page-philosophy-pdf",
+    "input_bytes": 28869470,
+    "finished": true,
+    "item_status": "ok",
+    "elapsed_s": 597.17,
+    "api_poll_p95_ms": 31,
+    "original_sha256_unchanged": true,
+    "output_chars": 197493,
+    "output_bytes": 551872,
+    "ocr_placeholder_only": false,
+    "passed": true
+  },
+  "staticAssetRoots": [
+    {
+      "mode": "virtualized-install-assets",
+      "resourceStatuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "passed": true
+    },
+    {
+      "mode": "default-installed-assets",
+      "resourceStatuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "passed": true
+    }
+  ],
+  "localization": {
+    "locales": 46,
+    "keysPerLocale": 2034,
+    "foreignLocalesUpdated": 42,
+    "changedTranslations": 19979,
+    "publicTranslationEntriesProcessed": 22312,
+    "machineAssisted": true,
+    "nativeSpeakerReviewComplete": false
+  },
+  "desktopCaseResults": [
+    {
+      "title": "discover models with saved opaque credentials, persist selection and reuse it after reload",
+      "status": "passed"
+    },
+    {
+      "title": "authentication failure is visible, does not report success and never echoes provider secrets",
+      "status": "passed"
+    },
+    {
+      "title": "compact checkboxes work by label and keyboard across themes without composer overflow",
+      "status": "passed"
+    },
+    {
+      "title": "bundled desktop extension installs in user data and launches the real Rust overlay",
+      "status": "passed"
+    },
+    {
+      "title": "failed desktop installation preserves the real disabled state and does not silently switch runtimes",
+      "status": "passed"
+    },
+    {
+      "title": "AI history renders untrusted markdown through the shared sanitizer",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1160x820 in zh-CN",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1160x820 in en",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1160x820 in zh-TW",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1024x680 in zh-CN",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1024x680 in en",
+      "status": "passed"
+    },
+    {
+      "title": "F097 all 29 dialogs remain reachable at 1024x680 in zh-TW",
+      "status": "passed"
+    },
+    {
+      "title": "saving preserves undo and a central version without sibling backups",
+      "status": "passed"
+    },
+    {
+      "title": "a late save acknowledges only submitted text and retains newer input",
+      "status": "passed"
+    },
+    {
+      "title": "a save response cannot change a different active document",
+      "status": "passed"
+    },
+    {
+      "title": "Save As and editing copy use the current draft without silently creating files",
+      "status": "passed"
+    },
+    {
+      "title": "AI copy saving always uses a chooser even if its origin has a directory",
+      "status": "passed"
+    },
+    {
+      "title": "recovery draft survives reload and opens safely without rewriting its source",
+      "status": "passed"
+    },
+    {
+      "title": "restoring a saved version is one undoable edit and does not write until Save",
+      "status": "passed"
+    },
+    {
+      "title": "closing with discard retains a recoverable draft and native-close cancellation preserves the editor",
+      "status": "passed"
+    },
+    {
+      "title": "undo history survives switching away and reopening an edited tab",
+      "status": "passed"
+    },
+    {
+      "title": "single conversion preview writes nothing, explicit overwrite keeps the earlier Markdown",
+      "status": "passed"
+    },
+    {
+      "title": "recovery panel stays reachable in both target windows",
+      "status": "passed"
+    },
+    {
+      "title": "Save As retargets to acknowledged asset paths and keeps the operation undoable",
+      "status": "passed"
+    },
+    {
+      "title": "a delayed history restore cannot replace input added during its checkpoint",
+      "status": "passed"
+    },
+    {
+      "title": "Ctrl Shift S invokes Save As and sends the actual current draft",
+      "status": "passed"
+    },
+    {
+      "title": "failed recovery blocks discard and preserves the open editor",
+      "status": "passed"
+    },
+    {
+      "title": "external change refuses overwrite and confirmed reload retains the discarded draft centrally",
+      "status": "passed"
+    },
+    {
+      "title": "editing copies and recovered virtual documents retain resource references and their base directory",
+      "status": "passed"
+    },
+    {
+      "title": "saving an AI reply uses a recoverable copy and blocks every other open file as its destination",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1160×820 in zh-CN",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1024×680 in en",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1024×680 in de",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1024×680 in fr",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1024×680 in ja",
+      "status": "passed"
+    },
+    {
+      "title": "editor commands and footer remain usable at 1024×680 in ar",
+      "status": "passed"
+    },
+    {
+      "title": "one row adapts to window size and keeps original overflow commands usable",
+      "status": "passed"
+    },
+    {
+      "title": "slash menu is a filterable listbox that inserts a table with a size picker",
+      "status": "passed"
+    },
+    {
+      "title": "slash menu inserts a callout, a code block with a language, and closes on Escape",
+      "status": "passed"
+    },
+    {
+      "title": "lists continue on Enter, exit on an empty item and indent with Tab",
+      "status": "passed"
+    },
+    {
+      "title": "brackets, quotes, backticks and emphasis marks auto-pair",
+      "status": "passed"
+    },
+    {
+      "title": "Tab moves between table cells and realigns the pipes",
+      "status": "passed"
+    },
+    {
+      "title": "shortcuts match the toolbar and each action is a single undo step",
+      "status": "passed"
+    },
+    {
+      "title": "pasting a URL over a selection creates a link",
+      "status": "passed"
+    },
+    {
+      "title": "selection toolbar appears, formats, and fires readmd:ai-inline",
+      "status": "passed"
+    },
+    {
+      "title": "footer shows live word, character and reading-time stats",
+      "status": "passed"
+    },
+    {
+      "title": "view menu toggles focus mode, typewriter scrolling and line numbers",
+      "status": "passed"
+    },
+    {
+      "title": "split preview updates quickly and scroll stays in sync both ways",
+      "status": "passed"
+    },
+    {
+      "title": "F006 returning home protects a dirty editor on cancel and discards only after confirmation",
+      "status": "passed"
+    },
+    {
+      "title": "F006 save before home writes the actual file before leaving the editor",
+      "status": "passed"
+    },
+    {
+      "title": "F082 AI repair preserves newer edits and creates a dirty copy instead of overwriting another document",
+      "status": "passed"
+    },
+    {
+      "title": "F082 repair in reading mode keeps the source intact and in an unchanged editor remains undoable",
+      "status": "passed"
+    },
+    {
+      "title": "F045 closed inline AI ignores a late result and a changed tab cannot receive its old selection",
+      "status": "passed"
+    },
+    {
+      "title": "F036 metadata reads existing values, escapes quotes and keeps unknown/nested fields",
+      "status": "passed"
+    },
+    {
+      "title": "F036 flow presentation metadata preserves nested options and an ordinary rule is not a YAML header",
+      "status": "passed"
+    },
+    {
+      "title": "F033–F035 insertion panels reject empty/invalid input and preserve embedded fences and drafts",
+      "status": "passed"
+    },
+    {
+      "title": "F013 a failed folder read preserves the tree and an older response cannot replace a newer folder",
+      "status": "passed"
+    },
+    {
+      "title": "F077 share failure is visible, retry works and duplicate actions send one request",
+      "status": "passed"
+    },
+    {
+      "title": "F077 the real Rust LAN service starts, rejects anonymous requests, serves its URL and stops",
+      "status": "passed"
+    },
+    {
+      "title": "F083 style loading locks inputs, retries failures and a save never closes over newer edits",
+      "status": "passed"
+    },
+    {
+      "title": "F016 corrupted settings cannot overwrite document state or inject invalid layout values",
+      "status": "passed"
+    },
+    {
+      "title": "F005 native chooser and recent-clear failures show feedback without unhandled rejections",
+      "status": "passed"
+    },
+    {
+      "title": "F021 an empty original stays empty and restoring an empty draft clears dirty without saving it",
+      "status": "passed"
+    },
+    {
+      "title": "F085 update polling catches failures, never overlaps and reports a failed cancellation",
+      "status": "passed"
+    },
+    {
+      "title": "F085 a verified update with a failed installer can retry installation without downloading again",
+      "status": "passed"
+    },
+    {
+      "title": "F021 changing documents during editor loading cannot mount the old editor over the new document",
+      "status": "passed"
+    },
+    {
+      "title": "F077 unsaved documents share their actual content through an isolated snapshot and can restart",
+      "status": "passed"
+    },
+    {
+      "title": "F082 textarea fallback repairs the current draft into a safe copy and retains its source",
+      "status": "passed"
+    },
+    {
+      "title": "interactive state classes resolve to stylesheet rules",
+      "status": "passed"
+    },
+    {
+      "title": "presentation renders Reveal under the application CSP",
+      "status": "passed"
+    },
+    {
+      "title": "zen mode enters without moving the reader or showing a toast",
+      "status": "passed"
+    },
+    {
+      "title": "tab selection is immediate and continuous scroll survives switches",
+      "status": "passed"
+    },
+    {
+      "title": "code header editing opens the editor and preserves the code",
+      "status": "passed"
+    },
+    {
+      "title": "a running batch survives closing and rejects another enqueue",
+      "status": "passed"
+    },
+    {
+      "title": "a real native extension installs, executes, persists toggles and uninstalls",
+      "status": "passed"
+    },
+    {
+      "title": "PDF preview shows a real page and export reuses precisely those bytes",
+      "status": "passed"
+    },
+    {
+      "title": "an emptied editor exports its empty content instead of the original",
+      "status": "passed"
+    },
+    {
+      "title": "selecting an archive extracts and converts the real child documents",
+      "status": "passed"
+    },
+    {
+      "title": "rich clipboard creation keeps headings and emphasis without Turndown",
+      "status": "passed"
+    },
+    {
+      "title": "WSD, D2 and ASCII diagram fences render real offline SVG",
+      "status": "passed"
+    },
+    {
+      "title": "search Enter cycles matches without leaving the field",
+      "status": "passed"
+    },
+    {
+      "title": "welcome Ctrl+P respects the document guard",
+      "status": "passed"
+    },
+    {
+      "title": "reading mode supports F11 Zen and Escape exit",
+      "status": "passed"
+    },
+    {
+      "title": "continuous confirmation escapes back to paged reading",
+      "status": "passed"
+    },
+    {
+      "title": "all shipped languages refresh editor state without losing the current document",
+      "status": "passed"
+    },
+    {
+      "title": "pagination bar adapts when main column is squeezed",
+      "status": "passed"
+    },
+    {
+      "title": "connection testing keeps feedback visible, uses saved credentials and resets key visibility",
+      "status": "passed"
+    },
+    {
+      "title": "connection failures, including HTTP 200 failures, report an inline error",
+      "status": "passed"
+    },
+    {
+      "title": "failed settings saves and invalid headers stop connection testing",
+      "status": "passed"
+    },
+    {
+      "title": "failed preset loading can be retried without caching an empty configuration",
+      "status": "passed"
+    },
+    {
+      "title": "preset selection and edits survive closing and changing formats",
+      "status": "passed"
+    },
+    {
+      "title": "custom presets save through the HTTP host and remain selected after reload",
+      "status": "passed"
+    },
+    {
+      "title": "failed custom preset saves keep the input and show a failure",
+      "status": "passed"
+    },
+    {
+      "title": "paper size, zero margins and disabled page decoration reach the preview",
+      "status": "passed"
+    },
+    {
+      "title": "HTML, PDF and DOCX export the selected preset and the previewed document",
+      "status": "passed"
+    },
+    {
+      "title": "plugin loading, empty categories and failed loads offer visible feedback and retry",
+      "status": "passed"
+    },
+    {
+      "title": "plugin toggles save once, survive reload and restore their state on failure",
+      "status": "passed"
+    },
+    {
+      "title": "plugin switch persistence reaches the native manifest",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1160x820 in en",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1024x680 in en",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1160x820 in zh-CN",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1024x680 in zh-CN",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1160x820 in zh-TW",
+      "status": "passed"
+    },
+    {
+      "title": "panels have no covered text and 44px controls at 1024x680 in zh-TW",
+      "status": "passed"
+    },
+    {
+      "title": "edit is disabled on the welcome screen until a document is open",
+      "status": "passed"
+    },
+    {
+      "title": "an empty document can be edited",
+      "status": "passed"
+    },
+    {
+      "title": "export preset gallery applies a preset and marks it pressed",
+      "status": "passed"
+    },
+    {
+      "title": "AI config answers annotated providers without secrets",
+      "status": "passed"
+    },
+    {
+      "title": "editor opens with live preview and scroll sync on, and remembers the caret",
+      "status": "passed"
+    },
+    {
+      "title": "AI provider browser renders a bounded card list",
+      "status": "passed"
+    },
+    {
+      "title": "welcome offers New document, and Ctrl+N opens a blank editor",
+      "status": "passed"
+    },
+    {
+      "title": "AI empty state shows six starters and a connect card when no key is set",
+      "status": "passed"
+    },
+    {
+      "title": "clicking the dim backdrop closes a modal, but not a static one",
+      "status": "passed"
+    },
+    {
+      "title": "AI conversation renders a typing state, rich answer, code copy and regenerate",
+      "status": "passed"
+    },
+    {
+      "title": "BongoCat modifier chords, independent mouse buttons and releases",
+      "status": "passed"
+    },
+    {
+      "title": "BongoCat retains 100 fast taps and rejects stale or duplicate local key events",
+      "status": "passed"
+    },
+    {
+      "title": "native drag crosses its threshold once, never writes JS bounds or pets on release",
+      "status": "passed"
+    },
+    {
+      "title": "cancelled pointer capture clears the drag without a pet reaction",
+      "status": "passed"
+    },
+    {
+      "title": "renderer ready waits for actual sprite art and hit regions when assets are delayed",
+      "status": "passed"
+    },
+    {
+      "title": "rest uses the cats original closed-eye frame and deliberate petting wakes its own wave",
+      "status": "passed"
+    },
+    {
+      "title": "native hit regions account for WebView zoom and track a resized window",
+      "status": "passed"
+    },
+    {
+      "title": "mochi preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "hermes preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "amber preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "moss preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "cache-capy preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "niu-lai preserves complete original art, reacts with authored frames and has no keyboard",
+      "status": "passed"
+    },
+    {
+      "title": "BongoCat original Cubism keyboard, mouse and pressed-key artwork still respond",
+      "status": "passed"
+    },
+    {
+      "title": "hermes-sprite Live2D keeps its whole portrait, gaze, blush and original gesture",
+      "status": "passed"
+    },
+    {
+      "title": "live2d Live2D keeps its whole portrait, gaze, blush and original gesture",
+      "status": "passed"
+    },
+    {
+      "title": "task state selects authored thought/failure poses and completion settles after one response",
+      "status": "passed"
+    },
+    {
+      "title": "water capybara and cow use original look frames without reacting to keys",
+      "status": "passed"
+    },
+    {
+      "title": "imported sheets retain their own named rows, frame counts and complete art",
+      "status": "passed"
+    },
+    {
+      "title": "host-delivered sprite is decoded once and switching characters does not reuse another sheet metadata",
+      "status": "passed"
+    },
+    {
+      "title": "quiet Live2D paints its full WebGL portrait and responds once without restarting idle animation",
+      "status": "passed"
+    },
+    {
+      "title": "awake and resting pets leave the surrounding desktop fully transparent",
+      "status": "passed"
+    },
+    {
+      "title": "opaque pixel runs leave most of the pet window free and include current authored paws",
+      "status": "passed"
+    },
+    {
+      "title": "smallest, default and largest sprite sizes are distinct and all compact",
+      "status": "passed"
+    },
+    {
+      "title": "click opens localized dialogue and accessible actions that issue real companion commands",
+      "status": "passed"
+    },
+    {
+      "title": "right-click menu buttons receive native hit regions and character switches persist through the bridge",
+      "status": "passed"
+    },
+    {
+      "title": "locked position suppresses browser drag but keeps click dialogue",
+      "status": "passed"
+    },
+    {
+      "title": "arch-chan exposes real opaque model pixels at a compact size",
+      "status": "passed"
+    },
+    {
+      "title": "bongocat exposes real opaque model pixels at a compact size",
+      "status": "passed"
+    },
+    {
+      "title": "real pet API persists controls and gallery selection",
+      "status": "passed"
+    },
+    {
+      "title": "unreachable pet API reports failure",
+      "status": "passed"
+    },
+    {
+      "title": "Live2D enable installs its runtime without opening a file picker",
+      "status": "passed"
+    },
+    {
+      "title": "window options, tiny size and quiet mode persist through the real Rust API and reload",
+      "status": "passed"
+    },
+    {
+      "title": "a delayed settings response cannot reset a slider before its change event",
+      "status": "passed"
+    },
+    {
+      "title": "pet settings and original companion preview fit 1160×820",
+      "status": "passed"
+    },
+    {
+      "title": "pet settings and original companion preview fit 1024×680",
+      "status": "passed"
+    },
+    {
+      "title": "character search and cards persist sprite and Live2D choices with top filter and favorites",
+      "status": "passed"
+    },
+    {
+      "title": "failed character configuration restores the saved selection",
+      "status": "passed"
+    },
+    {
+      "title": "quiet mode keeps deliberate greetings and keyboard interaction available",
+      "status": "passed"
+    },
+    {
+      "title": "desktop status does not report a stopped process as running",
+      "status": "passed"
+    },
+    {
+      "title": "Plugin Center entry point and modal cards render correctly",
+      "status": "passed"
+    },
+    {
+      "title": "Plugin install and uninstall invoke in-app confirmation modal",
+      "status": "passed"
+    },
+    {
+      "title": "GitHub alerts and Obsidian callouts render with icons and fold",
+      "status": "passed"
+    },
+    {
+      "title": "code blocks get a language header, syntax colour and a working copy button",
+      "status": "passed"
+    },
+    {
+      "title": "outline scroll-spy follows the reading position",
+      "status": "passed"
+    },
+    {
+      "title": "wide tables scroll inside their wrapper at 360 px",
+      "status": "passed"
+    },
+    {
+      "title": "reading width, typeface and spacing persist across reloads",
+      "status": "passed"
+    },
+    {
+      "title": "footnotes, task lists, definition lists and figures upgrade safely",
+      "status": "passed"
+    },
+    {
+      "title": "search skips reader chrome and keeps the count contract",
+      "status": "passed"
+    },
+    {
+      "title": "long-document interaction stays bounded from 1k through 50k lines",
+      "status": "passed"
+    },
+    {
+      "title": "installer keeps location-page actions inside compact viewports",
+      "status": "passed"
+    },
+    {
+      "title": "single row commands, formula picker and responsive preview",
+      "status": "passed"
+    },
+    {
+      "title": "image editor exposes professional lightweight controls",
+      "status": "passed"
+    },
+    {
+      "title": "export scroll, history and AI narrow layout remain usable",
+      "status": "passed"
+    },
+    {
+      "title": "select controls expose their localized selected action",
+      "status": "passed"
+    },
+    {
+      "title": "dragging alternatives and control targets satisfy accessibility contracts",
+      "status": "passed"
+    },
+    {
+      "title": "continuous mode uses a managed confirmation dialog",
+      "status": "passed"
+    },
+    {
+      "title": "AI keeps configured keys usable, autosaves, and supports incognito history",
+      "status": "passed"
+    },
+    {
+      "title": "module entry actively starts an idle module once before polling",
+      "status": "passed"
+    },
+    {
+      "title": "welcome keeps toolbar disabled and six modules; clipboard lives in more menu",
+      "status": "passed"
+    },
+    {
+      "title": "opened file re-enables export/font tools and shows home button",
+      "status": "passed"
+    },
+    {
+      "title": "toolbar filename supports accessible inline rename",
+      "status": "passed"
+    },
+    {
+      "title": "web to Markdown renders dynamic pages with progress and actionable errors",
+      "status": "passed"
+    },
+    {
+      "title": "offline Defuddle bundle extracts Markdown from a rendered DOM",
+      "status": "passed"
+    },
+    {
+      "title": "cancelling a batch keeps pages already extracted",
+      "status": "passed"
+    },
+    {
+      "title": "tab reordering reorders tabs and is isolated from global drag overlay",
+      "status": "passed"
+    },
+    {
+      "title": "smart in-document TOC auto-matches headings and resolves anchor jumps",
+      "status": "passed"
+    },
+    {
+      "title": "editor undo, redo buttons and floating selection toolbar are functional",
+      "status": "passed"
+    },
+    {
+      "title": "tab inline rename fixes extension and expands space by folding sibling tabs",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.0 i18n language modal and switching",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.1 export modal renders all settings, style presets and live preview",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.0 Zen Mode and Table Designer",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.2 dirty tab close confirmation modal UI, styling, and actions",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.7 top bar zen mode toggle & keyboard escape shortcut",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.7 more menu accordion groups and document-dependent disabled state",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.7 custom styles and html head injection modal",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.7 btn-home visibility state with tabs and welcome mode",
+      "status": "passed"
+    },
+    {
+      "title": "v2.3.7 presentation mode floating toolbar, themes, font zoom & escape",
+      "status": "passed"
+    },
+    {
+      "title": "in-app updates refuse binaries without a verified checksum",
+      "status": "passed"
+    },
+    {
+      "title": "update failures reset controls and downloads block accidental closure",
+      "status": "passed"
+    },
+    {
+      "title": "canceling a dirty editor asks before discarding changes",
+      "status": "passed"
+    },
+    {
+      "title": "switching tabs cannot discard a dirty editor",
+      "status": "passed"
+    },
+    {
+      "title": "saving a dirty background tab writes that tab, not the active editor",
+      "status": "passed"
+    },
+    {
+      "title": "saving a dirty background tab does not mark a clean active tab dirty",
+      "status": "passed"
+    },
+    {
+      "title": "keyboard delete closes a tab and restores visible tab focus",
+      "status": "passed"
+    },
+    {
+      "title": "auto reload does not overwrite an active editor",
+      "status": "passed"
+    },
+    {
+      "title": "forced reload updates a clean tab while preserving its page",
+      "status": "passed"
+    },
+    {
+      "title": "forced reload refuses to overwrite an unsaved draft",
+      "status": "passed"
+    },
+    {
+      "title": "global TOC identities resolve duplicate headings across pages",
+      "status": "passed"
+    },
+    {
+      "title": "folder tree exposes semantic keyboard navigation and selection",
+      "status": "passed"
+    },
+    {
+      "title": "url dialog participates in managed modal focus containment",
+      "status": "passed"
+    },
+    {
+      "title": "saving refreshes the existing tab with new content",
+      "status": "passed"
+    },
+    {
+      "title": "browser mode opens, edits, and saves a local document end to end",
+      "status": "passed"
+    },
+    {
+      "title": "browser-copy provenance survives reload and clears on native save-as",
+      "status": "passed"
+    },
+    {
+      "title": "upload failures surface the server recovery detail",
+      "status": "passed"
+    },
+    {
+      "title": "save conflicts offer save-as, reload, and cancel recovery",
+      "status": "passed"
+    },
+    {
+      "title": "tab switches preserve paged reading positions",
+      "status": "passed"
+    },
+    {
+      "title": "search highlights a term spanning adjacent inline elements",
+      "status": "passed"
+    },
+    {
+      "title": "enter immediately jumps even when the search debounce has not fired",
+      "status": "passed"
+    },
+    {
+      "title": "home resets pagination state and failed opens clear progress",
+      "status": "passed"
+    },
+    {
+      "title": "rendered Markdown cannot inject active content or privileged URLs",
+      "status": "passed"
+    },
+    {
+      "title": "core workflow controls satisfy accessibility contracts",
+      "status": "passed"
+    },
+    {
+      "title": "tabs, status regions, and stacked dialogs meet keyboard contracts",
+      "status": "passed"
+    },
+    {
+      "title": "rename and BibTeX metadata cannot inject markup",
+      "status": "passed"
+    },
+    {
+      "title": "unsupported actions and destructive choices give managed feedback",
+      "status": "passed"
+    },
+    {
+      "title": "renders deleted files with strikethrough, enables single-item removal",
+      "status": "passed"
+    },
+    {
+      "title": "QR code stays out of startup and loads once on demand",
+      "status": "passed"
+    },
+    {
+      "title": "presentation renders offline with initialized Reveal assets",
+      "status": "passed"
+    },
+    {
+      "title": "F11 enters immersive Zen once without layout jitter",
+      "status": "passed"
+    },
+    {
+      "title": "clicked Zen remains immersive until the pointer moves away",
+      "status": "passed"
+    },
+    {
+      "title": "rapid tab switching stays aligned and reveals the active tab",
+      "status": "passed"
+    },
+    {
+      "title": "superseded incremental renders stop without stale content",
+      "status": "passed"
+    },
+    {
+      "title": "a completed stale tab switch cannot restore the abandoned document",
+      "status": "passed"
+    },
+    {
+      "title": "going home cancels a still-loading document",
+      "status": "passed"
+    },
+    {
+      "title": "rendered code chunks preserve only sanctioned interactive buttons",
+      "status": "passed"
+    },
+    {
+      "title": "MPE-style fenced attributes select the command and presentation options",
+      "status": "passed"
+    },
+    {
+      "title": "cmd=false stays a normal fenced block and never enables execution",
+      "status": "passed"
+    },
+    {
+      "title": "Ctrl+K opens the palette as a managed modal layer with a listbox",
+      "status": "passed"
+    },
+    {
+      "title": "palette fuzzy search ranks the best match first and shows shortcut hints",
+      "status": "passed"
+    },
+    {
+      "title": "palette executes the existing feature and ranks it first next time",
+      "status": "passed"
+    },
+    {
+      "title": "toolbar palette button and welcome search open the palette",
+      "status": "passed"
+    },
+    {
+      "title": "shortcut cheat-sheet opens with ? and Ctrl+/, is generated from the registry and filters",
+      "status": "passed"
+    },
+    {
+      "title": "? typed into a text field does not open the cheat-sheet",
+      "status": "passed"
+    },
+    {
+      "title": "active tab indicator follows the selected tab",
+      "status": "passed"
+    },
+    {
+      "title": "welcome screen offers primary actions, drop hint and no overflow at 360px",
+      "status": "passed"
+    },
+    {
+      "title": "theme cycling keeps working through the cross-fade wrapper",
+      "status": "passed"
+    },
+    {
+      "title": "first reading render hides only closed YAML metadata and retains exact source",
+      "status": "passed"
+    },
+    {
+      "title": "inline AI cannot apply a pending result and applying one result is one undo",
+      "status": "passed"
+    },
+    {
+      "title": "native rename bridge gets a stem and disk extension is retained exactly once",
+      "status": "passed"
+    },
+    {
+      "title": "backlinks drawer indexes a fresh folder before querying outgoing links",
+      "status": "passed"
+    },
+    {
+      "title": "printing an open export panel prints only the current reading surface",
+      "status": "passed"
+    },
+    {
+      "title": "opening export after deleting all editor text never falls back to the saved original",
+      "status": "passed"
+    },
+    {
+      "title": "Windows code files keep line endings and cancel unchanged editing without a save prompt",
+      "status": "passed"
+    },
+    {
+      "title": "persisted code output uses editor offsets while retaining Windows file line endings",
+      "status": "passed"
+    },
+    {
+      "title": "welcome startup stays lightweight and interactive below one second",
+      "status": "passed"
+    },
+    {
+      "title": "mobile reader controls meet touch target budgets",
+      "status": "skipped"
+    },
+    {
+      "title": "measure tpl-box width and layout",
+      "status": "passed"
+    },
+    {
+      "title": "export-modal: focus stays inside, Esc closes and focus returns",
+      "status": "passed"
+    },
+    {
+      "title": "convert-modal: focus stays inside, Esc closes and focus returns",
+      "status": "passed"
+    },
+    {
+      "title": "plugin-modal: focus stays inside, Esc closes and focus returns",
+      "status": "passed"
+    },
+    {
+      "title": "tpl-modal: focus stays inside, Esc closes and focus returns",
+      "status": "passed"
+    },
+    {
+      "title": "Esc during IME composition does not close a modal",
+      "status": "passed"
+    },
+    {
+      "title": "export is single-flight and can be cancelled",
+      "status": "passed"
+    },
+    {
+      "title": "no horizontal page overflow at 360px",
+      "status": "passed"
+    },
+    {
+      "title": "every visible toolbar button has an accessible name and clicks without errors",
+      "status": "passed"
+    },
+    {
+      "title": "update release notes are sanitized before insertion",
+      "status": "passed"
+    },
+    {
+      "title": "all document AI entry points reuse the provider and opaque credential saved in settings",
+      "status": "passed"
+    },
+    {
+      "title": "Save As in the More menu is localized by the active dictionary",
+      "status": "passed"
+    },
+    {
+      "title": "small windows do not cause horizontal overflow",
+      "status": "passed"
+    },
+    {
+      "title": "doc import modal offers a browse button and keeps the modal open in browser mode",
+      "status": "passed"
+    },
+    {
+      "title": "provider search input filters provider cards",
+      "status": "passed"
+    },
+    {
+      "title": "two-step AI creation validates fields and routes unconfigured users to AI settings",
+      "status": "passed"
+    },
+    {
+      "title": "skill import menu stays inside the viewport at 600/900/1440 widths",
+      "status": "passed"
+    },
+    {
+      "title": "long user message collapses into an expandable summary card",
+      "status": "passed"
+    },
+    {
+      "title": "offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ without network",
+      "status": "passed"
+    },
+    {
+      "title": "offline Chart.js fence renders a bounded canvas without network",
+      "status": "passed"
+    },
+    {
+      "title": "all-to-markdown workbench is the single entry point for batch conversion",
+      "status": "passed"
+    },
+    {
+      "title": "mixed enqueue routes docs into one batch job and images into sequential OCR",
+      "status": "passed"
+    },
+    {
+      "title": "cancel stops the docs job via the cancel endpoint and marks rows canceled",
+      "status": "passed"
+    },
+    {
+      "title": "cancel during the OCR lane stops before the remaining images",
+      "status": "passed"
+    },
+    {
+      "title": "failures do not stop the queue and stay traceable per row",
+      "status": "passed"
+    },
+    {
+      "title": "saving in place keeps editing and clears the dirty indicator",
+      "status": "passed"
+    },
+    {
+      "title": "opening the same clean path again reloads current disk content",
+      "status": "passed"
+    },
+    {
+      "title": "paged long documents keep a usable editor when split preview is enabled",
+      "status": "passed"
+    },
+    {
+      "title": "narrow editor hides split preview and restores it when space returns",
+      "status": "passed"
+    },
+    {
+      "title": "checkboxes are compact while their labels remain touch friendly",
+      "status": "passed"
+    },
+    {
+      "title": "editor selection uses a visible theme-specific highlight",
+      "status": "passed"
+    },
+    {
+      "title": "mouse drag creates a visibly painted CodeMirror selection",
+      "status": "passed"
+    },
+    {
+      "title": "Skill details are readable before any editing controls are exposed",
+      "status": "passed"
+    },
+    {
+      "title": "import chooser supports GitHub, folder and ZIP without showing credentials by default",
+      "status": "passed"
+    },
+    {
+      "title": "GitHub authentication failure reveals the credential field only when needed",
+      "status": "passed"
+    },
+    {
+      "title": "GitHub token is submitted once and replaced by an opaque credential id",
+      "status": "passed"
+    },
+    {
+      "title": "unchanged \"\\n\" file closes without a dialog",
+      "status": "passed"
+    },
+    {
+      "title": "unchanged \"\\r\\n\" file closes without a dialog",
+      "status": "passed"
+    },
+    {
+      "title": "unchanged \"\\r\" file closes without a dialog",
+      "status": "passed"
+    },
+    {
+      "title": "undo to the saved content clears the dirty marker and closes without a dialog",
+      "status": "passed"
+    },
+    {
+      "title": "a real modification prompts once; cancellation retains it and discard is recoverable",
+      "status": "passed"
+    },
+    {
+      "title": "convert preview is silent until its text changes",
+      "status": "passed"
+    },
+    {
+      "title": "ocr preview is silent until its text changes",
+      "status": "passed"
+    },
+    {
+      "title": "url preview is silent until its text changes",
+      "status": "passed"
+    },
+    {
+      "title": "an AI copy still asks to save its newly created content",
+      "status": "passed"
+    },
+    {
+      "title": "global actions move above tabs and browser mode hides native window controls",
+      "status": "passed"
+    },
+    {
+      "title": "update checks share a request and recover on reconnect",
+      "status": "passed"
+    },
+    {
+      "title": "installation cancellation never calls the backend or loses the dirty document",
+      "status": "passed"
+    },
+    {
+      "title": "chrome and plugin panel fit 1160×820",
+      "status": "passed"
+    },
+    {
+      "title": "chrome and plugin panel fit 1024×680",
+      "status": "passed"
+    },
+    {
+      "title": "chrome and plugin panel fit 720×480",
+      "status": "passed"
+    },
+    {
+      "title": "Skill form validates inline, restores draft and submits chosen output",
+      "status": "passed"
+    },
+    {
+      "title": "AI starters fill composer without sending a request",
+      "status": "passed"
+    },
+    {
+      "title": "3D graph rotates, switches dimension and searches accessible nodes",
+      "status": "passed"
+    },
+    {
+      "title": "graph indexes the folder first and falls back to the document links when empty",
+      "status": "passed"
+    },
+    {
+      "title": "Backlinks filters, switches tabs and exposes unresolved targets",
+      "status": "passed"
+    },
+    {
+      "title": "Companion workbench exposes character cards and persistent quiet mode",
+      "status": "passed"
+    }
+  ],
+  "limits": [
+    "External services, all network environments and all file structures are not exhausted.",
+    "The full scanned-PDF pass preceded the startup-index-only change; conversion code was unchanged.",
+    "Desktop UI ran on final frontend assets; native and graph/save/language checks additionally ran on the final local kernel.",
+    "Physical pointer tests require exclusive input; two initial non-reproduced failures remain recorded locally.",
+    "Private source paths, titles, contents, credentials and full traces are excluded."
+  ]
+}

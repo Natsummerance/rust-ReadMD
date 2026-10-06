@@ -521,8 +521,7 @@ pub fn ocr_pdf_to_md(path: &str, max_pages: usize) -> Result<String, OcrError> {
         let want = if pages.is_empty() { None } else { Some(blank.clone()) };
         if pages.is_empty() || !blank.is_empty() {
             if let Ok(bytes) = fs::read(path) {
-                static NEVER: fn() -> bool = || false;
-                if let Ok(done) = crate::ocr_winrt::ocr_pdf_bytes(&bytes, max_pages, want, &NEVER) {
+                if let Ok(done) = crate::ocr_winrt::ocr_pdf_bytes(&bytes, max_pages, want, crate::speech::cancellation_check()) {
                     for (idx, lines) in done {
                         if pages.len() <= idx {
                             pages.resize(idx + 1, String::new());

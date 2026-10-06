@@ -290,10 +290,12 @@ test('selection toolbar appears, formats, and fires readmd:ai-inline', async ({ 
   await expect(page.locator('#cm-sel-bold')).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('edit bar shows live word, character and reading-time stats', async ({ page }) => {
+test('footer shows live word, character and reading-time stats', async ({ page }) => {
   await openEditor(page);
   await setDoc(page, 'One two three four five\n\n你好世界');
   await expect(page.locator('#edit-doc-stats')).toHaveText('9 words · 23 chars · 1 min read');
+  expect(await page.locator('#edit-doc-stats').evaluate(el => Boolean(el.closest('#statusbar')))).toBe(true);
+  await expect(page.locator('#edit-bar #edit-doc-stats')).toHaveCount(0);
   await page.evaluate(() => cmView.dispatch({ selection: { anchor: 0, head: 7 } }));
   await expect(page.locator('#edit-doc-stats')).toHaveText('2 of 9 words selected');
 });

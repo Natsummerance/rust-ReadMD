@@ -34,6 +34,24 @@ test('window options, tiny size and quiet mode persist through the real Rust API
   await expect(page.locator('#pet-bubble-toggle')).not.toBeChecked();
 });
 
+test('a delayed settings response cannot reset a slider before its change event',async({page})=>{
+  await page.locator('[data-pet-section=settings]').click();
+  let release; const held = new Promise(resolve => { release = resolve; });
+  let captured; const reached = new Promise(resolve => { captured = resolve; });
+  await page.route('**/api/pets/status', async route => {
+    const response = await route.fetch(); captured(); await held; await route.fulfill({ response });
+  });
+  await page.locator('label:has(#pet-lock-position)').click();
+  await reached;
+  await page.locator('#pet-scale').evaluate(el => { el.value='8'; el.dispatchEvent(new Event('input',{bubbles:true})); });
+  release();
+  await page.evaluate(() => petSettingsQueue);
+  await expect(page.locator('#pet-scale')).toHaveValue('8');
+  await page.unroute('**/api/pets/status');
+  await page.locator('#pet-scale').dispatchEvent('change');
+  await expect.poll(async () => (await page.evaluate(() => fetchPetRuntimeStatus())).preferences.scale).toBe(.08);
+});
+
 for(const [width,height] of [[1160,820],[1024,680]]) test(`pet settings and original companion preview fit ${width}×${height}`,async({page},testInfo)=>{
   await page.setViewportSize({width,height});
   await expect.poll(()=>page.locator('#pet-preview-character').evaluate(el=>getComputedStyle(el).backgroundImage.startsWith('url("data:image/png'))).toBe(true);

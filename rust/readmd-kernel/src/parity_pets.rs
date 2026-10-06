@@ -4655,11 +4655,25 @@ mod tests {
         dir
     }
 
-    fn test_app(tag: &str) -> Arc<App> {
+    // These fixtures exercise one process-wide companion controller. Keep its
+    // configuration/status assertions in the same exclusive test session;
+    // otherwise another fixture can change in_app between those two calls.
+    static PET_TEST_SESSION: Mutex<()> = Mutex::new(());
+    struct TestApp {
+        app: Arc<App>,
+        _session: std::sync::MutexGuard<'static, ()>,
+    }
+    impl std::ops::Deref for TestApp {
+        type Target = Arc<App>;
+        fn deref(&self) -> &Self::Target { &self.app }
+    }
+
+    fn test_app(tag: &str) -> TestApp {
+        let session = PET_TEST_SESSION.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = scratch_dir(tag);
         fs::create_dir_all(dir.join("assets")).unwrap();
         let paths = paths::AppPaths::with_dirs(&dir.join("data"), &dir, &dir.join("assets"));
-        Arc::new(App::bootstrap(paths).unwrap())
+        TestApp { app: Arc::new(App::bootstrap(paths).unwrap()), _session: session }
     }
 
     #[test]

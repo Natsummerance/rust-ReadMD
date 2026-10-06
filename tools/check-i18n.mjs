@@ -42,6 +42,11 @@ for (const [list, prefix] of [['ERROR_CODES', 'error'], ['NOTE_CODES', 'note'], 
 // ---- 2. identical key sets ----------------------------------------------
 // meta.json is the locale index, not a locale.
 const files = fs.readdirSync(i18nDir).filter(f => f.endsWith('.json') && f !== 'meta.json').sort();
+const metadata = load('meta.json');
+for (const [key, value] of Object.entries(metadata)) {
+  if (!value || typeof value !== 'object' || typeof value.native !== 'string') problems.push(`meta.json: unexpected non-locale entry ${key}`);
+}
+const placeholders = value => [...String(value).matchAll(/\{([\w.-]+)\}/g)].map(match => match[1]).sort().join(',');
 const enKeys = new Set(Object.keys(en));
 for (const f of files) {
   if (f === 'en.json') continue;
@@ -50,6 +55,16 @@ for (const f of files) {
   const extra = [...keys].filter(k => !enKeys.has(k));
   if (missing.length) problems.push(`${f}: ${missing.length} key(s) missing, e.g. ${missing.slice(0, 5).join(', ')}`);
   if (extra.length) problems.push(`${f}: ${extra.length} extra key(s), e.g. ${extra.slice(0, 5).join(', ')}`);
+  const dict = load(f);
+  for (const key of enKeys) {
+    if (key in dict && placeholders(dict[key]) !== placeholders(en[key])) problems.push(`${f}: placeholder mismatch in ${key}`);
+    // These newly expanded panels previously passed with copied English.
+    // Shared brands and short loanwords are allowed; whole UI sentences are not.
+    const recentPanel = /^(?:window|storage|audit|ux)\.|^plugin\.native\./.test(key);
+    if (f !== 'en.json' && !f.startsWith('zh-') && recentPanel && key !== 'ux.petLive2d' && String(en[key]).trim().split(/\s+/).length >= 3 && dict[key] === en[key]) {
+      problems.push(`${f}: untranslated panel text in ${key}`);
+    }
+  }
 }
 
 // ---- 3. hard-coded Chinese in user-visible calls --------------------------

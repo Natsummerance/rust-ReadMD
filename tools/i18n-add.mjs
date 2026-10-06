@@ -7,7 +7,7 @@ import path from 'node:path';
 
 const dir = path.resolve('assets/i18n');
 const spec = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.json'))) {
+for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.json') && n !== 'meta.json')) {
   const loc = f.replace(/\.json$/, '');
   const p = path.join(dir, f);
   const raw = fs.readFileSync(p, 'utf8');
@@ -15,8 +15,11 @@ for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.json'))) {
   let changed = false;
   for (const [k, texts] of Object.entries(spec)) {
     const zhTrad = loc === 'zh-TW' || loc === 'zh-HK' ? (texts['zh-TW'] || texts['zh-CN']) : undefined;
-    const v = texts[loc] ?? zhTrad ?? texts.en;
     const at = entries.findIndex(([ek]) => ek === k);
+    // A partial translation update must preserve existing native wording.
+    // English fallback is only used when a key is newly introduced.
+    if (at >= 0 && texts[loc] === undefined) continue;
+    const v = texts[loc] ?? zhTrad ?? texts.en;
     if (at >= 0) {
       if (entries[at][1] !== v) { entries[at][1] = v; changed = true; }
       continue;

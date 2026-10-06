@@ -1143,6 +1143,16 @@ body.window-fullscreen { --window-titlebar-height:0px; }
 .edge-se { bottom:0; right:0; cursor:nwse-resize; } .edge-sw { bottom:0; left:0; cursor:nesw-resize; }
 .window-maximized .window-resize-edge,.window-fullscreen .window-resize-edge { display:none; }
 body.zen-mode #app-titlebar { position:fixed; top:0; left:0; right:0; height:48px; }
+body.zen-mode #app-titlebar { transform:translateY(-100%); transition:transform .22s ease; }
+body.zen-mode #toolbar { transform:translateY(calc(-100% - var(--window-titlebar-height,0px))); }
+body.zen-mode.zen-toolbar-suppressed #toolbar:not(:focus-within) { transform:translateY(calc(-100% - var(--window-titlebar-height,0px))); }
+body.zen-mode:not(.zen-toolbar-suppressed):has(.zen-hover-trigger:hover) #app-titlebar,
+body.zen-mode:not(.zen-toolbar-suppressed):has(#toolbar:hover) #app-titlebar,
+body.zen-mode:has(#toolbar:focus-within) #app-titlebar,
+body.zen-mode:has(#toolbar.zen-toolbar-revealed) #app-titlebar,
+body.zen-mode #app-titlebar:hover,
+body.zen-mode #app-titlebar:focus-within { transform:translateY(0); }
+@media (prefers-reduced-motion:reduce) { body.zen-mode #app-titlebar { transition:none; } }
 .window-fullscreen #app-titlebar { display:none; }
 @media (max-width:1024px) { .app-titlebar { gap:4px; padding-left:8px; } .titlebar-actions .tb-palette-label,.titlebar-actions .tb-palette-keys { display:none; } }
 @media (max-width:640px) { .titlebar-mark { display:none; } .window-drag-region { min-width:30px; } .titlebar-actions>.tb-btn { min-width:44px; padding-inline:6px; } }
@@ -1169,3 +1179,44 @@ body.zen-mode #app-titlebar { position:fixed; top:0; left:0; right:0; height:48p
 #plugin-box .plugin-category-tabs { gap:4px; }
 #plugin-box .plugin-runtime-details { border-top:1px solid var(--border); padding-top:6px; }
 @media (max-width:640px) { #plugin-box .plugin-card { grid-template-columns:minmax(0,1fr); } .plugin-discovery { flex-wrap:wrap; } .plugin-search { flex-basis:100%; } }
+
+/* Editor commands stay visible; passive document metadata belongs in the footer. */
+#edit-bar { flex-wrap:nowrap; height:56px; min-height:56px; }
+#edit-bar .md-tool { flex:0 0 auto; flex-wrap:nowrap; overflow:visible; gap:2px; }
+#edit-bar .md-tool-btn { min-height:44px; flex-shrink:0; }
+#edit-bar .md-tool-btn.icon { width:44px; }
+#edit-bar .edit-actions-right { flex:0 0 auto; margin-inline-start:auto; margin-inline-end:0; }
+#edit-bar #edit-save,#edit-bar #edit-cancel { min-height:44px; flex-shrink:0; }
+#edit-bar .md-wide-only { display:inline-flex; }
+#edit-bar .md-tool>.md-menu-wrap { display:block; }
+#edit-bar .editor-overflowed,#edit-bar .md-tool>.md-menu-wrap.editor-overflowed,#edit-bar #edit-overflow-wrap.hidden { display:none; }
+#edit-bar #pv-trigger { width:44px; min-width:44px; padding:0; }
+#edit-bar #pv-trigger .pv-trigger-label,#edit-bar #pv-trigger .md-caret { display:none; }
+#edit-bar .editor-overflow-label { display:none; }
+#edit-overflow-menu { min-width:240px; max-width:calc(100vw - 24px); max-height:calc(100vh - 180px); overflow:auto; }
+#edit-bar #edit-overflow-menu button { display:flex; align-items:center; justify-content:flex-start; gap:10px; width:100%; min-height:44px; padding:6px 12px; text-align:start; white-space:nowrap; }
+#edit-bar #edit-overflow-menu .editor-overflow-label { display:inline; }
+#edit-bar #edit-overflow-menu button kbd { margin-inline-start:auto; }
+#edit-overflow-menu .editor-overflow-heading { display:block; color:var(--fg3); font-size:var(--text-xs); padding:8px 12px 4px; }
+#edit-overflow-menu .editor-overflow-group+.editor-overflow-group { border-top:1px solid var(--border); margin-top:5px; padding-top:5px; }
+html[dir="rtl"] #edit-overflow-menu { left:auto; right:0; }
+#edit-overflow-wrap.editor-menu-end #edit-overflow-menu { left:auto; right:0; }
+#editor-status-group { display:none; min-width:0; gap:var(--space-3); align-items:center; font-variant-numeric:tabular-nums; }
+body:has(#edit-bar:not(.hidden)) #editor-status-group { display:flex; flex:1 1 auto; justify-content:flex-end; }
+body:has(#edit-bar:not(.hidden)) #status-right,
+body:has(#edit-bar:not(.hidden)) #status-mods { display:none; }
+body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
+#editor-status-group #edit-doc-stats { flex:0 1 auto; color:var(--fg2); }
+#editor-status-group #document-recovery-status { flex:0 1 auto; }
+#editor-status-group .edit-tip-keys { flex:0 1 auto; }
+@media (max-width:1024px) {
+  #editor-status-group .edit-tip-keys { display:none; }
+}
+@media (max-width:640px) {
+  #edit-bar { padding-inline:6px; gap:2px; }
+  #edit-bar .edit-actions-right { gap:2px; }
+  #edit-bar #edit-save,#edit-bar #edit-cancel { padding-inline:8px; min-width:44px; }
+  #editor-status-group { gap:var(--space-1); }
+  #editor-status-group #document-recovery-status { display:none; }
+  body:has(#edit-bar:not(.hidden)) .statusbar-left-group { display:none; }
+}

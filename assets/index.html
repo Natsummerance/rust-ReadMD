@@ -122,7 +122,6 @@
           <button id="btn-assoc" class="more-item" role="menuitem"><span data-i18n="menu.assoc">设为默认</span><em data-i18n="menu.assocSub">.md 打开方式</em></button>
           <button id="btn-autostart" class="more-item" role="menuitem"><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
           <button id="btn-close-to-tray" class="more-item hidden" role="menuitemcheckbox" aria-checked="true"><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
-          <button id="btn-app-exit" class="more-item hidden" role="menuitem"><span data-i18n="window.exit">退出 ReadMD</span><em data-i18n="window.exitHint">保存修改后完全退出</em></button>
           <button id="btn-check-update" class="more-item" role="menuitem"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">当前版本 v0.0.4</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
         </div>
       </div>
@@ -182,8 +181,13 @@
     <button id="edit-slash-btn" class="md-tool-btn md-slash-btn" title="插入块 (/ 或 Ctrl+/)" aria-label="插入块" data-i18n-title="slash.buttonTip" data-i18n-aria="slash.button">
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><kbd aria-hidden="true">/</kbd>
     </button>
+    <div id="edit-overflow-wrap" class="md-menu-wrap hidden">
+      <button id="edit-overflow-trigger" class="md-tool-btn icon" data-menu="edit-overflow-menu" aria-haspopup="true" aria-expanded="false" title="更多功能" aria-label="更多功能" data-i18n-title="toolbar.more" data-i18n-aria="toolbar.more">
+        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+      </button>
+      <div id="edit-overflow-menu" class="md-menu hidden" role="menu"></div>
+    </div>
   </div>
-  <span class="edit-tip"><span id="edit-doc-stats" aria-live="polite">0 字 · 阅读约 1 分钟</span> <span class="edit-tip-keys" data-i18n="editor.shortcutsTip">· Ctrl+S 保存 · Esc 取消</span></span>
   <div class="edit-actions-right">
     <div class="md-menu-wrap edit-view-ctl">
       <button id="edit-view-trigger" class="md-tool-btn icon" aria-haspopup="true" aria-expanded="false" title="视图" aria-label="视图" data-i18n-title="editor.view" data-i18n-aria="editor.view">
@@ -215,7 +219,6 @@
     </div>
   </div>
   <button id="edit-save" class="tb-btn accent" data-i18n="editor.save">保存</button>
-  <span id="document-recovery-status" role="status" aria-live="polite"></span>
   <button id="edit-cancel" class="tb-btn" data-i18n="editor.cancel">取消</button>
 </div>
 
@@ -1467,6 +1470,11 @@
   </div>
   <span id="status-right"></span>
   <span id="status-mods"></span>
+  <div id="editor-status-group">
+    <span id="edit-doc-stats" aria-live="polite"></span>
+    <span id="document-recovery-status" role="status" aria-live="polite"></span>
+    <span class="edit-tip-keys" data-i18n="editor.shortcutsTip"></span>
+  </div>
   <button id="status-update-badge" class="status-update-badge hidden" title="点击查看新版本并更新" data-i18n-title="status.clickToUpdate">
     <svg class="update-badge-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.2-6.3-4.6-6.3 4.6 2.3-7.2-6-4.6h7.6z"/></svg>
     <span data-i18n="status.newVersion">新版本</span> <span id="update-badge-ver"></span>

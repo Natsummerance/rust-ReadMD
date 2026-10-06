@@ -1,0 +1,776 @@
+{
+  "date": "2026-10-06",
+  "scope": "Windows installed payload, isolated copies of real inputs, bounded production stress",
+  "features": [
+    {
+      "id": "F001",
+      "title": "打开文档",
+      "evidence": "真实 Markdown/EPUB 输出打开；系统选择器分支由原生桥和既有回归覆盖",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F002",
+      "title": "打开文件夹",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F003",
+      "title": "新建空白文档",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F004",
+      "title": "主页快捷卡片",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F005",
+      "title": "最近记录与清空",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F005 native chooser and recent-clear failures show feedback without unhandled rejections"
+      ]
+    },
+    {
+      "id": "F006",
+      "title": "返回主页",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F006 returning home protects a dirty editor on cancel and discards only after confirmation",
+        "F006 save before home writes the actual file before leaving the editor"
+      ]
+    },
+    {
+      "id": "F007",
+      "title": "更多菜单与分组",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F008",
+      "title": "刷新文件列表/当前文件",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F009",
+      "title": "切换、关闭及溢出标签",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F010",
+      "title": "标签右键菜单和排序",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F011",
+      "title": "标题重命名",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F012",
+      "title": "另存为 Markdown",
+      "evidence": "真实导出/复制与原生保存；路径选择条件另记",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F103",
+      "title": "恢复草稿与版本历史",
+      "evidence": "真实版本/草稿记录、原生退出恢复",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F013",
+      "title": "侧栏、大纲和文件树",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F013 a failed folder read preserves the tree and an older response cannot replace a newer folder"
+      ]
+    },
+    {
+      "id": "F014",
+      "title": "文内查找",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F015",
+      "title": "分页跳转与连续阅读",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F016",
+      "title": "主题、缩放和禅模式",
+      "evidence": "大文档主题/禅模式、原生顶栏与界面布局",
+      "level": "native-or-real-api",
+      "uiCaseTitles": [
+        "F016 corrupted settings cannot overwrite document state or inject invalid layout values"
+      ]
+    },
+    {
+      "id": "F017",
+      "title": "浮动阅读设置",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F099",
+      "title": "回到顶部",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F018",
+      "title": "正文链接、双链和锚点",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F019",
+      "title": "代码块复制、折叠提示、脚注与图片",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F020",
+      "title": "文献引用与参考文献交互",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F098",
+      "title": "代码文件顶部四个操作",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F021",
+      "title": "编辑、保存和取消",
+      "evidence": "真实原文副本保存、磁盘回读、撤销、草稿/历史",
+      "level": "native-or-real-api",
+      "uiCaseTitles": [
+        "F021 an empty original stays empty and restoring an empty draft clears dirty without saving it",
+        "F021 changing documents during editor loading cannot mount the old editor over the new document"
+      ]
+    },
+    {
+      "id": "F022",
+      "title": "文字格式与结构工具",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F023",
+      "title": "编辑菜单、视图和撤销栈",
+      "evidence": "真实撤销与编辑工具回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F024",
+      "title": "选区浮动工具条",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F025",
+      "title": "斜杠菜单与子选择器",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F026",
+      "title": "智能编辑、粘贴与任务勾选",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F027",
+      "title": "预览布局与分栏拖动",
+      "evidence": "分栏工具和多窗口尺寸回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F102",
+      "title": "创建编辑副本",
+      "evidence": "真实文档创建未保存副本与草稿",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F028",
+      "title": "图片输入及 URL 直接插入",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F029",
+      "title": "裁剪、旋转、翻转、尺寸及历史",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F030",
+      "title": "图片生成、插入与关闭",
+      "evidence": "本地图片编辑插入回归；网络图片/CORS 分支有条件",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F031",
+      "title": "表格网格选择",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F032",
+      "title": "公式模板选择",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F033",
+      "title": "交互式代码块插入",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F033–F035 insertion panels reject empty/invalid input and preserve embedded fences and drafts"
+      ]
+    },
+    {
+      "id": "F034",
+      "title": "科学图表插入",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F035",
+      "title": "引用子文档",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F033–F035 insertion panels reject empty/invalid input and preserve embedded fences and drafts"
+      ]
+    },
+    {
+      "id": "F036",
+      "title": "YAML/演示元数据",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F036 metadata reads existing values, escapes quotes and keeps unknown/nested fields",
+        "F036 flow presentation metadata preserves nested options and an ordinary rule is not a YAML header"
+      ]
+    },
+    {
+      "id": "F037",
+      "title": "单个代码块运行、复制输出、清空",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F038",
+      "title": "运行全部代码块",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F039",
+      "title": "本地图表与失败回退",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F040",
+      "title": "PlantUML 显式远程渲染",
+      "evidence": "远程 PlantUML 网络/用户授权；本轮为失败/交互回归",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F041",
+      "title": "打开、收起、全屏和调整 AI 面板",
+      "evidence": "实际 AI 工作区启动及语言切换",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F042",
+      "title": "输入、模板、选区、无痕及发送",
+      "evidence": "用户连接的真实合成小请求；选区/无痕由界面回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F043",
+      "title": "消息操作、文档上下文展开和重试",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F044",
+      "title": "应用回复及 AI 副本文档",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F045",
+      "title": "编辑内 AI 操作条",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F045 closed inline AI ignores a late result and a changed tab cannot receive its old selection"
+      ]
+    },
+    {
+      "id": "F046",
+      "title": "选择连接、官方预设和上游目录",
+      "evidence": "用户保存连接、真实模型发现",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F047",
+      "title": "创建/删除自定义连接及模型选择",
+      "evidence": "真实 23 模型目录；增删连接由隔离回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F048",
+      "title": "密钥输入、显示切换和清除",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F049",
+      "title": "高级参数与连接保存",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F050",
+      "title": "测试连接",
+      "evidence": "真实上游请求；失败类别由回归覆盖",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F051",
+      "title": "会话浏览、命名、保存、删除、复制及导出",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F052",
+      "title": "搜索、浏览和技能说明",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F053",
+      "title": "新建、编辑、复制、保存和删除",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F054",
+      "title": "AI 生成草稿和示例",
+      "evidence": "AI 工作台生成依赖可用模型；界面/内核回归，未对私人内容执行",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F055",
+      "title": "评估、发布、启用/停用和导出单个",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F056",
+      "title": "导入 Markdown/JSON 及全部导出",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F057",
+      "title": "GitHub、目录、ZIP来源预览和选择导入",
+      "evidence": "来源解析/ZIP 回归；并未访问所有远程仓库",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F058",
+      "title": "打开面板、选文件、选文件夹和覆盖策略",
+      "evidence": "真实 Office/EPUB、有效 XLSX 和损坏输入拒绝",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F059",
+      "title": "任务行、进度、取消和结果目录",
+      "evidence": "200 文件批量压力、真实扫描件取消",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F060",
+      "title": "单文件导入与同名输出决策",
+      "evidence": "真实转换输出回读、六格式导出重导入",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F061",
+      "title": "文件拖入、目录拖入和ZIP拆包",
+      "evidence": "真实 ZIP 拆包；拖放桥/队列由回归覆盖",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F100",
+      "title": "音视频识别语言",
+      "evidence": "真实 WAV 和 MP3 片段离线识别",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F062",
+      "title": "插件搜索、分类和运行信息",
+      "evidence": "真实插件目录和界面回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F063",
+      "title": "安装、重试及安装进度",
+      "evidence": "14 个插件逐项真实安装",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F064",
+      "title": "启用/停用和互斥切换",
+      "evidence": "14 个插件停用/重启用并读回",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F065",
+      "title": "卸载及错误详情",
+      "evidence": "14 个插件真实卸载",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F066",
+      "title": "扫描识别入口",
+      "evidence": "真实 PNG/扫描 PDF 系统 OCR",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F067",
+      "title": "网页表单、粘贴、抓取页数和图片",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F068",
+      "title": "智能提取、完整动态渲染及取消",
+      "evidence": "实际 WebView 动态 DOM、取消/超时/窗口关闭",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F069",
+      "title": "剪贴新建与多类型分流",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F101",
+      "title": "隔离网页窗口授权与提取",
+      "evidence": "实际隔离网页窗口、授权/撤权、Cookie 和输入脱敏",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F070",
+      "title": "导出格式切换",
+      "evidence": "六格式真实导出及五格式重导入",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F071",
+      "title": "预设选择、重置、自定义保存",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F072",
+      "title": "版式设置、实时预览和大预览",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F073",
+      "title": "AI 排版生成",
+      "evidence": "AI 排版生成依赖可用模型；隔离交互/内核回归",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F074",
+      "title": "执行、取消、打开结果和定位",
+      "evidence": "真实导出结果、批次取消；保存对话框条件另记",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F075",
+      "title": "系统浏览器打印",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F076",
+      "title": "演示开启与播放器",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F077",
+      "title": "开启/关闭共享与扫码访问",
+      "evidence": "共享内核/界面回归；未用第二台真实局域网设备扫码",
+      "level": "conditional",
+      "uiCaseTitles": [
+        "F077 share failure is visible, retry works and duplicate actions send one request",
+        "F077 the real Rust LAN service starts, rejects anonymous requests, serves its URL and stops",
+        "F077 unsaved documents share their actual content through an isolated snapshot and can restart"
+      ]
+    },
+    {
+      "id": "F078",
+      "title": "图谱打开与视图控制",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F079",
+      "title": "图谱筛选、节点选择与手势",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F080",
+      "title": "反向链接抽屉",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F081",
+      "title": "自动修复报告和修复副本",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F082",
+      "title": "AI 深度排版自愈",
+      "evidence": "真实上游连接已通；修复变更/冲突路径使用合成回归",
+      "level": "conditional",
+      "uiCaseTitles": [
+        "F082 AI repair preserves newer edits and creates a dirty copy instead of overwriting another document",
+        "F082 repair in reading mode keeps the source intact and in an unchanged editor remains undoable",
+        "F082 textarea fallback repairs the current draft into a safe copy and retains its source"
+      ]
+    },
+    {
+      "id": "F083",
+      "title": "样式预设、CSS/Head和AI生成",
+      "evidence": "样式界面与持久化回归；AI 生成成功质量未逐模板实测",
+      "level": "conditional",
+      "uiCaseTitles": [
+        "F083 style loading locks inputs, retries failures and a save never closes over newer edits"
+      ]
+    },
+    {
+      "id": "F084",
+      "title": "界面语言、默认关联和开机自启",
+      "evidence": "实际关联状态/命令；语言布局；自启写入由既有原生回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F085",
+      "title": "检查、下载、取消、应用和浏览器查看",
+      "evidence": "实际发布元数据、受控错误回归；全网络并未穷尽",
+      "level": "native-or-real-api",
+      "uiCaseTitles": [
+        "F085 update polling catches failures, never overlaps and reports a failed cancellation",
+        "F085 a verified update with a failed installer can retry installation without downloading again"
+      ]
+    },
+    {
+      "id": "F086",
+      "title": "桌宠工作台、预览和页签",
+      "evidence": "实际安装资产角色预览、工作台尺寸回归",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F087",
+      "title": "角色搜索、分类渲染器、收藏和选择",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F088",
+      "title": "导入/删除自定义精灵图",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F089",
+      "title": "运行位置、启用、尺寸、透明度和置顶",
+      "evidence": "实际尺寸/置顶/锁定/气泡持久化；滑块竞态复现",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F090",
+      "title": "安装/卸载桌宠扩展与运行时更新",
+      "evidence": "实际随包 Rust 桌面扩展安装/健康/停止",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F091",
+      "title": "陪伴风格、气泡和养成动作",
+      "evidence": "实际宠物互动请求与设置持久化",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F092",
+      "title": "阅读器内点击、拖动和快捷条",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F093",
+      "title": "原生拖动、透明区域和Bongo输入动作",
+      "evidence": "三种实际 Rust 窗口物理拖动与透明边缘、锁定、置顶；Bongo 输入状态由随包真实 renderer 与原生钩子测试分别验证",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F094",
+      "title": "右键快捷菜单、角色子菜单和互动气泡",
+      "evidence": "原生运行时可启动；完整实体菜单/每个角色分支未逐项手点",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F095",
+      "title": "桌宠拖入文件与跨进程唤起",
+      "evidence": "IPC/文件队列和转换回归；每种外部拖放来源未穷尽",
+      "level": "conditional",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F096",
+      "title": "全局命令面板及快捷键查询",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": []
+    },
+    {
+      "id": "F097",
+      "title": "保存、冲突、选择、确认和连续模式提示",
+      "evidence": "安装资产上的相关界面/内核自动回归及既有接线复查；具体原生/外部条件以流程清单为准",
+      "level": "ui-and-kernel-regression",
+      "uiCaseTitles": [
+        "F097 all 29 dialogs remain reachable at 1160x820 in zh-CN",
+        "F097 all 29 dialogs remain reachable at 1160x820 in en",
+        "F097 all 29 dialogs remain reachable at 1160x820 in zh-TW",
+        "F097 all 29 dialogs remain reachable at 1024x680 in zh-CN",
+        "F097 all 29 dialogs remain reachable at 1024x680 in en",
+        "F097 all 29 dialogs remain reachable at 1024x680 in zh-TW"
+      ]
+    },
+    {
+      "id": "F104",
+      "title": "窗口控制、托盘驻留与退出恢复",
+      "evidence": "实际原生窗口、托盘、热启动、文件交接与退出恢复",
+      "level": "native-or-real-api",
+      "uiCaseTitles": []
+    }
+  ],
+  "results": "readmd-production-audit-2026-10-06-results.json"
+}

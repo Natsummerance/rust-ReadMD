@@ -2901,6 +2901,22 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                 error: Some("转换器内部错误".to_string()),
             }
         });
+        // Cancellation can arrive while a native parser/OCR page is running.
+        // Stop before post-processing or committing its partial extraction.
+        {
+            let mut guard = CONVERT_JOBS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(job) = guard.as_mut().and_then(|map| map.get_mut(job_id)) {
+                if job.cancel {
+                    for item in job.items.iter_mut().skip(idx) {
+                        item.status = "canceled".into();
+                        item.done = true;
+                    }
+                    job.running = false;
+                    job.finished = true;
+                    return;
+                }
+            }
+        }
         let err = res.error.clone().unwrap_or_default();
         let mut status = "error".to_string();
         let mut error: Option<String> = None;
@@ -2930,13 +2946,20 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                 status = "skipped".to_string();
                 error_code = Some("output_exists".to_string());
             } else {
-                match crate::convert::write_md_managed(data_dir, &target, &fixed, allow_overwrite) {
+                // Serialize the final cancellation check with the commit.
+                // A cancel acknowledged before this lock commits no output.
+                let guard = CONVERT_JOBS.lock().unwrap_or_else(|e| e.into_inner());
+                let cancelled = guard.as_ref().and_then(|map| map.get(job_id)).is_none_or(|job| job.cancel);
+                if cancelled {
+                    status = "canceled".into();
+                    out = None;
+                } else { match crate::convert::write_md_managed(data_dir, &target, &fixed, allow_overwrite) {
                     Ok(()) => status = "ok".to_string(),
                     Err(e) => {
                         error = Some(format!("写入失败：{e}"));
                         error_code = Some("write_failed".to_string());
                     }
-                }
+                } }
             }
         }
 

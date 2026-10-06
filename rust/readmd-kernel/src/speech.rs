@@ -11,7 +11,10 @@ pub fn with_cancel<T>(check:std::sync::Arc<dyn Fn()->bool+Send+Sync>,action:impl
     impl Drop for Reset {fn drop(&mut self){CANCEL.with(|c|*c.borrow_mut()=self.0.take());}}
     let previous=CANCEL.with(|c|c.replace(Some(check)));let _reset=Reset(previous);action()
 }
-fn cancelled()->bool {CANCEL.with(|c|c.borrow().as_ref().is_some_and(|f|f()))}
+pub(crate) fn cancelled()->bool {CANCEL.with(|c|c.borrow().as_ref().is_some_and(|f|f()))}
+pub(crate) fn cancellation_check()->std::sync::Arc<dyn Fn()->bool+Send+Sync> {
+    CANCEL.with(|c|c.borrow().clone()).unwrap_or_else(||std::sync::Arc::new(||false))
+}
 
 const SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'

@@ -27,6 +27,7 @@ test('mobile reader controls meet touch target budgets', async ({ page }, testIn
   const sizes = await page.evaluate(() => {
     const selectors = [
       '#toolbar .tb-btn',
+      '#app-titlebar .tb-btn',
       '#doc-tabs-secondary-bar .tab-item',
       '#search-input',
       '#search-bar button',

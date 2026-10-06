@@ -4,7 +4,7 @@ const json = (route, body) => route.fulfill({ status: 200, contentType: 'applica
 // Exercise every static dialog, including controls revealed by details and
 // panes which used to be clipped by a non-scrolling modal body.
 for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }]) {
-  for (const locale of ['zh-CN', 'en', 'zh-TW']) {
+  for (const locale of (process.env.READMD_PANEL_TEST_LOCALES || 'zh-CN,en,zh-TW').split(',')) {
     test(`F097 all 29 dialogs remain reachable at ${size.width}x${size.height} in ${locale}`, async ({ page }, testInfo) => {
       test.setTimeout(120000);
       const errors = []; page.on('pageerror', error => errors.push(error.message));

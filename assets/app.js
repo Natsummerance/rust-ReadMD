@@ -943,6 +943,7 @@ function bindEvents() {
     }
     updateStatus();
     updateDocStatistics();
+    updatePvLabel();
     syncBuildVersionLabels();
     ['formula-mode', 'tpl-action', 'img-ratio'].forEach(id => {
       const select = $(id);

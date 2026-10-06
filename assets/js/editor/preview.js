@@ -64,13 +64,18 @@ function getEditContent() {
 }
 
 function setPvLayout(layout) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (['none', 'left', 'right', 'bottom', 'top'].indexOf(layout) < 0) layout = 'none';
   if (layout === 'none' && typeof switchEditAiToChatPanel === 'function') {
     switchEditAiToChatPanel();
   }
   state.pvLayout = layout;
   document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === layout));
+  updatePvLabel(layout);
+  applyPvLayout();
+}
+
+function updatePvLabel(layout = state.pvLayout || 'none') {
+  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const names = {
     none: _t('editor.previewNone') || '无',
     left: _t('editor.previewLeft') || '左',
@@ -92,6 +97,10 @@ function setPvLayout(layout) {
     trigger.setAttribute('aria-label', full);
     trigger.classList.toggle('is-on', layout !== 'none');
   }
+}
+
+function applyPvLayout() {
+  const layout = state.pvLayout || 'none';
   const mc = $('main-col');
 
   const pw = $('preview-wrap');

@@ -170,7 +170,7 @@ mod imp {
         bytes: &[u8],
         max_pages: usize,
         only: Option<Vec<usize>>,
-        cancel: &'static (dyn Fn() -> bool + Sync),
+        cancel: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<Vec<(usize, Lines)>, String> {
         let data = bytes.to_vec();
         on_mta(move || {
@@ -271,7 +271,7 @@ mod imp {
         _bytes: &[u8],
         _max_pages: usize,
         _only: Option<Vec<usize>>,
-        _cancel: &'static (dyn Fn() -> bool + Sync),
+        _cancel: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
     ) -> Result<Vec<(usize, Lines)>, String> {
         Err("ocr_no_engine".into())
     }
@@ -290,8 +290,7 @@ mod tests {
             return;
         }
         assert!(ocr_image_bytes(b"definitely not an image").is_err());
-        static NO: fn() -> bool = || false;
-        assert!(ocr_pdf_bytes(b"%PDF-broken", 3, None, &NO).is_err());
+        assert!(ocr_pdf_bytes(b"%PDF-broken", 3, None, std::sync::Arc::new(|| false)).is_err());
     }
 }
 

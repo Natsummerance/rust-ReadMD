@@ -2716,6 +2716,7 @@ async function saveAiAs() {
 
 window.addEventListener('readmd:language-changed', () => {
   fillAiTemplates();
+  renderAiEmptyState();
   if ($('tpl-modal') && !$('tpl-modal').classList.contains('hidden')) {
     renderTplList();
     const curId = $('tpl-id') && $('tpl-id').value;

@@ -1618,7 +1618,7 @@ fn serve_static(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     }
     for candidate in candidates {
         let Ok(canonical) = paths::canonical_existing(&candidate) else { continue };
-        if !canonical.starts_with(&root_c) && !canonical.starts_with(&assets_c) {
+        if !paths::path_starts_with(&canonical, &root_c) && !paths::path_starts_with(&canonical, &assets_c) {
             return Err(ApiError::forbidden("path_escape"));
         }
         if canonical.is_dir() {

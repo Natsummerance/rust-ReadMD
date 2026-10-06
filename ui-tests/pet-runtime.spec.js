@@ -3,6 +3,7 @@ const { test, expect } = require('@playwright/test');
 test('real pet API persists controls and gallery selection', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => typeof window.openPetSettings === 'function');
+  expect((await page.evaluate(() => requestConfigurePet({ enabled: false, in_app: true, renderer: 'hermes-sprite', character: 'hermes' }))).ok).toBe(true);
   await page.evaluate(() => window.openPetSettings());
   await expect(page.locator('#pet-settings-modal')).toBeVisible();
   await page.locator('label:has(#pet-enabled)').click();

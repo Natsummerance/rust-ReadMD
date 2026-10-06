@@ -152,8 +152,8 @@ test('checkboxes are compact while their labels remain touch friendly', async ({
     label.remove();
     return result;
   });
-  expect(sizes.inputWidth).toBe(16);
-  expect(sizes.inputHeight).toBe(16);
+  expect(sizes.inputWidth).toBe(14);
+  expect(sizes.inputHeight).toBe(14);
   expect(sizes.labelHeight).toBeGreaterThanOrEqual(44);
 });
 
@@ -168,7 +168,7 @@ test('editor selection uses a visible theme-specific highlight', async ({ page }
   });
   expect(backgrounds.defaultSelection).toMatch(/rgba?\(/);
   expect(backgrounds.defaultSelection).not.toContain(', 0.25)');
-  expect(backgrounds.checkbox).toBe('16px');
+  expect(backgrounds.checkbox).toBe('14px');
 });
 
 test('mouse drag creates a visibly painted CodeMirror selection', async ({ page }) => {
