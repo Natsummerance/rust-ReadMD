@@ -213,8 +213,15 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     const [layer] = stack.splice(at, 1);
     refreshInert();
     const next = stack[stack.length - 1];
+    // An insertion/cancel handler may already have returned the caret to the
+    // editor. The observer runs later; honour that explicit focus transfer.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && !el.contains(active) &&
+        !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length &&
+        (!next || next.el.contains(active))) return;
     const back = layer.opener;
-    const target = back && back.isConnected && !back.closest('[inert]') ? back : (next ? initialFocus(next.el) : null);
+    const target = back && back.isConnected && !back.closest('[inert], .hidden') &&
+      !back.disabled && back.getClientRects().length ? back : (next ? initialFocus(next.el) : null);
     if (target && (!next || next.el.contains(target))) target.focus({ preventScroll: true });
     else if (next) { const f = initialFocus(next.el); if (f) f.focus({ preventScroll: true }); }
   }
@@ -237,8 +244,9 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     // No close button (e.g. choice-modal builds its buttons at runtime): every
     // promise-based dialog treats a click on its own backdrop as "cancel".
     else el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    // Anything that is still open after its close path gets hidden directly.
-    if (isShown(el) && stack[stack.length - 1]?.el === el) {
+    // A close handler may first cancel a running task or ask to keep a draft.
+    // It owns that lifecycle; do not hide its progress/confirmation behind it.
+    if (!closer && isShown(el) && stack[stack.length - 1]?.el === el) {
       el.classList.add('hidden');
       sync(el);
     }
@@ -4035,6 +4043,8 @@ function updateSearchCount() {
   if (bar) {
     const hasHits = state.currentMarks.length > 0 || globalSearchState.matches.length > 0;
     bar.classList.toggle('rd-search-empty', !!state.lastQuery && !hasHits);
+    $('search-prev').disabled = !hasHits;
+    $('search-next').disabled = !hasHits;
   }
   const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
 
@@ -8335,6 +8345,16 @@ const imgState = {
   crop: { x: 0, y: 0, w: 0, h: 0 },
   drag: null, history: [], redo: [], spaceDown: false,
 };
+let imgLoadEpoch = 0;
+let imgInsertPending = false;
+window.ReadMDModal.setGuard('img-modal', () => !imgInsertPending);
+
+function syncImgAvailability() {
+  const loaded = !!imgState.img;
+  document.querySelectorAll('#img-box .img-inspector :is(button, input, select)').forEach(el => { el.disabled = !loaded; });
+  $('img-insert').disabled = !loaded;
+  updateImgHistoryButtons();
+}
 
 function imgSnapshot() { return {angle:imgState.angle,scale:imgState.scale,ratio:imgState.ratio,viewZoom:imgState.viewZoom,panX:imgState.panX,panY:imgState.panY,flipX:imgState.flipX,flipY:imgState.flipY,sizeLock:imgState.sizeLock,outW:imgState.outW,outH:imgState.outH,crop:Object.assign({},imgState.crop)}; }
 function pushImgHistory() { if (!imgState.img) return; imgState.history.push(imgSnapshot()); if (imgState.history.length > 40) imgState.history.shift(); imgState.redo = []; updateImgHistoryButtons(); }
@@ -8344,25 +8364,34 @@ function redoImg() { const s=imgState.redo.pop(); if (!s) return; imgState.histo
 function updateImgHistoryButtons() { $('img-undo').disabled=!imgState.history.length; $('img-redo').disabled=!imgState.redo.length; }
 
 function openImgModal() {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!state.dir) { showToast(_t('toast.imgLocalOnly') || '图片编辑仅支持本地 Markdown 文件'); return; }
   $('img-modal').classList.remove('hidden');
+  ++imgLoadEpoch;
+  imgState.img = null;
   resetImg();
   drawImg();
   updateImgInfo();
 }
 
-function closeImgModal() {
-  $('img-modal').classList.add('hidden');
+function closeImgModal(force) {
+  if (imgInsertPending && force !== true) return;
+  ++imgLoadEpoch;
+  window.ReadMDModal.close('img-modal');
   imgState.img = null;
   imgState.drag = null;
+  if (cmView) cmView.focus();
 }
 
 function loadImgFromFile(file) {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!file) return;
+  const epoch = ++imgLoadEpoch;
   const fr = new FileReader();
   fr.onload = () => {
+    if (epoch !== imgLoadEpoch) return;
     try { loadImgSrc(fr.result); } catch (e) { showToast((_t('toast.imgReadFail') || '图片读取失败：') + e.message); }
   };
   fr.onerror = () => showToast(_t('toast.imgReadFail') || '图片读取失败');
@@ -8370,9 +8399,12 @@ function loadImgFromFile(file) {
 }
 
 function loadImgSrc(src) {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const im = new Image();
+  const epoch = ++imgLoadEpoch;
   im.onload = () => {
+    if (epoch !== imgLoadEpoch || $('img-modal').classList.contains('hidden')) return;
     imgState.img = im;
     imgState.rawW = im.naturalWidth || im.width;
     imgState.rawH = im.naturalHeight || im.height;
@@ -8382,7 +8414,7 @@ function loadImgSrc(src) {
     $('img-crop').classList.add('active');
     updateImgInfo();
   };
-  im.onerror = () => showToast(_t('toast.imgLoadCorsFail') || '图片加载失败（URL 可能被跨域限制）');
+  im.onerror = () => { if (epoch === imgLoadEpoch) showToast(_t('toast.imgLoadCorsFail') || '图片加载失败（URL 可能被跨域限制）'); };
   im.src = src;
 }
 
@@ -8505,10 +8537,14 @@ function resetImg() {
     $('img-insert').disabled = false;
   } else {
     imgState.rotW = 0; imgState.rotH = 0;
+    const canvas = $('img-canvas');
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    $('img-out-w').value = ''; $('img-out-h').value = '';
     $('img-hint').style.display = '';
     $('img-crop').classList.remove('active');
     $('img-insert').disabled = true;
   }
+  syncImgAvailability();
   drawImg();
 }
 
@@ -8647,6 +8683,7 @@ function stagePointerUp(e) {
 }
 
 function insertImgUrl() {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const url = $('img-url-input').value.trim();
   if (!url) { showToast(_t('toast.imgEnterUrl') || '请输入图片 URL'); return; }
@@ -8666,8 +8703,32 @@ function cmInsertImage(rel) {
 }
 
 async function exportAndInsertImg() {
+  if (imgInsertPending || !imgState.img || !cmView) return;
+  imgInsertPending = true;
+  const controls = [...document.querySelectorAll('#img-box :is(button, input, select)')];
+  const disabled = controls.map(el => el.disabled);
+  controls.forEach(el => { el.disabled = true; });
+  $('img-stage').inert = true;
+  $('img-box').setAttribute('aria-busy', 'true');
+  try {
+    return await window.ReadMDTask.run('image-insert', exportAndInsertImgOnce);
+  } catch (e) {
+    showToast(window.i18n ? window.i18n.t('toast.imgExportFail') : '图片导出失败');
+  } finally {
+    imgInsertPending = false;
+    controls.forEach((el, index) => { el.disabled = disabled[index]; });
+    $('img-stage').inert = false;
+    $('img-box').removeAttribute('aria-busy');
+    syncImgAvailability();
+  }
+}
+
+async function exportAndInsertImgOnce() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!imgState.img) return;
+  const target = { view: cmView, tabId: state.activeTabId, dir: state.dir, file: state.file, doc: cmView.state.doc.toString() };
+  const targetUnchanged = () => cmView === target.view && state.activeTabId === target.tabId &&
+    state.dir === target.dir && state.file === target.file && cmView.state.doc.toString() === target.doc;
   const r = imgRect();
   const srcX = (imgState.crop.x - r.x) / imgState.fitScale;
   const srcY = (imgState.crop.y - r.y) / imgState.fitScale;
@@ -8696,18 +8757,21 @@ async function exportAndInsertImg() {
   const b64 = await new Promise(res => {
     const fr = new FileReader();
     fr.onload = () => res(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => res('');
     fr.readAsDataURL(blob);
   });
+  if (!b64 || !targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
   busy(true);
   try {
     const resp = await apiFetch('/api/image/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dir: state.dir, data: b64, format: 'png', name: 'img_' + Date.now() }),
+      body: JSON.stringify({ dir: target.dir, data: b64, format: 'png', name: 'img_' + Date.now() }),
     });
     const d = await resp.json();
     if (!resp.ok || !d.ok) throw new Error(d.error || _t('toast.unknownError'));
+    if (!targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
     cmInsertImage(d.rel);
-    closeImgModal();
+    closeImgModal(true);
     showToast(_t('toast.imgInsertedRel', { rel: d.rel }) || ('图片已插入（' + d.rel + '）'));
   } catch (e) {
     showToast((_t('toast.imgSaveFail') || '图片保存失败：') + e.message);
@@ -10173,11 +10237,12 @@ function openCodeChunkModal() {
     codeArea.value = CODE_CHUNK_SAMPLES[langSel.value] || CODE_CHUNK_SAMPLES.python;
   }
   $('code-chunk-modal').classList.remove('hidden');
+  syncCodeChunkOptions();
   setTimeout(() => { if (langSel) langSel.focus(); }, 50);
 }
 
 function closeCodeChunkModal() {
-  $('code-chunk-modal').classList.add('hidden');
+  window.ReadMDModal.close('code-chunk-modal');
   if (cmView) cmView.focus();
 }
 
@@ -10226,7 +10291,7 @@ function openDiagramModal() {
 }
 
 function closeDiagramModal() {
-  $('diagram-modal').classList.add('hidden');
+  window.ReadMDModal.close('diagram-modal');
   if (cmView) cmView.focus();
 }
 
@@ -10253,7 +10318,7 @@ function openDocImportModal() {
 }
 
 function closeDocImportModal() {
-  $('doc-import-modal').classList.add('hidden');
+  window.ReadMDModal.close('doc-import-modal');
   if (cmView) cmView.focus();
 }
 
@@ -10317,6 +10382,10 @@ async function browseDocImportFile() {
 function frontmatterParts(text) {
   const match = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
   return match && match.index === 0 ? { body: match[1].replace(/\r\n/g, '\n'), end: match[0].length } : { body: '', end: 0 };
+}
+
+function syncCodeChunkOptions() {
+  $('code-chunk-opt-plot').disabled = $('code-chunk-lang').value !== 'python';
 }
 
 function yamlFieldBlock(body, key, indent = '') {
@@ -10423,7 +10492,7 @@ function openFrontmatterModal() {
 
 function closeFrontmatterModal() {
   const modal = $('frontmatter-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
 }
 
@@ -10497,7 +10566,7 @@ const FORMULA_ITEM_KEYS = {
 let formulaCategory = '常用';
 
 function openFormulaModal(mode) { if (!state.editing) return; closeMdPopups(); $('formula-mode').value = mode || 'inline'; $('formula-modal').classList.remove('hidden'); $('formula-search').value = ''; renderFormulaPicker(); setTimeout(() => $('formula-search').focus(), 0); }
-function closeFormulaModal() { $('formula-modal').classList.add('hidden'); if (cmView) cmView.focus(); }
+function closeFormulaModal() { window.ReadMDModal.close('formula-modal'); if (cmView) cmView.focus(); }
 function renderFormulaPicker() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const cats = [...new Set(FORMULAS.map(f => f[0]))]; const catBox = $('formula-cats'); catBox.innerHTML = '';
@@ -10674,7 +10743,7 @@ function openTableModal() {
 
 function closeTableModal() {
   const modal = $('table-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
 }
 
@@ -13662,7 +13731,18 @@ async function copyText(value, success) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!value) return;
   try { await navigator.clipboard.writeText(value); showToast(success || (_t('toast.copied') || '')); }
-  catch (e) { const ta = document.createElement('textarea'); ta.value = value; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); showToast(success || (_t('toast.copied') || '')); } catch (e2) { showToast(_t('toast.copyFailed') || ''); } ta.remove(); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = value;
+    ta.style.cssText = 'position:fixed;inset-inline-start:0;top:0;width:1px;height:1px;opacity:0;';
+    const active = document.activeElement;
+    (window.ReadMDModal?.top() || document.body).appendChild(ta);
+    ta.select();
+    try {
+      if (!document.execCommand('copy')) throw new Error('copy_unavailable');
+      showToast(success || _t('toast.copied'));
+    } catch (_) { showToast(_t('toast.copyFailed')); }
+    ta.remove(); active?.focus({ preventScroll: true });
+  }
 }
 
 async function deleteAiSessionById(id) {
@@ -14921,14 +15001,18 @@ window.addEventListener('readmd:language-changed', () => {
 
 let qrLibraryLoader;
 let shareStatusEpoch = 0;
+let shareCurrentUrl = '';
 const shareText = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
 
 function shareBusy(busy) {
   $('share-modal').setAttribute('aria-busy', String(busy));
+  $('share-copy').disabled = busy || !shareCurrentUrl;
   if (busy) ['share-start', 'share-stop', 'share-refresh'].forEach(id => { $(id).disabled = true; });
 }
 
 function shareError(error) {
+  shareCurrentUrl = '';
+  $('share-copy').classList.add('hidden');
   $('share-url').textContent = '';
   $('share-token').textContent = '';
   $('share-qr').textContent = shareText('audit.shareFailed', { error: error.message });
@@ -14976,12 +15060,16 @@ async function refreshShareStatus() {
       if (!['http:', 'https:'].includes(authenticated.protocol) || typeof d.token !== 'string' || !d.token) throw new Error(_t('audit.invalidResponse'));
       authenticated.searchParams.set('token', d.token);
       const url = authenticated.href;
+      shareCurrentUrl = url;
+      $('share-copy').classList.remove('hidden');
       $('share-start').disabled = true;
       $('share-stop').disabled = false;
       $('share-url').textContent = (_t('share.mobileUrlLabel') || '手机浏览器打开：') + url;
       $('share-token').textContent = (_t('share.tokenLabel') || '访问令牌：') + d.token;
       await renderQr(url, epoch);
     } else {
+      shareCurrentUrl = '';
+      $('share-copy').classList.add('hidden');
       $('share-start').disabled = false;
       $('share-stop').disabled = true;
       $('share-url').textContent = '';
@@ -15018,6 +15106,10 @@ async function renderQr(text, epoch = shareStatusEpoch) {
 
 async function startShare() {
   return window.ReadMDTask.run('share-change', () => changeShare(true), { trigger: ['share-start', 'share-stop', 'share-refresh'] });
+}
+
+async function copyShareLink() {
+  if (shareCurrentUrl) await copyText(shareCurrentUrl);
 }
 
 async function stopShare() {
@@ -15160,40 +15252,50 @@ async function ocrFileOnce(path) {
   // Windows separators are Markdown escapes in the kernel's original-image link.
   // Forward slashes keep both the filesystem path and the generated link valid.
   if (/^[A-Za-z]:[\\/]/.test(path)) path = path.replace(/\\/g, '/');
-  if (!(await ensureModule('ocr'))) return;
+  if (!(await ensureModule('ocr'))) return false;
   busy(true);
   try {
     const r = await apiFetch('/api/ocr?p=' + encodeURIComponent(path));
     const d = await r.json();
-    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
-    if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return; }
-    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return; }
-    renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
-  } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); }
+    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
+    if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return false; }
+    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
+    await renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
+    return true;
+  } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); return false; }
   finally { busy(false); }
 }
 
 /* ---------------- 文件选择（含浏览器兜底） ---------------- */
 
-function chooseFile(mode) {
+async function processOcrSelection(files, upload = false) {
+  const run = async () => {
+    let ok = 0, failed = 0;
+    if (files.length > 1) showToast(_t('toast.batchOcrStarting', { count: files.length }), 3000);
+    for (const file of files) {
+      const path = upload ? await uploadFile(file) : file;
+      if (path && await ocrFile(path)) ok++; else failed++;
+    }
+    // Count actual documents created, including upload/empty-text failures.
+    if (files.length > 1) showToast(_t('batch.summary', { ok, skipped: 0, failed }), 4200);
+    return { ok, failed };
+  };
+  return window.ReadMDTask ? window.ReadMDTask.run('ocr-selection', run,
+    { trigger: ['btn-ocr', 'w-ocr'] }) : run();
+}
+
+async function chooseFile(mode) {
   if (moduleBlocked(mode)) return;
   if (hasPy) {
     if (mode === 'ocr') {
-      py.choose_many_files().then(async files => {
-        if (!files || !files.length) return;
-        if (files.length === 1) {
-          convertOrOcr(files[0], 'ocr');
-        } else {
-          showToast(_t('toast.batchOcrStarting', { count: files.length }) || `已选择 ${files.length} 个文件，正在进行批量 OCR 识别…`, 3000);
-          for (let i = 0; i < files.length; i++) {
-            await ocrFile(files[i]);
-          }
-          showToast(_t('toast.batchOcrComplete', { count: files.length }) || `批量 OCR 完成，已识别 ${files.length} 个文件并新建标签页`);
-        }
-      });
+      try {
+        const files = await py.choose_many_files();
+        if (files?.length) return await processOcrSelection(files);
+      } catch (e) { showToast(_t('toast.ocrFailPrefix') + e.message); }
       return;
     }
-    py.choose_any_file().then(p => { if (p) convertOrOcr(p, mode); });
+    try { const path = await py.choose_any_file(); if (path) return await convertOrOcr(path, mode); }
+    catch (e) { showToast(_t('toast.convertFailPrefix') + e.message); }
     return;
   }
   const input = $('file-input');
@@ -15202,9 +15304,10 @@ function chooseFile(mode) {
   input.onchange = async () => {
     const files = Array.from(input.files || []);
     if (!files.length) return;
+    if (mode === 'ocr') { await processOcrSelection(files, true); return; }
     if (files.length === 1) {
       const p = await uploadFile(files[0]);
-      if (p) convertOrOcr(p, mode);
+      if (p) await convertOrOcr(p, mode);
     } else {
       showToast(_t('toast.batchUploadStarting', { count: files.length }) || `正在批量上传并识别 ${files.length} 个文件…`, 3000);
       for (const f of files) {
@@ -15235,8 +15338,8 @@ async function uploadFile(file) {
 
 function convertOrOcr(p, mode) {
   // Images only have an OCR lane; PDFs convert and fall back to OCR in the kernel.
-  if (mode === 'ocr' || IMG_RE.test(p)) ocrFile(p);
-  else convertFile(p);
+  if (mode === 'ocr' || IMG_RE.test(p)) return ocrFile(p);
+  return convertFile(p);
 }
 
 
@@ -18287,6 +18390,7 @@ function setWebStatus(text, kind) {
 
   const el = $('url-status');
   el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
   el.classList.toggle('error', kind === 'error');
   el.classList.toggle('success', kind === 'success');
 }
@@ -18303,16 +18407,18 @@ function setWebProgress(percent, title, count) {
 
 function setWebRunning(running) {
   webRun.running = running;
+  $('url-modal').setAttribute('aria-busy', String(running));
   if ($('url-go')) $('url-go').disabled = running;
   if ($('url-render')) $('url-render').disabled = running || !hasPy;
   if ($('url-full')) $('url-full').disabled = running;
-  if ($('url-cancel')) $('url-cancel').classList.toggle('hidden', !running);
+  if ($('url-cancel')) { $('url-cancel').classList.toggle('hidden', !running); $('url-cancel').disabled = running && webRun.cancelled; }
   if ($('url-input')) $('url-input').disabled = running;
   if ($('url-mode')) $('url-mode').disabled = running;
   if ($('url-crawl')) $('url-crawl').disabled = running;
   if ($('url-pages')) $('url-pages').disabled = running;
   if ($('url-images')) $('url-images').disabled = running;
   if ($('url-private')) $('url-private').disabled = running || !hasPy;
+  ['url-paste-btn', 'url-pages-dec', 'url-pages-inc'].forEach(id => { if ($(id)) $(id).disabled = running; });
 }
 
 async function postWebExtract(payload) {
@@ -18399,8 +18505,9 @@ async function extractOneWebPage(url, options, forceRender) {
 
 async function cancelWebTask() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!webRun.running) return;
+  if (!webRun.running || webRun.cancelled) return;
   webRun.cancelled = true;
+  $('url-cancel').disabled = true;
   setWebStatus(_t('web.cancelling') || '正在取消网页转换…');
   try {
     await apiFetch('/api/web/cancel', {
@@ -18415,9 +18522,18 @@ async function cancelWebTask() {
 async function webToMd(url, crawl, forceRender) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   url = normalizeWebUrl(url);
-  if (!url || webRun.running) return;
+  if (webRun.running) return;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error('invalid_url');
+  } catch (_) {
+    setWebStatus(_t('web.statusPublic'), 'error');
+    $('url-input').setAttribute('aria-invalid', 'true');
+    $('url-input').focus();
+    return;
+  }
+  $('url-input').removeAttribute('aria-invalid');
   if ($('url-input')) $('url-input').value = url;
-  if (!(await ensureModule('web'))) return;
   webRun.taskId = 'web-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   webRun.lastUrl = url;
   webRun.cancelled = false;
@@ -18433,6 +18549,9 @@ async function webToMd(url, crawl, forceRender) {
   const sections = [], assets = [], warnings = [], failures = [];
   let first = null, batchTotal = 1;
   try {
+    // Own the UI before module loading: two fast clicks must share one job.
+    if (!(await ensureModule('web'))) return;
+    if (webRun.cancelled) throw Object.assign(new Error(_t('web.cancelled')), { code: 'cancelled' });
     if ($('url-private') && $('url-private').checked && hasPy && py.authorize_private_web) {
       const authorization = await py.authorize_private_web(url, webRun.taskId);
       if (authorization && authorization.ok) {
@@ -18479,7 +18598,7 @@ async function webToMd(url, crawl, forceRender) {
     }
     const content = sections.join('\n\n---\n\n');
     setWebProgress(100, _t('web.completed') || '网页转换完成', (crawl ? sections.length - 1 : sections.length) + ' ' + (_t('web.pageUnit') || '页'));
-    setWebStatus((_t('web.extractSuccess') || '提取成功') + (warnings.length ? '，' + warnings.length + ' 条提示' : '') + '。', 'success');
+    setWebStatus(_t('web.extractSuccess') + (warnings.length ? ' · ' + _t('web.additionalWarnings', { count: warnings.length }) : ''), 'success');
     const title = (first.meta && first.meta.title) || url;
     await renderVirtual('url', title, first.asset_dir || '', content, [], { assets });
     if (warnings.length) showToast(warnings[0] + (warnings.length > 1 ? (_t('web.additionalWarnings', { count: warnings.length - 1 }) || ('（另有 ' + (warnings.length - 1) + ' 条）')) : ''));
@@ -18509,8 +18628,8 @@ function openWebDialog() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (moduleBlocked('web')) return;
   $('url-modal').classList.remove('hidden');
-  $('url-render').disabled = !hasPy;
-  $('url-private').disabled = !hasPy;
+  setWebRunning(webRun.running);
+  if (webRun.running) return;
   $('url-progress').classList.add('hidden');
   $('url-progress').setAttribute('aria-hidden', 'true');
   setWebStatus(LAN_TOKEN
@@ -21847,8 +21966,10 @@ function bindEvents() {
   if ($('code-chunk-cancel')) $('code-chunk-cancel').addEventListener('click', closeCodeChunkModal);
   if ($('code-chunk-insert')) $('code-chunk-insert').addEventListener('click', insertCodeChunkFromModal);
   if ($('code-chunk-lang')) $('code-chunk-lang').addEventListener('change', e => {
+    syncCodeChunkOptions();
     const codeArea = $('code-chunk-code');
-    if (codeArea && typeof CODE_CHUNK_SAMPLES !== 'undefined') {
+    if (codeArea && typeof CODE_CHUNK_SAMPLES !== 'undefined' &&
+        (!codeArea.value.trim() || Object.values(CODE_CHUNK_SAMPLES).includes(codeArea.value))) {
       codeArea.value = CODE_CHUNK_SAMPLES[e.target.value] || CODE_CHUNK_SAMPLES.python;
     }
   });
@@ -21860,7 +21981,8 @@ function bindEvents() {
   if ($('diagram-insert')) $('diagram-insert').addEventListener('click', insertDiagramFromModal);
   if ($('diagram-type')) $('diagram-type').addEventListener('change', e => {
     const codeArea = $('diagram-code');
-    if (codeArea && typeof DIAGRAM_SAMPLES !== 'undefined') {
+    if (codeArea && typeof DIAGRAM_SAMPLES !== 'undefined' &&
+        (!codeArea.value.trim() || Object.values(DIAGRAM_SAMPLES).includes(codeArea.value))) {
       codeArea.value = DIAGRAM_SAMPLES[e.target.value] || DIAGRAM_SAMPLES.plantuml;
     }
   });
@@ -21947,7 +22069,10 @@ function bindEvents() {
   /* --- 6. 编辑器与工具栏交互 (Editor Studio & Markdown Tools) [联动: editor/editor.js, formula.js] --- */
   $('btn-edit').addEventListener('click', toggleEdit);
   document.querySelectorAll('#md-tool [data-md]').forEach(b => b.addEventListener('click', () => {
-    closeMdPopups(); if (b.dataset.md === 'image') openImgModal(); else cmInsertSyntax(b.dataset.md);
+    closeMdPopups();
+    if (b.dataset.md === 'image') openImgModal();
+    else if (b.id === 'btn-insert-table') openTableModal();
+    else cmInsertSyntax(b.dataset.md);
   }));
   document.querySelectorAll('#md-tool [data-menu]').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation(); const menu = $(b.dataset.menu); const wasHidden = menu.classList.contains('hidden'); closeMdPopups(); if (wasHidden) menu.classList.remove('hidden');
@@ -22279,6 +22404,7 @@ function bindEvents() {
   $('share-start').addEventListener('click', startShare);
   $('share-stop').addEventListener('click', stopShare);
   $('share-refresh').addEventListener('click', refreshShareStatus);
+  $('share-copy').addEventListener('click', copyShareLink);
   $('share-close').addEventListener('click', () => { $('share-modal').classList.add('hidden'); });
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
@@ -22306,43 +22432,10 @@ function bindEvents() {
 
   /* --- 17.1 编辑器增强：禅模式与全功能插入向导 [联动: editor/editor.js] --- */
   if ($('btn-zen-mode')) $('btn-zen-mode').addEventListener('click', () => toggleZenMode());
-  if ($('btn-insert-table')) $('btn-insert-table').addEventListener('click', () => openTableModal());
-  if ($('btn-insert-code-chunk')) $('btn-insert-code-chunk').addEventListener('click', () => openCodeChunkModal());
-  if ($('btn-insert-diagram')) $('btn-insert-diagram').addEventListener('click', () => openDiagramModal());
-  if ($('btn-insert-doc-import')) $('btn-insert-doc-import').addEventListener('click', () => openDocImportModal());
-  if ($('btn-insert-frontmatter')) $('btn-insert-frontmatter').addEventListener('click', () => openFrontmatterModal());
+  // Insert-menu buttons use the data-md dispatcher in section 6.
 
-  // 交互式代码块弹窗事件
-  if ($('code-chunk-modal-close')) $('code-chunk-modal-close').addEventListener('click', closeCodeChunkModal);
-  if ($('code-chunk-cancel')) $('code-chunk-cancel').addEventListener('click', closeCodeChunkModal);
-  if ($('code-chunk-insert')) $('code-chunk-insert').addEventListener('click', insertCodeChunkFromModal);
-  if ($('code-chunk-modal')) $('code-chunk-modal').addEventListener('click', e => { if (e.target === $('code-chunk-modal')) closeCodeChunkModal(); });
-  if ($('code-chunk-lang')) {
-    $('code-chunk-lang').addEventListener('change', () => {
-      if ($('code-chunk-code') && (typeof CODE_CHUNK_SAMPLES !== 'undefined')) {
-        $('code-chunk-code').value = CODE_CHUNK_SAMPLES[$('code-chunk-lang').value] || CODE_CHUNK_SAMPLES.python;
-      }
-    });
-  }
-
-  // 科学图表弹窗事件
-  if ($('diagram-modal-close')) $('diagram-modal-close').addEventListener('click', closeDiagramModal);
-  if ($('diagram-cancel')) $('diagram-cancel').addEventListener('click', closeDiagramModal);
-  if ($('diagram-insert')) $('diagram-insert').addEventListener('click', insertDiagramFromModal);
-  if ($('diagram-modal')) $('diagram-modal').addEventListener('click', e => { if (e.target === $('diagram-modal')) closeDiagramModal(); });
-  if ($('diagram-type')) {
-    $('diagram-type').addEventListener('change', () => {
-      if ($('diagram-code') && (typeof DIAGRAM_SAMPLES !== 'undefined')) {
-        $('diagram-code').value = DIAGRAM_SAMPLES[$('diagram-type').value] || DIAGRAM_SAMPLES.plantuml;
-      }
-    });
-  }
-
-  // 子文档引用弹窗事件
-  if ($('doc-import-modal-close')) $('doc-import-modal-close').addEventListener('click', closeDocImportModal);
-  if ($('doc-import-cancel')) $('doc-import-cancel').addEventListener('click', closeDocImportModal);
-  if ($('doc-import-insert')) $('doc-import-insert').addEventListener('click', insertDocImportFromModal);
-  if ($('doc-import-modal')) $('doc-import-modal').addEventListener('click', e => { if (e.target === $('doc-import-modal')) closeDocImportModal(); });
+  // Code, diagram and subdocument actions are bound once in section 2.
+  // Binding them again here inserted the same content twice per click.
 
   // 样式元数据 (Frontmatter) 弹窗事件
   if ($('frontmatter-modal-close')) $('frontmatter-modal-close').addEventListener('click', closeFrontmatterModal);

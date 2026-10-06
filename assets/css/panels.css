@@ -1220,3 +1220,111 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
   #editor-status-group #document-recovery-status { display:none; }
   body:has(#edit-bar:not(.hidden)) .statusbar-left-group { display:none; }
 }
+
+/* Shared panel anatomy: a stable heading and action row around one body.
+   Preserve the reader's existing palette and compact, quiet visual style. */
+.panel-scroll-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--space-4) var(--space-5);
+}
+.panel-sheet { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.panel-sheet > .modal-header,
+.panel-sheet > .modal-footer,
+.skill-create-dialog > .modal-footer { padding: var(--space-3) var(--space-5); }
+.panel-sheet > .modal-footer { margin: 0; border-top: 1px solid var(--border); background: var(--bg2); }
+.panel-sheet .modal-form-group + .modal-form-group { margin-top: var(--space-4); }
+.panel-sheet .modal-textarea { min-height: 160px; max-height: 36dvh; resize: vertical; font: var(--text-sm)/1.6 var(--font-code); }
+.panel-sheet .modal-form-group > label { display: block; margin-bottom: var(--space-2); color: var(--fg2); font-weight: var(--weight-medium); }
+.panel-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin-top: var(--space-4); }
+.panel-form-grid .modal-form-group { min-width: 0; }
+.panel-form-grid :is(input, select), .panel-sheet .modal-select { width: 100%; min-width: 0; }
+.panel-options { flex-shrink: 0; margin: var(--space-3) 0; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--bg); }
+.panel-options > summary { padding: 0 var(--space-3); display: flex; align-items: center; gap: var(--space-2); color: var(--fg2); font-size: var(--text-sm); cursor: pointer; list-style: none; }
+.panel-options > summary::-webkit-details-marker { display: none; }
+.panel-options > summary::before { content: ''; width: 6px; height: 6px; border-inline-end: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); flex: 0 0 auto; }
+.panel-options[open] > summary::before { transform: rotate(45deg); }
+.panel-options-body { padding: 0 var(--space-3) var(--space-3); display: grid; gap: var(--space-2); }
+.panel-options-body label { margin: 0; }
+.skill-create-dialog > .panel-scroll-body { padding: 0; }
+.skill-create-dialog .skill-create-intro { flex: none; }
+.skill-create-dialog .skill-create-layout { overflow: visible; }
+
+/* Every modal retains readable names, natural wrapping and visible feedback. */
+[role="dialog"] :is(.export-head, .modal-header, .url-head) { flex: 0 0 auto; min-width: 0; }
+[role="dialog"] :is(.export-head, .modal-header, .url-head) h3 { margin: 0; line-height: 1.45; }
+[role="dialog"] :is(.export-head, .modal-header, .url-head) > div { min-width: 0; }
+[role="dialog"] :is(.url-actions, .panel-actions, .convert-foot, .update-foot, .fix-actions) { flex-shrink: 0; flex-wrap: wrap; row-gap: var(--space-2); }
+[role="dialog"] :is(.fix-note, .url-status, .panel-feedback-row p, .plugin-path, .share-url, .share-token) { overflow-wrap: anywhere; line-height: 1.6; }
+[role="dialog"] :is(input, textarea)[aria-invalid="true"] { border-color: var(--danger); }
+[role="dialog"] :is(button, summary):disabled { cursor: default; }
+[role="dialog"] :is(.recent-name, .ai-history-name, .plugin-card-title, .batch-name) { min-width: 0; }
+[role="dialog"] :is(.recent-list, .ai-history-list, .plugin-grid, .formula-list, .lang-grid-container, .document-history-list) { overscroll-behavior: contain; scrollbar-gutter: stable; }
+#history-list .empty, #ai-history-list .empty, .side-empty { padding: var(--space-5); text-align: center; color: var(--fg2); }
+
+/* Table cells keep their 44px targets instead of clipping ten columns into
+   the former 320px dialog. Smaller windows scroll within this one body. */
+#table-modal .table-panel { width: min(534px, calc(100vw - 24px)); max-width: none; }
+#table-modal .table-picker-body { padding: var(--space-3); }
+#table-grid-picker { margin: 0 auto; padding: var(--space-2); gap: 3px; }
+#table-grid-picker .table-grid-cell { border-radius: var(--radius-xs); min-width: 44px; }
+#table-grid-label { position: sticky; bottom: calc(-1 * var(--space-3)); margin: var(--space-2) 0 0; padding: var(--space-2); background: var(--bg2); border-top: 1px solid var(--border); }
+
+/* Conversion starts with a useful empty state; advanced settings remain
+   accessible without competing with the file/folder actions. */
+#convert-box { width: min(680px, calc(100vw - 32px)); box-sizing: border-box; max-height: calc(100dvh - 32px); }
+#convert-box .convert-body { overflow: auto; overscroll-behavior: contain; }
+#convert-box .convert-options { margin: 0; }
+#convert-box .panel-options-body { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: center; }
+#convert-box .convert-speech-setting { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+#convert-box .convert-list:empty { display: none; }
+.convert-empty { display: none; min-height: 160px; padding: var(--space-5); border: 1px dashed var(--border2); border-radius: var(--radius-l); background: var(--bg); text-align: center; color: var(--fg2); }
+#convert-list:empty + .convert-empty { display: grid; place-items: center; align-content: center; gap: var(--space-2); }
+.convert-empty svg { width: 30px; height: 30px; color: var(--accent); }
+.convert-empty p { margin: 0; font-size: var(--text-md); color: var(--fg); }
+.convert-empty span { max-width: 32rem; font-size: var(--text-xs); line-height: 1.7; }
+#convert-box .convert-foot { position: sticky; bottom: 0; background: var(--bg2); padding-block: var(--space-2); }
+#convert-status { min-width: 0; overflow-wrap: anywhere; }
+.batch-item { flex-wrap: wrap; row-gap: var(--space-1); }
+.batch-name { flex: 1 1 140px; }
+.batch-state { white-space: normal; overflow-wrap: anywhere; }
+
+/* Sharing: stable header/actions, a clear QR empty state and a real copy link. */
+#share-box { padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: hidden; }
+#share-box > .export-head { padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--border); }
+#share-box > .panel-actions { margin: 0; padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border); }
+#share-box .fix-note { margin: 0 0 var(--space-4); }
+#share-qr:not(:has(img)) { min-height: 140px; padding: var(--space-3); display: grid; place-items: center; background: var(--bg); border: 1px dashed var(--border2); border-radius: var(--radius-l); }
+.share-link-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.share-link-row .share-url { flex: 1 1 200px; font-size: var(--text-xs); }
+#share-token:empty, #share-url:empty { display: none; }
+#share-refresh { margin-inline-start: auto; }
+#img-box .img-inspector :disabled { opacity: .4; }
+#img-box:not(:has(.img-crop.active)) .img-stage { background: var(--bg); border: 1px dashed var(--border2); }
+#img-box .img-hint { max-width: 28rem; padding: var(--space-5); line-height: 1.8; color: var(--fg2); }
+
+/* Search and menus are also panels: long translations/paths wrap inside the
+   current window, with consistent focus and reachable overflow items. */
+:is(#more-menu, .md-menu, .pv-menu, .tab-context-menu, .doc-tabs-dropdown) { max-width: calc(100vw - 24px); max-height: calc(100dvh - 120px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+:is(#more-menu, .md-menu, .pv-menu, .tab-context-menu, .doc-tabs-dropdown) :is(button, [role="menuitem"]) { min-height: 44px; height: auto; white-space: normal; line-height: 1.4; padding-block: var(--space-2); }
+.more-item { gap: var(--space-2); }
+.more-item em { margin-inline-start: auto; white-space: nowrap; }
+#search-bar { min-width: 0; gap: var(--space-2); }
+#search-input { min-width: 0; flex: 1 1 auto; }
+#search-count { flex: 0 1 auto; max-width: 42%; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+#search-bar button { flex: 0 0 auto; }
+.formula-box { border-radius: var(--radius-xl); }
+.formula-box > :is(.export-head, .formula-top, .formula-cats, .formula-preview) { flex-shrink: 0; }
+.formula-preview { max-height: 25dvh; }
+@media (max-width: 640px) {
+  .panel-form-grid, #convert-box .panel-options-body { grid-template-columns: minmax(0, 1fr); }
+  .panel-sheet > .modal-header, .panel-sheet > .modal-footer, .panel-scroll-body { padding-inline: var(--space-3); }
+  #convert-box, #share-box { width: calc(100vw - 24px); }
+  #share-box > :is(.export-head, .panel-actions) { padding-inline: var(--space-3); }
+  #share-refresh { margin-inline-start: 0; }
+  #search-count { max-width: 30%; font-size: var(--text-xs); }
+}

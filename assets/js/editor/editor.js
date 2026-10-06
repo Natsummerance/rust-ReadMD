@@ -762,11 +762,12 @@ function openCodeChunkModal() {
     codeArea.value = CODE_CHUNK_SAMPLES[langSel.value] || CODE_CHUNK_SAMPLES.python;
   }
   $('code-chunk-modal').classList.remove('hidden');
+  syncCodeChunkOptions();
   setTimeout(() => { if (langSel) langSel.focus(); }, 50);
 }
 
 function closeCodeChunkModal() {
-  $('code-chunk-modal').classList.add('hidden');
+  window.ReadMDModal.close('code-chunk-modal');
   if (cmView) cmView.focus();
 }
 
@@ -815,7 +816,7 @@ function openDiagramModal() {
 }
 
 function closeDiagramModal() {
-  $('diagram-modal').classList.add('hidden');
+  window.ReadMDModal.close('diagram-modal');
   if (cmView) cmView.focus();
 }
 
@@ -842,7 +843,7 @@ function openDocImportModal() {
 }
 
 function closeDocImportModal() {
-  $('doc-import-modal').classList.add('hidden');
+  window.ReadMDModal.close('doc-import-modal');
   if (cmView) cmView.focus();
 }
 
@@ -906,6 +907,10 @@ async function browseDocImportFile() {
 function frontmatterParts(text) {
   const match = text.match(/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)^---[ \t]*(?:\r?\n|$)/m);
   return match && match.index === 0 ? { body: match[1].replace(/\r\n/g, '\n'), end: match[0].length } : { body: '', end: 0 };
+}
+
+function syncCodeChunkOptions() {
+  $('code-chunk-opt-plot').disabled = $('code-chunk-lang').value !== 'python';
 }
 
 function yamlFieldBlock(body, key, indent = '') {
@@ -1012,7 +1017,7 @@ function openFrontmatterModal() {
 
 function closeFrontmatterModal() {
   const modal = $('frontmatter-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
 }
 
@@ -1086,7 +1091,7 @@ const FORMULA_ITEM_KEYS = {
 let formulaCategory = '常用';
 
 function openFormulaModal(mode) { if (!state.editing) return; closeMdPopups(); $('formula-mode').value = mode || 'inline'; $('formula-modal').classList.remove('hidden'); $('formula-search').value = ''; renderFormulaPicker(); setTimeout(() => $('formula-search').focus(), 0); }
-function closeFormulaModal() { $('formula-modal').classList.add('hidden'); if (cmView) cmView.focus(); }
+function closeFormulaModal() { window.ReadMDModal.close('formula-modal'); if (cmView) cmView.focus(); }
 function renderFormulaPicker() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const cats = [...new Set(FORMULAS.map(f => f[0]))]; const catBox = $('formula-cats'); catBox.innerHTML = '';
@@ -1263,7 +1268,7 @@ function openTableModal() {
 
 function closeTableModal() {
   const modal = $('table-modal');
-  if (modal) modal.classList.add('hidden');
+  if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
 }
 

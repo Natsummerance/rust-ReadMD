@@ -142,8 +142,15 @@
     const [layer] = stack.splice(at, 1);
     refreshInert();
     const next = stack[stack.length - 1];
+    // An insertion/cancel handler may already have returned the caret to the
+    // editor. The observer runs later; honour that explicit focus transfer.
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && !el.contains(active) &&
+        !active.closest('[inert], .hidden') && !active.disabled && active.getClientRects().length &&
+        (!next || next.el.contains(active))) return;
     const back = layer.opener;
-    const target = back && back.isConnected && !back.closest('[inert]') ? back : (next ? initialFocus(next.el) : null);
+    const target = back && back.isConnected && !back.closest('[inert], .hidden') &&
+      !back.disabled && back.getClientRects().length ? back : (next ? initialFocus(next.el) : null);
     if (target && (!next || next.el.contains(target))) target.focus({ preventScroll: true });
     else if (next) { const f = initialFocus(next.el); if (f) f.focus({ preventScroll: true }); }
   }
@@ -166,8 +173,9 @@
     // No close button (e.g. choice-modal builds its buttons at runtime): every
     // promise-based dialog treats a click on its own backdrop as "cancel".
     else el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    // Anything that is still open after its close path gets hidden directly.
-    if (isShown(el) && stack[stack.length - 1]?.el === el) {
+    // A close handler may first cancel a running task or ask to keep a draft.
+    // It owns that lifecycle; do not hide its progress/confirmation behind it.
+    if (!closer && isShown(el) && stack[stack.length - 1]?.el === el) {
       el.classList.add('hidden');
       sync(el);
     }

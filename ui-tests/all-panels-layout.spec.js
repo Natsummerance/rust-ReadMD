@@ -5,13 +5,15 @@ const json = (route, body) => route.fulfill({ status: 200, contentType: 'applica
 // panes which used to be clipped by a non-scrolling modal body.
 for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }]) {
   for (const locale of (process.env.READMD_PANEL_TEST_LOCALES || 'zh-CN,en,zh-TW').split(',')) {
-    test(`F097 all 29 dialogs remain reachable at ${size.width}x${size.height} in ${locale}`, async ({ page }, testInfo) => {
+    for (const theme of (process.env.READMD_PANEL_TEST_THEMES || 'light').split(',')) {
+    test(`F097 all 29 dialogs remain reachable at ${size.width}x${size.height} in ${locale}, ${theme}`, async ({ page }, testInfo) => {
       test.setTimeout(120000);
       const errors = []; page.on('pageerror', error => errors.push(error.message));
       await page.route('**/api/update/check', route => json(route, { ok: false }));
       await page.addInitScript(locale => localStorage.setItem('readmd_language', locale), locale);
       await page.setViewportSize(size); await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.goto('/'); await page.waitForFunction(() => typeof openPetSettings === 'function');
+      await page.evaluate(theme => { state.theme = theme; applySettings(); }, theme);
       await page.evaluate(async () => {
         const path = await uploadFile(new File(['# Layout\n\nBody'], 'layout.md', { type: 'text/markdown' }));
         await loadFile(path); await toggleEdit();
@@ -64,9 +66,10 @@ for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }])
         // Capture problematic screens for review without serializing input values.
         if (check.failures.length) await page.screenshot({ path: testInfo.outputPath(id + '.png') });
       }
-      await testInfo.attach('panel-geometry.json', { body: Buffer.from(JSON.stringify({ size, locale, report }, null, 2)), contentType: 'application/json' });
+      await testInfo.attach('panel-geometry.json', { body: Buffer.from(JSON.stringify({ size, locale, theme, report }, null, 2)), contentType: 'application/json' });
       expect(report.filter(row => row.failures.length)).toEqual([]);
       expect(errors).toEqual([]);
     });
+    }
   }
 }

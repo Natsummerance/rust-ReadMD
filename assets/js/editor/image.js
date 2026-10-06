@@ -13,6 +13,16 @@ const imgState = {
   crop: { x: 0, y: 0, w: 0, h: 0 },
   drag: null, history: [], redo: [], spaceDown: false,
 };
+let imgLoadEpoch = 0;
+let imgInsertPending = false;
+window.ReadMDModal.setGuard('img-modal', () => !imgInsertPending);
+
+function syncImgAvailability() {
+  const loaded = !!imgState.img;
+  document.querySelectorAll('#img-box .img-inspector :is(button, input, select)').forEach(el => { el.disabled = !loaded; });
+  $('img-insert').disabled = !loaded;
+  updateImgHistoryButtons();
+}
 
 function imgSnapshot() { return {angle:imgState.angle,scale:imgState.scale,ratio:imgState.ratio,viewZoom:imgState.viewZoom,panX:imgState.panX,panY:imgState.panY,flipX:imgState.flipX,flipY:imgState.flipY,sizeLock:imgState.sizeLock,outW:imgState.outW,outH:imgState.outH,crop:Object.assign({},imgState.crop)}; }
 function pushImgHistory() { if (!imgState.img) return; imgState.history.push(imgSnapshot()); if (imgState.history.length > 40) imgState.history.shift(); imgState.redo = []; updateImgHistoryButtons(); }
@@ -22,25 +32,34 @@ function redoImg() { const s=imgState.redo.pop(); if (!s) return; imgState.histo
 function updateImgHistoryButtons() { $('img-undo').disabled=!imgState.history.length; $('img-redo').disabled=!imgState.redo.length; }
 
 function openImgModal() {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!state.dir) { showToast(_t('toast.imgLocalOnly') || '图片编辑仅支持本地 Markdown 文件'); return; }
   $('img-modal').classList.remove('hidden');
+  ++imgLoadEpoch;
+  imgState.img = null;
   resetImg();
   drawImg();
   updateImgInfo();
 }
 
-function closeImgModal() {
-  $('img-modal').classList.add('hidden');
+function closeImgModal(force) {
+  if (imgInsertPending && force !== true) return;
+  ++imgLoadEpoch;
+  window.ReadMDModal.close('img-modal');
   imgState.img = null;
   imgState.drag = null;
+  if (cmView) cmView.focus();
 }
 
 function loadImgFromFile(file) {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!file) return;
+  const epoch = ++imgLoadEpoch;
   const fr = new FileReader();
   fr.onload = () => {
+    if (epoch !== imgLoadEpoch) return;
     try { loadImgSrc(fr.result); } catch (e) { showToast((_t('toast.imgReadFail') || '图片读取失败：') + e.message); }
   };
   fr.onerror = () => showToast(_t('toast.imgReadFail') || '图片读取失败');
@@ -48,9 +67,12 @@ function loadImgFromFile(file) {
 }
 
 function loadImgSrc(src) {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const im = new Image();
+  const epoch = ++imgLoadEpoch;
   im.onload = () => {
+    if (epoch !== imgLoadEpoch || $('img-modal').classList.contains('hidden')) return;
     imgState.img = im;
     imgState.rawW = im.naturalWidth || im.width;
     imgState.rawH = im.naturalHeight || im.height;
@@ -60,7 +82,7 @@ function loadImgSrc(src) {
     $('img-crop').classList.add('active');
     updateImgInfo();
   };
-  im.onerror = () => showToast(_t('toast.imgLoadCorsFail') || '图片加载失败（URL 可能被跨域限制）');
+  im.onerror = () => { if (epoch === imgLoadEpoch) showToast(_t('toast.imgLoadCorsFail') || '图片加载失败（URL 可能被跨域限制）'); };
   im.src = src;
 }
 
@@ -183,10 +205,14 @@ function resetImg() {
     $('img-insert').disabled = false;
   } else {
     imgState.rotW = 0; imgState.rotH = 0;
+    const canvas = $('img-canvas');
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    $('img-out-w').value = ''; $('img-out-h').value = '';
     $('img-hint').style.display = '';
     $('img-crop').classList.remove('active');
     $('img-insert').disabled = true;
   }
+  syncImgAvailability();
   drawImg();
 }
 
@@ -325,6 +351,7 @@ function stagePointerUp(e) {
 }
 
 function insertImgUrl() {
+  if (imgInsertPending) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const url = $('img-url-input').value.trim();
   if (!url) { showToast(_t('toast.imgEnterUrl') || '请输入图片 URL'); return; }
@@ -344,8 +371,32 @@ function cmInsertImage(rel) {
 }
 
 async function exportAndInsertImg() {
+  if (imgInsertPending || !imgState.img || !cmView) return;
+  imgInsertPending = true;
+  const controls = [...document.querySelectorAll('#img-box :is(button, input, select)')];
+  const disabled = controls.map(el => el.disabled);
+  controls.forEach(el => { el.disabled = true; });
+  $('img-stage').inert = true;
+  $('img-box').setAttribute('aria-busy', 'true');
+  try {
+    return await window.ReadMDTask.run('image-insert', exportAndInsertImgOnce);
+  } catch (e) {
+    showToast(window.i18n ? window.i18n.t('toast.imgExportFail') : '图片导出失败');
+  } finally {
+    imgInsertPending = false;
+    controls.forEach((el, index) => { el.disabled = disabled[index]; });
+    $('img-stage').inert = false;
+    $('img-box').removeAttribute('aria-busy');
+    syncImgAvailability();
+  }
+}
+
+async function exportAndInsertImgOnce() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!imgState.img) return;
+  const target = { view: cmView, tabId: state.activeTabId, dir: state.dir, file: state.file, doc: cmView.state.doc.toString() };
+  const targetUnchanged = () => cmView === target.view && state.activeTabId === target.tabId &&
+    state.dir === target.dir && state.file === target.file && cmView.state.doc.toString() === target.doc;
   const r = imgRect();
   const srcX = (imgState.crop.x - r.x) / imgState.fitScale;
   const srcY = (imgState.crop.y - r.y) / imgState.fitScale;
@@ -374,18 +425,21 @@ async function exportAndInsertImg() {
   const b64 = await new Promise(res => {
     const fr = new FileReader();
     fr.onload = () => res(String(fr.result).split(',')[1] || '');
+    fr.onerror = () => res('');
     fr.readAsDataURL(blob);
   });
+  if (!b64 || !targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
   busy(true);
   try {
     const resp = await apiFetch('/api/image/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dir: state.dir, data: b64, format: 'png', name: 'img_' + Date.now() }),
+      body: JSON.stringify({ dir: target.dir, data: b64, format: 'png', name: 'img_' + Date.now() }),
     });
     const d = await resp.json();
     if (!resp.ok || !d.ok) throw new Error(d.error || _t('toast.unknownError'));
+    if (!targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
     cmInsertImage(d.rel);
-    closeImgModal();
+    closeImgModal(true);
     showToast(_t('toast.imgInsertedRel', { rel: d.rel }) || ('图片已插入（' + d.rel + '）'));
   } catch (e) {
     showToast((_t('toast.imgSaveFail') || '图片保存失败：') + e.message);

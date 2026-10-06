@@ -99,4 +99,5 @@ jobs:
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js --project=desktop --project=mobile
+          READMD_PANEL_TEST_THEMES: light,dark,sepia
+        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js --project=desktop --project=mobile

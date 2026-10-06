@@ -7,14 +7,18 @@
 
 let qrLibraryLoader;
 let shareStatusEpoch = 0;
+let shareCurrentUrl = '';
 const shareText = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
 
 function shareBusy(busy) {
   $('share-modal').setAttribute('aria-busy', String(busy));
+  $('share-copy').disabled = busy || !shareCurrentUrl;
   if (busy) ['share-start', 'share-stop', 'share-refresh'].forEach(id => { $(id).disabled = true; });
 }
 
 function shareError(error) {
+  shareCurrentUrl = '';
+  $('share-copy').classList.add('hidden');
   $('share-url').textContent = '';
   $('share-token').textContent = '';
   $('share-qr').textContent = shareText('audit.shareFailed', { error: error.message });
@@ -62,12 +66,16 @@ async function refreshShareStatus() {
       if (!['http:', 'https:'].includes(authenticated.protocol) || typeof d.token !== 'string' || !d.token) throw new Error(_t('audit.invalidResponse'));
       authenticated.searchParams.set('token', d.token);
       const url = authenticated.href;
+      shareCurrentUrl = url;
+      $('share-copy').classList.remove('hidden');
       $('share-start').disabled = true;
       $('share-stop').disabled = false;
       $('share-url').textContent = (_t('share.mobileUrlLabel') || '手机浏览器打开：') + url;
       $('share-token').textContent = (_t('share.tokenLabel') || '访问令牌：') + d.token;
       await renderQr(url, epoch);
     } else {
+      shareCurrentUrl = '';
+      $('share-copy').classList.add('hidden');
       $('share-start').disabled = false;
       $('share-stop').disabled = true;
       $('share-url').textContent = '';
@@ -104,6 +112,10 @@ async function renderQr(text, epoch = shareStatusEpoch) {
 
 async function startShare() {
   return window.ReadMDTask.run('share-change', () => changeShare(true), { trigger: ['share-start', 'share-stop', 'share-refresh'] });
+}
+
+async function copyShareLink() {
+  if (shareCurrentUrl) await copyText(shareCurrentUrl);
 }
 
 async function stopShare() {

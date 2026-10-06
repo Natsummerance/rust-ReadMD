@@ -230,6 +230,8 @@ function updateSearchCount() {
   if (bar) {
     const hasHits = state.currentMarks.length > 0 || globalSearchState.matches.length > 0;
     bar.classList.toggle('rd-search-empty', !!state.lastQuery && !hasHits);
+    $('search-prev').disabled = !hasHits;
+    $('search-next').disabled = !hasHits;
   }
   const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
 

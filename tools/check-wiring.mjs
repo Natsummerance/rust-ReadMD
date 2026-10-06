@@ -13,6 +13,7 @@
 // Icon-only buttons must have an accessible name.
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripComments } from './check-no-python.mjs';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const report = process.argv.includes('--report');
@@ -30,6 +31,18 @@ function walk(dir, out = []) {
 export function analyse(html, sources) {
   const code = sources.join('\n');
   const problems = [];
+  // Re-registering the same named listener on a static control makes one
+  // click perform a destructive action twice. Delegated/anonymous listeners
+  // still require the browser's behavioural tests; this is a narrow gate.
+  const listenerRe = /(?:\$|document\.getElementById)\(\s*['"]([^'"]+)['"]\s*\)\s*\??\.addEventListener\(\s*['"]([^'"]+)['"]\s*,\s*([A-Za-z_$][\w$]*)\s*\)/g;
+  for (const source of sources) {
+    const seen = new Set();
+    for (const match of stripComments(source.split('\n')).join('\n').matchAll(listenerRe)) {
+      const key = match.slice(1).join(':');
+      if (seen.has(key)) problems.push({ kind: 'duplicate-listener', id: match[1] });
+      seen.add(key);
+    }
+  }
   // Controls with an id.
   const controlRe = /<(button|input|select|textarea|a)\b([^>]*)>([\s\S]*?)(?=<\/\1>|$)/g;
   const htmlIds = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));

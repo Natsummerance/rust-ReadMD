@@ -19,3 +19,13 @@ test('dangling aria-labelledby is reported', () => {
   const p = analyse(html, ['']);
   assert.deepEqual(p.map(x => x.kind + ':' + x.id), ['dangling-aria-labelledby:t2']);
 });
+
+test('duplicate named click handlers fail the gate without rejecting distinct events', () => {
+  const html = '<button id="insert">Insert</button>';
+  const once = "$('insert').addEventListener('click', insertContent);";
+  assert.deepEqual(analyse(html, [once]), []);
+  assert.deepEqual(analyse(html, [once + '\n// ' + once + '\n/* ' + once + ' */']), []);
+  assert.deepEqual(analyse(html, [once + "$('insert').addEventListener('focus', insertContent);"]), []);
+  assert.deepEqual(analyse(html, [once + 'document.getElementById("insert").addEventListener("click", insertContent);']),
+    [{ kind:'duplicate-listener', id:'insert' }]);
+});

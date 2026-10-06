@@ -238,8 +238,10 @@ function bindEvents() {
   if ($('code-chunk-cancel')) $('code-chunk-cancel').addEventListener('click', closeCodeChunkModal);
   if ($('code-chunk-insert')) $('code-chunk-insert').addEventListener('click', insertCodeChunkFromModal);
   if ($('code-chunk-lang')) $('code-chunk-lang').addEventListener('change', e => {
+    syncCodeChunkOptions();
     const codeArea = $('code-chunk-code');
-    if (codeArea && typeof CODE_CHUNK_SAMPLES !== 'undefined') {
+    if (codeArea && typeof CODE_CHUNK_SAMPLES !== 'undefined' &&
+        (!codeArea.value.trim() || Object.values(CODE_CHUNK_SAMPLES).includes(codeArea.value))) {
       codeArea.value = CODE_CHUNK_SAMPLES[e.target.value] || CODE_CHUNK_SAMPLES.python;
     }
   });
@@ -251,7 +253,8 @@ function bindEvents() {
   if ($('diagram-insert')) $('diagram-insert').addEventListener('click', insertDiagramFromModal);
   if ($('diagram-type')) $('diagram-type').addEventListener('change', e => {
     const codeArea = $('diagram-code');
-    if (codeArea && typeof DIAGRAM_SAMPLES !== 'undefined') {
+    if (codeArea && typeof DIAGRAM_SAMPLES !== 'undefined' &&
+        (!codeArea.value.trim() || Object.values(DIAGRAM_SAMPLES).includes(codeArea.value))) {
       codeArea.value = DIAGRAM_SAMPLES[e.target.value] || DIAGRAM_SAMPLES.plantuml;
     }
   });
@@ -338,7 +341,10 @@ function bindEvents() {
   /* --- 6. 编辑器与工具栏交互 (Editor Studio & Markdown Tools) [联动: editor/editor.js, formula.js] --- */
   $('btn-edit').addEventListener('click', toggleEdit);
   document.querySelectorAll('#md-tool [data-md]').forEach(b => b.addEventListener('click', () => {
-    closeMdPopups(); if (b.dataset.md === 'image') openImgModal(); else cmInsertSyntax(b.dataset.md);
+    closeMdPopups();
+    if (b.dataset.md === 'image') openImgModal();
+    else if (b.id === 'btn-insert-table') openTableModal();
+    else cmInsertSyntax(b.dataset.md);
   }));
   document.querySelectorAll('#md-tool [data-menu]').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation(); const menu = $(b.dataset.menu); const wasHidden = menu.classList.contains('hidden'); closeMdPopups(); if (wasHidden) menu.classList.remove('hidden');
@@ -670,6 +676,7 @@ function bindEvents() {
   $('share-start').addEventListener('click', startShare);
   $('share-stop').addEventListener('click', stopShare);
   $('share-refresh').addEventListener('click', refreshShareStatus);
+  $('share-copy').addEventListener('click', copyShareLink);
   $('share-close').addEventListener('click', () => { $('share-modal').classList.add('hidden'); });
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
@@ -697,43 +704,10 @@ function bindEvents() {
 
   /* --- 17.1 编辑器增强：禅模式与全功能插入向导 [联动: editor/editor.js] --- */
   if ($('btn-zen-mode')) $('btn-zen-mode').addEventListener('click', () => toggleZenMode());
-  if ($('btn-insert-table')) $('btn-insert-table').addEventListener('click', () => openTableModal());
-  if ($('btn-insert-code-chunk')) $('btn-insert-code-chunk').addEventListener('click', () => openCodeChunkModal());
-  if ($('btn-insert-diagram')) $('btn-insert-diagram').addEventListener('click', () => openDiagramModal());
-  if ($('btn-insert-doc-import')) $('btn-insert-doc-import').addEventListener('click', () => openDocImportModal());
-  if ($('btn-insert-frontmatter')) $('btn-insert-frontmatter').addEventListener('click', () => openFrontmatterModal());
+  // Insert-menu buttons use the data-md dispatcher in section 6.
 
-  // 交互式代码块弹窗事件
-  if ($('code-chunk-modal-close')) $('code-chunk-modal-close').addEventListener('click', closeCodeChunkModal);
-  if ($('code-chunk-cancel')) $('code-chunk-cancel').addEventListener('click', closeCodeChunkModal);
-  if ($('code-chunk-insert')) $('code-chunk-insert').addEventListener('click', insertCodeChunkFromModal);
-  if ($('code-chunk-modal')) $('code-chunk-modal').addEventListener('click', e => { if (e.target === $('code-chunk-modal')) closeCodeChunkModal(); });
-  if ($('code-chunk-lang')) {
-    $('code-chunk-lang').addEventListener('change', () => {
-      if ($('code-chunk-code') && (typeof CODE_CHUNK_SAMPLES !== 'undefined')) {
-        $('code-chunk-code').value = CODE_CHUNK_SAMPLES[$('code-chunk-lang').value] || CODE_CHUNK_SAMPLES.python;
-      }
-    });
-  }
-
-  // 科学图表弹窗事件
-  if ($('diagram-modal-close')) $('diagram-modal-close').addEventListener('click', closeDiagramModal);
-  if ($('diagram-cancel')) $('diagram-cancel').addEventListener('click', closeDiagramModal);
-  if ($('diagram-insert')) $('diagram-insert').addEventListener('click', insertDiagramFromModal);
-  if ($('diagram-modal')) $('diagram-modal').addEventListener('click', e => { if (e.target === $('diagram-modal')) closeDiagramModal(); });
-  if ($('diagram-type')) {
-    $('diagram-type').addEventListener('change', () => {
-      if ($('diagram-code') && (typeof DIAGRAM_SAMPLES !== 'undefined')) {
-        $('diagram-code').value = DIAGRAM_SAMPLES[$('diagram-type').value] || DIAGRAM_SAMPLES.plantuml;
-      }
-    });
-  }
-
-  // 子文档引用弹窗事件
-  if ($('doc-import-modal-close')) $('doc-import-modal-close').addEventListener('click', closeDocImportModal);
-  if ($('doc-import-cancel')) $('doc-import-cancel').addEventListener('click', closeDocImportModal);
-  if ($('doc-import-insert')) $('doc-import-insert').addEventListener('click', insertDocImportFromModal);
-  if ($('doc-import-modal')) $('doc-import-modal').addEventListener('click', e => { if (e.target === $('doc-import-modal')) closeDocImportModal(); });
+  // Code, diagram and subdocument actions are bound once in section 2.
+  // Binding them again here inserted the same content twice per click.
 
   // 样式元数据 (Frontmatter) 弹窗事件
   if ($('frontmatter-modal-close')) $('frontmatter-modal-close').addEventListener('click', closeFrontmatterModal);

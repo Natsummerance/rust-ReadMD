@@ -1703,7 +1703,18 @@ async function copyText(value, success) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!value) return;
   try { await navigator.clipboard.writeText(value); showToast(success || (_t('toast.copied') || '')); }
-  catch (e) { const ta = document.createElement('textarea'); ta.value = value; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); showToast(success || (_t('toast.copied') || '')); } catch (e2) { showToast(_t('toast.copyFailed') || ''); } ta.remove(); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = value;
+    ta.style.cssText = 'position:fixed;inset-inline-start:0;top:0;width:1px;height:1px;opacity:0;';
+    const active = document.activeElement;
+    (window.ReadMDModal?.top() || document.body).appendChild(ta);
+    ta.select();
+    try {
+      if (!document.execCommand('copy')) throw new Error('copy_unavailable');
+      showToast(success || _t('toast.copied'));
+    } catch (_) { showToast(_t('toast.copyFailed')); }
+    ta.remove(); active?.focus({ preventScroll: true });
+  }
 }
 
 async function deleteAiSessionById(id) {

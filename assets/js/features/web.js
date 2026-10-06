@@ -22,6 +22,7 @@ function setWebStatus(text, kind) {
 
   const el = $('url-status');
   el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
   el.classList.toggle('error', kind === 'error');
   el.classList.toggle('success', kind === 'success');
 }
@@ -38,16 +39,18 @@ function setWebProgress(percent, title, count) {
 
 function setWebRunning(running) {
   webRun.running = running;
+  $('url-modal').setAttribute('aria-busy', String(running));
   if ($('url-go')) $('url-go').disabled = running;
   if ($('url-render')) $('url-render').disabled = running || !hasPy;
   if ($('url-full')) $('url-full').disabled = running;
-  if ($('url-cancel')) $('url-cancel').classList.toggle('hidden', !running);
+  if ($('url-cancel')) { $('url-cancel').classList.toggle('hidden', !running); $('url-cancel').disabled = running && webRun.cancelled; }
   if ($('url-input')) $('url-input').disabled = running;
   if ($('url-mode')) $('url-mode').disabled = running;
   if ($('url-crawl')) $('url-crawl').disabled = running;
   if ($('url-pages')) $('url-pages').disabled = running;
   if ($('url-images')) $('url-images').disabled = running;
   if ($('url-private')) $('url-private').disabled = running || !hasPy;
+  ['url-paste-btn', 'url-pages-dec', 'url-pages-inc'].forEach(id => { if ($(id)) $(id).disabled = running; });
 }
 
 async function postWebExtract(payload) {
@@ -134,8 +137,9 @@ async function extractOneWebPage(url, options, forceRender) {
 
 async function cancelWebTask() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!webRun.running) return;
+  if (!webRun.running || webRun.cancelled) return;
   webRun.cancelled = true;
+  $('url-cancel').disabled = true;
   setWebStatus(_t('web.cancelling') || '正在取消网页转换…');
   try {
     await apiFetch('/api/web/cancel', {
@@ -150,9 +154,18 @@ async function cancelWebTask() {
 async function webToMd(url, crawl, forceRender) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   url = normalizeWebUrl(url);
-  if (!url || webRun.running) return;
+  if (webRun.running) return;
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error('invalid_url');
+  } catch (_) {
+    setWebStatus(_t('web.statusPublic'), 'error');
+    $('url-input').setAttribute('aria-invalid', 'true');
+    $('url-input').focus();
+    return;
+  }
+  $('url-input').removeAttribute('aria-invalid');
   if ($('url-input')) $('url-input').value = url;
-  if (!(await ensureModule('web'))) return;
   webRun.taskId = 'web-' + Date.now() + '-' + Math.random().toString(16).slice(2);
   webRun.lastUrl = url;
   webRun.cancelled = false;
@@ -168,6 +181,9 @@ async function webToMd(url, crawl, forceRender) {
   const sections = [], assets = [], warnings = [], failures = [];
   let first = null, batchTotal = 1;
   try {
+    // Own the UI before module loading: two fast clicks must share one job.
+    if (!(await ensureModule('web'))) return;
+    if (webRun.cancelled) throw Object.assign(new Error(_t('web.cancelled')), { code: 'cancelled' });
     if ($('url-private') && $('url-private').checked && hasPy && py.authorize_private_web) {
       const authorization = await py.authorize_private_web(url, webRun.taskId);
       if (authorization && authorization.ok) {
@@ -214,7 +230,7 @@ async function webToMd(url, crawl, forceRender) {
     }
     const content = sections.join('\n\n---\n\n');
     setWebProgress(100, _t('web.completed') || '网页转换完成', (crawl ? sections.length - 1 : sections.length) + ' ' + (_t('web.pageUnit') || '页'));
-    setWebStatus((_t('web.extractSuccess') || '提取成功') + (warnings.length ? '，' + warnings.length + ' 条提示' : '') + '。', 'success');
+    setWebStatus(_t('web.extractSuccess') + (warnings.length ? ' · ' + _t('web.additionalWarnings', { count: warnings.length }) : ''), 'success');
     const title = (first.meta && first.meta.title) || url;
     await renderVirtual('url', title, first.asset_dir || '', content, [], { assets });
     if (warnings.length) showToast(warnings[0] + (warnings.length > 1 ? (_t('web.additionalWarnings', { count: warnings.length - 1 }) || ('（另有 ' + (warnings.length - 1) + ' 条）')) : ''));
@@ -244,8 +260,8 @@ function openWebDialog() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (moduleBlocked('web')) return;
   $('url-modal').classList.remove('hidden');
-  $('url-render').disabled = !hasPy;
-  $('url-private').disabled = !hasPy;
+  setWebRunning(webRun.running);
+  if (webRun.running) return;
   $('url-progress').classList.add('hidden');
   $('url-progress').setAttribute('aria-hidden', 'true');
   setWebStatus(LAN_TOKEN

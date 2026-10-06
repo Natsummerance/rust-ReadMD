@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-06",
+  "scope": {
+    "sections": 21,
+    "flows": 104,
+    "dialogs": 29
+  },
+  "layout": {
+    "passed": 30,
+    "sizes": [
+      [
+        1160,
+        820
+      ],
+      [
+        1024,
+        680
+      ]
+    ],
+    "locales": [
+      "zh-CN",
+      "en",
+      "zh-TW",
+      "de",
+      "ar"
+    ],
+    "themes": [
+      "light",
+      "dark",
+      "sepia"
+    ]
+  },
+  "fullDesktop": {
+    "passed": 319,
+    "skipped": 1,
+    "failed": 0,
+    "stage": "Before final focus/search/image edge repairs; changed paths revalidated separately"
+  },
+  "finalRelatedDesktopAndTouch": {
+    "passed": 68,
+    "failed": 0
+  },
+  "finalImageAndPanelDesktopAndTouch": {
+    "passed": 32,
+    "failed": 0,
+    "retries": 0
+  },
+  "caughtByNewImageTests": {
+    "failed": 2,
+    "cause": "Esc fell through the generic modal fallback when all close buttons were disabled",
+    "repair": "Explicit in-flight image modal guard",
+    "revalidated": true
+  },
+  "node": {
+    "passed": 47,
+    "failed": 0
+  },
+  "i18n": {
+    "locales": 46,
+    "keysPerLocale": 2034
+  },
+  "native": {
+    "passed": true,
+    "realNativeCsp": true,
+    "elapsedMs": 6965,
+    "languages": 46,
+    "themes": 3,
+    "scenarios": [
+      {
+        "name": "cancel-table-without-editing",
+        "passed": true
+      },
+      {
+        "name": "insert-once-save-and-undo",
+        "passed": true
+      },
+      {
+        "name": "all-46-languages-keep-draft-and-one-row",
+        "passed": true
+      },
+      {
+        "name": "real-image-save-insert-and-undo",
+        "passed": true
+      },
+      {
+        "name": "real-lan-share-start-copy-state-stop",
+        "passed": true
+      },
+      {
+        "name": "three-themes-advanced-conversion-and-image-empty-state",
+        "passed": true
+      },
+      {
+        "name": "native-screenshot-and-preserved-file",
+        "passed": true
+      }
+    ],
+    "pageErrors": 0,
+    "syntheticFilePreserved": true
+  },
+  "bootBundle": {
+    "bytes": 1067288,
+    "normalizedLfSha256": "68b276342c856e82242c7ad0d88471fba168e0f197e1d16063eb975505f6aca7"
+  },
+  "gates": [
+    "offline-locked-boot-bundle",
+    "source-syntax",
+    "i18n",
+    "wiring",
+    "styles-and-contrast",
+    "assets",
+    "no-python",
+    "privacy"
+  ],
+  "limits": [
+    "Synthetic UI failures do not prove OCR engines or public websites succeed for arbitrary inputs.",
+    "Native tests use isolated profiles and synthetic original documents; production audit evidence is separately linked."
+  ]
+}

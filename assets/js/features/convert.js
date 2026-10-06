@@ -105,40 +105,50 @@ async function ocrFileOnce(path) {
   // Windows separators are Markdown escapes in the kernel's original-image link.
   // Forward slashes keep both the filesystem path and the generated link valid.
   if (/^[A-Za-z]:[\\/]/.test(path)) path = path.replace(/\\/g, '/');
-  if (!(await ensureModule('ocr'))) return;
+  if (!(await ensureModule('ocr'))) return false;
   busy(true);
   try {
     const r = await apiFetch('/api/ocr?p=' + encodeURIComponent(path));
     const d = await r.json();
-    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return; }
-    if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return; }
-    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return; }
-    renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
-  } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); }
+    if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
+    if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return false; }
+    if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
+    await renderVirtual('ocr', d.name, d.dir, d.content, d.fixes);
+    return true;
+  } catch (e) { showToast((_t('toast.ocrFailPrefix') || 'OCR 失败：') + e.message); return false; }
   finally { busy(false); }
 }
 
 /* ---------------- 文件选择（含浏览器兜底） ---------------- */
 
-function chooseFile(mode) {
+async function processOcrSelection(files, upload = false) {
+  const run = async () => {
+    let ok = 0, failed = 0;
+    if (files.length > 1) showToast(_t('toast.batchOcrStarting', { count: files.length }), 3000);
+    for (const file of files) {
+      const path = upload ? await uploadFile(file) : file;
+      if (path && await ocrFile(path)) ok++; else failed++;
+    }
+    // Count actual documents created, including upload/empty-text failures.
+    if (files.length > 1) showToast(_t('batch.summary', { ok, skipped: 0, failed }), 4200);
+    return { ok, failed };
+  };
+  return window.ReadMDTask ? window.ReadMDTask.run('ocr-selection', run,
+    { trigger: ['btn-ocr', 'w-ocr'] }) : run();
+}
+
+async function chooseFile(mode) {
   if (moduleBlocked(mode)) return;
   if (hasPy) {
     if (mode === 'ocr') {
-      py.choose_many_files().then(async files => {
-        if (!files || !files.length) return;
-        if (files.length === 1) {
-          convertOrOcr(files[0], 'ocr');
-        } else {
-          showToast(_t('toast.batchOcrStarting', { count: files.length }) || `已选择 ${files.length} 个文件，正在进行批量 OCR 识别…`, 3000);
-          for (let i = 0; i < files.length; i++) {
-            await ocrFile(files[i]);
-          }
-          showToast(_t('toast.batchOcrComplete', { count: files.length }) || `批量 OCR 完成，已识别 ${files.length} 个文件并新建标签页`);
-        }
-      });
+      try {
+        const files = await py.choose_many_files();
+        if (files?.length) return await processOcrSelection(files);
+      } catch (e) { showToast(_t('toast.ocrFailPrefix') + e.message); }
       return;
     }
-    py.choose_any_file().then(p => { if (p) convertOrOcr(p, mode); });
+    try { const path = await py.choose_any_file(); if (path) return await convertOrOcr(path, mode); }
+    catch (e) { showToast(_t('toast.convertFailPrefix') + e.message); }
     return;
   }
   const input = $('file-input');
@@ -147,9 +157,10 @@ function chooseFile(mode) {
   input.onchange = async () => {
     const files = Array.from(input.files || []);
     if (!files.length) return;
+    if (mode === 'ocr') { await processOcrSelection(files, true); return; }
     if (files.length === 1) {
       const p = await uploadFile(files[0]);
-      if (p) convertOrOcr(p, mode);
+      if (p) await convertOrOcr(p, mode);
     } else {
       showToast(_t('toast.batchUploadStarting', { count: files.length }) || `正在批量上传并识别 ${files.length} 个文件…`, 3000);
       for (const f of files) {
@@ -180,8 +191,8 @@ async function uploadFile(file) {
 
 function convertOrOcr(p, mode) {
   // Images only have an OCR lane; PDFs convert and fall back to OCR in the kernel.
-  if (mode === 'ocr' || IMG_RE.test(p)) ocrFile(p);
-  else convertFile(p);
+  if (mode === 'ocr' || IMG_RE.test(p)) return ocrFile(p);
+  return convertFile(p);
 }
 
 
