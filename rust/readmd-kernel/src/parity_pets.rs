@@ -4665,7 +4665,13 @@ mod tests {
     #[test]
     fn desktop_extension_installs_into_user_data_without_mutating_app_directory() {
         let app = test_app("user-runtime-install");
-        fs::write(app_dir(&app).join("ReadMD-Pet-Rust.zip"), bundle_zip()).unwrap();
+        let (manifest, exe, html) = bundle_parts();
+        let mut manifest: Value = serde_json::from_slice(&manifest).unwrap();
+        let executable = if cfg!(windows) { "readmd-pet-rust.exe" } else { "readmd-pet-rust" };
+        manifest["artifacts"][1]["path"] = json!(executable);
+        let manifest = serde_json::to_vec(&manifest).unwrap();
+        let archive = zip_of(&[("runtime-manifest.json", &manifest), ("renderer/index.html", &html), (executable, &exe)]);
+        fs::write(app_dir(&app).join("ReadMD-Pet-Rust.zip"), archive).unwrap();
         let result = install_default_pet_plugin(&app);
         assert_eq!(result.value().unwrap()["ok"], true);
         assert!(RuntimeTree::rust(&app).target.starts_with(&app.paths.data_dir));
