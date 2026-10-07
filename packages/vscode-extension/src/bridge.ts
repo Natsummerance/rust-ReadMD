@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import * as cp from 'child_process';
 import { StringDecoder } from 'string_decoder';
 import { findReadmdBinary } from './binaryFinder';
@@ -36,6 +37,7 @@ export class ReadMDBridge {
     onProgress?: (message: string) => void;
   }>();
   private disposed = false;
+  private configurationGeneration = 0;
   private procSpawned = false;
   private everConnected = false;
   private disconnectedListeners = new Set<() => void>();
@@ -43,13 +45,25 @@ export class ReadMDBridge {
 
   constructor(context: vscode.ExtensionContext) {
     this.extensionPath = context.extensionPath;
+    const changed = vscode.workspace.onDidChangeConfiguration?.(event => {
+      if (!event.affectsConfiguration('readmd.executablePath')) return;
+      this.configurationGeneration++;
+      this.resolvedBinary = undefined;
+      this.failProcess(new Error('core_configuration_changed'));
+    });
+    if (changed) context.subscriptions.push(changed);
   }
 
   private resolvedBinary?: string;
 
   /** The ReadMD executable; `readmd --mcp` is the MCP server (no Python). */
   public async getServerCommand(): Promise<string> {
-    if (!this.resolvedBinary) this.resolvedBinary = await findReadmdBinary(this.extensionPath);
+    if (!this.resolvedBinary) {
+      const generation = this.configurationGeneration;
+      const binary = await findReadmdBinary(this.extensionPath);
+      if (generation !== this.configurationGeneration) throw new Error('core_configuration_changed');
+      this.resolvedBinary = binary;
+    }
     return this.resolvedBinary;
   }
 
@@ -72,10 +86,12 @@ export class ReadMDBridge {
   }
 
   private async ensureProcess(): Promise<void> {
-    if (this.proc && this.procSpawned && !this.proc.killed) return;
+    if (this.disposed) throw new Error('core_closed');
     if (this.starting) return this.starting;
+    if (this.proc && this.procSpawned && !this.proc.killed) return;
     this.starting = (async () => {
       const binary = await this.getServerCommand();
+      if (this.disposed) throw new Error('core_closed');
       const proc = cp.spawn(binary, ['--mcp'], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -84,10 +100,14 @@ export class ReadMDBridge {
       this.procSpawned = false;
       this.decoder = new StringDecoder('utf8');
       proc.stdout.on('data', chunk => {
+        if (this.proc !== proc) return;
         const text = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
         this.consumeOutput(text);
       });
       proc.stderr.on('data', chunk => { /* protocol responses stay on stdout */ void chunk; });
+      proc.stdin.on?.('error', () => {
+        if (this.proc === proc) this.failProcess(new Error('core_not_connected'));
+      });
       proc.on('error', err => {
         // A binary that vanished (uninstall/upgrade) is looked up again next time.
         this.resolvedBinary = undefined;
@@ -98,25 +118,43 @@ export class ReadMDBridge {
       });
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
-          if (this.proc === proc) this.proc = undefined;
+          if (this.proc === proc) this.failProcess(new Error('core_start_timeout'));
           reject(new Error('core_start_timeout'));
         }, 10000);
         proc.once('spawn', () => {
           if (this.proc !== proc) return;
           this.procSpawned = true;
-          this.everConnected = true;
           clearTimeout(timer);
-          this.fireReady();
           resolve();
         });
         proc.once('error', err => { clearTimeout(timer); reject(err); });
+        proc.once('close', () => { clearTimeout(timer); reject(new Error('core_process_exit')); });
       });
-    })().finally(() => { this.starting = undefined; });
+      // Ready means the protocol is usable, not merely that an OS process exists.
+      const hello = await this.callMcpMethodInternal('initialize', {
+        protocolVersion: '2025-11-25', capabilities: {},
+        clientInfo: { name: 'readmd-vscode', version: '0.0.4' },
+      }, undefined, undefined, true);
+      if (!['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'].includes(hello?.protocolVersion)) {
+        this.failProcess(new Error('core_protocol_unsupported'));
+        throw new Error('core_protocol_unsupported');
+      }
+      proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+      this.everConnected = true;
+      this.fireReady();
+    })().catch(error => {
+      this.failProcess(error instanceof Error ? error : new Error('core_not_connected'));
+      throw error;
+    }).finally(() => { this.starting = undefined; });
     return this.starting;
   }
 
   private consumeOutput(chunk: string): void {
     this.buffer += chunk;
+    if (Buffer.byteLength(this.buffer, 'utf8') > 32 * 1024 * 1024) {
+      this.failProcess(new Error('core_response_too_large'));
+      return;
+    }
     let idx = this.buffer.indexOf('\n');
     while (idx >= 0) {
       const line = this.buffer.slice(0, idx).trim();
@@ -133,7 +171,7 @@ export class ReadMDBridge {
               if (waiter.onProgress && message) waiter.onProgress(message);
             }
           } else {
-            const id = Number(response.id);
+            const id = typeof response.id === 'number' ? response.id : NaN;
             const waiter = this.pending.get(id);
             if (waiter) {
               this.pending.delete(id);
@@ -150,10 +188,11 @@ export class ReadMDBridge {
   }
 
   private failProcess(error: Error): void {
-    if (this.proc && this.procSpawned && this.proc.exitCode === null && this.proc.signalCode === null) return;
-    const wasConnected = this.everConnected && !this.disposed;
+    const proc = this.proc;
+    const wasConnected = !!proc && this.procSpawned && this.everConnected && !this.disposed;
     this.proc = undefined;
     this.procSpawned = false;
+    proc?.kill();
     for (const waiter of this.pending.values()) {
       clearTimeout(waiter.idleTimer);
       clearTimeout(waiter.maxTimer);
@@ -175,15 +214,11 @@ export class ReadMDBridge {
 
   private unwrapToolResult(result: any): any {
     if (result?.isError) {
-      const raw = result.content?.[0]?.text;
-      try {
-        const parsed = raw ? JSON.parse(raw) : undefined;
-        throw new Error(String(parsed?.error_code || 'mcp_tool_failed'));
-      } catch (error) {
-        if (error instanceof Error && error.message !== 'mcp_tool_failed') throw error;
-        throw new Error('mcp_tool_failed');
-      }
+      let parsed = result.structuredContent;
+      if (!parsed) { try { parsed = JSON.parse(result.content?.[0]?.text || '{}'); } catch {} }
+      throw new Error(String(parsed?.error_code || 'mcp_tool_failed'));
     }
+    if (result?.structuredContent !== undefined) return result.structuredContent;
     const text = result?.content?.[0]?.text;
     try { return text ? JSON.parse(text) : result; } catch { return text || result; }
   }
@@ -194,12 +229,14 @@ export class ReadMDBridge {
   }
 
   private async callMcpMethodInternal(method: string, params: Record<string, any>,
-      onProgress?: (message: string) => void, token?: vscode.CancellationToken): Promise<any> {
-    await this.ensureProcess();
+      onProgress?: (message: string) => void, token?: vscode.CancellationToken, duringHandshake = false): Promise<any> {
+    if (token?.isCancellationRequested) throw new Error('ai_cancelled');
+    if (!duringHandshake) await this.ensureProcess();
+    if (token?.isCancellationRequested) throw new Error('ai_cancelled');
     const proc = this.proc;
     if (!proc || !proc.stdin.writable) throw new Error('core_not_connected');
     const id = this.nextId++;
-    if (onProgress) {
+    if (onProgress || method === 'tools/call') {
       params = { ...params, _meta: { ...(params._meta || {}), progressToken: id } };
     }
     const request = { jsonrpc: '2.0', id, method, params };
@@ -260,11 +297,15 @@ export class ReadMDBridge {
           settle(false, new Error('ai_cancelled'));
         });
       }
-      proc.stdin.write(JSON.stringify(request) + '\n');
+      try {
+        proc.stdin.write(JSON.stringify(request) + '\n', error => {
+          if (error) settle(false, new Error('core_not_connected'));
+        });
+      } catch { settle(false, new Error('core_not_connected')); }
     });
   }
 
-  /** Streaming tool call: progress notifications are forwarded to onChunk and
+  /** Tool call with progress messages (these are status, not AI text deltas).
    * an optional CancellationToken cancels via notifications/cancelled. */
   public async callMcpToolStreaming(name: string, args: Record<string, any>,
       onChunk: (chunk: string) => void, token?: vscode.CancellationToken): Promise<any> {
@@ -273,14 +314,28 @@ export class ReadMDBridge {
   }
 
   public async listSkills(): Promise<any[]> {
-    const result = await this.callMcpMethod('resources/list');
-    return result?.resources || [];
+    const resources = await this.collectPages('resources/list', 'resources');
+    return resources.filter(item => typeof item?.uri === 'string' && item.uri.startsWith('readmd://skills/'));
+  }
+
+  private async collectPages(method: string, key: string): Promise<any[]> {
+    const items: any[] = [];
+    const seen = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await this.callMcpMethod(method, cursor ? { cursor } : {});
+      if (Array.isArray(page?.[key])) items.push(...page[key]);
+      cursor = typeof page?.nextCursor === 'string' && page.nextCursor ? page.nextCursor : undefined;
+      if (cursor && seen.has(cursor)) throw new Error('core_invalid_pagination');
+      if (cursor) seen.add(cursor);
+      if (seen.size > 100) throw new Error('core_invalid_pagination');
+    } while (cursor);
+    return items;
   }
 
   /** Return the Core's current Skill-backed prompt descriptors. */
   public async listPrompts(): Promise<any[]> {
-    const result = await this.callMcpMethod('prompts/list');
-    return Array.isArray(result?.prompts) ? result.prompts : [];
+    return this.collectPages('prompts/list', 'prompts');
   }
 
   public async readSkill(uri: string): Promise<string> {
@@ -295,6 +350,16 @@ export class ReadMDBridge {
   public async listProviders(): Promise<any[]> {
     const result = await this.callMcpTool('readmd_ai_providers', {});
     return result?.providers || [];
+  }
+
+  public async listModels(provider: string, credentialId?: string): Promise<string[]> {
+    const result = await this.callMcpTool('readmd_ai_models', { provider, ...(credentialId ? { credential_id: credentialId } : {}), confirm: true });
+    return Array.isArray(result?.models) ? result.models.map((model: any) => typeof model === 'string' ? model : model?.id).filter((id: unknown): id is string => typeof id === 'string' && !!id) : [];
+  }
+
+  public async exportPresets(): Promise<string[]> {
+    const catalog = await this.callMcpTool('readmd_export_presets', {});
+    return [...new Set([...Object.keys(catalog?.presets || {}), ...Object.keys(catalog?.custom || {})])];
   }
 
   public async aiChat(args: Record<string, any>): Promise<any> {
@@ -340,13 +405,14 @@ export class ReadMDBridge {
   /**
    * 导出文档。
    */
-  public async exportDoc(markdown: string, outputPath: string, format: string, preset: string, title?: string): Promise<any> {
+  public async exportDoc(markdown: string, outputPath: string, format: string, preset: string, title?: string, baseDir?: string, overwrite = false): Promise<any> {
     return this.callMcpTool('readmd_export_document', {
       markdown_content: markdown,
       output_path: outputPath,
       output_format: format,
       style_preset: preset,
       title: title || 'ReadMD Document',
+      ...(baseDir ? { base_dir: baseDir } : {}), overwrite,
       confirm: true,
     });
   }
@@ -393,13 +459,15 @@ export class ReadMDBridge {
   /**
    * 导出 Reveal.js 演说幻灯片 HTML。
    */
-  public async exportPresentation(content: string, outputPath: string, title?: string, theme = 'black', transition = 'slide'): Promise<any> {
+  public async exportPresentation(content: string, outputPath: string, title?: string, theme = 'black', transition = 'slide', overwrite = false, baseDir?: string): Promise<any> {
     return this.callMcpTool('readmd_export_presentation', {
       markdown_content: content,
       output_path: outputPath,
       title: title || 'ReadMD Presentation',
       theme,
       transition,
+      overwrite,
+      base_dir: baseDir || path.dirname(outputPath),
       confirm: true,
     });
   }
@@ -407,13 +475,14 @@ export class ReadMDBridge {
   /**
    * 导出标准 EPUB 3.0 电子书。
    */
-  public async exportEpub(content: string, outputPath: string, title?: string, author?: string, language = 'zh-CN'): Promise<any> {
+  public async exportEpub(content: string, outputPath: string, title?: string, author?: string, language = 'en', baseDir?: string, overwrite = false): Promise<any> {
     return this.callMcpTool('readmd_export_epub', {
       markdown_content: content,
       output_path: outputPath,
-      title: title || 'ReadMD 电子书',
+      title: title || 'ReadMD Book',
       author: author || 'ReadMD Author',
       language,
+      ...(baseDir ? { base_dir: baseDir } : {}), overwrite,
       confirm: true,
     });
   }

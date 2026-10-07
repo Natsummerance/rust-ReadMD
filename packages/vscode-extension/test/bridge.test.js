@@ -14,7 +14,22 @@ function makeFakeProc() {
   const proc = new EventEmitter();
   proc.stdout = new EventEmitter();
   proc.stderr = new EventEmitter();
-  proc.stdin = { write: () => true, writable: true };
+  let writer = () => true;
+  proc.autoHandshake = true;
+  proc.stdin = { writable: true };
+  Object.defineProperty(proc.stdin, 'write', {
+    get: () => (payload, callback) => {
+      const message = JSON.parse(payload);
+      if (proc.autoHandshake && message.method === 'initialize') {
+        queueMicrotask(() => proc.stdout.emit('data', Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: message.id,
+          result: { protocolVersion: '2025-11-25', serverInfo: { name: 'readmd', version: '0.0.4' }, capabilities: {} } }) + '\n')));
+        callback?.(); return true;
+      }
+      if (message.method === 'notifications/initialized') { callback?.(); return true; }
+      return writer(payload, callback);
+    },
+    set: value => { writer = value; },
+  });
   proc.killed = false;
   proc.exitCode = null;
   proc.signalCode = null;
@@ -47,7 +62,7 @@ const waitFor = async (predicate, ms = 2000) => {
   }
 };
 
-test('onReady fires on spawn and onDisconnected fires when the core exits unexpectedly', async () => {
+test('onReady fires after the protocol handshake and onDisconnected fires when the core exits unexpectedly', async () => {
   const events = [];
   const proc = makeFakeProc();
   fakeCp.spawn = () => proc;
@@ -261,10 +276,11 @@ test('consumeOutput properly decodes multi-byte UTF-8 split across chunks', asyn
   const pending = bridge.callMcpMethod('test_utf8');
   await sleep();
   proc.emit('spawn');
+  await sleep();
 
   const jsonStr = JSON.stringify({
     jsonrpc: '2.0',
-    id: 1,
+    id: 2,
     result: { text: '测试中文字符串与Emoji🚀' },
   }) + '\n';
   const buf = Buffer.from(jsonStr, 'utf-8');

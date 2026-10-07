@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; }
+body { font-family: var(--vscode-font-family, system-ui); color: var(--vscode-editor-foreground, #222); background: var(--vscode-editor-background, #fff); margin: 0 auto; max-width: 880px; padding: 28px 36px; line-height: 1.75; overflow-wrap: anywhere; }
+h1,h2,h3,h4,h5,h6 { line-height: 1.35; margin: 1.5em 0 .6em; font-weight: 600; }
+h1,h2 { border-bottom: 1px solid var(--vscode-widget-border, #8884); padding-bottom: .3em; }
+a { color: var(--vscode-textLink-foreground, #3466cc); }
+a:focus-visible { outline: 2px solid var(--vscode-focusBorder, #3466cc); outline-offset: 3px; }
+pre,code { font-family: var(--vscode-editor-font-family, monospace); background: var(--vscode-textCodeBlock-background, #8881); border-radius: 5px; }
+code { padding: .12em .3em; } pre { padding: 14px 16px; border: 1px solid var(--vscode-widget-border, #8884); overflow: auto; } pre code { padding: 0; background: none; }
+blockquote { margin: 16px 0; padding: 8px 16px; border-left: 3px solid var(--vscode-textBlockQuote-border, #3466cc); background: var(--vscode-textBlockQuote-background, #8881); }
+table { display: block; width: max-content; max-width: 100%; overflow: auto; border-collapse: collapse; margin: 20px 0; } th,td { padding: 8px 14px; border: 1px solid var(--vscode-widget-border, #8884); }
+img,svg { max-width: 100%; height: auto; } hr { border: 0; border-top: 1px solid var(--vscode-widget-border, #8884); }
+.katex-display { overflow-x: auto; overflow-y: hidden; } input[type=checkbox] { width: 14px; height: 14px; accent-color: var(--vscode-focusBorder, #3466cc); }
+.diagram-error { white-space: pre-wrap; color: var(--vscode-errorForeground, #b33); } .remote-image { font-size: .9em; }
+.diagram { margin: 24px 0; overflow: auto; text-align: center; } .diagram figcaption { font-size: .9em; color: var(--vscode-descriptionForeground, #777); } .diagram img { max-height: 75vh; object-fit: contain; }
+.presentation { padding: 0; max-width: none; height: 100vh; } .presentation #content { height: 100%; }
+@media(max-width: 600px) { body { padding: 16px 20px; } }

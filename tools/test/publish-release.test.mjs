@@ -8,7 +8,7 @@ import { PACKAGE_NAMES, parseChecksums, publish } from '../publish-release.mjs';
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex');
 test('release manifest rejects missing, duplicate and foreign files',()=>{
   const valid=PACKAGE_NAMES.map(n=>hash(n)+'  '+n).join('\n');
-  assert.equal(parseChecksums(valid).size,8);
+  assert.equal(parseChecksums(valid).size,PACKAGE_NAMES.length);
   assert.throws(()=>parseChecksums(valid+'\n'+valid.split('\n')[0]));
   assert.throws(()=>parseChecksums(valid.split('\n').slice(1).join('\n')));
   assert.throws(()=>parseChecksums(valid.replace(PACKAGE_NAMES[0],'../private.mp4')));
@@ -40,7 +40,7 @@ function fixture(t,{badUpload=false,renameFailure=false}={}){
 test('all uploads pass authentication before any public download changes',async t=>{
   const f=fixture(t);await publish(f);
   const firstRename=f.events.findIndex(x=>x.method==='PATCH');
-  assert.equal(f.events.slice(0,firstRename).filter(x=>x.method==='POST').length,9);
+  assert.equal(f.events.slice(0,firstRename).filter(x=>x.method==='POST').length,PACKAGE_NAMES.length+1);
   assert.deepEqual(f.all.map(a=>a.name).sort(),[...PACKAGE_NAMES,'SHA256SUMS.txt'].sort());
   assert.ok(f.all.every(a=>a.id>=20));
   assert.equal(f.events.filter(x=>x.method==='PATCH'&&x.data?.draft===false).length,1);

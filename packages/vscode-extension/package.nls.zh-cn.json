@@ -27,5 +27,7 @@
   "view.toolboxName": "ReadMD 快捷工具箱",
   "configuration.title": "ReadMD",
   "configuration.executablePath": "ReadMD 可执行程序路径（留空则使用已安装的桌面端或 PATH 中的 readmd），核心通过 `readmd --mcp` 提供",
-  "configuration.customCssPath": "用户 custom.css 文件的绝对路径"
+  "configuration.customCssPath": "用户 custom.css 文件的绝对路径",
+  "capabilities.untrusted": "可预览和编辑。原生工具、AI、导入、代码执行及 MCP 配置需要受信任的工作区。",
+  "capabilities.virtual": "ReadMD 需要本地 Rust 程序和本地文件。"
 }

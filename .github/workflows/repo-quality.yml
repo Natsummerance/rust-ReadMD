@@ -71,7 +71,50 @@ jobs:
       - name: Privacy scan
         run: node tools/privacy-scan.mjs
       - name: Node tests
-        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs
+        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs
+
+  integrations:
+    name: VS Code and MCP quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Prepare locked test toolchains
+        run: |
+          cargo fetch --locked --manifest-path rust/Cargo.toml
+          npm ci --ignore-scripts --prefix packages/vscode-extension
+          npm ci --ignore-scripts --prefix ui-tests
+          cd ui-tests
+          npx --no-install playwright install --with-deps chromium webkit
+      - name: Compile and test integrations offline
+        run: |
+          cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
+          npm test --prefix packages/vscode-extension
+      - name: Real MCP stdio and concurrency acceptance
+        env:
+          READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
+          READMD_ASSETS_DIR: ${{ github.workspace }}/assets
+          READMD_MCP_TEST_ROOT: ${{ github.workspace }}/.cache/integration-mcp
+        run: node packages/mcp-server/test/stdio.mjs
+      - name: Offline preview, formulas and engineering diagrams
+        working-directory: ui-tests
+        run: npx --no-install playwright test --config vscode-preview.config.cjs
+      - name: Package integrations without downloads
+        run: node tools/package-integrations.mjs dist/integrations
+      - name: Upload integration packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReadMD-integrations
+          if-no-files-found: error
+          path: |
+            dist/integrations/*.vsix
+            dist/integrations/*.zip
 
   ui:
     name: UI quality (Playwright)
@@ -100,4 +143,4 @@ jobs:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
           READMD_PANEL_TEST_THEMES: light,dark,sepia
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js --project=desktop --project=mobile
+        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js --project=desktop --project=mobile

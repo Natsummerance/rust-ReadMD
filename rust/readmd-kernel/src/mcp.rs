@@ -22,8 +22,12 @@ use serde_json::{json, Value};
 
 use crate::{server, App};
 
-pub const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+pub const PROTOCOL_VERSIONS: &[&str] = &["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+const MODERN_PROTOCOL: &str = "2026-07-28";
+const LEGACY_PROTOCOL: &str = "2025-11-25";
+const PROTOCOL_META: &str = "io.modelcontextprotocol/protocolVersion";
 const MAX_CONCURRENT_TOOLS: usize = 8;
+const MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Tools that write files, touch the network or run code.
 const CONFIRM_REQUIRED: &[&str] = &[
@@ -33,6 +37,8 @@ const CONFIRM_REQUIRED: &[&str] = &[
     "readmd_export_epub",
     "readmd_run_code_chunk",
     "readmd_pdf_rollback",
+    "readmd_ai_models",
+    "readmd_render_diagram",
 ];
 
 /// One-release aliases for the former workflow ids (`prompts/get`, `readmd_ai_assistant`).
@@ -59,7 +65,7 @@ fn resolve_skill_id(raw: &str) -> String {
 // ---------------------------------------------------------------- tool list
 
 fn schema(props: Value, required: &[&str]) -> Value {
-    json!({ "type": "object", "properties": props, "required": required })
+    json!({ "type": "object", "properties": props, "required": required, "additionalProperties": false })
 }
 
 fn confirm_prop() -> Value {
@@ -71,7 +77,7 @@ fn overwrite_prop() -> Value {
 }
 
 pub fn tools() -> Value {
-    json!([
+    let mut list = json!([
         { "name": "readmd_fix_markdown",
           "description": "Diagnose and repair Markdown syntax problems (broken formulas, misaligned tables, unclosed code fences, CJK/Latin spacing and punctuation).",
           "inputSchema": schema(json!({ "content": { "type": "string", "description": "Markdown to repair" } }), &["content"]) },
@@ -95,6 +101,9 @@ pub fn tools() -> Value {
               "base_dir": { "type": "string", "description": "Directory relative images resolve against (default: the output directory)" },
               "overwrite": overwrite_prop(),
               "confirm": confirm_prop() }), &["markdown_content", "output_path", "output_format", "confirm"]) },
+        { "name": "readmd_export_presets",
+          "description": "List the desktop app's current built-in and user-created export presets with their style options.",
+          "inputSchema": schema(json!({}), &[]) },
         { "name": "readmd_latex_to_md",
           "description": "Convert LaTeX source (papers or formulas) to Markdown.",
           "inputSchema": schema(json!({ "latex_content": { "type": "string" } }), &["latex_content"]) },
@@ -118,12 +127,18 @@ pub fn tools() -> Value {
         { "name": "readmd_ai_providers",
           "description": "List the AI providers configured in ReadMD and their connection state. Never returns API keys.",
           "inputSchema": schema(json!({}), &[]) },
+        { "name": "readmd_ai_models",
+          "description": "Discover models from a saved ReadMD connection. Uses the credential vault; never accepts or returns raw API keys.",
+          "inputSchema": schema(json!({ "provider": { "type": "string" }, "credential_id": { "type": "string" }, "confirm": confirm_prop() }), &["provider", "confirm"]) },
         { "name": "readmd_ai_chat",
           "description": "Run one AI document task through a ReadMD Skill using a saved credential (credential_id, never a raw key).",
           "inputSchema": schema(json!({
               "provider": { "type": "string" }, "credential_id": { "type": "string" }, "model": { "type": "string" },
               "skill_id": { "type": "string" }, "markdown_content": { "type": "string" },
               "request": { "type": "string" }, "language": { "type": "string" } }), &["provider", "model", "skill_id", "markdown_content"]) },
+        { "name": "readmd_render_diagram",
+          "description": "Render PlantUML using locally installed Java/PlantUML, or basic WSD/D2/Ditaa diagrams. Never uploads diagram source.",
+          "inputSchema": schema(json!({ "engine": { "type": "string", "enum": ["plantuml", "puml", "wsd", "d2", "ditaa"] }, "code": { "type": "string" }, "confirm": confirm_prop() }), &["engine", "code", "confirm"]) },
         { "name": "readmd_process_imports",
           "description": "Flatten @import directives (nested Markdown, CSV as tables, code line ranges).",
           "inputSchema": schema(json!({ "markdown_content": { "type": "string" }, "base_dir": { "type": "string" } }), &["markdown_content"]) },
@@ -137,7 +152,7 @@ pub fn tools() -> Value {
           "description": "Export Markdown slides (--- or <!-- slide --> separated) to a single offline Reveal.js HTML file.",
           "inputSchema": schema(json!({
               "markdown_content": { "type": "string" }, "output_path": { "type": "string" }, "title": { "type": "string" },
-              "theme": { "type": "string" }, "transition": { "type": "string" },
+              "theme": { "type": "string" }, "transition": { "type": "string" }, "base_dir": { "type": "string" },
               "overwrite": overwrite_prop(), "confirm": confirm_prop() }), &["markdown_content", "output_path", "confirm"]) },
         { "name": "readmd_export_epub",
           "description": "Package Markdown as an EPUB 3 e-book (local images embedded).",
@@ -156,7 +171,14 @@ pub fn tools() -> Value {
         { "name": "readmd_pdf_rollback",
           "description": "Restore a PDF from its .bak backup written by a previous ReadMD edit.",
           "inputSchema": schema(json!({ "pdf_path": { "type": "string" }, "confirm": confirm_prop() }), &["pdf_path", "confirm"]) },
-    ])
+    ]);
+    for tool in list.as_array_mut().unwrap() {
+        let name = tool["name"].as_str().unwrap_or("");
+        let read_only = matches!(name, "readmd_fix_markdown" | "readmd_generate_toc" | "readmd_latex_to_md" | "readmd_md_to_latex" | "readmd_latex_to_omml" | "readmd_parse_bibtex" | "readmd_process_imports" | "readmd_ai_assistant" | "readmd_ai_providers" | "readmd_export_presets" | "readmd_pdf_audit");
+        let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_models" | "readmd_run_code_chunk");
+        tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only, "openWorldHint": open_world });
+    }
+    list
 }
 
 // ---------------------------------------------------------------- results
@@ -166,7 +188,10 @@ fn text_result(text: impl Into<String>) -> Value {
 }
 
 fn json_result(v: &Value) -> Value {
-    text_result(serde_json::to_string_pretty(v).unwrap_or_default())
+    let mut result = text_result(serde_json::to_string_pretty(v).unwrap_or_default());
+    // Keep text for older clients; structuredContent is an object in both eras.
+    if v.is_object() { result["structuredContent"] = v.clone(); }
+    result
 }
 
 fn error_result(code: &str, message: Option<&str>) -> Value {
@@ -174,7 +199,7 @@ fn error_result(code: &str, message: Option<&str>) -> Value {
     if let Some(m) = message {
         body["error"] = json!(m);
     }
-    json!({ "isError": true, "content": [{ "type": "text", "text": body.to_string() }] })
+    json!({ "isError": true, "structuredContent": body, "content": [{ "type": "text", "text": body.to_string() }] })
 }
 
 fn arg_str(args: &Value, key: &str, fallback: &str) -> String {
@@ -241,10 +266,11 @@ pub fn output_target(raw: &str, suffix: &str, overwrite: bool) -> Result<PathBuf
 /// Exclusive create, or atomic replace with `overwrite`.
 fn write_output(path: &Path, bytes: &[u8], overwrite: bool) -> Result<(), &'static str> {
     if !overwrite {
-        let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AlreadyExists { "output_exists" } else { "write_failed" }
-        })?;
-        return f.write_all(bytes).map_err(|_| "write_failed");
+        let mut file = tempfile::Builder::new().prefix(".readmd-mcp-").tempfile_in(path.parent().ok_or("output_directory_not_found")?).map_err(|_| "write_failed")?;
+        file.write_all(bytes).and_then(|_| file.as_file().sync_all()).map_err(|_| "write_failed")?;
+        return file.persist_noclobber(path).map(|_| ()).map_err(|e| {
+            if e.error.kind() == std::io::ErrorKind::AlreadyExists { "output_exists" } else { "write_failed" }
+        });
     }
     crate::content::write_bytes_atomic(path, bytes).map_err(|_| "write_failed")
 }
@@ -269,9 +295,14 @@ fn scrub(v: &Value) -> Value {
             m.iter()
                 .filter(|(k, _)| {
                     let k = k.to_lowercase();
-                    !matches!(k.as_str(), "api_key" | "apikey" | "key" | "secret" | "password" | "token" | "authorization")
+                    k != "key" && !["api_key", "api-key", "apikey", "secret", "password", "access_token", "authorization", "cookie"].iter().any(|marker| k.contains(marker)) && k != "token"
                 })
-                .map(|(k, v)| (k.clone(), scrub(v)))
+                .map(|(k, v)| {
+                    let value = if k.to_lowercase().ends_with("url") {
+                        v.as_str().map(|url| json!(public_url(url))).unwrap_or_else(|| scrub(v))
+                    } else { scrub(v) };
+                    (k.clone(), value)
+                })
                 .collect(),
         ),
         Value::Array(a) => Value::Array(a.iter().map(scrub).collect()),
@@ -310,17 +341,69 @@ fn skill_variables(args: &Value) -> Value {
 // ---------------------------------------------------------------- tools/call
 
 pub fn call_tool(app: &Arc<App>, name: &str, args: &Value) -> Value {
+    call_tool_cancellable(app, name, args, None)
+}
+
+fn public_url(url: &str) -> String {
+    let clean = url.split(['?', '#']).next().unwrap_or(url);
+    let Some((scheme, rest)) = clean.split_once("://") else { return clean.to_owned() };
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(authority_end);
+    let authority = authority.rsplit('@').next().unwrap_or(authority);
+    format!("{scheme}://{authority}{tail}")
+}
+
+fn check_cancel(cancel: Option<&AtomicBool>) -> Result<(), Value> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) { Err(error_result("cancelled", None)) } else { Ok(()) }
+}
+
+fn call_tool_cancellable(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&AtomicBool>) -> Value {
     if CONFIRM_REQUIRED.contains(&name) && args.get("confirm") != Some(&Value::Bool(true)) {
         return error_result("confirmation_required", None);
     }
-    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dispatch_tool(app, name, args)));
+    if name == "readmd_ai_chat" && (args.get("api_key").is_some() || args.get("key").is_some()) {
+        return error_result("raw_key_rejected", None);
+    }
+    if let Err(code) = validate_tool_arguments(name, args) {
+        return error_result(code, None);
+    }
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { check_cancel(cancel)?; dispatch_tool(app, name, args, cancel) }));
     match run {
         Ok(Ok(v)) | Ok(Err(v)) => v,
         Err(_) => error_result("internal_error", None),
     }
 }
 
-fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Value> {
+/// Validate advertised types before dispatch; never silently turn an object or
+/// boolean into empty document text or a default file path.
+fn validate_tool_arguments(name: &str, args: &Value) -> Result<(), &'static str> {
+    let catalog = tools();
+    let tool = catalog.as_array().unwrap().iter().find(|t| t["name"] == name).ok_or("unknown_tool")?;
+    let obj = args.as_object().ok_or("invalid_arguments")?;
+    let schema = &tool["inputSchema"];
+    for required in schema["required"].as_array().unwrap() {
+        if !obj.contains_key(required.as_str().unwrap()) { return Err("invalid_arguments"); }
+    }
+    for (key, value) in obj {
+        let Some(prop) = schema["properties"].get(key) else { return Err("invalid_arguments"); };
+        let valid = match prop["type"].as_str().unwrap_or("") {
+            "string" => value.is_string(), "boolean" => value.is_boolean(),
+            "integer" => value.is_i64() || value.is_u64(), _ => false,
+        };
+        if !valid || prop.get("enum").and_then(Value::as_array).is_some_and(|allowed| !allowed.contains(value)) {
+            return Err("invalid_arguments");
+        }
+        if prop.get("const").is_some_and(|expected| expected != value) { return Err("invalid_arguments"); }
+    }
+    if name == "readmd_generate_toc" {
+        let from = arg_i64(args, "depth_from", 1);
+        let to = arg_i64(args, "depth_to", 6);
+        if !(1..=6).contains(&from) || !(from..=6).contains(&to) { return Err("invalid_arguments"); }
+    }
+    Ok(())
+}
+
+fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
     match name {
         "readmd_fix_markdown" => {
             let res = crate::readmd_fix::fix_markdown(&arg_str(args, "content", ""));
@@ -368,7 +451,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
             })?;
             Ok(text_result(text))
         }
-        "readmd_export_document" => export_document(app, args),
+        "readmd_export_document" => export_document(app, args, cancel),
         "readmd_latex_to_md" => Ok(text_result(crate::texmd::latex_to_markdown(&arg_str(args, "latex_content", ""), ""))),
         "readmd_md_to_latex" => {
             let title = arg_str(args, "doc_title", "ReadMD Document");
@@ -418,6 +501,9 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
             })))
         }
         "readmd_ai_providers" => Ok(json_result(&providers_view(app)?)),
+        "readmd_export_presets" => Ok(json_result(&api(app, "GET", "/api/export/presets", None)?)),
+        "readmd_ai_models" => Ok(json_result(&api(app, "POST", "/api/ai/models", Some(args))?)),
+        "readmd_render_diagram" => Ok(json_result(&api(app, "POST", "/api/diagram/render", Some(&json!({ "engine": args["engine"], "code": args["code"], "allow_remote": false })))?)),
         "readmd_ai_chat" => {
             if args.get("api_key").is_some() || args.get("key").is_some() {
                 return Err(error_result("raw_key_rejected", Some("AI Chat 只接受 credential_id，不接受 API Key")));
@@ -436,12 +522,12 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
                 "stream": false,
             });
             let v = api(app, "POST", "/api/ai/chat", Some(&body))?;
-            Ok(text_result(json!({
+            Ok(json_result(&json!({
                 "ok": true,
                 "content": v.get("content").cloned().unwrap_or(json!("")),
                 "usage": v.get("usage").cloned().unwrap_or(Value::Null),
                 "skill_id": skill_id,
-            }).to_string()))
+            })))
         }
         "readmd_process_imports" => {
             let base = arg_str(args, "base_dir", "");
@@ -466,8 +552,11 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
         "readmd_export_presentation" => {
             let overwrite = arg_bool(args, "overwrite", false);
             let out = output_target(&arg_str(args, "output_path", ""), ".html", overwrite).map_err(|c| error_result(c, None))?;
+            let base = arg_str(args, "base_dir", &out.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
+            let mut warnings = Vec::new();
+            let markdown = crate::mdexport::embed_images_for_html(&arg_str(args, "markdown_content", ""), &base, &mut warnings);
             let html = crate::mdexport::render_presentation_html(
-                &arg_str(args, "markdown_content", ""),
+                &markdown,
                 &arg_str(args, "title", "ReadMD Presentation"),
                 &arg_str(args, "theme", "black"),
                 &arg_str(args, "transition", "slide"),
@@ -475,8 +564,9 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
                 &app.paths.assets_dir,
             )
             .map_err(|e| error_result("presentation_export_failed", Some(&e)))?;
+            check_cancel(cancel)?;
             write_output(&out, html.as_bytes(), overwrite).map_err(|c| error_result(c, None))?;
-            Ok(json_result(&json!({ "ok": true, "output_path": out, "file_size": html.len() })))
+            Ok(json_result(&json!({ "ok": true, "output_path": out, "file_size": html.len(), "warnings": warnings })))
         }
         "readmd_export_epub" => {
             let overwrite = arg_bool(args, "overwrite", false);
@@ -493,6 +583,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
                 &crate::mdexport::now_iso_z(),
             )
             .map_err(|e| error_result("export_failed", Some(&e)))?;
+            check_cancel(cancel)?;
             write_output(&out, &bytes, overwrite).map_err(|c| error_result(c, None))?;
             Ok(json_result(&json!({ "ok": true, "output_path": out, "file_size": bytes.len(), "warnings": warns })))
         }
@@ -522,7 +613,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value) -> Result<Value, Valu
     }
 }
 
-fn export_document(app: &Arc<App>, args: &Value) -> Result<Value, Value> {
+fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
     let fmt = arg_str(args, "output_format", "pdf").to_lowercase();
     if !matches!(fmt.as_str(), "pdf" | "docx" | "html" | "tex") {
         return Err(error_result("unsupported_output_format", None));
@@ -531,15 +622,28 @@ fn export_document(app: &Arc<App>, args: &Value) -> Result<Value, Value> {
     let out = output_target(&arg_str(args, "output_path", ""), &format!(".{fmt}"), overwrite).map_err(|c| error_result(c, None))?;
     let base = arg_str(args, "base_dir", &out.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
     let preset = arg_str(args, "style_preset", "minimal");
-    let options = crate::export_styles::preset_style(&preset);
+    let catalog = api(app, "GET", "/api/export/presets", None)?;
+    let options = catalog["presets"].get(&preset).or_else(|| catalog["custom"].get(&preset))
+        .map(crate::export_styles::sanitize).ok_or_else(|| error_result("unknown_style_preset", None))?;
     let title = arg_str(args, "title", "ReadMD Document");
-    // Exported straight to the validated target: TeX/HTML exports place their
-    // `<stem>.assets/` folder beside it and reference it by that name.
-    let out_s = out.to_string_lossy().into_owned();
+    // TeX has a companion assets directory and commits when rendering begins.
+    // Single-file formats are rendered in isolation before atomic publication.
+    check_cancel(cancel)?;
+    let stage = if fmt == "tex" { None } else {
+        Some(tempfile::Builder::new().prefix(".readmd-export-").tempdir_in(out.parent().unwrap())
+            .map_err(|_| error_result("write_failed", None))?)
+    };
+    let write_to = stage.as_ref().map(|dir| dir.path().join(out.file_name().unwrap())).unwrap_or_else(|| out.clone());
+    let out_s = write_to.to_string_lossy().into_owned();
     let res = crate::mdexport::export_document(&fmt, &arg_str(args, "markdown_content", ""), &base, &out_s, &options, &title, &app.paths.assets_dir)
         .map_err(|e| error_result("export_failed", Some(&e)))?;
     if !res.ok {
         return Err(error_result("export_failed", res.error.as_deref()));
+    }
+    if stage.is_some() {
+        let bytes = std::fs::read(&write_to).map_err(|_| error_result("export_failed", None))?;
+        check_cancel(cancel)?;
+        write_output(&out, &bytes, overwrite).map_err(|code| error_result(code, None))?;
     }
     let warns = res.warns.unwrap_or_default();
     let size = std::fs::metadata(&out).map(|m| m.len()).unwrap_or(0);
@@ -609,11 +713,11 @@ fn get_prompt(app: &Arc<App>, params: &Value) -> Result<Value, (i64, String)> {
 
 /// Serialised writer: responses from worker threads never interleave.
 #[derive(Clone)]
-pub struct Out(Arc<Mutex<Box<dyn Write + Send>>>);
+pub struct Out(Arc<Mutex<Box<dyn Write + Send>>>, Option<String>);
 
 impl Out {
     pub fn new(w: Box<dyn Write + Send>) -> Out {
-        Out(Arc::new(Mutex::new(w)))
+        Out(Arc::new(Mutex::new(w)), None)
     }
     fn send(&self, v: &Value) {
         let mut w = self.0.lock().unwrap_or_else(|e| e.into_inner());
@@ -622,7 +726,16 @@ impl Out {
     }
 }
 
-fn reply(out: &Out, id: &Value, result: Value) {
+fn reply(out: &Out, id: &Value, mut result: Value) {
+    if let Some(method) = &out.1 {
+        result["resultType"] = json!("complete");
+        result["_meta"] = json!({ "io.modelcontextprotocol/serverInfo": { "name": "readmd", "title": "ReadMD", "version": server::VERSION } });
+        if matches!(method.as_str(), "server/discover" | "tools/list" | "prompts/list" | "resources/list" | "resources/read" | "resources/templates/list") {
+            // Resource/Skill catalogs depend on the local user's current files.
+            result["ttlMs"] = json!(0);
+            result["cacheScope"] = json!("private");
+        }
+    }
     out.send(&json!({ "jsonrpc": "2.0", "id": id, "result": result }));
 }
 
@@ -646,6 +759,10 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
     };
     let method = obj.get("method").and_then(Value::as_str).unwrap_or("");
     let params = obj.get("params").cloned().unwrap_or(json!({}));
+    if obj.get("jsonrpc").and_then(Value::as_str) != Some("2.0") || method.is_empty() ||
+        obj.get("id").is_some_and(|id| !(id.is_string() || id.is_i64() || id.is_u64())) {
+        return reply_err(out, &Value::Null, -32600, "Invalid Request");
+    }
     let Some(id) = obj.get("id").cloned() else {
         // Notification: never answered.
         if method == "notifications/cancelled" {
@@ -657,10 +774,32 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
         }
         return;
     };
+    if !params.is_object() { return reply_err(out, &id, -32602, "Invalid params"); }
+    let requested = params.get("_meta").and_then(|m| m.get(PROTOCOL_META));
+    if let Some(version) = requested {
+        if !version.as_str().is_some_and(|v| PROTOCOL_VERSIONS.contains(&v)) {
+            out.send(&json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32022,
+                "message": "Unsupported protocol version", "data": { "supported": PROTOCOL_VERSIONS, "requested": version } } }));
+            return;
+        }
+    }
+    let modern = requested.and_then(Value::as_str) == Some(MODERN_PROTOCOL);
+    if (modern && !params["_meta"]["io.modelcontextprotocol/clientCapabilities"].is_object()) ||
+        (method == "server/discover" && !modern) {
+        return reply_err(out, &id, -32602, "Per-request protocol metadata and client capabilities required");
+    }
+    let response_out = Out(out.0.clone(), modern.then(|| method.to_owned()));
+    let out = &response_out;
+    if matches!(method, "tools/list" | "resources/list" | "prompts/list" | "resources/templates/list") && params.get("cursor").is_some() {
+        return reply_err(out, &id, -32602, "Invalid cursor");
+    }
     match method {
+        "server/discover" => reply(out, &id, json!({ "supportedVersions": PROTOCOL_VERSIONS,
+            "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
+            "instructions": "Local ReadMD kernel. File writes, URL fetches and code execution require confirm: true. Credentials are referenced by id, never supplied as raw keys." })),
         "initialize" => {
             let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
-            let version = if PROTOCOL_VERSIONS.contains(&asked) { asked } else { PROTOCOL_VERSIONS[0] };
+            let version = if asked != MODERN_PROTOCOL && PROTOCOL_VERSIONS.contains(&asked) { asked } else { LEGACY_PROTOCOL };
             reply(out, &id, json!({
                 "protocolVersion": version,
                 "serverInfo": { "name": "readmd", "title": "ReadMD", "version": server::VERSION },
@@ -671,6 +810,7 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
         "ping" => reply(out, &id, json!({})),
         "tools/list" => reply(out, &id, json!({ "tools": tools() })),
         "resources/list" => reply(out, &id, resources(app)),
+        "resources/templates/list" => reply(out, &id, json!({ "resourceTemplates": [] })),
         "resources/read" => match read_resource(app, &arg_str(&params, "uri", "")) {
             Ok(v) => reply(out, &id, v),
             Err((c, m)) => reply_err(out, &id, c, &m),
@@ -689,25 +829,53 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
                 Some(v @ Value::Object(_)) => v.clone(),
                 Some(_) => return reply_err(out, &id, -32602, "Invalid params"),
             };
+            let mut requests = cancelled.lock().unwrap_or_else(|e| e.into_inner());
+            if requests.contains_key(&id.to_string()) { return reply_err(out, &id, -32600, "Duplicate in-flight request id"); }
             if busy.fetch_add(1, Ordering::SeqCst) >= MAX_CONCURRENT_TOOLS {
                 busy.fetch_sub(1, Ordering::SeqCst);
                 return reply_err(out, &id, -32001, "server_busy");
             }
             let flag = Arc::new(AtomicBool::new(false));
-            cancelled.lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), flag.clone());
+            requests.insert(id.to_string(), flag.clone());
+            drop(requests);
+            let progress_token = params.get("_meta").and_then(|m| m.get("progressToken")).filter(|token| token.is_string() || token.is_i64() || token.is_u64()).cloned();
+            let spawn_id = id.clone();
             let (app, out, busy, cancelled) = (app.clone(), out.clone(), busy.clone(), cancelled.clone());
-            std::thread::Builder::new()
+            let (failed_out, failed_busy, failed_cancelled) = (out.clone(), busy.clone(), cancelled.clone());
+            if std::thread::Builder::new()
                 .name("mcp-tool".into())
                 .spawn(move || {
-                    let result = call_tool(&app, &name, &args);
+                    // Keep clients' inactivity timers alive during synchronous
+                    // OCR/export/provider requests. These are status messages,
+                    // never AI text deltas. Disconnecting the channel stops it
+                    // immediately when work finishes.
+                    let (done, receiver) = std::sync::mpsc::channel::<()>();
+                    let activity = progress_token.and_then(|token| {
+                        let (out, flag) = (out.clone(), flag.clone());
+                        std::thread::Builder::new().name("mcp-progress".into()).spawn(move || {
+                            let mut progress: u64 = 0;
+                            while receiver.recv_timeout(std::time::Duration::from_secs(10)) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+                                if flag.load(Ordering::SeqCst) { break; }
+                                progress += 1;
+                                out.send(&json!({ "jsonrpc": "2.0", "method": "notifications/progress", "params": {
+                                    "progressToken": token, "progress": progress, "message": "Working" } }));
+                            }
+                        }).ok()
+                    });
+                    let result = call_tool_cancellable(&app, &name, &args, Some(&flag));
+                    drop(done);
+                    if let Some(activity) = activity { let _ = activity.join(); }
                     // A cancelled request gets no response (MCP spec).
                     if !flag.load(Ordering::SeqCst) {
                         reply(&out, &id, result);
                     }
                     cancelled.lock().unwrap_or_else(|e| e.into_inner()).remove(&id.to_string());
                     busy.fetch_sub(1, Ordering::SeqCst);
-                })
-                .ok();
+                }).is_err() {
+                failed_cancelled.lock().unwrap_or_else(|e| e.into_inner()).remove(&spawn_id.to_string());
+                failed_busy.fetch_sub(1, Ordering::SeqCst);
+                reply_err(&failed_out, &spawn_id, -32603, "Worker unavailable");
+            }
         }
         _ => reply_err(out, &id, -32601, &format!("Method not found: {method}")),
     }
@@ -719,9 +887,14 @@ pub fn run_stdio(app: Arc<App>) {
     let busy = Arc::new(AtomicUsize::new(0));
     let cancelled = Arc::new(Mutex::new(HashMap::new()));
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
-        handle_line(&app, &out, &busy, &cancelled, &line);
+    let mut input = stdin.lock();
+    loop {
+        match read_message(&mut input, MAX_MESSAGE_BYTES) {
+            Ok(None) => break,
+            Ok(Some(Ok(line))) => handle_line(&app, &out, &busy, &cancelled, &line),
+            Ok(Some(Err(code))) => reply_err(&out, &Value::Null, code, "Invalid or oversized message"),
+            Err(_) => break,
+        }
     }
     while busy.load(Ordering::SeqCst) > 0 {
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -732,6 +905,42 @@ pub fn run_stdio(app: Arc<App>) {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn bounded_transport_drains_bad_messages_and_recovers() {
+        let mut input = std::io::BufReader::with_capacity(3, std::io::Cursor::new(b"123456789\nok\n\xff\nlast"));
+        assert_eq!(read_message(&mut input, 4).unwrap(), Some(Err(-32600)));
+        assert_eq!(read_message(&mut input, 4).unwrap(), Some(Ok("ok".into())));
+        assert_eq!(read_message(&mut input, 4).unwrap(), Some(Err(-32700)));
+        assert_eq!(read_message(&mut input, 4).unwrap(), Some(Ok("last".into())));
+        assert_eq!(read_message(&mut input, 4).unwrap(), None);
+    }
+
+    #[test]
+    fn atomic_publication_and_cancelled_exports_preserve_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("result.html");
+        std::fs::write(&output, b"KEEP").unwrap();
+        assert_eq!(write_output(&output, b"REPLACEMENT", false), Err("output_exists"));
+        assert_eq!(std::fs::read(&output).unwrap(), b"KEEP");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        let (app, _, _, _, _) = harness("cancelled-export");
+        let cancelled = AtomicBool::new(true);
+        let result = call_tool_cancellable(&app, "readmd_export_document", &json!({
+            "output_path": output, "output_format":"html", "markdown_content":"# Replaced", "overwrite":true, "confirm":true
+        }), Some(&cancelled));
+        assert_eq!(result["structuredContent"]["error_code"], "cancelled");
+        assert_eq!(std::fs::read(&output).unwrap(), b"KEEP");
+    }
+
+    #[test]
+    fn provider_metadata_does_not_echo_header_or_url_credentials() {
+        let result = scrub(&json!({"credential_id":"cred:handle", "base_url":"https://name:private@example.invalid/v1?api_key=private#private", "headers":{"X-API-Key":"private", "Proxy-Authorization":"private", "X-Region":"test"}}));
+        assert_eq!(result["credential_id"], "cred:handle");
+        assert_eq!(result["base_url"], "https://example.invalid/v1");
+        assert_eq!(result["headers"], json!({"X-Region":"test"}));
+        assert!(!result.to_string().contains("private"));
+    }
 
     struct Chan(mpsc::Sender<String>, Vec<u8>);
     impl Write for Chan {
@@ -840,4 +1049,69 @@ mod tests {
         let v: Value = serde_json::from_str(&rx.recv().unwrap()).unwrap();
         assert_eq!(v["error"]["code"], -32602);
     }
+
+    #[test]
+    fn modern_discovery_is_self_contained_and_legacy_handshake_stays_legacy() {
+        let meta = json!({ PROTOCOL_META: MODERN_PROTOCOL, "io.modelcontextprotocol/clientCapabilities": {} });
+        let r = roundtrip("modern", &[
+            json!({"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":meta}}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":meta}}),
+            json!({"jsonrpc":"2.0","id":3,"method":"initialize","params":{"protocolVersion":MODERN_PROTOCOL}}),
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"_meta":meta,"name":"readmd_fix_markdown","arguments":{"content":"# Heading"}}}),
+        ]);
+        let discovery = by_id(&r, 1);
+        assert_eq!(discovery["result"]["resultType"], "complete");
+        assert!(discovery["result"]["supportedVersions"].as_array().unwrap().contains(&json!(MODERN_PROTOCOL)));
+        assert_eq!(discovery["result"]["cacheScope"], "private");
+        assert_eq!(discovery["result"]["ttlMs"], 0);
+        assert_eq!(discovery["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "readmd");
+        assert_eq!(by_id(&r, 2)["result"]["resultType"], "complete");
+        assert_eq!(by_id(&r, 3)["result"]["protocolVersion"], LEGACY_PROTOCOL);
+        assert!(by_id(&r, 3)["result"].get("resultType").is_none());
+        let tool = by_id(&r, 4);
+        assert_eq!(tool["result"]["structuredContent"]["ok"], true);
+        assert_eq!(tool["result"]["resultType"], "complete");
+    }
+
+    #[test]
+    fn invalid_protocol_and_parameter_types_are_not_silently_accepted() {
+        let r = roundtrip("validate", &[
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{PROTOCOL_META:"1900-01-01"}}}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"_meta":{PROTOCOL_META:MODERN_PROTOCOL}}}),
+            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"readmd_fix_markdown","arguments":{"content":false}}}),
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"readmd_generate_toc","arguments":{"markdown_content":"# hi","depth_from":7}}}),
+            json!({"jsonrpc":"2.0","id":5,"method":"tools/list","params":{"cursor":"made-up"}}),
+            json!({"jsonrpc":"2.0","id":6,"method":"tools/list","params":[]}),
+        ]);
+        assert_eq!(by_id(&r, 1)["error"]["code"], -32022);
+        assert_eq!(by_id(&r, 1)["error"]["data"]["requested"], "1900-01-01");
+        assert_eq!(by_id(&r, 2)["error"]["code"], -32602);
+        assert_eq!(by_id(&r, 3)["result"]["structuredContent"]["error_code"], "invalid_arguments");
+        assert_eq!(by_id(&r, 4)["result"]["isError"], true);
+        assert_eq!(by_id(&r, 5)["error"]["code"], -32602);
+        assert_eq!(by_id(&r, 6)["error"]["code"], -32602);
+    }
+}
+
+// Drain oversized lines without retaining them, so the next request can recover.
+fn read_message(input: &mut impl BufRead, limit: usize) -> std::io::Result<Option<Result<String, i64>>> {
+    let mut bytes = Vec::new();
+    let mut oversized = false;
+    loop {
+        let chunk = input.fill_buf()?;
+        if chunk.is_empty() {
+            if bytes.is_empty() && !oversized { return Ok(None); }
+            break;
+        }
+        let end = chunk.iter().position(|b| *b == b'\n');
+        let count = end.map_or(chunk.len(), |at| at + 1);
+        let payload = end.unwrap_or(count);
+        if !oversized && bytes.len().saturating_add(payload) <= limit {
+            bytes.extend_from_slice(&chunk[..payload]);
+        } else { oversized = true; bytes.clear(); }
+        input.consume(count);
+        if end.is_some() { break; }
+    }
+    if oversized { return Ok(Some(Err(-32600))); }
+    Ok(Some(String::from_utf8(bytes).map_err(|_| -32700)))
 }

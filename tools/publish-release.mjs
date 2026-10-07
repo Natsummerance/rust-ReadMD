@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-export const PACKAGE_NAMES = ['ReadMD-linux-x86_64.deb','ReadMD-linux-x86_64.tar.gz','ReadMD-macos-arm64.dmg','ReadMD-macos-arm64.zip','ReadMD-macos-x64.dmg','ReadMD-macos-x64.zip','ReadMD-windows-x64.zip','ReadMDSetup-windows-x64.exe'];
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const version = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
+export const PACKAGE_NAMES = ['ReadMD-linux-x86_64.deb','ReadMD-linux-x86_64.tar.gz','ReadMD-macos-arm64.dmg','ReadMD-macos-arm64.zip','ReadMD-macos-x64.dmg','ReadMD-macos-x64.zip','ReadMD-windows-x64.zip','ReadMDSetup-windows-x64.exe',`readmd-vscode-${version}.vsix`,`readmd-mcp-server-${version}.zip`];
 export function parseChecksums(text) {
   const entries = new Map();
   for (const line of text.trim().split(/\r?\n/)) {
@@ -12,7 +14,7 @@ export function parseChecksums(text) {
     if (!match || !PACKAGE_NAMES.includes(match[2]) || entries.has(match[2])) throw Error('Invalid or unexpected checksum entry');
     entries.set(match[2],match[1]);
   }
-  if (entries.size !== PACKAGE_NAMES.length) throw Error('Incomplete desktop checksum manifest');
+  if (entries.size !== PACKAGE_NAMES.length) throw Error('Incomplete release checksum manifest');
   return entries;
 }
 function digest(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
@@ -20,7 +22,7 @@ export async function publish({ directory, tag, commit, repo, token, notes, requ
   if (!/^Natsummerance\/rust-ReadMD$/i.test(repo) || !/^[a-f\d]{40}$/.test(commit) || !/^[vV]\d+\.\d+\.\d+$/.test(tag)) throw Error('Invalid release target');
   const names=[...PACKAGE_NAMES,'SHA256SUMS.txt'];
   const actual=fs.readdirSync(directory).filter(n=>fs.statSync(path.join(directory,n)).isFile()).sort();
-  if (JSON.stringify(actual)!==JSON.stringify([...names].sort())) throw Error('Release directory must contain only the eight desktop packages and checksums');
+  if (JSON.stringify(actual)!==JSON.stringify([...names].sort())) throw Error('Release directory must contain only the desktop/integration packages and checksums');
   const sums=parseChecksums(fs.readFileSync(path.join(directory,'SHA256SUMS.txt'),'utf8'));
   const files=names.map(name=>({name,file:path.join(directory,name),sha:digest(path.join(directory,name)),size:fs.statSync(path.join(directory,name)).size}));
   for(const f of files) if(!f.size || (sums.has(f.name)&&sums.get(f.name)!==f.sha)) throw Error('Local package checksum mismatch: '+f.name);

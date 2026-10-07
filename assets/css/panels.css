@@ -1317,6 +1317,31 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 #search-input { min-width: 0; flex: 1 1 auto; }
 #search-count { flex: 0 1 auto; max-width: 42%; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 #search-bar button { flex: 0 0 auto; }
+#search-bar.is-editor-search {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) max-content 44px 44px 44px;
+  align-items: center;
+}
+#search-bar.is-editor-search #search-close { grid-column: 5; grid-row: 1; }
+#search-replace-controls:not([hidden]) {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  gap: var(--space-2);
+  min-width: 0;
+}
+#search-replace-input {
+  flex: 1 1 100px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-surface);
+  border: var(--hairline) solid var(--color-border);
+  border-radius: var(--radius-m);
+}
+#search-replace-controls button { min-height: 44px; width: auto; padding: 8px 12px; }
 .formula-box { border-radius: var(--radius-xl); }
 .formula-box > :is(.export-head, .formula-top, .formula-cats, .formula-preview) { flex-shrink: 0; }
 .formula-preview { max-height: 25dvh; }

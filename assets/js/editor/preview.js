@@ -495,6 +495,7 @@ async function toggleEdit() {
     $('edit-area').focus();
   }
   applyPvUi();
+  syncSearchMode();
 }
 
 async function confirmExitEdit() {
@@ -551,6 +552,7 @@ function exitEdit() {
   $('edit-wrap').classList.add('hidden');
   $('content').classList.remove('hidden');
   state.editing = false;
+  syncSearchMode();
   setEditBtn(_t('toolbar.edit') || '编辑');
   if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
 }

@@ -4,6 +4,7 @@ const path = require('node:path');
 const Module = require('node:module');
 
 const vscodeStub = {
+  env: { language: 'zh-cn' },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItem: class TreeItem {
     constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; }
@@ -26,7 +27,7 @@ const vscodeStub = {
 const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   const parentFile = (parent && parent.filename ? parent.filename : '').replace(/\\/g, '/');
-  if (parentFile.endsWith('/out/sidebarProvider.js') && request === 'vscode') return vscodeStub;
+  if (parentFile.includes('/out/') && request === 'vscode') return vscodeStub;
   return originalLoad.call(this, request, parent, isMain);
 };
 

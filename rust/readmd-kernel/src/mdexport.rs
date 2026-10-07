@@ -503,7 +503,7 @@ fn a2b_base64_strict(text: &str) -> Option<Vec<u8>> {
 }
 
 /// `mdexport/__init__.py:124-131` — the `re.sub` callback `embed_image`.
-fn embed_images_for_html(content: &str, base_dir: &str, warns: &mut Vec<String>) -> String {
+pub(crate) fn embed_images_for_html(content: &str, base_dir: &str, warns: &mut Vec<String>) -> String {
     static IMG_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = IMG_RE.get_or_init(|| {
         // Python's `[^)\s]` also excludes `U+001C`-`U+001F` (they are `\s` for

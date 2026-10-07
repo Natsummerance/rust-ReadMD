@@ -360,6 +360,8 @@ function bindEvents() {
   $('edit-area').addEventListener('input', () => {
     updateUnloadGuard();
     if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+    if (!$('search-bar').classList.contains('hidden')) syncSearchMode();
+    if (typeof updateDocStatistics === 'function') updateDocStatistics();
   });
   $('edit-cancel').addEventListener('click', confirmExitEdit);
 
@@ -492,6 +494,8 @@ function bindEvents() {
   $('search-close').addEventListener('click', () => closeSearch({ restoreFocus: true }));
   $('search-next').addEventListener('click', () => jumpToMark(1));
   $('search-prev').addEventListener('click', () => jumpToMark(-1));
+  $('search-replace-one').addEventListener('click', () => replaceEditorMatch(false));
+  $('search-replace-all').addEventListener('click', () => replaceEditorMatch(true));
   let searchDebounce = null;
   let initialSearchFocused = false;
   let searchQueryNeedsInitialEnter = false;

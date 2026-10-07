@@ -123,6 +123,7 @@ function createEditor(doc) {
           scheduleDocStatistics();
           if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
           if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+          if (!$('search-bar').classList.contains('hidden')) syncSearchMode();
         }
         slashOnUpdate(u);
         if (u.selectionSet && !u.docChanged) scheduleDocStatistics();
@@ -135,6 +136,7 @@ function createEditor(doc) {
   if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
     C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
+  syncSearchMode();
   applyEditorViewClasses();
   cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
   cmView.dom.addEventListener('keyup', () => setTimeout(updateCmSelectionToolbar, 10));

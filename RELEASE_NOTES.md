@@ -16,6 +16,8 @@
 - **生产场景复查**：修复 Windows 虚拟化安装目录下的资源拒绝、扫描 PDF 取消无效、损坏 Office 文档假成功、超宽表格的内存扩张，以及导出 HTML 重导入失败；限制启动索引工作量，避免大资料目录延迟窗口出现。真实资料副本与并发读写、冲突和批量转换压力检查见 `docs/reviews/readmd-production-audit-2026-10-06.md`。
 - **编辑与语言精修**：编辑工具栏始终单行，根据窗口和当前语言收纳低频工具，字数与恢复状态移至底部；移除设置里的重复退出项。补齐 46 语言词库中的新增面板文案，修复预览标题、草稿状态和 AI 空态切换语言后遗留旧文本的问题。
 - **图谱路径修复**：扫描文件在权限检查前统一规范路径，避免 Windows 临时目录别名和含 `..` 的合法工作区被错误跳过，保留原有目录边界检查。
+- **桌面查找与替换**：编辑时搜索当前草稿，支持逐项替换和可撤销的全部替换；CodeMirror 加载失败时备用编辑器仍可使用。大批匹配明确提示上限，不静默替换一部分，原文件在保存前保持不变。
+- **VS Code 与 MCP 升级**：工具箱分组折叠、完整中英文界面；异步识别已安装内核，修复握手、重连和取消。预览、公式及工程图表随 VSIX 离线打包，演讲主题和源目录图片生效；AI 只应用最终正文并保护期间发生的修改。MCP 提供 22 个工具，兼容当前逐请求发现及旧握手，补齐模型、真实导出预设、图表、结构化结果、参数校验、并发和消息上限。社区对照及实测边界见 `docs/reviews/readmd-community-upgrade-2026-10-07.md`。
 - **后续发布**：发布流程从 `VERSION` 读取版本，核对标签与源码提交；内核、前端和 UI 的共享质量检查及全部打包任务通过后，才允许正式替换下载包。完整上传并校验全部新包后再替换旧包，最后更新校验清单与正式发布状态。
 
 ## 下载
@@ -26,9 +28,11 @@
 | macOS Apple Silicon | `ReadMD-macos-arm64.dmg` / `ReadMD-macos-arm64.zip` |
 | macOS Intel | `ReadMD-macos-x64.dmg` / `ReadMD-macos-x64.zip` |
 | Linux x86_64 | `ReadMD-linux-x86_64.deb` / `ReadMD-linux-x86_64.tar.gz` |
+| VS Code 扩展 | `readmd-vscode-0.0.4.vsix` |
+| MCP 文档与连接模板 | `readmd-mcp-server-0.0.4.zip`（内核使用桌面主程序） |
 | 完整性校验 | `SHA256SUMS.txt` |
 
-Windows 便携版须解压整个 ZIP 后运行 `ReadMD.exe`；不要只移动其中的可执行文件。桌宠的全局键盘/鼠标监听和 BongoCat 敲击响应目前在 Windows 上可用，Linux/macOS 尚未提供全局输入监听。Linux 桌面版需要 GTK/WebKitGTK 运行库。macOS 包未做 Apple 公证。此版本不提供 Windows/Linux ARM64、AppImage、独立 VSIX 或 MCP ZIP；VS Code 扩展源码在仓库中，MCP 使用主程序的 `--mcp` 入口。
+Windows 便携版须解压整个 ZIP 后运行 `ReadMD.exe`；不要只移动其中的可执行文件。桌宠的全局键盘/鼠标监听和 BongoCat 敲击响应目前在 Windows 上可用，Linux/macOS 尚未提供全局输入监听。Linux 桌面版需要 GTK/WebKitGTK 运行库。macOS 包未做 Apple 公证。此版本不提供 Windows/Linux ARM64 或 AppImage；VS Code 扩展需要桌面内核，MCP 使用主程序的 `--mcp` 入口。
 
 从旧版本迁移时请先下载本版本安装包或完整便携包；旧版本内部版本号与原有发布标签不一致。本版本建立统一的后续更新基线。
 

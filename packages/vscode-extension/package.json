@@ -6,13 +6,13 @@
   "publisher": "Natsummerance",
   "icon": "icon.png",
   "license": "MIT",
-  "homepage": "https://github.com/Natsummerance/readMD",
+  "homepage": "https://github.com/Natsummerance/rust-ReadMD",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Natsummerance/readMD.git"
+    "url": "https://github.com/Natsummerance/rust-ReadMD.git"
   },
   "bugs": {
-    "url": "https://github.com/Natsummerance/readMD/issues"
+    "url": "https://github.com/Natsummerance/rust-ReadMD/issues"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -201,17 +201,17 @@
         {
           "command": "readmd.preview",
           "when": "resourceExtname == .md || resourceExtname == .markdown",
-          "group": "navigation@1"
+          "group": "navigation@10"
         },
         {
           "command": "readmd.openPresentation",
           "when": "resourceExtname == .md || resourceExtname == .markdown",
-          "group": "navigation@2"
+          "group": "readmd@1"
         },
         {
           "command": "readmd.fixCurrentDocument",
           "when": "resourceExtname == .md || resourceExtname == .markdown",
-          "group": "navigation@3"
+          "group": "readmd@1"
         }
       ],
       "editor/context": [
@@ -254,7 +254,7 @@
       "explorer/context": [
         {
           "command": "readmd.convertFileToMarkdown",
-          "when": "resourceExtname =~ /\\.(docx|pdf|pptx|xlsx|tex|txt|html|png|jpg|webp)$/i",
+          "when": "resourceScheme == file && !explorerResourceIsFolder",
           "group": "7_modification"
         },
         {
@@ -283,10 +283,10 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "node scripts/stage-assets.mjs && tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/bridge.test.js test/sidebarProvider.test.js test/commands.test.js",
-    "package": "node scripts/stage-core.mjs && vsce package --no-dependencies",
+    "test": "npm run compile && node --test test/*.test.js",
+    "package": "npm run compile && node scripts/stage-core.mjs && node scripts/package-vsix.mjs",
     "publish:ovsx": "node publish-ovsx.js",
     "release:ovsx": "npm run package && npm run publish:ovsx",
     "publish": "vsce publish"
@@ -296,5 +296,19 @@
     "@types/vscode": "^1.80.0",
     "@vscode/vsce": "^2.24.0",
     "typescript": "^5.3.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%capabilities.untrusted%",
+      "restrictedConfigurations": [
+        "readmd.executablePath",
+        "readmd.customCssPath"
+      ]
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "%capabilities.virtual%"
+    }
   }
 }

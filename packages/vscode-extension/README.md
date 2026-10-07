@@ -1,82 +1,81 @@
 # ReadMD for VS Code · V0.0.4
 
-ReadMD for VS Code 是桌面 ReadMD 的编辑器入口：在 VS Code、Cursor 和兼容的 Extension Host 中复用同一个本地 Core Service，提供 Markdown 预览、修复、转换、AI/Skills 与导出能力。扩展不会把文档上传到 ReadMD；AI、网页抓取和 GitHub Skill 导入是否联网，取决于你主动启用的 Provider 或操作。
+在 VS Code、Cursor 等兼容编辑器中阅读、修复和转换 Markdown，使用 ReadMD 的 AI Skills，并导出文档与演讲。保留编辑器原生的保存、撤销和未保存提示。
 
-ReadMD for VS Code is the editor front end for the ReadMD desktop app. It connects to one local Core Service so the desktop app, VS Code extension and MCP use the same document, provider, credential, Skill and history model. No document is sent to ReadMD by default. AI providers, web extraction and GitHub imports require the network only when you explicitly use them.
+## 安装和连接
 
-## 安装 / Installation
+安装 ReadMD 桌面应用，再用 **Extensions: Install from VSIX…** 安装 `readmd-vscode-0.0.4.vsix`。打开 Markdown，执行 ReadMD 命令即可。
 
-1. 在 Releases 下载与 VS Code 版本匹配的 `readmd-vscode-0.0.4.vsix`，打开命令面板执行 **Extensions: Install from VSIX...**。
-2. 重载窗口（Developer: Reload Window），打开一个 `.md` 文件。
-3. 第一次运行任意 ReadMD 命令时，扩展会自动启动本地 Core；也可以在设置中填写已有 Core 地址。
-4. 卸载前先关闭 ReadMD 视图。卸载扩展不会删除文档或凭据；要清除数据，请在桌面应用的设置中执行数据清理。
+扩展按需启动一个持久的 `readmd --mcp` 子进程，通过标准输入输出通信；没有 HTTP 服务地址设置，不需要打开桌面窗口，也不需要 Python。探测顺序：`readmd.executablePath` → 随 VSIX 附带的内核 → 桌面应用默认安装目录 → PATH。Windows 包括用户的 `Applications/ReadMD`、`LocalAppData/Programs` 和 Program Files。
 
-Install the matching `readmd-vscode-0.0.4.vsix` from Releases with **Extensions: Install from VSIX...**, reload the window, and open a Markdown file. The extension starts the bundled local Core on first use, or can connect to an existing Core configured in Settings. Uninstalling the extension does not delete documents or credentials.
+安装在其他目录时，设置 `readmd.executablePath` 为可执行文件的完整路径。修改后连接会重建；进程异常退出时，下次操作重新连接。卸载扩展不删除源文档、桌面设置或凭据。
 
-## 22 个命令 / Command reference
+## 工具箱与 22 个命令
 
-所有命令都可在 `Ctrl/Cmd+Shift+P` 搜索，也会按上下文出现在编辑器标题栏或右键菜单中。
+标题栏保留预览入口，低频操作收进菜单和分组工具箱。所有命令均可在命令面板搜索。
 
-| 命令 | 用途 |
+| 命令 | 实际行为与交互 |
 | --- | --- |
-| `ReadMD: 打开 AI Skill 工作台` (`readmd.openAiWorkbench`) | 选择 Provider、会话和 Skill，预览、应用、插入或撤销 AI 结果。 |
-| `ReadMD: 浏览 Skills` (`readmd.openSkills`) | 浏览内置、用户和项目 `.readmd/skills`，查看来源与权限。 |
-| `ReadMD: 打开智能实时双向预览` (`readmd.preview`) | 在分栏打开与当前编辑器绑定的实时预览。 |
-| `ReadMD: 智能诊断并自愈修复格式错误` (`readmd.fixCurrentDocument`) | 生成差异并将 Markdown 修复应用到当前编辑器。 |
-| `ReadMD: 插入交互式代码块` (`readmd.insertCodeChunk`) | 插入受限的代码块模板；执行前始终显示确认。 |
-| `ReadMD: 插入科学与工程图表` (`readmd.insertDiagram`) | 插入 PlantUML、TikZ、Vega 等图表块。 |
-| `ReadMD: 插入子文档引用` (`readmd.insertDocImport`) | 插入 `@import` 模块引用。 |
-| `ReadMD: 插入文档样式与演示元数据` (`readmd.insertFrontmatter`) | 插入 frontmatter 与样式字段。 |
-| `ReadMD: 开启全屏 Reveal.js 演说模式` (`readmd.openPresentation`) | 以当前文档打开演示模式。 |
-| `ReadMD: 导出 Reveal.js 演说 HTML` (`readmd.exportPresentation`) | 写出可离线播放的演示 HTML。 |
-| `ReadMD: 插入 [TOC] 自动目录` (`readmd.insertToc`) | 根据标题生成或更新目录。 |
-| `ReadMD: 插入 <!-- slide --> 幻灯片分页符` (`readmd.insertSlide`) | 在光标处插入分页标记。 |
-| `ReadMD: 展平并编译 @import 模块化引用` (`readmd.processImports`) | 预览并确认后生成展平文档。 |
-| `ReadMD: 安全运行光标所在 Python 代码块` (`readmd.runCodeChunk`) | 在限制目录和超时内执行当前代码块。 |
-| `ReadMD: 排版级导出文档` (`readmd.exportDocument`) | 导出 PDF、Word、HTML、LaTeX 等格式。 |
-| `ReadMD: 转换为 Markdown` (`readmd.convertFileToMarkdown`) | 将已选本地文件转换为 Markdown。 |
-| `ReadMD: 转换本地文档为 Markdown...` (`readmd.convertAnyFilePrompt`) | 选择文件并指定转换选项。 |
-| `ReadMD: 抓取网页 URL 为 Markdown` (`readmd.fetchWebToMarkdown`) | 明确确认后抓取网页正文。 |
-| `ReadMD: 一键编译转为学术 LaTeX 源码` (`readmd.convertToLatex`) | 生成可继续编辑的 `.tex` 文件。 |
-| `ReadMD: 解析 BibTeX 参考文献` (`readmd.parseBibtex`) | 解析当前 BibTeX 并返回引用数据。 |
-| `ReadMD: 一键配置工作区 MCP Server` (`readmd.setupMcpServer`) | 在确认后写入工作区 MCP 配置。 |
-| `ReadMD: 打开指定 Skill` (`readmd.openSkillByUri`) | 从侧边栏或链接直接在工作台中打开指定 Skill。 |
+| `readmd.preview` | 每个源文件复用一个实时预览；双向滚动同步；公式、目录、标题链接、本地图片和工程图表离线渲染。 |
+| `readmd.fixCurrentDocument` | 修复当前草稿，作为一次可撤销编辑应用；等待期间文档改变则停止替换。 |
+| `readmd.openAiWorkbench` | 选择 Skill、已保存的连接和模型；生成后选择替换选区/全文、插入末尾或另开结果。 |
+| `readmd.openSkills` | 从实际内核列出 Skills，选择后打开内容。 |
+| `readmd.openSkillByUri` | 通过工具箱指定 URI 打开 Skill。 |
+| `readmd.insertCodeChunk` | 插入 Python、JavaScript、Bash、R 或 Go 模板。 |
+| `readmd.runCodeChunk` | 选择代码或将光标放入围栏；确认后调用本地运行时；结果面板展示输出、标准错误和生成图片。支持反引号和波浪号围栏。 |
+| `readmd.insertDiagram` | 插入 PlantUML、TikZ、WaveDrom、Vega-Lite、Graphviz、Bitfield 模板。 |
+| `readmd.insertDocImport` | 插入 `@import` 引用。 |
+| `readmd.processImports` | 从当前文件目录解析引用，在新文档中展示展开结果。 |
+| `readmd.insertFrontmatter` | 插入文档和演讲元数据，已有元数据时提示。 |
+| `readmd.insertToc` | 插入 `[TOC]`，实时预览根据标题生成可点击目录。 |
+| `readmd.insertSlide` | 插入 `<!-- slide -->`。 |
+| `readmd.openPresentation` | 使用随包 Reveal.js 播放；支持分页分隔符和 Frontmatter 主题、转场，忽略元数据内的分隔线。 |
+| `readmd.exportPresentation` | 选择路径，导出含脚本及源目录图片的离线 HTML；保存框确认替换后可覆盖。 |
+| `readmd.exportDocument` | 选择 PDF、Word、HTML、LaTeX 或 EPUB；预设从实际桌面内核读取，包括自定义预设；相对图片以源目录解析。 |
+| `readmd.convertFileToMarkdown` | 从资源管理器或文件选择器转换；保留源文件，结果在未保存的新文档中打开。 |
+| `readmd.convertAnyFilePrompt` | 打开同一转换选择器，含“所有文件”，不会把内核支持范围限制为少量后缀。 |
+| `readmd.fetchWebToMarkdown` | 输入有效 HTTP(S) 网址，提取后打开新文档；操作会联网。 |
+| `readmd.convertToLatex` | 将当前草稿转换为 LaTeX，在新文档中打开。 |
+| `readmd.parseBibtex` | 读取工作区或所选 BibTeX 数据库并报告条目数。 |
+| `readmd.setupMcpServer` | 写入选定工作区的 VS Code/Cursor MCP 配置，或复制 Claude Desktop 模板。保留其他服务及 JSONC 注释；无效配置不覆盖。 |
 
-## AI、Provider 与凭据 / AI, providers and credentials
+## 预览、样式与执行
 
-打开 **AI Skill 工作台** 后，Provider 卡片和模型列表来自 Core 的 Provider catalog，不在扩展中写死。创建自定义连接时选择协议（OpenAI Chat/Responses/Completions 或 Anthropic Messages）、Base URL、模型和能力标签；Base URL 会规范化，密钥只通过 `credential_id` 从系统凭据库读取，不会写入设置、日志、历史或 URL。连接测试只返回状态、延迟和脱敏错误。
+预览脚本、公式字体和图表资产随 VSIX 打包，不从 CDN 下载。文档脚本、事件属性及外部追踪图片不执行/加载。外链点击交给编辑器打开，本地文档链接在编辑器中打开。远程图片以替代文字显示。
 
-AI 请求以统一 SSE 事件（`meta`、`delta`、`usage`、`error`、`done`）处理。生成结果默认仅预览；使用 **Apply**、**Insert** 或 **Undo** 明确决定是否修改文档。取消请求可随时停止当前会话。
+Mermaid、WaveDrom、Bitfield、Graphviz、Vega/Vega-Lite、Chart.js、TikZ 使用离线渲染器。需要表达式编译或 WASM 的引擎运行在可销毁的隔离 iframe，文档无法执行脚本。图表外部数据 URL 禁用。PlantUML 使用本机 Java/PlantUML，缺少依赖时保留源码并提示；不会自动把源码上传到代理。WSD/D2/Ditaa 使用内核的基础语法 SVG 渲染器。
 
-After opening the AI workbench, provider cards and models are loaded from the Core catalog. Secrets are stored by the operating system credential service and referenced only by `credential_id`. The extension never writes an API key to settings, history, logs, URLs or exports. Results are previewed before Apply/Insert, and a request can be cancelled.
+`readmd.customCssPath` 指向本地 CSS 文件（最多 256 KB；相对路径以第一个工作区目录为基准）。修改设置会刷新已有预览。限制模式下忽略该设置，预览仍可用；原生工具、AI、运行代码和 MCP 配置写入要求工作区信任。执行代码还需逐次确认，取消不会运行。
 
-## Skills 与 GitHub 导入 / Skills and GitHub import
+演讲元数据支持 `theme`、`transition`、`title`、`author`、`slideNumber`、`width`、`height` 的简单标量；主题和转场也可放在 `presentation:` 下。主题使用随包资源和系统字体回退，不请求在线字体。这不是完整 YAML 配置解析器；文档内的任意 `custom_css` 不执行，预览样式通过上述本地设置管理。
 
-Skill 解析顺序为项目 `.readmd/skills` > 用户目录 > 内置目录。每个 Skill 是 `SKILL.md` 加可选 `readmd.skill.json`，只允许六种受限变量：`document`、`selection`、`request`、`language`、`context`、`output_format`。普通用户 Skill 的脚本永远禁用。
+代码执行使用本机运行时，不能把它当作安全沙箱。Python/Matplotlib 等可选运行环境由用户自行提供；依赖不足会反馈错误。
 
-在桌面 ReadMD 的 Skill 工作台选择 GitHub 导入，粘贴仓库、`tree` 子目录或 `SKILL.md` 的 `blob` 链接，先预览再勾选多个 Skill。导入使用 GitHub API/归档下载，不执行 clone、hooks 或仓库脚本；固定解析后的 commit，并将来源、文件哈希和更新状态写入本地 `skills.json`。私有仓库只填写凭据 ID，Token 存入系统凭据库。更新必须手动检查、查看差异并再次确认。
+## AI 与文件保护
 
-Skills resolve in project, user and built-in scopes. GitHub imports are previewed, selected, pinned to a commit and copied as data; scripts remain disabled. Private repositories use a credential ID rather than a token in the config. Updates are manual and show the commit/file changes before replacement.
+先在桌面 ReadMD 配置连接；扩展读取连接和模型，模型为空时向该连接获取列表，也可刷新。只传凭据引用，不在扩展设置中保存 API Key。选中文本时仅发送选区；否则发送全文。只有主动运行 AI 操作才发送文档。
 
-## MCP 与网络边界 / MCP and network boundaries
+内核进度通知是状态，不能拼接为 AI 正文。结果以最终响应为准，默认等待用户选择应用方式。生成期间文件版本改变时，禁止直接替换，仍可另开结果或插入末尾。应用结果使用原生编辑事务，可撤销；不自动保存、不在源目录生成备份。
 
-`setupMcpServer` 会为当前工作区生成 MCP 配置。MCP 暴露只读资源、动态 Skill prompts 和文档工具；写文件、覆盖、导出、联网抓取与代码执行都要求明确目标及 `confirm=true`。桌面更新、托盘、通知和窗口控制不会通过 MCP 暴露。
+取消会通知内核并停止应用结果。已发出的第三方网络请求可能仍在服务端执行；不承诺撤销已发生的远程费用或已提交的文件写入。扩展目前没有桌面聊天会话管理器或逐 token 输出界面。
 
-完全离线可用：预览、编辑、目录、公式、转换（已安装依赖范围内）、本地导出和已缓存 Skill。需要联网的操作：GitHub 导入/更新、网页抓取、检查更新，以及调用远程 AI Provider。网络失败不会删除本地文档或凭据。
+## 维护与离线打包
 
-The MCP setup command writes a workspace-scoped configuration. Read-only resources and dynamic Skill prompts are safe by default; side effects require an explicit confirmation. Offline editing and local rendering remain available when GitHub, web extraction or a remote AI provider is unavailable.
+已准备现有锁定开发工具后，在仓库内运行：
 
-## 数据目录与故障排查 / Data and troubleshooting
+```sh
+cd packages/vscode-extension
+npm run compile
+node --test test/*.test.js
+node scripts/package-vsix.mjs
+```
 
-- Core 数据目录由桌面应用决定（Windows 通常位于 `%APPDATA%\\ReadMD`，macOS 位于 `~/Library/Application Support/ReadMD`，Linux 位于 `${XDG_DATA_HOME:-~/.local/share}/ReadMD`）。扩展设置只保存连接方式，不复制凭据。
-- “Core 无法连接”：执行 `Developer: Reload Window`，确认没有第二个实例占用端口，再从设置中重新连接或选择自动启动。
-- “没有模型”：检查 Provider 的协议、Base URL、模型发现权限和凭据 ID；先运行连接测试。
-- “Skill 不显示”：检查 `SKILL.md` frontmatter、目录名、description 是否为空，以及是否被禁用；description 可以使用任意语言。GitHub 导入后可在桌面工作台启用。
-- “导入被阻止”：重新预览并检查 commit、许可证、路径和脚本提示。压缩包超限、符号链接、目录穿越和无许可证内容会被拒绝。
-- “导出失败”：确认目标目录可写，并安装对应的系统转换依赖；错误消息不会包含 API Key。
+编译先从仓库 `assets/vendor` 暂存渲染资产，不下载新依赖。VSIX 打包只使用 Node 内置模块，包含 `out`、`media`、文案和 snippets，排除源码、测试、node_modules 与 source maps。默认使用已安装的桌面内核；`scripts/stage-core.mjs` 的可选平台内核打包仍可使用。
 
-See the desktop application's diagnostics log for a redacted error and timing record. Do not paste tokens or complete local paths into issues.
+额外验收：`ui-tests/vscode-preview.config.cjs` 验证真实浏览器 CSP/公式/图表；`test/host.cjs` 可通过 VS Code `--extensionTestsPath` 验证实际宿主和 Rust stdio，需要独立测试目录。
 
-## 许可证 / License
+## English
 
-ReadMD for VS Code 使用 MIT License。上游 Skill 与 Provider 原文在发行包中随许可证和归属信息离线保存；参考项目链接仅用于归属，不是运行时依赖。反馈请提交到 [ReadMD Issues](https://github.com/Natsummerance/readMD/issues)。
+ReadMD starts a persistent local `readmd --mcp` process on demand. Install the desktop app and this VSIX, or set `readmd.executablePath`. Preview/presentation assets are bundled for offline use. The toolbox groups editing, conversion, export, Skills and integrations; all 22 commands are available from the command palette.
+
+Conversion and generated results open as unsaved documents. Repairs and AI replacements use undoable editor transactions and guard against intervening edits. AI sends only selected text when there is a selection; otherwise the document. Network operations occur only when invoked. Code execution requires workspace trust and explicit confirmation. Cancellation discards late results but cannot reverse a remote operation already submitted. Local preview CSS is optional; document scripts and remote images stay blocked.
