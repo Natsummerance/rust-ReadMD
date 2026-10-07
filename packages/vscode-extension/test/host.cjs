@@ -35,6 +35,36 @@ exports.run = async function () {
     fs.writeFileSync(source, markdown);
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(source));
     await vscode.window.showTextDocument(document);
+    const linked = path.join(root, 'Plato.md'); fs.writeFileSync(linked, '# Plato\n\nA careful argument.\n');
+    const inspected = await bridge.callMcpTool('readmd_analyze_document', {
+      content: '[[Plato]]\n\n[Broken](#missing)\n', file_path: source, workspace_root: root,
+    });
+    assert.equal(inspected.diagnostics[0].code, 'missing_anchor');
+    assert.equal(path.basename(inspected.links[0].resolved_path), 'Plato.md');
+    results.push('shared AST link inspection');
+    const search = await bridge.callMcpTool('readmd_search_workspace', { workspace_root: root, query: 'title:Plato "careful argument"' });
+    assert.equal(search.results[0].relative_path, 'Plato.md'); results.push('fresh workspace phrase and title search');
+    const read = await bridge.callMcpTool('readmd_read_document', { file_path: linked });
+    const args = { file_path: linked, expected_revision: read.revision, old_text: 'careful', new_text: 'clear' };
+    const preview = await bridge.callMcpTool('readmd_edit_document', args);
+    assert.equal(preview.dry_run, true); assert.match(fs.readFileSync(linked, 'utf8'), /careful/);
+    const applied = await bridge.callMcpTool('readmd_edit_document', { ...args, dry_run: false, confirm: true });
+    assert.match(fs.readFileSync(linked, 'utf8'), /clear/);
+    const history = await bridge.callMcpTool('readmd_document_history', { file_path: linked, operation: 'read', checkpoint_id: applied.checkpoint_id });
+    assert.match(history.content, /careful/); results.push('safe edit preview, commit and recovery history');
+    const inspectionFile=path.join(root,'Links.md');
+    fs.writeFileSync(inspectionFile,'# Links\n\n[[Plato]]\n\n[Broken](#missing)\n');
+    const inspectionDoc=await vscode.workspace.openTextDocument(vscode.Uri.file(inspectionFile));
+    await vscode.window.showTextDocument(inspectionDoc);
+    await vscode.commands.executeCommand('readmd.inspectDocument');
+    assert.ok(vscode.languages.getDiagnostics(inspectionDoc.uri).some(d=>d.source==='ReadMD'&&d.code==='missing_anchor'));
+    const documentLinks=await vscode.commands.executeCommand('vscode.executeLinkProvider',inspectionDoc.uri);
+    fs.writeFileSync(path.join(root,'link-provider.json'),JSON.stringify(documentLinks.map(link=>({target:link.target?.fsPath,text:inspectionDoc.getText(link.range)})),null,2));
+    const wiki=documentLinks.find(link=>link.target?.fsPath.toLowerCase()===linked.toLowerCase());
+    assert.ok(wiki,'Wiki target resolves to the real local file');
+    assert.equal(inspectionDoc.getText(wiki.range),'[[Plato]]');
+    results.push('native Problems diagnostics and clickable Wiki provider');
+    await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('readmd.preview'); results.push('real preview command');
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('readmd.openPresentation'); results.push('real presentation command');

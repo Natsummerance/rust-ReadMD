@@ -621,6 +621,8 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/ping", h_ping),
     ("/api/kernel/status", h_kernel_status), // KERNEL BRIDGE — non-parity, see its doc comment
     ("/api/file", h_file),
+    ("/api/document/analyze", h_document_analyze), // V0.0.5 KERNEL BRIDGE, non-parity
+    ("/api/workspace/search", h_workspace_search), // V0.0.5 KERNEL BRIDGE, non-parity
     ("/api/list", h_list),
     ("/raw", h_raw),
     ("/api/save", h_save),
@@ -3522,6 +3524,32 @@ fn h_ai_models(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             Ok(Response::json_status(502, &json!({ "ok": false, "error_code": "model_list_failed", "error": message })))
         }
     }
+}
+
+/// V0.0.5 KERNEL BRIDGE: inspect a current draft, without repairing or saving it.
+fn h_document_analyze(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::bad_request("method_not_allowed")); }
+    let body=body_value(req);
+    let Some(text)=body.get("content").and_then(Value::as_str) else { return Err(ApiError::bad_request("invalid_request")); };
+    let file=body.get("file_path").and_then(Value::as_str).filter(|p|!p.is_empty()).map(Path::new);
+    if file.is_some_and(|p|!p.is_absolute()) { return Err(ApiError::bad_request("file_path_must_be_absolute")); }
+    let root=body.get("workspace_root").and_then(Value::as_str).filter(|p|!p.is_empty()).map(Path::new)
+        .or_else(||file.and_then(Path::parent)).or(Some(app.paths.workspace.as_path()));
+    crate::document_intelligence::analyze_for_reader(text,file,root).map_err(|e|ApiError::bad_request(&e)).and_then(ok_json)
+}
+
+/// V0.0.5 KERNEL BRIDGE: bounded, read-only search over current workspace files.
+fn h_workspace_search(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::bad_request("method_not_allowed")); }
+    let body=body_value(req);
+    let Some(query)=body.get("query").and_then(Value::as_str) else { return Err(ApiError::bad_request("invalid_request")); };
+    let root=body.get("workspace_root").and_then(Value::as_str).map(Path::new).unwrap_or(&app.paths.workspace);
+    let limit=match body.get("limit") {
+        None => 20,
+        Some(v) => v.as_u64().filter(|n| (1..=100).contains(n))
+            .ok_or_else(||ApiError::bad_request("invalid_search_limit"))? as usize,
+    };
+    crate::document_intelligence::search_workspace(root,query,limit,None).map_err(|e|ApiError::bad_request(&e)).and_then(ok_json)
 }
 
 // ---------------------------------------------------------------------------

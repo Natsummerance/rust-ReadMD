@@ -207,8 +207,8 @@ export class ReadMDBridge {
   /**
    * 调用 MCP 工具调度器执行核心能力。
    */
-  public async callMcpTool(name: string, args: Record<string, any>): Promise<any> {
-    const result = await this.callMcpMethod('tools/call', { name, arguments: args });
+  public async callMcpTool(name: string, args: Record<string, any>, token?: vscode.CancellationToken): Promise<any> {
+    const result = await this.callMcpMethodInternal('tools/call', { name, arguments: args }, undefined, token);
     return this.unwrapToolResult(result);
   }
 

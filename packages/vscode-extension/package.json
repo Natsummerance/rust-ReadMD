@@ -2,7 +2,7 @@
   "name": "readmd-vscode",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "Natsummerance",
   "icon": "icon.png",
   "license": "MIT",
@@ -58,7 +58,9 @@
     "onCommand:readmd.convertFileToMarkdown",
     "onCommand:readmd.fetchWebToMarkdown",
     "onCommand:readmd.setupMcpServer",
-    "onCommand:readmd.openSkillByUri"
+    "onCommand:readmd.openSkillByUri",
+    "onCommand:readmd.inspectDocument",
+    "onCommand:readmd.searchWorkspace"
   ],
   "contributes": {
     "snippets": [
@@ -177,6 +179,14 @@
         "command": "readmd.openSkillByUri",
         "title": "%command.openSkillByUri%",
         "icon": "$(library)"
+      },
+      {
+        "command": "readmd.inspectDocument",
+        "title": "%command.inspectDocument%"
+      },
+      {
+        "command": "readmd.searchWorkspace",
+        "title": "%command.searchWorkspace%"
       }
     ],
     "viewsContainers": {

@@ -42,6 +42,10 @@ const zhBundle = JSON.parse(fs.readFileSync(path.join(extDir, 'l10n', 'bundle.l1
 const enBundle = JSON.parse(fs.readFileSync(path.join(extDir, 'l10n', 'bundle.l10n.json'), 'utf-8'));
 
 const vscodeStub = {
+  languages: {
+    createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
+    registerDocumentLinkProvider: () => ({ dispose() {} }),
+  },
   l10n: {
     t: (opts, ...args) => {
       const key = opts && opts.key;
@@ -100,6 +104,14 @@ const vscodeStub = {
     showTextDocument: async doc => { openedDocs.push(doc); return doc; },
   },
   workspace: {
+    textDocuments: [],
+    onDidOpenTextDocument: () => ({ dispose() {} }),
+    onDidSaveTextDocument: () => ({ dispose() {} }),
+    onDidCloseTextDocument: () => ({ dispose() {} }),
+    onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
+    onDidRenameFiles: () => ({ dispose() {} }),
+    onDidCreateFiles: () => ({ dispose() {} }),
+    onDidDeleteFiles: () => ({ dispose() {} }),
     onDidChangeTextDocument: () => ({ dispose() {} }),
     findFiles: async () => [],
     workspaceFolders: undefined,
@@ -231,12 +243,12 @@ test('AI status messages do not enter the result and only the selected source is
   finally { fakeBridgeInstance.aiChatStreaming = originalAi; vscodeStub.window.showInformationMessage = originalInfo; }
 });
 
-test('activate registers exactly the 22 commands contributed in package.json', () => {
+test('activate registers every command contributed in package.json', () => {
   freshState();
   const context = activateExtension();
   const registeredIds = Object.keys(registered).sort();
   assert.deepStrictEqual(registeredIds, contributedCommands);
-  assert.strictEqual(registeredIds.length, 22);
+  assert.strictEqual(registeredIds.length, contributedCommands.length);
   assert.ok(context.subscriptions.length > 0);
   for (const disposable of context.subscriptions) {
     assert.strictEqual(typeof disposable.dispose, 'function');

@@ -13,6 +13,7 @@ pub mod code_chunk_runner;
 pub mod codecs;
 pub mod content;
 pub mod document_history;
+pub mod document_intelligence;
 pub mod convert;
 pub mod convert_ext;
 pub mod crypto;

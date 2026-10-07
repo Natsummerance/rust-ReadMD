@@ -89,7 +89,7 @@ ReadMD 解决的是长期资料库里的实际问题：大文件能继续读，�
 ## 多系统与信创国产适配
 
 ### 1. Linux 与国产操作系统适配（统信 UOS / 银河麒麟 / 深度）
-- **直接安装使用**：下载 [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) 双击安装，或直接运行 [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz)。银河麒麟 V10 + 飞腾 ARM64 设备使用 [`readmd_0.0.4_arm64.deb`](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux)。
+- **直接安装使用**：下载 [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) 双击安装，或直接运行 [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz)。银河麒麟 V10 + 飞腾 ARM64 设备使用 [`readmd_0.0.5_arm64.deb`](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux)。
 - **飞腾安全回退**：自动识别 Phytium D2000/E2000/FT 系列；WebKitGTK 启动时优先选择 UKUI/X11、禁用 DMABUF 合成并回退 llvmpipe，避免旧 GPU 驱动白屏或崩溃。
 - **系统与环境识别**：100% 纯原生 Rust 内核（`native_system`）自动识别系统发行版，自适应配置 Wayland / X11 显示后端。
 - **桌面与深色模式**：自动侦测 DDE（统信/Deepin）、UKUI（银河麒麟）与 GNOME/KDE 的外观主题，实时同步深色/浅色配色。
@@ -123,15 +123,15 @@ ReadMD 解决的是长期资料库里的实际问题：大文件能继续读，�
 ## VSCode 扩展与 MCP Server 生态
 
 ### 1. VSCode 插件安装与使用
-- **界面安装**：下载 [`readmd-vscode-0.0.4.vsix`](https://github.com/Natsummerance/rust-ReadMD/tree/main/packages/vscode-extension) -> 在 VSCode 扩展面板选择 `... -> 从 VSIX 安装...`。
+- **界面安装**：下载 [`readmd-vscode-0.0.5.vsix`](https://github.com/Natsummerance/rust-ReadMD/tree/main/packages/vscode-extension) -> 在 VSCode 扩展面板选择 `... -> 从 VSIX 安装...`。
 - **命令行安装**：
  ```bash
- code --install-extension readmd-vscode-0.0.4.vsix
+ code --install-extension readmd-vscode-0.0.5.vsix
  ```
 - **核心功能**：打开 Markdown 文件点击右上角书本图标开启同步预览；右键菜单支持一键自动修复语法错误与转换为 LaTeX 源码。
 
 ### 2. MCP (Model Context Protocol) Server 配置
-直接下载解压 [`readmd-mcp-server-0.0.4.zip`](https://github.com/Natsummerance/rust-ReadMD/tree/main/rust/readmd-kernel/src/mcp_server.rs)，在 Claude Desktop、Cursor、Antigravity 与 Cline 中配置（请将 `args` 中的路径替换为本机解压的**绝对路径**）：
+直接下载解压 [`readmd-mcp-server-0.0.5.zip`](https://github.com/Natsummerance/rust-ReadMD/tree/main/rust/readmd-kernel/src/mcp_server.rs)，在 Claude Desktop、Cursor、Antigravity 与 Cline 中配置（请将 `args` 中的路径替换为本机解压的**绝对路径**）：
 
 **Windows**:
 ```json

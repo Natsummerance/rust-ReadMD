@@ -29,6 +29,7 @@ const pageSet = slug => Object.fromEntries(Object.entries(LANG_PREFIX).map(([lan
 }]));
 const INTENT_PAGES = pageSet('workflows');
 const DOWNLOAD_PAGES = pageSet('download');
+const INTEGRATION_PAGES = pageSet('integrations');
 const ANSWER_TOPICS = [
   ['large-files', 'large-markdown-files'], ['slides', 'markdown-to-slides'], ['conversion', 'convert-to-markdown'],
   ['pdf', 'pdf-to-markdown'], ['tables', 'markdown-tables'], ['release-notes', 'release-notes'],
@@ -39,11 +40,12 @@ for (const [key, slug] of ANSWER_TOPICS) {
   for (const [lang, c] of Object.entries(pageSet(slug))) ANSWER_PAGES[`${lang}-${key}`] = c;
 }
 
-const VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim();
+const VERSION = JSON.parse(fs.readFileSync(path.join(SITE, 'release.json'), 'utf8')).stable;
 const RELEASE_ASSETS = new Set([
   'ReadMDSetup-windows-x64.exe', 'ReadMD-windows-x64.zip',
   'ReadMD-macos-arm64.zip', 'ReadMD-macos-x64.zip', 'ReadMD-macos-arm64.dmg', 'ReadMD-macos-x64.dmg',
   'ReadMD-linux-x86_64.tar.gz', 'ReadMD-linux-x86_64.deb', 'SHA256SUMS.txt',
+  `readmd-vscode-${VERSION}.vsix`, `readmd-mcp-server-${VERSION}.zip`,
 ]);
 const AI_CRAWLERS = ['GPTBot', 'OAI-SearchBot', 'ClaudeBot', 'PerplexityBot'];
 const FAQ_QUESTION_COUNTS = {};
@@ -247,7 +249,7 @@ function validateRobotsAndSitemap() {
   if (!robots.includes('Sitemap: https://rust.readmd.asia/sitemap.xml')) errors.push('robots.txt omits canonical sitemap');
   const sitemap = read(P('sitemap.xml'));
   if (!sitemap.includes('xmlns:xhtml="http://www.w3.org/1999/xhtml"')) errors.push('sitemap omits XHTML hreflang namespace');
-  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
+  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
   expected.add('https://rust.readmd.asia/showcase/');
   const actual = new Set([...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]));
   if (!setEq(actual, expected)) errors.push(`sitemap mismatch: missing=${pySet(minus(expected, actual))}, extra=${pySet(minus(actual, expected))}`);
@@ -467,7 +469,7 @@ function validateSecurityTxt() {
   const p = P('.well-known', 'security.txt');
   if (!isFile(p)) return ['security.txt is missing'];
   const t = read(p);
-  const req = ['Contact: https://github.com/Natsummerance/readMD/security/advisories/new', 'Expires: 2027-08-26T00:00:00Z', 'Preferred-Languages: en, zh-CN, zh-TW, ja', 'Canonical: https://rust.readmd.asia/.well-known/security.txt'];
+  const req = ['Contact: https://github.com/Natsummerance/rust-ReadMD/security/advisories/new', 'Expires: 2027-08-26T00:00:00Z', 'Preferred-Languages: en, zh-CN, zh-TW, ja', 'Canonical: https://rust.readmd.asia/.well-known/security.txt'];
   return req.every(r => t.includes(r)) ? [] : ['security.txt omits required trust fields'];
 }
 
@@ -481,6 +483,12 @@ function validate404() {
 
 function main() {
   const errors = [];
+  for (const c of Object.values(INTEGRATION_PAGES)) {
+    if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
+    const html=read(c.path);
+    if (!html.includes('rel="canonical" href="'+c.canonical+'"')) errors.push('Integration canonical mismatch: '+c.canonical);
+    if (!html.includes('V0.0.5') || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
+  }
   const groups = [[LANGUAGES, 'index'], [INTENT_PAGES, 'workflow page'], [DOWNLOAD_PAGES, 'download page'], [ANSWER_PAGES, 'answer page']];
   for (const [group, label] of groups) {
     for (const [name, c] of Object.entries(group)) {

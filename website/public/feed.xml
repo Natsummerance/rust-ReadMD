@@ -316,4 +316,8 @@
     <summary>ReadMD is a local-first Markdown workspace for Windows, macOS, Linux, and Chinese operating systems. It opens long documents instantly, repairs rendering without changing source files, converts Office and PDF files, and presents Markdown directly.</summary>
   </entry>
   <entry><id>https://rust.readmd.asia/showcase/</id><title>ReadMD 功能操作演示</title><link rel="alternate" href="https://rust.readmd.asia/showcase/"/><updated>2026-10-03T00:00:00Z</updated><summary>按最新清单浏览阅读、编辑、保存恢复、转换、导出和桌宠的真实操作短视频。</summary></entry>
+<entry><id>https://rust.readmd.asia/integrations/</id><title>ReadMD in VS Code and MCP</title><link rel="alternate" href="https://rust.readmd.asia/integrations/"/><updated>2026-10-07T00:00:00Z</updated><summary>Local engine integrations and V0.0.5 preview.</summary></entry>
+<entry><id>https://rust.readmd.asia/zh-cn/integrations/</id><title>ReadMD 的 VS Code 与 MCP 集成</title><link rel="alternate" href="https://rust.readmd.asia/zh-cn/integrations/"/><updated>2026-10-07T00:00:00Z</updated><summary>本地内核集成与 V0.0.5 新能力预览。</summary></entry>
+<entry><id>https://rust.readmd.asia/zh-tw/integrations/</id><title>ReadMD 的 VS Code 與 MCP 整合</title><link rel="alternate" href="https://rust.readmd.asia/zh-tw/integrations/"/><updated>2026-10-07T00:00:00Z</updated><summary>本機核心整合與 V0.0.5 新能力預覽。</summary></entry>
+<entry><id>https://rust.readmd.asia/ja/integrations/</id><title>ReadMD の VS Code と MCP 連携</title><link rel="alternate" href="https://rust.readmd.asia/ja/integrations/"/><updated>2026-10-07T00:00:00Z</updated><summary>ローカルエンジンの連携と V0.0.5 の新機能。</summary></entry>
 </feed>

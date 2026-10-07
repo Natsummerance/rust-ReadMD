@@ -179,5 +179,22 @@
   "noBibFound": "没有找到 .bib 文件",
   "bibtexParseFailed": "BibTeX 解析失败：{error}",
   "openWorkspaceFirst": "请先打开工作区。",
-  "writeMcpFailed": "无法写入 MCP 配置：{error}"
+  "writeMcpFailed": "无法写入 MCP 配置：{error}",
+  "inspection_missing_anchor": "未找到目标标题",
+  "inspection_missing_file": "未找到本地文件",
+  "inspection_ambiguous_link": "同名链接目标不唯一",
+  "inspection_outside_workspace": "链接位于检查工作区以外",
+  "inspection_missing_footnote": "未找到脚注定义",
+  "inspectionOpen": "请先在已信任的工作区打开 Markdown 文件。",
+  "inspectionSize": "文档检查支持不超过 2 MB 的文件。",
+  "inspectionLimited": "检查达到处理上限，部分内容尚未检查。",
+  "inspectionDone": "文档检查完成：{count} 项待检查。",
+  "inspectionUnavailable": "请更新 ReadMD 核心后使用文档检查。",
+  "searchOpenWorkspace": "请先打开工作区文件夹。",
+  "searchPrompt": "搜索正文、\"短语\"、path: 路径、title: 标题、tag: 标签及 -排除词",
+  "searchProgress": "正在搜索本地 Markdown 文件",
+  "searchEmpty": "已扫描的文件中没有匹配结果。",
+  "searchLimited": "结果或扫描达到上限，请缩小查询范围",
+  "searchResults": "选择结果以打开文件",
+  "searchUnavailable": "搜索未能完成，请检查查询语法并更新 ReadMD 核心。"
 }

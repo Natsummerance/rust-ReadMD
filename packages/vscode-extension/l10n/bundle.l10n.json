@@ -179,5 +179,22 @@
   "noBibFound": "No .bib file found",
   "bibtexParseFailed": "BibTeX parsing failed: {error}",
   "openWorkspaceFirst": "Open a workspace first.",
-  "writeMcpFailed": "Cannot write MCP configuration: {error}"
+  "writeMcpFailed": "Cannot write MCP configuration: {error}",
+  "inspection_missing_anchor": "Heading anchor not found",
+  "inspection_missing_file": "Local file not found",
+  "inspection_ambiguous_link": "Multiple files match this link",
+  "inspection_outside_workspace": "Link is outside the inspected workspace",
+  "inspection_missing_footnote": "Footnote definition not found",
+  "inspectionOpen": "Open a Markdown file in a trusted workspace first.",
+  "inspectionSize": "Inspection supports documents up to 2 MB.",
+  "inspectionLimited": "Inspection reached a processing limit; some content was not checked.",
+  "inspectionDone": "Document inspection complete: {count} items.",
+  "inspectionUnavailable": "Update ReadMD Core to use document inspection.",
+  "searchOpenWorkspace": "Open a workspace folder first.",
+  "searchPrompt": "Search text, \"phrases\", path:, title:, tag: and -exclusions",
+  "searchProgress": "Searching local Markdown files",
+  "searchEmpty": "No matches in the scanned files.",
+  "searchLimited": "Results limited to 50; refine your query",
+  "searchResults": "Select a result to open",
+  "searchUnavailable": "Search could not finish. Check the query and update ReadMD Core."
 }
