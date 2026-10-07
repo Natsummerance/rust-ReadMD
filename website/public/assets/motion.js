@@ -6,7 +6,7 @@
   const finePointer = matchMedia('(hover: hover) and (pointer: fine)');
   const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
   const items = new Set(), visible = new Set();
-  const selector = 'main h1,main h2,main h3,main p,main article,main pre,main details,main button,main summary,main input,main select,main .demo-card,main .product-frame,main .platform-card,main .apple-platform-card,main .button-primary,main .button-secondary,main .apple-pill-primary,main .apple-pill-secondary,footer';
+  const selector = 'main h1,main h2,main h3,main p,main article,main pre,main details,main button,main summary,main input,main select,main a,main li,main figure,nav a,main .demo-card,main .product-frame,main .platform-card,main .apple-platform-card,main .button-primary,main .button-secondary,main .apple-pill-primary,main .apple-pill-secondary,footer';
   let raf = 0, last = 0, progress = 0, pageProgress = 0;
   const journey = document.querySelector('[data-readmd-cinema]');
   const stage = journey?.querySelector('.journey-stage');
@@ -36,8 +36,7 @@
     const found = [...(scope.matches?.(selector) ? [scope] : []), ...scope.querySelectorAll(selector)];
     for (const node of found) {
       if (items.has(node) || node.closest('[data-readmd-cinema],dialog,[role="dialog"]')) continue;
-      // Large generated galleries remain bounded; unanimated content stays visible.
-      if (items.size >= 512) break;
+      // Observe every component; only visible components enter frame work.
       items.add(node); node.classList.add('motion-item');
       node.style.setProperty('--motion-delay', (items.size % 4) * 45 + 'ms');
       observer.observe(node);
@@ -103,6 +102,7 @@
       active = index;
       stage.dataset.clipIndex = String(index); stage.dataset.mediaReady = 'poster';
       poster.src = clips[index].poster;
+      poster.alt = captions[index].querySelector('strong').textContent + ' · ReadMD';
       for (let n = 0; n < captions.length; n++) {
         captions[n].classList.toggle('is-active', n === index);
         captions[n].inert = n !== index;

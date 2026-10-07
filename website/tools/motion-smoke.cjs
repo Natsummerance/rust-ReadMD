@@ -38,6 +38,7 @@ const settle=async(page,p)=>{
      console.log('Verify scroll story: '+engineName+' /'+prefix);
      await page.goto(local.url+'/'+prefix);await page.waitForSelector('html.motion-ready');
      assert.ok(await page.locator('main h1.motion-item').count());
+     assert.equal(await page.locator('main a:not(.motion-item):not(.journey-caption a)').count(),0,'Every ordinary link participates in component motion');
      for(const progress of [.04,.23,.41,.59,.77,.96]){
       const evidence=await settle(page,progress);report.cases.push({engine:engineName,prefix,progress,...evidence});
       if(output&&prefix==='zh-cn/'&&engineName==='chromium'&&progress===.23){fs.mkdirSync(path.dirname(output),{recursive:true});await page.screenshot({path:path.join(path.dirname(output),'scroll-story.png')});}
