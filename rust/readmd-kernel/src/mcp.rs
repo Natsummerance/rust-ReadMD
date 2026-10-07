@@ -168,6 +168,23 @@ pub fn tools() -> Value {
         { "name": "readmd_pdf_audit",
           "description": "Inspect a PDF: page count, page sizes, rotation, text layer, read-only flag and processes holding it open.",
           "inputSchema": schema(json!({ "pdf_path": { "type": "string" } }), &["pdf_path"]) },
+        { "name": "readmd_analyze_document",
+          "description": "Inspect current Markdown without changing it: AST headings, local/wiki links, anchors, task counts and UTF-16 diagnostic locations. Optional workspace checks never fetch URLs.",
+          "inputSchema": schema(json!({"content":{"type":"string"},"file_path":{"type":"string"},"workspace_root":{"type":"string"}}), &["content"]) },
+        { "name": "readmd_search_workspace",
+          "description": "Read-only, bounded search of current local Markdown files. Combine quoted phrases, path:, title:, tag:, and -exclusions. Ignores hidden and generated directories; reports skipped/truncated results.",
+          "inputSchema": schema(json!({"workspace_root":{"type":"string"},"query":{"type":"string"},"limit":{"type":"integer","default":20}}), &["workspace_root","query"]) },
+        { "name": "readmd_read_document",
+          "description": "Read at most 1000 lines of a local text document with its byte SHA-256 revision, encoding and EOL. Limited to 2 MiB; use the revision for conflict-protected edits.",
+          "inputSchema": schema(json!({"file_path":{"type":"string"},"start_line":{"type":"integer","default":1},"end_line":{"type":"integer","default":1000}}), &["file_path"]) },
+        { "name": "readmd_edit_document",
+          "description": "Preview a literal replacement by default. Commit only with dry_run:false, confirm:true and a matching byte revision. Ambiguous matches require replace_all. Preserves encoding/EOL; records recoverable history outside the document folder.",
+          "inputSchema": schema(json!({"file_path":{"type":"string"},"expected_revision":{"type":"string"},
+            "old_text":{"type":"string"},"new_text":{"type":"string"},"replace_all":{"type":"boolean","default":false},
+            "dry_run":{"type":"boolean","default":true},"confirm":confirm_prop()}), &["file_path","expected_revision","old_text","new_text"]) },
+        { "name": "readmd_document_history",
+          "description": "List or read bounded recovery checkpoints belonging to one local document. Read-only; never restores or overwrites automatically.",
+          "inputSchema": schema(json!({"file_path":{"type":"string"},"operation":{"type":"string","enum":["list","read"],"default":"list"},"checkpoint_id":{"type":"string"}}), &["file_path"]) },
         { "name": "readmd_pdf_rollback",
           "description": "Restore a PDF from its .bak backup written by a previous ReadMD edit.",
           "inputSchema": schema(json!({ "pdf_path": { "type": "string" }, "confirm": confirm_prop() }), &["pdf_path", "confirm"]) },
@@ -175,6 +192,7 @@ pub fn tools() -> Value {
     for tool in list.as_array_mut().unwrap() {
         let name = tool["name"].as_str().unwrap_or("");
         let read_only = matches!(name, "readmd_fix_markdown" | "readmd_generate_toc" | "readmd_latex_to_md" | "readmd_md_to_latex" | "readmd_latex_to_omml" | "readmd_parse_bibtex" | "readmd_process_imports" | "readmd_ai_assistant" | "readmd_ai_providers" | "readmd_export_presets" | "readmd_pdf_audit");
+        let read_only = read_only || matches!(name, "readmd_analyze_document" | "readmd_search_workspace" | "readmd_read_document" | "readmd_document_history");
         let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_models" | "readmd_run_code_chunk");
         tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only, "openWorldHint": open_world });
     }
@@ -405,6 +423,45 @@ fn validate_tool_arguments(name: &str, args: &Value) -> Result<(), &'static str>
 
 fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
     match name {
+        "readmd_analyze_document" => {
+            let file = arg_str(args, "file_path", ""); let root = arg_str(args, "workspace_root", "");
+            if (!file.is_empty() && !Path::new(&file).is_absolute()) || (!root.is_empty() && !Path::new(&root).is_absolute()) {
+                return Err(error_result("file_path_must_be_absolute", None));
+            }
+            crate::document_intelligence::analyze(&arg_str(args,"content",""),
+                (!file.is_empty()).then(||Path::new(&file)), (!root.is_empty()).then(||Path::new(&root)))
+                .map(|v|json_result(&v)).map_err(|code|error_result(&code,None))
+        }
+        "readmd_search_workspace" => crate::document_intelligence::search_workspace(
+            Path::new(&arg_str(args,"workspace_root","")), &arg_str(args,"query",""),
+            arg_i64(args,"limit",20).try_into().unwrap_or(0),cancel)
+            .map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
+        "readmd_read_document" => crate::document_intelligence::read_document(
+            Path::new(&arg_str(args,"file_path","")),arg_i64(args,"start_line",1).try_into().unwrap_or(0),
+            arg_i64(args,"end_line",1000).try_into().unwrap_or(0))
+            .map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
+        "readmd_edit_document" => crate::document_intelligence::edit_document(app,
+            Path::new(&arg_str(args,"file_path","")), &arg_str(args,"expected_revision",""),
+            &arg_str(args,"old_text",""),&arg_str(args,"new_text",""),arg_bool(args,"replace_all",false),
+            arg_bool(args,"dry_run",true),arg_bool(args,"confirm",false),cancel)
+            .map(|v|json_result(&v)).map_err(|code|error_result(&code,None)),
+        "readmd_document_history" => {
+            let raw=arg_str(args,"file_path","");
+            let source=Path::new(&raw);
+            if !source.is_absolute() { return Err(error_result("file_path_must_be_absolute",None)); }
+            let path=crate::paths::canonicalize_or_clean(source);
+            if path.is_dir() || !crate::content::is_readable(&path) { return Err(error_result("unsupported_text_file",None)); }
+            let key=crate::paths::canonicalize_or_clean(&path).to_string_lossy().into_owned();
+            if arg_str(args,"operation","list")=="read" {
+                let (entry,text)=crate::document_history::read(&app.paths.data_dir,&arg_str(args,"checkpoint_id",""))
+                    .map_err(|_|error_result("history_not_found",None))?;
+                if entry.doc_key!=key { return Err(error_result("history_document_mismatch",None)); }
+                Ok(json_result(&json!({"ok":true,"entry":entry,"content":text})))
+            } else {
+                let entries=crate::document_history::list(&app.paths.data_dir,Some(&key)).map_err(|_|error_result("history_read_failed",None))?;
+                Ok(json_result(&json!({"ok":true,"entries":entries})))
+            }
+        }
         "readmd_fix_markdown" => {
             let res = crate::readmd_fix::fix_markdown(&arg_str(args, "content", ""));
             Ok(json_result(&json!({

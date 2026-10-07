@@ -1,10 +1,12 @@
-# ReadMD for VS Code · V0.0.4
+# ReadMD for VS Code · V0.0.5
+
+V0.0.5 新增原生“问题”面板链接诊断、可点击 Wiki 双链与工作区检索。使用命令面板中的“ReadMD: 检查文档链接与标题”和“ReadMD: 搜索本地 Markdown 工作区”；搜索可组合短语、`path:`、`title:`、`tag:` 和排除词。修改内容后检查会防抖更新，旧版本结果不会覆盖最新文档；不信任的工作区不调用本地内核。需配合 V0.0.5 桌面内核，单份文档上限 2 MiB，扫描范围及截断明确提示。
 
 在 VS Code、Cursor 等兼容编辑器中阅读、修复和转换 Markdown，使用 ReadMD 的 AI Skills，并导出文档与演讲。保留编辑器原生的保存、撤销和未保存提示。
 
 ## 安装和连接
 
-安装 ReadMD 桌面应用，再用 **Extensions: Install from VSIX…** 安装 `readmd-vscode-0.0.4.vsix`。打开 Markdown，执行 ReadMD 命令即可。
+安装 ReadMD 桌面应用，再用 **Extensions: Install from VSIX…** 安装 `readmd-vscode-0.0.5.vsix`。打开 Markdown，执行 ReadMD 命令即可。
 
 扩展按需启动一个持久的 `readmd --mcp` 子进程，通过标准输入输出通信；没有 HTTP 服务地址设置，不需要打开桌面窗口，也不需要 Python。探测顺序：`readmd.executablePath` → 随 VSIX 附带的内核 → 桌面应用默认安装目录 → PATH。Windows 包括用户的 `Applications/ReadMD`、`LocalAppData/Programs` 和 Program Files。
 

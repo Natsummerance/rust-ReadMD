@@ -6,6 +6,7 @@ import { ReadMDToolboxProvider } from './sidebarProvider';
 import { l10n } from './localization';
 import { getWebviewContent, WebviewAssets } from './webview';
 import { fencedCodeAt } from './fences';
+import { registerIntelligence } from './intelligence';
 
 let diagnosticStatusBarItem: vscode.StatusBarItem;
 let coreStatusBarItem: vscode.StatusBarItem;
@@ -149,6 +150,7 @@ export function parseJsoncSafely(text: string): Record<string, any> {
 export function activate(context: vscode.ExtensionContext) {
   const bridge = new ReadMDBridge(context);
   context.subscriptions.push({ dispose: () => bridge.dispose() });
+  registerIntelligence(context, bridge);
   const trusted = () => {
     if (vscode.workspace.isTrusted !== false) return true;
     void vscode.window.showWarningMessage(l10n('trustRequired', 'Trust this workspace before using native tools, AI or code execution.'));

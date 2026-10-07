@@ -29,5 +29,7 @@
   "configuration.executablePath": "ReadMD executable (leave empty to use the installed desktop app or `readmd` on PATH); it serves the core via `readmd --mcp`",
   "configuration.customCssPath": "Absolute path to a user custom.css file",
   "capabilities.untrusted": "Preview and editing are available. Native tools, AI, imports, code execution and MCP configuration require a trusted workspace.",
-  "capabilities.virtual": "ReadMD uses a local Rust executable and local files."
+  "capabilities.virtual": "ReadMD uses a local Rust executable and local files.",
+  "command.inspectDocument": "ReadMD: Inspect document links and headings",
+  "command.searchWorkspace": "ReadMD: Search local Markdown workspace"
 }

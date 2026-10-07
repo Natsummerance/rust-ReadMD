@@ -1353,3 +1353,6 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
   #share-refresh { margin-inline-start: 0; }
   #search-count { max-width: 30%; font-size: var(--text-xs); }
 }
+/* Current-draft inspection shares the existing repair report. */
+#fix-list .document-inspection-summary { font-weight: 600; margin-top: 12px; }
+#fix-list .document-inspection-issue { overflow-wrap: anywhere; }

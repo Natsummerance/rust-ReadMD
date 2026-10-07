@@ -131,3 +131,6 @@ packages/readmd-pet-rust/target/
 
 ReadMD.exe
 /test-results-pagination/
+
+# Local incremental videos and production scripts never enter software releases.
+/showcase/updates/

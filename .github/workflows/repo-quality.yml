@@ -90,6 +90,7 @@ jobs:
           cargo fetch --locked --manifest-path rust/Cargo.toml
           npm ci --ignore-scripts --prefix packages/vscode-extension
           npm ci --ignore-scripts --prefix ui-tests
+          npm ci --ignore-scripts --prefix website
           cd ui-tests
           npx --no-install playwright install --with-deps chromium webkit
       - name: Compile and test integrations offline
@@ -109,6 +110,13 @@ jobs:
         run: npx --no-install playwright test --config vscode-preview.config.cjs
       - name: Package integrations without downloads
         run: node tools/package-integrations.mjs dist/integrations
+      - name: Build website offline and verify scroll video in Chrome
+        env:
+          NODE_PATH: ${{ github.workspace }}/ui-tests/node_modules
+          READMD_MOTION_CHANNEL: chrome
+        run: |
+          npm run verify:release --prefix website
+          node website/tools/motion-smoke.cjs
       - name: Upload integration packages
         uses: actions/upload-artifact@v4
         with:
@@ -145,4 +153,4 @@ jobs:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
           READMD_PANEL_TEST_THEMES: light,dark,sepia
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js --project=desktop --project=mobile
+        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js --project=desktop --project=mobile

@@ -234,6 +234,19 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
     let hc = sv.harmony_code();
     let mut plan = Plan::default();
 
+    // Workspace package metadata must match the executable's VERSION too.
+    if let Some(t) = read_text(&root.join("rust/Cargo.toml")) {
+        let s = sub(&t.original, r#"(?m)^version = "[^"]+"$"#, &format!("version = \"{v}\""));
+        plan.push_if_changed(&t,s);
+    }
+    if let Some(t) = read_text(&root.join("rust/Cargo.lock")) {
+        let mut s=t.original.clone();
+        for name in ["readmd-kernel","xtask"] {
+            s=sub(&s,&format!(r#"(name = "{name}"\nversion = ")[^"]+""#),&format!("${{1}}{v}\""));
+        }
+        plan.push_if_changed(&t,s);
+    }
+
     // .env / .env.example / VERSION
     let env_path = root.join(".env");
     let old_env = read_text(&env_path).unwrap_or(Text { path: env_path.clone(), crlf: false, original: String::new() });
@@ -336,6 +349,11 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
     // Website
     let site = root.join("website/public");
     if site.is_dir() {
+        // Public links follow the published release, not the local candidate.
+        let published = fs::read_to_string(root.join("website/release.json")).ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|j| j["stable"].as_str().map(str::to_owned));
+        let v = published.as_deref().unwrap_or(v);
         let mut files: Vec<PathBuf> = walkdir::WalkDir::new(&site)
             .sort_by_file_name()
             .into_iter()
@@ -348,8 +366,8 @@ fn build_plan(root: &Path, v: &str) -> Result<Plan, String> {
         for p in files {
             let Some(t) = read_text(&p) else { continue };
             let s = artifact_names(&t.original, v);
-            let s = sub(&s, r"(releases/tag/v)[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
-            let s = sub(&s, r"(releases/download/v)[0-9a-zA-Z.-]+", &format!("${{1}}{v}"));
+            let s = sub(&s, r"releases/tag/[vV][0-9a-zA-Z.-]+", &format!("releases/tag/V{v}"));
+            let s = sub(&s, r"releases/download/[vV][0-9a-zA-Z.-]+", &format!("releases/download/V{v}"));
             let s = sub(&s, r#"("softwareVersion":\s*")[^"]+""#, &format!("${{1}}{v}\""));
             let s = sub(&s, r#"("artifactSection":\s*"v)[^"]+""#, &format!("${{1}}{v}\""));
             let s = sub(&s, r"2\.3\.7-beta\.\d+", v);

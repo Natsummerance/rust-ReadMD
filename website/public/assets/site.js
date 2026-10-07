@@ -64,21 +64,19 @@
     });
 
     // Initialize links with data-mirror-url if present
-    document.querySelectorAll('a[href^="https://github.com/Natsummerance/readMD/releases/download/"]').forEach((link) => {
+    document.querySelectorAll('a[href^="https://github.com/Natsummerance/rust-ReadMD/releases/download/"]').forEach((link) => {
       if (!link.dataset.mirrorUrl) link.dataset.mirrorUrl = link.href;
     });
 
     updateDownloadLinks(activeMirror);
 
     // Dual-Layer Dynamic Version & Release Synchronizer
-    const GITHUB_REPO = 'Natsummerance/readMD';
-    const CACHE_KEY = 'readmd_release_cache_v2';
-    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+    const GITHUB_REPO = 'Natsummerance/rust-ReadMD';
 
     const applyVersionData = (versionTag, pureVersion) => {
       if (!versionTag) return;
-      const cleanTag = versionTag.startsWith('v') ? versionTag : `v${versionTag}`;
-      const cleanPure = pureVersion || cleanTag.replace(/^v/, '');
+      const cleanTag = /^[vV]/.test(versionTag) ? versionTag : `v${versionTag}`;
+      const cleanPure = pureVersion || cleanTag.replace(/^[vV]/, '');
 
       document.querySelectorAll('.latest-version-badge, [data-version-slot]').forEach((el) => {
         el.textContent = cleanTag;
@@ -99,7 +97,7 @@
           const oldTagMatch = orig.match(/\/releases\/download\/([^/]+)\//);
           if (oldTagMatch && oldTagMatch[1] && oldTagMatch[1] !== cleanTag) {
             const oldTag = oldTagMatch[1];
-            const oldPure = oldTag.replace(/^v/, '');
+            const oldPure = oldTag.replace(/^[vV]/, '');
             let updated = orig.replace(new RegExp(`/releases/download/${oldTag}/`, 'g'), `/releases/download/${cleanTag}/`);
             updated = updated.replace(new RegExp(`-${oldPure}\\.`, 'g'), `-${cleanPure}.`);
             link.dataset.mirrorUrl = updated;
@@ -110,51 +108,13 @@
       updateDownloadLinks(activeMirror);
     };
 
-    // 1. Try Cached GitHub Release
-    let isApplied = false;
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < CACHE_TTL && parsed.tag_name) {
-          applyVersionData(parsed.tag_name, parsed.pure_version);
-          isApplied = true;
-        }
-      }
-    } catch (e) {}
-
-    // 2. Fetch Latest from GitHub API (or fallback to /version.json)
-    if (!isApplied) {
-      fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-        headers: { 'Accept': 'application/vnd.github.v3+json' }
-      })
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Rate limited / network'))))
-        .then((data) => {
-          if (data && data.tag_name) {
-            const tag = data.tag_name;
-            const pure = tag.replace(/^v/, '');
-            try {
-              sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-                timestamp: Date.now(),
-                tag_name: tag,
-                pure_version: pure
-              }));
-            } catch (e) {}
-            applyVersionData(tag, pure);
-          }
-        })
-        .catch(() => {
-          // Fallback to local build-time version.json
-          fetch('/version.json')
-            .then((res) => (res.ok ? res.json() : null))
-            .then((vData) => {
-              if (vData && vData.releaseTag) {
-                applyVersionData(vData.releaseTag, vData.version);
-              }
-            })
-            .catch(() => {});
-        });
-    }
+    // Published manifest is same-origin and independent of API rate limits.
+    fetch('/version.json', { signal: AbortSignal.timeout(5000) })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (data && /^V\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(data.releaseTag))
+          applyVersionData(data.releaseTag, data.version);
+      }).catch(() => {});
   };
 
   /* Interactive MCP Configuration & 1-Click Multi-Harness Generator */

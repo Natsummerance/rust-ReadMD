@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "readmd-kernel"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "aes",
  "base64",
@@ -3631,7 +3631,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "base64",
  "flate2",

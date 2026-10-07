@@ -29,6 +29,7 @@ const pageSet = slug => Object.fromEntries(Object.entries(LANG_PREFIX).map(([lan
 }]));
 const INTENT_PAGES = pageSet('workflows');
 const DOWNLOAD_PAGES = pageSet('download');
+const INTEGRATION_PAGES = pageSet('integrations');
 const ANSWER_TOPICS = [
   ['large-files', 'large-markdown-files'], ['slides', 'markdown-to-slides'], ['conversion', 'convert-to-markdown'],
   ['pdf', 'pdf-to-markdown'], ['tables', 'markdown-tables'], ['release-notes', 'release-notes'],
@@ -39,11 +40,13 @@ for (const [key, slug] of ANSWER_TOPICS) {
   for (const [lang, c] of Object.entries(pageSet(slug))) ANSWER_PAGES[`${lang}-${key}`] = c;
 }
 
-const VERSION = fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim();
+const RELEASE_INFO = JSON.parse(fs.readFileSync(path.join(SITE, 'release.json'), 'utf8'));
+const VERSION = RELEASE_INFO.stable;
 const RELEASE_ASSETS = new Set([
   'ReadMDSetup-windows-x64.exe', 'ReadMD-windows-x64.zip',
   'ReadMD-macos-arm64.zip', 'ReadMD-macos-x64.zip', 'ReadMD-macos-arm64.dmg', 'ReadMD-macos-x64.dmg',
   'ReadMD-linux-x86_64.tar.gz', 'ReadMD-linux-x86_64.deb', 'SHA256SUMS.txt',
+  `readmd-vscode-${VERSION}.vsix`, `readmd-mcp-server-${VERSION}.zip`,
 ]);
 const AI_CRAWLERS = ['GPTBot', 'OAI-SearchBot', 'ClaudeBot', 'PerplexityBot'];
 const FAQ_QUESTION_COUNTS = {};
@@ -162,7 +165,9 @@ function auditPage(p, canonical) {
   const hreflang = new Set(audit.links.filter(i => i.rel === 'alternate' && i.hreflang).map(i => i.hreflang));
   if (!setEq(hreflang, new Set(['en', 'zh-CN', 'zh-TW', 'ja', 'x-default']))) errors.push(`${s}: incomplete hreflang set: ${pyList(sorted([...hreflang].filter(Boolean)))}`);
   if (audit.headings.filter(([t, x]) => t === 'h1' && x).length !== 1) errors.push(`${s}: page must contain exactly one non-empty h1`);
-  for (const img of audit.images) {
+  const decorativeBrand = img => img.src === '/assets/icon-256.png' && img.alt === '' && img['aria-hidden'] === 'true';
+  const productImages = audit.images.filter(img => !decorativeBrand(img));
+  for (const img of productImages) {
     if ((img.alt || '').trim().length < 10) errors.push(`${s}: image lacks meaningful alt text: ${img.src || ''}`);
     if (img.loading === 'eager' && img.fetchpriority !== 'high') errors.push(`${s}: eager hero image must declare fetchpriority=high`);
   }
@@ -171,8 +176,8 @@ function auditPage(p, canonical) {
   for (const r of ['icon', 'apple-touch-icon', 'manifest', 'license']) if (!rels.has(r)) errors.push(`${s}: missing ${r} link`);
   if (!audit.links.some(i => i.type === 'application/atom+xml' && (i.href || '').endsWith('releases.atom'))) errors.push(`${s}: release Atom feed link is missing`);
   if (!audit.links.some(i => i.type === 'application/atom+xml' && i.href === '/feed.xml')) errors.push(`${s}: full-site Atom feed link is missing`);
-  const genuineHome=/class="[^\"]*\breadmd-home\b/.test(content)&&audit.images.every(img=>(img.src||'').endsWith('.webp'));
-  if (!genuineHome && content.split('<picture>').length - 1 !== audit.images.length) errors.push(`${s}: every product image must have a WebP picture fallback`);
+  const genuineHome=/class="[^\"]*\breadmd-home\b/.test(content)&&productImages.every(img=>(img.src||'').endsWith('.webp'));
+  if (!genuineHome && content.split('<picture>').length - 1 !== productImages.length) errors.push(`${s}: every product image must have a WebP picture fallback`);
   if (audit.images.length && !content.includes('.webp')) errors.push(`${s}: optimized WebP source is missing`);
   if (!/https:\/\/github\.com\/Natsummerance\/(?:rust-)?readMD\/stargazers/i.test(content)) errors.push(`${s}: star call to action is missing`);
   const blocks = jsonBlocks(content);
@@ -247,7 +252,7 @@ function validateRobotsAndSitemap() {
   if (!robots.includes('Sitemap: https://rust.readmd.asia/sitemap.xml')) errors.push('robots.txt omits canonical sitemap');
   const sitemap = read(P('sitemap.xml'));
   if (!sitemap.includes('xmlns:xhtml="http://www.w3.org/1999/xhtml"')) errors.push('sitemap omits XHTML hreflang namespace');
-  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
+  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
   expected.add('https://rust.readmd.asia/showcase/');
   const actual = new Set([...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]));
   if (!setEq(actual, expected)) errors.push(`sitemap mismatch: missing=${pySet(minus(expected, actual))}, extra=${pySet(minus(actual, expected))}`);
@@ -467,7 +472,7 @@ function validateSecurityTxt() {
   const p = P('.well-known', 'security.txt');
   if (!isFile(p)) return ['security.txt is missing'];
   const t = read(p);
-  const req = ['Contact: https://github.com/Natsummerance/readMD/security/advisories/new', 'Expires: 2027-08-26T00:00:00Z', 'Preferred-Languages: en, zh-CN, zh-TW, ja', 'Canonical: https://rust.readmd.asia/.well-known/security.txt'];
+  const req = ['Contact: https://github.com/Natsummerance/rust-ReadMD/security/advisories/new', 'Expires: 2027-08-26T00:00:00Z', 'Preferred-Languages: en, zh-CN, zh-TW, ja', 'Canonical: https://rust.readmd.asia/.well-known/security.txt'];
   return req.every(r => t.includes(r)) ? [] : ['security.txt omits required trust fields'];
 }
 
@@ -481,6 +486,21 @@ function validate404() {
 
 function main() {
   const errors = [];
+  for (const c of Object.values(LANGUAGES)) {
+    const html=read(c.path);
+    for (const asset of ['motion.css','motion.js']) if(!html.includes('/assets/'+asset)||!isFile(P('assets',asset))) errors.push('Missing shared motion asset: '+asset);
+    const videos=[...html.matchAll(/data-video="([^"]+)"/g)].map(m=>m[1]);
+    if(videos.length!==6||new Set(videos).size!==6)errors.push('Homepage must contain six distinct scroll chapters: '+c.path);
+    for(const src of videos)if(!/^\/showcase\/videos\/F\d{3}\.mp4$/.test(src)||!isFile(P(src.slice(1))))errors.push('Scroll chapter recording missing: '+src);
+    if(/data-webm=/.test(html))errors.push('Derived WebM belongs to ignored dist only: '+c.path);
+    if(/class="journey-caption[^>]*\sinert\b/.test(html))errors.push('Static chapters must remain accessible without JavaScript: '+c.path);
+  }
+  for (const c of Object.values(INTEGRATION_PAGES)) {
+    if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
+    const html=read(c.path);
+    if (!html.includes('rel="canonical" href="'+c.canonical+'"')) errors.push('Integration canonical mismatch: '+c.canonical);
+    if (!html.includes('V'+RELEASE_INFO.candidate) || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
+  }
   const groups = [[LANGUAGES, 'index'], [INTENT_PAGES, 'workflow page'], [DOWNLOAD_PAGES, 'download page'], [ANSWER_PAGES, 'answer page']];
   for (const [group, label] of groups) {
     for (const [name, c] of Object.entries(group)) {
@@ -506,7 +526,7 @@ function main() {
     answer_pages: Object.keys(ANSWER_PAGES),
     showcase_features: JSON.parse(read(P('showcase/catalog.json'))).features.length,
     broad_seo: {
-      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
+      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
       atom_feed: true, entity_graph: true, security_txt: true, quality_404: true, genuine_operation_gallery: true,
     },
   }));

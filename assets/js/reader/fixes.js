@@ -5,6 +5,7 @@
 
 /* ---------------- 修正详情 ---------------- */
 
+let documentInspectionGeneration = 0;
 function showFixModal() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const list = $('fix-list');
@@ -28,6 +29,43 @@ function showFixModal() {
   }
   const modal = $('fix-modal');
   if (modal) modal.classList.remove('hidden');
+  void inspectCurrentDocument(++documentInspectionGeneration);
+}
+
+async function inspectCurrentDocument(generation) {
+  const text = state.editing ? getEditContent() : (state.original ?? state.fixed ?? '');
+  const tabId = state.activeTabId;
+  const file = state.file && !state.virtualSource ? state.file : '';
+  const list = $('fix-list');
+  const status = document.createElement('li');
+  status.className = 'document-inspection-summary';
+  status.textContent = i18n.t('inspection.loading');
+  list?.appendChild(status);
+  try {
+    const response = await apiFetch('/api/document/analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: text, ...(file && /^(?:[A-Za-z]:[\\/]|\/)/.test(file) ? { file_path: file } : {}) })
+    });
+    const result = await response.json();
+    if (generation !== documentInspectionGeneration || tabId !== state.activeTabId || $('fix-modal').classList.contains('hidden')) return;
+    if (text !== (state.editing ? getEditContent() : (state.original ?? state.fixed ?? ''))) {
+      status.textContent = i18n.t('inspection.changed'); return;
+    }
+    if (!response.ok || !result.ok) throw new Error('inspection_failed');
+    status.textContent = i18n.t('inspection.summary', { count: result.diagnostics.length });
+    for (const issue of result.diagnostics) {
+      const row = document.createElement('li');
+      row.className = 'document-inspection-issue';
+      const key = 'inspection.' + issue.code;
+      row.textContent = i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target;
+      list?.appendChild(row);
+    }
+    if (result.truncated) {
+      const row = document.createElement('li'); row.textContent = i18n.t('inspection.limited'); list?.appendChild(row);
+    }
+  } catch (_) {
+    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) status.textContent = i18n.t('inspection.failed');
+  }
 }
 
 async function handleAiDocumentFix() {
