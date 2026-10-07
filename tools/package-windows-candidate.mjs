@@ -11,7 +11,7 @@ const output=path.resolve(process.argv[3]||'dist/candidate');
 const pet=path.resolve(process.argv[4]||'dist/ReadMD-Pet-Rust.zip');
 const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();
 if(!binary||!fs.statSync(binary,{throwIfNoEntry:false})?.isFile())throw Error('Provide a built Windows binary');
-if(!execFileSync(binary,['--version'],{encoding:'utf8',windowsHide:true}).includes(version))throw Error('Binary version differs from VERSION');
+if(execFileSync(binary,['--version'],{encoding:'utf8',windowsHide:true}).trim()!=='readmd-rust '+version)throw Error('Binary version differs from VERSION');
 if(!fs.statSync(pet,{throwIfNoEntry:false})?.isFile())throw Error('Provide the verified desktop pet archive');
 const entries=[];
 const add=(name,file)=>entries.push({name,data:fs.readFileSync(file)});

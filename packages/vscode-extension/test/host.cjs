@@ -53,7 +53,7 @@ exports.run = async function () {
     const history = await bridge.callMcpTool('readmd_document_history', { file_path: linked, operation: 'read', checkpoint_id: applied.checkpoint_id });
     assert.match(history.content, /careful/); results.push('safe edit preview, commit and recovery history');
     const inspectionFile=path.join(root,'Links.md');
-    fs.writeFileSync(inspectionFile,'# Links\n\n[[Plato]]\n\n[Broken](#missing)\n');
+    fs.writeFileSync(inspectionFile,'# Links\n\n[[Plato]]\n\n[[#Local section]]\n\n## Local section\n\n[Broken](#missing)\n');
     const inspectionDoc=await vscode.workspace.openTextDocument(vscode.Uri.file(inspectionFile));
     await vscode.window.showTextDocument(inspectionDoc);
     await vscode.commands.executeCommand('readmd.inspectDocument');
@@ -63,6 +63,9 @@ exports.run = async function () {
     const wiki=documentLinks.find(link=>link.target?.fsPath.toLowerCase()===linked.toLowerCase());
     assert.ok(wiki,'Wiki target resolves to the real local file');
     assert.equal(inspectionDoc.getText(wiki.range),'[[Plato]]');
+    const local=documentLinks.find(link=>inspectionDoc.getText(link.range)==='[[#Local section]]');
+    assert.equal(local?.target?.fsPath.toLowerCase(),inspectionFile.toLowerCase());
+    assert.equal(local?.target?.fragment,'local-section');
     results.push('native Problems diagnostics and clickable Wiki provider');
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('readmd.preview'); results.push('real preview command');

@@ -40,7 +40,8 @@ for (const [key, slug] of ANSWER_TOPICS) {
   for (const [lang, c] of Object.entries(pageSet(slug))) ANSWER_PAGES[`${lang}-${key}`] = c;
 }
 
-const VERSION = JSON.parse(fs.readFileSync(path.join(SITE, 'release.json'), 'utf8')).stable;
+const RELEASE_INFO = JSON.parse(fs.readFileSync(path.join(SITE, 'release.json'), 'utf8'));
+const VERSION = RELEASE_INFO.stable;
 const RELEASE_ASSETS = new Set([
   'ReadMDSetup-windows-x64.exe', 'ReadMD-windows-x64.zip',
   'ReadMD-macos-arm64.zip', 'ReadMD-macos-x64.zip', 'ReadMD-macos-arm64.dmg', 'ReadMD-macos-x64.dmg',
@@ -487,7 +488,7 @@ function main() {
     if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
     const html=read(c.path);
     if (!html.includes('rel="canonical" href="'+c.canonical+'"')) errors.push('Integration canonical mismatch: '+c.canonical);
-    if (!html.includes('V0.0.5') || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
+    if (!html.includes('V'+RELEASE_INFO.candidate) || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
   }
   const groups = [[LANGUAGES, 'index'], [INTENT_PAGES, 'workflow page'], [DOWNLOAD_PAGES, 'download page'], [ANSWER_PAGES, 'answer page']];
   for (const [group, label] of groups) {
@@ -514,7 +515,7 @@ function main() {
     answer_pages: Object.keys(ANSWER_PAGES),
     showcase_features: JSON.parse(read(P('showcase/catalog.json'))).features.length,
     broad_seo: {
-      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
+      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
       atom_feed: true, entity_graph: true, security_txt: true, quality_404: true, genuine_operation_gallery: true,
     },
   }));

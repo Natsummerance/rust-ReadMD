@@ -48,4 +48,45 @@ node website/tools/build-integrations.mjs 生成四语言集成说明。所有�
 
 ## 验收记录
 
-此处随后填入最终实测结果；未完成的检查不得标为通过。跨平台安装、上游 AI 服务和不同真实网络仍有环境边界，不能从本机测试推断全部通过。
+### 本机完成的检查
+
+| 验收层 | 结果与实际边界 |
+| --- | --- |
+| Rust 完整回归 | 本机完整运行 1,875 项通过、3 项保留原有忽略；116 项系统/原生测试通过，xtask 12 项通过。随后新增的编码与宿主锚点用例纳入 9 项文档智能定向测试，全部通过。最终完整数量以 PR 的 Windows/Linux CI 为准。 |
+| JavaScript / TypeScript | 离线 TypeScript 严格检查 8 个源文件；扩展 44 项及前端/工具 49 项，共 93 项通过。 |
+| 桌面 UI 全量回归 | 298 项通过，31 项按既有环境条件跳过；不能将跳过项目算作实测通过。新增用例覆盖编辑草稿、过期响应和请求边界。 |
+| 解压后的 Windows 候选包 | 真实 WebView2 与原有 CSP，7 个操作流程通过；46 种语言切换保持草稿及单行工具栏，3 个主题、插入/撤销、图像保存、局域网分享均验证，零页面脚本错误。 |
+| 安装后的 VSIX | VS Code 真实 Extension Host，13 个流程通过；含原生 Problems、跨文档/同文档 Wiki 链接、检索、预览、确认写入、历史读取、演讲及 DOCX 导出。使用隔离配置，不覆盖日常扩展设置。 |
+| MCP 真实 stdio | 27 工具发现，15 类验收检查通过，含新工具完整流程、版本冲突、原文件删除后的恢复、AI 模拟服务协议、取消、重复请求 ID 与超大输入后连接恢复。这里的 AI 服务是本机合成测试服务，不代表公网模型成功率。 |
+| 打包后二进制压力 | 700 份合成文档；128 个瞬时请求中 8 个执行、120 个明确返回忙碌。客户端限制并发为 8 后，128 个请求全部完成。16 个竞争写入只有 1 次提交，其余为版本冲突或忙碌；默认预览不改文件，删除原文件后历史仍可读取。 |
+| 真实文件 | 使用两份本机真实 Markdown 的隔离副本，大小 1,836,325 与 7,807 字节；读取版本、AST 检查、检索和修改预览通过，原件与副本的 SHA-256 均未变化。未把私人内容上传给 AI 或纳入视频。 |
+| 网站 | 离线构建与发布校验通过，49 个 canonical 页面及既有 104 项演示清单检查通过；四语言集成页在两种宽度、明暗主题共 16 组浏览器检查通过，无横向溢出及脚本错误；既有下载页的主题检查继续通过。 |
+| 增量视频 | 4 条，原生 2560×1600、30 fps；分别展示当前草稿检查、Wiki/Problems、工作区检索、MCP 预览/提交/恢复。97 个抽样帧经过 OCR 隐私检查，全部通过；不宣称逐帧 OCR。 |
+| 静态门禁 | i18n、样式、控件接线、资源、无 Python 构建链、隐私扫描和 Git 空白检查通过。媒体及制作文件均未进入软件提交。 |
+
+验收日志保留在本机 .cache/v005/，候选包、校验和及源提交记录在 dist/candidate-v0.0.5/，VSIX 与 MCP 连接包位于 .cache/v005/integrations/。增量素材、录像脚本、清单、字幕和本地查看页位于 showcase/updates/v0.0.5/；这部分已被 Git 忽略，可在后续版本复制同一管线并替换合成材料。
+
+### CI 与正式发布关卡
+
+[V0.0.5 草稿 PR](https://github.com/Natsummerance/rust-ReadMD/pull/1) 的最新检查是跨平台结果的依据。CI 构建 Windows x64、Linux x64、macOS Intel 和 ARM64，并分别执行 Windows/Linux 内核测试、前端门禁、浏览器测试及 VS Code/MCP 集成验收。构建成功代表这些环境完成编译与对应自动检查，不代表已经在每个系统的实体机器上交互验收。
+
+首轮 CI 揭示 MCP 验收脚本仍硬编码旧版 22 工具。已更新到 27 工具，并加入新工具实际读取、检查、检索、预览、确认、冲突与历史恢复操作；新增桌面检查用例也补入 CI。此前本机压力脚本与已安装扩展测到了新工具，但未运行这条独立的旧 stdio 入口，因此没有及时发现过期断言。后续发布须同时运行协议入口、宿主扩展和安装包验收，不能用源文件存在或单元测试代替可用性证明。
+
+本轮只准备发布候选，没有合并 main、创建或移动 V0.0.5 标签，也没有替换已安装的正式 V0.0.4。正式发布前必须确认 PR 最新检查全部通过，复核平台资产和 SHA256SUMS.txt，再以同一提交创建正式发布。网站的 stable 和 published 只能在正式发布资产可下载后更新；candidate_ref 指向候选文档分支，正式版文档随合并进入 main。
+
+不能从以上结果推断公网 AI 服务、全部操作系统/驱动、所有损坏文件或任意网络永不失败。受限输入、忙碌、取消、冲突和不可无损编码会明确拒绝；未运行的第三方环境须保留为边界，不标成通过。
+
+### 离线复验入口
+
+以下命令沿用已准备的工具链与依赖，不执行安装或下载：
+
+    cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask
+    node --test packages/vscode-extension/test/*.test.js
+    node packages/mcp-server/test/stdio.mjs
+    node tools/package-integrations.mjs dist/integrations
+    node tools/package-windows-candidate.mjs <已构建的ReadMD.exe> dist/candidate-v0.0.5 dist/ReadMD-Pet-Rust.zip
+    node website/tools/build-integrations.mjs
+    node website/tools/sync-version.mjs
+    node website/tools/validate-website.mjs --release
+
+stdio 验收要求 READMD_BIN、READMD_ASSETS_DIR、隔离的 READMD_MCP_TEST_ROOT；原生验收使用 ui-tests/panel-native-smoke.cjs，按脚本要求指定独立资料目录。Playwright 使用本机已安装 CLI，运行桌面项目及 CI 列出的移动项目；不使用会隐式联网安装的命令。

@@ -45,7 +45,33 @@ try {
   const discovery=await call('server/discover',{_meta:meta}); assert.equal(discovery.result.resultType,'complete'); report.checks.push('modern discovery');
   const hello=await call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'readmd-fixture',version:'1'}}); assert.equal(hello.result.protocolVersion,'2025-11-25');
   send({jsonrpc:'2.0',method:'notifications/initialized'}); report.checks.push('legacy handshake');
-  const catalog=(await call('tools/list')).result.tools; assert.equal(catalog.length,22); report.tools=catalog.length;
+  const catalog=(await call('tools/list')).result.tools; assert.equal(catalog.length,27); report.tools=catalog.length;
+  for (const name of ['readmd_analyze_document','readmd_search_workspace','readmd_read_document','readmd_edit_document','readmd_document_history']) {
+    assert.ok(catalog.some(item=>item.name===name),name);
+  }
+  const source=path.join(root,'reading.md'), linked=path.join(root,'Plato.md');
+  fs.writeFileSync(linked,'---\ntags:\n  - philosophy\n---\n# Plato\n\nA careful argument.\n');
+  fs.writeFileSync(source,'# Reading\n\n[[Plato]]\n\n[Broken](#missing)\n');
+  const analyzed=unwrap(await tool('readmd_analyze_document',{content:fs.readFileSync(source,'utf8'),file_path:source,workspace_root:root}));
+  assert.equal(path.basename(analyzed.links[0].resolved_path),'Plato.md');
+  assert.ok(analyzed.diagnostics.some(item=>item.code==='missing_anchor'));
+  report.checks.push('AST wiki targets and missing anchors');
+  const search=unwrap(await tool('readmd_search_workspace',{workspace_root:root,query:'tag:philosophy "careful argument"'}));
+  assert.equal(search.results[0].relative_path,'Plato.md');
+  report.checks.push('fresh workspace phrase and YAML tag search');
+  const original=fs.readFileSync(linked,'utf8'), read=unwrap(await tool('readmd_read_document',{file_path:linked}));
+  const edit={file_path:linked,expected_revision:read.revision,old_text:'careful',new_text:'clear'};
+  assert.equal(unwrap(await tool('readmd_edit_document',edit)).dry_run,true);
+  assert.equal(fs.readFileSync(linked,'utf8'),original);
+  assert.equal((await tool('readmd_edit_document',{...edit,dry_run:false})).result.structuredContent.error_code,'confirmation_required');
+  const committed=unwrap(await tool('readmd_edit_document',{...edit,dry_run:false,confirm:true}));
+  assert.match(fs.readFileSync(linked,'utf8'),/clear argument/);
+  assert.equal((await tool('readmd_edit_document',edit)).result.structuredContent.error_code,'document_conflict');
+  report.checks.push('revision-protected preview and confirmed commit');
+  fs.unlinkSync(linked);
+  const history=unwrap(await tool('readmd_document_history',{file_path:linked,operation:'read',checkpoint_id:committed.checkpoint_id}));
+  assert.equal(history.content,original);
+  report.checks.push('recovery after original file deletion');
   const presets=unwrap(await tool('readmd_export_presets',{})); assert.ok(presets.presets.classic); report.checks.push('real export preset catalog');
   const models=unwrap(await tool('readmd_ai_models',{provider:'custom:fixture',confirm:true})); assert.ok(models.models.includes('fixture-model')); report.checks.push('model discovery over loopback HTTP');
   const aiArgs={provider:'custom:fixture',model:'fixture-model',skill_id:'readmd-summary',markdown_content:'# Synthetic source'};

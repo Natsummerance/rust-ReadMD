@@ -24,24 +24,31 @@ const locales={
  ['現在のファイルを検索','フレーズ、タイトル、パスと YAML タグを組み合わせます。処理上限とスキップを報告し、リンク検査では URL に接続しません。']],
  flow:'読み取り → プレビュー → 確認 → 復元',code:'インストール済み ReadMD の実行ファイルを使用します。MCP パッケージは文書と接続設定を提供し、サーバー本体は含みません。',docs:'連携ドキュメント',limits:'検査・編集は文書ごとに 2 MiB。検索は最大 5,000 ファイル、合計 64 MiB。MCP ツールは最大 8 件を並行実行。一部形式にはローカル実行環境や OS サービスが必要です。',more:'V0.0.5 は安定版の 22 ツールに 5 ツールを追加します。利用可能な機能はインストールした版によります。'}
 };
+// Localized copy is authored against this template version; future candidates
+// update the shared release manifest instead of hand-editing four pages.
+for (const c of Object.values(locales)) {
+ for (const key of ['description','candidate','more']) c[key]=c[key].replaceAll('V0.0.5','V'+release.candidate);
+ c.cards=c.cards.map(card=>card.map(text=>text.replaceAll('V0.0.5','V'+release.candidate)));
+}
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 for(const [lang,c] of Object.entries(locales)){
  const url=origin+'/'+c.prefix+'integrations/';
+ const docsRef=release.candidate_ref||'main';
  const alternate=Object.entries(locales).map(([l,v])=>'<link rel="alternate" hreflang="'+l+'" href="'+origin+'/'+v.prefix+'integrations/">').join('\n');
  const schema={'@context':'https://schema.org','@type':'WebPage',name:c.title,description:c.description,url,inLanguage:lang,dateModified:'2026-10-07',
    isPartOf:{'@type':'WebSite',name:'ReadMD',url:origin+'/'}};
  const html='<!doctype html>\n<html lang="'+lang+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
- '<title>'+esc(c.title)+' | ReadMD</title><meta name="description" content="'+esc(c.description)+'"><meta name="robots" content="index,follow,max-image-preview:large">'+
+ '<title>'+esc(c.title)+' | ReadMD</title><meta name="description" content="'+esc(c.description)+'"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">'+
  '<link rel="canonical" href="'+url+'">'+alternate+'<link rel="alternate" hreflang="x-default" href="'+origin+'/integrations/">'+
  '<meta property="og:type" content="website"><meta property="og:title" content="'+esc(c.title)+'"><meta property="og:description" content="'+esc(c.description)+'"><meta property="og:url" content="'+url+'">'+
- '<meta property="og:image" content="'+origin+'/media/overview-reader.png"><meta name="twitter:card" content="summary_large_image">'+
- '<link rel="icon" href="/assets/icon-256.png"><link rel="stylesheet" href="/assets/site.css"><script type="application/ld+json">'+JSON.stringify(schema)+'</script></head>'+
- '<body class="bg-background text-foreground"><header class="border-b border-border"><nav class="mx-auto max-w-6xl px-5 py-5 flex items-center justify-between"><a class="flex items-center gap-3 font-semibold" href="/'+c.prefix+'"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a><a class="apple-pill-secondary" href="/'+c.prefix+'download/">'+esc(c.stable)+'</a></nav></header>'+
- '<main class="mx-auto max-w-6xl px-5 py-16 md:py-24"><p class="text-sm text-muted-foreground">'+esc(c.candidate)+'</p><h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight">'+esc(c.title)+'</h1>'+
- '<p class="mt-6 text-xl text-muted-foreground max-w-3xl">'+esc(c.lead)+'</p><section class="grid md:grid-cols-3 gap-6 mt-16">'+c.cards.map(([h,p])=>'<article class="rounded-3xl border border-border bg-card p-8"><h2 class="text-xl font-semibold">'+esc(h)+'</h2><p class="mt-4 text-muted-foreground leading-relaxed">'+esc(p)+'</p></article>').join('')+'</section>'+
- '<section class="mt-16 rounded-3xl border border-border p-8 md:p-12"><h2 class="text-2xl font-semibold">'+esc(c.flow)+'</h2><p class="mt-4 max-w-3xl text-muted-foreground">'+esc(c.code)+'</p><pre class="mt-6 p-6 rounded-2xl bg-muted overflow-x-auto"><code>readmd --mcp</code></pre>'+
- '<p class="mt-5 text-muted-foreground">'+esc(c.more)+'</p><a class="apple-pill-primary inline-flex mt-6" href="https://github.com/'+release.repository+'/tree/main/packages/mcp-server">'+esc(c.docs)+'</a></section>'+
- '<p class="mt-8 text-sm text-muted-foreground leading-relaxed">'+esc(c.limits)+'</p></main><footer class="mx-auto max-w-6xl px-5 py-8 border-t border-border"><a href="/'+c.prefix+'">'+esc(c.back)+'</a><nav class="mt-4 flex flex-wrap gap-5" aria-label="Language">'+Object.values(locales).map(v=>'<a href="/'+v.prefix+'integrations/">'+v.name+'</a>').join('')+'</nav></footer><script src="/assets/site.js" defer></script></body></html>\n';
+ '<meta property="og:image" content="'+origin+'/media/overview-reader.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="'+origin+'/media/overview-reader.png">'+
+ '<link rel="icon" href="/assets/icon-256.png"><link rel="manifest" href="/site.webmanifest"><link rel="alternate" type="application/atom+xml" href="/feed.xml"><link rel="stylesheet" href="/assets/site.css"><script type="application/ld+json">'+JSON.stringify(schema)+'</script></head>'+
+ '<body class="text-ink"><header class="border-b border-line"><nav aria-label="Breadcrumb" class="mx-auto max-w-6xl px-5 py-5 flex items-center justify-between"><a class="flex items-center gap-3 font-semibold" href="/'+c.prefix+'"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a><a class="apple-pill-secondary" href="/'+c.prefix+'download/">'+esc(c.stable)+'</a></nav></header>'+
+ '<main class="mx-auto max-w-6xl px-5 py-16 md:py-24"><p class="text-sm text-muted">'+esc(c.candidate)+'</p><h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight text-balance">'+esc(c.title)+'</h1>'+
+ '<p class="mt-6 text-xl text-muted max-w-3xl">'+esc(c.lead)+'</p><section class="grid md:grid-cols-3 gap-6 mt-16">'+c.cards.map(([h,p])=>'<article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">'+esc(h)+'</h2><p class="mt-4 text-muted leading-relaxed">'+esc(p)+'</p></article>').join('')+'</section>'+
+ '<section class="mt-16 rounded-3xl border border-line p-8 md:p-12"><h2 class="text-2xl font-semibold">'+esc(c.flow)+'</h2><p class="mt-4 max-w-3xl text-muted">'+esc(c.code)+'</p><pre class="mt-6 p-6 rounded-2xl bg-surface overflow-x-auto"><code>readmd --mcp</code></pre>'+
+ '<p class="mt-5 text-muted">'+esc(c.more)+'</p><a class="apple-pill-primary inline-flex mt-6" href="https://github.com/'+release.repository+'/tree/'+docsRef+'/packages/mcp-server">'+esc(c.docs)+'</a></section>'+
+ '<p class="mt-8 text-sm text-muted leading-relaxed">'+esc(c.limits)+'</p></main><footer class="mx-auto max-w-6xl px-5 py-8 border-t border-line"><a href="/'+c.prefix+'">'+esc(c.back)+'</a><nav class="mt-4 flex flex-wrap gap-5" aria-label="Language">'+Object.values(locales).map(v=>'<a href="/'+v.prefix+'integrations/">'+v.name+'</a>').join('')+'</nav></footer><script src="/assets/site.js" defer></script></body></html>\n';
  const dir=new URL(c.prefix+'integrations/',site);fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(new URL('index.html',dir),html);
  const home=new URL(c.prefix+'index.html',site);let text=fs.readFileSync(home,'utf8');
  if(!text.includes('href="/'+c.prefix+'integrations/"')) text=text.replace('</footer>','<p class="text-center py-6"><a class="link-action" href="/'+c.prefix+'integrations/">'+esc(c.title)+'</a></p></footer>');
