@@ -104,6 +104,7 @@ const vscodeStub = {
     showTextDocument: async doc => { openedDocs.push(doc); return doc; },
   },
   workspace: {
+    createFileSystemWatcher: () => ({ onDidCreate: () => ({ dispose() {} }), onDidChange: () => ({ dispose() {} }), onDidDelete: () => ({ dispose() {} }), dispose() {} }),
     textDocuments: [],
     onDidOpenTextDocument: () => ({ dispose() {} }),
     onDidSaveTextDocument: () => ({ dispose() {} }),

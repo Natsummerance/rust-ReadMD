@@ -165,7 +165,9 @@ function auditPage(p, canonical) {
   const hreflang = new Set(audit.links.filter(i => i.rel === 'alternate' && i.hreflang).map(i => i.hreflang));
   if (!setEq(hreflang, new Set(['en', 'zh-CN', 'zh-TW', 'ja', 'x-default']))) errors.push(`${s}: incomplete hreflang set: ${pyList(sorted([...hreflang].filter(Boolean)))}`);
   if (audit.headings.filter(([t, x]) => t === 'h1' && x).length !== 1) errors.push(`${s}: page must contain exactly one non-empty h1`);
-  for (const img of audit.images) {
+  const decorativeBrand = img => img.src === '/assets/icon-256.png' && img.alt === '' && img['aria-hidden'] === 'true';
+  const productImages = audit.images.filter(img => !decorativeBrand(img));
+  for (const img of productImages) {
     if ((img.alt || '').trim().length < 10) errors.push(`${s}: image lacks meaningful alt text: ${img.src || ''}`);
     if (img.loading === 'eager' && img.fetchpriority !== 'high') errors.push(`${s}: eager hero image must declare fetchpriority=high`);
   }
@@ -174,8 +176,8 @@ function auditPage(p, canonical) {
   for (const r of ['icon', 'apple-touch-icon', 'manifest', 'license']) if (!rels.has(r)) errors.push(`${s}: missing ${r} link`);
   if (!audit.links.some(i => i.type === 'application/atom+xml' && (i.href || '').endsWith('releases.atom'))) errors.push(`${s}: release Atom feed link is missing`);
   if (!audit.links.some(i => i.type === 'application/atom+xml' && i.href === '/feed.xml')) errors.push(`${s}: full-site Atom feed link is missing`);
-  const genuineHome=/class="[^\"]*\breadmd-home\b/.test(content)&&audit.images.every(img=>(img.src||'').endsWith('.webp'));
-  if (!genuineHome && content.split('<picture>').length - 1 !== audit.images.length) errors.push(`${s}: every product image must have a WebP picture fallback`);
+  const genuineHome=/class="[^\"]*\breadmd-home\b/.test(content)&&productImages.every(img=>(img.src||'').endsWith('.webp'));
+  if (!genuineHome && content.split('<picture>').length - 1 !== productImages.length) errors.push(`${s}: every product image must have a WebP picture fallback`);
   if (audit.images.length && !content.includes('.webp')) errors.push(`${s}: optimized WebP source is missing`);
   if (!/https:\/\/github\.com\/Natsummerance\/(?:rust-)?readMD\/stargazers/i.test(content)) errors.push(`${s}: star call to action is missing`);
   const blocks = jsonBlocks(content);
@@ -484,6 +486,15 @@ function validate404() {
 
 function main() {
   const errors = [];
+  for (const c of Object.values(LANGUAGES)) {
+    const html=read(c.path);
+    for (const asset of ['motion.css','motion.js']) if(!html.includes('/assets/'+asset)||!isFile(P('assets',asset))) errors.push('Missing shared motion asset: '+asset);
+    const videos=[...html.matchAll(/data-video="([^"]+)"/g)].map(m=>m[1]);
+    if(videos.length!==6||new Set(videos).size!==6)errors.push('Homepage must contain six distinct scroll chapters: '+c.path);
+    for(const src of videos)if(!/^\/showcase\/videos\/F\d{3}\.mp4$/.test(src)||!isFile(P(src.slice(1))))errors.push('Scroll chapter recording missing: '+src);
+    if(/data-webm=/.test(html))errors.push('Derived WebM belongs to ignored dist only: '+c.path);
+    if(/class="journey-caption[^>]*\sinert\b/.test(html))errors.push('Static chapters must remain accessible without JavaScript: '+c.path);
+  }
   for (const c of Object.values(INTEGRATION_PAGES)) {
     if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
     const html=read(c.path);

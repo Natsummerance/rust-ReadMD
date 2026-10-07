@@ -20,6 +20,7 @@ export function registerIntelligence(context: vscode.ExtensionContext, bridge: R
   const cache = new Map<string, { version: number; root: string; promise: Promise<Inspection> }>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   let disposed = false;
+  let fileChangeTimer: ReturnType<typeof setTimeout> | undefined;
   const eligible = (doc: vscode.TextDocument) => vscode.workspace.isTrusted !== false
     && doc.languageId === 'markdown' && doc.uri.scheme === 'file';
   const inspect = async (doc: vscode.TextDocument): Promise<Inspection | undefined> => {
@@ -58,8 +59,21 @@ export function registerIntelligence(context: vscode.ExtensionContext, bridge: R
     const key = doc.uri.toString(); clearTimeout(timers.get(key));
     timers.set(key, setTimeout(() => { timers.delete(key); void inspect(doc).catch(() => {}); }, 700));
   };
+  const fileChanged = (uri: vscode.Uri) => {
+    const folder = vscode.workspace.getWorkspaceFolder(uri);
+    if (!folder || path.relative(folder.uri.fsPath, uri.fsPath).split(/[\\/]/)
+      .some(part => ['.git', 'node_modules', 'target', 'dist', 'build', 'vendor', '__pycache__'].includes(part))) return;
+    // VS Code's create/delete/rename events omit changes made by other programs.
+    // Invalidate in-flight results now, debounce the native reinspection.
+    cache.clear(); clearTimeout(fileChangeTimer);
+    fileChangeTimer = setTimeout(() => {
+      for (const doc of vscode.workspace.textDocuments) schedule(doc);
+    }, 250);
+  };
+  const watcher = vscode.workspace.createFileSystemWatcher('**/*');
   context.subscriptions.push(diagnostics,
-    { dispose() { disposed = true; for (const timer of timers.values()) clearTimeout(timer); cache.clear(); } },
+    watcher, watcher.onDidCreate(fileChanged), watcher.onDidChange(fileChanged), watcher.onDidDelete(fileChanged),
+    { dispose() { disposed = true; clearTimeout(fileChangeTimer); for (const timer of timers.values()) clearTimeout(timer); cache.clear(); } },
     vscode.workspace.onDidOpenTextDocument(schedule),
     vscode.workspace.onDidSaveTextDocument(() => { cache.clear(); for (const doc of vscode.workspace.textDocuments) schedule(doc); }),
     vscode.workspace.onDidChangeTextDocument(event => {
@@ -94,10 +108,13 @@ export function registerIntelligence(context: vscode.ExtensionContext, bridge: R
     vscode.commands.registerCommand('readmd.inspectDocument', async () => {
       const doc = vscode.window.activeTextEditor?.document;
       if (!doc || !eligible(doc)) { void vscode.window.showInformationMessage(l10n('inspectionOpen', 'Open a Markdown file in a trusted workspace first.')); return; }
+      if (Buffer.byteLength(doc.getText(), 'utf8') > 2 * 1024 * 1024) {
+        void vscode.window.showInformationMessage(l10n('inspectionSize', 'Inspection supports documents up to 2 MB.')); return;
+      }
       cache.delete(doc.uri.toString());
       try {
         const result = await inspect(doc);
-        if (!result) { void vscode.window.showInformationMessage(l10n('inspectionSize', 'Inspection supports documents up to 2 MB.')); return; }
+        if (!result) { void vscode.window.showInformationMessage(l10n('inspectionChanged', 'The document changed during inspection. Run it again.')); return; }
         await vscode.commands.executeCommand('workbench.actions.view.problems');
         void vscode.window.showInformationMessage(l10n(result.truncated ? 'inspectionLimited' : 'inspectionDone',
           result.truncated ? 'Inspection reached a processing limit; some content was not checked.' : 'Document inspection complete: {count} items.',

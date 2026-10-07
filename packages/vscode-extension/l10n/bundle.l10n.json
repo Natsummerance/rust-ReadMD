@@ -196,5 +196,6 @@
   "searchEmpty": "No matches in the scanned files.",
   "searchLimited": "Results limited to 50; refine your query",
   "searchResults": "Select a result to open",
-  "searchUnavailable": "Search could not finish. Check the query and update ReadMD Core."
+  "searchUnavailable": "Search could not finish. Check the query and update ReadMD Core.",
+  "inspectionChanged": "The document changed during inspection. Run it again."
 }

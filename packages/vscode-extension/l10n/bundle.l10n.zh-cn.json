@@ -196,5 +196,6 @@
   "searchEmpty": "已扫描的文件中没有匹配结果。",
   "searchLimited": "结果或扫描达到上限，请缩小查询范围",
   "searchResults": "选择结果以打开文件",
-  "searchUnavailable": "搜索未能完成，请检查查询语法并更新 ReadMD 核心。"
+  "searchUnavailable": "搜索未能完成，请检查查询语法并更新 ReadMD 核心。",
+  "inspectionChanged": "检查期间文档或关联文件已变化，请重新检查。"
 }

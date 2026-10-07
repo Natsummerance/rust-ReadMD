@@ -67,6 +67,13 @@ exports.run = async function () {
     assert.equal(local?.target?.fsPath.toLowerCase(),inspectionFile.toLowerCase());
     assert.equal(local?.target?.fragment,'local-section');
     results.push('native Problems diagnostics and clickable Wiki provider');
+    const moved=path.join(root,'Renamed-Plato.md');
+    const until=async predicate=>{const end=Date.now()+15000;while(Date.now()<end){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,80));}throw Error('External file changes did not refresh diagnostics');};
+    fs.renameSync(linked,moved);
+    await until(()=>vscode.languages.getDiagnostics(inspectionDoc.uri).some(d=>d.source==='ReadMD'&&d.code==='missing_file'));
+    fs.renameSync(moved,linked);
+    await until(()=>!vscode.languages.getDiagnostics(inspectionDoc.uri).some(d=>d.source==='ReadMD'&&d.code==='missing_file'));
+    results.push('external file rename refreshes diagnostics without editing the draft');
     await vscode.window.showTextDocument(document);
     await vscode.commands.executeCommand('readmd.preview'); results.push('real preview command');
     await vscode.window.showTextDocument(document);
