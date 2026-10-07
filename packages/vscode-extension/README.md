@@ -30,7 +30,7 @@
 | `readmd.insertToc` | 插入 `[TOC]`，实时预览根据标题生成可点击目录。 |
 | `readmd.insertSlide` | 插入 `<!-- slide -->`。 |
 | `readmd.openPresentation` | 使用随包 Reveal.js 播放；支持分页分隔符和 Frontmatter 主题、转场，忽略元数据内的分隔线。 |
-| `readmd.exportPresentation` | 选择路径，导出含脚本及源目录图片的离线 HTML；保存框确认替换后可覆盖。 |
+| `readmd.exportPresentation` | 选择路径，导出含脚本及源目录图片的离线 HTML；公式、Mermaid 生效，主题字体使用系统回退；保存框确认替换后可覆盖。 |
 | `readmd.exportDocument` | 选择 PDF、Word、HTML、LaTeX 或 EPUB；预设从实际桌面内核读取，包括自定义预设；相对图片以源目录解析。 |
 | `readmd.convertFileToMarkdown` | 从资源管理器或文件选择器转换；保留源文件，结果在未保存的新文档中打开。 |
 | `readmd.convertAnyFilePrompt` | 打开同一转换选择器，含“所有文件”，不会把内核支持范围限制为少量后缀。 |

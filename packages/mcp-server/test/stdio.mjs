@@ -55,6 +55,14 @@ try {
   const args={markdown_content:'# Export acceptance',output_path:output,output_format:'html',confirm:true};
   assert.equal((await tool('readmd_export_document',args)).result.structuredContent.error_code,'output_exists'); assert.equal(fs.readFileSync(output,'utf8'),'KEEP');
   unwrap(await tool('readmd_export_document',{...args,overwrite:true,style_preset:'classic'})); assert.match(fs.readFileSync(output,'utf8'),/Export acceptance/); report.checks.push('protected and atomic HTML replacement');
+  const pixel='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+  fs.writeFileSync(path.join(root,'fixture.png'),Buffer.from(pixel,'base64'));
+  for (const theme of ['black','night']) {
+    const slides=path.join(root,`slides-${theme}.html`);
+    unwrap(await tool('readmd_export_presentation',{markdown_content:'# Exported offline\n\n![Local](fixture.png)\n\n$x^2$\n\n```mermaid\ngraph LR\n A-->B\n```\n\n---\n\n# Second slide',output_path:slides,base_dir:root,theme,overwrite:true,confirm:true}));
+    assert.ok(fs.readFileSync(slides,'utf8').includes('data:image/png;base64,'+pixel));
+  }
+  report.checks.push('standalone presentations embed source-directory images');
   const burst=await Promise.all(Array.from({length:128},()=>tool('readmd_fix_markdown',{content:('# Heading\n\nText | value\n').repeat(400)})));
   const busy=burst.filter(response=>response.error?.code===-32001).length;
   for(const response of burst) if(response.error) assert.equal(response.error.code,-32001); else assert.equal(response.result.structuredContent.ok,true);

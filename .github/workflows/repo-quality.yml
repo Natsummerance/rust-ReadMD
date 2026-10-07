@@ -104,6 +104,8 @@ jobs:
         run: node packages/mcp-server/test/stdio.mjs
       - name: Offline preview, formulas and engineering diagrams
         working-directory: ui-tests
+        env:
+          READMD_PRESENTATION_TEST_ROOT: ${{ github.workspace }}/.cache/integration-mcp
         run: npx --no-install playwright test --config vscode-preview.config.cjs
       - name: Package integrations without downloads
         run: node tools/package-integrations.mjs dist/integrations

@@ -1,4 +1,5 @@
 {
+  "errCoreRequestSize": "The request exceeds 32 MB. Select a smaller section or split the document.",
   "pickSkill": "Select ReadMD Skill",
   "skillsOpenFailed": "Failed to open ReadMD Skills: {error}",
   "openDocFirst": "Please open a Markdown document first",

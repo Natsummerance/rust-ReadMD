@@ -4277,6 +4277,9 @@ const PRES_STYLE_BLOCK: &str = r#"</title>
 fn pres_css_tag(rel_path: &str, standalone: bool, link_id: &str, assets_dir: &Path) -> Result<String, String> {
     if standalone {
         let css = read_vendor(assets_dir, &format!("reveal/dist/{rel_path}"))?;
+        // A single-file presentation cannot fetch sibling font stylesheets or
+        // Google Fonts. Themes retain their declared system-font fallbacks.
+        let css = regex::Regex::new(r"(?i)@import\s+url\([^)]*\)\s*;").unwrap().replace_all(&css, "");
         return Ok(format!("<style>\n{css}\n</style>"));
     }
     let id_attr = if link_id.is_empty() {
@@ -4385,10 +4388,27 @@ pub fn render_presentation_html(
     for p in PRES_SCRIPTS {
         body_scripts.push(pres_script_tag(p, standalone, assets_dir)?);
     }
+    let mermaid_used = standalone && regex::Regex::new(r"(?m)^\s{0,3}(?:`{3,}|~{3,})\s*mermaid(?:\s|$)").unwrap().is_match(content);
+    if mermaid_used {
+        let js = read_vendor(assets_dir, "diagrams/mermaid/mermaid.min.js")?.replace("</script", "<\\/script");
+        body_scripts.push(format!("<script>\n{js}\nmermaid.initialize({{startOnLoad:false,securityLevel:'strict'}});\n</script>"));
+    }
     let body_scripts = body_scripts.join("\n");
 
     // Python reads the boot script even for the non-standalone preview.
-    let boot_js = read_vendor(assets_dir, "reveal/dist/readmd-boot.js")?;
+    let mut boot_js = read_vendor(assets_dir, "reveal/dist/readmd-boot.js")?;
+    if mermaid_used {
+        boot_js.push_str(r#"
+if (window.deck && window.mermaid) window.deck.on('ready', function () {
+  var diagrams = [];
+  document.querySelectorAll('.slides pre > code.language-mermaid, .slides pre > code.mermaid').forEach(function (code) {
+    var item = document.createElement('div'); item.className = 'mermaid'; item.textContent = code.textContent;
+    code.parentElement.replaceWith(item); diagrams.push(item);
+  });
+  mermaid.run({nodes:diagrams}).then(function () { window.deck.layout(); }).catch(function () {});
+});
+"#);
+    }
     let reveal_transition = if pres_in(PRES_TRANSITIONS, &transition_meta) {
         transition_meta.clone()
     } else {

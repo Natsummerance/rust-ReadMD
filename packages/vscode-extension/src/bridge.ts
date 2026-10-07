@@ -240,6 +240,8 @@ export class ReadMDBridge {
       params = { ...params, _meta: { ...(params._meta || {}), progressToken: id } };
     }
     const request = { jsonrpc: '2.0', id, method, params };
+    const payload = JSON.stringify(request) + '\n';
+    if (Buffer.byteLength(payload, 'utf8') > 32 * 1024 * 1024) throw new Error('core_request_too_large');
     return new Promise((resolve, reject) => {
       const IDLE_TIMEOUT_MS = 45000;
       const MAX_TIMEOUT_MS = 600000; // 10 minutes
@@ -298,7 +300,7 @@ export class ReadMDBridge {
         });
       }
       try {
-        proc.stdin.write(JSON.stringify(request) + '\n', error => {
+        proc.stdin.write(payload, error => {
           if (error) settle(false, new Error('core_not_connected'));
         });
       } catch { settle(false, new Error('core_not_connected')); }

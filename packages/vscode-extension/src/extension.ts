@@ -34,6 +34,7 @@ function errorText(error: unknown): string {
     core_configuration_changed: ['errCoreConfigChanged', 'Core settings changed; try the operation again.'],
     core_protocol_unsupported: ['errCoreProtocol', 'The installed ReadMD Core uses an unsupported protocol. Update the desktop app.'],
     core_response_too_large: ['errCoreResponseSize', 'The result exceeds the 32 MB limit.'],
+    core_request_too_large: ['errCoreRequestSize', 'The request exceeds 32 MB. Select a smaller section or split the document.'],
     unknown_style_preset: ['errUnknownPreset', 'This export preset no longer exists. Choose another preset.'],
   };
   const pair = messages[code];

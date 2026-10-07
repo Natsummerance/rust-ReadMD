@@ -69,6 +69,8 @@ PDF、Word、HTML 先在独立临时目录渲染，完成后原子发布；EPUB 
 
 文档、EPUB 和演讲导出均可传 `base_dir` 指定源文件目录；相对图片按该目录解析。演讲将可读取的本地图片嵌入 HTML，无法嵌入的图片返回 `warnings`，不静默声称全部成功。
 
+演讲单文件移除在线/旁置字体样式请求，使用系统字体回退；KaTeX 公式与存在的 Mermaid 围栏均使用内嵌渲染资源，断网可打开。其他工程图表的离线增强预览不等于演讲导出已嵌入所有引擎。
+
 ## 当前协议与兼容
 
 2026-07-28 客户端可直接调用 `server/discover`，逐请求在 `params._meta` 传入 `io.modelcontextprotocol/protocolVersion: "2026-07-28"` 和 `io.modelcontextprotocol/clientCapabilities: {}`。响应含 `resultType: "complete"`、服务器信息；用户目录/资源不共享缓存。版本不支持时返回 `-32022` 和支持的版本。

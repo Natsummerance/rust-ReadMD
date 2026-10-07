@@ -297,6 +297,20 @@ test('consumeOutput properly decodes multi-byte UTF-8 split across chunks', asyn
   bridge.dispose();
 });
 
+test('oversized UTF-8 requests fail before writing and leave the connection usable', async () => {
+  const proc = makeFakeProc(), writes = [];
+  proc.stdin.write = (payload, callback) => { writes.push(JSON.parse(payload)); callback?.(); return true; };
+  fakeCp.spawn = () => proc;
+  const bridge = new ReadMDBridge({ extensionPath: '/fake-ext' });
+  const rejected = assert.rejects(bridge.callMcpMethod('tools/call', { name:'large', arguments:{text:'汉'.repeat(12*1024*1024)} }), /core_request_too_large/);
+  await sleep(); proc.emit('spawn'); await rejected;
+  assert.ok(writes.every(message => message.method !== 'tools/call'));
+  const ping = bridge.callMcpMethod('ping'); await sleep();
+  const request = writes.at(-1);
+  proc.stdout.emit('data', Buffer.from(JSON.stringify({jsonrpc:'2.0',id:request.id,result:{}})+'\n'));
+  assert.deepStrictEqual(await ping, {}); bridge.dispose();
+});
+
 test('bridge resets idle timeout on progress notifications and notifies cancellation', async () => {
   const proc = makeFakeProc();
   const writes = [];

@@ -1,4 +1,5 @@
 {
+  "errCoreRequestSize": "请求超过 32 MB，请缩小选区或拆分文档。",
   "pickSkill": "选择 ReadMD Skill",
   "skillsOpenFailed": "ReadMD Skills 打开失败: {error}",
   "openDocFirst": "请先打开 Markdown 文档",

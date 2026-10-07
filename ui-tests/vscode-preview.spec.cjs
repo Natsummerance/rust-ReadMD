@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { getWebviewContent } = require('../packages/vscode-extension/out/webview.js');
 
 for (const presentation of [false,true]) {
@@ -50,6 +51,22 @@ const diagrams = {
   chart: JSON.stringify({type:'bar',data:{labels:['A'],datasets:[{data:[12]}]}}),
   tikz: '\\begin{tikzpicture}\\draw (0,0) -- (1,1);\\end{tikzpicture}',
 };
+for (const theme of ['black','night']) test(`native exported ${theme} presentation renders with no network requests`, async ({ page }) => {
+  test.skip(!process.env.READMD_PRESENTATION_TEST_ROOT, 'Run the real MCP fixture generator first');
+  const file = path.join(process.env.READMD_PRESENTATION_TEST_ROOT, `slides-${theme}.html`);
+  const requests = [], errors = [];
+  page.on('request', request => { if (!/^(data:|file:)/.test(request.url())) requests.push(request.url()); });
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/*', route => route.request().url().startsWith('file:') ? route.continue() : route.abort());
+  await page.goto(pathToFileURL(file).href);
+  await expect.poll(()=>page.evaluate(()=>window.deck?.isReady())).toBe(true);
+  await expect(page.locator('.slides section')).toHaveCount(2);
+  await expect(page.locator('.katex')).toHaveCount(1);
+  await expect(page.locator('.mermaid svg')).toHaveCount(1);
+  await expect(page.locator('.mermaid .error-text')).toHaveCount(0);
+  await expect.poll(()=>page.locator('img[alt="Local"]').evaluate(element=>element.complete && element.naturalWidth>0)).toBe(true);
+  expect(requests).toEqual([]);expect(errors).toEqual([]);
+});
 for (const [engine, code] of Object.entries(diagrams)) test(`${engine} renders inside a disposable offline sandbox`, async ({ page }) => {
   test.setTimeout(120000);
   const media = path.resolve(__dirname, '../packages/vscode-extension/media');
