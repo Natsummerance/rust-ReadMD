@@ -9,11 +9,12 @@
       fastgit: (url) => `https://gh-proxy.com/${url}`,
     };
 
-    let activeMirror = localStorage.getItem('readmd_download_mirror') || 'direct';
+    let activeMirror = 'direct';
+    try { activeMirror = localStorage.getItem('readmd_download_mirror') || 'direct'; } catch {}
 
     const updateDownloadLinks = (mirrorKey, animate = true) => {
       activeMirror = mirrorKey;
-      localStorage.setItem('readmd_download_mirror', mirrorKey);
+      try { localStorage.setItem('readmd_download_mirror', mirrorKey); } catch {}
 
       const targetElements = document.querySelectorAll('.platform-card a, .platform-card button');
 
@@ -70,91 +71,10 @@
 
     updateDownloadLinks(activeMirror);
 
-    // Dual-Layer Dynamic Version & Release Synchronizer
-    const GITHUB_REPO = 'Natsummerance/readMD';
-    const CACHE_KEY = 'readmd_release_cache_v2';
-    const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+    // The shared release module owns version discovery and validated URLs.
+    document.addEventListener('readmd:release', () => updateDownloadLinks(activeMirror, false));
+    window.__readmdReleaseReady?.then(() => updateDownloadLinks(activeMirror, false));
 
-    const applyVersionData = (versionTag, pureVersion) => {
-      if (!versionTag) return;
-      const cleanTag = versionTag.startsWith('v') ? versionTag : `v${versionTag}`;
-      const cleanPure = pureVersion || cleanTag.replace(/^v/, '');
-
-      document.querySelectorAll('.latest-version-badge, [data-version-slot]').forEach((el) => {
-        el.textContent = cleanTag;
-      });
-      document.querySelectorAll('[data-pure-version]').forEach((el) => {
-        el.textContent = cleanPure;
-      });
-
-      // Update SHA256SUMS.txt links
-      document.querySelectorAll('a[href*="SHA256SUMS.txt"]').forEach((a) => {
-        a.href = `https://github.com/${GITHUB_REPO}/releases/download/${cleanTag}/SHA256SUMS.txt`;
-      });
-
-      // Update all download URLs and mirror slots
-      document.querySelectorAll('a[data-mirror-url]').forEach((link) => {
-        let orig = link.dataset.mirrorUrl;
-        if (orig.includes('/releases/download/')) {
-          const oldTagMatch = orig.match(/\/releases\/download\/([^/]+)\//);
-          if (oldTagMatch && oldTagMatch[1] && oldTagMatch[1] !== cleanTag) {
-            const oldTag = oldTagMatch[1];
-            const oldPure = oldTag.replace(/^v/, '');
-            let updated = orig.replace(new RegExp(`/releases/download/${oldTag}/`, 'g'), `/releases/download/${cleanTag}/`);
-            updated = updated.replace(new RegExp(`-${oldPure}\\.`, 'g'), `-${cleanPure}.`);
-            link.dataset.mirrorUrl = updated;
-          }
-        }
-      });
-
-      updateDownloadLinks(activeMirror);
-    };
-
-    // 1. Try Cached GitHub Release
-    let isApplied = false;
-    try {
-      const cached = sessionStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < CACHE_TTL && parsed.tag_name) {
-          applyVersionData(parsed.tag_name, parsed.pure_version);
-          isApplied = true;
-        }
-      }
-    } catch (e) {}
-
-    // 2. Fetch Latest from GitHub API (or fallback to /version.json)
-    if (!isApplied) {
-      fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-        headers: { 'Accept': 'application/vnd.github.v3+json' }
-      })
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Rate limited / network'))))
-        .then((data) => {
-          if (data && data.tag_name) {
-            const tag = data.tag_name;
-            const pure = tag.replace(/^v/, '');
-            try {
-              sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-                timestamp: Date.now(),
-                tag_name: tag,
-                pure_version: pure
-              }));
-            } catch (e) {}
-            applyVersionData(tag, pure);
-          }
-        })
-        .catch(() => {
-          // Fallback to local build-time version.json
-          fetch('/version.json')
-            .then((res) => (res.ok ? res.json() : null))
-            .then((vData) => {
-              if (vData && vData.releaseTag) {
-                applyVersionData(vData.releaseTag, vData.version);
-              }
-            })
-            .catch(() => {});
-        });
-    }
   };
 
   /* Interactive MCP Configuration & 1-Click Multi-Harness Generator */
