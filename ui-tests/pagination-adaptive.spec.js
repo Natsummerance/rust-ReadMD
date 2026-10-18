@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 // 分页条窄宽自适应：AI 面板挤压 #main-col 时分页条不得溢出，
@@ -15,9 +16,9 @@ test('pagination bar adapts when main column is squeezed', async ({ page }) => {
   }));
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   await page.evaluate(() => loadFile('C:/long.md'));
-  await page.waitForFunction(() => state.pagination.enabled && state.pagination.totalPages > 1);
+  await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
   await expect(page.locator('#pagination-bar')).toBeVisible();
 
   const measure = () => page.evaluate(() => {

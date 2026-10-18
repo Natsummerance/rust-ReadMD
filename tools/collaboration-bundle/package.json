@@ -1,0 +1,8 @@
+{
+  "name": "readmd-collaboration-client",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": { "build": "esbuild entry.js --bundle --minify --format=iife --global-name=ReadMDCRDT --outfile=../../assets/vendor/yjs.bundle.js" },
+  "dependencies": { "yjs": "13.6.33", "esbuild": "0.28.1" }
+}

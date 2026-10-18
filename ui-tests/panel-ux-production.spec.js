@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const json = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
 const initial = '# Panel acceptance\n\nKeep this draft.\n';
@@ -5,7 +6,7 @@ const initial = '# Panel acceptance\n\nKeep this draft.\n';
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'zh-CN'));
-  await page.goto('/'); await page.waitForFunction(() => window.__readmdAppReady);
+  await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async content => {
     const path = await uploadFile(new File([content], 'panel-acceptance.md', { type: 'text/markdown' }));
     await loadFile(path); state.pvLayout = 'none'; await toggleEdit();

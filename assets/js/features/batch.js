@@ -7,6 +7,10 @@
 
 let batchJobTimer = null;
 let batchJobId = null;
+let batchGeneration = 0;
+let batchPollAbort = null;
+let batchCancelPending = false;
+let batchCancelAcknowledged = false;
 let batchCancelRequested = false;
 let batchOcrCanceled = false;
 let batchDocsDone = false;
@@ -28,9 +32,12 @@ function openBatchModal() {
   }
   if (typeof initSpeechLanguage === 'function') initSpeechLanguage();
   stopBatchPoll();
+  batchGeneration++;
   setBatchTriggersBusy(false);
   batchJobId = null;
   batchCancelRequested = false;
+  batchCancelPending = false;
+  batchCancelAcknowledged = false;
   batchOcrCanceled = false;
   batchFinished = false;
   batchCount = { ok: 0, skipped: 0, error: 0, canceled: 0 };
@@ -46,6 +53,7 @@ function openBatchModal() {
   const note = $('convert-note');
   if (note) note.textContent = batchT('batch.note') || '';
   $('batch-cancel').classList.add('hidden');
+  $('batch-cancel').disabled = false;
 }
 
 function closeBatchModal() {
@@ -53,7 +61,9 @@ function closeBatchModal() {
 }
 
 function stopBatchPoll() {
-  if (batchJobTimer) { clearInterval(batchJobTimer); batchJobTimer = null; }
+  if (batchJobTimer) { clearTimeout(batchJobTimer); batchJobTimer = null; }
+  batchPollAbort?.abort();
+  batchPollAbort = null;
 }
 
 function makeBatchRow(path) {
@@ -67,16 +77,29 @@ function makeBatchRow(path) {
   st.className = 'batch-state';
   st.textContent = batchT('batch.statusQueued') || '';
   row.appendChild(nm); row.appendChild(st);
-  row.addEventListener('click', async () => {
+  const open = async () => {
     if (!row.dataset.done || !row.dataset.out) return;
     closeBatchModal();
     await loadFile(row.dataset.out);
+  };
+  row.addEventListener('click', open);
+  row.addEventListener('keydown', event => {
+    if ((event.key === 'Enter' || event.key === ' ') && row.dataset.out) {
+      event.preventDefault(); open();
+    }
   });
   return row;
 }
 
 function setBatchRow(row, status, title) {
+  // A completed result must never regress to an older progress snapshot.
+  if (row.dataset.done) return;
   row.className = 'batch-item ' + status;
+  if (title) row.title = title;
+  if (row.dataset.out) {
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+  }
   const st = row.querySelector('.batch-state');
   if (st) {
     const labels = {
@@ -88,12 +111,12 @@ function setBatchRow(row, status, title) {
       canceled: batchT('batch.statusCanceled') || '',
     };
     st.textContent = labels[status] || status;
-    if (status === 'error' && title) st.title = title;
+    if (title) st.title = title;
   }
 }
 
 function countBatchRow(row, status) {
-  if (row.dataset.done) return;
+  if (row.dataset.done || !Object.hasOwn(batchCount, status)) return;
   row.dataset.done = '1';
   if (status in batchCount) batchCount[status]++;
 }
@@ -105,7 +128,7 @@ async function enqueueBatchFiles(paths, overwrite) {
     return;
   }
   const input = (paths || []).filter(p => typeof p === 'string' && p.trim());
-  const list = [];
+  const extracted = [];
   // Selected/uploaded archives use the same guarded extractor as OS drops.
   // Reserve the workbench during extraction, before either conversion lane.
   setBatchTriggersBusy(true);
@@ -114,11 +137,21 @@ async function enqueueBatchFiles(paths, overwrite) {
       if (/\.zip$/i.test(path)) {
         const result = await extractDroppedZip({ path, name: path.split(/[\\/]/).pop() });
         if (!result || result.ok === false) return;
-        list.push(...(result.paths || []));
-      } else list.push(path);
+        extracted.push(...(result.paths || []));
+      } else extracted.push(path);
     }
   } catch (error) { showToast(error.message); return; }
   finally { setBatchTriggersBusy(false); }
+  // Windows paths are case-insensitive; POSIX paths retain case. One source
+  // owns one row and one output even when selected twice or present in a ZIP.
+  const seen = new Set();
+  const list = extracted.filter(path => {
+    if (typeof path !== 'string' || !path.trim()) return false;
+    let key = path.replace(/\\/g, '/');
+    if (/^(?:[a-z]:\/|\/\/)/i.test(key)) key = key.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
   if (!list.length) { if (input.length) showToast(batchT('convert.noConvertibleFiles')); return; }
   if (list.some(p => IMG_RE.test(p)) && moduleBlocked('ocr')) return;
   if (list.some(p => !IMG_RE.test(p)) && moduleBlocked('convert')) return;
@@ -137,11 +170,12 @@ async function enqueueBatchFiles(paths, overwrite) {
   setBatchTriggersBusy(true);
   $('batch-cancel').classList.remove('hidden');
   $('convert-status').textContent = batchT('batch.preparing') || '';
-  if (docs.length) runBatchDocsLane(docs, overwrite);
-  if (images.length) runBatchOcrLane(images);
+  const generation = batchGeneration;
+  if (docs.length) runBatchDocsLane(docs, overwrite, generation);
+  if (images.length) runBatchOcrLane(images, overwrite, generation);
 }
 
-async function runBatchDocsLane(paths, overwrite) {
+async function runBatchDocsLane(paths, overwrite, generation) {
   try {
     if (!(await ensureModule('convert'))) throw new Error('convert_module_unavailable');
     const r = await apiFetch('/api/convert/batch', {
@@ -149,40 +183,85 @@ async function runBatchDocsLane(paths, overwrite) {
       body: JSON.stringify({ paths, overwrite: !!overwrite, confirm: true, language: typeof currentSpeechLanguage === 'function' ? currentSpeechLanguage() : 'auto' }),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error_code || ('http_' + r.status));
+    if (generation !== batchGeneration) return;
+    if (!r.ok || typeof d.job !== 'string' || !d.job) throw new Error(d.error_code || ('http_' + r.status));
     batchJobId = d.job;
     if (batchCancelRequested) sendBatchCancel();
     pollBatchJob(d.job);
   } catch (e) {
+    if (generation !== batchGeneration) return;
     failBatchDocsLane(e && e.message);
   }
 }
 
-function sendBatchCancel() {
-  if (!batchJobId || !batchCancelRequested) return;
-  apiFetch('/api/convert/cancel', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job: batchJobId }),
-  }).catch(() => {});
+async function sendBatchCancel() {
+  if (!batchJobId || !batchCancelRequested || batchCancelPending || batchCancelAcknowledged || batchDocsDone) return;
+  const generation = batchGeneration;
+  batchCancelPending = true;
+  $('batch-cancel').disabled = true;
+  try {
+    const response = await apiFetch('/api/convert/cancel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job: batchJobId }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.ok !== true) throw new Error('cancel_failed');
+    if (generation !== batchGeneration || batchFinished) return;
+    batchCancelAcknowledged = true;
+    $('convert-status').textContent = batchT('task.cancelling');
+  } catch (_) {
+    if (generation !== batchGeneration || batchFinished) return;
+    $('convert-status').textContent = batchT('task.cancelRetry');
+    showToast(batchT('task.cancelRetry'));
+  } finally {
+    if (generation === batchGeneration) {
+      batchCancelPending = false;
+      $('batch-cancel').disabled = batchCancelAcknowledged;
+    }
+  }
 }
 
 function pollBatchJob(jid) {
   stopBatchPoll();
-  batchJobTimer = setInterval(async () => {
+  const generation = batchGeneration;
+  let failures = 0;
+  const current = () => generation === batchGeneration && jid === batchJobId && !batchDocsDone;
+  const poll = async () => {
+    if (!current()) return;
+    const controller = new AbortController();
+    batchPollAbort = controller;
+    const deadline = setTimeout(() => controller.abort(), 15000);
     try {
-      const r = await apiFetch('/api/convert/progress?job=' + encodeURIComponent(jid));
-      if (!r.ok) { failBatchDocsLane('HTTP ' + r.status); return; }
+      const r = await apiFetch('/api/convert/progress?job=' + encodeURIComponent(jid), { signal: controller.signal });
+      if (!current()) return;
+      if (r.status === 404) { failBatchDocsLane(batchT('batch.jobMissing')); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
+      if (!current()) return;
+      if (!Array.isArray(d.items) || typeof d.finished !== 'boolean') throw new Error('invalid_progress');
+      failures = 0;
       renderBatchProgress(d);
       if (d.finished) {
-        stopBatchPoll();
+        // A malformed final response cannot leave rows indefinitely running.
+        for (const row of Object.values(batchRowsBySrc)) {
+          if (!row.dataset.done) { setBatchRow(row, 'error', batchT('batch.incompleteResult')); countBatchRow(row, 'error'); }
+        }
         batchDocsDone = true;
         maybeFinishBatch();
       }
-    } catch (e) {
-      failBatchDocsLane(e && e.message);
+    } catch (_) {
+      if (!current()) return;
+      failures++;
+      // A transport failure says nothing about files still being written by
+      // the kernel. Keep ownership of the job and reconnect with backoff.
+      $('convert-status').textContent = batchT('batch.reconnecting');
+    } finally {
+      clearTimeout(deadline);
+      if (batchPollAbort === controller) batchPollAbort = null;
+      if (current()) batchJobTimer = setTimeout(poll, Math.min(10000, 600 * (2 ** Math.min(failures, 5))));
     }
-  }, 600);
+  };
+  batchJobTimer = setTimeout(poll, 0);
 }
 
 function failBatchDocsLane(message) {
@@ -201,7 +280,7 @@ function failBatchDocsLane(message) {
 function renderBatchProgress(d) {
   (d.items || []).forEach(it => {
     const row = batchRowsBySrc[it.src];
-    if (!row) return;
+    if (!row || row.dataset.done) return;
     const status = it.status || 'queued';
     if (status !== 'queued') {
       if ((status === 'ok' || status === 'skipped') && it.out) row.dataset.out = it.out;
@@ -210,12 +289,12 @@ function renderBatchProgress(d) {
     }
   });
   if (d.running) {
-    $('convert-status').textContent = batchT('batch.converting', { done: d.done, total: d.total })
+    $('convert-status').textContent = batchCancelAcknowledged ? batchT('task.cancelling') : batchT('batch.converting', { done: d.done, total: d.total })
       || '';
   }
 }
 
-async function runBatchOcrLane(items) {
+async function runBatchOcrLane(items, overwrite, generation) {
   if (!(await ensureModule('ocr'))) {
     items.forEach(([, row]) => { setBatchRow(row, 'error'); countBatchRow(row, 'error'); });
     batchOcrDone = true;
@@ -223,6 +302,7 @@ async function runBatchOcrLane(items) {
     return;
   }
   for (let i = 0; i < items.length; i++) {
+    if (generation !== batchGeneration) return;
     const [path, row] = items[i];
     if (batchOcrCanceled && !row.dataset.done) {
       setBatchRow(row, 'canceled');
@@ -231,9 +311,9 @@ async function runBatchOcrLane(items) {
     }
     setBatchRow(row, 'running');
     try {
-      const overwrite = $('convert-overwrite') && $('convert-overwrite').checked;
       const r = await apiFetch('/api/ocr?p=' + encodeURIComponent(path) + '&save=1&on_exists=' + (overwrite ? 'overwrite' : 'skip'));
       const d = await r.json().catch(() => ({}));
+      if (generation !== batchGeneration) return;
       if (r.ok && d.empty) {
         // 识别成功但没有文字：不写文件，标注“无文字”。
         setBatchRow(row, 'skipped', batchT('batch.ocrNoText') || '');

@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Part C UI quality: modal focus management, task feedback and cancellation,
 // narrow-screen layout and a click smoke over the visible toolbar.
 const { test, expect } = require('@playwright/test');
@@ -11,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openDoc(page, body = '# Title\n\nSome text.\n') {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function' && window.ReadMDModal);
+  await waitForPage(page, () => typeof renderVirtual === 'function' && window.ReadMDModal);
   await page.evaluate(async md => { await renderVirtual('clipboard', 'ui.md', '', md, []); }, body);
 }
 

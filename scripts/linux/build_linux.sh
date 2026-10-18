@@ -3,12 +3,10 @@
 # 其他架构必须使用专门的、已验证的构建流程，不得被此脚本误标为正式产物。
 set -euo pipefail
 if [ -z "${READMD_VERSION:-}" ]; then
-  if [ -f ".env" ]; then
-    READMD_VERSION="$(grep -E '^READMD_VERSION=' .env | head -n1 | cut -d'=' -f2- | tr -d '\r\"')"
-  elif [ -f "VERSION" ]; then
+  if [ -f "VERSION" ]; then
     READMD_VERSION="$(head -n1 VERSION | tr -d '\r\n')"
   else
-    READMD_VERSION="2.4.0"
+    echo 'ERROR: VERSION is required' >&2; exit 2
   fi
 fi
 VERSION="${READMD_BUILD_VERSION:-${READMD_VERSION}}"
@@ -19,7 +17,7 @@ if [ -z "${DEB_ARCH}" ]; then
     aarch64|arm64) DEB_ARCH="arm64" ;;
     x86_64|amd64)   DEB_ARCH="amd64" ;;
     *)
-      echo "ERROR: unsupported architecture for the v2.3.7 Linux release: ${ARCH}" >&2
+      echo "ERROR: unsupported Linux architecture: ${ARCH}" >&2
       exit 2
       ;;
   esac
@@ -28,9 +26,12 @@ fi
 echo "=== Building ReadMD v${VERSION} for Linux (${ARCH} / ${DEB_ARCH}) ==="
 
 # 1. Cargo 构建独立二进制
-cargo build --release -p readmd-kernel
+cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel
 mkdir -p dist/ReadMD
-cp rust/target/release/readmd dist/ReadMD/ReadMD
+cp "${CARGO_TARGET_DIR:-rust/target}/release/readmd" dist/ReadMD/ReadMD
+mkdir -p dist/ReadMD/assets
+cp -r assets/. dist/ReadMD/assets/
+cp LICENSE README.md dist/ReadMD/
 
 # 2. 校验构建出的 ELF 二进制架构与目标包架构一致性
 if [ -f "dist/ReadMD/ReadMD" ] && command -v file >/dev/null 2>&1; then
@@ -96,25 +97,14 @@ elif [ -f "./appimagetool" ]; then
   ./appimagetool --appimage-extract-and-run "${APPDIR}" "dist/${APPIMAGE_NAME}"
   APPIMAGE_BUILT=1
 else
-  case "${ARCH}" in
-    aarch64) APPIMAGE_TOOL_ARCH="aarch64" ;;
-    *) APPIMAGE_TOOL_ARCH="x86_64" ;;
-  esac
-  APPIMAGE_TOOL="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/readmd-appimagetool-${APPIMAGE_TOOL_ARCH}"
-  echo "Downloading ${APPIMAGE_TOOL_ARCH} appimagetool..."
-  if wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_TOOL_ARCH}.AppImage" -O "${APPIMAGE_TOOL}"; then
-    chmod +x "${APPIMAGE_TOOL}"
-    "${APPIMAGE_TOOL}" --appimage-extract-and-run "${APPDIR}" "dist/${APPIMAGE_NAME}"
-    APPIMAGE_BUILT=1
-  fi
-  rm -f "${APPIMAGE_TOOL}"
+  echo 'ERROR: prepare appimagetool before the offline build; downloads are disabled.' >&2
 fi
 if [ "${APPIMAGE_BUILT}" -ne 1 ] || [ ! -s "dist/${APPIMAGE_NAME}" ]; then
   echo "ERROR: AppImage creation failed; refusing to report a green Linux build." >&2
   exit 1
 fi
 
-# 5. 构建 DEB 安装包 (适用于 Ubuntu / Debian / 统信 UOS / 银河麒麟 KylinOS / 深度 Deepin / openEuler)
+# 5. DEB: Ubuntu / Debian / UOS / Kylin / Deepin. openEuler uses RPM.
 DEB_DIR="dist/deb_build"
 rm -rf "${DEB_DIR}"
 mkdir -p "${DEB_DIR}/DEBIAN" "${DEB_DIR}/usr/bin" "${DEB_DIR}/usr/share/applications" "${DEB_DIR}/usr/share/icons/hicolor/512x512/apps" "${DEB_DIR}/usr/share/mime/packages" "${DEB_DIR}/opt/readmd"
@@ -135,8 +125,8 @@ Architecture: ${DEB_ARCH}
 Maintainer: Natsummerance <natsummerance@github.com>
 Homepage: https://readmd.asia
 Description: ReadMD - Lightweight Markdown viewer and editor with auto-repair, LaTeX PRO, and multi-platform support.
-Depends: libc6, libgtk-3-0, libwebkit2gtk-4.0-37 | libwebkit2gtk-4.1-0 | libwebkit2gtk-6.0-4, xdg-utils, shared-mime-info, tesseract-ocr
-Recommends: gir1.2-webkit2-4.0 | gir1.2-webkit2-4.1 | gir1.2-webkit-6.0, gir1.2-gtk-3.0, libnotify-bin
+Depends: libc6, libgtk-3-0t64 | libgtk-3-0, libwebkit2gtk-4.1-0, xdg-utils, shared-mime-info, zenity | kdialog
+Recommends: tesseract-ocr, libnotify-bin, fonts-noto-cjk
 Suggests: kylin-browser | uos-browser | chromium-browser | google-chrome-stable | firefox
 EOF
 

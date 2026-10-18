@@ -366,6 +366,7 @@ mod tests {
 
     #[test]
     fn data_dir_is_absolute_or_an_explicit_home_free_default() {
+        let _guard = crate::test_data_dir_guard();
         // The live call may only be checked for shape: the ambient environment
         // belongs to the whole test process, so asserting a concrete root here
         // would make this lane's tests order-dependent.

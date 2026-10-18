@@ -519,8 +519,8 @@ pub fn normalize_base_url(base_url: &str, endpoint: &str) -> String {
     format!("{}/{}", u, endpoint)
 }
 
-/// `ai.py::_endpoint_url` (552-556).  `str(endpoint_mode or "prefix").lower()`
-/// is deliberately *not* stripped, matching CPython.
+/// `ai.py::_endpoint_url` (552-556), extended to avoid duplicate version
+/// segments at the proxy boundary. Full URL mode remains literal.
 pub fn endpoint_url(base_url: &str, endpoint: &str, endpoint_mode: &str) -> String {
     let mode_value = if endpoint_mode.is_empty() {
         "prefix".to_string()
@@ -529,6 +529,11 @@ pub fn endpoint_url(base_url: &str, endpoint: &str, endpoint_mode: &str) -> Stri
     };
     if mode_value.to_lowercase() == "full_url" {
         return py_rstrip_char(&py_strip(base_url), '/');
+    }
+    let base = normalize_base_url(base_url, "");
+    let endpoint = endpoint.trim_start_matches('/');
+    if py_ends_with_ic(&base, "/v1") && endpoint.starts_with("v1/") {
+        return format!("{}/{}", base, &endpoint[3..]);
     }
     normalize_base_url(base_url, endpoint)
 }
@@ -626,6 +631,8 @@ pub enum HttpError {
 pub trait LineStream {
     /// `Ok(None)` == end of stream; `Err(reason)` == mid-stream `URLError`.
     fn next_line(&mut self) -> Result<Option<String>, String>;
+    /// Some compatible relays ignore `stream:true` and return a JSON body.
+    fn content_type(&self) -> Option<&str> { None }
 }
 
 pub trait Transport {
@@ -693,23 +700,38 @@ pub mod ureq_transport {
 
         fn agent(&self, timeout: Duration) -> ureq::Agent {
             ureq::AgentBuilder::new()
+                .timeout(timeout)
+                .timeout_connect(timeout.min(Duration::from_secs(10)))
                 .timeout_read(timeout)
                 .timeout_write(timeout)
                 .redirects(10)
                 .build()
         }
+
+        /// Keep TLS sessions and idle connections for frequent short requests.
+        /// Credentials remain on each Request, never on the shared Agent.
+        pub fn pooled(self) -> PooledTransport {
+            let json = self.agent(self.json_timeout);
+            let stream = if self.json_timeout == self.stream_timeout { json.clone() } else { self.agent(self.stream_timeout) };
+            PooledTransport { json, stream }
+        }
     }
+
+    pub struct PooledTransport { json: ureq::Agent, stream: ureq::Agent }
 
     /// Lossy UTF-8, split on `\n` only — same as iterating a urllib response.
     struct ReaderLines {
         reader: BufReader<Box<dyn Read>>,
+        content_type: String,
     }
 
     impl LineStream for ReaderLines {
+        fn content_type(&self) -> Option<&str> { Some(&self.content_type) }
         fn next_line(&mut self) -> Result<Option<String>, String> {
             let mut buf: Vec<u8> = Vec::new();
-            match self.reader.read_until(b'\n', &mut buf) {
+            match (&mut self.reader).take(8 * 1024 * 1024 + 1).read_until(b'\n', &mut buf) {
                 Ok(0) => Ok(None),
+                Ok(_) if buf.len() > 8 * 1024 * 1024 => Err("AI response line too large".into()),
                 Ok(_) => Ok(Some(String::from_utf8_lossy(&buf).into_owned())),
                 Err(e) => Err(format!("{}", e)),
             }
@@ -725,7 +747,20 @@ pub mod ureq_transport {
 
     impl Transport for UreqTransport {
         fn post_json(&self, url: &str, headers: &Headers, body: &str) -> Result<String, HttpError> {
-            let agent = self.agent(self.json_timeout);
+            post(&self.agent(self.json_timeout), url, headers, body)
+        }
+
+        fn open_stream(&self, url: &str, headers: &Headers, body: &str) -> Result<Box<dyn LineStream>, HttpError> {
+            open(&self.agent(self.stream_timeout), url, headers, body)
+        }
+    }
+
+    impl Transport for PooledTransport {
+        fn post_json(&self, url: &str, headers: &Headers, body: &str) -> Result<String, HttpError> { post(&self.json, url, headers, body) }
+        fn open_stream(&self, url: &str, headers: &Headers, body: &str) -> Result<Box<dyn LineStream>, HttpError> { open(&self.stream, url, headers, body) }
+    }
+
+    fn post(agent: &ureq::Agent, url: &str, headers: &Headers, body: &str) -> Result<String, HttpError> {
             let mut call = agent.post(url);
             for (k, v) in headers {
                 call = call.set(k, v);
@@ -735,23 +770,22 @@ pub mod ureq_transport {
                 Err(ureq::Error::Status(code, resp)) => Err(HttpError::Status { code, body: read_body(resp) }),
                 Err(e) => Err(HttpError::Network(format!("{}", e))),
             }
-        }
+    }
 
-        fn open_stream(&self, url: &str, headers: &Headers, body: &str) -> Result<Box<dyn LineStream>, HttpError> {
-            let agent = self.agent(self.stream_timeout);
+    fn open(agent: &ureq::Agent, url: &str, headers: &Headers, body: &str) -> Result<Box<dyn LineStream>, HttpError> {
             let mut call = agent.post(url);
             for (k, v) in headers {
                 call = call.set(k, v);
             }
             match call.send_string(body) {
                 Ok(resp) => {
+                    let content_type = resp.header("Content-Type").unwrap_or("").to_ascii_lowercase();
                     let reader: Box<dyn Read> = Box::new(resp.into_reader());
-                    Ok(Box::new(ReaderLines { reader: BufReader::new(reader) }))
+                    Ok(Box::new(ReaderLines { reader: BufReader::new(reader), content_type }))
                 }
                 Err(ureq::Error::Status(code, resp)) => Err(HttpError::Status { code, body: read_body(resp) }),
                 Err(e) => Err(HttpError::Network(format!("{}", e))),
             }
-        }
     }
 }
 
@@ -1747,8 +1781,22 @@ pub fn chat_openai(args: &RouteArgs, http: &dyn Transport) -> Result<ChatStream,
         let text = http_json(http, &url, &headers, &body)?;
         return Ok(box_iter(parse_openai_chat(&text)?));
     }
-    let lines = http_stream(http, &url, &headers, &body)?;
+    let mut lines = http_stream(http, &url, &headers, &body)?;
+    if let Some(events) = json_stream_response(lines.as_mut(), parse_openai_chat)? { return Ok(box_iter(events)); }
     Ok(Box::new(SseIter::new(lines, Box::new(OpenAiChatMachine::default()))))
+}
+
+// Parse the same response, without a duplicate model request/charge. SSE is
+// left untouched; JSON fallback is bounded and reports malformed responses.
+fn json_stream_response(lines: &mut dyn LineStream, parse: fn(&str) -> Result<Vec<ChatEvent>, AiError>) -> Result<Option<Vec<ChatEvent>>, AiError> {
+    let mime = lines.content_type().unwrap_or("").split(';').next().unwrap_or("").trim();
+    if mime != "application/json" && !mime.ends_with("+json") { return Ok(None); }
+    let mut body = String::new();
+    while let Some(line) = lines.next_line().map_err(|_| AiError::new("AI response could not be read"))? {
+        if body.len().saturating_add(line.len()) > 8 * 1024 * 1024 { return Err(AiError::new("AI response too large")); }
+        body.push_str(&line);
+    }
+    parse(&body).map(Some).map_err(|_| AiError::new("AI response JSON could not be parsed"))
 }
 
 struct OpenAiChatMachine {
@@ -1866,7 +1914,8 @@ pub fn chat_openai_completion(args: &RouteArgs, http: &dyn Transport) -> Result<
         let text = http_json(http, &url, &headers, &body)?;
         return Ok(box_iter(parse_openai_completion(&text)?));
     }
-    let lines = http_stream(http, &url, &headers, &body)?;
+    let mut lines = http_stream(http, &url, &headers, &body)?;
+    if let Some(events) = json_stream_response(lines.as_mut(), parse_openai_completion)? { return Ok(box_iter(events)); }
     Ok(Box::new(SseIter::new(lines, Box::new(OpenAiCompletionMachine::default()))))
 }
 
@@ -1898,7 +1947,8 @@ impl SseMachine for OpenAiCompletionMachine {
             Ok(v) => v,
             Err(e) => return FrameOut::Fail(e),
         };
-        // Legacy streams carry `text`; `delta.content` is never read here.
+        // Standard completion streams carry choices[].text. Older relays
+        // also use delta.text; delta.content belongs to chat completions.
         let delta = match py_get_checked(&first, "delta") {
             Ok(v) => v.cloned().unwrap_or_else(null),
             Err(e) => return FrameOut::Fail(e),
@@ -1907,6 +1957,12 @@ impl SseMachine for OpenAiCompletionMachine {
         let piece = match py_get_checked(&delta, "text") {
             Ok(v) => v.cloned().unwrap_or_else(empty_string),
             Err(e) => return FrameOut::Fail(e),
+        };
+        let piece = if py_truthy(&piece) { piece } else {
+            match py_get_checked(&first, "text") {
+                Ok(v) => v.cloned().unwrap_or_else(empty_string),
+                Err(e) => return FrameOut::Fail(e),
+            }
         };
         if py_truthy(&piece) {
             FrameOut::Delta(piece)
@@ -1957,7 +2013,8 @@ pub fn chat_openai_responses(args: &RouteArgs, http: &dyn Transport) -> Result<C
         let text = http_json(http, &url, &headers, &body)?;
         return Ok(box_iter(parse_openai_responses(&text)?));
     }
-    let lines = http_stream(http, &url, &headers, &body)?;
+    let mut lines = http_stream(http, &url, &headers, &body)?;
+    if let Some(events) = json_stream_response(lines.as_mut(), parse_openai_responses)? { return Ok(box_iter(events)); }
     Ok(Box::new(SseIter::new(lines, Box::new(OpenAiResponsesMachine::default()))))
 }
 
@@ -1983,10 +2040,10 @@ impl SseMachine for OpenAiResponsesMachine {
                 Err(e) => return FrameOut::Fail(e),
             };
             let dt = if py_truthy(&dt) { dt } else { Value::Object(Map::new()) };
-            let text = match py_get_checked(&dt, "text") {
+            let text = if dt.is_string() { dt } else { match py_get_checked(&dt, "text") {
                 Ok(v) => v.cloned().unwrap_or_else(empty_string),
                 Err(e) => return FrameOut::Fail(e),
-            };
+            }};
             return if py_truthy(&text) {
                 FrameOut::Delta(text)
             } else {
@@ -2030,7 +2087,26 @@ pub fn parse_openai_responses(text: &str) -> Result<Vec<ChatEvent>, AiError> {
             Ok(v) => v.cloned().unwrap_or_else(empty_string),
             Err(e) => return Err(e),
         };
-        Ok((first_truthy_owned(text_value, empty_string()), usage))
+        if py_truthy(&text_value) {
+            return Ok((text_value, usage));
+        }
+        // output_text is an SDK convenience; the HTTP response carries text
+        // blocks inside output. Ignore reasoning, tool calls and refusals.
+        let mut text = String::new();
+        if let Some(output) = d.get("output").and_then(Value::as_array) {
+            for item in output {
+                if let Some(content) = item.get("content").and_then(Value::as_array) {
+                    for block in content {
+                        if block.get("type").and_then(Value::as_str) == Some("output_text") {
+                            if let Some(part) = block.get("text").and_then(Value::as_str) {
+                                text.push_str(part);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok((str_value(&text), usage))
     })
 }
 
@@ -2047,7 +2123,8 @@ pub fn chat_anthropic(args: &RouteArgs, http: &dyn Transport) -> Result<ChatStre
         let text = http_json(http, &url, &headers, &body)?;
         return Ok(box_iter(parse_anthropic(&text)?));
     }
-    let lines = http_stream(http, &url, &headers, &body)?;
+    let mut lines = http_stream(http, &url, &headers, &body)?;
+    if let Some(events) = json_stream_response(lines.as_mut(), parse_anthropic)? { return Ok(box_iter(events)); }
     Ok(Box::new(SseIter::new(
         lines,
         Box::new(AnthropicMachine { input_tokens: None, output_tokens: 0 }),
@@ -2175,6 +2252,39 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::sync::Mutex;
+
+    struct JsonLines { body: Option<String>, mime: &'static str }
+    impl LineStream for JsonLines {
+        fn content_type(&self) -> Option<&str> { Some(self.mime) }
+        fn next_line(&mut self) -> Result<Option<String>, String> { Ok(self.body.take()) }
+    }
+
+    #[test]
+    fn stream_request_accepts_json_response_for_all_four_protocols() {
+        let cases: Vec<(fn(&str) -> Result<Vec<ChatEvent>, AiError>, Value)> = vec![
+            (parse_openai_chat, json!({"choices":[{"message":{"content":"续写"}}]})),
+            (parse_openai_completion, json!({"choices":[{"text":"续写"}]})),
+            (parse_openai_responses, json!({"output":[{"content":[{"type":"output_text","text":"续写"}]}]})),
+            (parse_anthropic, json!({"content":[{"type":"text","text":"续写"}]})),
+        ];
+        for (parse, body) in cases {
+            let mut lines = JsonLines { body: Some(body.to_string()), mime: "application/json; charset=utf-8" };
+            let events = json_stream_response(&mut lines, parse).unwrap().unwrap();
+            assert!(events.iter().any(|event| matches!(event, ChatEvent::Delta(value) if value == "续写")), "{body}");
+            assert!(lines.body.is_none());
+        }
+    }
+
+    #[test]
+    fn json_stream_fallback_is_bounded_and_does_not_consume_sse() {
+        let mut sse = JsonLines { body: Some("data: [DONE]\n\n".into()), mime: "text/event-stream" };
+        assert!(json_stream_response(&mut sse, parse_openai_chat).unwrap().is_none());
+        assert!(sse.body.is_some());
+        for text in ["{malformed".to_string(), "x".repeat(8 * 1024 * 1024 + 1)] {
+            let mut lines = JsonLines { body: Some(text), mime: "application/json" };
+            assert!(json_stream_response(&mut lines, parse_openai_chat).is_err());
+        }
+    }
 
     /// Records every `(url, headers, body)` tuple handed to the transport.
     pub struct MockTransport {
@@ -2432,7 +2542,16 @@ mod tests {
             endpoint_url("https://api.openai.com/v1", "chat/completions", ""),
             "https://api.openai.com/v1/chat/completions"
         );
-        assert_eq!(endpoint_url("https://x/v1", "v1/messages", "other"), "https://x/v1/v1/messages");
+        assert_eq!(endpoint_url("https://x/v1", "v1/messages", "other"), "https://x/v1/messages");
+    }
+
+    #[test]
+    fn endpoint_url_keeps_proxy_prefix_without_duplicating_version() {
+        for base in ["https://x/gateway/v1", "https://x/gateway/v1/", "https://x/gateway/v1/messages", "https://x/gateway/v1/chat/completions"] {
+            assert_eq!(endpoint_url(base, "v1/messages", "prefix"), "https://x/gateway/v1/messages");
+        }
+        assert_eq!(endpoint_url("https://x/gateway", "v1/messages", "prefix"), "https://x/gateway/v1/messages");
+        assert_eq!(endpoint_url("https://x/v1", "v1/messages", "full_url"), "https://x/v1");
     }
 
     // -- _request_headers (ai.py 559-571) -----------------------------------
@@ -2827,7 +2946,7 @@ mod tests {
         let http = MockTransport::new("{\"content\": []}", vec![]);
         let payload = json!({"provider": "local", "model": "x", "messages": [{"role": "user", "content": "hi"}], "stream": false});
         let events = collect(&payload, &dir_with(provider), &skills(), &http).unwrap();
-        assert_eq!(http.last().url, "http://localhost:1234/v1/v1/messages");
+        assert_eq!(http.last().url, "http://localhost:1234/v1/messages");
         let call = http.last();
         let names: Vec<&str> = call.headers.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(names, vec!["User-Agent", "Accept", "Content-Type", "anthropic-version"]);
@@ -2910,10 +3029,10 @@ mod tests {
     }
 
     #[test]
-    fn completion_stream_reads_delta_text_only() {
+    fn completion_stream_accepts_standard_text_and_legacy_delta_text() {
         let lines = vec![
             sse("{\"choices\": [{\"delta\": {\"content\": \"WRONG\", \"text\": \"ct1\"}}]}"),
-            sse("{\"choices\": [{\"text\": \"WRONG2\"}]}"),
+            sse("{\"choices\": [{\"text\": \"ct2\"}]}"),
             sse("{\"choices\": [{\"delta\": {\"text\": \"\"}}]}"),
             sse("{\"usage\": {\"total_tokens\": 4}}"),
             sse("[DONE]"),
@@ -2922,7 +3041,7 @@ mod tests {
         provider["mode"] = json!("completion");
         let http = MockTransport::new("", lines);
         let events = collect(&openai_payload(json!({"stream": true})), &dir_with(provider), &skills(), &http).unwrap();
-        assert_eq!(deltas(&events), vec![json!("ct1")]);
+        assert_eq!(deltas(&events), vec![json!("ct1"), json!("ct2")]);
         assert_eq!(usages(&events), vec![usage(&[("total_tokens", 4)])]);
     }
 
@@ -2954,6 +3073,30 @@ mod tests {
         // round trip, which is CPython's behaviour (`json.loads` then `json.dumps`).
         assert_eq!(err.message, "提供商错误：{\"type\": \"error\", \"error\": {\"message\": \"nope\"}}");
         assert!(err.message.contains(r#""error": {"message": "nope"}"#), "{}", err.message);
+    }
+
+    #[test]
+    fn responses_wire_string_deltas_and_output_blocks_are_visible() {
+        let mut provider = openai_provider();
+        provider["mode"] = json!("responses");
+        let frames = vec![
+            sse(&json!({"type":"response.reasoning_text.delta","delta":"hidden"}).to_string()),
+            sse(&json!({"type":"response.output_text.delta","delta":"先读"}).to_string()),
+            sse(&json!({"type":"response.output_text.delta","delta":"再写"}).to_string()),
+            sse("[DONE]"),
+        ];
+        let http = MockTransport::new("", frames);
+        let events = collect(&openai_payload(json!({"stream":true})), &dir_with(provider), &skills(), &http).unwrap();
+        assert_eq!(deltas(&events), vec![json!("先读"), json!("再写")]);
+        let body = json!({"output":[
+            {"type":"reasoning","summary":[{"type":"summary_text","text":"hidden"}]},
+            {"type":"message","content":[{"type":"output_text","text":"先读"},{"type":"refusal","refusal":"hidden"},{"type":"output_text","text":"再写"}]}
+        ],"usage":{"total_tokens":12}});
+        let events = parse_openai_responses(&body.to_string()).unwrap();
+        assert_eq!(deltas(&events), vec![json!("先读再写")]);
+        assert_eq!(usages(&events), vec![usage(&[("total_tokens",12)])]);
+        let events = parse_openai_responses(&json!({"output_text":"legacy","output":body["output"]}).to_string()).unwrap();
+        assert_eq!(deltas(&events), vec![json!("legacy")]);
     }
 
     #[test]

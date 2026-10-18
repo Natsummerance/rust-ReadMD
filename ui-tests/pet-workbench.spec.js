@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 async function setup(page, overrides = {}, failConfigure = false) {
@@ -19,7 +20,7 @@ async function setup(page, overrides = {}, failConfigure = false) {
     await r.fulfill({ json: { ok: true } });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof window.openPetSettings === 'function');
+  await waitForPage(page, () => typeof window.openPetSettings === 'function');
   await page.evaluate(() => window.openPetSettings());
   await expect(page.locator('#pet-renderer-row')).toBeVisible();
   return { status, gallery, configs };

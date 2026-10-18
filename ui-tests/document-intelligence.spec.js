@@ -1,7 +1,8 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window.__readmdAppReady);
+  await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(() => i18n.setLanguage('zh-CN', false));
 });
 test('repair report inspects the current unsaved draft without changing it', async ({ page }) => {

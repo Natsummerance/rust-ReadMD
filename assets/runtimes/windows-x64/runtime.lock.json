@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "windows-vc-runtime",
+  "version": "14.51.36247.0",
+  "platform": "windows-x64",
+  "source": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+    "bytes": 18731856,
+    "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c"
+  },
+  "files": [
+    {
+      "path": "vcruntime140.dll",
+      "size": 178616,
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "vcruntime140_1.dll",
+      "size": 50112,
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    }
+  ],
+  "review": {
+    "authenticode": "Valid Microsoft Corporation archive; both DLLs Valid Microsoft Windows Software Compatibility Publisher; verified 2026-10-10",
+    "license": "Microsoft Distributable Code; app-local deployment with ReadMD only",
+    "licenseUrl": "https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/",
+    "redistribution": "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170",
+    "imports": "Only Windows kernel/UCRT platform APIs; vcruntime140_1 also imports bundled vcruntime140. No globally installed VC Redistributable required."
+  }
+}

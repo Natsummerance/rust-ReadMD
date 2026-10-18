@@ -57,6 +57,7 @@ function captureReaderState(tab) {
 }
 
 function renderTabsBar() {
+  window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
   const secBar = $('doc-tabs-secondary-bar');
   const dropdown = $('doc-tabs-dropdown');
@@ -516,6 +517,7 @@ async function activateTabForSave(tabId) {
 
 async function switchTab(tabId) {
   if (state.activeTabId === tabId) return;
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   window.invalidateDocumentLoads?.();
   const prevTab = getActiveTab();
   if (prevTab) {
@@ -528,6 +530,7 @@ async function switchTab(tabId) {
           await saveEdit({ exitAfterSave: true });
           if (state.editing) return;
         } else {
+          await window.ReadMDCollaborationShare?.detach(prevTab,true);
           exitEdit();
           prevTab.content = prevTab.original;
           prevTab.fixed = prevTab.original;
@@ -670,11 +673,14 @@ function askChoice(title, desc, choices) {
 async function closeTab(tabId, force = false) {
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
+  let discardShared=false;
   if (tab.isDirty && !force) {
     const action = await promptDirtyClose(tab.title || tab.name);
     if (action === 'cancel') return;
     if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(tab)) return;
+    discardShared=action==='discard';
     if (action === 'save') {
       await activateTabForSave(tabId);
       const saved = await saveEdit({ exitAfterSave: true });
@@ -683,6 +689,7 @@ async function closeTab(tabId, force = false) {
   }
   const idx = state.tabs.findIndex(t => t.id === tabId);
   if (idx < 0) return;
+  await window.ReadMDCollaborationShare?.detach(tab,discardShared);
   const focusedTabId = document.activeElement instanceof Element ? document.activeElement.dataset.tabId : null;
   state.tabs.splice(idx, 1);
   if (state.activeTabId === tabId) {
@@ -707,8 +714,9 @@ async function closeTab(tabId, force = false) {
 async function closeOtherTabs(keepTabId) {
   const keepTab = state.tabs.find(t => t.id === keepTabId);
   if (!keepTab) return;
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (state.editing) syncActiveTabDirty();
-  const candidates = [...state.tabs], accepted = new Map();
+  const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
   for (const t of candidates) {
     if (t.id !== keepTabId) {
@@ -716,6 +724,7 @@ async function closeOtherTabs(keepTabId) {
         const action = await promptDirtyClose(t.title || t.name);
         if (action === 'cancel') return;
         if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
+        if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
@@ -726,6 +735,7 @@ async function closeOtherTabs(keepTabId) {
     }
   }
   if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
+  for (const tab of candidates) if (tab !== keepTab) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
   state.tabs = [keepTab];
   window.invalidateDocumentLoads?.();
   if (state.activeTabId !== keepTabId) exitEdit();
@@ -735,14 +745,16 @@ async function closeOtherTabs(keepTabId) {
 }
 
 async function closeAllTabs() {
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (state.editing) syncActiveTabDirty();
-  const candidates = [...state.tabs], accepted = new Map();
+  const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
   for (const t of candidates) {
     if (t.isDirty) {
       const action = await promptDirtyClose(t.title || t.name);
       if (action === 'cancel') return;
       if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
+      if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
         await activateTabForSave(t.id);
         const saved = await saveEdit({ exitAfterSave: true });
@@ -752,8 +764,146 @@ async function closeAllTabs() {
     accepted.set(t, text(t));
   }
   if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
+  for (const tab of candidates) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
   state.tabs = [];
   state.activeTabId = null;
   await goHome({ discardConfirmed: true });
   renderTabsBar();
 }
+
+/* Persist the open page set, never the recent-file list. Document bodies stay
+   in the existing bounded recovery store, outside the user's folders. */
+(function () {
+  const storageKey = 'readmd-session';
+  let ready = false, timer, pending, lastSaved = '', notified = false;
+  function bounded(value) {
+    if (!value || value.version !== 1 || !Array.isArray(value.tabs) || value.tabs.length > 100) return null;
+    const seen = new Set(), tabs = [];
+    const text = (s, limit = 32768) => typeof s === 'string' && s.length <= limit ? s : '';
+    const number = n => Number.isFinite(n) ? Math.max(0, Math.min(n, 1e9)) : 0;
+    for (const item of value.tabs) {
+      if (!item || typeof item !== 'object') continue;
+      const key = text(item.key), path = text(item.path), name = text(item.name, 512);
+      if (!key || seen.has(path ? normalizePath(path) : key)) continue;
+      seen.add(path ? normalizePath(path) : key);
+      tabs.push({ key, path, name, dir: text(item.dir), source: text(item.source, 64), originPath: text(item.originPath),
+        revision: text(item.revision, 256), dirty: item.dirty === true, unsavedCreation: item.unsavedCreation === true,
+        readerMode: item.readerMode === 'continuous' ? 'continuous' : 'paged',
+        readerPage: number(item.readerPage), scrollPos: number(item.scrollPos) });
+    }
+    return { version: 1, tabs, active: text(value.active), folder: text(value.folder) };
+  }
+  function snapshot() {
+    const tabs = state.tabs.map(tab => ({ key: tab.recoveryKey ||= (tab.path || 'draft:' + tab.id), path: tab.path || '',
+      name: tab.name || tab.title, dir: tab.dir, source: tab.source, originPath: tab.originPath, revision: tab.revision,
+      dirty: !!tab.isDirty, unsavedCreation: !!tab.unsavedCreation, readerMode: tab.readerMode,
+      readerPage: tab.readerPage, scrollPos: tab.scrollPos }));
+    return bounded({ version: 1, tabs, active: getActiveTab()?.recoveryKey || '', folder: state.folder || '' });
+  }
+  function persist() {
+    if (!ready) return;
+    const value = snapshot();
+    if (!value) return;
+    const encoded = JSON.stringify(value);
+    try { localStorage.setItem(storageKey, encoded); } catch (_) { /* Native settings remain authoritative. */ }
+    if (encoded === lastSaved) return;
+    pending = { value, encoded };
+    clearTimeout(timer);
+    timer = setTimeout(write, 120);
+  }
+  function write() {
+    clearTimeout(timer);
+    if (!pending) return settingsSaveQueue;
+    const next = pending; pending = null;
+    settingsSaveQueue = settingsSaveQueue.then(async () => {
+      try {
+        if (hasPy) {
+          const result = await py.save_settings({ session: next.value });
+          if (result === false || result?.ok === false) throw new Error(result?.error || 'session_save_failed');
+        }
+        lastSaved = next.encoded;
+      } catch (error) {
+        if (!notified) { notified = true; showToast(window.i18n.t('storage.recoveryFailed', { error: error.message })); }
+      }
+    });
+    return settingsSaveQueue;
+  }
+  async function flush() {
+    if (!ready) await window.__readmdSessionReady;
+    await window.ReadMDRecovery?.flush();
+    captureReaderState(getActiveTab());
+    persist();
+    await write();
+  }
+  async function restore(initialFile) {
+    const epoch = documentLoadEpoch;
+    const untouched = () => epoch === documentLoadEpoch && state.tabs.length === 0 && state.mode === 'welcome';
+    try {
+      let stored, nativeRead = false;
+      if (hasPy) {
+        try { const settings = await py.get_settings(); stored = settings?.session; nativeRead = true; }
+        catch (_) { /* The same-origin mirror can recover a transient settings failure. */ }
+      }
+      if (!nativeRead) {
+        try { stored = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (_) {}
+      }
+      const session = bounded(stored);
+      if (!untouched()) return;
+      if (session?.tabs.length) {
+        let drafts = new Map();
+        try { drafts = await window.ReadMDRecovery.sessionDrafts(session.tabs.map(tab => tab.key)); } catch (_) {}
+        if (!untouched()) return;
+        const restored = [];
+        // Limit concurrent disk reads; a missing document must not block the rest.
+        for (let offset = 0; offset < session.tabs.length; offset += 4) {
+          const group = await Promise.all(session.tabs.slice(offset, offset + 4).map(async descriptor => {
+            let file;
+            if (descriptor.path) {
+              try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(descriptor.path)); if (response.ok) file = await response.json(); } catch (_) {}
+            }
+            const draft = drafts.get(descriptor.key);
+            if (!file && !draft) return null;
+            const dirty = descriptor.dirty && !!draft;
+            const content = (!file || dirty) ? draft.content : file.content;
+            return { id: 'tab_' + crypto.randomUUID(), mode: file ? 'file' : 'virtual', source: file ? 'file' : (descriptor.source || 'recovery'),
+              path: file?.path || null, dir: file?.dir || draft?.entry.context?.dir || descriptor.dir,
+              name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
+              content, fixed: content, original: file?.original ?? file?.content ?? content,
+              revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
+              size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+              is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
+              isVirtual: !file, isDirty: dirty, unsavedCreation: !file && descriptor.unsavedCreation,
+              originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
+              _recoveryContent: draft?.content, webAssets: Array.isArray(draft?.entry.context?.assets) ? draft.entry.context.assets : [],
+              externalChanged: dirty && !!file && descriptor.revision !== file.revision,
+              readerMode: descriptor.readerMode, readerPage: descriptor.readerPage, scrollPos: descriptor.scrollPos,
+              continuousScroll: descriptor.scrollPos };
+          }));
+          if (!untouched()) return;
+          restored.push(...group.filter(Boolean));
+        }
+        state.tabs = restored;
+        state.folder = session.folder;
+        const active = restored.find(tab => tab.recoveryKey === session.active) || (session.active ? restored.at(-1) : null);
+        state.activeTabId = active?.id || null;
+        if (active) {
+          syncStateFromActiveTab();
+          await prepareDocCitations(active.path || active.originPath || '', active.content);
+          if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
+          await renderActiveTab({ restoreScroll: true });
+          if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
+          if (state.pagination.enabled && state.pagination.mode === 'paged') renderPage(active.readerPage || 0, null, true);
+          if (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length) await toggleEdit();
+        } else resetHome();
+      }
+      // An explicit OS/file URL open becomes active after restoring older pages.
+      if (initialFile && epoch === documentLoadEpoch) await openInitialFile(initialFile);
+    } finally {
+      ready = true;
+      renderTabsBar();
+    }
+  }
+  window.ReadMDSession = { persist, flush, restore };
+  window.addEventListener('pagehide', () => { captureReaderState(getActiveTab()); persist(); write(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { captureReaderState(getActiveTab()); persist(); write(); } });
+})();

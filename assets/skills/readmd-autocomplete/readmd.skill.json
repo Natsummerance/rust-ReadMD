@@ -1,0 +1,1 @@
+{"id":"readmd-autocomplete","version":1,"source":"ReadMD built-in","license":"MIT","capabilities":["document","writing","completion"],"completion_only":true,"scopes":["builtin"],"scripts_allowed":false,"locales":["zh-CN","zh-TW","en","ja"]}

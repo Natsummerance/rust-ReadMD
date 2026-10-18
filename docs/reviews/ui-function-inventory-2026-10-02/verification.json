@@ -271,7 +271,8 @@
       "title": "返回主页",
       "source_audited": true,
       "controls": [
-        "btn-home"
+        "btn-home",
+        "titlebar-home"
       ],
       "operation": "返回主页 → 正在编辑且有修改时弹出保存/放弃/取消 → 保存真正成功或明确放弃后才重置阅读区；取消保留编辑器。标签仍可再次打开。关闭标签已完成的确认通过内部参数复用，避免重复弹窗；并发主页点击不会叠加确认。",
       "frontend": [
@@ -283,7 +284,7 @@
       ],
       "backend": "读取最近记录；返回主页本身不删除文件",
       "registered_routes": [],
-      "validation": "真实文件先保存再返回主页；取消保留草稿、放弃后重置、重复确认防护通过。",
+      "validation": "LOGO 与底部按钮共用返回主页流程；保留未关闭页面，脏内容取消返回后完整保留。",
       "conditions": "保存失败时保留编辑状态。虚拟标签仍需首次保存路径。",
       "evidence": [
         {
@@ -293,6 +294,10 @@
         {
           "file": "ui-tests/readmd-ui.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/shell-polish.spec.js",
+          "kind": "品牌返回主页、命令快捷键、无边框输入区及紧凑窗口交互"
         }
       ]
     },
@@ -421,7 +426,7 @@
           "line": 2255
         }
       ],
-      "validation": "标签切换、拖动重排、键盘关闭、溢出入口、脏后台标签保存与独立内容/阅读位置通过。",
+      "validation": "标签切换、拖动重排、键盘关闭、溢出入口、脏后台标签保存与独立内容/阅读位置通过。 重启恢复实际未关闭页面的顺序、当前页和阅读位置；全部关闭后下次显示主页，不通过旧 last 值复活文件。未保存文档及转换预览沿用中央恢复草稿；退出或更新时保存/放弃不误清空未关闭的文件页。",
       "conditions": "虚拟文档没有磁盘路径；上下文动作按状态启用。",
       "evidence": [
         {
@@ -443,6 +448,14 @@
         {
           "file": "docs/reviews/readmd-window-system-upgrade-2026-10-04.md",
           "kind": "实现、实机和网络验证范围"
+        },
+        {
+          "file": "ui-tests/session-restore.spec.js",
+          "kind": "真实 Rust 文件、保存/关闭/恢复与延迟竞争回归"
+        },
+        {
+          "file": "ui-tests/session-native.cjs",
+          "kind": "Windows 原生真实进程重启、全部关闭后主页、异常中断草稿恢复"
         }
       ]
     },
@@ -832,7 +845,7 @@
           "line": 3050
         }
       ],
-      "validation": "主题切换、缩放、禅模式、损坏配置字段隔离及设置合法值过滤通过；持久化写入串行化。",
+      "validation": "主题切换、缩放、禅模式、损坏配置字段隔离及设置合法值过滤通过；持久化写入串行化。 统一 AI、导出、转换、网页、更新、图谱、技能、阅读/编辑任务及查看菜单的 14px 圆角勾选框；三主题、焦点、混合/禁用状态与键盘操作一致；滑动开关保留原有开关样式。",
       "conditions": "原生设置写入依赖本地目录权限；失败有反馈。",
       "evidence": [
         {
@@ -850,6 +863,10 @@
         {
           "file": "ui-tests/frontend-audit.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/checkbox-consistency.spec.js",
+          "kind": "静态/动态组件全遍历、三主题、焦点、键盘、任务撤销"
         }
       ]
     },
@@ -979,6 +996,10 @@
         {
           "file": "ui-tests/readmd-ui.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/knowledge-workspace.spec.js",
+          "description": "真实 Rust 工作区语义补全与跨笔记标题跳转；原生证据见 community implementation 报告"
         }
       ]
     },
@@ -1076,6 +1097,10 @@
         {
           "file": "ui-tests/readmd-ui.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/knowledge-workspace.spec.js",
+          "description": "真实 Rust 工作区语义补全与跨笔记标题跳转；原生证据见 community implementation 报告"
         }
       ]
     },
@@ -1251,6 +1276,10 @@
         {
           "file": "ui-tests/v238-reliability.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/knowledge-workspace.spec.js",
+          "description": "真实 Rust 工作区语义补全与跨笔记标题跳转；原生证据见 community implementation 报告"
         }
       ]
     },
@@ -1786,39 +1815,67 @@
     {
       "id": "F032",
       "section": "06 插入图片、表格、公式和高级块",
-      "title": "公式模板选择",
+      "title": "公式辅助编辑与符号替换",
       "source_audited": true,
       "controls": [
         "formula-open",
         "formula-close",
         "formula-search",
-        "formula-mode"
+        "formula-mode",
+        "formula-source",
+        "formula-token",
+        "formula-token-replace",
+        "formula-more",
+        "formula-apply"
       ],
-      "operation": "公式按钮 → 搜索模板、选择分类/模板 → 查看公式预览 → 按行内/块公式模式插入 LaTeX。分类和模板按钮动态生成，具体模板目录见数据清单；正文公式由本地 MathJax/KaTeX 类资源渲染。",
+      "operation": "编辑态公式按钮或双击实时预览的公式 → 独立公式草稿 → 19 个可视结构与 27 个函数预设，2,432 个数学字符/446 个 TeX 别名可搜索 → 点选渲染符号精确替换 → 折叠源码可编辑，行内/块级可切换 → 确认一次写入并可单次撤销。关闭/Esc 不改正文；文档或标签变化拒绝迟到覆盖；未知命令和超预算草稿禁止确认。模板分类、符号、分页及可点选 SVG 动态生成。",
       "frontend": [
         {
-          "file": "assets/js/editor/editor.js",
-          "symbol": "renderFormulaPicker",
-          "line": 1090
+          "file": "assets/js/editor/formula-studio.js",
+          "symbol": "open",
+          "line": 216
         },
         {
-          "file": "assets/js/editor/editor.js",
-          "symbol": "insertFormula",
-          "line": 1118
+          "file": "assets/js/editor/formula-studio.js",
+          "symbol": "picker",
+          "line": 163
+        },
+        {
+          "file": "assets/js/editor/formula-studio.js",
+          "symbol": "renderDraft",
+          "line": 97
+        },
+        {
+          "file": "assets/js/editor/formula-studio.js",
+          "symbol": "apply",
+          "line": 235
+        },
+        {
+          "file": "assets/js/reader/formula.js",
+          "symbol": "renderMath",
+          "line": 131
         }
       ],
-      "backend": "前端模板插入；Rust 读取修复与导出公式另由 formula_repair.rs/formula 系列实现",
+      "backend": "前端草稿与 CM 单事务；assets/math-catalog.json 由前端/Rust 共用；latex2omml.rs + math_catalog.rs 解析导出，现有 /api/save 受修订保护；/api/export 写出可编辑 DOCX 数学对象、PDF 与 EPUB。完整 Office OMML 属性及无损往返尚未认证。",
       "registered_routes": [],
-      "validation": "28个公式模板目录、分类/搜索/插入函数核对；公式面板和响应式工具回归通过。",
-      "conditions": "数学渲染使用随包资源；自动回归未对每个模板各执行一次人工插入。",
+      "validation": "10 项公式 UI 用例（含全部 46 预设渲染、符号点选、取消/过期防护、安全、语言与布局）；Windows 原生 CSP 四组流程，真实保存与 DOCX/PDF/EPUB 导出检查；2,432 字符 Rust 导出往返字符断言。",
+      "conditions": "完整 Office OMML 属性往返、结构槽位导航、矩阵行列编辑及预览原位浮层尚待实现；当前是打开对应公式草稿后点击符号替换。字符收录不代表所有平台字体都具备每个字形。",
       "evidence": [
         {
-          "file": "ui-tests/readmd-ui.spec.js",
-          "kind": "相关回归；覆盖范围见validation"
+          "file": "ui-tests/formula-studio.spec.js",
+          "kind": "真实指针与端到端界面回归"
         },
         {
-          "file": "ui-tests/all-panels-layout.spec.js",
-          "kind": "相关回归；覆盖范围见validation"
+          "file": "ui-tests/formula-native.cjs",
+          "kind": "原生 WebView、真实 Rust 保存与三格式导出"
+        },
+        {
+          "file": "rust/readmd-kernel/src/math_catalog.rs",
+          "kind": "全部收录字符导出保留"
+        },
+        {
+          "file": "docs/design/office-math-coverage.json",
+          "kind": "官方 schema 逐元素兼容性差距，不以源码出现冒充已认证"
         }
       ]
     },
@@ -2294,7 +2351,7 @@
           "line": 4062
         }
       ],
-      "validation": "AI面板、选区/文档上下文、流式反馈、回答富文本/复制/重试、无痕历史及副本应用通过；请求使用受控响应。",
+      "validation": "AI面板、选区/文档上下文、流式反馈、回答富文本/复制/重试、无痕历史及副本应用通过；请求使用受控响应。 AI 输入区铺满底部，无卡片边框、圆角或外发光；保留输入焦点分隔线、自动增高、滚动、发送/停止及勾选反馈。",
       "conditions": "真实模型效果/在线状态取决于用户配置；本轮没有使用用户密钥调用外部AI。",
       "evidence": [
         {
@@ -2312,6 +2369,10 @@
         {
           "file": "ui-tests/v238-batch-a-fixes.spec.js",
           "kind": "相关回归；覆盖范围见validation"
+        },
+        {
+          "file": "ui-tests/shell-polish.spec.js",
+          "kind": "长输入、Shift+Enter、三主题及两种紧凑窗口"
         }
       ]
     },
@@ -5452,7 +5513,7 @@
     {
       "id": "F104",
       "source_audited": true,
-      "validation": "真实Windows自绘顶栏/拖动/窗口控制、托盘驻留恢复、重复启动唤起、文件交接、脏退出取消及恢复通过。",
+      "validation": "真实Windows自绘顶栏/拖动/窗口控制、托盘驻留恢复、重复启动唤起、文件交接、脏退出取消及恢复通过。 重启恢复实际未关闭页面的顺序、当前页和阅读位置；全部关闭后下次显示主页，不通过旧 last 值复活文件。未保存文档及转换预览沿用中央恢复草稿；退出或更新时保存/放弃不误清空未关闭的文件页。",
       "conditions": "原生窗口功能仅Windows桌面宿主；浏览器原生按钮隐藏。",
       "evidence": [
         {
@@ -5474,6 +5535,14 @@
         {
           "file": "docs/reviews/readmd-window-system-upgrade-2026-10-04.md",
           "kind": "实现、实机和网络验证范围"
+        },
+        {
+          "file": "ui-tests/session-restore.spec.js",
+          "kind": "真实 Rust 文件、保存/关闭/恢复与延迟竞争回归"
+        },
+        {
+          "file": "ui-tests/session-native.cjs",
+          "kind": "Windows 原生真实进程重启、全部关闭后主页、异常中断草稿恢复"
         }
       ],
       "section": "21 命令面板、快捷键和通用对话框",

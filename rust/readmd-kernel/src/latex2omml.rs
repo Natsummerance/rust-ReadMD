@@ -2,7 +2,7 @@
 //! LaTeX -> OMML (Office Math Markup Language) 编译器。
 //!
 //! 将 LaTeX 数学公式字符串直接解析编译为 Microsoft Word 原生的 OMML XML 节点，
-//! 支持在 python-docx 生成的 .docx 文档中直接插入可编辑的矢量微软公式对象。
+//! 供 Rust DOCX、PDF 与数学结构编辑器共用，保留可编辑的数学对象。
 //!
 //! 支持语法：
 //! 1. 基础结构：数字、变量、四则运算、正负号、等号、空格 (\quad, \;, \,)
@@ -22,10 +22,126 @@ use std::collections::{HashMap, VecDeque};
 const _M_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const _W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
+/// This editing subset accepts a decimal mu dimension, not TeX registers,
+/// expansion, glue, or physical units. Negative mu is valid TeX but remains an
+/// explicitly unsupported signed-space extension of the shared layout tree.
+pub(crate) struct MathKern {
+    pub from: usize,
+    pub to: usize,
+    pub em: f64,
+}
+pub(crate) fn math_kern(source: &str, start: usize) -> Result<MathKern, &'static str> {
+    let mut at = start;
+    let skip = |at: &mut usize| {
+        while source.as_bytes().get(*at).is_some_and(u8::is_ascii_whitespace) { *at += 1; }
+    };
+    skip(&mut at);
+    let from = at;
+    if matches!(source.as_bytes().get(at), Some(b'+' | b'-')) { at += 1; }
+    if matches!(source.as_bytes().get(at), Some(b'+' | b'-' | b'\\')) {
+        return Err("math_unsupported_extension");
+    }
+    let digits = at;
+    while source.as_bytes().get(at).is_some_and(u8::is_ascii_digit) { at += 1; }
+    let mut count = at - digits;
+    if source.as_bytes().get(at) == Some(&b'.') {
+        at += 1;
+        let decimal = at;
+        while source.as_bytes().get(at).is_some_and(u8::is_ascii_digit) { at += 1; }
+        count += at - decimal;
+    }
+    if count == 0 { return Err("math_invalid_property"); }
+    if at - from > 128 { return Err("math_budget"); }
+    let number = source[from..at].parse::<f64>().map_err(|_| "math_invalid_property")?;
+    skip(&mut at);
+    if !source.get(at..at.saturating_add(2)).is_some_and(|unit| unit.eq_ignore_ascii_case("mu")) {
+        return Err("math_invalid_property");
+    }
+    at += 2;
+    if !number.is_finite() { return Err("math_budget"); }
+    if number < 0. { return Err("math_unsupported_extension"); }
+    let em = number / 18.;
+    crate::math_spacing::SpaceLength::parse(&format!("{em}em"))?;
+    Ok(MathKern { from, to: at, em })
+}
+
+/// Match actual control-sequence tokens; an escaped backslash and literal text
+/// arguments cannot activate the new mathematical extension path.
+pub(crate) fn has_math_extensions(source: &str) -> bool {
+    if !["\\mathord","\\mathbin","\\mathrel","\\mkern"].iter().any(|command|source.contains(command)) { return false; }
+    let mut tokenizer = LatexTokenizer::from_owned(source.to_string());
+    while let Some(token) = tokenizer.next_token() {
+        if matches!(token.as_str(), "\\mathord" | "\\mathbin" | "\\mathrel" | "\\mkern") { return true; }
+        if matches!(token.as_str(), "\\text" | "\\operatorname") {
+            if let Some((_, _, end)) = crate::math_document::group(&tokenizer.text, tokenizer.pos, '{', '}') {
+                tokenizer.pos = end;
+            }
+        }
+    }
+    false
+}
+
+fn styled_run(xml:&str,command:&str)->String{
+    use crate::math_document::{XmlNode,XmlPart};
+    let Ok(mut root)=crate::math_document::parse_xml(xml) else{return xml.into()};
+    let Some(run)=root.content.iter_mut().find_map(|p|if let XmlPart::Element(n)=p{Some(n)}else{None})else{return xml.into()};
+    let index=run.content.iter().position(|p|matches!(p,XmlPart::Element(n) if n.name=="m:rPr")).unwrap_or_else(||{
+        run.content.insert(0,XmlPart::Element(XmlNode{id:String::new(),attribute_namespaces:Default::default(),namespace:_M_NS.into(),name:"m:rPr".into(),attributes:Default::default(),content:vec![]}));0
+    });
+    if let XmlPart::Element(pr)=&mut run.content[index]{
+        // An inner literal text run or explicit font choice wins inheritance.
+        if pr.children().any(|n|n.local()=="nor"){return xml.into();}
+        let(script,style)=match command{
+            "\\mathrm"=>(None,"p"),"\\mathbf"=>(None,"b"),"\\boldsymbol"=>(None,"bi"),"\\mathit"=>(None,"i"),
+            "\\mathbb"=>(Some("double-struck"),"p"),"\\mathcal"|"\\mathscr"=>(Some("script"),"p"),
+            "\\mathfrak"=>(Some("fraktur"),"p"),"\\mathsf"=>(Some("sans-serif"),"p"),"\\mathtt"=>(Some("monospace"),"p"),_=>return xml.into(),
+        };
+        for(key,value)in [("scr",script),("sty",Some(style))]{
+            if let Some(value)=value{if !pr.children().any(|n|n.local()==key){
+                let mut node=XmlNode{id:String::new(),attribute_namespaces:Default::default(),namespace:_M_NS.into(),name:format!("m:{key}"),attributes:Default::default(),content:vec![]};
+                node.attributes.insert("m:val".into(),value.into());pr.content.push(XmlPart::Element(node));
+            }}
+        }
+        let order=["lit","nor","scr","sty","brk","aln"];
+        pr.content.sort_by_key(|p|if let XmlPart::Element(n)=p{order.iter().position(|v|*v==n.local()).unwrap_or(usize::MAX)}else{usize::MAX});
+    }
+    run.xml()
+}
+
+/// Stream the generated fragment: no recursive descent through thousands of
+/// nested fractions, and each individual run has a small bounded XML tree.
+fn styled_content(xml:&str,command:&str)->String{
+    use quick_xml::{events::Event,Reader};
+    let mut reader=Reader::from_str(xml);let mut out=String::with_capacity(xml.len());
+    loop{
+        let start=reader.buffer_position() as usize;
+        match reader.read_event(){
+            Ok(Event::Eof)=>break,
+            Ok(Event::Start(e)) if e.name().as_ref()=="m:r"=>{
+                let mut nesting=1;
+                while nesting>0{match reader.read_event(){
+                    Ok(Event::Start(e)) if e.name().as_ref()=="m:r"=>nesting+=1,
+                    Ok(Event::End(e)) if e.name().as_ref()=="m:r"=>nesting-=1,
+                    Ok(Event::Eof)|Err(_)=>return xml.into(),_=>{},
+                }}
+                out.push_str(&styled_run(&xml[start..reader.buffer_position() as usize],command));
+            }
+            Ok(_)=>out.push_str(&xml[start..reader.buffer_position() as usize]),
+            Err(_)=>return xml.into(),
+        }
+    }out
+}
+
 lazy_static! {
     /// 希腊字母与常用数学符号映射表
     static ref MATH_SYMBOLS: HashMap<&'static str, &'static str> = {
         let mut m = HashMap::new();
+        // The existing mathematical \backslash alias remains U+2216 in the
+        // shared catalogue. A literal ASCII U+005C uses its text command.
+        m.insert(r"\textbackslash", "\\");
+        m.insert(r"\textasciicircum", "^");
+        m.insert(r"\textasciitilde", "~");
+        m.insert(r"\$", "$");
         // 小写希腊字母
         m.insert(r"\alpha", "α");
         m.insert(r"\beta", "β");
@@ -73,7 +189,7 @@ lazy_static! {
         m.insert(r"\mp", "∓");
         m.insert(r"\times", "×");
         m.insert(r"\div", "÷");
-        m.insert(r"\cdot", "·");
+        m.insert(r"\cdot", "⋅");
         m.insert(r"\ast", "∗");
         m.insert(r"\star", "⋆");
         m.insert(r"\circ", "∘");
@@ -235,6 +351,9 @@ struct LatexTokenizer {
     text: String,
     pos: usize,
     len: usize,
+    // Enabled for the complete new mathord/mkern parse, including child
+    // frames whose individual source no longer contains those commands.
+    escaped_groups: bool,
 }
 
 impl LatexTokenizer {
@@ -249,7 +368,7 @@ impl LatexTokenizer {
         let trimmed = py_trim(&text);
         let text = if trimmed.len() == text.len() { text } else { trimmed.to_string() };
         let len = text.len();
-        Self { pos: 0, len, text }
+        Self { pos: 0, len, text, escaped_groups: false }
     }
 
     /// 跳过 Python `str.isspace()` 认定的空白（含 \x1c-\x1f）
@@ -305,6 +424,12 @@ impl LatexTokenizer {
 
     fn get_group(&mut self, open_ch: char, close_ch: char) -> String {
         self.skip_space();
+        if self.escaped_groups {
+            if let Some((from, to, end)) = crate::math_document::group(&self.text, self.pos, open_ch, close_ch) {
+                self.pos = end;
+                return self.text[from..to].to_string();
+            }
+        }
         if self.pos >= self.len || self.text[self.pos..].chars().next().unwrap() != open_ch {
             // 如果不是以 open_ch 开头，提取单个 token
             return self.next_token().unwrap_or_default();
@@ -371,11 +496,6 @@ fn r(text: &str) -> String {
     format!("<m:r><m:t>{}</m:t></m:r>", escaped)
 }
 
-/// 包装为 OMML 元素容器 <m:e>
-fn e(inner: &str) -> String {
-    format!("<m:e>{}</m:e>", inner)
-}
-
 /// XML 转义
 ///
 /// 与 Python `xml.sax.saxutils.escape()` 完全一致：只处理 `&`、`<`、`>`，
@@ -435,6 +555,11 @@ enum Blocked {
     Acc { chr: &'static str },
     Boxed,
     Bar,
+    Styled {command:String},
+    Ordinary,
+    /// Standard TeX atom classes which the existing native opEmu model can
+    /// express without adding hidden properties or changing its inference.
+    Emulator {relation:bool},
     LimLow { name: String },
     /// `x^{…}`.  Python pops the base off `out` *after* the descent, but nothing
     /// else touches `out` while the child is in flight, so popping it before the
@@ -452,6 +577,7 @@ struct Nary {
     sum: bool,
     sub: String,
     sup: String,
+    limits: Option<bool>,
 }
 
 /// Live while a `\begin{…}` environment is consuming its groups.  Python builds
@@ -473,16 +599,24 @@ struct Frame {
     blocked: Option<Blocked>,
     nary: Option<Nary>,
     table: Option<Table>,
+    // None preserves the historical recursive-oracle contract in tests.
+    // Production parsing always supplies the actual mathematical style.
+    display: Option<bool>,
+    error: Option<&'static str>,
 }
 
 impl Frame {
-    fn new(src: String) -> Self {
+    fn new(src: String, display: Option<bool>, escaped_groups: bool) -> Self {
+        let mut tok = LatexTokenizer::from_owned(src);
+        tok.escaped_groups = escaped_groups;
         Self {
-            tok: LatexTokenizer::from_owned(src),
+            tok,
             out: Vec::new(),
             blocked: None,
             nary: None,
             table: None,
+            display,
+            error: None,
         }
     }
 
@@ -495,6 +629,24 @@ impl Frame {
                 Some(token) => token,
                 None => return None,
             };
+
+            if matches!(t.as_str(),"\\mathord"|"\\mathbin"|"\\mathrel") {
+                let Some((from, to, end)) = crate::math_document::group(&self.tok.text, self.tok.pos, '{', '}') else {
+                    self.error = Some("math_unsupported_extension"); return None;
+                };
+                let body = self.tok.text[from..to].to_string(); self.tok.pos = end;
+                self.blocked = Some(match t.as_str(){"\\mathbin"=>Blocked::Emulator{relation:false},"\\mathrel"=>Blocked::Emulator{relation:true},_=>Blocked::Ordinary}); return Some(body);
+            }
+            if t == "\\mkern" {
+                let kern = match math_kern(&self.tok.text, self.tok.pos) {
+                    Ok(value) => value,
+                    Err(error) => { self.error = Some(error); return None; }
+                };
+                self.tok.pos = kern.to;
+                let width = crate::math_spacing::SpaceLength::parse(&format!("{}em", kern.em)).expect("validated decimal mu");
+                let space = crate::math_spacing::Spacing { width: Some(width), ..Default::default() };
+                self.out.push(space.node().xml()); continue;
+            }
 
             // 1. 分数 \frac{num}{den}, \dfrac{num}{den}, \binom{n}{k}
             if t == r"\frac" || t == r"\dfrac" {
@@ -529,6 +681,7 @@ impl Frame {
                     sum: t == r"\sum",
                     sub: String::new(),
                     sup: String::new(),
+                    limits: None,
                 });
                 match self.nary_more() {
                     Some(src) => return Some(src),
@@ -616,8 +769,8 @@ impl Frame {
                 return Some(body);
             }
 
-            // 字体与文本包装 \text, \mathrm, \mathbf —— 无递归：Python 直接把
-            // group 原文转义进 <m:t>。
+            // Text is literal; mathematical font commands parse their content
+            // through the same frame stack and apply valid Office run styles.
             if matches!(
                 t.as_str(),
                 r"\text"
@@ -626,25 +779,16 @@ impl Frame {
                     | r"\mathbb"
                     | r"\mathcal"
                     | r"\boldsymbol"
+                    | r"\mathit" | r"\mathfrak" | r"\mathsf" | r"\mathtt" | r"\mathscr" | r"\operatorname"
             ) {
                 let body = self.tok.get_group('{', '}');
-                if t == r"\text" {
+                if t == r"\text" || t==r"\operatorname" {
                     self.out.push(format!(
                         "<m:r><m:rPr><m:nor/></m:rPr><m:t>{}</m:t></m:r>",
                         escape_xml(&body)
                     ));
-                } else if t == r"\mathbf" || t == r"\boldsymbol" {
-                    self.out.push(format!(
-                        "<m:r><m:rPr><m:b/></m:rPr><m:t>{}</m:t></m:r>",
-                        escape_xml(&body)
-                    ));
-                } else if t == r"\mathrm" {
-                    self.out.push(format!(
-                        "<m:r><m:rPr><m:i m:val=\"off\"/></m:rPr><m:t>{}</m:t></m:r>",
-                        escape_xml(&body)
-                    ));
                 } else {
-                    self.out.push(r(&body));
+                    self.blocked=Some(Blocked::Styled{command:t});return Some(body);
                 }
                 continue;
             }
@@ -674,6 +818,10 @@ impl Frame {
 
             // 9. 符号映射表转换
             if let Some(&symbol) = MATH_SYMBOLS.get(t.as_str()) {
+                self.out.push(r(symbol));
+                continue;
+            }
+            if let Some(symbol) = crate::math_catalog::symbol(&t) {
                 self.out.push(r(symbol));
                 continue;
             }
@@ -716,8 +864,8 @@ impl Frame {
             Blocked::FracDen { num } => {
                 self.out.push(format!(
                     "<m:f><m:num>{}</m:num><m:den>{}</m:den></m:f>",
-                    e(&num),
-                    e(&val)
+                    num,
+                    val
                 ));
                 None
             }
@@ -729,8 +877,8 @@ impl Frame {
                 // 微软 OMML 中无横线分数 + 外层圆括号定界符
                 let f_xml = format!(
                     "<m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr><m:num>{}</m:num><m:den>{}</m:den></m:f>",
-                    e(&n),
-                    e(&val)
+                    n,
+                    val
                 );
                 self.out.push(format!(
                     "<m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e>{}</m:e></m:d>",
@@ -752,7 +900,7 @@ impl Frame {
             Blocked::RadDeg { body } => {
                 self.out.push(format!(
                     "<m:rad><m:deg>{}</m:deg><m:e>{}</m:e></m:rad>",
-                    e(&val),
+                    val,
                     body
                 ));
                 None
@@ -804,11 +952,27 @@ impl Frame {
                 ));
                 None
             }
+            Blocked::Styled{command}=>{self.out.push(styled_content(&val,&command));None},
+            Blocked::Ordinary => {
+                // An ordinary outer atom does not reclassify its operands.
+                // A nested a+b keeps its internal binary spacing.
+                self.out.push(format!("<m:box><m:boxPr><m:noBreak/></m:boxPr><m:e>{val}</m:e></m:box>")); None
+            },
+            Blocked::Emulator{relation} => {
+                let xml=format!("<m:box><m:boxPr><m:opEmu/><m:noBreak/></m:boxPr><m:e>{val}</m:e></m:box>");
+                let expected=if relation{crate::omml::Class::Rel}else{crate::omml::Class::Bin};
+                let root=match crate::omml::parse(&xml){Ok(root)=>root,Err(code)=>{
+                    self.error=Some(if code=="math_budget"{"math_budget"}else{"math_invalid_source"});return None;
+                }};
+                let valid=root.child("box").is_some_and(|n|crate::omml::emulated_operator_class(n)==expected);
+                if !valid{self.error=Some("math_unsupported_extension");return None;}
+                self.out.push(xml);None
+            },
             Blocked::LimLow { name } => {
                 self.out.push(format!(
                     "<m:limLow><m:e>{}</m:e><m:lim>{}</m:lim></m:limLow>",
                     name,
-                    e(&val)
+                    val
                 ));
                 None
             }
@@ -816,7 +980,7 @@ impl Frame {
                 self.out.push(format!(
                     "<m:sSup><m:e>{}</m:e><m:sup>{}</m:sup></m:sSup>",
                     base,
-                    e(&val)
+                    val
                 ));
                 None
             }
@@ -831,7 +995,7 @@ impl Frame {
                 self.out.push(format!(
                     "<m:sSub><m:e>{}</m:e><m:sub>{}</m:sub></m:sSub>",
                     base,
-                    e(&val)
+                    val
                 ));
                 None
             }
@@ -839,8 +1003,8 @@ impl Frame {
                 self.out.push(format!(
                     "<m:sSubSup><m:e>{}</m:e><m:sub>{}</m:sub><m:sup>{}</m:sup></m:sSubSup>",
                     base,
-                    e(&sub),
-                    e(&val)
+                    sub,
+                    val
                 ));
                 None
             }
@@ -875,6 +1039,15 @@ impl Frame {
                     self.blocked = Some(Blocked::NarySup);
                     return Some(src);
                 }
+                Some('\\') if self.display.is_some() => {
+                    let position = self.tok.pos;
+                    let token = self.tok.next_token();
+                    match token.as_deref() {
+                        Some("\\limits") => self.nary.as_mut().unwrap().limits = Some(true),
+                        Some("\\nolimits") => self.nary.as_mut().unwrap().limits = Some(false),
+                        _ => { self.tok.pos = position; self.finish_nary(); return None; }
+                    }
+                }
                 _ => {
                     self.finish_nary();
                     return None;
@@ -886,19 +1059,22 @@ impl Frame {
     fn finish_nary(&mut self) {
         let n = self.nary.take().expect("nary_more only runs inside \\sum-like ops");
         let chr_attr = format!("<m:chr m:val=\"{}\"/>", escape_xml(n.chr));
-        let lim_loc = if n.sum {
+        let above = n.limits.unwrap_or_else(|| self.display
+            .map(|display|display && !crate::omml::is_integral_operator(n.chr))
+            .unwrap_or(n.sum));
+        let lim_loc = if above {
             "<m:limLoc m:val=\"undOvr\"/>"
         } else {
             "<m:limLoc m:val=\"subSup\"/>"
         };
         let nary_pr = format!("<m:naryPr>{}{}</m:naryPr>", chr_attr, lim_loc);
         let sub_part = if !n.sub.is_empty() {
-            format!("<m:sub>{}</m:sub>", e(&n.sub))
+            format!("<m:sub>{}</m:sub>", n.sub)
         } else {
             "<m:sub/>".to_string()
         };
         let sup_part = if !n.sup.is_empty() {
-            format!("<m:sup>{}</m:sup>", e(&n.sup))
+            format!("<m:sup>{}</m:sup>", n.sup)
         } else {
             "<m:sup/>".to_string()
         };
@@ -942,7 +1118,7 @@ impl Frame {
             }
             queue.push_back(Item::EndRow);
         }
-        if matches!(env.as_str(), "aligned" | "cases") {
+        if matches!(env.as_str(), "aligned" | "gathered" | "cases") {
             for row in rows.iter() {
                 if row.is_empty() {
                     continue;
@@ -1010,7 +1186,7 @@ impl Frame {
                 "<m:d><m:dPr><m:begChr m:val=\"|\"/><m:endChr m:val=\"|\"/></m:dPr><m:e><m:m>{}</m:m></m:e></m:d>",
                 m_inner
             )),
-            "aligned" | "cases" => {
+            "aligned" | "gathered" | "cases" => {
                 // 方程组 / 多行对齐
                 let eq_arr = format!("<m:eqArr>{}</m:eqArr>", eq_inner);
                 if tb.env == "cases" {
@@ -1031,14 +1207,28 @@ impl Frame {
 ///
 /// 见文件内注释：递归版本对每一层嵌套都要一个调用帧，`.md` 里几千层
 /// `\frac{…}{…}` 会直接把 1 MiB / 2 MiB 的线程栈打穿。
+#[cfg(test)]
 fn parse_latex_to_omml_inner(latex_str: &str) -> String {
+    parse_latex_to_omml_inner_mode(latex_str,None)
+}
+
+fn parse_latex_to_omml_inner_mode(latex_str: &str, display: Option<bool>) -> String {
+    parse_latex_to_omml_inner_mode_checked(latex_str, display).unwrap_or_else(|_| {
+        // Compatibility-only String adapter. Service and export callers use
+        // the typed adapter/preflight and never certify this literal fallback.
+        format!("<m:r><m:rPr><m:nor/></m:rPr><m:t>{}</m:t></m:r>", escape_xml(latex_str))
+    })
+}
+
+fn parse_latex_to_omml_inner_mode_checked(latex_str: &str, display: Option<bool>) -> Result<String, &'static str> {
     if latex_str.is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
 
     // The frame stack *is* the call stack, moved to the heap.
     let mut stack: Vec<Frame> = Vec::new();
-    stack.push(Frame::new(latex_str.to_string()));
+    let escaped_groups = has_math_extensions(latex_str);
+    stack.push(Frame::new(latex_str.to_string(),display,escaped_groups));
     // OMML produced by the frame that just finished, waiting for its parent.
     let mut ready: Option<String> = None;
 
@@ -1054,8 +1244,14 @@ fn parse_latex_to_omml_inner(latex_str: &str) -> String {
                 None => (top.run(), false),
             }
         };
+        if let Some(error) = stack.last().and_then(|frame| frame.error) { return Err(error); }
         if let Some(src) = descend {
-            stack.push(Frame::new(src));
+            let parent=stack.last().expect("parent frame remains");
+            let child_display=parent.display.map(|display|display && !matches!(parent.blocked,
+                Some(Blocked::FracNum{..}|Blocked::FracDen{..}|Blocked::BinomN{..}|Blocked::BinomK{..}|
+                    Blocked::RadDeg{..}|Blocked::NarySub|Blocked::NarySup|Blocked::LimLow{..}|
+                    Blocked::Sup{..}|Blocked::Sub{..}|Blocked::SubSup{..}|Blocked::Cell|Blocked::Row)));
+            stack.push(Frame::new(src,child_display,escaped_groups));
             continue;
         }
         if resumed {
@@ -1063,7 +1259,7 @@ fn parse_latex_to_omml_inner(latex_str: &str) -> String {
         }
         let finished = stack.pop().expect("stack is never empty");
         if stack.is_empty() {
-            return finished.out.join("");
+            return Ok(finished.out.join(""));
         }
         ready = Some(finished.out.join(""));
     }
@@ -1098,8 +1294,8 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
             let den_omml = parse_latex_to_omml_inner_recursive(&den);
             out.push(format!(
                 "<m:f><m:num>{}</m:num><m:den>{}</m:den></m:f>",
-                e(&num_omml),
-                e(&den_omml)
+                num_omml,
+                den_omml
             ));
             continue;
         }
@@ -1112,8 +1308,8 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
             // 微软 OMML 中无横线分数 + 外层圆括号定界符
             let f_xml = format!(
                 "<m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr><m:num>{}</m:num><m:den>{}</m:den></m:f>",
-                e(&n_omml),
-                e(&k_omml)
+                n_omml,
+                k_omml
             );
             out.push(format!(
                 "<m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e>{}</m:e></m:d>",
@@ -1134,7 +1330,7 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
                 let deg_omml = parse_latex_to_omml_inner_recursive(&deg_val);
                 out.push(format!(
                     "<m:rad><m:deg>{}</m:deg><m:e>{}</m:e></m:rad>",
-                    e(&deg_omml),
+                    deg_omml,
                     body_omml
                 ));
             } else {
@@ -1175,12 +1371,12 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
             };
             let nary_pr = format!("<m:naryPr>{}{}</m:naryPr>", chr_attr, lim_loc);
             let sub_part = if !sub_xml.is_empty() {
-                format!("<m:sub>{}</m:sub>", e(&sub_xml))
+                format!("<m:sub>{}</m:sub>", sub_xml)
             } else {
                 "<m:sub/>".to_string()
             };
             let sup_part = if !sup_xml.is_empty() {
-                format!("<m:sup>{}</m:sup>", e(&sup_xml))
+                format!("<m:sup>{}</m:sup>", sup_xml)
             } else {
                 "<m:sup/>".to_string()
             };
@@ -1374,25 +1570,16 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
                 | r"\mathbb"
                 | r"\mathcal"
                 | r"\boldsymbol"
+                | r"\mathit" | r"\mathfrak" | r"\mathsf" | r"\mathtt" | r"\mathscr" | r"\operatorname"
         ) {
             let body = tok.get_group('{', '}');
-            if t == r"\text" {
+            if t == r"\text" || t==r"\operatorname" {
                 out.push(format!(
                     "<m:r><m:rPr><m:nor/></m:rPr><m:t>{}</m:t></m:r>",
                     escape_xml(&body)
                 ));
-            } else if t == r"\mathbf" || t == r"\boldsymbol" {
-                out.push(format!(
-                    "<m:r><m:rPr><m:b/></m:rPr><m:t>{}</m:t></m:r>",
-                    escape_xml(&body)
-                ));
-            } else if t == r"\mathrm" {
-                out.push(format!(
-                    "<m:r><m:rPr><m:i m:val=\"off\"/></m:rPr><m:t>{}</m:t></m:r>",
-                    escape_xml(&body)
-                ));
             } else {
-                out.push(r(&body));
+                out.push(styled_content(&parse_latex_to_omml_inner_recursive(&body),&t));
             }
             continue;
         }
@@ -1415,7 +1602,7 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
                     out.push(format!(
                         "<m:limLow><m:e>{}</m:e><m:lim>{}</m:lim></m:limLow>",
                         fname_omml,
-                        e(&sub_omml)
+                        sub_omml
                     ));
                     continue;
                 }
@@ -1429,6 +1616,10 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
             out.push(r(symbol));
             continue;
         }
+        if let Some(symbol) = crate::math_catalog::symbol(&t) {
+            out.push(r(symbol));
+            continue;
+        }
 
         // 10. 上标 ^ 与 下标 _
         if t == "^" {
@@ -1439,7 +1630,7 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
             out.push(format!(
                 "<m:sSup><m:e>{}</m:e><m:sup>{}</m:sup></m:sSup>",
                 prev_base,
-                e(&sup_omml)
+                sup_omml
             ));
             continue;
         }
@@ -1456,14 +1647,14 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
                 out.push(format!(
                     "<m:sSubSup><m:e>{}</m:e><m:sub>{}</m:sub><m:sup>{}</m:sup></m:sSubSup>",
                     prev_base,
-                    e(&sub_omml),
-                    e(&sup_omml)
+                    sub_omml,
+                    sup_omml
                 ));
             } else {
                 out.push(format!(
                     "<m:sSub><m:e>{}</m:e><m:sub>{}</m:sub></m:sSub>",
                     prev_base,
-                    e(&sub_omml)
+                    sub_omml
                 ));
             }
             continue;
@@ -1492,6 +1683,10 @@ fn parse_latex_to_omml_inner_recursive(latex_str: &str) -> String {
 ///
 /// 带有命名空间声明的完整 OMML XML 字符串
 pub fn latex_to_omml(latex_code: &str, is_block: bool) -> String {
+    latex_to_omml_mode(latex_code,is_block,false).expect("Legacy adapter preserves failed source literally")
+}
+
+fn latex_to_omml_mode(latex_code: &str, is_block: bool, checked: bool) -> Result<String, &'static str> {
     let clean_latex = py_trim(latex_code);
     let mut is_block = is_block;
 
@@ -1505,7 +1700,8 @@ pub fn latex_to_omml(latex_code: &str, is_block: bool) -> String {
         clean_latex
     };
 
-    let inner_xml = parse_latex_to_omml_inner(py_trim(clean_latex));
+    let inner_xml = if checked { parse_latex_to_omml_inner_mode_checked(py_trim(clean_latex),Some(is_block))? }
+        else { parse_latex_to_omml_inner_mode(py_trim(clean_latex),Some(is_block)) };
     let inner_xml = if inner_xml.is_empty() {
         "<m:r><m:t></m:t></m:r>"
     } else {
@@ -1517,18 +1713,84 @@ pub fn latex_to_omml(latex_code: &str, is_block: bool) -> String {
         _M_NS, _W_NS, inner_xml
     );
 
-    if is_block {
+    Ok(if is_block {
         format!(
             "<m:oMathPara xmlns:m=\"{}\" xmlns:w=\"{}\"><m:oMath>{}</m:oMath></m:oMathPara>",
             _M_NS, _W_NS, inner_xml
         )
     } else {
         omath_xml
+    })
+}
+
+/// Typed extension entry point. Historical inputs keep their byte projection;
+/// newly accepted ordinary atoms/kerns cannot fall back to visible command
+/// names after invalid dimensions, source syntax, or XML/layout budgets.
+pub fn latex_to_omml_checked(latex_code: &str, is_block: bool) -> Result<String, &'static str> {
+    if !has_math_extensions(latex_code) { return Ok(latex_to_omml(latex_code, is_block)); }
+    let (_, diagnostics) = crate::math_document::source_nodes(latex_code)?;
+    if diagnostics.iter().any(|diagnostic| matches!(diagnostic.code.as_str(), "math_unbalanced" | "math_missing_argument")) {
+        return Err("math_invalid_source");
     }
+    if diagnostics.iter().any(|diagnostic| diagnostic.code == "math_unknown_macro") { return Err("math_unknown_macro"); }
+    let xml = latex_to_omml_mode(latex_code, is_block, true)?;
+    let root = crate::math_document::parse_xml(&xml)?;
+    crate::math_spacing::validate_tree(&root)?;
+    Ok(xml)
+}
+
+/// A service which promises native Office XML must reject the new kern node,
+/// including an explicitly zero kern, rather than return mixed MathML/OMML.
+pub fn latex_to_native_omml(latex_code: &str, is_block: bool) -> Result<String, &'static str> {
+    let xml = latex_to_omml_checked(latex_code,is_block)?;
+    if has_math_extensions(latex_code) {
+        crate::math_spacing::native_office(&crate::math_document::parse_xml(&xml)?)?;
+    }
+    Ok(xml)
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn latex_math_limit_positions_follow_real_style_and_explicit_controls() {
+        for (source,display,expected) in [
+            (r"\sum_{i=0}^{n}",false,"subSup"),
+            (r"\sum_{i=0}^{n}",true,"undOvr"),
+            (r"\prod_{i=0}^{n}",true,"undOvr"),
+            (r"\int_0^1",true,"subSup"),
+            (r"\sum\nolimits_{i=0}^{n}",true,"subSup"),
+            (r"\int\limits_0^1",false,"undOvr"),
+            (r"\sum_{i=0}^{n}\limits",false,"undOvr"),
+            (r"x^{\sum_{i=0}^{n}}",true,"subSup"),
+            (r"\frac{\sum_{i=0}^{n}}{x}",true,"subSup"),
+            (r"\sqrt[\sum_{i=0}^{n}]{x}",true,"subSup"),
+            (r"\left(\sum_{i=0}^{n}\right)",true,"undOvr"),
+            (r"\begin{matrix}\sum_{i=0}^{n}\end{matrix}",true,"subSup"),
+        ] {
+            let output=super::latex_to_omml(source,display);
+            assert!(output.contains(&format!(r#"<m:limLoc m:val="{expected}"/>"#)),"{source}: {output}");
+            assert!(!output.contains(">limits<")&&!output.contains(">nolimits<"));
+            let root=crate::math_document::parse_xml(&output).unwrap();
+            let readable=crate::math_dsl::decompile(&root).unwrap();
+            crate::math_dsl::compile(&readable,display).unwrap();
+        }
+    }
+    #[test]
+    fn font_commands_use_schema_properties_and_parse_nested_mathematics(){
+        for(command,script,style)in[("\\mathrm",None,"p"),("\\mathbf",None,"b"),("\\boldsymbol",None,"bi"),("\\mathit",None,"i"),("\\mathbb",Some("double-struck"),"p"),("\\mathcal",Some("script"),"p"),("\\mathfrak",Some("fraktur"),"p"),("\\mathsf",Some("sans-serif"),"p"),("\\mathtt",Some("monospace"),"p")]{
+            let source=format!("{command}{{\\alpha+\\frac{{x}}{{y}}}}");
+            let xml=super::latex_to_omml(&source,false);let root=crate::omml::parse(&xml).unwrap();
+            assert!(xml.contains("<m:f>"));assert!(xml.contains(">α<"));assert!(!xml.contains("\\alpha"));
+            let mut nodes=vec![&root];let mut runs=0;
+            while let Some(n)=nodes.pop(){
+                if n.name=="r"{runs+=1;assert_eq!(n.prop("rPr","sty"),Some(style));assert_eq!(n.prop("rPr","scr"),script);}
+                nodes.extend(&n.children);
+            }
+            assert_eq!(runs,4);assert!(!xml.contains("<m:b/>")&&!xml.contains("<m:i "));
+        }
+        let nested=super::latex_to_omml(r"\mathbf{x+\mathrm{y}+\text{label}}",false);
+        assert!(nested.contains("<m:sty m:val=\"p\"/>"));assert!(nested.contains("<m:nor/>"));
+    }
     use super::*;
 
     #[test]
@@ -1604,22 +1866,24 @@ mod tests {
         assert!(result.contains("<m:oMathPara"));
     }
 
-    /// Python 派生的逐字符对照表（inline 模式）。
+    /// Reviewed snapshots, initially derived from the legacy converter.
+    /// Office argument containers and font styles intentionally correct that
+    /// converter's invalid nested m:e and lost/invalid run properties.
     ///
     /// 期望值全部由 `scratch/p6_omml_golden.py` 调用权威实现
     /// `src/readmd_modules/latex2omml.py::latex_to_omml` 生成后内联到此。
     /// 采集纯离线：不发网络请求、不起子进程、不启动 readmd 服务。
     #[test]
-    fn omml_inline_matches_python_character_by_character() {
+    fn omml_inline_matches_reviewed_office_snapshots() {
         let cases: &[(&str, &str)] = &[
-        ("E = mc^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath>"),
-        ("\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:e><m:r><m:t>-</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>±</m:t></m:r><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:sSup><m:e><m:r><m:t>b</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup><m:r><m:t>-</m:t></m:r><m:r><m:t>4</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>c</m:t></m:r></m:e></m:rad></m:e></m:num><m:den><m:e><m:r><m:t>2</m:t></m:r><m:r><m:t>a</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
-        ("\\sum_{i=1}^{n} i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub><m:e><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>n</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath>"),
-        ("\\int_0^1 x^2 dx", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:r><m:t>0</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>1</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
-        ("\\left( \\frac{a}{b} \\right)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:num><m:e><m:r><m:t>a</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>b</m:t></m:r></m:e></m:den></m:f></m:e></m:d></m:oMath>"),
+        ("E = mc^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>"),
+        ("\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:r><m:t>-</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>±</m:t></m:r><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:sSup><m:e><m:r><m:t>b</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup><m:r><m:t>-</m:t></m:r><m:r><m:t>4</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>c</m:t></m:r></m:e></m:rad></m:num><m:den><m:r><m:t>2</m:t></m:r><m:r><m:t>a</m:t></m:r></m:den></m:f></m:oMath>"),
+        ("\\sum_{i=1}^{n} i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub><m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>"),
+        ("\\int_0^1 x^2 dx", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
+        ("\\left( \\frac{a}{b} \\right)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:e></m:d></m:oMath>"),
         ("\\left\\{ x \\right}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"\\{\"/><m:endChr m:val=\"}\"/></m:dPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath>"),
         ("\\left[ 0, 1 \\right]", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"[\"/><m:endChr m:val=\"]\"/></m:dPr><m:e><m:r><m:t>0</m:t></m:r><m:r><m:t>,</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e></m:d></m:oMath>"),
-        ("\\left. \\frac{d}{dx} \\right|_{x=0}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSub><m:e><m:d><m:dPr><m:begChr m:val=\"\"/><m:endChr m:val=\"|\"/></m:dPr><m:e><m:f><m:num><m:e><m:r><m:t>d</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:e></m:den></m:f></m:e></m:d></m:e><m:sub><m:e><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>0</m:t></m:r></m:e></m:sub></m:sSub></m:oMath>"),
+        ("\\left. \\frac{d}{dx} \\right|_{x=0}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSub><m:e><m:d><m:dPr><m:begChr m:val=\"\"/><m:endChr m:val=\"|\"/></m:dPr><m:e><m:f><m:num><m:r><m:t>d</m:t></m:r></m:num><m:den><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:den></m:f></m:e></m:d></m:e><m:sub><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>0</m:t></m:r></m:sub></m:sSub></m:oMath>"),
         ("\\left\\| x \\right\\|", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"\\|\"/><m:endChr m:val=\"\\|\"/></m:dPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath>"),
         ("\\left\\{ a \\right\\}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"\\{\"/><m:endChr m:val=\"\\}\"/></m:dPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:d></m:oMath>"),
         ("\\left(a\\right)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:d></m:oMath>"),
@@ -1641,55 +1905,55 @@ mod tests {
         ("\\begin", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:m></m:m></m:oMath>"),
         ("\\begin{matrix}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:m></m:m></m:oMath>"),
         ("\\end{matrix}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>end</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>m</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>t</m:t></m:r><m:r><m:t>r</m:t></m:r><m:r><m:t>i</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>}</m:t></m:r></m:oMath>"),
-        ("\\vec{a} \\cdot \\hat{b}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:acc><m:accPr><m:chr m:val=\"→\"/></m:accPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:acc><m:r><m:t>·</m:t></m:r><m:acc><m:accPr><m:chr m:val=\"^\"/></m:accPr><m:e><m:r><m:t>b</m:t></m:r></m:e></m:acc></m:oMath>"),
-        ("\\text{hello} & \\mathrm{d}x \\mathbf{v} \\mathbb{R} \\mathcal{F} \\boldsymbol{\\alpha}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>hello</m:t></m:r><m:r><m:t>&amp;</m:t></m:r><m:r><m:rPr><m:i m:val=\"off\"/></m:rPr><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:rPr><m:b/></m:rPr><m:t>v</m:t></m:r><m:r><m:t>R</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:rPr><m:b/></m:rPr><m:t>\\alpha</m:t></m:r></m:oMath>"),
+        ("\\vec{a} \\cdot \\hat{b}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:acc><m:accPr><m:chr m:val=\"→\"/></m:accPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:acc><m:r><m:t>⋅</m:t></m:r><m:acc><m:accPr><m:chr m:val=\"^\"/></m:accPr><m:e><m:r><m:t>b</m:t></m:r></m:e></m:acc></m:oMath>"),
+        ("\\text{hello} & \\mathrm{d}x \\mathbf{v} \\mathbb{R} \\mathcal{F} \\boldsymbol{\\alpha}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>hello</m:t></m:r><m:r><m:t>&amp;</m:t></m:r><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:rPr><m:sty m:val=\"b\"/></m:rPr><m:t>v</m:t></m:r><m:r><m:rPr><m:scr m:val=\"double-struck\"/><m:sty m:val=\"p\"/></m:rPr><m:t>R</m:t></m:r><m:r><m:rPr><m:scr m:val=\"script\"/><m:sty m:val=\"p\"/></m:rPr><m:t>F</m:t></m:r><m:r><m:rPr><m:sty m:val=\"bi\"/></m:rPr><m:t>α</m:t></m:r></m:oMath>"),
         ("\\text{a\\text{b}c}d", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>a\\text{b}c</m:t></m:r><m:r><m:t>d</m:t></m:r></m:oMath>"),
         ("\\text{}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t></m:t></m:r></m:oMath>"),
         ("\\text{a}b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:oMath>"),
-        ("\\sin \\cos \\tan \\log_2 x \\lim_{x \\to 0} \\frac{1}{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>sin </m:t></m:r><m:r><m:t>cos </m:t></m:r><m:r><m:t>tan </m:t></m:r><m:sSub><m:e><m:r><m:t>log </m:t></m:r></m:e><m:sub><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sub></m:sSub><m:r><m:t>x</m:t></m:r><m:limLow><m:e><m:r><m:t>lim</m:t></m:r></m:e><m:lim><m:e><m:r><m:t>x</m:t></m:r><m:r><m:t>→</m:t></m:r><m:r><m:t>0</m:t></m:r></m:e></m:lim></m:limLow><m:f><m:num><m:e><m:r><m:t>1</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>x</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
+        ("\\sin \\cos \\tan \\log_2 x \\lim_{x \\to 0} \\frac{1}{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>sin </m:t></m:r><m:r><m:t>cos </m:t></m:r><m:r><m:t>tan </m:t></m:r><m:sSub><m:e><m:r><m:t>log </m:t></m:r></m:e><m:sub><m:r><m:t>2</m:t></m:r></m:sub></m:sSub><m:r><m:t>x</m:t></m:r><m:limLow><m:e><m:r><m:t>lim</m:t></m:r></m:e><m:lim><m:r><m:t>x</m:t></m:r><m:r><m:t>→</m:t></m:r><m:r><m:t>0</m:t></m:r></m:lim></m:limLow><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>x</m:t></m:r></m:den></m:f></m:oMath>"),
         ("\\lim x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>lim </m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
-        ("\\max_{n} \\min_{m}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:limLow><m:e><m:r><m:t>max</m:t></m:r></m:e><m:lim><m:e><m:r><m:t>n</m:t></m:r></m:e></m:lim></m:limLow><m:limLow><m:e><m:r><m:t>min</m:t></m:r></m:e><m:lim><m:e><m:r><m:t>m</m:t></m:r></m:e></m:lim></m:limLow></m:oMath>"),
+        ("\\max_{n} \\min_{m}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:limLow><m:e><m:r><m:t>max</m:t></m:r></m:e><m:lim><m:r><m:t>n</m:t></m:r></m:lim></m:limLow><m:limLow><m:e><m:r><m:t>min</m:t></m:r></m:e><m:lim><m:r><m:t>m</m:t></m:r></m:lim></m:limLow></m:oMath>"),
         ("\\,\\; \\quad\\qquad\\!", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t> </m:t></m:r><m:r><m:t> </m:t></m:r><m:r><m:t>  </m:t></m:r><m:r><m:t>    </m:t></m:r></m:oMath>"),
         ("\\% \\_ \\& \\# 100\\%", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>%</m:t></m:r><m:r><m:t>_</m:t></m:r><m:r><m:t>&amp;</m:t></m:r><m:r><m:t>#</m:t></m:r><m:r><m:t>1</m:t></m:r><m:r><m:t>0</m:t></m:r><m:r><m:t>0</m:t></m:r><m:r><m:t>%</m:t></m:r></m:oMath>"),
         ("50\\% \\& 'quote' <tag> \"double\"", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>5</m:t></m:r><m:r><m:t>0</m:t></m:r><m:r><m:t>%</m:t></m:r><m:r><m:t>&amp;</m:t></m:r><m:r><m:t>'</m:t></m:r><m:r><m:t>q</m:t></m:r><m:r><m:t>u</m:t></m:r><m:r><m:t>o</m:t></m:r><m:r><m:t>t</m:t></m:r><m:r><m:t>e</m:t></m:r><m:r><m:t>'</m:t></m:r><m:r><m:t>&lt;</m:t></m:r><m:r><m:t>t</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>g</m:t></m:r><m:r><m:t>&gt;</m:t></m:r><m:r><m:t>\"</m:t></m:r><m:r><m:t>d</m:t></m:r><m:r><m:t>o</m:t></m:r><m:r><m:t>u</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>l</m:t></m:r><m:r><m:t>e</m:t></m:r><m:r><m:t>\"</m:t></m:r></m:oMath>"),
-        ("x_i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>i</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSubSup></m:oMath>"),
-        ("{x_i}^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>{</m:t></m:r><m:sSub><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>i</m:t></m:r></m:e></m:sub></m:sSub><m:sSup><m:e><m:r><m:t>}</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath>"),
-        ("a_b^c^d", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:sSubSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>b</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>c</m:t></m:r></m:e></m:sup></m:sSubSup></m:e><m:sup><m:e><m:r><m:t>d</m:t></m:r></m:e></m:sup></m:sSup></m:oMath>"),
-        ("^{2}x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup><m:r><m:t>x</m:t></m:r></m:oMath>"),
-        ("x^{a^{b}}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:e><m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>b</m:t></m:r></m:e></m:sup></m:sSup></m:e></m:sup></m:sSup></m:oMath>"),
-        ("^_", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e></m:e><m:sup><m:e><m:sSub><m:e></m:e><m:sub><m:e></m:e></m:sub></m:sSub></m:e></m:sup></m:sSup></m:oMath>"),
-        ("a^", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:e></m:e></m:sup></m:sSup></m:oMath>"),
-        ("_x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSub><m:e></m:e><m:sub><m:e><m:r><m:t>x</m:t></m:r></m:e></m:sub></m:sSub></m:oMath>"),
-        ("$$x^2$$", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath></m:oMathPara>"),
-        ("$x^2$", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath>"),
+        ("x_i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:r><m:t>i</m:t></m:r></m:sub><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSubSup></m:oMath>"),
+        ("{x_i}^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>{</m:t></m:r><m:sSub><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sub><m:r><m:t>i</m:t></m:r></m:sub></m:sSub><m:sSup><m:e><m:r><m:t>}</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>"),
+        ("a_b^c^d", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:sSubSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sub><m:r><m:t>b</m:t></m:r></m:sub><m:sup><m:r><m:t>c</m:t></m:r></m:sup></m:sSubSup></m:e><m:sup><m:r><m:t>d</m:t></m:r></m:sup></m:sSup></m:oMath>"),
+        ("^{2}x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup><m:r><m:t>x</m:t></m:r></m:oMath>"),
+        ("x^{a^{b}}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup><m:r><m:t>b</m:t></m:r></m:sup></m:sSup></m:sup></m:sSup></m:oMath>"),
+        ("^_", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e></m:e><m:sup><m:sSub><m:e></m:e><m:sub></m:sub></m:sSub></m:sup></m:sSup></m:oMath>"),
+        ("a^", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>a</m:t></m:r></m:e><m:sup></m:sup></m:sSup></m:oMath>"),
+        ("_x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSub><m:e></m:e><m:sub><m:r><m:t>x</m:t></m:r></m:sub></m:sSub></m:oMath>"),
+        ("$$x^2$$", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath></m:oMathPara>"),
+        ("$x^2$", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath>"),
         ("$$", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:r><m:t></m:t></m:r></m:oMath></m:oMathPara>"),
         ("$", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t></m:t></m:r></m:oMath>"),
         ("x$$y", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>x</m:t></m:r><m:r><m:t>$</m:t></m:r><m:r><m:t>$</m:t></m:r><m:r><m:t>y</m:t></m:r></m:oMath>"),
         ("$$ x $$ and $ y $", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>$</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>$</m:t></m:r><m:r><m:t>$</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>n</m:t></m:r><m:r><m:t>d</m:t></m:r><m:r><m:t>$</m:t></m:r><m:r><m:t>y</m:t></m:r></m:oMath>"),
-        ("\\sqrt[3]{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:deg><m:e><m:r><m:t>3</m:t></m:r></m:e></m:deg><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"),
+        ("\\sqrt[3]{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:deg><m:r><m:t>3</m:t></m:r></m:deg><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"),
         ("\\sqrt[]{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"),
         ("\\sqrt2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:r><m:t>2</m:t></m:r></m:e></m:rad></m:oMath>"),
         ("\\sqrt{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:oMath>"),
-        ("\\frac12", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:e><m:r><m:t>1</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>2</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
-        ("\\frac{a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:e><m:r><m:t>a</m:t></m:r></m:e></m:num><m:den><m:e></m:e></m:den></m:f></m:oMath>"),
-        ("\\binom{n}{k}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr><m:num><m:e><m:r><m:t>n</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>k</m:t></m:r></m:e></m:den></m:f></m:e></m:d></m:oMath>"),
-        ("\\dfrac{1}{2}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:e><m:r><m:t>1</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>2</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
+        ("\\frac12", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>"),
+        ("\\frac{a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den></m:den></m:f></m:oMath>"),
+        ("\\binom{n}{k}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:fPr><m:type m:val=\"noBar\"/></m:fPr><m:num><m:r><m:t>n</m:t></m:r></m:num><m:den><m:r><m:t>k</m:t></m:r></m:den></m:f></m:e></m:d></m:oMath>"),
+        ("\\dfrac{1}{2}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:r><m:t>2</m:t></m:r></m:den></m:f></m:oMath>"),
         ("\\unknowncommand{x}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>unknowncommand</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>}</m:t></m:r></m:oMath>"),
-        ("\\boxed{E=mc^2}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:borderBox><m:e><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:e></m:borderBox></m:oMath>"),
+        ("\\boxed{E=mc^2}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:borderBox><m:e><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:e></m:borderBox></m:oMath>"),
         ("\\boxed{}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:borderBox><m:e></m:e></m:borderBox></m:oMath>"),
         ("\\overline{AB}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:bar><m:barPr><m:pos m:val=\"top\"/></m:barPr><m:e><m:r><m:t>A</m:t></m:r><m:r><m:t>B</m:t></m:r></m:e></m:bar></m:oMath>"),
         ("\\bar{x} \\dot{y} \\ddot{z} \\tilde{w} \\check{v} \\acute{u} \\grave{t}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:acc><m:accPr><m:chr m:val=\"¯\"/></m:accPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"˙\"/></m:accPr><m:e><m:r><m:t>y</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"¨\"/></m:accPr><m:e><m:r><m:t>z</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"~\"/></m:accPr><m:e><m:r><m:t>w</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"ˇ\"/></m:accPr><m:e><m:r><m:t>v</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"´\"/></m:accPr><m:e><m:r><m:t>u</m:t></m:r></m:e></m:acc><m:acc><m:accPr><m:chr m:val=\"`\"/></m:accPr><m:e><m:r><m:t>t</m:t></m:r></m:e></m:acc></m:oMath>"),
         ("\\overline", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:bar><m:barPr><m:pos m:val=\"top\"/></m:barPr><m:e></m:e></m:bar></m:oMath>"),
         ("\\alpha\\beta\\gamma\\delta\\epsilon\\varepsilon\\zeta\\eta\\theta\\vartheta", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>α</m:t></m:r><m:r><m:t>β</m:t></m:r><m:r><m:t>γ</m:t></m:r><m:r><m:t>δ</m:t></m:r><m:r><m:t>ϵ</m:t></m:r><m:r><m:t>ε</m:t></m:r><m:r><m:t>ζ</m:t></m:r><m:r><m:t>η</m:t></m:r><m:r><m:t>θ</m:t></m:r><m:r><m:t>ϑ</m:t></m:r></m:oMath>"),
-        ("\\iint_D \\oint_C f", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∬\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:r><m:t>D</m:t></m:r></m:e></m:sub><m:sup/><m:e/></m:nary><m:nary><m:naryPr><m:chr m:val=\"∮\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:r><m:t>C</m:t></m:r></m:e></m:sub><m:sup/><m:e/></m:nary><m:r><m:t>f</m:t></m:r></m:oMath>"),
-        ("\\bigcup_\\bigcap", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"⋃\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:nary><m:naryPr><m:chr m:val=\"⋂\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:e></m:sub><m:sup/><m:e/></m:nary></m:oMath>"),
-        ("\\sum", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:oMath>"),
-        ("\\sum^{a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub/><m:sup><m:e><m:r><m:t>a</m:t></m:r></m:e></m:sup><m:e/></m:nary></m:oMath>"),
-        ("\\prod\\limits_{i}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∏\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary><m:sSub><m:e><m:r><m:t>limits</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>i</m:t></m:r></m:e></m:sub></m:sSub></m:oMath>"),
+        ("\\iint_D \\oint_C f", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∬\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>D</m:t></m:r></m:sub><m:sup/><m:e/></m:nary><m:nary><m:naryPr><m:chr m:val=\"∮\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>C</m:t></m:r></m:sub><m:sup/><m:e/></m:nary><m:r><m:t>f</m:t></m:r></m:oMath>"),
+        ("\\bigcup_\\bigcap", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"⋃\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:nary><m:naryPr><m:chr m:val=\"⋂\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:sub><m:sup/><m:e/></m:nary></m:oMath>"),
+        ("\\sum", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:oMath>"),
+        ("\\sum^{a}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup><m:r><m:t>a</m:t></m:r></m:sup><m:e/></m:nary></m:oMath>"),
+        ("\\prod\\limits_{i}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∏\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub><m:r><m:t>i</m:t></m:r></m:sub><m:sup/><m:e/></m:nary></m:oMath>"),
         ("a \\ne b \\le c \\ge d \\approx e \\equiv f \\sim g \\propto h", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>a</m:t></m:r><m:r><m:t>≠</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>≤</m:t></m:r><m:r><m:t>c</m:t></m:r><m:r><m:t>≥</m:t></m:r><m:r><m:t>d</m:t></m:r><m:r><m:t>≈</m:t></m:r><m:r><m:t>e</m:t></m:r><m:r><m:t>≡</m:t></m:r><m:r><m:t>f</m:t></m:r><m:r><m:t>∼</m:t></m:r><m:r><m:t>g</m:t></m:r><m:r><m:t>∝</m:t></m:r><m:r><m:t>h</m:t></m:r></m:oMath>"),
         ("f(x) = \\begin{cases} 1 & x > 0 \\\\ 0 & x \\le 0 \\end{cases}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>f</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>)</m:t></m:r><m:r><m:t>=</m:t></m:r><m:d><m:dPr><m:begChr m:val=\"{\"/><m:endChr m:val=\"\"/></m:dPr><m:e><m:eqArr><m:e><m:r><m:t>1</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>&gt;</m:t></m:r><m:r><m:t>0</m:t></m:r></m:e><m:e><m:r><m:t>0</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>≤</m:t></m:r><m:r><m:t>0</m:t></m:r></m:e></m:eqArr></m:e></m:d></m:oMath>"),
-        ("\\int_a^b f(x)\\,dx = F(b) - F(a)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:r><m:t>a</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>b</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:r><m:t>f</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>)</m:t></m:r><m:r><m:t> </m:t></m:r><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>)</m:t></m:r><m:r><m:t>-</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>)</m:t></m:r></m:oMath>"),
-        ("\\begin{pmatrix} a \\end{pmatrix}_i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:m><m:mr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:mr></m:m></m:e></m:d></m:e><m:sub><m:e><m:r><m:t>i</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSubSup></m:oMath>"),
+        ("\\int_a^b f(x)\\,dx = F(b) - F(a)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:sup><m:r><m:t>b</m:t></m:r></m:sup><m:e/></m:nary><m:r><m:t>f</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>)</m:t></m:r><m:r><m:t> </m:t></m:r><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>)</m:t></m:r><m:r><m:t>-</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:t>(</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>)</m:t></m:r></m:oMath>"),
+        ("\\begin{pmatrix} a \\end{pmatrix}_i^2", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:m><m:mr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:mr></m:m></m:e></m:d></m:e><m:sub><m:r><m:t>i</m:t></m:r></m:sub><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSubSup></m:oMath>"),
         ("A \\cap B \\cup C \\setminus D", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>A</m:t></m:r><m:r><m:t>∩</m:t></m:r><m:r><m:t>B</m:t></m:r><m:r><m:t>∪</m:t></m:r><m:r><m:t>C</m:t></m:r><m:r><m:t>∖</m:t></m:r><m:r><m:t>D</m:t></m:r></m:oMath>"),
         ("\\{ a \\} \\langle u | v \\rangle", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>{</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>}</m:t></m:r><m:r><m:t>⟨</m:t></m:r><m:r><m:t>u</m:t></m:r><m:r><m:t>|</m:t></m:r><m:r><m:t>v</m:t></m:r><m:r><m:t>⟩</m:t></m:r></m:oMath>"),
         ("\\forall x \\exists y : x \\in S", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>∀</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>∃</m:t></m:r><m:r><m:t>y</m:t></m:r><m:r><m:t>:</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>∈</m:t></m:r><m:r><m:t>S</m:t></m:r></m:oMath>"),
@@ -1697,49 +1961,49 @@ mod tests {
         ("a b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:oMath>"),
         ("   ", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t></m:t></m:r></m:oMath>"),
         ("", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t></m:t></m:r></m:oMath>"),
-        ("   \\sum   ", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:oMath>"),
+        ("   \\sum   ", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub/><m:sup/><m:e/></m:nary></m:oMath>"),
         ("\t\\alpha\n\\beta ", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>α</m:t></m:r><m:r><m:t>β</m:t></m:r></m:oMath>"),
         ("a\u{001c}b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:oMath>"),
         ("a
 b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:oMath>"),
         ("a b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:oMath>"),
-        ("\\mathrm{d}x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:i m:val=\"off\"/></m:rPr><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
+        ("\\mathrm{d}x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
         ("\\cal{F}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>cal</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>F</m:t></m:r><m:r><m:t>}</m:t></m:r></m:oMath>"),
-        ("\\mathcal{F}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>F</m:t></m:r></m:oMath>"),
+        ("\\mathcal{F}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:scr m:val=\"script\"/><m:sty m:val=\"p\"/></m:rPr><m:t>F</m:t></m:r></m:oMath>"),
         ("\\LaTeX \\TeX \\TeXture", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>LaTeX</m:t></m:r><m:r><m:t>TeX</m:t></m:r><m:r><m:t>TeXture</m:t></m:r></m:oMath>"),
-        ("\\operatorname{sn} x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>operatorname</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>s</m:t></m:r><m:r><m:t>n</m:t></m:r><m:r><m:t>}</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
+        ("\\operatorname{sn} x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>sn</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
         ("&", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>&amp;</m:t></m:r></m:oMath>"),
         ("&&", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>&amp;</m:t></m:r><m:r><m:t>&amp;</m:t></m:r></m:oMath>"),
         ("\\\\", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>\\</m:t></m:r></m:oMath>"),
         ("Ω x", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>Ω</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath>"),
-        ("\\alpha_{1}^{n}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:r><m:t>α</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>1</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>n</m:t></m:r></m:e></m:sup></m:sSubSup></m:oMath>"),
-        ("{}^1_2H", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>{</m:t></m:r><m:sSub><m:e><m:sSup><m:e><m:r><m:t>}</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>1</m:t></m:r></m:e></m:sup></m:sSup></m:e><m:sub><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sub></m:sSub><m:r><m:t>H</m:t></m:r></m:oMath>"),
+        ("\\alpha_{1}^{n}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:sSubSup><m:e><m:r><m:t>α</m:t></m:r></m:e><m:sub><m:r><m:t>1</m:t></m:r></m:sub><m:sup><m:r><m:t>n</m:t></m:r></m:sup></m:sSubSup></m:oMath>"),
+        ("{}^1_2H", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>{</m:t></m:r><m:sSub><m:e><m:sSup><m:e><m:r><m:t>}</m:t></m:r></m:e><m:sup><m:r><m:t>1</m:t></m:r></m:sup></m:sSup></m:e><m:sub><m:r><m:t>2</m:t></m:r></m:sub></m:sSub><m:r><m:t>H</m:t></m:r></m:oMath>"),
         ("\\begin{cases} a & b \\\\ \\end{cases}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"{\"/><m:endChr m:val=\"\"/></m:dPr><m:e><m:eqArr><m:e><m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r></m:e></m:eqArr></m:e></m:d></m:oMath>"),
-        ("\\frac{\\frac{a}{b}}{c}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:e><m:f><m:num><m:e><m:r><m:t>a</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>b</m:t></m:r></m:e></m:den></m:f></m:e></m:num><m:den><m:e><m:r><m:t>c</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
+        ("\\frac{\\frac{a}{b}}{c}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:f><m:num><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:num><m:den><m:r><m:t>c</m:t></m:r></m:den></m:f></m:oMath>"),
         ("\\left( \\begin{matrix} 1 \\\\ 2 \\end{matrix} \\right)", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:m><m:mr><m:e><m:r><m:t>1</m:t></m:r></m:e></m:mr><m:mr><m:e><m:r><m:t>2</m:t></m:r><m:r><m:t>end</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>m</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>t</m:t></m:r><m:r><m:t>r</m:t></m:r><m:r><m:t>i</m:t></m:r><m:r><m:t>x</m:t></m:r><m:r><m:t>}</m:t></m:r></m:e></m:mr></m:m></m:e></m:d></m:oMath>"),
         ("\\text{spin-up } \\uparrow \\text{ spin-down } \\downarrow", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:rPr><m:nor/></m:rPr><m:t>spin-up </m:t></m:r><m:r><m:t>↑</m:t></m:r><m:r><m:rPr><m:nor/></m:rPr><m:t> spin-down </m:t></m:r><m:r><m:t>↓</m:t></m:r></m:oMath>"),
         ("\\overline{\\overline{A}}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:bar><m:barPr><m:pos m:val=\"top\"/></m:barPr><m:e><m:bar><m:barPr><m:pos m:val=\"top\"/></m:barPr><m:e><m:r><m:t>A</m:t></m:r></m:e></m:bar></m:e></m:bar></m:oMath>"),
         ("\\sqrt{\\sqrt{x}}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:r><m:t>x</m:t></m:r></m:e></m:rad></m:e></m:rad></m:oMath>"),
-        ("\\sum_{i=1}^{\\infty} \\frac{1}{i^2} = \\frac{\\pi^2}{6}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub><m:e><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>∞</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:f><m:num><m:e><m:r><m:t>1</m:t></m:r></m:e></m:num><m:den><m:e><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:e></m:den></m:f><m:r><m:t>=</m:t></m:r><m:f><m:num><m:e><m:sSup><m:e><m:r><m:t>π</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:e></m:num><m:den><m:e><m:r><m:t>6</m:t></m:r></m:e></m:den></m:f></m:oMath>"),
-        ("x'_i", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>x</m:t></m:r><m:sSub><m:e><m:r><m:t>'</m:t></m:r></m:e><m:sub><m:e><m:r><m:t>i</m:t></m:r></m:e></m:sub></m:sSub></m:oMath>"),
+        ("\\sum_{i=1}^{\\infty} \\frac{1}{i^2} = \\frac{\\pi^2}{6}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub><m:sup><m:r><m:t>∞</m:t></m:r></m:sup><m:e/></m:nary><m:f><m:num><m:r><m:t>1</m:t></m:r></m:num><m:den><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:den></m:f><m:r><m:t>=</m:t></m:r><m:f><m:num><m:sSup><m:e><m:r><m:t>π</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:num><m:den><m:r><m:t>6</m:t></m:r></m:den></m:f></m:oMath>"),
+        ("x'_i", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>x</m:t></m:r><m:sSub><m:e><m:r><m:t>'</m:t></m:r></m:e><m:sub><m:r><m:t>i</m:t></m:r></m:sub></m:sSub></m:oMath>"),
         ("'", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>'</m:t></m:r></m:oMath>"),
         ("\\overrightarrow{AB}", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:r><m:t>overrightarrow</m:t></m:r><m:r><m:t>{</m:t></m:r><m:r><m:t>A</m:t></m:r><m:r><m:t>B</m:t></m:r><m:r><m:t>}</m:t></m:r></m:oMath>"),
         ];
-        assert_matches_python(cases, false);
+        assert_reviewed_omml(cases, false);
     }
 
-    /// 块级公式（is_block=True，外层 <m:oMathPara>）逐字符对照表。
+    /// Reviewed block snapshots (outer m:oMathPara), with the same schema fixes.
     #[test]
-    fn omml_block_matches_python_character_by_character() {
+    fn omml_block_matches_reviewed_office_snapshots() {
         let cases: &[(&str, &str)] = &[
-        ("E = mc^2", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath></m:oMathPara>"),
-        ("\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:f><m:num><m:e><m:r><m:t>-</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>±</m:t></m:r><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:sSup><m:e><m:r><m:t>b</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup><m:r><m:t>-</m:t></m:r><m:r><m:t>4</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>c</m:t></m:r></m:e></m:rad></m:e></m:num><m:den><m:e><m:r><m:t>2</m:t></m:r><m:r><m:t>a</m:t></m:r></m:e></m:den></m:f></m:oMath></m:oMathPara>"),
-        ("\\sum_{i=1}^{n} i^2", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub><m:e><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>n</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup></m:oMath></m:oMathPara>"),
-        ("\\int_0^1 x^2 dx", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:e><m:r><m:t>0</m:t></m:r></m:e></m:sub><m:sup><m:e><m:r><m:t>1</m:t></m:r></m:e></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:e><m:r><m:t>2</m:t></m:r></m:e></m:sup></m:sSup><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>"),
-        ("\\left( \\frac{a}{b} \\right)", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:num><m:e><m:r><m:t>a</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>b</m:t></m:r></m:e></m:den></m:f></m:e></m:d></m:oMath></m:oMathPara>"),
+        ("E = mc^2", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:r><m:t>E</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>m</m:t></m:r><m:sSup><m:e><m:r><m:t>c</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath></m:oMathPara>"),
+        ("\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:f><m:num><m:r><m:t>-</m:t></m:r><m:r><m:t>b</m:t></m:r><m:r><m:t>±</m:t></m:r><m:rad><m:radPr><m:degHide m:val=\"1\"/></m:radPr><m:deg/><m:e><m:sSup><m:e><m:r><m:t>b</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup><m:r><m:t>-</m:t></m:r><m:r><m:t>4</m:t></m:r><m:r><m:t>a</m:t></m:r><m:r><m:t>c</m:t></m:r></m:e></m:rad></m:num><m:den><m:r><m:t>2</m:t></m:r><m:r><m:t>a</m:t></m:r></m:den></m:f></m:oMath></m:oMathPara>"),
+        ("\\sum_{i=1}^{n} i^2", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:nary><m:naryPr><m:chr m:val=\"∑\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr><m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub><m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>i</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup></m:oMath></m:oMathPara>"),
+        ("\\int_0^1 x^2 dx", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:nary><m:naryPr><m:chr m:val=\"∫\"/><m:limLoc m:val=\"subSup\"/></m:naryPr><m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup><m:e/></m:nary><m:sSup><m:e><m:r><m:t>x</m:t></m:r></m:e><m:sup><m:r><m:t>2</m:t></m:r></m:sup></m:sSup><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:oMath></m:oMathPara>"),
+        ("\\left( \\frac{a}{b} \\right)", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:f><m:num><m:r><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:e></m:d></m:oMath></m:oMathPara>"),
         ("\\left\\{ x \\right}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"\\{\"/><m:endChr m:val=\"}\"/></m:dPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath></m:oMathPara>"),
         ("\\left[ 0, 1 \\right]", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"[\"/><m:endChr m:val=\"]\"/></m:dPr><m:e><m:r><m:t>0</m:t></m:r><m:r><m:t>,</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e></m:d></m:oMath></m:oMathPara>"),
-        ("\\left. \\frac{d}{dx} \\right|_{x=0}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:sSub><m:e><m:d><m:dPr><m:begChr m:val=\"\"/><m:endChr m:val=\"|\"/></m:dPr><m:e><m:f><m:num><m:e><m:r><m:t>d</m:t></m:r></m:e></m:num><m:den><m:e><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:e></m:den></m:f></m:e></m:d></m:e><m:sub><m:e><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>0</m:t></m:r></m:e></m:sub></m:sSub></m:oMath></m:oMathPara>"),
+        ("\\left. \\frac{d}{dx} \\right|_{x=0}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:sSub><m:e><m:d><m:dPr><m:begChr m:val=\"\"/><m:endChr m:val=\"|\"/></m:dPr><m:e><m:f><m:num><m:r><m:t>d</m:t></m:r></m:num><m:den><m:r><m:t>d</m:t></m:r><m:r><m:t>x</m:t></m:r></m:den></m:f></m:e></m:d></m:e><m:sub><m:r><m:t>x</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>0</m:t></m:r></m:sub></m:sSub></m:oMath></m:oMathPara>"),
         ("\\left\\| x \\right\\|", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"\\|\"/><m:endChr m:val=\"\\|\"/></m:dPr><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:oMath></m:oMathPara>"),
         ("\\left\\{ a \\right\\}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"\\{\"/><m:endChr m:val=\"\\}\"/></m:dPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:d></m:oMath></m:oMathPara>"),
         ("\\left(a\\right)", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:d><m:dPr><m:begChr m:val=\"(\"/><m:endChr m:val=\")\"/></m:dPr><m:e><m:r><m:t>a</m:t></m:r></m:e></m:d></m:oMath></m:oMathPara>"),
@@ -1757,16 +2021,16 @@ b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/ma
         ("\\begin{array}{cc} 1 & 2 \\end{array}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:m><m:mr><m:e><m:r><m:t>{</m:t></m:r><m:r><m:t>c</m:t></m:r><m:r><m:t>c</m:t></m:r><m:r><m:t>}</m:t></m:r><m:r><m:t>1</m:t></m:r></m:e><m:e><m:r><m:t>2</m:t></m:r></m:e></m:mr></m:m></m:oMath></m:oMathPara>"),
         ("\\begin{array}{} x \\end{array}", "<m:oMathPara xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><m:oMath><m:m><m:mr><m:e><m:r><m:t>{</m:t></m:r><m:r><m:t>}</m:t></m:r><m:r><m:t>x</m:t></m:r></m:e></m:mr></m:m></m:oMath></m:oMathPara>"),
         ];
-        assert_matches_python(cases, true);
+        assert_reviewed_omml(cases, true);
     }
 
-    fn assert_matches_python(cases: &[(&str, &str)], is_block: bool) {
+    fn assert_reviewed_omml(cases: &[(&str, &str)], is_block: bool) {
         let mut diffs: Vec<String> = Vec::new();
         for (input, expected) in cases {
             let got = latex_to_omml(input, is_block);
             if got != *expected {
                 diffs.push(format!(
-                    "input={}\n  python={}\n  rust  ={}",
+                    "input={}\n  expected={}\n  actual  ={}",
                     input, expected, got
                 ));
             }
@@ -1889,11 +2153,11 @@ b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/ma
 
     /// n 元运算符必须是 <m:nary><m:naryPr>…</m:naryPr>sub sup <m:e/></m:nary>。
     #[test]
-    fn nary_emits_python_shape() {
+    fn nary_emits_office_shape_with_inline_limits() {
         let xml = latex_to_omml("\\sum_{i=1}^{n}", false);
         assert!(
             xml.contains(
-                "<m:nary><m:naryPr><m:chr m:val=\"\u{2211}\"/><m:limLoc m:val=\"undOvr\"/></m:naryPr>"
+                "<m:nary><m:naryPr><m:chr m:val=\"\u{2211}\"/><m:limLoc m:val=\"subSup\"/></m:naryPr>"
             ),
             "{}",
             xml
@@ -1905,15 +2169,34 @@ b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/ma
         assert!(integral.contains("subSup"), "{}", integral);
     }
 
-    /// 字体命令集合与 Python 完全一致：有 \mathcal，没有 \cal。
+    /// Font wrappers retain their Office script/style; unsupported legacy
+    /// commands remain visible instead of being silently discarded.
     #[test]
-    fn font_command_set_matches_python() {
+    fn font_commands_preserve_script_and_unknown_commands() {
         let mathcal = latex_to_omml("\\mathcal{F}", false);
-        assert!(mathcal.contains("<m:r><m:t>F</m:t></m:r>"), "{}", mathcal);
-        assert!(!mathcal.contains("rPr"), "{}", mathcal);
+        assert!(mathcal.contains("<m:scr m:val=\"script\"/><m:sty m:val=\"p\"/>"), "{}", mathcal);
+        assert!(mathcal.contains("<m:t>F</m:t>"), "{}", mathcal);
         let cal = latex_to_omml("\\cal{F}", false);
         assert!(cal.contains("<m:t>cal</m:t>"), "{}", cal);
         assert!(cal.contains("<m:t>{</m:t>"), "{}", cal);
+    }
+    #[test]
+    fn generated_math_children_follow_the_pinned_office_schema(){
+        fn check(node:&crate::math_document::XmlNode){
+            let definition=crate::math_document::schema()["elements"].as_array().unwrap().iter().find(|e|e["element"]==node.local());
+            for child in node.children(){
+                if let Some(definition)=definition{assert!(definition["children"].as_array().unwrap().iter().any(|name|name==child.local()),"{} cannot contain {}",node.name,child.name);}
+                check(child);
+            }
+        }
+        for source in DIFFERENTIAL_PROBES{
+            check(&crate::math_document::parse_xml(&latex_to_omml(source,false)).unwrap());
+        }
+        for source in [r#"<math><mrow><mfrac><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow><mi>c</mi></mfrac></mrow></math>"#,
+          r#"<math><mtable><mtr><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr></mtable></math>"#,
+          r#"<math><mmultiscripts><mrow><mi>T</mi></mrow><mi>i</mi><none/><mprescripts/><none/><mn>2</mn></mmultiscripts></math>"#]{
+            check(&crate::math_document::parse_xml(&crate::math_formats::from_mathml(source).unwrap().0).unwrap());
+        }
     }
     // ------------------------------------------------- Item 1: call-stack safety
     //
@@ -2232,10 +2515,14 @@ b", "<m:oMath xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/ma
             } else {
                 assert!(inline.starts_with("<m:oMath "), "{:?}", probe);
                 assert!(inline.ends_with("</m:oMath>"), "{:?}", probe);
+                // The wrapper must preserve every structural byte. Limit
+                // placement alone is style-dependent and is independently
+                // checked against explicit expected values above.
+                let without_style_difference=|s:&str|s.replace(r#"<m:limLoc m:val="subSup"/>"#,r#"<m:limLoc m:val="undOvr"/>"#);
                 assert_eq!(
-                    inline,
-                    format!("{}{}</m:oMath>", math_open, inner),
-                    "{:?}: inline must be the very same inner XML inside a namespace-carrying <m:oMath>",
+                    without_style_difference(&inline),
+                    without_style_difference(&format!("{}{}</m:oMath>", math_open, inner)),
+                    "{:?}: inline and block must preserve the same structure apart from limit placement",
                     probe
                 );
             }

@@ -1,0 +1,13 @@
+; Generated from assets/capabilities/catalog.json. Do not guess pack sizes.
+!define PDF_PACK_DOWNLOAD_MIB "17.3"
+!define PDF_PACK_INSTALLED_MIB "13.0"
+!define PDF_PACK_INSTALLED_KIB "13276"
+!define TYPST_PACK_DOWNLOAD_MIB "29.9"
+!define TYPST_PACK_INSTALLED_MIB "50.1"
+!define TYPST_PACK_INSTALLED_KIB "51288"
+!define OCR_PACK_DOWNLOAD_MIB "9.4"
+!define OCR_PACK_INSTALLED_MIB "12.7"
+!define OCR_PACK_INSTALLED_KIB "13006"
+!define FONTS_PACK_DOWNLOAD_MIB "38.1"
+!define FONTS_PACK_INSTALLED_MIB "48.5"
+!define FONTS_PACK_INSTALLED_KIB "49707"

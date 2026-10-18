@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test.describe('frontend release audit', () => {
@@ -62,7 +63,7 @@ test.describe('presentation security audit', () => {
     await page.goto('/');
     const indexHeaders = await page.request.get('/');
     expect(indexHeaders.headers()['x-frame-options']).toBe('DENY');
-    await page.waitForFunction(() => typeof launchPresentationMode === 'function');
+    await waitForPage(page, () => typeof launchPresentationMode === 'function');
     await page.evaluate(() => {
       const markdown = '# CSP Slide One\n\nDirect Reveal rendering.\n\n<!-- slide -->\n\n## CSP Slide Two\n\n- stable\n- offline';
       state.mode = 'file';
@@ -100,9 +101,9 @@ test.describe('presentation security audit', () => {
 });
 
 test.describe('zen and tab stability', () => {
-  test('zen mode enters without moving the reader or showing a toast', async ({ page }) => {
+  test('zen mode releases chrome height without changing scroll or showing a toast', async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(() => typeof toggleZenMode === 'function' && typeof renderContent === 'function');
+    await waitForPage(page, () => typeof toggleZenMode === 'function' && typeof renderContent === 'function');
     await page.evaluate(async () => {
       await renderContent('# Stable Zen\n\nImmersive reading body.', 'zen.md');
       $('content').scrollTop = 24;
@@ -111,6 +112,7 @@ test.describe('zen and tab stability', () => {
 
     const before = await page.evaluate(() => ({
       rect: document.querySelector('#content .markdown-body').getBoundingClientRect().toJSON(),
+      reader: document.getElementById('content').getBoundingClientRect().toJSON(),
       scroll: document.getElementById('content').scrollTop,
     }));
     const entering = await page.evaluate(() => {
@@ -135,22 +137,30 @@ test.describe('zen and tab stability', () => {
     expect(entering.enteringRule).toBe(true);
     expect(entering.toastHidden).toBe(true);
 
-    await page.waitForFunction(() => document.activeElement?.id === 'content');
-    await page.waitForFunction(() => !document.body.classList.contains('zen-entering'));
+    await waitForPage(page, () => document.activeElement?.id === 'content');
+    await waitForPage(page, () => !document.body.classList.contains('zen-entering'));
     const after = await page.evaluate(() => ({
       rect: document.querySelector('#content .markdown-body').getBoundingClientRect().toJSON(),
+      reader: document.getElementById('content').getBoundingClientRect().toJSON(),
       scroll: document.getElementById('content').scrollTop,
       transform: getComputedStyle(document.getElementById('toolbar')).transform,
     }));
     expect(Math.abs(after.rect.left - before.rect.left)).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.rect.top - before.rect.top)).toBeLessThanOrEqual(1);
+    // The new layout deliberately gives the hidden title/document bars back
+    // to the content. Keep the article's inset and scroll position, not the
+    // obsolete empty band above it. Revealing controls must be an overlay.
+    expect(after.reader.top).toBeLessThan(before.reader.top);
+    expect(Math.abs((before.rect.top - after.rect.top) - (before.reader.top - after.reader.top))).toBeLessThanOrEqual(1);
     expect(Math.abs(after.scroll - before.scroll)).toBeLessThanOrEqual(1);
     expect(after.transform).toMatch(/matrix\(1, 0, 0, 1, 0, -\d+\)/);
+    await page.evaluate(() => document.getElementById('toolbar').classList.add('zen-toolbar-revealed'));
+    const revealed = await page.locator('#content').boundingBox();
+    expect(Math.abs(revealed.y - after.reader.top)).toBeLessThanOrEqual(1);
   });
 
   test('tab selection is immediate and continuous scroll survives switches', async ({ page }) => {
     await page.goto('/');
-    await page.waitForFunction(() => typeof renderTabsBar === 'function');
+    await waitForPage(page, () => typeof renderTabsBar === 'function');
     const paragraphs = Array.from({ length: 160 }, (_, index) => `Paragraph ${index} keeps continuous reading measurable.`).join('\n\n');
     await page.evaluate(({ paragraphs }) => {
       state.tabs = [
@@ -163,9 +173,9 @@ test.describe('zen and tab stability', () => {
       void renderActiveTab({ restoreScroll: true });
     }, { paragraphs });
 
-    await page.waitForFunction(() => document.getElementById('content')?.textContent.includes('Paragraph 159'));
+    await waitForPage(page, () => document.getElementById('content')?.textContent.includes('Paragraph 159'));
     await page.evaluate(() => { document.getElementById('content').scrollTop = 320; });
-    await page.waitForFunction(() => getActiveTab()?.scrollPos === 320);
+    await waitForPage(page, () => getActiveTab()?.scrollPos === 320);
 
     const selectionTiming = await page.evaluate(() => {
       const bar = document.getElementById('doc-tabs-bar');
@@ -178,9 +188,9 @@ test.describe('zen and tab stability', () => {
     expect(selectionTiming.activeId).toBe('short');
     expect(selectionTiming.selectedNow).toBe('short');
 
-    await page.waitForFunction(() => document.getElementById('content')?.textContent.includes('Short'));
+    await waitForPage(page, () => document.getElementById('content')?.textContent.includes('Short'));
     await page.evaluate(() => { void switchTab('long'); });
-    await page.waitForFunction(() => document.getElementById('content')?.textContent.includes('Paragraph 159'));
-    await page.waitForFunction(() => Math.abs(document.getElementById('content').scrollTop - 320) <= 2);
+    await waitForPage(page, () => document.getElementById('content')?.textContent.includes('Paragraph 159'));
+    await waitForPage(page, () => Math.abs(document.getElementById('content').scrollTop - 320) <= 2);
   });
 });

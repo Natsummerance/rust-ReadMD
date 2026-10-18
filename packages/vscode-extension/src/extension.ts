@@ -7,6 +7,8 @@ import { l10n } from './localization';
 import { getWebviewContent, WebviewAssets } from './webview';
 import { fencedCodeAt } from './fences';
 import { registerIntelligence } from './intelligence';
+import { registerCompletion } from './completion';
+import { registerOpenAPI } from './openapi';
 
 let diagnosticStatusBarItem: vscode.StatusBarItem;
 let coreStatusBarItem: vscode.StatusBarItem;
@@ -151,6 +153,8 @@ export function activate(context: vscode.ExtensionContext) {
   const bridge = new ReadMDBridge(context);
   context.subscriptions.push({ dispose: () => bridge.dispose() });
   registerIntelligence(context, bridge);
+  registerCompletion(context, bridge);
+  registerOpenAPI(context, bridge);
   const trusted = () => {
     if (vscode.workspace.isTrusted !== false) return true;
     void vscode.window.showWarningMessage(l10n('trustRequired', 'Trust this workspace before using native tools, AI or code execution.'));

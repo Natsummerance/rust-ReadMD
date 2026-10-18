@@ -1,0 +1,12 @@
+{
+  "name": "vega-interpreter",
+  "version": "1.0.5",
+  "license": "BSD-3-Clause",
+  "source": "https://github.com/vega/vega/tree/fb1092f6b931d450f9c210b67ae4752bd3dd461b/packages/vega-interpreter",
+  "archive": "https://registry.npmjs.org/vega-interpreter/-/vega-interpreter-1.0.5.tgz",
+  "integrity": "sha512-po6oTOmeQqr1tzTCdD15tYxAQLeUnOVirAysgVEemzl+vfmvcEP7jQmlc51jz0jMA+WsbmE6oJywisQPu/H0Bg==",
+  "path": "assets/vendor/diagrams/vega/vega-interpreter.min.js",
+  "bytes": 5046,
+  "sha256": "53be81f6c7fb5d30aa32dc61bf938d37d43299f1ad9dd16957077fb01f72240a",
+  "notice": "assets/licenses/vega-interpreter-1.0.5-BSD.txt"
+}

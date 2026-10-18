@@ -294,7 +294,12 @@ mod linux {
     }
 
     pub fn run(req: &Request) -> DialogOutcome {
-        zenity(req).or_else(|| kdialog(req)).unwrap_or(DialogOutcome::Unavailable)
+        match zenity(req) {
+            Some(DialogOutcome::Picked(paths)) => DialogOutcome::Picked(paths),
+            Some(DialogOutcome::Canceled) => DialogOutcome::Canceled,
+            // Installed but unusable (Wayland/desktop mismatch) should try Qt.
+            _ => kdialog(req).unwrap_or(DialogOutcome::Unavailable),
+        }
     }
 }
 

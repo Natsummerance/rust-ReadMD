@@ -12,7 +12,9 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     } : {});
     const data = await response.json();
-    if (!response.ok || data.ok !== true) throw new Error(data.error === 'recovery_document_too_large' ? t('storage.tooLarge') : (data.error || 'HTTP ' + response.status));
+    if (!response.ok || data.ok !== true) throw new Error(data.error === 'recovery_document_too_large' ?
+      (body?.kind==='math_draft'?t('storage.mathPolicy',{count:32,size:'512 KiB'}):t('storage.tooLarge')) :
+      data.error==='invalid_recovery_document'&&body?.kind==='math_draft'?t('formula.invalid'):(data.error || 'HTTP ' + response.status));
     return data;
   }
   function enqueue(body) {
@@ -46,12 +48,13 @@
     flushing = true;
     try {
     clearTimeout(timer);
+    if (window.ReadMDInlineMath && !await ReadMDInlineMath.flush()) return false;
     if (state.editing) syncActiveTabDirty();
-    for (const tab of state.tabs.filter(tab => !tab.isDirty && tab._recoveryContent !== undefined)) {
+    for (const tab of state.tabs.filter(tab => tab.path && !tab.isDirty && tab._recoveryContent !== undefined)) {
       try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; }
       catch (_) { /* Retry during maintenance. */ }
     }
-    const pending = state.tabs.filter(tab => tab.isDirty && !tab._recoveryDiscarding);
+    const pending = state.tabs.filter(tab => (tab.isDirty || !tab.path) && !tab._recoveryDiscarding);
     for (const tab of pending) {
       const snapshot = capture(tab);
       if (tab._recoveryContent === snapshot.content) continue;
@@ -60,7 +63,7 @@
         if (capture(tab).content !== snapshot.content) setTimeout(schedule, 0);
       }
     }
-    } finally { flushing = false; }
+    } finally { flushing = false; window.ReadMDSession?.persist(); }
   }
   function schedule() { if (flushing) return; clearTimeout(timer); timer = setTimeout(flush, 1500); }
   async function checkpoint(reason = 'ai', tab = getActiveTab()) {
@@ -110,6 +113,12 @@
     const expectedTab = getActiveTab();
     const expectedView = cmView, previous = expectedTab ? capture(expectedTab).content : '';
     const data = await enqueue({ op: 'read', id });
+    if (data.entry.kind === 'math_draft') {
+      const source = ReadMDInlineMath.recoveryText(JSON.parse(data.content));
+      await renderVirtual('recovery', data.entry.name, data.entry.context?.dir || '', source, [], { originPath:data.entry.path });
+      await toggleEdit();
+      $('document-history-modal').classList.add('hidden');showToast(t('storage.restoredDraft'));return;
+    }
     const baseDir = data.entry.context?.dir || (data.entry.path ? data.entry.path.replace(/[\\/][^\\/]*$/, '') : '');
     const extras = { originPath: data.entry.path, assets: Array.isArray(data.entry.context?.assets) ? data.entry.context.assets : [] };
     const sameOrigin = expectedTab?.path && data.entry.path && normalizePath(expectedTab.path) === normalizePath(data.entry.path);
@@ -144,7 +153,7 @@
         row.dataset.historyId = entry.id;
         const title = document.createElement('strong'); title.textContent = entry.name;
         const meta = document.createElement('p'); meta.className = 'hint';
-        meta.textContent = t('storage.kind.' + entry.kind) + ' · ' + new Date(entry.created).toLocaleString() + ' · ' + Math.ceil(entry.bytes / 1024) + ' KB';
+        meta.textContent = (['math_draft','math_recovery'].includes(entry.kind) ? t('editor.formula') + ' · ' + t('storage.draftKept') : t('storage.kind.' + entry.kind)) + ' · ' + new Date(entry.created).toLocaleString() + ' · ' + Math.ceil(entry.bytes / 1024) + ' KB';
         const path = document.createElement('p'); path.className = 'hint'; path.textContent = entry.path || t('storage.unsaved');
         row.append(title, meta, path);
         const actions = document.createElement('div'); actions.className = 'document-history-actions';
@@ -155,7 +164,7 @@
         };
         button('storage.openCopy', () => restore(entry.id, false));
         const tab = getActiveTab();
-        if (state.editing && tab?.path && entry.path && normalizePath(tab.path) === normalizePath(entry.path)) button('storage.restoreEditor', () => restore(entry.id, true));
+        if (!['math_draft','math_recovery'].includes(entry.kind) && state.editing && tab?.path && entry.path && normalizePath(tab.path) === normalizePath(entry.path)) button('storage.restoreEditor', () => restore(entry.id, true));
         button('storage.delete', async () => {
           if (!await confirmAction({ title: t('storage.delete'), message: t('storage.deleteConfirm'), confirmText: t('storage.delete'), cancelText: t('common.cancel') })) return;
           await enqueue({ op: 'delete', id: entry.id }); await refresh();
@@ -169,7 +178,7 @@
   async function open() {
     ensureModal();
     $('document-history-title').textContent = t('storage.history');
-    $('document-history-policy').textContent = t('storage.policy');
+    $('document-history-policy').textContent = t('storage.policy')+' '+t('storage.mathPolicy',{count:32,size:'512 KiB'});
     $('document-history-close').setAttribute('aria-label', t('common.close'));
     $('document-history-refresh').textContent = t('storage.refresh');
     $('document-history-modal').classList.remove('hidden'); await refresh();
@@ -181,7 +190,7 @@
     if (!window.__STARTUP_PROBE__) setTimeout(async () => {
       try {
         const data = await request();
-        recoveryCount = data.entries.filter(entry => entry.kind === 'draft' || entry.kind === 'discarded').length;
+        recoveryCount = data.entries.filter(entry => ['draft','discarded','math_draft','math_recovery'].includes(entry.kind)).length;
         if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });
       } catch (_) { /* Opening recovery provides an explicit retry with feedback. */ }
     }, 3000);
@@ -194,28 +203,100 @@
     if (closing) return false;
     closing = true;
     try {
+      if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
-      await flush();
-      if (state.tabs.some(tab => tab.isDirty)) {
-        await closeAllTabs();
-        if (state.tabs.length) return false;
-      }
+      if (await flush() === false) return false;
+      if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+      if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
+      if (!await confirmExitChanges()) return false;
+      await window.ReadMDSession?.flush();
       await queue;
       window.ipc?.postMessage('readmd:quit');
       return true;
     } finally { closing = false; }
   }
   async function prepareInstall() {
+    if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
     if (state.editing) syncActiveTabDirty();
-    await flush();
-    if (state.tabs.some(tab => tab.isDirty)) {
-      await closeAllTabs();
-      if (state.tabs.some(tab => tab.isDirty)) return false;
-    }
+    if (await flush() === false) return false;
+    if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
+    if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
+    if (!await confirmExitChanges()) return false;
+    await window.ReadMDSession?.flush();
     await queue;
     return true;
   }
-  window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall };
+  // App exit is not the same operation as explicitly closing every page.
+  async function confirmExitChanges() {
+    const candidates = [...state.tabs], discarded = [], accepted = new Map();
+    const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
+    for (const tab of candidates) {
+      if (tab.isDirty) {
+        const action = await promptDirtyClose(tab.title || tab.name);
+        if (action === 'cancel') return false;
+        if (action === 'save') {
+          await activateTabForSave(tab.id);
+          if (!await saveEdit({ exitAfterSave: true }) || tab.isDirty) return false;
+        } else {
+          if (!await discard(tab)) return false;
+          discarded.push(tab);
+        }
+      }
+      accepted.set(tab, text(tab));
+    }
+    if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab) || text(tab) !== accepted.get(tab))) return false;
+    for (const tab of discarded) {
+      await window.ReadMDCollaborationShare?.detach(tab,true);
+      if (!tab.path) state.tabs.splice(state.tabs.indexOf(tab), 1);
+      else { tab.content = tab.fixed = tab.original; tab.isDirty = false; tab._recoveryContent = undefined; tab.editorState = null; }
+    }
+    if (discarded.length) {
+      exitEdit();
+      if (!getActiveTab()) state.activeTabId = state.tabs.at(-1)?.id || null;
+      if (getActiveTab()) { syncStateFromActiveTab(); await renderActiveTab(); }
+      else resetHome();
+    }
+    return true;
+  }
+  async function sessionDrafts(keys) {
+    const wanted = new Set(keys), result = new Map();
+    const { entries } = await request();
+    for (const entry of entries.filter(e => e.kind === 'draft' && wanted.has(e.doc_key)).sort((a, b) => b.created - a.created)) {
+      if (!result.has(entry.doc_key)) {
+        const data = await enqueue({ op: 'read', id: entry.id });
+        result.set(entry.doc_key, data);
+      }
+    }
+    return result;
+  }
+  async function mathDrafts(tab) {
+    if (tab.mathDrafts) return tab.mathDrafts;
+    const key=keyFor(tab),data=await request();
+    const drafts=[];
+    for (const entry of data.entries.filter(e=>e.kind==='math_draft'&&e.doc_key===key)) {
+      const row=await enqueue({op:'read',id:entry.id});drafts.push({entry:row.entry,payload:JSON.parse(row.content)});
+    }
+    return tab.mathDrafts ||= drafts;
+  }
+  async function saveMathDraft(tab,payload) {
+    try {
+      await mathDrafts(tab);
+      const result=await enqueue({op:'record',key:keyFor(tab),path:tab.path||'',name:tab.name||tab.title||'document.md',
+        kind:'math_draft',reason:'formula',content:JSON.stringify(payload),context:{dir:tab.dir||''}});
+      tab.mathDrafts=tab.mathDrafts.filter(d=>d.entry.context.math_slot!==result.entry.context.math_slot);
+      tab.mathDrafts.unshift({entry:result.entry,payload});if(getActiveTab()===tab)feedback('storage.draftKept');return true;
+    }catch(error){feedback('storage.recoveryFailed',{error:error.message},true);return false;}
+  }
+  async function removeMathDraft(tab,slot) {
+    try {
+      for (const row of [...await mathDrafts(tab)]) if(row.entry.context.math_slot===slot){
+        await enqueue({op:'delete',id:row.entry.id});tab.mathDrafts=tab.mathDrafts.filter(d=>d.entry.id!==row.entry.id);
+      }
+      return true;
+    }catch(error){feedback('storage.recoveryFailed',{error:error.message},true);return false;}
+  }
+  window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall, sessionDrafts,
+    mathDrafts, saveMathDraft, removeMathDraft, mathKept:()=>feedback('storage.draftKept') };
   window.addEventListener('readmd:language-changed', () => {
     if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
     if (recoveryCount) $('btn-document-history').querySelector('em').textContent = t('storage.recoveryAvailable', { count: recoveryCount });

@@ -1,14 +1,6 @@
-//! 扫描 / 图片转 md：`src/readmd_modules/ocr.py` 的 Rust 对等实现。
-//!
-//! Python 侧的引擎阶梯是 WinRT → macOS Vision → RapidOCR 插件 → Tesseract CLI，
-//! 全部依赖宿主二进制或 Python 扩展。Rust 内核既不回调 Python，也不得把识别
-//! 任务外包给外部可执行文件，因此 `pick_engine()` 稳定返回 `None`——这等价于
-//! Python 在“没有 tesseract、没有 rapidocr 插件、没有 WinRT”的机器上的状态：
-//! `load()` 抛 `ocr-no-engine：无可用 OCR 引擎`，模块注册表进入 `error`，
-//! `/api/ocr` 走 503 `module_unavailable`（见 `parity_web::h_ocr`）。
-//!
-//! PDF 的文字层是纯解析工作，不需要任何 OCR 引擎，所以 `ocr_pdf_to_md` 在 Rust
-//! 内核里真正可用，并逐字复刻 Python 的分页、占位符与截断提示。
+//! OCR and Markdown reconstruction. A reviewed portable engine takes priority;
+//! native OS acceleration remains an optional fallback, never a requirement.
+//! Scanned PDFs use the owned PDFium pack when portable OCR is installed.
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -25,8 +17,7 @@ pub const OCR_PDF_EMPTY_PLACEHOLDER: &str = "> （PDF 未提取到文字，且 O
 /// Python `ocr_pdf_to_md(path, max_pages=200)` 的默认页数上限。
 pub const OCR_MAX_PAGES: usize = 200;
 
-/// Python `_pick_engine()` 的引擎阶梯。Rust 内核里没有一项可用，保留枚举是为了
-/// 让“未来接入原生引擎”这件事有一个明确的落点。
+/// Runtime identity, separate from the user's installed Office applications.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OcrEngine {
     WinRt,
@@ -49,6 +40,12 @@ pub enum OcrErrorCode {
     OcrInvalidImage,
     #[serde(rename = "ocr_no_engine")]
     OcrNoEngine,
+    #[serde(rename = "ocr_busy")]
+    OcrBusy,
+    #[serde(rename = "ocr_timeout")]
+    OcrTimeout,
+    #[serde(rename = "cancelled")]
+    Cancelled,
 }
 
 /// `code` 承载 Python 异常文本，`error_code` 承载稳定 UI 代码。
@@ -65,6 +62,31 @@ impl std::fmt::Display for OcrError {
 }
 
 impl OcrError {
+    pub(crate) fn from_portable(code:String)->Self {
+        let error_code=match code.as_str(){
+            "ocr_no_engine"=>OcrErrorCode::OcrNoEngine,
+            "ocr_busy"=>OcrErrorCode::OcrBusy,
+            "ocr_timeout"=>OcrErrorCode::OcrTimeout,
+            "cancelled"=>OcrErrorCode::Cancelled,
+            "ocr_invalid_image"=>OcrErrorCode::OcrInvalidImage,
+            _=>OcrErrorCode::OcrProcessFailed,
+        };
+        Self{code,error_code}
+    }
+    pub(crate) fn api_code(&self)->&'static str {
+        match self.error_code {
+            OcrErrorCode::OcrNoEngine=>"ocr_no_engine",
+            OcrErrorCode::OcrBusy=>"ocr_busy",
+            OcrErrorCode::OcrTimeout=>"ocr_timeout",
+            OcrErrorCode::Cancelled=>"cancelled",
+            _ if self.code=="pdf_engine_unavailable"=>"pdf_engine_unavailable",
+            _ if self.code=="cancelled"=>"cancelled",
+            _=>"ocr_failed",
+        }
+    }
+    pub(crate) fn http_status(&self)->u16 {
+        match self.api_code(){"ocr_busy"=>409,"ocr_timeout"=>408,"cancelled"=>422,_=>500}
+    }
     fn engine(message: &str) -> Self {
         OcrError {
             code: message.to_string(),
@@ -85,6 +107,7 @@ lazy_static! {
 /// 引擎探测：Windows 10+ 走系统自带的 `Windows.Media.Ocr`（[`crate::ocr_winrt`]），
 /// 其他平台暂无原生引擎。结果缓存，避免每次请求重新探测。
 pub fn pick_engine() -> Option<OcrEngine> {
+    if crate::ocr_portable::available(){return Some(OcrEngine::Tesseract);}
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(engine) = cache.engine.clone() {
         return engine;
@@ -106,14 +129,21 @@ pub fn load() -> Result<(), String> {
 }
 
 /// 识别一张图片的字节；没有引擎时报错，而不是静默返回空串。
-pub fn ocr_bytes(data: &[u8], _language: Option<&str>) -> Result<String, OcrError> {
+pub fn ocr_bytes(data: &[u8], language: Option<&str>) -> Result<String, OcrError> {
+    // Try the managed service first. Its reservation precedes full validation;
+    // a preliminary availability/hash pass would make a busy request expensive.
+    match crate::ocr_portable::image(data,language){
+        Ok(text)=>return Ok(text),
+        Err(code) if code=="ocr_no_engine"=>(),
+        Err(code)=>return Err(OcrError::from_portable(code)),
+    }
     if pick_engine().is_none() {
         return Err(OcrError::engine(OCR_NO_ENGINE_MESSAGE));
     }
     match crate::ocr_winrt::ocr_image_bytes(data) {
         Ok(lines) => Ok(lines.join("\n")),
         Err(e) if e == "ocr_no_engine" => Err(OcrError::engine(OCR_NO_ENGINE_MESSAGE)),
-        Err(e) => Err(OcrError { code: e, error_code: OcrErrorCode::OcrProcessFailed }),
+        Err(e) => Err(OcrError::from_portable(e)),
     }
 }
 
@@ -396,7 +426,7 @@ pub fn extract_table_to_md_path(path: &str) -> String {
 }
 
 /// Python `ocr_image(path, dpi=None)`。签名保留 `language` 形参以兼容既有调用点。
-pub fn ocr_image(image_path: &str, _language: Option<&str>) -> Result<String, OcrError> {
+pub fn ocr_image(image_path: &str, language: Option<&str>) -> Result<String, OcrError> {
     let path = Path::new(image_path);
     if !path.is_file() {
         return Err(OcrError {
@@ -408,12 +438,15 @@ pub fn ocr_image(image_path: &str, _language: Option<&str>) -> Result<String, Oc
         code: image_path.to_string(),
         error_code: OcrErrorCode::OcrImageNotFound,
     })?;
-    Ok(ocr_cascade(&data, Some(image_path)))
+    ocr_bytes(&data,language)
 }
 
 /// Python `ocr_image_to_md(path)`。
 pub fn ocr_image_to_md(path: &str) -> String {
     let text = ocr_image(path, None).unwrap_or_default();
+    image_markdown(path,text)
+}
+fn image_markdown(path:&str,text:String)->String{
     let body = if !text.is_empty() {
         let formatted = normalize_ocr_text(&text);
         if formatted.is_empty() { text } else { formatted }
@@ -520,6 +553,16 @@ pub fn ocr_pdf_to_md(path: &str, max_pages: usize) -> Result<String, OcrError> {
         let blank: Vec<usize> = pages.iter().enumerate().filter(|(_, t)| thin(t)).map(|(i, _)| i).collect();
         let want = if pages.is_empty() { None } else { Some(blank.clone()) };
         if pages.is_empty() || !blank.is_empty() {
+            if crate::ocr_portable::available(){
+                let paths=crate::ocr_portable::paths();let mut indices=if pages.is_empty(){vec![0]}else{blank.into_iter().filter(|n|*n<max_pages).collect()};
+                let mut at=0;
+                while at<indices.len(){
+                    let index=indices[at];let rendered=crate::pdf_workspace::raster_for_ocr(&paths,path,index).map_err(|code|OcrError{code,error_code:OcrErrorCode::OcrProcessFailed})?;
+                    if pages.is_empty(){pages.resize(rendered.0,String::new());indices=(0..rendered.0.min(max_pages)).collect();}
+                    let text=crate::ocr_portable::image(&rendered.1,None).map_err(OcrError::from_portable)?;
+                    if !text.trim().is_empty(){pages[index]=text;}at+=1;
+                }
+            }else{
             if let Ok(bytes) = fs::read(path) {
                 if let Ok(done) = crate::ocr_winrt::ocr_pdf_bytes(&bytes, max_pages, want, crate::speech::cancellation_check()) {
                     for (idx, lines) in done {
@@ -533,6 +576,7 @@ pub fn ocr_pdf_to_md(path: &str, max_pages: usize) -> Result<String, OcrError> {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -707,7 +751,7 @@ pub fn ocr_any(path: &str) -> Result<String, OcrError> {
         return ocr_pdf_to_md(path, OCR_MAX_PAGES);
     }
     if OCR_IMAGE_EXTS.contains(&ext.as_str()) {
-        return Ok(ocr_image_to_md(path));
+        return ocr_image(path,None).map(|text|image_markdown(path,text));
     }
     Err(OcrError {
         code: format!(
@@ -1121,6 +1165,16 @@ pub fn xy_cut_layout(items: &[LayoutItem]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn portable_lifecycle_errors_keep_http_and_mcp_codes() {
+        for (code,status) in [("ocr_busy",409),("ocr_timeout",408),("cancelled",422),("ocr_no_engine",500)] {
+            let error=super::OcrError::from_portable(code.into());
+            assert_eq!(error.api_code(),code);assert_eq!(error.http_status(),status);
+            assert_eq!(serde_json::to_value(&error.error_code).unwrap(),code);
+        }
+        let error=super::OcrError::from_portable("Internal native diagnostic".into());
+        assert_eq!(error.api_code(),"ocr_failed");assert_eq!(error.http_status(),500);
+    }
     use super::*;
 
     #[test]

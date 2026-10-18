@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 function median(values) {
@@ -29,7 +30,7 @@ test('welcome startup stays lightweight and interactive below one second', async
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.__readmdAppReady === true, null, { timeout: 5000 });
+    await waitForPage(page, () => window.__readmdAppReady === true, null, { timeout: 5000 });
     const metrics = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0];
       const paint = performance.getEntriesByType('paint').find(entry => entry.name === 'first-contentful-paint');

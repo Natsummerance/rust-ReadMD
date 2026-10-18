@@ -1178,6 +1178,7 @@ pub(crate) fn h_export_epub(app: &Arc<App>, req: &Request) -> ApiResult<Response
         }
     }
 
+    if let Some(content)=content_v.as_str(){if let Err(error)=crate::publication_navigation::preflight_export("epub",content,&opts){return ok_json(error.response_body());}}
     // `if not out_path:` — every falsy value (`""`, `null`, `0`, `[]`, `{}`)
     // takes the generated path; a truthy non-str reaches `os.fspath()` and
     // raises `TypeError`.
@@ -1263,9 +1264,11 @@ pub(crate) fn h_export_epub(app: &Arc<App>, req: &Request) -> ApiResult<Response
         &crate::mdexport::now_iso_z(),
     ) {
         Ok(b) => b,
+        Err(e) if e.starts_with("publication_navigation_")=>return ok_json(crate::publication_metadata_formats::error_body(content_v.as_str().unwrap_or(""),&options,&title,"epub",&e).unwrap_or_else(||json!({"ok":false,"error_code":e}))),
+        Err(e) if e == "math_unsupported_version" => return ok_json(crate::latex_compile::error_body(&e)),
         Err(_) => return Ok(failed()),
     };
-    if std::fs::write(&out_path, &bytes).is_err() {
+    if crate::content::write_bytes_atomic(Path::new(&out_path), &bytes).is_err() {
         return Ok(failed());
     }
 
@@ -2260,9 +2263,9 @@ pub(crate) fn h_ocr(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 "path": p,
             })))
         }
-        Err(_) => Ok(Response::json_status(
-            500,
-            &json!({ "ok": false, "error_code": "ocr_failed" }),
+        Err(error) => Ok(Response::json_status(
+            error.http_status(),
+            &json!({ "ok": false, "error_code": error.api_code() }),
         )),
     }
 }
@@ -2600,6 +2603,25 @@ fn save_converted(data_dir: &Path, fixed: &str, out: PathBuf, mode: OnExists, fo
     (target, saved, skipped, existed)
 }
 
+fn save_converted_assets(data_dir: &Path, fixed: &str, out: PathBuf, mode: OnExists, force: bool, preview: bool, assets: &[crate::document_assets::AssetHandle]) -> (PathBuf, bool, bool, bool, String) {
+    if preview || assets.is_empty() {
+        let (out, saved, skipped, existed) = save_converted(data_dir, fixed, out, mode, force, preview);
+        return (out, saved, skipped, existed, fixed.into());
+    }
+    let existed = out.exists();
+    let overwrite = force || mode == OnExists::Overwrite;
+    let target = if mode == OnExists::Rename && !force { free_output_path(&out) } else { out };
+    let _guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if target.exists() && !overwrite { return (target, false, true, existed, fixed.into()); }
+    let mut resources = match crate::document_assets::materialize(fixed, &target, assets) {
+        Ok(resources) => resources, Err(_) => return (target, false, false, existed, fixed.into()),
+    };
+    let saved = crate::convert::write_md_managed_locked(data_dir, &target.to_string_lossy(), &resources.text, overwrite).is_ok();
+    let skipped = false;
+    if saved { resources.commit(); }
+    (target, saved, skipped, existed, if saved { resources.text.clone() } else { fixed.into() })
+}
+
 /// `os.path.dirname(os.path.abspath(p))`, the base directory `MDC.check`
 /// resolves relative image references against (readmd.py:3162, 3197).
 fn mdcheck_base_dir(working: &Path) -> String {
@@ -2685,6 +2707,9 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 .into_iter()
                 .find(|c| err.contains(c));
             let mut body = json!({ "ok": false, "error_code": "conversion_failed", "engine": res.engine, "error": err });
+            for code in [crate::api_codes::DOCX_NOTES_INVALID,crate::api_codes::DOCX_NESTED_FOOTNOTE] {
+                if err == code { body["error_code"] = json!(code); }
+            }
             if let Some(r) = reason {
                 body["reason"] = json!(r);
             }
@@ -2709,7 +2734,7 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         let fixes = auto_fixes(&warns);
         let out = PathBuf::from(crate::convert::md_output_path(&ws));
         let force = crate::convert::is_upload_path(&ws, &app.paths.data_dir);
-        let (out, saved, skipped, out_exists) = save_converted(&app.paths.data_dir, &fixed, out, mode, force, req.q("preview") == Some("1"));
+        let (out, saved, skipped, out_exists, fixed) = save_converted_assets(&app.paths.data_dir, &fixed, out, mode, force, req.q("preview") == Some("1"), &res.assets);
         if req.q("preview") != Some("1") && !saved && !skipped { return Ok(Response::json_status(500, &json!({"ok": false, "content": fixed, "saved": false, "out": out, "error_code": "save_failed", "error": "转换成功，但输出文件未保存；原文件未覆盖"}))); }
 
         return Ok(Response::json(&json!({
@@ -2724,7 +2749,8 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             "saved": saved,
             "skipped": skipped,
             "out_exists": out_exists,
-            "warns": warns
+            "warns": warns,
+            "assets": res.assets
         })));
     }
 
@@ -2846,7 +2872,8 @@ fn start_convert_job_with_language(app: &Arc<App>, paths: Vec<String>, overwrite
     }
     let worker_id = jid.clone();
     let data_dir = app.paths.data_dir.clone();
-    std::thread::spawn(move || convert_worker_with_language(&worker_id, &data_dir, language.as_deref()));
+    let paths=app.paths.clone();
+    std::thread::spawn(move || crate::ocr_portable::with_paths(&paths,||convert_worker_with_language(&worker_id, &data_dir, language.as_deref())));
     jid
 }
 
@@ -2899,6 +2926,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                 text: String::new(),
                 engine: String::new(),
                 error: Some("转换器内部错误".to_string()),
+                assets: Vec::new(),
             }
         });
         // Cancellation can arrive while a native parser/OCR page is running.
@@ -2953,13 +2981,16 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                 if cancelled {
                     status = "canceled".into();
                     out = None;
-                } else { match crate::convert::write_md_managed(data_dir, &target, &fixed, allow_overwrite) {
-                    Ok(()) => status = "ok".to_string(),
-                    Err(e) => {
-                        error = Some(format!("写入失败：{e}"));
+                } else {
+                    let mode = if allow_overwrite { OnExists::Overwrite } else { OnExists::Skip };
+                    let (_, saved, skipped, _, _) = save_converted_assets(data_dir, &fixed, PathBuf::from(&target), mode, false, false, &res.assets);
+                    if saved { status = "ok".to_string(); }
+                    else if skipped { status = "skipped".into(); error_code = Some("output_exists".into()); }
+                    else {
+                        error = Some("写入失败：资源或文档未能保存".into());
                         error_code = Some("write_failed".to_string());
                     }
-                } }
+                }
             }
         }
 

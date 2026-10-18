@@ -1753,6 +1753,9 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
                 "source": "ocr",
                 "path": p,
             });
+            if req.q("details")==Some("1"){
+                body["engine"]=json!(if ocr::pick_engine()==Some(ocr::OcrEngine::Tesseract){"readmd-tesseract"}else{"native-os"});
+            }
             // Nothing recognised: no file is written, and the UI says so.
             let empty = ocr_result_is_empty(&text);
             if empty {
@@ -1782,11 +1785,7 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
             Response::json(&body)
         }
         Err(e) => {
-            let code = match e.error_code {
-                ocr::OcrErrorCode::OcrNoEngine => "ocr_no_engine",
-                _ => "ocr_failed",
-            };
-            Response::json_status(500, &json!({"ok": false, "error_code": code}))
+            Response::json_status(e.http_status(), &json!({"ok": false, "error_code": e.api_code()}))
         }
     }
 }

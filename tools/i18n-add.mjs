@@ -34,5 +34,15 @@ for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.json') && n !== 'me
   if (!changed) continue;
   const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   const out = JSON.stringify(Object.fromEntries(entries), null, 2).replace(/\n/g, eol) + (/\r?\n$/.test(raw) ? eol : '');
-  fs.writeFileSync(p, out);
+  // Readers and Windows indexers may map a locale file. Never truncate the
+  // live JSON: commit a complete neighbour file, preserving the old file if
+  // replacement is refused.
+  const temporary = p + '.i18n-' + process.pid + '.tmp';
+  try {
+    fs.writeFileSync(temporary, out, { flag: 'wx' });
+    fs.renameSync(temporary, p);
+  } catch (error) {
+    try { fs.unlinkSync(temporary); } catch {}
+    throw error;
+  }
 }

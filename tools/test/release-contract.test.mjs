@@ -9,13 +9,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
 const exists = rel => fs.existsSync(path.join(root, rel));
 
-test('formal platform matrix is explicit and HarmonyOS is out of scope', () => {
+test('platform matrix distinguishes native evidence from HarmonyOS source integration', () => {
   const matrix = JSON.parse(read('release/platform-matrix.json'));
   const ids = new Set(matrix.formal_support.map(item => item.id));
-  for (const id of ['windows-x64', 'windows-arm64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64']) {
+  for (const id of ['windows-x64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64']) {
     assert.ok(ids.has(id), id);
   }
-  assert.ok(matrix.out_of_scope.includes('HarmonyOS/OpenHarmony'));
+  assert.equal(matrix.release, read('VERSION').trim());
+  assert.ok(matrix.experimental_support.some(p=>p.id==='harmonyos-arm64' && p.status==='source-integrated-sdk-device-unverified' && p.artifacts.length===0));
+  assert.ok(matrix.formal_support.every(p=>p.status));
   assert.equal(matrix.evidence_policy.release_blocked_until_complete, true);
   assert.ok(matrix.formal_support.every(item => item.native_backend));
   assert.equal(matrix.feature_matrix.no_implicit_empty_cells, true);
@@ -62,7 +64,10 @@ test('HarmonyOS scaffold stays structurally buildable', () => {
   const pkg = JSON.parse(read(h + 'package.json'));
   assert.equal(pkg.scripts['sync:web'], 'node scripts/sync-web-assets.mjs');
   const script = read(h + 'scripts/sync-web-assets.mjs');
-  assert.ok(script.includes("repositoryRoot, 'assets'"));
+  assert.ok(script.includes("../../assets"));
+  assert.ok(script.includes('kernel-manifest.json'));
+  assert.ok(exists(h+'entry/src/main/cpp/readmd_bridge.cpp'));
+  assert.ok(exists('rust/readmd-kernel/src/mobile_ffi.rs'));
   assert.ok(script.includes('resources/rawfile'));
   assert.ok(!exists(h + 'entry/src/main/resources/rawfile'));
 });

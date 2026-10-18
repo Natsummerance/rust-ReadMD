@@ -45,6 +45,7 @@ const vscodeStub = {
   languages: {
     createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
     registerDocumentLinkProvider: () => ({ dispose() {} }),
+    registerInlineCompletionItemProvider: () => ({ dispose() {} }),
   },
   l10n: {
     t: (opts, ...args) => {
@@ -104,6 +105,8 @@ const vscodeStub = {
     showTextDocument: async doc => { openedDocs.push(doc); return doc; },
   },
   workspace: {
+    registerTextDocumentContentProvider: () => ({ dispose() {} }),
+    onDidChangeConfiguration: () => ({ dispose() {} }),
     createFileSystemWatcher: () => ({ onDidCreate: () => ({ dispose() {} }), onDidChange: () => ({ dispose() {} }), onDidDelete: () => ({ dispose() {} }), dispose() {} }),
     textDocuments: [],
     onDidOpenTextDocument: () => ({ dispose() {} }),

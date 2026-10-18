@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('Live2D enable installs its runtime without opening a file picker', async ({ page }) => {
@@ -22,7 +23,7 @@ test('Live2D enable installs its runtime without opening a file picker', async (
     await route.fulfill({ json: { ok: true } });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof window.openPetSettings === 'function');
+  await waitForPage(page, () => typeof window.openPetSettings === 'function');
   await page.evaluate(() => window.openPetSettings());
   await page.locator('#pet-renderer').selectOption('live2d');
   await expect(page.locator('#pet-runtime')).toHaveValue('desktop');

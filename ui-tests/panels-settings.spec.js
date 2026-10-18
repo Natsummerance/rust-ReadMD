@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -21,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openDoc(page) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openExportModal === 'function' && typeof testAiConnection === 'function');
+  await waitForPage(page, () => typeof openExportModal === 'function' && typeof testAiConnection === 'function');
   await page.evaluate(() => renderVirtual('clipboard', 'panel.md', '', '# Panel title\n\nBody and [link](https://example.test).\n\n| A | B |\n|---|---|\n| One | Two |\n', []));
 }
 
@@ -97,6 +98,7 @@ test('failed preset loading can be retried without caching an empty configuratio
 test('preset selection and edits survive closing and changing formats', async ({ page }) => {
   await openDoc(page);
   await page.evaluate(() => openExportModal());
+  await page.locator('#export-tab-pdf').click();
   await page.locator('#exp-preset-cards [data-preset="business"]').click();
   await page.locator('.export-customize > summary').click();
   const size = page.locator('#export-opts [data-k="typography.size"]');
@@ -120,6 +122,7 @@ test('preset selection and edits survive closing and changing formats', async ({
 test('custom presets save through the HTTP host and remain selected after reload', async ({ page }) => {
   await openDoc(page);
   await page.evaluate(() => openExportModal());
+  await page.locator('#export-tab-pdf').click();
   await page.locator('#exp-preset-cards [data-preset="business"]').click();
   await page.locator('#export-tab-docx').click();
   await page.locator('#exp-save-preset').click();
@@ -128,8 +131,8 @@ test('custom presets save through the HTTP host and remain selected after reload
   await page.locator('#exp-save-ok').click();
   await expect(page.locator('#exp-save-name')).toBeHidden();
   await page.reload();
-  await page.waitForFunction(() => typeof openExportModal === 'function');
-  await page.evaluate(() => { renderVirtual('clipboard', 'again.md', '', '# Again', []); openExportModal(); });
+  await waitForPage(page, () => typeof openExportModal === 'function');
+  await page.evaluate(async () => { await window.__readmdSessionReady; await renderVirtual('clipboard', 'again.md', '', '# Again', []); await openExportModal(); });
   await expect(page.locator('#exp-preset-cards').getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => [state.export.fmt, collectExportOptions().link.color])).toEqual(['docx', '#1f3864']);
   await expect(page.locator('#export-tab-docx')).toHaveAttribute('aria-selected', 'true');
@@ -200,6 +203,7 @@ test('HTML, PDF and DOCX export the selected preset and the previewed document',
   });
   await openDoc(page);
   await page.evaluate(() => openExportModal());
+  await page.locator('#export-tab-pdf').click();
   await page.locator('#exp-preset-cards [data-preset="business"]').click();
   for (const format of ['html', 'pdf', 'docx']) {
     await page.locator('#export-tab-' + format).click();
@@ -265,7 +269,7 @@ test('plugin toggles save once, survive reload and restore their state on failur
   await expect(toggle).toBeEnabled();
   await expect(toggle).not.toBeChecked();
   await page.reload();
-  await page.waitForFunction(() => typeof openPluginModal === 'function');
+  await waitForPage(page, () => typeof openPluginModal === 'function');
   await page.evaluate(() => openPluginModal());
   await expect(toggle).not.toBeChecked();
   fail = true;
@@ -304,7 +308,7 @@ test('plugin switch persistence reaches the native manifest', async ({ page }) =
   await expect(toggle).toBeChecked();
   await expect(toggle).toBeEnabled();
   await page.reload();
-  await page.waitForFunction(() => typeof openPluginModal === 'function');
+  await waitForPage(page, () => typeof openPluginModal === 'function');
   await page.evaluate(() => openPluginModal());
   await expect(toggle).toBeChecked();
   const saved = await page.evaluate(async () => (await apiFetch('/api/plugins/list')).json());

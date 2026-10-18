@@ -1,0 +1,238 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-11T04:26:08.500Z",
+  "workspaceCache": ".cache",
+  "logicalBytes": 73131098471,
+  "logicalGiB": 68.109,
+  "uniquePhysicalBytes": null,
+  "physicalSizeNote": "Logical file lengths are summed. Windows DirEntry.stat did not populate file IDs or link counts; its invalid unique-file estimate was discarded. NTFS hard links were independently observed in build outputs, so this is not a guaranteed physical-reclaim estimate.",
+  "scanSeconds": 46.55,
+  "reparsePoints": [],
+  "scanErrors": [],
+  "topLevel": [
+    {
+      "path": "community-upgrade",
+      "bytes": 43730847490,
+      "GiB": 40.728
+    },
+    {
+      "path": "capability-upgrade",
+      "bytes": 28131477239,
+      "GiB": 26.199
+    },
+    {
+      "path": "v005-community",
+      "bytes": 504648061,
+      "GiB": 0.47
+    },
+    {
+      "path": "math-ux",
+      "bytes": 205687252,
+      "GiB": 0.192
+    },
+    {
+      "path": "ocr-static-build",
+      "bytes": 191482991,
+      "GiB": 0.178
+    },
+    {
+      "path": "uiux-all",
+      "bytes": 171205280,
+      "GiB": 0.159
+    },
+    {
+      "path": "v005-ai",
+      "bytes": 100439228,
+      "GiB": 0.094
+    },
+    {
+      "path": "v005-depth",
+      "bytes": 62133789,
+      "GiB": 0.058
+    },
+    {
+      "path": "v005",
+      "bytes": 17011720,
+      "GiB": 0.016
+    },
+    {
+      "path": "v005-completion-speed",
+      "bytes": 16165421,
+      "GiB": 0.015
+    }
+  ],
+  "reviewedCleanup": [
+    {
+      "path": ".cache/community-upgrade/build",
+      "logicalBytes": 42062630896,
+      "kind": "reproducible Rust compilation artifacts",
+      "contains": "incremental cache, dependency artifacts, debug binaries/PDB, examples and build outputs",
+      "impact": "requires rebuilding for further development; does not delete source, installed application, lockfiles, offline inputs or archived evidence",
+      "status": "not_executed_policy_rejected",
+      "reason": "Execution was rejected with 'blocked by policy'; no more specific reason supplied. No alternate deletion method attempted."
+    }
+  ],
+  "retained": [
+    ".cache/capability-upgrade/tex-inputs",
+    ".cache/capability-upgrade/delivery-publish-staging",
+    ".cache/capability-upgrade/font-inputs",
+    "isolated test profiles, results, screenshots and logs",
+    "source-controlled assets and all existing evidence/ledger files"
+  ],
+  "groups": [
+    {
+      "path": "community-upgrade/build",
+      "files": 29807,
+      "bytes": 42062630896
+    },
+    {
+      "path": "capability-upgrade/tex-inputs",
+      "files": 56860,
+      "bytes": 2365549437
+    },
+    {
+      "path": "capability-upgrade/tex-managed-native-worms4",
+      "files": 35170,
+      "bytes": 1194897648
+    },
+    {
+      "path": "capability-upgrade/tex-managed-native-wpy2lv",
+      "files": 35168,
+      "bytes": 1194896393
+    },
+    {
+      "path": "capability-upgrade/translations",
+      "files": 7918,
+      "bytes": 1190165778
+    },
+    {
+      "path": "capability-upgrade/tex-managed-native-4XTy5i",
+      "files": 35257,
+      "bytes": 828482164
+    },
+    {
+      "path": "capability-upgrade/tex-managed-native-VAgAhF",
+      "files": 35168,
+      "bytes": 821584013
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-f390a5dd-610c-4753-96a5-438ca5972a3f",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-bf0f79ee-767c-46df-8e95-05b95107efaf",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-79725205-f20d-40da-83de-48779c4f437d",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-40e0c909-474f-4ad7-93a9-829d9c06e060",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-3d6a1f35-1de3-476c-bf7e-7ba4046403d8",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "capability-upgrade/tex-managed-faults-2b7ce7bf-5a02-4638-abc8-83fa3cb49515",
+      "files": 34824,
+      "bytes": 736647717
+    },
+    {
+      "path": "community-upgrade/vscode-host",
+      "files": 1622,
+      "bytes": 683419573
+    },
+    {
+      "path": "capability-upgrade/tools",
+      "files": 10615,
+      "bytes": 622690221
+    },
+    {
+      "path": "capability-upgrade/tex-managed-fixture-JrToRd",
+      "files": 894,
+      "bytes": 442729927
+    },
+    {
+      "path": "capability-upgrade/chunk-native-Me7RC2",
+      "files": 369,
+      "bytes": 394875002
+    },
+    {
+      "path": "capability-upgrade/vscode-openapi-TA8RWX",
+      "files": 1713,
+      "bytes": 389653980
+    },
+    {
+      "path": "capability-upgrade/chunk-fixture-tldX62",
+      "files": 898,
+      "bytes": 374376365
+    },
+    {
+      "path": "capability-upgrade/stream-service-native-wZArZh",
+      "files": 415,
+      "bytes": 289016139
+    },
+    {
+      "path": "capability-upgrade/stream-service-native-UrVtlb",
+      "files": 414,
+      "bytes": 288755982
+    },
+    {
+      "path": "capability-upgrade/stream-service-native-RYoLK9",
+      "files": 414,
+      "bytes": 286655876
+    },
+    {
+      "path": "capability-upgrade",
+      "files": 1059,
+      "bytes": 268846507
+    },
+    {
+      "path": "capability-upgrade/chunk-native-v8i0Ki",
+      "files": 334,
+      "bytes": 253167826
+    },
+    {
+      "path": "capability-upgrade/chunk-native-wwMvWP",
+      "files": 334,
+      "bytes": 252906035
+    },
+    {
+      "path": "capability-upgrade/chunk-native-xu8MHn",
+      "files": 333,
+      "bytes": 252905651
+    },
+    {
+      "path": "capability-upgrade/chunk-native-sInd6z",
+      "files": 332,
+      "bytes": 252903693
+    },
+    {
+      "path": "community-upgrade/vscode-host-final",
+      "files": 834,
+      "bytes": 245502176
+    },
+    {
+      "path": "community-upgrade/vscode-host-official",
+      "files": 904,
+      "bytes": 234307419
+    },
+    {
+      "path": "capability-upgrade/chunk-native-TQQ6s0",
+      "files": 329,
+      "bytes": 224207825
+    }
+  ],
+  "applicationInstallationModified": false,
+  "cleanupExecuted": false,
+  "groupScope": "30 largest subdirectories by logical length; topLevel covers the entire .cache scan."
+}
+

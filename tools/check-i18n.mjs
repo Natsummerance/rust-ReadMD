@@ -48,6 +48,16 @@ for (const [key, value] of Object.entries(metadata)) {
 }
 const placeholders = value => [...String(value).matchAll(/\{([\w.-]+)\}/g)].map(match => match[1]).sort().join(',');
 const enKeys = new Set(Object.keys(en));
+// Formula properties are generated from the pinned schema; a text-call scan
+// alone cannot see those dynamic labels and enum choices.
+const mathSchema=JSON.parse(fs.readFileSync(path.join(root,'docs/design/office-math-coverage.json'),'utf8'));
+for(const element of mathSchema.elements){
+  if(element.element&&!en['formula.omml.'+element.element])problems.push('en.json: missing formula schema label '+element.element);
+}
+for(const enumeration of mathSchema.enumerations)for(const facet of enumeration.facets){
+  const key='formula.ommlEnum.'+enumeration.name+'.'+(facet.Name||facet.Value);
+  if(!en[key])problems.push('en.json: missing formula enum label '+key);
+}
 for (const f of files) {
   if (f === 'en.json') continue;
   const keys = new Set(Object.keys(load(f)));

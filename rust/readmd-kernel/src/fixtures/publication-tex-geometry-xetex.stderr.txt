@@ -1,0 +1,20 @@
+<READMD_CONTEXT_MARKER> BEGIN
+<READMD_CONTEXT_MARKER> index=1
+<READMD_CONTEXT_MARKER> mode=1
+<READMD_CONTEXT_MARKER> requested=1184071
+<READMD_CONTEXT_MARKER> required=2385120
+<READMD_CONTEXT_MARKER> width=32445430
+<READMD_CONTEXT_MARKER> height=47922272
+<READMD_CONTEXT_MARKER> reserved=1
+<READMD_CONTEXT_MARKER> END
+
+./document.tex:212: Package ReadMD Error: readmd-p04-geometry.
+
+See the ReadMD package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.212 THIRD}
+            
+No pages of output.
+Transcript written on document.log.

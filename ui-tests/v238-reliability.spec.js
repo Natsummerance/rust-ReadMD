@@ -1,7 +1,8 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 async function setEditorContent(page, content) {
-  await page.waitForFunction(() => (
+  await waitForPage(page, () => (
     document.querySelector('#edit-cm .cm-content') ||
     !document.getElementById('edit-area')?.classList.contains('hidden')
   ));
@@ -31,7 +32,7 @@ test('saving in place keeps editing and clears the dirty indicator', async ({ pa
     body: JSON.stringify({ ok: true, mtime: 42 }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof saveEdit === 'function');
+  await waitForPage(page, () => typeof saveEdit === 'function');
   await page.evaluate(async () => {
     const tab = {
       id: 'doc', mode: 'file', source: 'file', path: 'C:/doc.md', dir: 'C:/',
@@ -45,11 +46,11 @@ test('saving in place keeps editing and clears the dirty indicator', async ({ pa
     await toggleEdit();
   });
   await setEditorContent(page, '# changed');
-  await page.waitForFunction(() => getActiveTab()?.isDirty === true);
+  await waitForPage(page, () => getActiveTab()?.isDirty === true);
 
   await page.keyboard.press('Control+S');
 
-  await page.waitForFunction(() => (
+  await waitForPage(page, () => (
     state.original === '# changed' && state.mtime === 42 &&
     getActiveTab()?.original === '# changed' && getActiveTab()?.isDirty === false
   ));
@@ -74,9 +75,9 @@ test('opening the same clean path again reloads current disk content', async ({ 
     });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   await page.evaluate(() => loadFile('C:/direct.md'));
-  await page.waitForFunction(() => state.original === '# revision 1');
+  await waitForPage(page, () => state.original === '# revision 1');
   await page.evaluate(() => {
     state.autoReload = false;
     if (typeof stopAutoReload === 'function') stopAutoReload();
@@ -86,7 +87,7 @@ test('opening the same clean path again reloads current disk content', async ({ 
   revision = 2;
   await page.evaluate(() => loadFile('C:/direct.md'));
 
-  await page.waitForFunction(() => state.original === '# revision 2' && state.mtime === 2);
+  await waitForPage(page, () => state.original === '# revision 2' && state.mtime === 2);
   expect(requests).toBe(1);
   expect(await page.evaluate(() => getActiveTab()?.isDirty)).toBe(false);
 });
@@ -94,7 +95,7 @@ test('opening the same clean path again reloads current disk content', async ({ 
 test('paged long documents keep a usable editor when split preview is enabled', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.original = '# Long document\n\n' + 'content '.repeat(15000);
     state.fixed = state.original;
@@ -120,7 +121,7 @@ test('paged long documents keep a usable editor when split preview is enabled', 
 test('narrow editor hides split preview and restores it when space returns', async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 480 });
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.original = '# Narrow';
     state.fixed = state.original;
@@ -133,7 +134,7 @@ test('narrow editor hides split preview and restores it when space returns', asy
   await expect(page.locator('#edit-wrap')).toBeVisible();
 
   await page.setViewportSize({ width: 1200, height: 800 });
-  await page.waitForFunction(() => !document.getElementById('preview-wrap').classList.contains('hidden'));
+  await waitForPage(page, () => !document.getElementById('preview-wrap').classList.contains('hidden'));
   await expect(page.locator('#preview-wrap')).toBeVisible();
 });
 
@@ -173,7 +174,7 @@ test('editor selection uses a visible theme-specific highlight', async ({ page }
 
 test('mouse drag creates a visibly painted CodeMirror selection', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.original = 'Select this text with the mouse.\nSecond line.';
     state.fixed = state.original;
@@ -189,7 +190,7 @@ test('mouse drag creates a visibly painted CodeMirror selection', async ({ page 
   await page.mouse.down();
   await page.mouse.move(box.x + Math.min(box.width - 8, 170), box.y + box.height / 2, { steps: 8 });
   await page.mouse.up();
-  await page.waitForFunction(() => cmView && !cmView.state.selection.main.empty);
+  await waitForPage(page, () => cmView && !cmView.state.selection.main.empty);
   await expect(page.locator('#edit-cm .cm-selectionBackground').first()).toBeVisible();
   const color = await page.locator('#edit-cm .cm-selectionBackground').first().evaluate(
     element => getComputedStyle(element).backgroundColor

@@ -3,5 +3,5 @@
   "version": "0.0.5",
   "description": "ReadMD HarmonyOS entry module",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {"libreadmd_bridge.so":"file:./src/main/cpp/types/libreadmd_bridge"}
 }

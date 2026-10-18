@@ -24,6 +24,7 @@ function resolveAiActionLabel(action, template) {
 
 function toggleAiPanel() {
   if (moduleBlocked('ai')) return;
+  captureAiSelection();
   const p = $('ai-panel');
   p.classList.toggle('hidden');
   if (!p.classList.contains('hidden')) {
@@ -142,11 +143,14 @@ function renderAiEmptyState() {
   if (connectBtn) connectBtn.addEventListener('click', () => openAiModal('ai-settings-modal', $('ai-settings-open')));
 }
 window.addEventListener('readmd:ai-config-changed', () => renderAiEmptyState());
+window.addEventListener('readmd:language-changed', () => updateAiContextStrip());
 
 function updateAiContextStrip() {
   const label = $('ai-context-file');
   if (!label) return;
-  label.textContent = (typeof state !== 'undefined' && (state.file || state.sourceName || state.title))?.split(/[\\/]/).pop() || window.i18n.t('ux.noDocument');
+  const name = (state.file || state.sourceName || state.title)?.split(/[\\/]/).pop();
+  const target = getAiTargetText();
+  label.textContent = name ? name + ' · ' + i18n.t(target.isSelection ? 'ai.scopeSelection' : 'ai.scopeFull') : i18n.t('ux.noDocument');
   label.title = typeof state !== 'undefined' ? (state.file || '') : '';
 }
 
@@ -166,7 +170,19 @@ function initAiComposerUx() {
   }
   out.addEventListener('scroll', () => latest.classList.toggle('hidden', out.scrollHeight - out.scrollTop - out.clientHeight < 100));
   latest.addEventListener('click', () => { out.scrollTop = out.scrollHeight; input.focus({ preventScroll: true }); });
-  document.addEventListener('readmd:document-loaded', updateAiContextStrip);
+  // Capture before a pointer changes DOM/editor focus. A selection in an AI
+  // answer, settings dialog or input is never document context.
+  document.addEventListener('pointerdown', e => {
+    if (e.target.closest('#ai-panel, #btn-ai')) captureAiSelection();
+  }, true);
+  document.addEventListener('selectionchange', () => {
+    if (captureAiSelection()) updateAiContextStrip();
+  });
+  input.addEventListener('focus', () => { captureAiSelection(); updateAiContextStrip(); });
+  document.addEventListener('readmd:document-loaded', () => {
+    state.ai.capturedTarget = null; state.ai.conversationTarget = null;
+    updateAiContextStrip();
+  });
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAiComposerUx); else initAiComposerUx();
 
@@ -287,6 +303,10 @@ function fillAiTemplates() {
 
   const groups = { general: [], writing: [], coding: [], academic: [], custom: [] };
   (state.ai.templates || []).forEach(t => {
+    // Cursor completion has a dedicated JSON context, not a chat action.
+    // Keep it inspectable in the Skill workbench without offering a broken
+    // document-chat invocation in the conversation dropdown.
+    if (t.metadata && t.metadata.completion_only) return;
     const cat = getTemplateCategory(t);
     if (groups[cat]) groups[cat].push(t);
     else groups.custom.push(t);
@@ -440,7 +460,9 @@ function renderSkillOverview(t) {
   host.appendChild(title);
   if (t.description) {
     const description = document.createElement('p');
-    description.textContent = t.description;
+    const key='skill.'+(t.skill_id||t.id)+'.description';
+    const translated=t.builtin?_t(key):key;
+    description.textContent = translated && translated!==key ? translated : t.description;
     host.appendChild(description);
   }
   const facts = document.createElement('div');
@@ -1472,7 +1494,10 @@ async function deleteCurrentSession() {
 }
 
 function clearAiContext() {
-  if (!(state.ai.messages || []).length) { showToast(_t('toast.noContext') || ''); return; }
+  state.ai.capturedTarget = null;
+  state.ai.conversationTarget = null;
+  state.ai.lastSelection = null;
+  state.ai.targetOverride = null;
   state.ai.messages = [];
   state.ai.sessionId = null;
   state.ai.raw = '';
@@ -1481,6 +1506,7 @@ function clearAiContext() {
   updateAiUsage();
   clearAiOutput();
   $('ai-session').value = '';
+  updateAiContextStrip();
   showToast(_t('toast.contextCleared') || '');
 }
 
@@ -1644,17 +1670,41 @@ function readAiCustomHeaders() {
   return parsed;
 }
 
-function fillAiModels(models, selected) {
+function readAiAutocompleteSettings() {
+  const value = $('ai-autocomplete-model')?.value || 'auto';
+  if (value === 'current') return { mode: 'current' };
+  if (value.startsWith('model:')) return { mode: 'model', model: value.slice(6) };
+  return { mode: 'auto' };
+}
+
+function fillAiAutocompleteModels(models, settings) {
+  const select = $('ai-autocomplete-model');
+  if (!select) return;
+  const t = key => window.i18n ? window.i18n.t(key) : key;
+  const auto=new Option(t('ai.autocompleteAuto'),'auto'),current=new Option(t('ai.autocompleteCurrent'),'current');
+  auto.dataset.i18n='ai.autocompleteAuto';current.dataset.i18n='ai.autocompleteCurrent';
+  select.replaceChildren(auto,current);
+  const list = [...new Set((models || []).filter(id => typeof id === 'string' && id))];
+  if (settings?.mode === 'model' && settings.model && !list.includes(settings.model)) list.unshift(settings.model);
+  for (const id of list) select.appendChild(new Option(id, 'model:' + id));
+  select.value = settings?.mode === 'model' ? 'model:' + settings.model : settings?.mode === 'current' ? 'current' : 'auto';
+}
+
+function fillAiModels(models, selected, autocomplete = readAiAutocompleteSettings()) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('ai-model');
   sel.innerHTML = '';
-  const list = Array.isArray(models) ? models.filter(Boolean) : [];
+  const list = [...new Set(Array.isArray(models) ? models.filter(id => typeof id === 'string' && id) : [])];
+  // A saved model remains selected even when discovery has not run or a
+  // gateway temporarily omits it. Saving another setting must not erase it.
+  if (typeof selected === 'string' && selected && !list.includes(selected)) list.unshift(selected);
   const placeholder = new Option(list.length ? (_t('ai.selectModel') || '') : (_t('ai.fetchModelsFirst') || ''), '');
   placeholder.disabled = true; placeholder.selected = !list.length;
   sel.appendChild(placeholder);
   list.forEach(id => sel.appendChild(new Option(id, id)));
   sel.disabled = !list.length;
   if (list.length) sel.value = list.indexOf(selected) >= 0 ? selected : list[0];
+  fillAiAutocompleteModels(list, autocomplete);
   updateAiConnectionSummary();
 }
 
@@ -1667,7 +1717,7 @@ function onAiProviderChange() {
   $('ai-mode').value = (mode === 'anthropic') ? 'messages' : mode;
   if ($('ai-endpoint-mode')) $('ai-endpoint-mode').value = p.endpoint_mode || 'prefix';
   const current = (state.ai.config && state.ai.config.current) || {};
-  fillAiModels(p.models, (current.provider_id || current.provider) === p.id ? current.model : '');
+  fillAiModels(p.models, (current.provider_id || current.provider) === p.id ? current.model : '', p.autocomplete || { mode: 'auto' });
   $('ai-provider-name').value = p.name || '';
   $('ai-provider-name').disabled = !p.custom;
   $('ai-provider-delete').disabled = !p.custom;
@@ -1776,7 +1826,25 @@ async function deleteAiProvider() {
 }
 
 
-async function saveAiSelection(silent) {
+let aiSelectionSavePromise = null;
+function saveAiSelection(silent) {
+  if (aiSelectionSavePromise) return aiSelectionSavePromise;
+  const controls = Array.from(document.querySelectorAll('#ai-settings-box input, #ai-settings-box select, #ai-settings-box textarea, #ai-save-key, #ai-models-btn'));
+  const disabled = controls.map(el => el.disabled);
+  controls.forEach(el => { el.disabled = true; });
+  $('ai-save-key')?.setAttribute('aria-busy', 'true');
+  aiSelectionSavePromise = saveAiSelectionOnce(silent).finally(() => {
+    controls.forEach((el, i) => { if (el.isConnected) el.disabled = disabled[i]; });
+    // Discovery can legitimately leave these unavailable; do not override
+    // the state chosen by the newly loaded provider catalog.
+    if ($('ai-model')) $('ai-model').disabled = !$('ai-model').options.length || !$('ai-model').value;
+    $('ai-save-key')?.removeAttribute('aria-busy');
+    aiSelectionSavePromise = null;
+  });
+  return aiSelectionSavePromise;
+}
+
+async function saveAiSelectionOnce(silent) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   let p = currentAiProvider();
   if (!p || !state.ai.config) return false;
@@ -1821,6 +1889,7 @@ async function saveAiSelection(silent) {
   else over.format = 'openai';
   if (keyVal) over.api_key = keyVal;
   over.models = Array.from($('ai-model').options).map(o => o.value).filter(Boolean);
+  over.autocomplete = readAiAutocompleteSettings();
   if (p.clear_key) over.clear_key = true;
   const current = { provider_id: over.id, model: $('ai-model').value || '' };
   try {
@@ -1878,39 +1947,64 @@ function getCurrentDocumentText() {
     : (state.fixed || state.original || '');
 }
 
-function getAiTargetText() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const currentDoc = getCurrentDocumentText();
-  if ($('ai-selection') && $('ai-selection').checked) {
-    let from = -1, to = -1;
-    let sel = '';
-    if (state.editing && window.cmView) {
-      try {
-        const m = window.cmView.state.selection.main;
-        if (!m.empty) {
-          from = m.from;
-          to = m.to;
-          sel = window.cmView.state.sliceDoc(from, to) || '';
+function captureAiSelection() {
+  const tabId = state.activeTabId;
+  const selection = window.getSelection?.();
+  if (selection?.rangeCount && !selection.isCollapsed) {
+    const range = selection.getRangeAt(0);
+    const root = [$('content'), $('preview-pane')].find(el => el?.contains(range.startContainer) && el.contains(range.endContainer));
+    if (root) {
+      const fragment = range.cloneContents();
+      fragment.querySelectorAll('[data-rd-chrome], button, input, mjx-assistive-mml').forEach(el => el.remove());
+      const text = fragment.textContent || '';
+      if (text.trim()) {
+        const source = getCurrentDocumentText();
+        let from = -1, to = -1;
+        const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+        const block = start?.closest('[data-source-line]');
+        // Plain rendered blocks map through their source line and DOM offset.
+        // This distinguishes identical paragraphs and repeated words inside a
+        // paragraph. Rich projections without a precise map stay read-only:
+        // applying their answer uses the existing safe-copy path.
+        if (block && root.contains(block) && block.contains(range.endContainer)) {
+          const line = Number(block.dataset.sourceLine);
+          const lines = source.split('\n');
+          const begin = lines.slice(0, line - 1).reduce((n, s) => n + s.length + 1, 0);
+          const next = [...root.querySelectorAll('[data-source-line]')].map(el => Number(el.dataset.sourceLine)).filter(n => n > line).sort((a,b) => a-b)[0];
+          const end = next ? lines.slice(0, next - 1).reduce((n, s) => n + s.length + 1, 0) : source.length;
+          const raw = source.slice(begin, end), rendered = block.textContent;
+          const offset = raw.indexOf(rendered);
+          if (Number.isInteger(line) && line > 0 && rendered && offset >= 0 && raw.indexOf(rendered, offset + 1) < 0) {
+            const prefix = document.createRange(); prefix.selectNodeContents(block); prefix.setEnd(range.startContainer, range.startOffset);
+            const position = begin + offset + prefix.toString().length;
+            if (source.slice(position, position + text.length) === text) { from = position; to = position + text.length; }
+          }
         }
-      } catch (_) {}
-    }
-    if (!sel) {
-      sel = ((window.getSelection && window.getSelection()) || {}).toString() || '';
-      if (sel) {
-        const idx = currentDoc.indexOf(sel);
-        if (idx >= 0) {
-          from = idx;
-          to = idx + sel.length;
-        }
+        state.ai.capturedTarget = { text, isSelection:true, from, to, source, tabId };
+        return true;
       }
     }
-    if (!sel || !sel.trim()) {
-      showToast(_t('toast.noTextSelectionNotice') || '请先在正文中选择要处理的文字');
-      return { text: '', isSelection: true, emptySelection: true, from: -1, to: -1 };
-    }
-    return { text: sel, isSelection: true, emptySelection: false, from, to };
   }
-  return { text: currentDoc, isSelection: false, emptySelection: false, from: 0, to: currentDoc.length };
+  if (state.editing && window.cmView) {
+    const range = cmView.state.selection.main;
+    if (!range.empty) {
+      const text = cmView.state.sliceDoc(range.from, range.to);
+      if (text.trim()) {
+        const source = getCurrentDocumentText();
+        state.ai.capturedTarget = { text, isSelection:true, from:range.from, to:range.to, source, tabId };
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function getAiTargetText() {
+  const source = getCurrentDocumentText();
+  for (const target of [state.ai.capturedTarget, state.ai.conversationTarget]) {
+    if (target?.tabId === state.activeTabId && target.source === source) return { ...target };
+  }
+  return { text:source, isSelection:false, from:0, to:source.length, source, tabId:state.activeTabId };
 }
 
 function setAiBusy(b) {
@@ -1945,7 +2039,6 @@ function setAiBusy(b) {
   if ($('ai-template')) $('ai-template').disabled = b;
   if ($('ai-tpl-btn')) $('ai-tpl-btn').disabled = b;
   if ($('ai-clear-ctx')) $('ai-clear-ctx').disabled = b;
-  if ($('ai-selection')) $('ai-selection').disabled = b;
   if ($('ai-incognito')) $('ai-incognito').disabled = b;
 
   const statusEl = $('ai-status');
@@ -2058,23 +2151,30 @@ function updateAiUsage() {
 }
 
 async function runAi(action) {
-  if (state.ai.busy) return;
+  if (state.ai.busy || state.ai.preparing) return;
+  state.ai.preparing = true;
+  try { return await runAiRequest(action); }
+  finally { state.ai.preparing = false; }
+}
+
+async function runAiRequest(action) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   state.ai.lastAction = action || (currentAiTemplate() && currentAiTemplate().action) || '';
-  if (!(await ensureAiConfigured())) return;
-  const p = currentAiProvider();
-  if (!p) return;
+  captureAiSelection();
   const target = state.ai.targetOverride;
   const targetInfo = target != null
     ? { text: target, isSelection: true, from: -1, to: -1 }
     : getAiTargetText();
   state.ai.targetOverride = null;
-  if (targetInfo.emptySelection) {
-    return;
-  }
+  const origin = { tabId:state.activeTabId, name:state.sourceName, path:state.file, dir:state.dir,
+    generation:getActiveTab()?.editGeneration || 0, isEditMode:Boolean(state.editing && window.cmView) };
   const { text, isSelection } = targetInfo;
-  if (!text || !text.trim()) { showToast(_t('toast.noDocContentNotice') || ''); return; }
   const prompt = $('ai-prompt').value.trim();
+  if (!text?.trim() && !prompt) { showToast(_t('toast.noDocContentNotice') || ''); return; }
+  if (!(await ensureAiConfigured())) return;
+  const p = currentAiProvider();
+  if (!p) return;
+  state.ai.conversationTarget = targetInfo;
   state.ai.lastPrompt = prompt;
   state.ai.lastRunAction = action || '';
   const tpl = currentAiTemplate();
@@ -2087,18 +2187,18 @@ async function runAi(action) {
     text: text,
     from: targetInfo.from,
     to: targetInfo.to,
+    exact: targetInfo.from >= 0 && targetInfo.to >= targetInfo.from,
     isContinue: isContinueAction,
-    isEditMode: Boolean(state.editing && window.cmView)
+    isEditMode: origin.isEditMode
   } : (isContinueAction ? {
     text: '',
     from: -1,
     to: -1,
     isContinue: true,
-    isEditMode: Boolean(state.editing && window.cmView)
-  } : null);
+    isEditMode: origin.isEditMode
+  } : { text:'', from:0, to:targetInfo.to, isSelection:false, isEditMode:origin.isEditMode });
 
-  if (currentSelectionSnapshot) Object.assign(currentSelectionSnapshot, { tabId: state.activeTabId, name: state.sourceName,
-    path: state.file, dir: state.dir, generation: getActiveTab()?.editGeneration || 0 });
+  Object.assign(currentSelectionSnapshot, origin);
   state.ai.lastSelection = currentSelectionSnapshot;
   const isIncognito = $('ai-incognito').checked;
   const model = $('ai-model').value.trim() || (p.models || [''])[0] || '';
@@ -2119,7 +2219,8 @@ async function runAi(action) {
   const fill = s => String(s || '').replace(/\{doc\}/g, docs).replace(/\{prompt\}/g, prompt || '');
   let userMsg;
   const docFollows = _t('ai.docFollows') || '';
-  if (tpl && tpl.user) {
+  if (!docs.trim()) userMsg = prompt;
+  else if (tpl && tpl.user) {
     userMsg = fill(tpl.user);
   } else if (action === 'ask' && prompt) userMsg = docFollows + '\n\n' + docs + '\n\n' + (_t('ai.questionLabel') || '') + prompt;
   else if (action === 'modify' && prompt) userMsg = docFollows + '\n\n' + docs + '\n\n' + (_t('ai.reqLabel') || '') + prompt;
@@ -2482,6 +2583,7 @@ function bindAiResize() {
 function aiErrorHint(error) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const raw = String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  if (/provider_model_unavailable/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('ai.selectModel') };
   if (/401|403|auth|key|token|鉴权|密钥/i.test(raw)) return { kind: 'error', summary: _t('ai.authFailSummary') || '', message: _t('ai.authFailMsg') || '' };
   if (/429|rate.?limit|限流|too many/i.test(raw)) return { kind: 'warn', summary: _t('ai.rateLimitSummary') || '', message: _t('ai.rateLimitMsg') || '' };
   if (/network|fetch|timeout|connect|网络|连接/i.test(raw)) return { kind: 'error', summary: _t('ai.netFailSummary') || '', message: _t('ai.netFailMsg') || '' };
@@ -2544,6 +2646,11 @@ async function applyAi(targetResult, selectionContext) {
   const prompt = ($('ai-prompt') && $('ai-prompt').value) || '';
   const isContinue = Boolean((ctx && ctx.isContinue) || act === 'continue' || act === 'complete' || tplId.includes('continue') || tplName.includes('续写') || /续写|接着写|继续写/i.test(prompt));
   const hasSelection = Boolean(ctx && ctx.text && ctx.text.trim());
+  const applyTabId = state.activeTabId;
+  if (hasSelection && ctx.exact === false) {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
+    showToast(_t('storage.aiSafeCopy')); return;
+  }
 
   if (!hasSelection && !isContinue) {
     const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
@@ -2607,6 +2714,10 @@ async function applyAi(targetResult, selectionContext) {
       await new Promise(r => setTimeout(r, 50));
     }
   }
+  if (state.activeTabId !== applyTabId) {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx?.name), ctx?.dir || '', raw, [], { originPath: ctx?.path });
+    showToast(_t('storage.aiSafeCopy')); return;
+  }
 
   if (cmView) {
     const doc = cmView.state.doc;
@@ -2617,7 +2728,7 @@ async function applyAi(targetResult, selectionContext) {
 
     if (hasSelection) {
       const selText = ctx.text;
-      if (typeof ctx.from === 'number' && typeof ctx.to === 'number' && ctx.to <= docLen && doc.sliceString(ctx.from, ctx.to) === selText) {
+      if (typeof ctx.from === 'number' && typeof ctx.to === 'number' && ctx.from >= 0 && ctx.to <= docLen && doc.sliceString(ctx.from, ctx.to) === selText) {
         insertFrom = ctx.from;
         insertTo = ctx.to;
       } else {
@@ -2678,7 +2789,9 @@ async function applyAi(targetResult, selectionContext) {
     const val = ta.value;
     let from = val.length, to = val.length, insert = raw;
     if (hasSelection) {
-      const idx = val.indexOf(ctx.text);
+      const exact = Number.isInteger(ctx.from) && Number.isInteger(ctx.to) && ctx.from >= 0 && ctx.to <= val.length && val.slice(ctx.from, ctx.to) === ctx.text;
+      const first = val.indexOf(ctx.text);
+      const idx = exact ? ctx.from : first >= 0 && val.indexOf(ctx.text, first + 1) < 0 ? first : -1;
       if (idx >= 0) {
         if (isContinue) {
           const sep = (ctx.text.endsWith('\n') || raw.startsWith('\n')) ? '' : '\n\n';

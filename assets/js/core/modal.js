@@ -124,6 +124,9 @@
     // the opener already moved focus into the dialog before we observed it.
     if (!stack.length && (!opener || el.contains(opener))) opener = lastOutside && lastOutside.isConnected ? lastOutside : null;
     stack.push({ el, opener });
+    // A theme snapshot can otherwise paint an old page over a newly opened
+    // dialog until its fade finishes, despite correct dialog stacking.
+    window.dispatchEvent(new CustomEvent('readmd:modal-opened', { detail: { id: el.id } }));
     refreshInert();
     // Let the opener's own focus logic run first; only step in if focus is outside.
     requestAnimationFrame(() => {

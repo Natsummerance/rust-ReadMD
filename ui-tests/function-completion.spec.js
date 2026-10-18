@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 
@@ -28,7 +29,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', route => json(route, { ok: false }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.goto('/');
-  await page.waitForFunction(() => typeof enqueueBatchFiles === 'function' && typeof openExportModal === 'function');
+  await waitForPage(page, () => typeof enqueueBatchFiles === 'function' && typeof openExportModal === 'function');
 });
 
 test('code header editing opens the editor and preserves the code', async ({ page }) => {
@@ -86,7 +87,7 @@ test('a real native extension installs, executes, persists toggles and uninstall
   await expect(card.locator('[data-action="toggle"]')).not.toBeChecked();
   await expect(card.locator('[data-action="toggle"]')).toBeEnabled();
   await page.reload();
-  await page.waitForFunction(() => typeof openPluginModal === 'function');
+  await waitForPage(page, () => typeof openPluginModal === 'function');
   await page.evaluate(() => openPluginModal());
   await expect(card.locator('[data-action="toggle"]')).not.toBeChecked();
   await card.locator('[data-action="uninstall"]').click();
@@ -117,7 +118,7 @@ test('PDF preview shows a real page and export reuses precisely those bytes', as
 test('an emptied editor exports its empty content instead of the original', async ({ page }) => {
   await page.evaluate(() => renderVirtual('clipboard', 'empty.md', '', '# Original content', []));
   await page.evaluate(() => toggleEdit());
-  await page.waitForFunction(() => !!window.cmView);
+  await waitForPage(page, () => !!window.cmView);
   await page.evaluate(() => window.cmView.dispatch({ changes: { from: 0, to: window.cmView.state.doc.length, insert: '' } }));
   expect(await page.evaluate(() => currentExportContent())).toBe('');
 });

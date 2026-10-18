@@ -133,7 +133,7 @@ async function changeShare(start) {
       body: JSON.stringify({ current_file: state.file || null,
         current_content: (!state.file || (state.editing && hasUnsavedEditorChanges()))
           ? (state.editing ? getEditContent() : (state.fixed ?? state.original ?? '')) : null,
-        language: window.i18n?.locale || 'en', theme: document.body.dataset.theme,
+        language: window.i18n?.currentLang || 'en', theme: document.body.dataset.theme,
         labels: { title: _t('share.title'), up: _t('audit.shareParent'), download: _t('audit.shareDownload') } }),
     });
     const data = await shareResponse(r);

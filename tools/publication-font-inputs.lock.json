@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "license": "OFL-1.1",
+  "inputs": [
+    {
+      "name": "STIXTwoMath-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/stipub/stixfonts/744a22a4dd626cd14d75728aef34fc8ad7c85db0/fonts/static_ttf/STIXTwoMath-Regular.ttf",
+      "commit": "744a22a4dd626cd14d75728aef34fc8ad7c85db0",
+      "gitBlob": "a4705fc7273cefa3f07108285e68755c81fd442c",
+      "size": 1518116,
+      "sha256": "49b22767985171bce579307b21d98f4d35012fa39e316acc4ffcab8644dfb69b"
+    },
+    {
+      "name": "STIX-OFL.txt",
+      "url": "https://raw.githubusercontent.com/stipub/stixfonts/744a22a4dd626cd14d75728aef34fc8ad7c85db0/OFL.txt",
+      "commit": "744a22a4dd626cd14d75728aef34fc8ad7c85db0",
+      "gitBlob": "11b7b8e8892a6ec8fbe709cc10fa7a12d53a4501",
+      "size": 4519,
+      "sha256": "0c8825913b60d858aacdb33c4ca6660a7d64b0d6464702efbb19313f5765861a"
+    },
+    {
+      "name": "NotoSansSC.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+      "commit": "a85815a42757630ce188fdad368c2dfc444d4773",
+      "gitBlob": "fb0637bafbcd804fe32152370a1225990745b4bc",
+      "size": 17772300,
+      "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da"
+    },
+    {
+      "name": "NotoSansSC-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc/OFL.txt",
+      "commit": "a85815a42757630ce188fdad368c2dfc444d4773",
+      "gitBlob": "1c9f43281b8f216c5461fe9ac729afbade7724e4",
+      "size": 4388,
+      "sha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"
+    },
+    {
+      "name": "NotoSerifSC.ttf",
+      "url": "https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notoserifsc/NotoSerifSC%5Bwght%5D.ttf",
+      "commit": "a85815a42757630ce188fdad368c2dfc444d4773",
+      "gitBlob": "eab063faf229160a52d3760f5555150e4eb9e5bf",
+      "size": 25125512,
+      "sha256": "050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9"
+    },
+    {
+      "name": "NotoSerifSC-OFL.txt",
+      "url": "https://raw.githubusercontent.com/google/fonts/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notoserifsc/OFL.txt",
+      "commit": "a85815a42757630ce188fdad368c2dfc444d4773",
+      "gitBlob": "94d1bf7b52481343e2983fb7751e8b7abe1ea07b",
+      "size": 4350,
+      "sha256": "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6"
+    }
+  ]
+}

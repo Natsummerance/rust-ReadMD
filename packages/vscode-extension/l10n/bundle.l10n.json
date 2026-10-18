@@ -197,5 +197,15 @@
   "searchLimited": "Results limited to 50; refine your query",
   "searchResults": "Select a result to open",
   "searchUnavailable": "Search could not finish. Check the query and update ReadMD Core.",
-  "inspectionChanged": "The document changed during inspection. Run it again."
+  "inspectionChanged": "The document changed during inspection. Run it again.",
+  "openApiOpenMarkdown": "Open the target Markdown document first.",
+  "openApiUpToDate": "API documentation is already up to date.",
+  "openApiReviewTitle": "ReadMD · Review API documentation",
+  "openApiApply": "Accept changes",
+  "openApiReviewHint": "Review {count} API changes. The original file is saved only when you save the document.",
+  "openApiConflict": "The document or API source changed. Generate a fresh review before accepting.",
+  "openApiLocalChanges": "The generated region contains manual edits. Move your notes outside it before updating.",
+  "openApiInvalidRegion": "The generated region markers are damaged. Restore them from document history.",
+  "openApiBudget": "The specification, document or open reviews exceed the processing limit.",
+  "openApiFailed": "API documentation could not be generated. Check the OpenAPI 3.0/3.1 JSON or YAML source and ReadMD Core."
 }

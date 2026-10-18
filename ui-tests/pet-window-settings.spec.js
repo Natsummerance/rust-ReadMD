@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 test.use({bypassCSP:false});
@@ -6,7 +7,7 @@ test.beforeEach(async ({ page, request }) => {
   await request.post('/api/pets/configure',{data:{enabled:false,in_app:true,renderer:'hermes-sprite',character:'',scale:.22,always_on_top:true,lock_position:false,bubbles:true,quiet:false}});
   await page.addInitScript(()=>localStorage.setItem('readmd_language','en'));
   await page.goto('/');
-  await page.waitForFunction(()=>typeof window.openPetSettings==='function');
+  await waitForPage(page, ()=>typeof window.openPetSettings==='function');
   await page.evaluate(()=>window.openPetSettings());
 });
 
@@ -23,7 +24,7 @@ test('window options, tiny size and quiet mode persist through the real Rust API
     const s=await page.evaluate(()=>window.fetchPetRuntimeStatus());
     return {scale:s.preferences.scale,top:s.preferences.always_on_top,lock:s.preferences.lock_position,quiet:s.preferences.quiet,bubbles:s.preferences.bubbles};
   },{timeout:25000}).toEqual({scale:.08,top:false,lock:true,quiet:true,bubbles:false});
-  await page.reload();await page.waitForFunction(()=>typeof window.openPetSettings==='function');
+  await page.reload();await waitForPage(page, ()=>typeof window.openPetSettings==='function');
   await page.evaluate(()=>window.openPetSettings());
   await page.locator('[data-pet-section=settings]').click();
   await expect(page.locator('#pet-topmost')).not.toBeChecked();

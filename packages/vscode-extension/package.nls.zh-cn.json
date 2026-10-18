@@ -31,5 +31,8 @@
   "capabilities.untrusted": "可预览和编辑。原生工具、AI、导入、代码执行及 MCP 配置需要受信任的工作区。",
   "capabilities.virtual": "ReadMD 需要本地 Rust 程序和本地文件。",
   "command.inspectDocument": "ReadMD: 检查文档链接与标题",
-  "command.searchWorkspace": "ReadMD: 搜索本地 Markdown 工作区"
+  "command.searchWorkspace": "ReadMD: 搜索本地 Markdown 工作区",
+  "configuration.aiAutocomplete": "AI 行内补全：仅将光标附近内容发送给 ReadMD 已保存的 AI 连接。Tab 接受，不自动保存。仅适用于信任的工作区。",
+  "configuration.aiAutocompleteModel": "仅用于自动补全的模型 ID。留空使用 ReadMD 已保存的补全策略，默认自动优先响应速度；不改变对话模型。",
+  "command.openApiDocument": "ReadMD: 生成／更新 API 文档"
 }

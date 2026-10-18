@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "implementation": "FontTools",
+  "version": "4.63.0",
+  "generatorSha256": "f585ccefa1fd4a31858382914137c1e725dcdbc47fa5bdfd1f86877d631fd416",
+  "font": "assets/fonts/STIXTwoMath-Regular.ttf",
+  "fontSha256": "49b22767985171bce579307b21d98f4d35012fa39e316acc4ffcab8644dfb69b",
+  "unitsPerEm": 1000,
+  "characters": {
+    " ": {
+      "glyph": "space",
+      "gid": 1,
+      "advance": 235,
+      "inkBounds": null
+    },
+    "a": {
+      "glyph": "a",
+      "gid": 255,
+      "advance": 480,
+      "inkBounds": [
+        38,
+        -7,
+        476,
+        485
+      ]
+    },
+    "+": {
+      "glyph": "plus",
+      "gid": 1196,
+      "advance": 720,
+      "inkBounds": [
+        62,
+        -40,
+        658,
+        558
+      ]
+    },
+    "b": {
+      "glyph": "b",
+      "gid": 256,
+      "advance": 522,
+      "inkBounds": [
+        8,
+        -10,
+        487,
+        706
+      ]
+    },
+    "=": {
+      "glyph": "equal",
+      "gid": 1202,
+      "advance": 720,
+      "inkBounds": [
+        62,
+        123,
+        658,
+        395
+      ]
+    },
+    "/": {
+      "glyph": "slash",
+      "gid": 1060,
+      "advance": 386,
+      "inkBounds": [
+        35,
+        -89,
+        351,
+        709
+      ]
+    },
+    "-": {
+      "glyph": "hyphen",
+      "gid": 1075,
+      "advance": 315,
+      "inkBounds": [
+        45,
+        218,
+        270,
+        283
+      ]
+    },
+    "n": {
+      "glyph": "n",
+      "gid": 269,
+      "advance": 576,
+      "inkBounds": [
+        32,
+        0,
+        555,
+        485
+      ]
+    },
+    "s": {
+      "glyph": "s",
+      "gid": 274,
+      "advance": 395,
+      "inkBounds": [
+        39,
+        -11,
+        368,
+        485
+      ]
+    },
+    "i": {
+      "glyph": "i",
+      "gid": 263,
+      "advance": 285,
+      "inkBounds": [
+        32,
+        0,
+        257,
+        673
+      ]
+    },
+    "𝑎": {
+      "glyph": "u1D44E",
+      "gid": 3326,
+      "advance": 555,
+      "inkBounds": [
+        49,
+        -12,
+        539,
+        479
+      ]
+    },
+    "𝑏": {
+      "glyph": "u1D44F",
+      "gid": 3327,
+      "advance": 518,
+      "inkBounds": [
+        46,
+        -12,
+        483,
+        705
+      ]
+    },
+    "𝑛": {
+      "glyph": "u1D45B",
+      "gid": 3341,
+      "advance": 565,
+      "inkBounds": [
+        47,
+        -10,
+        542,
+        479
+      ]
+    },
+    "𝑠": {
+      "glyph": "u1D460",
+      "gid": 3346,
+      "advance": 386,
+      "inkBounds": [
+        21,
+        -11,
+        378,
+        479
+      ]
+    },
+    "𝑖": {
+      "glyph": "u1D456",
+      "gid": 3334,
+      "advance": 274,
+      "inkBounds": [
+        52,
+        -9,
+        255,
+        665
+      ]
+    },
+    " ": {
+      "glyph": "uni2009",
+      "gid": 6752,
+      "advance": 125,
+      "inkBounds": null
+    },
+    " ": {
+      "glyph": "uni2005",
+      "gid": 6748,
+      "advance": 250,
+      "inkBounds": null
+    },
+    " ": {
+      "glyph": "uni2003",
+      "gid": 6746,
+      "advance": 1000,
+      "inkBounds": null
+    }
+  }
+}

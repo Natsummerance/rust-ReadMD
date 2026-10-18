@@ -7,22 +7,22 @@ const locales={
  ['VS Code, without another workspace','Live preview, math, diagrams and slides. V0.0.5 adds link diagnostics to the native Problems panel, clickable wiki links and local workspace search.'],
  ['AI edits you can review','V0.0.5 MCP reads a document revision, previews literal edits and writes only after explicit confirmation. Conflicting file versions stop the edit; recovery history stays in application data.'],
  ['Local files, current results','Search phrases, titles, paths and YAML tags directly in the workspace. Limits and skipped files are reported. URLs are never fetched during link inspection.']],
- flow:'Read → preview → confirm → recover',code:'Use the same executable installed with ReadMD. The MCP kit contains documentation and client configuration, not a second server binary.',docs:'Integration documentation',limits:'Bounded by design: 2 MiB per inspected/edited document, 5,000 searched Markdown files, 64 MiB per search, 8 concurrent MCP tools. Native runtimes and OS services are required for some formats.',more:'V0.0.5 adds 5 tools to the 22-tool stable core. Availability follows the installed desktop version.'},
+ flow:'Read → preview → confirm → recover',code:'Use the same executable installed with ReadMD. The MCP kit contains documentation and client configuration, not a second server binary.',docs:'Integration documentation',limits:'Bounded by design: 2 MiB per inspected/edited document, 5,000 searched Markdown files, 64 MiB per search, 8 concurrent MCP tools. Native runtimes and OS services are required for some formats.',more:'V0.0.5 adds 8 tools to the 22-tool stable core. Availability follows the installed desktop version.'},
  'zh-CN':{prefix:'zh-cn/',name:'简体中文',title:'让 Markdown 接入你的编辑器与 AI',lead:'同一套本地 Rust 内核，沿用你熟悉的工作方式。',description:'ReadMD 的 VS Code 与 MCP 集成：离线预览、格式转换与导出，V0.0.5 增加文档检查、工作区检索和可预览、可恢复的文件编辑。',candidate:'V0.0.5 发布候选 · 尚未正式发布',stable:'下载当前正式版',back:'ReadMD 首页',cards:[
  ['在 VS Code 中，保持专注','预览、公式、图表与演讲继续复用本地内核。V0.0.5 将链接检查放进原生“问题”面板，支持点击双链和搜索 Markdown 工作区。'],
  ['让 AI 编辑先经过审阅','V0.0.5 MCP 读取文件版本，默认只预览文字替换；明确确认后才写入。文件被其他操作修改时停止覆盖，恢复记录保存在应用数据区。'],
  ['直接检索当前文件','组合短语、标题、路径与 YAML 标签，不等待旧索引更新。检查范围、跳过文件与处理上限明确返回；链接检查不联网。']],
- flow:'读取 → 预览 → 确认 → 恢复',code:'使用已安装的 ReadMD 可执行程序启动 MCP。连接包提供文档与客户端配置，不重复附带服务端内核。',docs:'查看集成文档',limits:'明确边界：检查及编辑单文档上限 2 MiB；单次搜索最多 5,000 个 Markdown 文件、64 MiB 内容；MCP 最多并发 8 个工具。部分格式依赖本机运行时或系统服务。',more:'V0.0.5 在正式版 22 个工具基础上增加 5 个工具，具体能力以已安装的桌面版本为准。'},
+ flow:'读取 → 预览 → 确认 → 恢复',code:'使用已安装的 ReadMD 可执行程序启动 MCP。连接包提供文档与客户端配置，不重复附带服务端内核。',docs:'查看集成文档',limits:'明确边界：检查及编辑单文档上限 2 MiB；单次搜索最多 5,000 个 Markdown 文件、64 MiB 内容；MCP 最多并发 8 个工具。部分格式依赖本机运行时或系统服务。',more:'V0.0.5 在正式版 22 个工具基础上增加 8 个工具，具体能力以已安装的桌面版本为准。'},
  'zh-TW':{prefix:'zh-tw/',name:'繁體中文',title:'讓 Markdown 接入你的編輯器與 AI',lead:'同一套本機 Rust 核心，沿用你熟悉的工作方式。',description:'ReadMD 的 VS Code 與 MCP 整合：離線預覽、格式轉換與匯出，V0.0.5 增加文件檢查、工作區搜尋和可預覽、可復原的檔案編輯。',candidate:'V0.0.5 發布候選 · 尚未正式發布',stable:'下載目前正式版',back:'ReadMD 首頁',cards:[
  ['在 VS Code 中，保持專注','預覽、公式、圖表與簡報繼續共用本機核心。V0.0.5 將連結檢查放進原生「問題」面板，支援點擊雙向連結與搜尋 Markdown 工作區。'],
  ['讓 AI 編輯先經過審閱','V0.0.5 MCP 讀取檔案版本，預設只預覽文字取代；明確確認後才寫入。檔案被其他操作修改時停止覆寫，復原記錄保存在應用程式資料區。'],
  ['直接搜尋目前檔案','組合片語、標題、路徑與 YAML 標籤，不必等待舊索引更新。檢查範圍、略過檔案與處理上限明確回傳；連結檢查不連網。']],
- flow:'讀取 → 預覽 → 確認 → 復原',code:'使用已安裝的 ReadMD 執行檔啟動 MCP。連線包提供文件與用戶端設定，不重複附帶伺服器核心。',docs:'查看整合文件',limits:'明確邊界：檢查及編輯單份文件上限 2 MiB；單次搜尋最多 5,000 個 Markdown 檔案、64 MiB 內容；MCP 最多並行 8 個工具。部分格式依賴本機執行環境或系統服務。',more:'V0.0.5 在正式版 22 個工具基礎上增加 5 個工具，實際能力以已安裝的桌面版本為準。'},
+ flow:'讀取 → 預覽 → 確認 → 復原',code:'使用已安裝的 ReadMD 執行檔啟動 MCP。連線包提供文件與用戶端設定，不重複附帶伺服器核心。',docs:'查看整合文件',limits:'明確邊界：檢查及編輯單份文件上限 2 MiB；單次搜尋最多 5,000 個 Markdown 檔案、64 MiB 內容；MCP 最多並行 8 個工具。部分格式依賴本機執行環境或系統服務。',more:'V0.0.5 在正式版 22 個工具基礎上增加 6 個工具，實際能力以已安裝的桌面版本為準。'},
  ja:{prefix:'ja/',name:'日本語',title:'Markdown をエディターと AI につなぐ',lead:'同じローカル Rust エンジンを、いつもの作業環境で。',description:'ReadMD の VS Code と MCP 連携。オフラインプレビュー、変換と書き出しに加え、V0.0.5 はリンク検査、ワークスペース検索と確認付きファイル編集を提供します。',candidate:'V0.0.5 リリース候補 · 未公開',stable:'公開済みの安定版をダウンロード',back:'ReadMD ホーム',cards:[
  ['VS Code で集中する','数式、図、スライドをローカルで表示。V0.0.5 は標準の問題パネルにリンク診断を表示し、Wiki リンクと Markdown ワークスペース検索に対応します。'],
  ['AI の編集を確認する','V0.0.5 MCP はファイルの版を読み取り、置換をまずプレビューします。明示的な確認後に保存し、競合時は停止。復元履歴はアプリのデータ領域に保存します。'],
  ['現在のファイルを検索','フレーズ、タイトル、パスと YAML タグを組み合わせます。処理上限とスキップを報告し、リンク検査では URL に接続しません。']],
- flow:'読み取り → プレビュー → 確認 → 復元',code:'インストール済み ReadMD の実行ファイルを使用します。MCP パッケージは文書と接続設定を提供し、サーバー本体は含みません。',docs:'連携ドキュメント',limits:'検査・編集は文書ごとに 2 MiB。検索は最大 5,000 ファイル、合計 64 MiB。MCP ツールは最大 8 件を並行実行。一部形式にはローカル実行環境や OS サービスが必要です。',more:'V0.0.5 は安定版の 22 ツールに 5 ツールを追加します。利用可能な機能はインストールした版によります。'}
+ flow:'読み取り → プレビュー → 確認 → 復元',code:'インストール済み ReadMD の実行ファイルを使用します。MCP パッケージは文書と接続設定を提供し、サーバー本体は含みません。',docs:'連携ドキュメント',limits:'検査・編集は文書ごとに 2 MiB。検索は最大 5,000 ファイル、合計 64 MiB。MCP ツールは最大 8 件を並行実行。一部形式にはローカル実行環境や OS サービスが必要です。',more:'V0.0.5 は安定版の 22 ツールに 8 ツールを追加します。利用可能な機能はインストールした版によります。'}
 };
 // Localized copy is authored against this template version; future candidates
 // update the shared release manifest instead of hand-editing four pages.

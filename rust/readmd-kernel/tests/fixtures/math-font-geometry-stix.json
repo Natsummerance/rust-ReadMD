@@ -1,0 +1,1458 @@
+{
+  "characters": {
+    "+": "plus",
+    "/": "slash",
+    "0": "zero",
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "A": "A",
+    "a": "a",
+    "b": "b",
+    "f": "f",
+    "g": "g",
+    "j": "j",
+    "n": "n",
+    "p": "p",
+    "x": "x",
+    "y": "y",
+    "̂": "uni0302",
+    "̃": "uni0303",
+    "̄": "uni0304",
+    "̇": "uni0307",
+    "̈": "uni0308",
+    "⁄": "fraction",
+    "⃗": "uni20D7",
+    "√": "uni221A",
+    "𝐴": "u1D434",
+    "𝑎": "u1D44E",
+    "𝑏": "u1D44F",
+    "𝑓": "u1D453",
+    "𝑔": "u1D454",
+    "𝑗": "u1D457",
+    "𝑛": "u1D45B",
+    "𝑝": "u1D45D",
+    "𝑥": "u1D465",
+    "𝑦": "u1D466"
+  },
+  "constants": {
+    "AccentBaseHeight": 480,
+    "AxisHeight": 258,
+    "DelimitedSubFormulaMinHeight": 1325,
+    "DisplayOperatorMinHeight": 1800,
+    "FlattenedAccentBaseHeight": 656,
+    "FractionDenomDisplayStyleGapMin": 150,
+    "FractionDenominatorDisplayStyleShiftDown": 640,
+    "FractionDenominatorGapMin": 68,
+    "FractionDenominatorShiftDown": 585,
+    "FractionNumDisplayStyleGapMin": 150,
+    "FractionNumeratorDisplayStyleShiftUp": 640,
+    "FractionNumeratorGapMin": 68,
+    "FractionNumeratorShiftUp": 585,
+    "FractionRuleThickness": 68,
+    "LowerLimitBaselineDropMin": 670,
+    "LowerLimitGapMin": 135,
+    "MathLeading": 150,
+    "OverbarExtraAscender": 68,
+    "OverbarRuleThickness": 68,
+    "OverbarVerticalGap": 175,
+    "RadicalDegreeBottomRaisePercent": 55,
+    "RadicalDisplayStyleVerticalGap": 170,
+    "RadicalExtraAscender": 78,
+    "RadicalKernAfterDegree": -335,
+    "RadicalKernBeforeDegree": 65,
+    "RadicalRuleThickness": 68,
+    "RadicalVerticalGap": 85,
+    "ScriptPercentScaleDown": 70,
+    "ScriptScriptPercentScaleDown": 55,
+    "SkewedFractionHorizontalGap": 350,
+    "SkewedFractionVerticalGap": 68,
+    "SpaceAfterScript": 40,
+    "StackBottomDisplayStyleShiftDown": 690,
+    "StackBottomShiftDown": 385,
+    "StackDisplayStyleGapMin": 300,
+    "StackGapMin": 150,
+    "StackTopDisplayStyleShiftUp": 780,
+    "StackTopShiftUp": 470,
+    "StretchStackBottomShiftDown": 590,
+    "StretchStackGapAboveMin": 68,
+    "StretchStackGapBelowMin": 68,
+    "StretchStackTopShiftUp": 800,
+    "SubSuperscriptGapMin": 150,
+    "SubscriptBaselineDropMin": 160,
+    "SubscriptShiftDown": 210,
+    "SubscriptTopMax": 368,
+    "SuperscriptBaselineDropMax": 230,
+    "SuperscriptBottomMaxWithSubscript": 380,
+    "SuperscriptBottomMin": 120,
+    "SuperscriptShiftUp": 360,
+    "SuperscriptShiftUpCramped": 252,
+    "UnderbarExtraDescender": 68,
+    "UnderbarRuleThickness": 68,
+    "UnderbarVerticalGap": 175,
+    "UpperLimitBaselineRiseMin": 300,
+    "UpperLimitGapMin": 135
+  },
+  "fontBytes": 1518116,
+  "fontPath": "assets/fonts/STIXTwoMath-Regular.ttf",
+  "fontSha256": "49b22767985171bce579307b21d98f4d35012fa39e316acc4ffcab8644dfb69b",
+  "fontToolsVersion": "4.63.0",
+  "glyphs": {
+    "A": {
+      "advance": 718,
+      "fontBounds": [
+        3,
+        0,
+        714,
+        662
+      ],
+      "gid": 3,
+      "inkBounds": [
+        3,
+        0,
+        714,
+        662
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 3,
+      "topAccentAttachment": 360
+    },
+    "a": {
+      "advance": 480,
+      "fontBounds": [
+        38,
+        -7,
+        476,
+        485
+      ],
+      "gid": 255,
+      "inkBounds": [
+        38,
+        -7,
+        476,
+        485
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 38,
+      "topAccentAttachment": 230
+    },
+    "b": {
+      "advance": 522,
+      "fontBounds": [
+        8,
+        -10,
+        487,
+        706
+      ],
+      "gid": 256,
+      "inkBounds": [
+        8,
+        -10,
+        487,
+        706
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 8,
+      "topAccentAttachment": 260
+    },
+    "circumflex.s1": {
+      "advance": 573,
+      "fontBounds": [
+        0,
+        536,
+        573,
+        754
+      ],
+      "gid": 1395,
+      "inkBounds": [
+        0,
+        536,
+        573,
+        754
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "circumflex.s2": {
+      "advance": 1002,
+      "fontBounds": [
+        0,
+        536,
+        1002,
+        754
+      ],
+      "gid": 1396,
+      "inkBounds": [
+        0,
+        536,
+        1002,
+        754
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "circumflex.s3": {
+      "advance": 1495,
+      "fontBounds": [
+        0,
+        536,
+        1495,
+        756
+      ],
+      "gid": 1397,
+      "inkBounds": [
+        0,
+        536,
+        1495,
+        756
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "circumflex.s4": {
+      "advance": 1931,
+      "fontBounds": [
+        0,
+        536,
+        1931,
+        756
+      ],
+      "gid": 1398,
+      "inkBounds": [
+        0,
+        536,
+        1931,
+        756
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "circumflex.s5": {
+      "advance": 2384,
+      "fontBounds": [
+        0,
+        536,
+        2384,
+        756
+      ],
+      "gid": 1399,
+      "inkBounds": [
+        0,
+        536,
+        2384,
+        756
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "f": {
+      "advance": 307,
+      "fontBounds": [
+        18,
+        0,
+        379,
+        713
+      ],
+      "gid": 260,
+      "inkBounds": [
+        18,
+        0,
+        379,
+        713
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 18,
+      "topAccentAttachment": 250
+    },
+    "fraction": {
+      "advance": 205,
+      "fontBounds": [
+        -135,
+        -20,
+        343,
+        692
+      ],
+      "gid": 1177,
+      "inkBounds": [
+        -135,
+        -20,
+        343,
+        692
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -135,
+      "topAccentAttachment": null
+    },
+    "g": {
+      "advance": 484,
+      "fontBounds": [
+        21,
+        -235,
+        472,
+        485
+      ],
+      "gid": 261,
+      "inkBounds": [
+        21,
+        -235,
+        472,
+        485
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 21,
+      "topAccentAttachment": 250
+    },
+    "j": {
+      "advance": 263,
+      "fontBounds": [
+        -95,
+        -235,
+        198,
+        673
+      ],
+      "gid": 265,
+      "inkBounds": [
+        -95,
+        -235,
+        198,
+        673
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -95,
+      "topAccentAttachment": 140
+    },
+    "n": {
+      "advance": 576,
+      "fontBounds": [
+        32,
+        0,
+        555,
+        485
+      ],
+      "gid": 269,
+      "inkBounds": [
+        32,
+        0,
+        555,
+        485
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 32,
+      "topAccentAttachment": 290
+    },
+    "one": {
+      "advance": 495,
+      "fontBounds": [
+        74,
+        0,
+        426,
+        639
+      ],
+      "gid": 1138,
+      "inkBounds": [
+        74,
+        0,
+        426,
+        639
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 74,
+      "topAccentAttachment": 240
+    },
+    "p": {
+      "advance": 537,
+      "fontBounds": [
+        22,
+        -220,
+        502,
+        485
+      ],
+      "gid": 271,
+      "inkBounds": [
+        22,
+        -220,
+        502,
+        485
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 22,
+      "topAccentAttachment": 280
+    },
+    "plus": {
+      "advance": 720,
+      "fontBounds": [
+        62,
+        -40,
+        658,
+        558
+      ],
+      "gid": 1196,
+      "inkBounds": [
+        62,
+        -40,
+        658,
+        558
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 62,
+      "topAccentAttachment": null
+    },
+    "slash": {
+      "advance": 386,
+      "fontBounds": [
+        35,
+        -89,
+        351,
+        709
+      ],
+      "gid": 1060,
+      "inkBounds": [
+        35,
+        -89,
+        351,
+        709
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 35,
+      "topAccentAttachment": null
+    },
+    "slash.s1": {
+      "advance": 593,
+      "fontBounds": [
+        25,
+        -168,
+        565,
+        1091
+      ],
+      "gid": 1381,
+      "inkBounds": [
+        25,
+        -168,
+        565,
+        1091
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 25,
+      "topAccentAttachment": null
+    },
+    "slash.s2": {
+      "advance": 825,
+      "fontBounds": [
+        25,
+        -286,
+        799,
+        1603
+      ],
+      "gid": 1382,
+      "inkBounds": [
+        25,
+        -286,
+        799,
+        1603
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 25,
+      "topAccentAttachment": null
+    },
+    "slash.s3": {
+      "advance": 1127,
+      "fontBounds": [
+        30,
+        -404,
+        1096,
+        2115
+      ],
+      "gid": 1383,
+      "inkBounds": [
+        30,
+        -404,
+        1096,
+        2115
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 30,
+      "topAccentAttachment": null
+    },
+    "slash.s4": {
+      "advance": 1340,
+      "fontBounds": [
+        16,
+        -521,
+        1324,
+        2627
+      ],
+      "gid": 1384,
+      "inkBounds": [
+        16,
+        -521,
+        1324,
+        2627
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 16,
+      "topAccentAttachment": null
+    },
+    "three": {
+      "advance": 495,
+      "fontBounds": [
+        59,
+        -13,
+        444,
+        644
+      ],
+      "gid": 1140,
+      "inkBounds": [
+        59,
+        -13,
+        444,
+        644
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 59,
+      "topAccentAttachment": 240
+    },
+    "tilde.s1": {
+      "advance": 573,
+      "fontBounds": [
+        0,
+        591,
+        573,
+        711
+      ],
+      "gid": 1405,
+      "inkBounds": [
+        0,
+        591,
+        573,
+        711
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "tilde.s2": {
+      "advance": 1002,
+      "fontBounds": [
+        0,
+        591,
+        1002,
+        747
+      ],
+      "gid": 1406,
+      "inkBounds": [
+        0,
+        591,
+        1002,
+        747
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "tilde.s3": {
+      "advance": 1495,
+      "fontBounds": [
+        0,
+        591,
+        1495,
+        761
+      ],
+      "gid": 1407,
+      "inkBounds": [
+        0,
+        591,
+        1495,
+        761
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "tilde.s4": {
+      "advance": 1931,
+      "fontBounds": [
+        0,
+        591,
+        1931,
+        758
+      ],
+      "gid": 1408,
+      "inkBounds": [
+        0,
+        591,
+        1931,
+        758
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "tilde.s5": {
+      "advance": 2384,
+      "fontBounds": [
+        0,
+        591,
+        2384,
+        757
+      ],
+      "gid": 1409,
+      "inkBounds": [
+        0,
+        591,
+        2384,
+        757
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "two": {
+      "advance": 495,
+      "fontBounds": [
+        38,
+        0,
+        464,
+        644
+      ],
+      "gid": 1139,
+      "inkBounds": [
+        38,
+        0,
+        464,
+        644
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 38,
+      "topAccentAttachment": 245
+    },
+    "u1D434": {
+      "advance": 681,
+      "fontBounds": [
+        -62,
+        0,
+        648,
+        661
+      ],
+      "gid": 3300,
+      "inkBounds": [
+        -62,
+        0,
+        648,
+        661
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -62,
+      "topAccentAttachment": 480
+    },
+    "u1D44E": {
+      "advance": 555,
+      "fontBounds": [
+        49,
+        -12,
+        539,
+        479
+      ],
+      "gid": 3326,
+      "inkBounds": [
+        49,
+        -12,
+        539,
+        479
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 49,
+      "topAccentAttachment": 340
+    },
+    "u1D44F": {
+      "advance": 518,
+      "fontBounds": [
+        46,
+        -12,
+        483,
+        705
+      ],
+      "gid": 3327,
+      "inkBounds": [
+        46,
+        -12,
+        483,
+        705
+      ],
+      "italicCorrection": 5,
+      "leftSideBearing": 46,
+      "topAccentAttachment": 350
+    },
+    "u1D453": {
+      "advance": 577,
+      "fontBounds": [
+        10,
+        -225,
+        571,
+        711
+      ],
+      "gid": 3331,
+      "inkBounds": [
+        10,
+        -225,
+        571,
+        711
+      ],
+      "italicCorrection": 20,
+      "leftSideBearing": 10,
+      "topAccentAttachment": 470
+    },
+    "u1D454": {
+      "advance": 503,
+      "fontBounds": [
+        -2,
+        -225,
+        489,
+        479
+      ],
+      "gid": 3332,
+      "inkBounds": [
+        -2,
+        -225,
+        489,
+        479
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -2,
+      "topAccentAttachment": 300
+    },
+    "u1D457": {
+      "advance": 431,
+      "fontBounds": [
+        9,
+        -225,
+        400,
+        665
+      ],
+      "gid": 3336,
+      "inkBounds": [
+        9,
+        -225,
+        400,
+        665
+      ],
+      "italicCorrection": 20,
+      "leftSideBearing": 9,
+      "topAccentAttachment": 360
+    },
+    "u1D45B": {
+      "advance": 565,
+      "fontBounds": [
+        47,
+        -10,
+        542,
+        479
+      ],
+      "gid": 3341,
+      "inkBounds": [
+        47,
+        -10,
+        542,
+        479
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 47,
+      "topAccentAttachment": 340
+    },
+    "u1D45D": {
+      "advance": 598,
+      "fontBounds": [
+        77,
+        -220,
+        572,
+        479
+      ],
+      "gid": 3343,
+      "inkBounds": [
+        77,
+        -220,
+        572,
+        479
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 77,
+      "topAccentAttachment": 410
+    },
+    "u1D465": {
+      "advance": 559,
+      "fontBounds": [
+        23,
+        -10,
+        540,
+        479
+      ],
+      "gid": 3354,
+      "inkBounds": [
+        23,
+        -10,
+        540,
+        479
+      ],
+      "italicCorrection": 10,
+      "leftSideBearing": 23,
+      "topAccentAttachment": 345
+    },
+    "u1D466": {
+      "advance": 510,
+      "fontBounds": [
+        -17,
+        -220,
+        496,
+        482
+      ],
+      "gid": 3355,
+      "inkBounds": [
+        -17,
+        -220,
+        496,
+        482
+      ],
+      "italicCorrection": 15,
+      "leftSideBearing": -17,
+      "topAccentAttachment": 330
+    },
+    "uni0302": {
+      "advance": 0,
+      "fontBounds": [
+        -371,
+        521,
+        -89,
+        674
+      ],
+      "gid": 732,
+      "inkBounds": [
+        -371,
+        521,
+        -89,
+        674
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -371,
+      "topAccentAttachment": -230
+    },
+    "uni0303": {
+      "advance": 0,
+      "fontBounds": [
+        -386,
+        533,
+        -65,
+        642
+      ],
+      "gid": 742,
+      "inkBounds": [
+        -386,
+        533,
+        -65,
+        642
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -386,
+      "topAccentAttachment": -230
+    },
+    "uni0304": {
+      "advance": 0,
+      "fontBounds": [
+        -375,
+        555,
+        -85,
+        610
+      ],
+      "gid": 744,
+      "inkBounds": [
+        -375,
+        555,
+        -85,
+        610
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -375,
+      "topAccentAttachment": -230
+    },
+    "uni0307": {
+      "advance": 0,
+      "fontBounds": [
+        -287,
+        560,
+        -173,
+        673
+      ],
+      "gid": 758,
+      "inkBounds": [
+        -287,
+        560,
+        -173,
+        673
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -287,
+      "topAccentAttachment": -230
+    },
+    "uni0308": {
+      "advance": 0,
+      "fontBounds": [
+        -396,
+        560,
+        -64,
+        672
+      ],
+      "gid": 760,
+      "inkBounds": [
+        -396,
+        560,
+        -64,
+        672
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -396,
+      "topAccentAttachment": -230
+    },
+    "uni20D6.x": {
+      "advance": 512,
+      "fontBounds": [
+        0,
+        688,
+        512,
+        735
+      ],
+      "gid": 1477,
+      "inkBounds": [
+        0,
+        688,
+        512,
+        735
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni20D7": {
+      "advance": 0,
+      "fontBounds": [
+        -438,
+        580,
+        -3,
+        843
+      ],
+      "gid": 1277,
+      "inkBounds": [
+        -438,
+        580,
+        -3,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -438,
+      "topAccentAttachment": -230
+    },
+    "uni20D7.s1": {
+      "advance": 892,
+      "fontBounds": [
+        0,
+        580,
+        892,
+        843
+      ],
+      "gid": 1478,
+      "inkBounds": [
+        0,
+        580,
+        892,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni20D7.s2": {
+      "advance": 1339,
+      "fontBounds": [
+        0,
+        580,
+        1339,
+        843
+      ],
+      "gid": 1479,
+      "inkBounds": [
+        0,
+        580,
+        1339,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni20D7.s3": {
+      "advance": 1786,
+      "fontBounds": [
+        0,
+        580,
+        1786,
+        843
+      ],
+      "gid": 1480,
+      "inkBounds": [
+        0,
+        580,
+        1786,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni20D7.s4": {
+      "advance": 2232,
+      "fontBounds": [
+        0,
+        580,
+        2232,
+        843
+      ],
+      "gid": 1481,
+      "inkBounds": [
+        0,
+        580,
+        2232,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni20D7.s5": {
+      "advance": 3072,
+      "fontBounds": [
+        0,
+        580,
+        3072,
+        843
+      ],
+      "gid": 1482,
+      "inkBounds": [
+        0,
+        580,
+        3072,
+        843
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 0,
+      "topAccentAttachment": null
+    },
+    "uni221A": {
+      "advance": 794,
+      "fontBounds": [
+        18,
+        -265,
+        829,
+        922
+      ],
+      "gid": 1657,
+      "inkBounds": [
+        18,
+        -265,
+        829,
+        922
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 18,
+      "topAccentAttachment": null
+    },
+    "uni221A.s1": {
+      "advance": 1041,
+      "fontBounds": [
+        30,
+        -265,
+        1076,
+        1589
+      ],
+      "gid": 1658,
+      "inkBounds": [
+        30,
+        -265,
+        1076,
+        1589
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 30,
+      "topAccentAttachment": null
+    },
+    "uni221A.s2": {
+      "advance": 1177,
+      "fontBounds": [
+        30,
+        -265,
+        1212,
+        2105
+      ],
+      "gid": 1659,
+      "inkBounds": [
+        30,
+        -265,
+        1212,
+        2105
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 30,
+      "topAccentAttachment": null
+    },
+    "uni221A.s3": {
+      "advance": 1170,
+      "fontBounds": [
+        30,
+        -265,
+        1205,
+        2626
+      ],
+      "gid": 1660,
+      "inkBounds": [
+        30,
+        -265,
+        1205,
+        2626
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 30,
+      "topAccentAttachment": null
+    },
+    "uni221A.s4": {
+      "advance": 1212,
+      "fontBounds": [
+        86,
+        -5,
+        916,
+        1899
+      ],
+      "gid": 1661,
+      "inkBounds": [
+        86,
+        -5,
+        916,
+        1899
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 86,
+      "topAccentAttachment": null
+    },
+    "uni221A.t": {
+      "advance": 1212,
+      "fontBounds": [
+        849,
+        0,
+        1243,
+        641
+      ],
+      "gid": 1662,
+      "inkBounds": [
+        849,
+        0,
+        1243,
+        641
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 849,
+      "topAccentAttachment": null
+    },
+    "uni221A.x": {
+      "advance": 1212,
+      "fontBounds": [
+        849,
+        0,
+        916,
+        650
+      ],
+      "gid": 1664,
+      "inkBounds": [
+        849,
+        0,
+        916,
+        650
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 849,
+      "topAccentAttachment": null
+    },
+    "x": {
+      "advance": 479,
+      "fontBounds": [
+        -2,
+        0,
+        482,
+        473
+      ],
+      "gid": 279,
+      "inkBounds": [
+        -2,
+        0,
+        482,
+        473
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -2,
+      "topAccentAttachment": 250
+    },
+    "y": {
+      "advance": 483,
+      "fontBounds": [
+        -12,
+        -235,
+        493,
+        473
+      ],
+      "gid": 280,
+      "inkBounds": [
+        -12,
+        -235,
+        493,
+        473
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": -12,
+      "topAccentAttachment": 260
+    },
+    "zero": {
+      "advance": 495,
+      "fontBounds": [
+        27,
+        -11,
+        468,
+        642
+      ],
+      "gid": 1137,
+      "inkBounds": [
+        27,
+        -11,
+        468,
+        642
+      ],
+      "italicCorrection": 0,
+      "leftSideBearing": 27,
+      "topAccentAttachment": 250
+    }
+  },
+  "minConnectorOverlap": 100,
+  "origin": "Direct FontTools MATH/hmtx/glyf/BoundsPen extraction; no product rendering or inferred expectations",
+  "schema": 1,
+  "specification": "https://learn.microsoft.com/en-us/typography/opentype/spec/math",
+  "units": {
+    "attachmentFallback": "An absent attachment stays null; consumers may use advance/2 under the OpenType rule",
+    "constants": "font design units except percentageConstants",
+    "glyphBounds": "font design units, y up, signed; positive yMin is retained",
+    "inkBounds": "BoundsPen curve extrema; fontBounds retains the stored glyf bounds",
+    "percentageConstants": [
+      "ScriptPercentScaleDown",
+      "ScriptScriptPercentScaleDown",
+      "RadicalDegreeBottomRaisePercent"
+    ]
+  },
+  "unitsPerEm": 1000,
+  "variants": {
+    "horizontal": {
+      "/": null,
+      "̂": {
+        "assembly": null,
+        "baseGlyph": "uni0302",
+        "variants": [
+          {
+            "advanceMeasurement": 283,
+            "glyph": "uni0302"
+          },
+          {
+            "advanceMeasurement": 574,
+            "glyph": "circumflex.s1"
+          },
+          {
+            "advanceMeasurement": 1003,
+            "glyph": "circumflex.s2"
+          },
+          {
+            "advanceMeasurement": 1496,
+            "glyph": "circumflex.s3"
+          },
+          {
+            "advanceMeasurement": 1932,
+            "glyph": "circumflex.s4"
+          },
+          {
+            "advanceMeasurement": 2385,
+            "glyph": "circumflex.s5"
+          }
+        ]
+      },
+      "̃": {
+        "assembly": null,
+        "baseGlyph": "uni0303",
+        "variants": [
+          {
+            "advanceMeasurement": 322,
+            "glyph": "uni0303"
+          },
+          {
+            "advanceMeasurement": 574,
+            "glyph": "tilde.s1"
+          },
+          {
+            "advanceMeasurement": 1003,
+            "glyph": "tilde.s2"
+          },
+          {
+            "advanceMeasurement": 1496,
+            "glyph": "tilde.s3"
+          },
+          {
+            "advanceMeasurement": 1932,
+            "glyph": "tilde.s4"
+          },
+          {
+            "advanceMeasurement": 2385,
+            "glyph": "tilde.s5"
+          }
+        ]
+      },
+      "̄": null,
+      "̇": null,
+      "̈": null,
+      "⁄": null,
+      "⃗": {
+        "assembly": {
+          "italicCorrection": 0,
+          "parts": [
+            {
+              "endConnectorLength": 200,
+              "flags": 1,
+              "fullAdvance": 513,
+              "glyph": "uni20D6.x",
+              "startConnectorLength": 200
+            },
+            {
+              "endConnectorLength": 200,
+              "flags": 0,
+              "fullAdvance": 893,
+              "glyph": "uni20D7.s1",
+              "startConnectorLength": 700
+            }
+          ]
+        },
+        "baseGlyph": "uni20D7",
+        "variants": [
+          {
+            "advanceMeasurement": 436,
+            "glyph": "uni20D7"
+          },
+          {
+            "advanceMeasurement": 893,
+            "glyph": "uni20D7.s1"
+          },
+          {
+            "advanceMeasurement": 1340,
+            "glyph": "uni20D7.s2"
+          },
+          {
+            "advanceMeasurement": 1787,
+            "glyph": "uni20D7.s3"
+          },
+          {
+            "advanceMeasurement": 2233,
+            "glyph": "uni20D7.s4"
+          },
+          {
+            "advanceMeasurement": 3073,
+            "glyph": "uni20D7.s5"
+          }
+        ]
+      },
+      "√": null
+    },
+    "vertical": {
+      "/": {
+        "assembly": null,
+        "baseGlyph": "slash",
+        "variants": [
+          {
+            "advanceMeasurement": 799,
+            "glyph": "slash"
+          },
+          {
+            "advanceMeasurement": 1260,
+            "glyph": "slash.s1"
+          },
+          {
+            "advanceMeasurement": 1890,
+            "glyph": "slash.s2"
+          },
+          {
+            "advanceMeasurement": 2520,
+            "glyph": "slash.s3"
+          },
+          {
+            "advanceMeasurement": 3149,
+            "glyph": "slash.s4"
+          }
+        ]
+      },
+      "̂": null,
+      "̃": null,
+      "̄": null,
+      "̇": null,
+      "̈": null,
+      "⁄": null,
+      "⃗": null,
+      "√": {
+        "assembly": {
+          "italicCorrection": 0,
+          "parts": [
+            {
+              "endConnectorLength": 200,
+              "flags": 0,
+              "fullAdvance": 1905,
+              "glyph": "uni221A.s4",
+              "startConnectorLength": 200
+            },
+            {
+              "endConnectorLength": 650,
+              "flags": 1,
+              "fullAdvance": 651,
+              "glyph": "uni221A.x",
+              "startConnectorLength": 650
+            },
+            {
+              "endConnectorLength": 0,
+              "flags": 0,
+              "fullAdvance": 642,
+              "glyph": "uni221A.t",
+              "startConnectorLength": 550
+            }
+          ]
+        },
+        "baseGlyph": "uni221A",
+        "variants": [
+          {
+            "advanceMeasurement": 1188,
+            "glyph": "uni221A"
+          },
+          {
+            "advanceMeasurement": 1855,
+            "glyph": "uni221A.s1"
+          },
+          {
+            "advanceMeasurement": 2371,
+            "glyph": "uni221A.s2"
+          },
+          {
+            "advanceMeasurement": 2892,
+            "glyph": "uni221A.s3"
+          }
+        ]
+      }
+    }
+  }
+}

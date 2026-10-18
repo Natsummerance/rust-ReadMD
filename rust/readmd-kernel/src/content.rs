@@ -164,7 +164,13 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.write_all(bytes)?;
     if let Ok(meta) = std::fs::metadata(path) { tmp.as_file().set_permissions(meta.permissions())?; }
     tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|e| Error::from(e.error))?;
+    if crate::task_workspace::track_atomic(&tmp, path)? {
+        // A private task output is created exactly once. Do not overwrite a
+        // foreign file that appeared after the identity check.
+        tmp.persist_noclobber(path).map_err(|e| Error::from(e.error))?;
+    } else {
+        tmp.persist(path).map_err(|e| Error::from(e.error))?;
+    }
     Ok(())
 }
 

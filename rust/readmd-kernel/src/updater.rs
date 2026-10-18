@@ -1230,12 +1230,15 @@ pub fn redirecting_reply_via_ureq(url: &str, timeout: Duration) -> Result<Reply,
 
 /// Share proxy selection between metadata and package downloads. Credentials never reach logs.
 pub fn update_agent(timeout: Duration, redirects: u32) -> ureq::Agent {
+    update_agent_with_read_timeout(timeout,redirects,timeout.min(Duration::from_secs(30)))
+}
+pub(crate) fn update_agent_with_read_timeout(timeout:Duration,redirects:u32,read_timeout:Duration)->ureq::Agent{
     let mut builder = ureq::AgentBuilder::new()
         .try_proxy_from_env(true)
         .redirects(redirects)
         .timeout(timeout)
         .timeout_connect(timeout.min(Duration::from_secs(6)))
-        .timeout_read(timeout.min(Duration::from_secs(30)))
+        .timeout_read(read_timeout)
         .https_only(true)
         .user_agent(UPDATE_USER_AGENT);
     let has_environment_proxy = ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"].iter()

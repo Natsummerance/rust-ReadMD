@@ -5851,7 +5851,7 @@ body.zen-mode .zen-exit-btn,
 }
 
 body.zen-mode #content {
-  padding: calc(var(--window-titlebar-height, 0px) + var(--zen-toolbar-height, var(--toolbar-h))) 0 0 !important;
+  padding: 0 !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('update release notes are sanitized before insertion', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => (
+  await waitForPage(page, () => (
     typeof startUpdateDownload === 'function' &&
     typeof window.renderSafeMarkdown === 'function'
   ));

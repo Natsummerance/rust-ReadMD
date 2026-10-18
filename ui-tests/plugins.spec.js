@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 async function waitForApp(page) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openConvertModal === 'function');
+  await waitForPage(page, () => typeof openConvertModal === 'function');
 }
 
 test.beforeEach(async ({ page }) => {

@@ -316,8 +316,6 @@ function updateStatus() {
     $('btn-print').setAttribute('aria-label', exportHint);
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
-  if ($('btn-a')) $('btn-a').disabled = isWelcome;
-  if ($('btn-A')) $('btn-A').disabled = isWelcome;
   if ($('btn-search')) $('btn-search').disabled = isWelcome;
   setUnavailableReason($('btn-search'), _t('toast.searchNeedsDocument'));
   if ($('btn-presentation-menu')) $('btn-presentation-menu').disabled = !hasDoc;
@@ -360,6 +358,7 @@ async function goHome(options = {}) {
   goingHome = true;
   const tabId = state.activeTabId;
   try {
+    if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
     if (!options.discardConfirmed && state.editing && !await confirmExitEdit()) return false;
     if (state.activeTabId !== tabId) return false;
     return resetHome();
@@ -443,64 +442,56 @@ function bindWelcomeEvents() {
 /* ---------------- 自动刷新 ---------------- */
 
 let autoReloadTimer = null;
+let autoReloadGeneration = 0;
+let autoReloadAbort = null;
 function startAutoReload() {
   stopAutoReload();
-  autoReloadTimer = setInterval(async () => {
-    if (!state.autoReload || state.editing) return;
+  const generation = autoReloadGeneration;
+  const current = () => generation === autoReloadGeneration && state.autoReload;
+  const poll = async () => {
+    if (!current()) return;
     try {
+      if (state.editing) return;
       for (const tab of [...state.tabs]) {
+        if (!current() || state.editing) break;
         if (tab.mode !== 'file' || !tab.path || tab.isDirty || tab.externalChanged) continue;
-        const r = await apiFetch('/api/file?p=' + encodeURIComponent(tab.path) + '&meta=1');
-        if (!r.ok) continue;
-        const d = await r.json();
-        if (d.mtime === tab.mtime) continue;
-        if (tab.id === state.activeTabId) {
-          const sc = $('content')?.scrollTop || 0;
-          await loadFile(tab.path, { force: true });
-          if (sc) $('content').scrollTop = sc;
-        } else {
-          tab.externalChanged = true;
-          renderTabsBar();
+        const path = tab.path, revision = tab.revision, mtime = tab.mtime;
+        const controller = new AbortController();
+        autoReloadAbort = controller;
+        const deadline = setTimeout(() => controller.abort(), 15000);
+        try {
+          const r = await apiFetch('/api/file?p=' + encodeURIComponent(path) + '&meta=1', { signal: controller.signal });
+          if (!r.ok) continue;
+          const d = await r.json();
+          if (!current() || state.editing || !state.tabs.includes(tab) || tab.path !== path || tab.isDirty || tab.revision !== revision || tab.mtime !== mtime) continue;
+          // Content hashes catch fast edits, restored timestamps and sync tools
+          // that preserve mtime. The kernel already returns this revision.
+          const changed = d.revision && revision ? d.revision !== revision : d.mtime !== mtime;
+          if (!changed) continue;
+          if (tab.id === state.activeTabId) {
+            await loadFile(path, { force: true, backgroundRefresh: current });
+          } else {
+            tab.externalChanged = true;
+            renderTabsBar();
+          }
+        } catch (_) { /* A missing/offline file does not block later tabs. */ }
+        finally {
+          clearTimeout(deadline);
+          if (autoReloadAbort === controller) autoReloadAbort = null;
         }
       }
-    } catch (e) { /* ignore */ }
-  }, 2500);
+    } finally {
+      if (current()) autoReloadTimer = setTimeout(poll, 2500);
+    }
+  };
+  autoReloadTimer = setTimeout(poll, 2500);
 }
 function stopAutoReload() {
-  if (autoReloadTimer) clearInterval(autoReloadTimer);
+  autoReloadGeneration++;
+  if (autoReloadTimer) clearTimeout(autoReloadTimer);
   autoReloadTimer = null;
-}
-
-/* ---------------- 工具 ---------------- */
-
-function showToast(msg, ms) {
-  const t = $('toast');
-  if (window.i18n && typeof msg === 'string') {
-    msg = window.i18n.t(msg);
-  }
-  t.textContent = msg;
-  t.classList.remove('hidden');
-  clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => t.classList.add('hidden'), ms || 2600);
-}
-
-
-function setProgress(p) {
-  const el = $('progress');
-  el.style.width = p + '%';
-  if (p >= 100) setTimeout(() => { el.style.width = '0'; }, 400);
-}
-
-function busy(on) {
-  state.busyCount = Math.max(0, state.busyCount + (on ? 1 : -1));
-  $('busy').classList.toggle('hidden', state.busyCount === 0);
-}
-
-function saveLastFile(path) {
-  localStorage.setItem('readmd-last', path);
-  if (hasPy) {
-    try { py.save_settings({ last: path }); } catch (e) { /* ignore */ }
-  }
+  autoReloadAbort?.abort();
+  autoReloadAbort = null;
 }
 
 function syncBuildVersionLabels() {
@@ -510,12 +501,3 @@ function syncBuildVersionLabels() {
   if ($('status-version')) $('status-version').textContent = 'v' + version;
   if ($('menu-version-label')) $('menu-version-label').textContent = _t('app.currentVersion') + version;
 }
-
-function installAssoc() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
-  py.install_association().then(ok => {
-    showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
-  }).catch(e => showToast(_t('toast.assocFailed', { error: e.message })));
-}
-

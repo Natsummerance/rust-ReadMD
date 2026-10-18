@@ -51,6 +51,50 @@ pub const HTML_THEMES: &[&str] = &["light", "dark", "sepia"];
 pub const FONTS: &[&str] = &["MicrosoftYaHei", "SimHei", "SimSun", "KaiTi", "DengXian", "Arial"];
 /// `styles._MONO` (`styles.py:113`).
 pub const MONO: &[&str] = &["Consolas", "Courier New", "SimHei"];
+
+/// One authority for default dark HTML ink/surfaces, also consumed by the
+/// existing export preview. Non-default custom colors remain unchanged.
+pub(crate) fn html_dark_palette() -> Value {
+    json!([
+        ["typography.color","#262626","#d6d9de"],
+        ["headings.h1.color","#1a1a1a","#d6d9de"],
+        ["headings.h2.color","#1f2937","#d6d9de"],
+        ["headings.h3.color","#2d3748","#d6d9de"],
+        ["headings.h4.color","#374151","#d6d9de"],
+        ["headings.h5.color","#4a5568","#d6d9de"],
+        ["headings.h6.color","#4a5568","#d6d9de"],
+        ["code.bg","#f5f6f8","#20242c"],
+        ["code.color","#2f3b4a","#d6d9de"],
+        ["code.borderColor","#dfe3e8","#414854"],
+        ["quote.bg","#f3f6ff","#1c2440"],
+        ["quote.color","#4a5568","#cbd3e6"],
+        ["quote.barColor","#3b6ef5","#7298ff"],
+        ["table.headerBg","#3b6ef5","#345bd1"],
+        ["table.bandColor","#f3f5f9","#1d232e"],
+        ["table.borderColor","#c8cdd4","#414854"],
+        ["link.color","#2b6cb0","#8ebfff"],
+        ["hr.color","#d8dce2","#414854"]
+    ])
+}
+
+pub(crate) fn html_display_options(options:&Value) -> Value {
+    let mut out=options.clone();
+    if options["htmlTheme"].as_str()!=Some("dark"){return out;}
+    for row in html_dark_palette().as_array().unwrap(){
+        let keys=row[0].as_str().unwrap().split('.').collect::<Vec<_>>();
+        let mut value=&mut out;
+        for key in &keys[..keys.len()-1]{
+            if !value.is_object(){*value=json!({});}
+            value=value.as_object_mut().unwrap().entry((*key).to_string()).or_insert_with(||json!({}));
+        }
+        if !value.is_object(){*value=json!({});}
+        let values=value.as_object_mut().unwrap();let key=keys[keys.len()-1];
+        if values.get(key).and_then(Value::as_str).is_none_or(|color|color.trim().eq_ignore_ascii_case(row[1].as_str().unwrap())){
+            values.insert(key.into(),row[2].clone());
+        }
+    }
+    out
+}
 /// `styles._ALIGNS` (`styles.py:114`).
 pub const ALIGNS: &[&str] = &["left", "center", "right", "justify"];
 
@@ -435,6 +479,10 @@ pub fn sanitize(options: &Value) -> Value {
     // --- table ---
     {
         let tb = section(&mut s, "table");
+        if tb.contains_key("style") {
+            let style = if tb.get("style").and_then(Value::as_str) == Some("three-line") { "three-line" } else { "grid" };
+            tb.insert("style".into(), json!(style));
+        }
         let header_bg = hex(tb.get("headerBg"), "#3b6ef5");
         tb.insert("headerBg".into(), json!(header_bg));
         let header_color = hex(tb.get("headerColor"), "#ffffff");
@@ -580,7 +628,23 @@ pub fn sanitize(options: &Value) -> Value {
             p.insert(b, json!(nb));
         }
     }
+    crate::publication_layout::sanitize_optional(&mut s);
+    crate::publication_typography::normalize_completed_style(&mut s);
     s
+}
+
+/// Scientific tables suppress decoration without discarding the user's grid
+/// colours. Switching back to grid restores the original options.
+pub fn three_line_table(style: &Value) -> bool {
+    style.pointer("/table/style").and_then(Value::as_str) == Some("three-line")
+}
+
+pub fn scientific_table_css(style: &Value, root: &str) -> String {
+    if !three_line_table(style) { return String::new(); }
+    let border = hex(style.pointer("/table/borderColor"), "#111111");
+    let color = hex(style.pointer("/typography/color"), "#111111");
+    let width = style.pointer("/table/borderWidth").and_then(Value::as_f64).filter(|w| w.is_finite()).unwrap_or(0.75).clamp(0.25,3.0);
+    format!("{root} table{{border-collapse:collapse;border:{outer}pt solid {border};border-left:0;border-right:0}}{root} th,{root} td{{border:0;background:transparent;color:{color}}}{root} thead th{{border-bottom:{width}pt solid {border}}}{root} tbody tr:nth-child(even),{root} tbody tr:nth-child(even) td{{background:transparent}}",outer=width*2.)
 }
 
 fn py_str_or_empty(value: Option<&Value>) -> String {
@@ -645,6 +709,14 @@ pub fn preset_style(name: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]fn html_dark_defaults_are_readable_but_custom_ink_and_other_outputs_remain_intact(){
+        let light=default_style();assert_eq!(html_display_options(&light),light);
+        let mut dark=light.clone();dark["htmlTheme"]=json!("dark");let themed=html_display_options(&dark);
+        for level in 1..=6{assert_eq!(themed["headings"][format!("h{level}")]["color"],"#d6d9de");}
+        assert_eq!(themed["table"]["bandColor"],"#1d232e");assert_eq!(themed["code"]["bg"],"#20242c");assert_eq!(themed["quote"]["color"],"#cbd3e6");
+        dark["headings"]["h2"]["color"]=json!("#F0CA71");dark["code"]["bg"]=json!("#010203");let custom=html_display_options(&dark);assert_eq!(custom["headings"]["h2"]["color"],"#F0CA71");assert_eq!(custom["code"]["bg"],"#010203");assert_eq!(dark["headings"]["h1"]["color"],light["headings"]["h1"]["color"]);
+    }
 
     /// `(case, kind, argument, want sanitized, want page_dimensions)` generated by
     /// `scratch/docx_render_s1_style_golden_splice.py` from

@@ -31,6 +31,17 @@ function walk(dir, out = []) {
 export function analyse(html, sources) {
   const code = sources.join('\n');
   const problems = [];
+  // Classic boot sources share one global scope. Column-zero declarations
+  // follow this repository's top-level convention; a later duplicate silently
+  // replaces an earlier implementation, including its error/retry handling.
+  const globals = new Set();
+  for (const source of sources) {
+    const clean = stripComments(source.split('\n')).join('\n');
+    for (const match of clean.matchAll(/^(?:async )?function ([A-Za-z_$][\w$]*)\s*\(/gm)) {
+      if (globals.has(match[1])) problems.push({kind:'duplicate-global-function',id:match[1]});
+      globals.add(match[1]);
+    }
+  }
   // Re-registering the same named listener on a static control makes one
   // click perform a destructive action twice. Delegated/anonymous listeners
   // still require the browser's behavioural tests; this is a narrow gate.

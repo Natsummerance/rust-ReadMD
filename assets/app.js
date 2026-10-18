@@ -84,6 +84,7 @@ function bindEvents() {
   /* --- 1. 欢迎页与全局导航 (Welcome & Navigation) [联动: history.js, render.js, folder.js] --- */
   bindWelcomeEvents(); // 绑定欢迎页各个功能入口卡片事件
   if ($('btn-home')) $('btn-home').addEventListener('click', goHome); // 回到主页并深度清理状态 (history.js)
+  $('titlebar-home')?.addEventListener('click', goHome);
   $('btn-open').addEventListener('click', () => { loadFileDialog(); }); // 打开本地文件 (reader/render.js)
   $('btn-folder').addEventListener('click', openFolder); // 打开工作区文件夹 (reader/folder.js)
   syncDesktopControls();
@@ -152,6 +153,10 @@ function bindEvents() {
   if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { closeMoreMenu(); if (window.runAllCodeChunks) runAllCodeChunks(); });
   if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { closeMoreMenu(); openStyleModal(); });
   if ($('btn-zen')) $('btn-zen').addEventListener('click', () => toggleZenMode()); // 顶栏常驻禅模式按钮
+  $('btn-zen')?.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    window.ReadMDViewMode.toggleFullscreen();
+  });
   if ($('btn-zen-menu')) $('btn-zen-menu').addEventListener('click', () => { closeMoreMenu(); toggleZenMode(); });
 
   const _openKnowledgeGraph = () => {
@@ -193,7 +198,7 @@ function bindEvents() {
     });
   });
 
-  // 全局快捷键与无障碍键盘导航 (Esc 统一关闭顶层弹窗 / F5 演说放映 / F11 禅模式)
+  // 全局快捷键与无障碍键盘导航 (Esc 退出全屏或关闭顶层弹窗 / F5 演说放映 / F11 全屏)
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
@@ -252,6 +257,7 @@ function bindEvents() {
   if ($('diagram-cancel')) $('diagram-cancel').addEventListener('click', closeDiagramModal);
   if ($('diagram-insert')) $('diagram-insert').addEventListener('click', insertDiagramFromModal);
   if ($('diagram-type')) $('diagram-type').addEventListener('change', e => {
+    updateScientificFigureTemplates();
     const codeArea = $('diagram-code');
     if (codeArea && typeof DIAGRAM_SAMPLES !== 'undefined' &&
         (!codeArea.value.trim() || Object.values(DIAGRAM_SAMPLES).includes(codeArea.value))) {
@@ -343,6 +349,7 @@ function bindEvents() {
   document.querySelectorAll('#md-tool [data-md]').forEach(b => b.addEventListener('click', () => {
     closeMdPopups();
     if (b.dataset.md === 'image') openImgModal();
+    else if(b.dataset.md==='publication-style')ReadMDPublication.openStyle();
     else if (b.id === 'btn-insert-table') openTableModal();
     else cmInsertSyntax(b.dataset.md);
   }));
@@ -388,6 +395,12 @@ function bindEvents() {
   document.querySelectorAll('.pv-btn').forEach(b => b.addEventListener('click', () => { setPvLayout(b.dataset.pv); closeMdPopups(); }));
   const pvSyncEl = $('pv-sync');
   if (pvSyncEl) pvSyncEl.addEventListener('change', e => { state.pvSync = e.target.checked; saveSettings(); });
+  const publicationToggle=$('pv-publication');
+  if(publicationToggle)publicationToggle.addEventListener('change',async event=>{
+    const wanted=event.target.checked,view=cmView,tab=state.activeTabId;publicationToggle.disabled=true;
+    try{const ready=!wanted||(await ReadMDCapabilities.ensure('typst')&&await ReadMDCapabilities.ensurePublication(view.state.doc.toString(),{...state.export?.options,pdf:{engine:"typst"}}));if(cmView!==view||state.activeTabId!==tab||!state.editing){publicationToggle.checked=!!state.pvPublication;return;}state.pvPublication=publicationToggle.checked=!!(wanted&&ready);if(pvSyncEl)pvSyncEl.disabled=!!state.pvPublication;pvLast='';schedulePreview();}
+    finally{publicationToggle.disabled=false;}
+  });
   const pvWrap = $('preview-wrap');
   if (pvWrap) pvWrap.addEventListener('scroll', pvSyncFromPreview);
   bindPvSplitter(); // 绑定分栏拖拽调整手柄
@@ -530,8 +543,6 @@ function bindEvents() {
     }
   });
   $('btn-theme').addEventListener('click', toggleTheme);
-  $('btn-a').addEventListener('click', () => zoom(-10));
-  $('btn-A').addEventListener('click', () => zoom(10));
 
   /* --- 11.5. 超长文档智能翻页控制器事件 [联动: reader/render.js] --- */
   if (typeof initPaginationEvents === 'function') initPaginationEvents();
@@ -565,6 +576,7 @@ function bindEvents() {
     exportFormatTabs.forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
     $('export-opts').setAttribute('aria-labelledby', btn.id);
     state.export.fmt = btn.dataset.fmt;
+    renderExportPresetSelect();
     renderExportSections();
   };
   exportFormatTabs.forEach(btn => btn.addEventListener('click', () => activateExportFormat(btn)));
@@ -988,16 +1000,7 @@ function bindEvents() {
       }
     }
 
-    const presentationVisible = $('presentation-modal') && !$('presentation-modal').classList.contains('hidden');
-    if (e.key === 'F11') {
-      e.preventDefault();
-      if (presentationVisible) {
-        window.togglePresentationFullscreen?.($('presentation-modal'));
-      } else {
-        toggleZenMode();
-      }
-    }
-    else if (e.key === 'F2') { e.preventDefault(); openFileRename(); } // F2: 文件重命名
+    if (e.key === 'F2') { e.preventDefault(); openFileRename(); } // F2: 文件重命名
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('btn-open').click(); } // Ctrl+O: 打开文件
     else if (mod && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
       e.preventDefault();
@@ -1196,11 +1199,11 @@ function syncDesktopControls() {
 async function openInitialFile(path) {
   if (!path) return;
   // Markdown 文档 -> 直接阅读器加载
-  if (MD_RE.test(path)) { loadFile(path); return; }
+  if (MD_RE.test(path)) return loadFile(path);
   // 图片或 PDF 扫描件 -> 触发离线 OCR 识别
-  if (IMG_RE.test(path) || /\.pdf$/i.test(path)) { ocrFile(path); return; }
+  if (IMG_RE.test(path) || /\.pdf$/i.test(path)) return ocrFile(path);
   // Office/Epub/HTML/LaTeX 等 -> 触发万物转 MD 引擎
-  convertFile(path);
+  return convertFile(path);
 }
 
 /* ----------------------------------------------------------------------------------------------
@@ -1220,17 +1223,17 @@ async function init() {
   updateStatus();
   const params = new URLSearchParams(location.search);
   const file = params.get('file');
-  if (file) {
-    openInitialFile(file);
-  } else {
-    restoreLastFile();
-  }
+  window.__readmdSessionReady = window.ReadMDSession.restore(file);
+  window.__readmdSessionReady.then(() => window.ReadMDCollaborationShare?.restore());
   startAutoReload();
   // 3. Report the readable shell now; localized preferences continue in the background.
   finishInit();
 
-  await loadSettings();
-  if (window.i18n) await window.i18n.init();
+  window.__readmdPreferencesReady = (async () => {
+    await loadSettings();
+    if (window.i18n) await window.i18n.init();
+  })();
+  await window.__readmdPreferencesReady;
   syncBuildVersionLabels();
   if (hasPy && py.get_app_info) {
     try { if ((await py.get_app_info()).last_update_error) showToast(window.i18n.t('update.replaceFailed'), 10000); } catch (_) {}
@@ -1268,16 +1271,7 @@ function reportNativeReady() {
    恢复上次会话文件 (Restore Last Session State)
    ---------------------------------------------------------------------------------------------- */
 async function restoreLastFile() {
-  if (state.file) return;
-  let last = null;
-  try {
-    if (hasPy) {
-      const s = await py.get_settings();
-      last = (s && s.last) || null;
-    }
-  } catch (e) { /* ignore */ }
-  if (!last) last = localStorage.getItem('readmd-last');
-  if (last && /\.(md|markdown|mdown|mkd|mdx|txt)$/i.test(last)) loadFile(last);
+  return window.__readmdSessionReady;
 }
 
 /* ----------------------------------------------------------------------------------------------
@@ -1399,7 +1393,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 function updateUnloadGuard() {
-  const dirty = state.tabs.some(tab => tab.isDirty) || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
+  const dirty = state.tabs.some(tab => tab.isDirty) || window.ReadMDPdf?.dirty || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
   window.onbeforeunload = dirty ? event => {
     event.preventDefault();
     event.returnValue = '';

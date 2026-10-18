@@ -443,14 +443,19 @@
   }
 
   function headingSlug(text, seen) {
-    let slug = text.trim().toLowerCase().replace(/[^\w一-鿿\s-]/g, '').replace(/\s+/g, '-');
+    let slug = Array.from(text.trim()).map(c=>/[\p{L}\p{N}_-]/u.test(c)?c.toLowerCase():/\p{White_Space}/u.test(c)?'-':'').join('');
     if (!slug) slug = 'section';
-    if (seen[slug]) { seen[slug]++; slug = slug + '-' + seen[slug]; } else seen[slug] = 1;
+    const base=slug;let count=1;while(Object.prototype.hasOwnProperty.call(seen,slug))slug=base+'-'+count++;seen[slug]=1;
     return slug;
   }
 
   /* A Markdown list linking every ATX heading (fenced code is skipped). */
   function tocMarkdown(doc) {
+    if(typeof window!=='undefined'&&window.ReadMDHeadings){
+      const headings=ReadMDHeadings.fromMarkdown(doc);if(!headings.length)return '';
+      const min=Math.min(...headings.map(h=>h.level));
+      return headings.map(h=>'  '.repeat(h.level-min)+'- ['+h.text.replace(/([\\[\]])/g,'\\$1')+'](#'+encodeURIComponent(h.id)+')').join('\n');
+    }
     const heads = [];
     let fence = null;
     for (const raw of String(doc).split('\n')) {

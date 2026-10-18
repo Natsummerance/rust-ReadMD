@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "tool": "fontTools 4.63.0",
+  "modified": "Pinned weight, renamed derivative families; original OFL copyright and license retained",
+  "files": [
+    {
+      "name": "ReadMDSansSC-Regular.ttf",
+      "source": "NotoSansSC.ttf",
+      "weight": 400,
+      "size": 10595976,
+      "sha256": "d1c83f2cee1944128ab039e2ff32c6ca9e9c78156a5600225043cfc19268c116"
+    },
+    {
+      "name": "ReadMDSansSC-Bold.ttf",
+      "source": "NotoSansSC.ttf",
+      "weight": 700,
+      "size": 10585500,
+      "sha256": "f140fedb7ec4375e6530ba8db311463b05360e69f7522a1b92e88449e36c7fa3"
+    },
+    {
+      "name": "ReadMDSerifSC-Regular.ttf",
+      "source": "NotoSerifSC.ttf",
+      "weight": 400,
+      "size": 14854756,
+      "sha256": "749890c12dc26d583ffd343fd5d2ff8a754d5ef730d8436a580a2b548cf1f68d"
+    },
+    {
+      "name": "ReadMDSerifSC-Bold.ttf",
+      "source": "NotoSerifSC.ttf",
+      "weight": 700,
+      "size": 14853736,
+      "sha256": "be60d85893fa53c05dd19eb9241718f0c174c0a1de6765f3286ba95b488ebc23"
+    }
+  ]
+}

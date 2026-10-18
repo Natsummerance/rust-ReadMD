@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Editor lane: slash menu, smart editing, selection toolbar, AI hook, stats.
 const { test, expect } = require('@playwright/test');
 
@@ -10,14 +11,14 @@ test.beforeEach(async ({ page }) => {
 
 async function openEditor(page, markdown = '# Draft\n\nHello world\n') {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function' && typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function' && typeof toggleEdit === 'function');
   await page.evaluate(async md => {
     await renderVirtual('clipboard', 'editor.md', '', md, []);
     state.pvLayout = 'none';
     await toggleEdit();
   }, markdown);
   await expect(page.locator('#edit-bar')).toBeVisible();
-  await page.waitForFunction(() => window.cmView && document.querySelector('#edit-cm .cm-content'));
+  await waitForPage(page, () => window.cmView && document.querySelector('#edit-cm .cm-content'));
 }
 
 /** Replace the document and put the caret at `pos` (default: end). */
@@ -323,7 +324,7 @@ test('split preview updates quickly and scroll stays in sync both ways', async (
   test.skip(testInfo.project.name === 'mobile', 'Split preview needs a wide window.');
   const md = Array.from({ length: 80 }, (_, i) => `## Section ${i + 1}\n\nBody text for section ${i + 1}.\n`).join('\n');
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async src => {
     await renderVirtual('clipboard', 'long.md', '', src, []);
     state.pvLayout = 'right';

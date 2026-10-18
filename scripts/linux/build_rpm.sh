@@ -2,12 +2,10 @@
 # ReadMD RPM 打包脚本 (适用于 openEuler / Fedora / RHEL / CentOS / Anolis / openSUSE)
 set -euo pipefail
 if [ -z "${READMD_VERSION:-}" ]; then
-  if [ -f ".env" ]; then
-    READMD_VERSION="$(grep -E '^READMD_VERSION=' .env | head -n1 | cut -d'=' -f2- | tr -d '\r\"\'')"
-  elif [ -f "VERSION" ]; then
+  if [ -f "VERSION" ]; then
     READMD_VERSION="$(head -n1 VERSION | tr -d '\r\n')"
   else
-    READMD_VERSION="2.4.0"
+    echo 'ERROR: VERSION is required' >&2; exit 2
   fi
 fi
 VERSION="${READMD_BUILD_VERSION:-${READMD_VERSION}}"
@@ -16,15 +14,20 @@ RPM_ARCH="${READMD_RPM_ARCH:-}"
 if [ -z "${RPM_ARCH}" ]; then
   case "${ARCH}" in
     aarch64|arm64) RPM_ARCH="aarch64" ;;
-    loongarch64)   RPM_ARCH="loongarch64" ;;
-    mips64el)      RPM_ARCH="mips64el" ;;
-    sw_64|sw64)    RPM_ARCH="sw64" ;;
-    armv7l|armhf)  RPM_ARCH="armhfp" ;;
-    *)             RPM_ARCH="x86_64" ;;
+    x86_64|amd64)  RPM_ARCH="x86_64" ;;
+    *) echo "ERROR: no verified native target for ${ARCH}" >&2; exit 2 ;;
   esac
 fi
 
 echo "=== Building ReadMD v${VERSION} RPM Package (${ARCH} / ${RPM_ARCH}) ==="
+
+case "${RPM_ARCH}" in x86_64|aarch64) ;; *) echo 'ERROR: unsupported RPM architecture' >&2; exit 2 ;; esac
+command -v file >/dev/null 2>&1 || { echo 'ERROR: file is required to verify the ELF architecture' >&2; exit 2; }
+BIN_INFO="$(file dist/ReadMD/ReadMD)"
+case "${RPM_ARCH}" in
+  x86_64) echo "${BIN_INFO}" | grep -Eqi 'ELF.*(x86-64|x86_64)' || { echo 'ERROR: RPM target does not match ELF architecture' >&2; exit 2; } ;;
+  aarch64) echo "${BIN_INFO}" | grep -Eqi 'ELF.*(aarch64|ARM aarch64)' || { echo 'ERROR: RPM target does not match ELF architecture' >&2; exit 2; } ;;
+esac
 
 BUILD_ROOT="dist/rpm_build"
 rm -rf "${BUILD_ROOT}"
@@ -35,7 +38,7 @@ ROOT_DIR="${BUILD_ROOT}/BUILDROOT/readmd-${VERSION}-1.${RPM_ARCH}"
 mkdir -p "${ROOT_DIR}/opt/readmd" "${ROOT_DIR}/usr/bin" "${ROOT_DIR}/usr/share/applications" "${ROOT_DIR}/usr/share/icons/hicolor/512x512/apps" "${ROOT_DIR}/usr/share/mime/packages"
 
 # 复制编译生成的二进制文件
-if [ -d "dist/ReadMD" ]; then
+if [ -f "dist/ReadMD/ReadMD" ] && [ -f "dist/ReadMD/assets/index.html" ]; then
   cp -r dist/ReadMD/* "${ROOT_DIR}/opt/readmd/"
 else
   echo "Error: dist/ReadMD does not exist. Please run cargo build --release first." >&2
@@ -57,10 +60,9 @@ License:        MIT
 URL:            https://readmd.asia
 BuildArch:      ${RPM_ARCH}
 
-# 依赖解耦：仅约束基础 glibc 与桌面通用工具，WebKitGTK 与浏览器作为软性推荐
-Requires:       glibc
-Recommends:     webkit2gtk4.1 || webkit2gtk4.0 || gtk3 || libnotify
-Suggests:       chromium || google-chrome-stable || firefox
+# The binary links GTK3/WebKitGTK 4.1. A browser is not a native fallback.
+Requires:       glibc, gtk3, webkit2gtk4.1, xdg-utils
+Recommends:     zenity, tesseract, google-noto-sans-cjk-fonts
 
 %description
 ReadMD is a lightweight, privacy-first native Markdown reader, editor and document

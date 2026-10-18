@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -6,7 +7,7 @@ const locales = fs.readdirSync(path.join(__dirname, '../assets/i18n')).filter(f 
 test('all shipped languages refresh editor state without losing the current document', async ({ page }) => {
   test.setTimeout(90000);
   await page.goto('/');
-  await page.waitForFunction(() => window.__readmdAppReady && window.ReadMDRecovery);
+  await waitForPage(page, () => window.__readmdAppReady && window.ReadMDRecovery);
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'Language-check.md', '', '# Public language fixture\n\nOne two three\n', []);
     await toggleEdit(); setPvLayout('right');

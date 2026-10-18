@@ -8,13 +8,16 @@
 
 use crate::md_ast::{inline_plain, Align, Block, Document, Inline};
 use std::collections::HashMap;
+#[path = "latex_writer_paragraphs.rs"]
+mod paragraphs;
+pub(crate) use paragraphs::GeometryContext as ParagraphGeometry;
 
 /// Document-level knobs, read from the export panel's `tex`/`meta` options.
 #[derive(Debug, Clone)]
 pub struct LatexOptions {
     pub title: String,
     pub author: String,
-    /// Raw LaTeX for `\date{}`; `None` → `\today`.
+    /// Literal date text. None uses `\today` only in the legacy title lane.
     pub date: Option<String>,
     pub doc_class: String,
     pub font_size: String,
@@ -27,6 +30,19 @@ pub struct LatexOptions {
     pub bib_engine: String,
     /// Relative, copied .bib resources; never raw user-supplied LaTeX.
     pub bibliography: Vec<String>,
+    /// Application-generated relative font resource, materialized by the exporter
+    /// only when a visible scalar needs the core SMP fallback.
+    pub core_text_font: Option<String>,
+    /// Shared, validated section ranges. Empty preserves legacy output.
+    pub publication_sections: Vec<crate::publication_sections::ResolvedSection>,
+    /// The already validated publication projection. None keeps the direct
+    /// standalone writer's legacy title and class-default layout contract.
+    pub publication_style: Option<serde_json::Value>,
+    /// Internal projection boundary; never read from user JSON. Shared metadata
+    /// front blocks keep their own story and do not inherit ordinary-body mode.
+    pub publication_front_block_count: usize,
+    /// Internal sparse-layer provenance, separate from client style JSON.
+    pub publication_legacy_line_height: f64,
 }
 
 impl Default for LatexOptions {
@@ -43,6 +59,11 @@ impl Default for LatexOptions {
             toc: false,
             bib_engine: "biblatex".into(),
             bibliography: Vec::new(),
+            core_text_font: None,
+            publication_sections: Vec::new(),
+            publication_style: None,
+            publication_front_block_count: 0,
+            publication_legacy_line_height: 1.6,
         }
     }
 }
@@ -50,6 +71,77 @@ impl Default for LatexOptions {
 /// Image resolution callback: markdown `src` → path to use in `\includegraphics`
 /// (already relative to the `.tex` file), or `None` if it cannot be embedded.
 pub type ImageMap<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+// Split both column lists at real TeX line/page breakpoints. A long citation
+// is never trapped in one unbreakable table row or minipage. Nested calls use
+// local box assignments and retain their split points in their parent list.
+const CSL_COLUMN_MACROS:&str=r#"
+\newbox\readmdcslleft
+\newbox\readmdcslright
+\newbox\readmdcslleftpart
+\newbox\readmdcslrightpart
+\newdimen\readmdcslleftwidth
+\newdimen\readmdcslrightwidth
+\newdimen\readmdcslavailable
+\newdimen\readmdcslheight
+\newif\ifreadmdcslmore
+\newbox\readmdcslwordbox
+\newcommand{\readmdcslchar}[1]{%
+  \setbox\readmdcslwordbox=\hbox{#1}%
+  \ifdim\wd\readmdcslwordbox>\linewidth\relax
+    \PackageError{ReadMD}{publication_layout_geometry}{A CSL character exceeds its column}%
+  \fi
+  #1%
+}
+\newcommand{\readmdcslword}[2]{%
+  \begingroup
+  \setbox\readmdcslwordbox=\hbox{#1}%
+  \ifdim\wd\readmdcslwordbox>\linewidth\relax
+    #2%
+  \else
+    #1%
+  \fi
+  \endgroup
+}
+\newcommand{\readmdcslcolumns}[2]{%
+  \par\begingroup
+  \readmdcslleftwidth=\readmdbiblabelwidth
+  \ifdim\readmdcslleftwidth<.5em\readmdcslleftwidth=.5em\fi
+  \ifdim\readmdcslleftwidth>.35\linewidth\readmdcslleftwidth=.35\linewidth\fi
+  \readmdcslrightwidth=\dimexpr\linewidth-\readmdcslleftwidth-.75em\relax
+  \ifdim\readmdcslleftwidth<.5em\PackageError{ReadMD}{publication_layout_geometry}{CSL label column is too narrow}\fi
+  \ifdim\readmdcslrightwidth<1em\PackageError{ReadMD}{publication_layout_geometry}{CSL columns are too narrow}\fi
+  % A short non-final line needs stretch: emergency penalties alone can
+  % otherwise force an overfull line into the reserved structural gutter.
+  \setbox\readmdcslleft=\vbox{\hsize=\readmdcslleftwidth\linewidth=\hsize\leftskip=0pt\rightskip=0pt plus1fil\parfillskip=0pt plus1fil\parindent=0pt\parskip=0pt\noindent#1\par}%
+  \setbox\readmdcslright=\vbox{\hsize=\readmdcslrightwidth\linewidth=\hsize\leftskip=0pt\rightskip=0pt plus1fil\parfillskip=0pt plus1fil\parindent=0pt\parskip=0pt\noindent#2\par}%
+  \loop
+    \ifinner\readmdcslavailable=\textheight\else
+      \readmdcslavailable=\dimexpr\pagegoal-\pagetotal\relax
+      \ifdim\readmdcslavailable>\textheight\readmdcslavailable=\textheight\fi
+      \ifdim\readmdcslavailable<2\baselineskip\newpage\readmdcslavailable=\textheight\fi
+    \fi
+    \advance\readmdcslavailable by-\baselineskip
+    \splittopskip=\topskip
+    \readmdcslheight=\dimexpr\ht\readmdcslleft+\dp\readmdcslleft\relax
+    \ifdim\readmdcslheight>\readmdcslavailable
+      \setbox\readmdcslleftpart=\vsplit\readmdcslleft to\readmdcslavailable
+    \else\setbox\readmdcslleftpart=\box\readmdcslleft\fi
+    \readmdcslheight=\dimexpr\ht\readmdcslright+\dp\readmdcslright\relax
+    \ifdim\readmdcslheight>\readmdcslavailable
+      \setbox\readmdcslrightpart=\vsplit\readmdcslright to\readmdcslavailable
+    \else\setbox\readmdcslrightpart=\box\readmdcslright\fi
+    \ifdim\ht\readmdcslleftpart>\dimexpr\readmdcslavailable+1pt\relax\PackageError{ReadMD}{publication_layout_geometry}{An unbreakable CSL object exceeds the page}\fi
+    \ifdim\ht\readmdcslrightpart>\dimexpr\readmdcslavailable+1pt\relax\PackageError{ReadMD}{publication_layout_geometry}{An unbreakable CSL object exceeds the page}\fi
+    \noindent\hbox to\linewidth{\hbox to\readmdcslleftwidth{\vtop{\unvbox\readmdcslleftpart}\hss}\hspace{.75em}\hbox to\readmdcslrightwidth{\vtop{\unvbox\readmdcslrightpart}\hss}\hss}\par
+    \readmdcslmorefalse
+    \ifvoid\readmdcslleft\else\readmdcslmoretrue\fi
+    \ifvoid\readmdcslright\else\readmdcslmoretrue\fi
+    \ifreadmdcslmore\ifinner\penalty-10000\else\newpage\fi\fi
+  \ifreadmdcslmore\repeat
+  \par\endgroup
+}
+"#;
 
 /// True for CJK ideographs, kana, hangul and CJK punctuation / fullwidth forms.
 pub fn is_cjk(c: char) -> bool {
@@ -82,6 +174,42 @@ pub fn escape_text(s: &str) -> String {
         }
     }
     out
+}
+
+fn escape_visible_text(s: &str, fallback: bool, used: &mut bool) -> String {
+    if !fallback || !crate::publication_fonts::needs_core_text_fallback(s) {
+        return escape_text(s);
+    }
+    let mut out = String::with_capacity(s.len() + 24);
+    let mut start = 0;
+    for (index, character) in s.char_indices() {
+        if character as u32 <= 0xffff {
+            continue;
+        }
+        let mut encoded = [0; 4];
+        if !crate::publication_fonts::needs_core_text_fallback(character.encode_utf8(&mut encoded)) {
+            continue;
+        }
+        out.push_str(&escape_text(&s[start..index]));
+        out.push_str("\\readmdunicode{");
+        out.push(character);
+        out.push('}');
+        start = index + character.len_utf8();
+        *used = true;
+    }
+    out.push_str(&escape_text(&s[start..]));
+    out
+}
+
+// Encode the path as character tokens, never raw TeX. fontspec's extension
+// detection compares tokens: ASCII letters must retain category 11 so .ttf
+// and .otf match its declared extensions. All other characters remain literal
+// category 12, including spaces, braces, percent signs and Unicode scalars.
+fn font_file_tokens(path: &str) -> String {
+    path.chars().map(|character| {
+        let category = if character.is_ascii_alphabetic() { 11 } else { 12 };
+        format!("\\char_generate:nn {{{}}}{{{category}}}", character as u32)
+    }).collect()
 }
 
 /// Escape a URL for `\href{…}` / `\url{…}`.
@@ -147,29 +275,229 @@ struct Writer<'a> {
     /// Footnote labels currently being expanded (guards self-reference).
     fn_stack: Vec<String>,
     bib_engine: String,
+    chapter_headings: bool,
+    publication_style: Option<serde_json::Value>,
+    core_text_fallback: bool,
+    core_text_used: bool,
+    /// Emergency ASCII breaks are allowed only inside recursive CSL columns.
+    csl_columns_text: bool,
+    paragraphs: paragraphs::State,
 }
 
+fn local_termes_font(attributes: &serde_json::Value) -> bool {
+    crate::publication_blocks::validate_style(attributes).is_ok()
+        && attributes.pointer("/text/font").and_then(serde_json::Value::as_str)
+            == Some("TeX Gyre Termes")
+}
+
+fn any_local_style(blocks: &[Block], predicate: &dyn Fn(&serde_json::Value) -> bool) -> bool {
+    blocks.iter().any(|block| match block {
+        Block::Styled { attributes, block } => {
+            predicate(attributes) || any_local_style(std::slice::from_ref(block.as_ref()), predicate)
+        }
+        Block::List { items, .. } => items.iter().any(|item| any_local_style(&item.blocks, predicate)),
+        Block::Quote(blocks) | Block::FootnoteDef { blocks, .. } => any_local_style(blocks, predicate),
+        _ => false,
+    })
+}
+
+/// TeX implements one fixed, managed local family. Every other visual request
+/// still needs the exporter warning; identities and empty sections do not.
+pub(crate) fn has_unsupported_local_styles(doc: &Document) -> bool {
+    has_unsupported_local_styles_with_spacing(doc,None)
+}
+
+pub(crate) fn has_unsupported_local_styles_with_spacing(doc:&Document, style:Option<&serde_json::Value>)->bool {
+    use crate::publication_typography as t;
+    let global = style.and_then(|style|t::global_line_spacing(style).ok().flatten());
+    fn walk(block:&Block,ordinary:bool,inherited:Option<t::LineSpacing>,global:Option<t::LineSpacing>)->bool {
+        match block {
+            Block::Styled {attributes,block} => {
+                if crate::publication_blocks::validate_style(attributes).is_err() { return true; }
+                let body = ordinary && matches!(block.unstyled(),Block::Paragraph(_));
+                let mode = t::resolve_line_spacing(inherited.or(if body{global}else{None}),&attributes["paragraph"],body).ok().flatten();
+                let unsupported = attributes.as_object().is_some_and(|root|root.iter().any(|(section,value)|match section.as_str(){
+                    "id"=>false,
+                    "text"=>value.as_object().is_some_and(|text|text.iter().any(|(key,value)|
+                        !(key=="font"&&value.as_str()==Some("TeX Gyre Termes") || key=="size"&&body&&mode.is_some()))),
+                    "paragraph"=>value.as_object().is_some_and(|p|p.keys().any(|key|
+                        !(body&&mode.is_some()&&matches!(key.as_str(),"lineSpacing"|"lineHeight")))),
+                    _=>true,
+                }));
+                unsupported || walk(block,ordinary,mode,global)
+            },
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>blocks.iter().any(|b|walk(b,false,None,global)),
+            Block::List{items,..}=>items.iter().any(|item|item.blocks.iter().any(|b|walk(b,false,None,global))),
+            _=>false,
+        }
+    }
+    doc.blocks.iter().any(|block|walk(block,true,None,global))
+}
+
+pub(crate) fn has_small_caps(doc: &Document) -> bool {
+    let mut found=false;
+    crate::md_ast::walk_inlines(&doc.blocks,&mut |inline|{
+        if matches!(inline,Inline::Styled{format,..} if format.font_variant==crate::publication_rich::RichFontVariant::SmallCaps){found=true;}
+    });
+    fn rich(nodes:&[crate::publication_rich::RichNode])->bool {
+        use crate::publication_rich::{RichFontVariant,RichNode};
+        nodes.iter().any(|node|match node {
+            RichNode::Text{format,..}=>format.font_variant==RichFontVariant::SmallCaps,
+            RichNode::Link{children,..}|RichNode::Group{children,..}=>rich(children),
+        })
+    }
+    fn bibliography(blocks:&[Block])->bool {
+        blocks.iter().any(|block|match block.unstyled(){
+            Block::Bibliography(bib)=>bib.items.iter().any(|item|rich(&item.first_field)||rich(&item.rich)),
+            Block::List{items,..}=>items.iter().any(|item|bibliography(&item.blocks)),
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>bibliography(blocks),
+            _=>false,
+        })
+    }
+    found||bibliography(&doc.blocks)
+}
+fn has_bibliography_columns(blocks:&[Block])->bool {
+    blocks.iter().any(|block|match block.unstyled(){
+        Block::Bibliography(bib)=>bib.items.iter().any(|item|!item.first_field.is_empty()||item.layout().is_ok_and(|layout|crate::publication_rich::layout_has_columns(&layout))),
+        Block::List{items,..}=>items.iter().any(|item|has_bibliography_columns(&item.blocks)),
+        Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>has_bibliography_columns(blocks),
+        _=>false,
+    })
+}
 /// Render the full standalone `.tex` document.
 pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) -> String {
-    let body = render_body_with_bibliography(doc, images, &opts.bib_engine);
+    render_document_with_resources(doc, opts, images).0
+}
+
+/// Return whether the actual visible projection requires the staged font.
+/// Image captions and referenced notes are observed while rendering, so unused
+/// source metadata and unused notes cannot create extra resource files.
+pub(crate) fn render_document_with_resources(doc: &Document, opts: &LatexOptions, images: ImageMap) -> (String, bool) {
+    match render_document_with_geometry(doc, opts, images) {
+        Ok((source, used, _)) => (source, used),
+        Err(error) => (format!("\\documentclass{{article}}\n\\begin{{document}}\n\\PackageError{{ReadMD}}{{{}}}{{Invalid publication paragraph}}\n\\end{{document}}\n", escape_text(&error)), false),
+    }
+}
+
+/// Preflight precedes image/bibliography resource staging in actual exporters.
+pub(crate) fn validate_paragraphs(doc:&Document, opts:&LatexOptions)->Result<(),String> {
+    let mut checked = opts.publication_style.clone().unwrap_or_else(||serde_json::json!({}));
+    crate::publication_typography::tracking::validate_document(doc, &checked, false)?;
+    crate::publication_typography::baseline::validate_document(doc, &checked, crate::publication_typography::baseline::Consumer::Unsupported)?;
+    checked["tex"] = serde_json::json!({"bibEngine":opts.bib_engine,"renderBibliography":!opts.bib_engine.is_empty()});
+    if crate::publication_typography::global_line_spacing(&checked)?.is_some()
+        || any_local_style(&doc.blocks,&|attributes| attributes["paragraph"].get("lineSpacing").is_some()) {
+        crate::publication_typography::validate_tex_document_with_front(doc,
+            &checked, opts.publication_front_block_count)?;
+    }
+    Ok(())
+}
+
+/// The actual exporter consumes the typed error/context, not a TeX string or
+/// warning parsed back into a control message. Legacy public formatting keeps
+/// its String signature but emits an explicit noncompilable error document.
+pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions, images: ImageMap)
+    -> Result<(String, bool, Option<ParagraphGeometry>), String>
+{
+    validate_paragraphs(doc,opts)?;
+    let fallback = opts.core_text_font.is_some();
+    let (body, mut core_text_used, mut paragraph_state) = if opts.publication_sections.is_empty(){
+        render_body_with_bibliography(doc, images, &opts.bib_engine,
+            matches!(opts.doc_class.as_str(), "report" | "book" | "ctexrep" | "ctexbook"), fallback, opts.publication_style.as_ref(), opts.publication_front_block_count)
+    }else{render_section_body(doc,opts,images,fallback)};
+    if let Some(error) = paragraph_state.error.take() { return Err(error); }
+    let legacy_title = opts.publication_style.is_none() && !opts.title.trim().is_empty();
+    let cover = opts.publication_style.as_ref().filter(|style|style["cover"]["enabled"].as_bool()==Some(true));
+    // Hidden metadata remains literal metadata, not a visible glyph/resource
+    // requirement. Typed paper/book front matter is already in the shared AST.
+    let title = if legacy_title {escape_visible_text(&opts.title, fallback, &mut core_text_used)}else{escape_text(&opts.title)};
+    let author = escape_visible_text(&opts.author, fallback && legacy_title, &mut core_text_used);
+    let date = opts.date.as_ref().map(|date| escape_visible_text(date, fallback && legacy_title, &mut core_text_used));
+    let cover_source = cover.map(|style|{
+        let c=&style["cover"];
+        let requested=c["title"].as_str().filter(|value|!value.trim().is_empty()).unwrap_or(&opts.title);
+        let title=escape_visible_text(requested,fallback,&mut core_text_used);
+        let subtitle=escape_visible_text(c["subtitle"].as_str().unwrap_or(""),fallback,&mut core_text_used);
+        let author=escape_visible_text(&opts.author,fallback,&mut core_text_used);
+        let date=escape_visible_text(c["date"].as_str().unwrap_or(""),fallback,&mut core_text_used);
+        let alignment=match c["align"].as_str(){Some("left")=>"\\raggedright",Some("right")=>"\\raggedleft",_=>"\\centering"};
+        let settings=shared_text_settings(style,opts.publication_legacy_line_height);
+        // titlepage itself starts with a page transition. Colour commands must
+        // run inside it, after that transition, never on the preceding empty
+        // vertical list.
+        format!("\\begin{{titlepage}}\n\\thispagestyle{{empty}}\n{settings}{alignment}\n\\vspace*{{\\fill}}\n{{\\fontsize{{28}}{{34}}\\selectfont\\bfseries {title}\\par}}\n\\vspace{{12pt}}\n{subtitle}\\par\n\\vspace{{12pt}}\n{author}\\par\n\\vspace{{12pt}}\n{date}\\par\n\\vspace*{{\\fill}}\n\\end{{titlepage}}\n")
+    }).unwrap_or_default();
     let wants_ctex = opts.use_ctex.unwrap_or_else(|| {
-        body.chars().any(is_cjk) || opts.title.chars().any(is_cjk) || opts.author.chars().any(is_cjk)
+        body.chars().any(is_cjk) || cover_source.chars().any(is_cjk)
+            || (legacy_title && (opts.title.chars().any(is_cjk) || opts.author.chars().any(is_cjk)))
     });
     let mut s = String::new();
     s.push_str("% !TEX program = xelatex\n");
     s.push_str("% Generated by ReadMD. Compile with XeLaTeX (recommended) or LuaLaTeX.\n");
+    // CTeX otherwise auto-selects SimSun on Windows / native fonts on macOS.
+    // Generated documents use the same portable font family on every host.
+    // A hand-authored/imported TeX template remains free to select its fonts.
+    let class_fonts = if opts.doc_class.starts_with("ctex") {
+        ",fontset=fandol"
+    } else {
+        ""
+    };
     s.push_str(&format!(
-        "\\documentclass[{},{}]{{{}}}\n\n",
-        opts.font_size, opts.paper, opts.doc_class
+        "\\documentclass[{},{}{}]{{{}}}\n\n",
+        opts.font_size, opts.paper, class_fonts, opts.doc_class
     ));
-    s.push_str("\\usepackage{iftex}\n\\ifPDFTeX\n  \\usepackage[utf8]{inputenc}\n  \\usepackage[T1]{fontenc}\n\\fi\n");
+    // T1 Computer Modern otherwise falls back to EC bitmap fonts and mktexpk.
+    // Latin Modern ships ready-made outlines in the portable input runtime.
+    s.push_str("\\usepackage{iftex}\n\\ifPDFTeX\n  \\usepackage[utf8]{inputenc}\n  \\usepackage[T1]{fontenc}\n  \\usepackage{lmodern}\n\\fi\n");
     if wants_ctex && !opts.doc_class.starts_with("ctex") {
-        s.push_str("\\usepackage[UTF8]{ctex}\n");
+        s.push_str("\\usepackage[UTF8,fontset=fandol]{ctex}\n");
     }
-    s.push_str(&format!("\\usepackage[margin={}]{{geometry}}\n", opts.margin));
+    if let Some(style)=&opts.publication_style{
+        // The explicit cover, TOC and first body section share the same paper
+        // profile; class defaults and TeX's legacy margin knob cannot silently
+        // change the shared projection before the first section marker.
+        let (width,height)=crate::export_styles::page_dimensions(style);
+        let layout=crate::publication_layout::Layout::from_style(style);
+        let n=|key:&str,d:f64|style["page"][key].as_f64().filter(|v|v.is_finite()).unwrap_or(d);
+        s.push_str(&format!("\\usepackage[paperwidth={width}mm,paperheight={height}mm,left={}mm,right={}mm,top={}mm,bottom={}mm]{{geometry}}\n",n("marginLeft",18.)+layout.gutter,n("marginRight",18.),n("marginTop",20.),n("marginBottom",20.)));
+    }else{s.push_str(&format!("\\usepackage[margin={}]{{geometry}}\n", opts.margin));}
+    if !opts.publication_sections.is_empty(){
+        s.push_str("\\usepackage{multicol}\n\\usepackage{fancyhdr}\n\\newcounter{readmdphysicalpage}\n\\setcounter{readmdphysicalpage}{1}\n");
+        s.push_str(r#"\providecommand{\readmdtotalpages}{?}
+\makeatletter
+\newcommand{\readmdapplypagestyle}[1]{%
+\begingroup
+\pagestyle{#1}%
+\global\let\@oddhead\@oddhead
+\global\let\@evenhead\@evenhead
+\global\let\@oddfoot\@oddfoot
+\global\let\@evenfoot\@evenfoot
+\global\let\f@nch@oddhead\f@nch@oddhead
+\global\let\f@nch@oddfoot\f@nch@oddfoot
+\global\let\f@nch@olh\f@nch@olh
+\global\let\f@nch@och\f@nch@och
+\global\let\f@nch@orh\f@nch@orh
+\global\let\f@nch@elh\f@nch@elh
+\global\let\f@nch@ech\f@nch@ech
+\global\let\f@nch@erh\f@nch@erh
+\global\let\f@nch@olf\f@nch@olf
+\global\let\f@nch@ocf\f@nch@ocf
+\global\let\f@nch@orf\f@nch@orf
+\global\let\f@nch@elf\f@nch@elf
+\global\let\f@nch@ecf\f@nch@ecf
+\global\let\f@nch@erf\f@nch@erf
+\global\let\headrulewidth\headrulewidth
+\global\let\footrulewidth\footrulewidth
+\endgroup
+}
+\AddToHook{shipout/after}{\immediate\write\@auxout{\string\gdef\string\readmdtotalpages{\number\value{readmdphysicalpage}}}\stepcounter{readmdphysicalpage}}
+\makeatother
+"#);
+    }
     match opts.bib_engine.as_str() {
         "natbib" => s.push_str("\\usepackage[round,authoryear]{natbib}\n"),
         "bibtex" => s.push_str("% Bibliography engine: BibTeX\n"),
+        ""=>(),
         _ => {
             s.push_str("\\usepackage[backend=biber]{biblatex}\n");
             for path in &opts.bibliography {
@@ -179,6 +507,11 @@ pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) ->
     }
     s.push_str(concat!(
         "\\usepackage{amsmath,amssymb,amsfonts,mathtools}\n",
+        // DSL/OMML equations contain real Unicode math, including Greek and
+        // mathematical alphabet scalars. Legacy Computer Modern math slots
+        // cannot consume those scalars even when XeTeX handles body Unicode.
+        // Use the pack's OpenType math font; pdfTeX keeps its ASCII math lane.
+        "\\ifPDFTeX\\else\n  \\usepackage{unicode-math}\n  \\setmathfont{latinmodern-math.otf}\n\\fi\n",
         "\\usepackage{graphicx}\n",
         "\\usepackage[export]{adjustbox}\n",
         "\\usepackage{booktabs}\n",
@@ -198,22 +531,78 @@ pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) ->
         "\\providecommand{\\tightlist}{\\setlength{\\itemsep}{0pt}\\setlength{\\parskip}{0pt}}\n",
         "\n",
     ));
-    s.push_str(&format!("\\title{{{}}}\n", escape_text(&opts.title)));
-    s.push_str(&format!("\\author{{{}}}\n", escape_text(&opts.author)));
-    match &opts.date {
-        Some(d) => s.push_str(&format!("\\date{{{}}}\n", escape_text(d))),
-        None => s.push_str("\\date{\\today}\n"),
+    if opts.bib_engine.is_empty() && has_bibliography_columns(&doc.blocks) {
+        // Allocate once; each bibliography changes the dimensions only inside
+        // its local spacing group. Ordinary paragraphs remain breakable.
+        s.push_str("\\newlength{\\readmdbiblabelwidth}\n\\newlength{\\readmdbibmeasure}\n");
+        s.push_str(CSL_COLUMN_MACROS);
+    }
+    let small_caps = has_small_caps(doc);
+    if small_caps || any_local_style(&doc.blocks, &local_termes_font) {
+        // The same locked four physical faces serve ordinary text and small caps.
+        // Local defaults also cover headings/notes that call \normalfont. The
+        // fixed NFSS name is independent of any user font or file-name string.
+        s.push_str(concat!(
+            "\\ifPDFTeX\n",
+            "  \\newcommand{\\readmdtermesfont}{\\fontfamily{qtm}\\selectfont}\n",
+            "  \\newcommand{\\readmdtermesblockfont}{\\renewcommand{\\rmdefault}{qtm}\\renewcommand{\\familydefault}{qtm}\\readmdtermesfont}\n",
+            "\\else\n",
+            "  \\usepackage{fontspec}\n",
+            "  \\newfontfamily\\readmdtermesfont[NFSSFamily=readmdtermes,BoldFont={texgyretermes-bold.otf},ItalicFont={texgyretermes-italic.otf},BoldItalicFont={texgyretermes-bolditalic.otf}]{texgyretermes-regular.otf}\n",
+            "  \\newcommand{\\readmdtermesblockfont}{\\renewcommand{\\rmdefault}{readmdtermes}\\renewcommand{\\familydefault}{readmdtermes}\\readmdtermesfont}\n",
+            "\\fi\n"
+        ));
+        if small_caps {
+            // Keep smcp in a separate NFSS family: fontspec's bx/sc alias can
+            // otherwise select ordinary bold. Select only the family so the
+            // inherited weight, shape and size survive. XeTeX records ActualText
+            // on each native word while this local group is active; restoring
+            // the parameter before shipout does not lose original Unicode.
+            s.push_str(concat!(
+                "\\ifPDFTeX\n",
+                "  \\newcommand{\\readmdsmallcaps}[1]{{\\readmdtermesfont\\textsc{#1}}}\n",
+                "\\else\n",
+                "  \\newfontfamily\\readmdtermessmallcapsfont[NFSSFamily=readmdtermessmallcaps,Letters=SmallCaps,BoldFont={texgyretermes-bold.otf},ItalicFont={texgyretermes-italic.otf},BoldItalicFont={texgyretermes-bolditalic.otf}]{texgyretermes-regular.otf}\n",
+                "  \\ifXeTeX\n",
+                "    \\newcommand{\\readmdsmallcaps}[1]{{\\XeTeXgenerateactualtext=1\\relax\\readmdtermessmallcapsfont #1}}\n",
+                "  \\else\n",
+                "    \\newcommand{\\readmdsmallcaps}[1]{{\\readmdtermessmallcapsfont #1}}\n",
+                "  \\fi\n\\fi\n"
+            ));
+        }
+    }
+    if core_text_used {
+        // A single real face is enough for the covered scalars. Reset series
+        // and shape only inside this character's group; surrounding Termes
+        // small caps, emphasis, size, colour and links retain their settings.
+        s.push_str("\\ifPDFTeX\n  \\PackageError{ReadMD}{Core Unicode text fallback requires XeLaTeX}{Select XeLaTeX for this document.}\n\\else\n  \\usepackage{fontspec}\n  \\ExplSyntaxOn\n");
+        s.push_str(&format!("  \\cs_new:Npx \\readmdcorefontfile {{ {} }}\n", font_file_tokens(opts.core_text_font.as_deref().unwrap_or_default())));
+        s.push_str("  \\exp_args:NNV \\newfontface \\readmdcorefallback \\readmdcorefontfile [NFSSFamily=readmdcorefallback]\n  \\ExplSyntaxOff\n  \\DeclareRobustCommand{\\readmdunicode}[1]{{\\normalfont\\readmdcorefallback #1}}\n\\fi\n\\pdfstringdefDisableCommands{\\def\\readmdunicode#1{#1}}\n");
+    }
+    if let Some(geometry) = &paragraph_state.geometry {
+        s.push_str(paragraphs::MACROS);
+        s.push_str(&format!("\\def\\readmdpmarker{{{}}}\n", geometry.marker_for_source()));
+    }
+    s.push_str(&format!("\\title{{{title}}}\n"));
+    s.push_str(&format!("\\author{{{author}}}\n"));
+    match &date {
+        Some(d) => s.push_str(&format!("\\date{{{d}}}\n")),
+        None => s.push_str(if opts.publication_style.is_some(){"\\date{}\n"}else{"\\date{\\today}\n"}),
     }
     s.push_str("\n\\begin{document}\n");
-    if !opts.title.trim().is_empty() {
+    if legacy_title {
         s.push_str("\\maketitle\n");
     }
+    s.push_str(&cover_source);
     if opts.toc {
         s.push_str("\\tableofcontents\n\\newpage\n");
     }
+    if opts.publication_sections.is_empty(){
+        if let Some(style)=&opts.publication_style{s.push_str(&shared_text_settings(style,opts.publication_legacy_line_height));}
+    }
     s.push('\n');
     s.push_str(body.trim_end());
-    if !opts.bibliography.is_empty() {
+    if !opts.bib_engine.is_empty() && !opts.bibliography.is_empty() {
         if matches!(opts.bib_engine.as_str(), "natbib" | "bibtex") {
             s.push_str("\n\\bibliographystyle{plain");
             if opts.bib_engine == "natbib" { s.push_str("nat"); }
@@ -225,25 +614,122 @@ pub fn render_document(doc: &Document, opts: &LatexOptions, images: ImageMap) ->
         }
     }
     s.push_str("\n\n\\end{document}\n");
-    s
+    if let Some(geometry) = &mut paragraph_state.geometry { geometry.bind_source(&s); }
+    Ok((s, core_text_used, paragraph_state.geometry))
 }
 
 /// Render only the body (no preamble).
 pub fn render_body(doc: &Document, images: ImageMap) -> String {
-    render_body_with_bibliography(doc, images, "biblatex")
+    render_body_with_bibliography(doc, images, "biblatex", false, false, None, 0).0
 }
 
-fn render_body_with_bibliography(doc: &Document, images: ImageMap, bib_engine: &str) -> String {
+fn render_body_with_bibliography(doc: &Document, images: ImageMap, bib_engine: &str, chapter_headings: bool, core_text_fallback: bool, publication_style: Option<&serde_json::Value>, front_count: usize) -> (String, bool, paragraphs::State) {
     let mut footnotes = HashMap::new();
     collect_footnotes(&doc.blocks, &mut footnotes);
-    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new(), bib_engine: bib_engine.into() };
+    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new(), bib_engine: bib_engine.into(), chapter_headings, publication_style: publication_style.cloned(), core_text_fallback, core_text_used: false, csl_columns_text: false, paragraphs: paragraphs::State::new(doc, front_count) };
     w.blocks(&doc.blocks, 0);
-    w.out
+    (w.out, w.core_text_used, w.paragraphs)
+}
+
+fn shared_text_settings(style:&serde_json::Value,legacy_line_height:f64)->String{
+    let number=|value:&serde_json::Value,default:f64|value.as_f64().filter(|v|v.is_finite()).unwrap_or(default);
+    let color=|value:&serde_json::Value|{let value=value.as_str().unwrap_or("#262626").trim();if value.len()==7&&value.starts_with('#')&&value[1..].bytes().all(|b|b.is_ascii_hexdigit()){value[1..].to_string()}else{"262626".into()}};
+    let body=&style["typography"];let size=number(&body["size"],11.);let line=number(&body["lineHeight"],legacy_line_height);
+    let alignment=match body["align"].as_str(){Some("center")=>"\\centering",Some("right")=>"\\raggedleft",Some("justify")=>"\\leftskip=0pt\\rightskip=0pt\\parfillskip=0pt plus1fil",_=>"\\raggedright"};
+    let widow=if body["widowControl"].as_bool().unwrap_or(true){10000}else{0};
+    let mut out=format!("% Shared publication typography, independent of class defaults.\n\\linespread{{1}}{alignment}\n\\fontsize{{{size}}}{{{}}}\\selectfont\\color[HTML]{{{}}}\n\\setlength{{\\parindent}}{{{}mm}}\\setlength{{\\parskip}}{{{}pt}}\n\\clubpenalty={widow}\\widowpenalty={widow}\\interlinepenalty={}\\relax\n\\setcounter{{secnumdepth}}{{-1}}\n\\makeatletter\n\\providecommand{{\\l@readmdsubparagraph}}{{\\@dottedtocline{{6}}{{10em}}{{5em}}}}\n\\providecommand{{\\toclevel@readmdsubparagraph}}{{6}}\n\\def\\readmdheadingfree{{\\global\\@nobreakfalse\\everypar{{}}\\penalty0 }}\n",size*line,color(&body["color"]),number(&body["firstLineIndent"],0.),number(&body["spacing"],6.),if body["keepLines"].as_bool().unwrap_or(false){10000}else{0});
+    for (index,name) in ["section","subsection","subsubsection","paragraph","subparagraph","readmdsubparagraph"].iter().enumerate(){
+        let level=index+1;let h=&style["headings"][format!("h{level}")];let size=number(&h["size"],14.);
+        let alignment=match h["align"].as_str(){Some("center")=>"\\centering",Some("right")=>"\\raggedleft",_=>"\\raggedright"};
+        // Native @startsection interprets zero after-space as a run-in heading.
+        // One scaled point preserves a separate block at the requested zero
+        // visible gap (1/65536 TeX point), rather than merging the next paragraph.
+        let after=number(&h["after"],8.);let after=if after==0.{"1sp".into()}else{format!("{after}pt")};
+        let leading=size*line;
+        let bold=if h["bold"].as_bool().unwrap_or(true){"\\bfseries"}else{"\\mdseries"};
+        let heading_color=color(&h["color"]);
+        out.push_str(&format!("\\expandafter\\def\\csname readmdheading{level}\\endcsname{{"));
+        out.push_str(&format!("\\@startsection{{{name}}}{{{level}}}{{0pt}}{{{}pt}}{{{after}}}",number(&h["before"],12.)));
+        out.push('{');
+        out.push_str(&format!("\\normalfont\\fontsize{{{size}}}{{{leading}}}\\selectfont{bold}\\color[HTML]{{{heading_color}}}{alignment}"));
+        out.push_str("}}\n");
+    }
+    out.push_str("\\makeatother\n");out
+}
+
+fn render_section_body(doc:&Document,opts:&LatexOptions,images:ImageMap,fallback:bool)->(String,bool,paragraphs::State){
+    let mut footnotes=HashMap::new();collect_footnotes(&doc.blocks,&mut footnotes);
+    let mut w=Writer{out:String::new(),images,footnotes,fn_stack:Vec::new(),bib_engine:opts.bib_engine.clone(),chapter_headings:matches!(opts.doc_class.as_str(),"report"|"book"|"ctexrep"|"ctexbook"),publication_style:opts.publication_style.clone(),core_text_fallback:fallback,core_text_used:false,csl_columns_text:false,paragraphs:paragraphs::State::new(doc,opts.publication_front_block_count)};
+    for (index,section) in opts.publication_sections.iter().enumerate(){
+        let Some(blocks)=doc.blocks.get(section.block_range.clone())else{
+            w.out.push_str("\\PackageError{ReadMD}{publication_section_invalid}{Invalid section range}\n");return(w.out,w.core_text_used,w.paragraphs);
+        };
+        if index>0{match section.break_kind{
+            crate::publication_sections::SectionBreak::Continuous=>w.out.push_str("\\par\n"),
+            crate::publication_sections::SectionBreak::NextPage=>w.out.push_str("\\clearpage\n"),
+            crate::publication_sections::SectionBreak::OddPage=>w.out.push_str("\\clearpage\n\\ifodd\\value{readmdphysicalpage}\\else\\hbox{}\\thispagestyle{empty}\\newpage\\fi\n"),
+            crate::publication_sections::SectionBreak::EvenPage=>w.out.push_str("\\clearpage\n\\ifodd\\value{readmdphysicalpage}\\hbox{}\\thispagestyle{empty}\\newpage\\fi\n"),
+        }}
+        let style=&section.style;let layout=crate::publication_layout::Layout::from_style(style);
+        if index==0||section.break_kind!=crate::publication_sections::SectionBreak::Continuous{
+            let (width,height)=crate::export_styles::page_dimensions(style);
+            let num=|key:&str,default:f64|style["page"][key].as_f64().filter(|v|v.is_finite()).unwrap_or(default);
+            let left=num("marginLeft",18.)+layout.gutter;let right=num("marginRight",18.);
+            let top=num("marginTop",20.);let bottom=num("marginBottom",20.);
+            // geometry's newgeometry intentionally ignores paper=... . Use
+            // its public layout dimensions, then update the physical paper
+            // registers and the selected engine's page size explicitly.
+            // XeTeX reads these dimensions at every shipout. A one-page
+            // papersize special alone leaves subsequent pages (including
+            // parity padding) at the preamble's original paper dimensions.
+            w.out.push_str(&format!("\\newgeometry{{layoutwidth={width}mm,layoutheight={height}mm,left={left}mm,right={right}mm,top={top}mm,bottom={bottom}mm,headheight={}pt,headsep={}mm,footskip={}mm}}\n\\setlength{{\\paperwidth}}{{{width}mm}}\\setlength{{\\paperheight}}{{{height}mm}}\n\\ifPDFTeX\\pdfpagewidth=\\paperwidth\\pdfpageheight=\\paperheight\\else\\ifLuaTeX\\pagewidth=\\paperwidth\\pageheight=\\paperheight\\else\\ifXeTeX\\pdfpagewidth=\\paperwidth\\pdfpageheight=\\paperheight\\else\\special{{papersize={width}mm,{height}mm}}\\fi\\fi\\fi\n",layout.header_size*1.3,(top-layout.header_distance-layout.header_size*1.3*25.4/72.).max(0.),(bottom-layout.footer_distance).max(0.)));
+        }
+        // newgeometry clears the current page. Apply any colour/font settings
+        // only afterwards, so a colour whatsit cannot create an undeclared
+        // leading page (or an extra page after a real section boundary).
+        if opts.publication_style.is_some(){w.publication_style=Some(style.clone());w.out.push_str(&shared_text_settings(style,opts.publication_legacy_line_height));}
+        let format=match layout.page_format.as_str(){"lowerRoman"=>"roman","upperRoman"=>"Roman","lowerLetter"=>"alph","upperLetter"=>"Alph",_=>"arabic"};
+        w.out.push_str(&format!("\\renewcommand{{\\thepage}}{{\\{format}{{page}}}}\n"));
+        if let Some(start)=section.page_start{w.out.push_str(&format!("\\setcounter{{page}}{{{start}}}\n"));}
+        let position=|value:&str|match value{"left"=>"L","right"=>"R",_=>"C"};
+        let mut running=String::from("\\fancyhf{}\\renewcommand{\\headrulewidth}{0pt}\\renewcommand{\\footrulewidth}{0pt}\\setlength{\\headwidth}{\\textwidth}\n");
+        for part in ["header","footer"]{
+            let odd=w.text(style[part]["text"].as_str().unwrap_or(""));
+            let even=w.text(style[part]["evenText"].as_str().unwrap_or(""));
+            let text=if layout.different_odd_even{format!("\\ifodd\\value{{readmdphysicalpage}} {odd}\\else {even}\\fi")}else{odd};
+            let number=if part=="footer"&&style["footer"]["pageNumbers"].as_bool().unwrap_or(true){if layout.page_total{" \\thepage{} / \\readmdtotalpages"}else{" \\thepage"}}else{""};
+            let command=if part=="header"{"fancyhead"}else{"fancyfoot"};
+            let size=if part=="header"{layout.header_size}else{layout.footer_size};
+            running.push_str(&format!("\\{command}[{}]{{\\fontsize{{{size}}}{{{}}}\\selectfont {text}{number}}}\n",position(style[part]["align"].as_str().unwrap_or(if part=="header"{"left"}else{"center"})),size*1.2));
+        }
+        w.out.push_str(&format!("\\fancypagestyle{{readmdsection{index}}}{{{running}}}\n"));
+        if index>0&&section.break_kind==crate::publication_sections::SectionBreak::Continuous{
+            // A continuous boundary cannot rewrite the running matter of the
+            // physical page already in progress. Last boundary on that page
+            // wins for the next page; native shipout remains the authority.
+            // Publish only the running-matter macros from the hook's group.
+            // Globalizing all pagestyle assignments leaks TeX's temporary
+            // escapechar state and corrupts every subsequent AUX command.
+            w.out.push_str(&format!("\\ifdim\\pagetotal>0pt\\relax\\AddToHookNext{{shipout/after}}{{\\readmdapplypagestyle{{readmdsection{index}}}}}\\else\\pagestyle{{readmdsection{index}}}\\fi\n"));
+        }else{w.out.push_str(&format!("\\pagestyle{{readmdsection{index}}}\n"));}
+        if layout.hide_first{
+            let header=w.text(style["header"]["firstText"].as_str().unwrap_or(""));
+            let footer=w.text(style["footer"]["firstText"].as_str().unwrap_or(""));
+            let first=format!("\\fancyhf{{}}\\renewcommand{{\\headrulewidth}}{{0pt}}\\renewcommand{{\\footrulewidth}}{{0pt}}\\setlength{{\\headwidth}}{{\\textwidth}}\\fancyhead[{}]{{\\fontsize{{{}}}{{{}}}\\selectfont {header}}}\\fancyfoot[{}]{{\\fontsize{{{}}}{{{}}}\\selectfont {footer}}}",position(style["header"]["align"].as_str().unwrap_or("left")),layout.header_size,layout.header_size*1.2,position(&layout.footer_align),layout.footer_size,layout.footer_size*1.2);
+            w.out.push_str(&format!("\\fancypagestyle{{readmdsection{index}first}}{{{first}}}\n\\thispagestyle{{readmdsection{index}first}}\n"));
+        }
+        w.out.push_str(&format!("\\hypertarget{{readmd-section-{}}}{{}}\n",section.id));
+        if layout.columns>1{w.out.push_str(&format!("\\setlength{{\\columnsep}}{{{}mm}}\n\\begin{{multicols}}{{{}}}\n",layout.column_gap,layout.columns));}
+        w.blocks(blocks,0);
+        if layout.columns>1{w.out.push_str("\\end{multicols}\n");}
+    }
+    (w.out,w.core_text_used,w.paragraphs)
 }
 
 fn collect_footnotes(blocks: &[Block], into: &mut HashMap<String, Vec<Block>>) {
     for b in blocks {
         match b {
+            Block::Styled { block, .. } => collect_footnotes(std::slice::from_ref(block.as_ref()), into),
             Block::FootnoteDef { label, blocks } => {
                 into.insert(label.clone(), blocks.clone());
             }
@@ -259,9 +745,90 @@ fn collect_footnotes(blocks: &[Block], into: &mut HashMap<String, Vec<Block>>) {
 }
 
 impl<'a> Writer<'a> {
+    fn rich_flow(&mut self,nodes:&[crate::publication_rich::RichLayoutNode],href:Option<&str>,hanging:bool)->String{
+        use crate::publication_rich::RichLayoutNode as L;
+        let mut out=String::new();for node in nodes{match node{
+            L::Inline{children}=>{let value=self.inlines(&crate::md_ast::rich_inlines(children));out.push_str(&if let Some(href)=href{format!("\\href{{{}}}{{{value}}}",escape_url(href))}else{value});},
+            L::Group{children,..}=>out.push_str(&self.rich_flow(children,href,hanging)),
+            L::Link{href,children}=>out.push_str(&self.rich_flow(children,Some(href),hanging)),
+            L::Block{children,indent}=>out.push_str(&format!("\\par\\begingroup\\parindent=0pt\\hangindent={}em\\hangafter=1{}\n{}\\par\\endgroup\n",if hanging{2}else{0},if *indent{"\\advance\\leftskip by4em\\advance\\linewidth by-4em"}else{""},self.rich_flow(children,href,hanging))),
+            L::Columns{left,right}=>{
+                let previous = self.csl_columns_text; self.csl_columns_text = true;
+                let left = self.rich_flow(left,href,false); let right = self.rich_flow(right,href,false);
+                self.csl_columns_text = previous;
+                out.push_str(&format!("\\readmdcslcolumns{{{left}}}{{{right}}}\n"));
+            },
+        }}out
+    }
+    fn rich_label_lines(&mut self,nodes:&[crate::publication_rich::RichLayoutNode],out:&mut Vec<String>,line:&mut String){
+        use crate::publication_rich::RichLayoutNode as L;
+        fn flush(out:&mut Vec<String>,line:&mut String){if !line.is_empty(){out.push(std::mem::take(line));}}
+        for node in nodes{match node{
+            L::Inline{children}=>line.push_str(&self.inlines(&crate::md_ast::rich_inlines(children))),
+            L::Group{children,..}|L::Link{children,..}=>self.rich_label_lines(children,out,line),
+            L::Block{children,..}=>{flush(out,line);self.rich_label_lines(children,out,line);flush(out,line);},
+            L::Columns{left,right}=>{flush(out,line);self.rich_label_lines(left,out,line);flush(out,line);self.rich_label_lines(right,out,line);flush(out,line);},
+        }}
+    }
+    fn rich_labels(&mut self,nodes:&[crate::publication_rich::RichLayoutNode],out:&mut Vec<String>){
+        use crate::publication_rich::RichLayoutNode as L;
+        for node in nodes{match node{
+            L::Columns{left,right}=>{let mut line=String::new();self.rich_label_lines(left,out,&mut line);if !line.is_empty(){out.push(line);}self.rich_labels(left,out);self.rich_labels(right,out);},
+            L::Block{children,..}|L::Group{children,..}|L::Link{children,..}=>self.rich_labels(children,out),_=>(),
+        }}
+    }
+    fn rich_bibliography(&mut self,bib:&crate::publication_rich::RichBibliography){
+        let layouts=match bib.items.iter().map(|item|item.layout()).collect::<crate::ApiResult<Vec<_>>>(){
+            Ok(layouts)=>layouts,Err(_)=>{self.out.push_str("\\PackageError{ReadMD}{academic_rich_budget}{Invalid citation layout}\n");return;}
+        };
+        self.para_break();let title=self.text(&bib.title);self.out.push_str(&format!("\\section*{{{title}}}\n\\begingroup\\linespread{{{}}}\\selectfont\\setlength{{\\parskip}}{{0pt}}\n",bib.line_spacing));
+        let mut labels=Vec::new();for layout in &layouts{self.rich_labels(layout,&mut labels);}
+        if !labels.is_empty(){
+            self.out.push_str("\\setlength{\\readmdbiblabelwidth}{0pt}\n");
+            for label in labels{self.out.push_str(&format!("\\settowidth{{\\readmdbibmeasure}}{{{label}}}\\ifdim\\readmdbibmeasure>\\readmdbiblabelwidth\\setlength{{\\readmdbiblabelwidth}}{{\\readmdbibmeasure}}\\fi\n"));}
+        }
+        for (index,layout) in layouts.iter().enumerate(){
+            let body=self.rich_flow(layout,None,bib.hanging_indent);self.out.push_str(&format!("\\begingroup\\parindent=0pt\\hangindent={}em\\hangafter=1\n{body}\\par\\endgroup\n",if bib.hanging_indent{2}else{0}));
+            if index+1<layouts.len()&&bib.entry_spacing>0{self.out.push_str(&format!("\\vspace{{{}\\baselineskip}}\n",bib.entry_spacing));}
+        }
+        self.out.push_str("\\par\\endgroup\n");
+    }
+    fn text(&mut self, text: &str) -> String {
+        escape_visible_text(text, self.core_text_fallback, &mut self.core_text_used)
+    }
+    fn inline_text(&mut self, text: &str) -> String {
+        if !self.csl_columns_text || !self.bib_engine.is_empty() {
+            return citation_text(text, &self.bib_engine, self.core_text_fallback, &mut self.core_text_used);
+        }
+        let mut out = String::new();
+        // Keep a complete non-ASCII token intact: never split combining marks,
+        // surrogate scalars, emoji sequences or a font's Unicode shaping unit.
+        for segment in text.split_inclusive(char::is_whitespace) {
+            let token = segment.trim_end_matches(char::is_whitespace);
+            if token.is_ascii() && !token.is_empty() {
+                let normal = self.text(token);
+                let pieces = token.chars().map(|c| format!("\\readmdcslchar{{{}}}", self.text(&c.to_string())))
+                    .collect::<Vec<_>>().join("\\allowbreak{}");
+                out.push_str(&format!("\\readmdcslword{{{normal}}}{{{pieces}}}"));
+            } else { out.push_str(&self.text(token)); }
+            out.push_str(&self.text(&segment[token.len()..]));
+        }
+        // Separate rich leaves may be parts of one word. A high-penalty,
+        // invisible leaf boundary permits emergency wrapping without forcing
+        // a glyph/space or changing links and format ownership.
+        if text.chars().last().is_some_and(|c| c.is_ascii() && !c.is_ascii_whitespace()) {
+            out.push_str("\\penalty1000\\relax ");
+        }
+        out
+    }
     fn blocks(&mut self, blocks: &[Block], list_depth: usize) {
         for b in blocks {
+            if crate::speech::cancelled() { self.paragraphs.fail("cancelled"); break; }
+            let ordinary = self.paragraphs.ordinary;
+            if self.paragraphs.is_front(b) { self.paragraphs.ordinary = false; }
             self.block(b, list_depth);
+            self.paragraphs.ordinary = ordinary;
+            if self.paragraphs.error.is_some() { break; }
         }
     }
 
@@ -277,29 +844,88 @@ impl<'a> Writer<'a> {
 
     fn block(&mut self, b: &Block, list_depth: usize) {
         match b {
+            Block::SectionStart(_)=>(),
+            Block::Styled { attributes, block } => {
+                let previous = (self.paragraphs.line, self.paragraphs.size, self.paragraphs.id.clone());
+                if self.paragraphs.ordinary && matches!(block.unstyled(),Block::Paragraph(_)) {
+                    let global = self.publication_style.as_ref()
+                        .map(crate::publication_typography::global_line_spacing).transpose();
+                    let mode = global.and_then(|global| crate::publication_typography::resolve_line_spacing(
+                        self.paragraphs.line.or(global.flatten()), &attributes["paragraph"], true));
+                    match mode {
+                        Ok(mode) => {
+                            self.paragraphs.line = mode;
+                            if mode.is_some() {
+                                self.paragraphs.size = attributes.pointer("/text/size").and_then(serde_json::Value::as_f64).or(self.paragraphs.size);
+                                self.paragraphs.id = attributes["id"].as_str().map(str::to_owned).or(self.paragraphs.id.clone());
+                            }
+                        },
+                        Err(error) => { self.paragraphs.fail(error); return; },
+                    }
+                }
+                if local_termes_font(attributes) {
+                    self.para_break();
+                    self.out.push_str("\\begingroup\\readmdtermesblockfont\n");
+                    self.block(block, list_depth);
+                    // Paragraph metrics must be evaluated before the local
+                    // family is restored, including the final list/quote line.
+                    self.out.push_str("\\par\\endgroup\n\n");
+                } else {
+                    self.block(block, list_depth);
+                }
+                (self.paragraphs.line, self.paragraphs.size, self.paragraphs.id) = previous;
+            }
             Block::Heading { level, id, inlines } => {
                 self.para_break();
-                let cmd = match level {
-                    1 => "section",
-                    2 => "subsection",
-                    3 => "subsubsection",
-                    4 => "paragraph",
-                    _ => "subparagraph",
+                let heading_style = self.publication_style.as_ref().map(|style| style["headings"][format!("h{level}")].clone());
+                let cmd = if heading_style.is_some() {
+                    // A Markdown heading is an unnumbered block in the shared
+                    // profile, including book/report classes. A native chapter
+                    // command would introduce an undeclared page break.
+                    format!("\\csname readmdheading{level}\\endcsname")
+                } else {
+                    format!("\\{}", match (*level, self.chapter_headings) {
+                        (1, true) => "chapter",
+                        (2, true) | (1, false) => "section",
+                        (3, true) | (2, false) => "subsection",
+                        (4, true) | (3, false) => "subsubsection",
+                        (5, true) | (4, false) => "paragraph",
+                        _ => "subparagraph",
+                    })
                 };
+                if heading_style.as_ref().is_some_and(|h|h["pageBreakBefore"].as_bool()==Some(true)){
+                    self.out.push_str("\\newpage\n");
+                }
                 let text = self.inlines(inlines);
                 // Moving arguments must not contain fragile commands: give the
                 // TOC/bookmark a plain-text version.
-                let plain = escape_text(&inline_plain(inlines));
+                let plain_text = inline_plain(inlines);
+                let plain = self.text(&plain_text);
+                let pdf_plain = escape_text(&plain_text);
                 if plain == text {
-                    self.out.push_str(&format!("\\{cmd}{{{text}}}\\label{{{}}}\n\n", label_key(id)));
+                    self.out.push_str(&format!("{cmd}{{{text}}}\\label{{{}}}\n", label_key(id)));
                 } else {
                     self.out.push_str(&format!(
-                        "\\{cmd}[{plain}]{{\\texorpdfstring{{{text}}}{{{plain}}}}}\\label{{{}}}\n\n",
+                        "{cmd}[{plain}]{{\\texorpdfstring{{{text}}}{{{pdf_plain}}}}}\\label{{{}}}\n",
                         label_key(id)
                     ));
                 }
+                if heading_style.as_ref().is_some_and(|h|h["keepNext"].as_bool()==Some(false)){
+                    self.out.push_str("\\readmdheadingfree\n");
+                }
+                self.out.push('\n');
             }
             Block::Paragraph(inl) => {
+                let global = if self.paragraphs.ordinary { self.publication_style.as_ref()
+                    .map(crate::publication_typography::global_line_spacing).transpose() } else { Ok(None) };
+                let mode = match global { Ok(global) => self.paragraphs.line.or(global.flatten()),
+                    Err(error) => { self.paragraphs.fail(error); return; } };
+                if let Some(mode) = mode {
+                    self.para_break();
+                    match self.typed_paragraph(inl,mode) { Ok(value) => self.out.push_str(&value),
+                        Err(error) => self.paragraphs.fail(error), }
+                    return;
+                }
                 self.para_break();
                 if let [Inline::Image { src, alt, .. }] = inl.as_slice() {
                     self.figure(src, alt);
@@ -310,6 +936,8 @@ impl<'a> Writer<'a> {
                 }
             }
             Block::List { ordered, start, items } => {
+                let ordinary = self.paragraphs.ordinary; let line = self.paragraphs.line;
+                self.paragraphs.ordinary = false; self.paragraphs.line = None;
                 self.para_break();
                 if list_depth >= 4 {
                     // LaTeX nests lists at most four deep; flatten deeper ones.
@@ -318,6 +946,7 @@ impl<'a> Writer<'a> {
                         self.out.push_str(&format!("\\noindent\\hspace*{{{}em}}{mark} ", list_depth * 2));
                         self.item_body(&it.blocks, list_depth);
                     }
+                    self.paragraphs.ordinary = ordinary; self.paragraphs.line = line;
                     return;
                 }
                 let env = if *ordered { "enumerate" } else { "itemize" };
@@ -335,13 +964,17 @@ impl<'a> Writer<'a> {
                     self.item_body(&it.blocks, list_depth + 1);
                 }
                 self.out.push_str(&format!("\\end{{{env}}}\n\n"));
+                self.paragraphs.ordinary = ordinary; self.paragraphs.line = line;
             }
             Block::Quote(inner) => {
+                let ordinary = self.paragraphs.ordinary; let line = self.paragraphs.line;
+                self.paragraphs.ordinary = false; self.paragraphs.line = None;
                 self.para_break();
                 self.out.push_str("\\begin{quote}\n");
                 self.blocks(inner, list_depth);
                 trim_trailing_blank(&mut self.out);
                 self.out.push_str("\n\\end{quote}\n\n");
+                self.paragraphs.ordinary = ordinary; self.paragraphs.line = line;
             }
             Block::Code { lang, text } => {
                 self.para_break();
@@ -353,10 +986,16 @@ impl<'a> Writer<'a> {
                 self.out.push_str(&safe);
                 self.out.push_str("\n\\end{lstlisting}\n\n");
             }
-            Block::Math(m) => {
+            Block::Math(m) | Block::OfficeMath {latex:m,..} => {
                 self.para_break();
                 self.out.push_str(&display_math(m));
                 self.out.push_str("\n\n");
+            }
+            Block::Caption { label, inlines } => {
+                self.para_break();
+                let rest = self.inlines(inlines);
+                let text = self.text(&label.text());
+                self.out.push_str(&format!("\\phantomsection\\label{{{}}}\n\\begin{{center}}{}{}\\end{{center}}\n\n", label_key(&label.id), text, rest));
             }
             Block::Table { aligns, header, rows } => {
                 self.para_break();
@@ -370,7 +1009,35 @@ impl<'a> Writer<'a> {
                 self.para_break();
                 self.out.push_str("\\newpage\n\n");
             }
+            Block::Bibliography(bibliography) => {
+                if !self.bib_engine.is_empty() { return; }
+                if bibliography.items.iter().any(|item| !item.first_field.is_empty()
+                    || item.layout().map(|flow| crate::publication_rich::layout_requires_flow(&flow)).unwrap_or(true)) {
+                    // Simple CSL first-field labels use the same bounded,
+                    // breakable columns as nested displays. An unbounded
+                    // makebox must not consume the complete text width.
+                    self.rich_bibliography(bibliography); return;
+                }
+                self.para_break();
+                let title = self.text(&bibliography.title);
+                self.out.push_str(&format!("\\section*{{{title}}}\n"));
+                // CSL spacing is relative to the selected font's ordinary line
+                // height. Keep the stretch and paragraph glue local, and measure
+                // the extra entry gap with that same effective baselineskip.
+                self.out.push_str(&format!("\\begingroup\n\\linespread{{{}}}\\selectfont\n\\setlength{{\\parskip}}{{0pt}}\n", bibliography.line_spacing));
+                let entries=bibliography.items.iter().map(|item|
+                    self.inlines(&crate::md_ast::rich_inlines(&item.rich))
+                ).collect::<Vec<_>>();
+                for (index,body) in entries.iter().enumerate() {
+                    self.out.push_str(&format!("\\begingroup\\parindent=0pt\\hangindent={}em\\hangafter=1\\noindent {body}\\par\\endgroup\n",if bibliography.hanging_indent{2}else{0}));
+                    if index + 1 < entries.len() && bibliography.entry_spacing > 0 {
+                        self.out.push_str(&format!("\\vspace{{{}\\baselineskip}}\n", bibliography.entry_spacing));
+                    }
+                }
+                self.out.push_str("\\par\\endgroup\n");
+            }
             Block::Html(h) => {
+                if crate::publication_navigation::parse_html(h).is_ok_and(|items|!items.is_empty()){return;}
                 self.para_break();
                 for line in h.lines() {
                     self.out.push_str("% ");
@@ -429,12 +1096,14 @@ impl<'a> Writer<'a> {
                     "\\includegraphics[max width=\\linewidth,max height=0.7\\textheight]{{{path}}}\n"
                 ));
                 if !alt.trim().is_empty() {
-                    self.out.push_str(&format!("\\caption{{{}}}\n", escape_text(alt)));
+                    let text = self.text(alt);
+                    self.out.push_str(&format!("\\caption{{{text}}}\n"));
                 }
                 self.out.push_str("\\end{figure}\n\n");
             }
             None => {
-                self.out.push_str(&format!("\\textit{{[{}]}}\n\n", escape_text(if alt.is_empty() { src } else { alt })));
+                let text = self.text(if alt.is_empty() { src } else { alt });
+                self.out.push_str(&format!("\\textit{{[{text}]}}\n\n"));
             }
         }
     }
@@ -475,25 +1144,40 @@ impl<'a> Writer<'a> {
         self.inlines(v).replace("\\\\\n", "\\newline ").replace('\n', " ").trim().to_string()
     }
 
+    fn footnote_paragraph(&mut self, block: &Block) -> Option<String> {
+        match block {
+            Block::Paragraph(inlines) => Some(self.inlines(inlines).trim().to_string()),
+            Block::Styled { attributes, block } => {
+                let body = self.footnote_paragraph(block)?;
+                if local_termes_font(attributes) {
+                    Some(format!("\\begingroup\\readmdtermesblockfont {body}\\par\\endgroup"))
+                } else {
+                    Some(body)
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn inlines(&mut self, v: &[Inline]) -> String {
         let mut s = String::new();
         let mut text = String::new();
         for i in v {
             if let Inline::Text(t) = i { text.push_str(t); continue; }
-            s.push_str(&citation_text(&text, &self.bib_engine));
+            s.push_str(&self.inline_text(&text));
             text.clear();
             self.inline(i, &mut s);
         }
-        s.push_str(&citation_text(&text, &self.bib_engine));
+        s.push_str(&self.inline_text(&text));
         s
     }
 
     fn inline(&mut self, i: &Inline, s: &mut String) {
         match i {
-            Inline::Text(t) => s.push_str(&escape_text(t)),
+            Inline::Text(t) => s.push_str(&self.inline_text(t)),
             Inline::Code(t) => {
                 s.push_str("\\texttt{");
-                s.push_str(&escape_text(t).replace(' ', "\\ "));
+                s.push_str(&self.text(t).replace(' ', "\\ "));
                 s.push('}');
             }
             Inline::Strong(c) => {
@@ -508,24 +1192,47 @@ impl<'a> Writer<'a> {
                 let t = self.inlines(c);
                 s.push_str(&format!("\\sout{{{t}}}"));
             }
+            Inline::Styled { format, children } => {
+                use crate::publication_rich::*;
+                let mut body=self.inlines(children);
+                if format.font_style!=RichFontStyle::Normal { body=format!("\\textit{{{body}}}"); }
+                if format.font_weight==RichFontWeight::Bold { body=format!("\\textbf{{{body}}}"); }
+                if format.font_variant==RichFontVariant::SmallCaps { body=format!("\\readmdsmallcaps{{{body}}}"); }
+                if format.text_decoration==RichDecoration::Underline { body=format!("\\uline{{{body}}}"); }
+                match format.vertical_align { RichVerticalAlign::Baseline=>(),RichVerticalAlign::Sup=>body=format!("\\textsuperscript{{{body}}}"),RichVerticalAlign::Sub=>body=format!("\\textsubscript{{{body}}}") }
+                s.push_str(&body);
+            }
+            Inline::Display { display, children } => {
+                let body=self.inlines(children);
+                match display { crate::publication_rich::RichDisplay::Block=>s.push_str(&format!("\\par {body}\\par ")),crate::publication_rich::RichDisplay::Indent=>s.push_str(&format!("\\par\\begingroup\\leftskip=4em {body}\\par\\endgroup ")),_=>s.push_str(&body) }
+            }
+            Inline::Citation { source, children } => {
+                if self.bib_engine.is_empty() { s.push_str(&self.inlines(children)); }
+                else { s.push_str(&native_citation(source,&self.bib_engine,self.core_text_fallback,&mut self.core_text_used)); }
+            }
             Inline::Link { href, children, .. } => {
                 let t = self.inlines(children);
                 if let Some(anchor) = href.strip_prefix('#') {
-                    let slug = crate::md_ast::slugify(
-                        &percent_encoding::percent_decode_str(anchor).decode_utf8_lossy(),
-                    );
+                    let slug = percent_encoding::percent_decode_str(anchor).decode_utf8_lossy();
                     s.push_str(&format!("\\hyperref[{}]{{{t}}}", label_key(&slug)));
+                } else if self.csl_columns_text {
+                    s.push_str(&format!("\\href{{{}}}{{{t}}}", escape_url(href)));
                 } else if t.is_empty() || inline_plain(children) == *href {
-                    s.push_str(&format!("\\url{{{}}}", escape_url(href)));
+                    if self.core_text_fallback && crate::publication_fonts::needs_core_text_fallback(href) {
+                        let visible = self.text(href);
+                        s.push_str(&format!("\\href{{{}}}{{\\texttt{{{visible}}}}}", escape_url(href)));
+                    } else {
+                        s.push_str(&format!("\\url{{{}}}", escape_url(href)));
+                    }
                 } else {
                     s.push_str(&format!("\\href{{{}}}{{{t}}}", escape_url(href)));
                 }
             }
             Inline::Image { src, alt, .. } => match (self.images)(src) {
                 Some(path) => s.push_str(&format!("\\includegraphics[height=1.2em]{{{path}}}")),
-                None => s.push_str(&format!("\\textit{{[{}]}}", escape_text(if alt.is_empty() { src } else { alt }))),
+                None => s.push_str(&format!("\\textit{{[{}]}}", self.text(if alt.is_empty() { src } else { alt }))),
             },
-            Inline::Math(m) => {
+            Inline::Math(m) | Inline::OfficeMath {latex:m,..} => {
                 s.push_str("\\(");
                 s.push_str(m.trim());
                 s.push_str("\\)");
@@ -541,14 +1248,14 @@ impl<'a> Writer<'a> {
                         self.fn_stack.push(label.clone());
                         let mut parts = Vec::new();
                         for b in &blocks {
-                            if let Block::Paragraph(inl) = b {
-                                parts.push(self.inlines(inl).trim().to_string());
+                            if let Some(body) = self.footnote_paragraph(b) {
+                                parts.push(body);
                             }
                         }
                         self.fn_stack.pop();
                         s.push_str(&format!("\\footnote{{{}}}", parts.join(" \\par ")));
                     }
-                    None => s.push_str(&format!("\\textsuperscript{{[{}]}}", escape_text(label))),
+                    None => s.push_str(&format!("\\textsuperscript{{[{}]}}", self.text(label))),
                 }
             }
             // Raw inline HTML has no safe LaTeX equivalent; its text children
@@ -560,17 +1267,73 @@ impl<'a> Writer<'a> {
 
 /// Pandoc-style bracket citations. Only safe BibTeX keys become commands;
 /// ordinary brackets and code spans remain ordinary text.
-fn citation_text(text: &str, engine: &str) -> String {
+/// Native engines have different cluster contracts. Reject unrepresentable
+/// combinations before any resource is copied, instead of dropping an affix.
+pub fn validate_native(doc:&Document,engine:&str)->Result<(),String>{
+    fn valid_spacing(blocks:&[Block])->bool {
+        blocks.iter().all(|block|match block.unstyled(){
+            Block::Bibliography(bibliography)=>bibliography.line_spacing>0,
+            Block::List{items,..}=>items.iter().all(|item|valid_spacing(&item.blocks)),
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>valid_spacing(blocks),
+            _=>true,
+        })
+    }
+    if engine.is_empty() && !valid_spacing(&doc.blocks) { return Err("academic_rich_spacing".into()); }
+    if engine.is_empty(){return Ok(());}
+    let mut error=false;
+    crate::md_ast::walk_inlines(&doc.blocks,&mut |inline|{if let Inline::Citation{source,..}=inline{
+        let first=source.items.first().map(|item|&item.cite);
+        if source.items.iter().any(|item|!item.cite.key.chars().all(|c|c.is_alphanumeric()||"_:.+/-".contains(c))){error=true;}
+        if source.items.iter().any(|item|first.is_some_and(|f|f.mode!=item.cite.mode)){error=true;}
+        // Suppression differs between style-specific starred commands. Without
+        // an audited native style it cannot stand in for CSL suppress-author.
+        if source.items.iter().any(|item|item.cite.mode==crate::academic::CiteMode::SuppressAuthor){error=true;}
+        // Only ordinary/prose BibLaTeX clusters have an audited per-item
+        // multi-command path. A shared command must not discard another item's
+        // affix, including distinct formatting of otherwise identical text.
+        let shared_command=engine!="biblatex"||first.is_some_and(|f|f.mode==crate::academic::CiteMode::AuthorOnly);
+        if shared_command&&source.items.len()>1&&source.items.iter().any(|item|first.is_some_and(|f|f.prefix!=item.cite.prefix||f.suffix!=item.cite.suffix||f.prefix_rich!=item.cite.prefix_rich||f.suffix_rich!=item.cite.suffix_rich||engine!="biblatex"&&(f.locator!=item.cite.locator||f.kind!=item.cite.kind))){error=true;}
+        if engine=="bibtex"&&source.items.iter().any(|item|item.cite.mode!=crate::academic::CiteMode::Normal||item.cite.prefix.is_some()){error=true;}
+    }});
+    if error{Err("academic_tex_context".into())}else{Ok(())}
+}
+fn native_citation(source:&crate::publication_rich::SourceCitation,engine:&str,fallback:bool,used:&mut bool)->String{
+    use crate::academic::CiteMode;
+    fn affix(rich:&Option<Vec<crate::publication_rich::RichNode>>,plain:&Option<String>,fallback:bool,used:&mut bool)->String{
+        if let Some(nodes)=rich {
+            let (text,rich_used,_)=render_body_with_bibliography(&Document{blocks:vec![Block::Paragraph(crate::md_ast::rich_inlines(nodes))],..Default::default()},&|_|None,"biblatex",false,fallback,None,0);
+            *used |= rich_used;
+            text.trim().to_string()
+        }else{escape_visible_text(plain.as_deref().unwrap_or(""),fallback,used)}
+    }
+    fn params(cite:&crate::academic::Cite,engine:&str,fallback:bool,used:&mut bool)->String{
+        let prefix=affix(&cite.prefix_rich,&cite.prefix,fallback,used);
+        let mut post=String::new();
+        if cite.mode!=CiteMode::AuthorOnly {if let Some(locator)=&cite.locator {let kind=cite.kind.as_deref().unwrap_or("page");if kind!="page"{post.push_str(&escape_visible_text(kind,fallback,used));post.push(' ');}post.push_str(&escape_visible_text(locator,fallback,used));}}
+        let suffix=affix(&cite.suffix_rich,&cite.suffix,fallback,used);if !suffix.is_empty(){if !post.is_empty(){post.push(' ');}post.push_str(&suffix);}
+        if prefix.is_empty()&&post.is_empty(){String::new()}else if engine=="bibtex"{format!("[{{{post}}}]")}else{format!("[{{{prefix}}}][{{{post}}}]")}
+    }
+    let Some(first)=source.items.first().map(|item|&item.cite)else{return String::new();};
+    let command=match (engine,first.mode){("biblatex",CiteMode::Prose)=>"textcite",(_,CiteMode::AuthorOnly)=>"citeauthor",("natbib",CiteMode::Prose)=>"citet",("natbib",_)=>"citep",("bibtex",_)=>"cite",_=>"autocite"};
+    if engine=="biblatex"&&source.items.len()>1&&first.mode!=CiteMode::AuthorOnly {
+        let args=source.items.iter().map(|item|format!("{}{{{}}}",params(&item.cite,engine,fallback,used),item.cite.key)).collect::<String>();format!("\\{command}s{args}")
+    }else{
+        let keys=source.items.iter().map(|item|item.cite.key.as_str()).collect::<Vec<_>>().join(",");
+        format!("\\{command}{}{{{keys}}}",params(first,engine,fallback,used))
+    }
+}
+
+fn citation_text(text: &str, engine: &str, fallback: bool, used: &mut bool) -> String {
     let re = regex::Regex::new(r"\[\s*@([A-Za-z0-9_:.+/-]+)(?:\s*;\s*@[A-Za-z0-9_:.+/-]+)*\s*\]").expect("citation regex");
     let command = match engine { "natbib" => "citep", "bibtex" => "cite", _ => "autocite" };
     let mut out = String::new(); let mut cursor = 0;
     for m in re.find_iter(text) {
-        out.push_str(&escape_text(&text[cursor..m.start()]));
+        out.push_str(&escape_visible_text(&text[cursor..m.start()],fallback,used));
         let keys = m.as_str().trim_matches(|c| c == '[' || c == ']').split(';')
             .map(|key| key.trim().trim_start_matches('@')).collect::<Vec<_>>().join(",");
         out.push_str(&format!("\\{command}{{{keys}}}")); cursor = m.end();
     }
-    out.push_str(&escape_text(&text[cursor..])); out
+    out.push_str(&escape_visible_text(&text[cursor..],fallback,used)); out
 }
 
 /// Display math: environments pass through, everything else goes in `\[ \]`.
@@ -590,9 +1353,425 @@ fn trim_trailing_blank(s: &mut String) {
 }
 
 #[cfg(test)]
+#[path = "latex_publication_profile_tests.rs"]
+mod publication_profile_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::md_ast::parse;
+
+    fn termes_block(block: Block) -> Block {
+        Block::Styled {
+            attributes: serde_json::json!({"text":{"font":"TeX Gyre Termes"}}),
+            block: Box::new(block),
+        }
+    }
+
+    #[test]
+    fn local_termes_family_is_shared_by_plain_uppercase_and_small_caps() {
+        use crate::publication_rich::{RichFontStyle, RichFontVariant, RichFontWeight, RichFormat};
+        let mut doc = Document::default();
+        for (weight, style) in [
+            (RichFontWeight::Normal, RichFontStyle::Normal),
+            (RichFontWeight::Bold, RichFontStyle::Normal),
+            (RichFontWeight::Normal, RichFontStyle::Italic),
+            (RichFontWeight::Bold, RichFontStyle::Italic),
+        ] {
+            for (text, variant) in [("abc", RichFontVariant::Normal),
+                ("ABC", RichFontVariant::Normal), ("abc", RichFontVariant::SmallCaps)] {
+                doc.blocks.push(termes_block(Block::Paragraph(vec![Inline::Styled {
+                    format: RichFormat { font_weight: weight, font_style: style,
+                        font_variant: variant, ..Default::default() },
+                    children: vec![Inline::Text(text.into())],
+                }])));
+            }
+        }
+        assert!(!has_unsupported_local_styles(&doc));
+        let tex = render_document(&doc, &LatexOptions::default(), &|_| None);
+        assert_eq!(tex.matches("\\newfontfamily\\readmdtermesfont[").count(), 1);
+        assert!(tex.contains("NFSSFamily=readmdtermes"));
+        for face in ["regular", "bold", "italic", "bolditalic"] {
+            assert_eq!(tex.matches(&format!("texgyretermes-{face}.otf")).count(), 2);
+        }
+        assert!(tex.contains("\\fontfamily{qtm}\\selectfont"));
+        assert!(tex.contains("\\newcommand{\\readmdsmallcaps}[1]{{\\readmdtermesfont\\textsc{#1}}}"));
+        assert_eq!(tex.matches("NFSSFamily=readmdtermessmallcaps,").count(), 1);
+        assert!(tex.contains("Letters=SmallCaps"));
+        assert!(tex.contains("\\newcommand{\\readmdsmallcaps}[1]{{\\XeTeXgenerateactualtext=1\\relax\\readmdtermessmallcapsfont #1}}"));
+        assert_eq!(tex.matches("\\XeTeXgenerateactualtext=1").count(), 1,
+            "Original-copy state must be scoped to the small-caps run");
+        let body = tex.split_once("\\begin{document}").unwrap().1;
+        assert_eq!(body.matches("\\begingroup\\readmdtermesblockfont").count(), 12);
+        assert_eq!(body.matches("\\readmdsmallcaps{").count(), 4);
+        assert!(body.contains("\\textbf{\\textit{ABC}}"));
+        assert!(body.contains("\\readmdsmallcaps{\\textbf{\\textit{abc}}}"));
+        assert!(!body.contains("\\normalfont") && !body.contains("\\fontspec"),
+            "Selecting the family must preserve the run's weight, shape and size");
+        let plain = render_document(&parse("Ordinary text."), &LatexOptions::default(), &|_| None);
+        assert!(!plain.contains("readmdtermes") && !plain.contains("texgyretermes"));
+    }
+
+    #[test]
+    fn local_termes_scope_covers_headings_lists_quotes_and_restores_after_paragraphs() {
+        let mut doc = parse("Before.\n\n# Heading\n\n> Quoted text.\n\n- Item text.\n\nAfter.\n");
+        assert_eq!(doc.blocks.len(), 5);
+        for index in 1..4 {
+            doc.blocks[index] = termes_block(doc.blocks[index].clone());
+        }
+        if let Block::Styled { block, .. } = &mut doc.blocks[2] {
+            if let Block::Quote(blocks) = block.as_mut() {
+                blocks[0] = termes_block(blocks[0].clone());
+            }
+        }
+        let tex = render_document(&doc, &LatexOptions::default(), &|_| None);
+        assert!(tex.contains("\\renewcommand{\\rmdefault}{readmdtermes}\\renewcommand{\\familydefault}{readmdtermes}\\readmdtermesfont"),
+            "Section/footnote normalfont must use the local family, not the document default");
+        let body = tex.split_once("\\begin{document}").unwrap().1;
+        assert!(body.contains("\\begingroup\\readmdtermesblockfont\n\n\\section{Heading}"));
+        assert!(body.contains("\\begin{quote}"));
+        assert!(body.contains("\\begin{itemize}\n\\item Item text."));
+        assert_eq!(body.matches("\\begingroup\\readmdtermesblockfont").count(), 4);
+        assert_eq!(body.matches("\\par\\endgroup").count(), 4);
+        let mut depth = 0i32;
+        for token in regex::Regex::new(r"\\(begingroup|endgroup)\b|Before\.|After\.").unwrap().find_iter(body) {
+            match token.as_str() {
+                "\\begingroup" => depth += 1,
+                "\\endgroup" => depth -= 1,
+                "Before." | "After." => assert_eq!(depth, 0, "Surrounding paragraphs must retain their font"),
+                _ => unreachable!(),
+            }
+            assert!(depth >= 0);
+        }
+        assert_eq!(depth, 0);
+        assert!(!body.contains("\\setmainfont") && !body.contains("\\normalfont"));
+    }
+
+    #[test]
+    fn local_termes_footnotes_keep_styled_content_cjk_smp_and_recursion_guard() {
+        let style = crate::publication_blocks::comment(&serde_json::json!({"text":{"font":"TeX Gyre Termes"}})).unwrap();
+        let source = format!("Before[^n].\n\n[^n]: *Note 中文 😀* [^n] {style}\n\nAfter.\n");
+        let doc = parse(&source);
+        let note = doc.blocks.iter().find_map(|block| match block {
+            Block::FootnoteDef { blocks, .. } => Some(blocks), _ => None,
+        }).unwrap();
+        assert!(matches!(&note[0], Block::Styled { .. }), "The source directive must reach the typed note paragraph");
+        let options = LatexOptions { bib_engine: String::new(), core_text_font: Some("paper.assets/core.ttf".into()), ..Default::default() };
+        let (tex, used) = render_document_with_resources(&doc, &options, &|_| None);
+        assert!(used);
+        assert!(tex.contains("\\footnote{\\begingroup\\readmdtermesblockfont \\emph{Note 中文 \\readmdunicode{😀}}\\par\\endgroup}"), "{tex}");
+        assert_eq!(tex.matches("\\footnote{").count(), 1);
+        assert!(tex.contains("\\DeclareRobustCommand{\\readmdunicode}[1]{{\\normalfont\\readmdcorefallback #1}}"));
+        assert!(tex.contains("\\usepackage[UTF8,fontset=fandol]{ctex}"));
+        assert!(!has_unsupported_local_styles(&doc));
+
+        let unsupported = source.replace("TeX Gyre Termes", "Other Font");
+        let unsupported = parse(&unsupported);
+        assert!(has_unsupported_local_styles(&unsupported));
+        let (tex, _) = render_document_with_resources(&unsupported, &options, &|_| None);
+        assert!(tex.contains("\\footnote{\\emph{Note 中文 \\readmdunicode{😀}}}"),
+            "An unsupported font must not erase a wrapped footnote's content");
+        assert!(!tex.contains("Other Font") && !tex.contains("readmdtermesblockfont"));
+    }
+
+    #[test]
+    fn local_termes_support_reports_mixed_properties_and_never_interpolates_font_names() {
+        for (attributes, unsupported, applied) in [
+            (serde_json::json!({"id":"identity","text":{},"paragraph":{}}), false, false),
+            (serde_json::json!({"text":{"font":"TeX Gyre Termes"}}), false, true),
+            (serde_json::json!({"text":{"font":"TeX Gyre Termes","italic":false}}), true, true),
+            (serde_json::json!({"text":{"font":"TeX Gyre Termes"},"paragraph":{"before":0}}), true, true),
+            (serde_json::json!({"text":{"font":"Other Font"}}), true, false),
+            (serde_json::json!({"text":{"font":"TeX Gyre Termes}\\input{injected}"}}), true, false),
+            (serde_json::json!({"text":{"font":"TeX Gyre Termes","unknown":true}}), true, false),
+        ] {
+            let doc = Document { blocks: vec![Block::Quote(vec![Block::Styled {
+                attributes, block: Box::new(Block::Paragraph(vec![Inline::Text("Preserved text.".into())])),
+            }])], ..Default::default() };
+            assert_eq!(has_unsupported_local_styles(&doc), unsupported);
+            let tex = render_document(&doc, &LatexOptions::default(), &|_| None);
+            assert_eq!(tex.contains("\\begingroup\\readmdtermesblockfont"), applied);
+            assert!(tex.contains("Preserved text."));
+            assert!(!tex.contains("Other Font") && !tex.contains("injected"));
+        }
+    }
+
+    #[test]
+    fn native_author_only_clusters_reject_distinct_plain_and_rich_affixes() {
+        use crate::publication_rich::{RichFontStyle, RichNode, SourceCitation};
+        fn typed(source: SourceCitation) -> Document {
+            Document { blocks: vec![Block::Paragraph(vec![Inline::Citation {
+                source, children: vec![Inline::Text("author display".into())],
+            }])], ..Default::default() }
+        }
+        let scan = crate::publication::citations::scan(
+            ":cite[author-only cf. @alpha after; cf. @beta after]", "en-US").unwrap();
+        assert!(scan.diagnostics.is_empty(), "{:?}", scan.diagnostics);
+        let source = scan.citations.into_iter().next().unwrap();
+        assert_eq!(source.items.len(), 2);
+        assert!(source.items.iter().all(|item| item.cite.mode == crate::academic::CiteMode::AuthorOnly));
+        validate_native(&typed(source.clone()), "biblatex").unwrap();
+        for prefix in [true, false] {
+            let mut different = source.clone();
+            let cite = &mut different.items[1].cite;
+            if prefix { cite.prefix = Some("different".into()); }
+            else { cite.suffix = Some("different".into()); }
+            assert_eq!(validate_native(&typed(different), "biblatex").unwrap_err(), "academic_tex_context");
+
+            let mut formatted = source.clone();
+            let cite = &mut formatted.items[1].cite;
+            let rich = if prefix { &mut cite.prefix_rich } else { &mut cite.suffix_rich };
+            let rich = rich.as_mut().unwrap();
+            let original_text = crate::publication_rich::plain(rich);
+            for node in rich.iter_mut() {
+                if let RichNode::Text { format, .. } = node {
+                    format.font_style = RichFontStyle::Italic;
+                    break;
+                }
+            }
+            assert_eq!(crate::publication_rich::plain(rich), original_text);
+            assert_eq!(formatted.items[0].cite.prefix, formatted.items[1].cite.prefix);
+            assert_eq!(formatted.items[0].cite.suffix, formatted.items[1].cite.suffix);
+            for engine in ["biblatex", "natbib"] {
+                assert_eq!(validate_native(&typed(formatted.clone()), engine).unwrap_err(), "academic_tex_context");
+            }
+        }
+        // Ordinary/prose BibLaTeX has a real per-item parameter path and remains
+        // valid when each citation has a different affix.
+        for mode in [crate::academic::CiteMode::Normal, crate::academic::CiteMode::Prose] {
+            let mut multi = source.clone();
+            for item in &mut multi.items { item.cite.mode = mode; }
+            multi.items[1].cite.prefix = Some("see".into());
+            multi.items[1].cite.prefix_rich = Some(vec![RichNode::text("see")]);
+            let doc = typed(multi);
+            validate_native(&doc, "biblatex").unwrap();
+            let tex = render_document(&doc, &LatexOptions::default(), &|_| None);
+            assert!(tex.contains(if mode == crate::academic::CiteMode::Normal { "\\autocites" } else { "\\textcites" }));
+            assert!(tex.contains("[{see}][{after}]{beta}"), "{tex}");
+        }
+    }
+
+    #[test]
+    fn native_author_only_rejection_preserves_existing_tex_and_foreign_assets() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("Paper.tex");
+        let assets = directory.path().join("Paper.assets");
+        std::fs::write(&target, b"Previous complete TeX").unwrap();
+        std::fs::create_dir(&assets).unwrap();
+        std::fs::write(assets.join("foreign.bin"), b"Unrelated existing resource").unwrap();
+        for citation in [
+            ":cite[author-only cf. @alpha; see @beta]",
+            ":cite[author-only *cf.* @alpha; **cf.** @beta]",
+        ] {
+            let source = format!("Visible 😀. ![image](image.png)\n\n{citation}\n");
+            let error = crate::mdexport::export_tex(&source, directory.path().to_str().unwrap(),
+                target.to_str().unwrap(), &serde_json::json!({"tex":{"bibEngine":"biblatex"}}), "Paper").unwrap_err();
+            assert_eq!(error, "academic_tex_context");
+            assert_eq!(std::fs::read(&target).unwrap(), b"Previous complete TeX");
+            assert_eq!(std::fs::read(assets.join("foreign.bin")).unwrap(), b"Unrelated existing resource");
+            assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
+            assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 1, "No image/font/license may be staged before validation");
+        }
+    }
+
+    #[test]
+    fn csl_bibliography_line_and_entry_spacing_are_local_effective_line_heights() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("refs.json"), r#"[{"id":"a","type":"book","title":"First bibliography title"},{"id":"b","type":"book","title":"Second bibliography title"}]"#).unwrap();
+        let source = "---\nbibliography: refs.json\ncsl: spacing.csl\n---\nBefore [@a; @b].\n\n<!--readmd:bibliography-->\n\nAfter bibliography text.\n";
+        for (line, entry) in [(1, 0), (3, 2), (11, 2)] {
+            let csl = format!(r#"<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text"><info><title>ReadMD spacing regression</title><id>https://readmd.test/spacing</id></info><citation><layout delimiter="; "><text variable="citation-number"/></layout></citation><bibliography hanging-indent="true" line-spacing="{line}" entry-spacing="{entry}"><layout><text variable="title" font-style="italic"/></layout></bibliography></style>"#);
+            std::fs::write(directory.path().join("spacing.csl"), csl).unwrap();
+            let (doc, _) = crate::mdexport::publication_document(source, directory.path().to_str().unwrap(), &serde_json::json!({})).unwrap();
+            let bibliography = doc.blocks.iter().find_map(|block| match block.unstyled() {
+                Block::Bibliography(bibliography) => Some(bibliography), _ => None,
+            }).unwrap();
+            assert_eq!((bibliography.line_spacing, bibliography.entry_spacing), (line, entry));
+            assert_eq!(bibliography.items.len(), 2);
+            validate_native(&doc, "").unwrap();
+            let tex = render_document(&doc, &LatexOptions { bib_engine: String::new(), ..Default::default() }, &|_| None);
+            let start = tex.find(&format!("\\begingroup\n\\linespread{{{line}}}\\selectfont\n")).unwrap();
+            let after = tex.find("After bibliography text.").unwrap();
+            let body = &tex[start..after];
+            assert!(body.contains("\\setlength{\\parskip}{0pt}"));
+            assert!(body.contains("\\hangindent=2em"));
+            assert!(body.contains("\\textit{First bibliography title}"));
+            assert!(body.contains("\\textit{Second bibliography title}"));
+            assert!(!tex.contains("\\printbibliography"));
+            let gap = format!("\\vspace{{{entry}\\baselineskip}}");
+            assert_eq!(body.matches(&gap).count(), usize::from(entry > 0));
+            let mut depth = 0i32;
+            for part in regex::Regex::new(r"\\(begingroup|endgroup)\b").unwrap().captures_iter(body) {
+                depth += if &part[1] == "begingroup" { 1 } else { -1 };
+                assert!(depth >= 0, "A bibliography group cannot close its caller's scope");
+            }
+            assert_eq!(depth, 0, "Line stretch must not affect the following paragraph");
+            if entry > 0 {
+                let gap_at = body.find(&gap).unwrap();
+                assert!(gap_at > body.find("First bibliography title").unwrap());
+                assert!(gap_at < body.find("Second bibliography title").unwrap());
+                let gap_depth = regex::Regex::new(r"\\(begingroup|endgroup)\b").unwrap()
+                    .captures_iter(&body[..gap_at]).fold(0i32, |depth, part| depth + if &part[1] == "begingroup" { 1 } else { -1 });
+                assert_eq!(gap_depth, 1, "Entry gap must use the still-active bibliography line stretch");
+            }
+        }
+    }
+
+    #[test]
+    fn csl_display_bibliography_columns_measure_the_widest_styled_label_and_keep_full_width_rows() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("refs.json"), r#"[{"id":"a","type":"book","volume":"9","title":"First long bibliography entry"},{"id":"b","type":"book","volume":"100","title":"Second long bibliography entry"},{"id":"c","type":"book","title":"Full width bibliography entry"}]"#).unwrap();
+        std::fs::write(directory.path().join("columns.csl"), r#"<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text"><info><title>ReadMD original display column regression</title><id>https://readmd.test/columns</id></info><citation><layout delimiter="; "><text variable="citation-number"/></layout></citation><bibliography hanging-indent="true" line-spacing="3" entry-spacing="2"><layout><text variable="volume" prefix="[" suffix="]" font-weight="bold" display="left-margin"/><group display="right-inline"><text variable="title" font-variant="small-caps"/></group></layout></bibliography></style>"#).unwrap();
+        let source = "---\nbibliography: refs.json\ncsl: columns.csl\n---\nBefore [@a; @b; @c].\n\n<!--readmd:bibliography-->\n\nAfter bibliography.\n";
+        let (doc, _) = crate::mdexport::publication_document(source, directory.path().to_str().unwrap(), &serde_json::json!({})).unwrap();
+        let bibliography = doc.blocks.iter().find_map(|block| match block.unstyled() {
+            Block::Bibliography(bib) => Some(bib), _ => None,
+        }).unwrap();
+        assert_eq!(bibliography.items.iter().map(|item| crate::publication_rich::plain(&item.first_field)).collect::<Vec<_>>(), ["[9]", "[100]", ""]);
+        assert!(has_small_caps(&doc), "Bibliography-only small caps must define the font macro used in labels and body");
+        let options = LatexOptions { bib_engine: String::new(), ..Default::default() };
+        let tex = render_document(&doc, &options, &|_| None);
+        assert_eq!(tex.matches("\\newlength{\\readmdbiblabelwidth}").count(), 1);
+        assert_eq!(tex.matches("\\newlength{\\readmdbibmeasure}").count(), 1);
+        assert!(tex.contains("\\newcommand{\\readmdsmallcaps}"));
+        let measurements = tex.lines().filter(|line| line.starts_with("\\settowidth{\\readmdbibmeasure}")).collect::<Vec<_>>();
+        assert_eq!(measurements.len(), 2);
+        assert!(measurements[0].contains('9') && measurements[1].contains("100"));
+        assert!(measurements.iter().all(|line| line.contains("\\textbf{")), "Measure the actual styled label, not its plain Unicode length");
+        assert_eq!(tex.matches("\\ifdim\\readmdbibmeasure>\\readmdbiblabelwidth").count(), 2);
+        let body = tex.split_once("\\begin{document}").unwrap().1;
+        assert_eq!(body.matches("\\readmdcslcolumns{").count(), 2);
+        assert!(!body.contains("\\makebox[\\readmdbiblabelwidth]"));
+        let full_width = body.lines().find(|line| line.contains("Full width bibliography entry")).unwrap();
+        assert!(!full_width.contains("\\readmdcslcolumns") && !full_width.contains("\\readmdbibmeasure"));
+        assert!(body[..body.find(full_width).unwrap()].ends_with("\\begingroup\\parindent=0pt\\hangindent=2em\\hangafter=1\n"));
+        assert!(!tex.contains("\\begin{tabular"), "Long bibliography paragraphs must remain able to wrap and paginate");
+        assert!(body.find("\\settowidth").unwrap() < body.find("\\readmdcslcolumns").unwrap());
+
+        let mut unlabelled = doc.clone();
+        for block in &mut unlabelled.blocks {
+            if let Block::Bibliography(bib) = block {
+                for item in &mut bib.items { item.first_field.clear(); }
+                bib.hanging_indent = false;
+            }
+        }
+        let tex = render_document(&unlabelled, &options, &|_| None);
+        assert!(!tex.contains("\\newlength{\\readmdbiblabelwidth}") && !tex.contains("\\settowidth"));
+        let rows = tex.lines().filter(|line| line.contains("bibliography entry")).collect::<Vec<_>>();
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|line| line.contains("\\hangindent=0em") && !line.contains("\\makebox")));
+    }
+
+    #[test]
+    fn static_bibliography_rejects_zero_line_spacing_in_nested_blocks() {
+        let doc = Document { blocks: vec![Block::Quote(vec![Block::Bibliography(
+            crate::publication_rich::RichBibliography { title: "References".into(), items: Vec::new(),
+                hanging_indent: false, line_spacing: 0, entry_spacing: 0, source_span: None },
+        )])], ..Default::default() };
+        assert_eq!(validate_native(&doc, "").unwrap_err(), "academic_rich_spacing");
+    }
+
+    #[test]
+    fn smp_text_fallback_is_cmap_driven_and_preserves_tex_escaping() {
+        let face = ttf_parser::Face::parse(crate::publication_fonts::CORE_TEXT_FALLBACK, 0).unwrap();
+        let second = (0x10000..0x20000).filter_map(char::from_u32)
+            .find(|character| *character != '😀' && face.glyph_index(*character).is_some_and(|glyph| glyph.0 != 0)).unwrap();
+        let source = format!("A & %_\\{{}} α 中文 😀{second}\u{10ffff}");
+        let mut used = false;
+        let rendered = escape_visible_text(&source, true, &mut used);
+        assert!(used);
+        assert!(rendered.starts_with("A \\& \\%\\_\\textbackslash{}\\{\\} α 中文 "));
+        assert!(rendered.contains("\\readmdunicode{😀}"));
+        assert!(rendered.contains(&format!("\\readmdunicode{{{second}}}")));
+        assert!(rendered.ends_with('\u{10ffff}'));
+        assert_eq!(rendered.matches("\\readmdunicode{").count(), 2);
+        let mut unused = false;
+        assert_eq!(escape_visible_text(&source, false, &mut unused), escape_text(&source));
+        assert!(!unused);
+        assert_eq!(escape_visible_text("Latin α 中文 \u{10ffff}", true, &mut unused), "Latin α 中文 \u{10ffff}");
+        assert!(!unused);
+    }
+
+    #[test]
+    fn smp_font_keeps_heading_bookmarks_links_and_small_caps_local() {
+        use crate::publication_rich::{RichFontVariant, RichFormat};
+        let mut doc = parse("# **Head 😀**\n\n[Shown 😀](https://example.test/a%20b#target).\n");
+        doc.blocks.push(Block::Paragraph(vec![Inline::Styled {
+            format: RichFormat { font_variant: RichFontVariant::SmallCaps, ..Default::default() },
+            children: vec![Inline::Text("Alpha 😀 Beta".into())],
+        }]));
+        let path = "paper %{} space.assets/readmd-core.ttf";
+        let options = LatexOptions { title: "Paper 😀".into(), bib_engine: String::new(), core_text_font: Some(path.into()), ..Default::default() };
+        let (tex, used) = render_document_with_resources(&doc, &options, &|_| None);
+        assert!(used);
+        assert!(tex.contains("\\section[Head \\readmdunicode{😀}]{\\texorpdfstring{\\textbf{Head \\readmdunicode{😀}}}{Head 😀}}"), "{tex}");
+        assert!(tex.contains("\\title{Paper \\readmdunicode{😀}}"));
+        assert!(tex.contains("\\href{https://example.test/a\\%20b\\#target}{Shown \\readmdunicode{😀}}"));
+        assert!(tex.contains("\\readmdsmallcaps{Alpha \\readmdunicode{😀} Beta}"));
+        assert!(tex.contains("texgyretermes-bold.otf") && tex.contains("texgyretermes-italic.otf") && tex.contains("texgyretermes-bolditalic.otf"));
+        assert!(tex.contains("\\DeclareRobustCommand{\\readmdunicode}[1]{{\\normalfont\\readmdcorefallback #1}}"));
+        assert!(tex.contains("\\pdfstringdefDisableCommands{\\def\\readmdunicode#1{#1}}"));
+        assert!(!tex.contains(path), "The resource path must not become raw TeX syntax");
+        assert!(tex.contains("\\exp_args:NNV \\newfontface \\readmdcorefallback \\readmdcorefontfile [NFSSFamily=readmdcorefallback]\n  \\ExplSyntaxOff"));
+        assert!(!tex.contains("\\newfontface\\readmdcorefallback{\\readmdcorefontfile}"));
+        let pattern = regex::Regex::new(r"\\char_generate:nn \{(\d+)\}\{(?:11|12)\}").unwrap();
+        let decoded: String = pattern.captures_iter(&font_file_tokens(path)).map(|capture|
+            char::from_u32(capture[1].parse().unwrap()).unwrap()).collect();
+        assert_eq!(decoded, path);
+    }
+
+    #[test]
+    fn core_font_filename_tokens_preserve_extension_categories_and_literal_specials() {
+        let path = "Az %{}#_$&^~\\中文😀.ttf";
+        let encoded = font_file_tokens(path);
+        let pattern = regex::Regex::new(r"\\char_generate:nn \{(\d+)\}\{(\d+)\}").unwrap();
+        let tokens: Vec<(u32, u8)> = pattern.captures_iter(&encoded).map(|capture|
+            (capture[1].parse().unwrap(), capture[2].parse().unwrap())).collect();
+        assert_eq!(tokens, vec![
+            (65, 11), (122, 11), (32, 12), (37, 12), (123, 12), (125, 12),
+            (35, 12), (95, 12), (36, 12), (38, 12), (94, 12), (126, 12),
+            (92, 12), (20013, 12),
+            (25991, 12), (128512, 12), (46, 12), (116, 11), (116, 11), (102, 11),
+        ]);
+        let decoded: String = tokens.iter().map(|(codepoint, _)| char::from_u32(*codepoint).unwrap()).collect();
+        assert_eq!(decoded, path);
+        assert_eq!(pattern.find_iter(&encoded).map(|hit| hit.as_str()).collect::<String>(), encoded,
+            "No file-name character may escape the generated character-token sequence");
+    }
+
+    #[test]
+    fn smp_font_resources_follow_visible_images_and_referenced_notes() {
+        let options = LatexOptions { bib_engine: String::new(), core_text_font: Some("paper.assets/core.ttf".into()), ..Default::default() };
+        let doc = parse("---\nunused: 😀\n---\n\nPlain text. ![😀](image.png)\n\n[^unused]: 😀\n\n```text\n😀\n```\n");
+        let (tex, used) = render_document_with_resources(&doc, &options, &|_| Some("image.png".into()));
+        assert!(!used, "Unprinted metadata, an unused note, successful inline image alt and raw listings need no fallback resource");
+        assert!(!tex.contains("readmdcorefallback"));
+        assert!(tex.contains("\\begin{lstlisting}\n😀\n"), "Raw code must not be rewritten as TeX commands");
+        assert!(render_document_with_resources(&doc, &options, &|_| None).1, "A failed inline image visibly prints its alt");
+        let referenced = parse("Plain[^used].\n\n[^used]: 😀\n");
+        assert!(render_document_with_resources(&referenced, &options, &|_| None).1);
+        let hidden_author = LatexOptions { author: "😀".into(), ..options.clone() };
+        assert!(!render_document_with_resources(&parse("Plain"), &hidden_author, &|_| None).1);
+    }
+
+    #[test]
+    fn native_citation_smp_affixes_keep_keys_and_typed_formatting() {
+        use crate::publication_rich::{RichFontStyle, RichFormat, RichNode, SourceCitation, SourceItem, SourceSpan};
+        let raw = "[@alpha_1]";
+        let span = SourceSpan::new(raw, 0..raw.len()).unwrap();
+        let mut cite = crate::academic::Cite::new("alpha_1");
+        cite.mode = crate::academic::CiteMode::Prose;
+        cite.locator = Some("17".into());
+        cite.prefix_rich = Some(vec![RichNode::Text { text: "see 😀 &".into(), format: RichFormat { font_style: RichFontStyle::Italic, ..Default::default() } }]);
+        cite.suffix = Some("after".into());
+        let source = SourceCitation { span: span.clone(), items: vec![SourceItem { cite, span, fields: Default::default() }], context: Default::default() };
+        let doc = Document { blocks: vec![Block::Paragraph(vec![Inline::Citation { source, children: vec![Inline::Text("unused display".into())] }])], ..Default::default() };
+        let options = LatexOptions { core_text_font: Some("paper.assets/core.ttf".into()), ..Default::default() };
+        let (tex, used) = render_document_with_resources(&doc, &options, &|_| None);
+        assert!(used);
+        assert!(tex.contains("\\textcite[{\\textit{see \\readmdunicode{😀} \\&}}][{17 after}]{alpha_1}"), "{tex}");
+        assert!(!tex.contains("unused display"));
+    }
 
     #[test]
     fn selected_bibliography_engines_and_citations_are_real_output() {
@@ -626,8 +1805,25 @@ mod tests {
     fn preamble_has_xelatex_and_ctex_for_cjk() {
         let d = doc("你好");
         assert!(d.starts_with("% !TEX program = xelatex"));
-        assert!(d.contains("\\usepackage[UTF8]{ctex}"));
+        assert!(d.contains("\\usepackage[UTF8,fontset=fandol]{ctex}"));
         assert!(!doc("hello").contains("{ctex}"));
+    }
+
+    #[test]
+    fn ctex_classes_use_portable_fonts_without_duplicate_package_loading() {
+        for class in ["ctexart", "ctexrep", "ctexbook"] {
+            let options = LatexOptions { doc_class: class.into(), ..Default::default() };
+            let source = render_document(&parse("# 中文书稿\n\n## 方法"), &options, &|_| None);
+            assert!(source.contains(&format!("\\documentclass[11pt,a4paper,fontset=fandol]{{{class}}}")));
+            assert!(!source.contains("\\usepackage[UTF8,fontset=fandol]{ctex}"));
+            if class == "ctexart" {
+                assert!(source.contains("\\section{中文书稿}"));
+                assert!(source.contains("\\subsection{方法}"));
+            } else {
+                assert!(source.contains("\\chapter{中文书稿}"));
+                assert!(source.contains("\\section{方法}"));
+            }
+        }
     }
 
     #[test]
@@ -727,3 +1923,7 @@ mod tests {
         z ^ (z >> 31)
     }
 }
+
+#[cfg(test)]
+#[path = "latex_csl_columns_tests.rs"]
+mod csl_columns_tests;

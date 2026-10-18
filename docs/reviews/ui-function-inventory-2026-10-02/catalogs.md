@@ -37,7 +37,7 @@
 | [skills.csv](skills.csv) | 25 | 隔离环境内置本地Skill的id、标题、说明、状态、源路径；用户导入后可增加 |
 | [pets.csv](pets.csv) | 79 | 伴读使者、3原创精灵、Bongo、Arch-Chan + 73目录角色；缩略/has_local不是当前已安装运行证明 |
 | [languages.csv](languages.csv) | 46 | 全部语言code、中文名/native名、LTR/RTL |
-| [formulas.csv](formulas.csv) | 28 | 分类、名称、搜索别名、完整TeX模板 |
+| [formulas.csv](formulas.csv) | 2,478 | 46 个结构/函数预设与 2,432 个字符；分类、名称、搜索别名及源写法，不代表完整 OMML 排版兼容 |
 | [slash-languages.csv](slash-languages.csv) | 25 | 全部语言子菜单及别名，另支持plain/自定义 |
 | [export-fields.csv](export-fields.csv) | 99 | 98可编辑字段+1说明、各格式、范围和全部选项 |
 | [export-presets.json](export-presets.json) | 3 | defaults、3内置预设、空隔离custom/last；未复制用户自定义数据 |

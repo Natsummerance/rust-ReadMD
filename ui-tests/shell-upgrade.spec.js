@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Shell upgrade: command palette, shortcut cheat-sheet, tab indicator,
 // welcome screen and narrow-screen layout.
 const { test, expect } = require('@playwright/test');
@@ -14,7 +15,7 @@ test.beforeEach(async ({ page }) => {
 
 async function boot(page) {
   await page.goto('/');
-  await page.waitForFunction(() => window.__readmdAppReady === true && window.ReadMDPalette && window.ReadMDModal);
+  await waitForPage(page, () => window.__readmdAppReady === true && window.ReadMDPalette && window.ReadMDModal);
 }
 
 async function openDoc(page, name = 'shell.md', body = '# Shell\n\n## Section\n\nBody text.\n') {
@@ -69,6 +70,9 @@ test('palette fuzzy search ranks the best match first and shows shortcut hints',
   // Keyword matching: "zen" finds Zen mode in any UI language.
   await page.locator('#cmdp-input').fill('zen');
   await expect(page.locator('.rm-palette-item').first()).toContainText(/禅|Zen/);
+  await expect(page.locator('.rm-palette-item').first().locator('.rm-palette-keys kbd')).toHaveCount(0);
+  await page.locator('#cmdp-input').fill('fullscreen');
+  await expect(page.locator('.rm-palette-item').first().locator('.rm-palette-title')).toHaveText(await page.evaluate(() => i18n.t('presentation.fullscreenLabel')));
   await expect(page.locator('.rm-palette-item').first().locator('.rm-palette-keys kbd')).toHaveText('F11');
   // Empty state.
   await page.locator('#cmdp-input').fill('qqqzzzxxx');

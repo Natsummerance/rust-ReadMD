@@ -58,16 +58,36 @@ fn diagram_render_response(req: &Request) -> Response {
         Err(_) => return Response::json_status(500, &json!({ "ok": false, "error_code": "diagram_render_failed" })),
     };
     let engine = normalized_engine(&body);
+    if body["action"]=="prepare_spec" {
+        let code=body["code"].as_str().unwrap_or("");
+        if code.len()>1024*1024{return Response::json(&json!({"ok":false,"error_code":"diagram_input_too_large"}));}
+        return match serde_json::from_str::<Value>(code).map_err(|_|"diagram_invalid_input".to_string()).and_then(|spec|crate::scientific_figures::prepare_spec(spec,body.get("figures").unwrap_or(&json!({})))) {
+            Ok(spec)=>Response::json(&json!({"ok":true,"spec":spec})),
+            Err(code)=>Response::json(&json!({"ok":false,"error_code":code})),
+        };
+    }
+    if body["action"]=="fences" || body["action"]=="materialize" {
+        let content=body.get("content").and_then(Value::as_str).unwrap_or("");
+        if content.len()>16*1024*1024{return Response::json_status(422,&json!({"ok":false,"error_code":"diagram_input_too_large"}));}
+        if body["action"]=="materialize" {
+            return match crate::scientific_figures::materialize(content,&json!({"figures":body.get("figures").unwrap_or(&Value::Null)})) {
+                Ok(content)=>Response::json(&json!({"ok":true,"content":content})),
+                Err(code)=>Response::json_status(422,&json!({"ok":false,"error_code":code})),
+            };
+        }
+        return Response::json(&json!({"ok":true,"fences":crate::scientific_figures::fences(content,body.get("figures").unwrap_or(&json!({})))}));
+    }
     match engine.as_str() {
         "puml" | "plantuml" => render_plantuml(&body, &engine),
         "tikz" => {
             let html = diagrams::format_tikz_html(&code_or_empty(&body));
             Response::json(&json!({ "ok": true, "type": "html", "html": html }))
         }
-        "vega" | "vega-lite" => match diagrams::render_vega_svg(
+        "vega" | "vega-lite" => match diagrams::render_vega_with_profile(
             &code_or_empty(&body),
             &engine,
             diagrams::VEGA_TIMEOUT,
+            body.get("figures").unwrap_or(&Value::Null),
         ) {
             Ok(svg) => Response::json(&json!({
                 "ok": true,
@@ -541,6 +561,20 @@ mod tests {
     }
 
     #[test]
+    fn browser_spec_preparation_preserves_measurements_and_author_styles() {
+        let spec = json!({"data":{"values":[{"x":2,"y":5}]},"mark":"point","config":{"axis":{"labelFontSize":12}}});
+        let body = json!({"action":"prepare_spec","engine":"vega-lite","code":spec.to_string(),"figures":{"style":"research","widthMm":89}});
+        let res = diagram_render_response(&request("POST", &body.to_string()));
+        let prepared = payload(&res);
+        assert_eq!(prepared["ok"], true);
+        assert_eq!(prepared["spec"]["data"], spec["data"]);
+        assert_eq!(prepared["spec"]["config"]["axis"]["labelFontSize"], 12);
+        assert_eq!(prepared["spec"]["background"], "white");
+        let invalid = json!({"action":"prepare_spec","code":"[]"});
+        assert_eq!(payload(&diagram_render_response(&request("POST", &invalid.to_string())))["error_code"], "diagram_invalid_input");
+    }
+
+    #[test]
     fn capabilities_method_and_shape() {
         let posted = diagram_capabilities_response(&request("POST", ""));
         assert_eq!(posted.status, 405);
@@ -585,6 +619,8 @@ mod tests {
         }
         for engine in ["vega", "vega-lite"] {
             assert_eq!(engines[engine]["renderer"], json!("node"), "engine {engine}");
+            assert_eq!(engines[engine]["client"]["renderer"], "browser");
+            assert_eq!(engines[engine]["client"]["available"], true);
             assert_eq!(engines[engine]["offline"], engines[engine]["available"]);
             assert_eq!(engines[engine]["requires_network"], json!(false));
             let ready = engines[engine]["available"].as_bool().expect("bool");

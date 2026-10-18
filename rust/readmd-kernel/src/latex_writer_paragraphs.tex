@@ -1,0 +1,102 @@
+% ReadMD typed ordinary paragraphs. This file is embedded only when used.
+% The compact measurement list is never shipped. The visible paragraph is
+% built natively, outside a box, so TeX retains its normal page breakpoints.
+\newbox\readmdpmeasure
+\newbox\readmdpscan
+\newbox\readmdpline
+\newdimen\readmdpheight
+\newdimen\readmdpdepth
+\newdimen\readmdprequired
+\newdimen\readmdprequested
+\newdimen\readmdpwidth
+\newdimen\readmdpavailable
+\newdimen\readmdpboundary
+\newcount\readmdpsteps
+\newif\ifreadmdpmore
+% A source-space after a control word is discarded by TeX tokenization.
+% Emit an explicit space token so the private packet matches its strict parser.
+\newcommand{\readmdpgeometry}[2]{%
+  \typeout{\readmdpmarker\space BEGIN}%
+  \typeout{\readmdpmarker\space index=#1}%
+  \typeout{\readmdpmarker\space mode=#2}%
+  \typeout{\readmdpmarker\space requested=\number\readmdprequested}%
+  \typeout{\readmdpmarker\space required=\number\readmdprequired}%
+  \typeout{\readmdpmarker\space width=\number\readmdpwidth}%
+  \typeout{\readmdpmarker\space height=\number\readmdpavailable}%
+  \typeout{\readmdpmarker\space reserved=1}%
+  \typeout{\readmdpmarker\space END}%
+  \PackageError{ReadMD}{readmd-p04-geometry}{The requested paragraph geometry does not fit}%
+}
+\newcommand{\readmdtypedparagraph}[6]{%
+  \par\begingroup
+  \fontsize{#4bp}{#3bp}\selectfont
+  \readmdprequested=#3bp\relax
+  \readmdpwidth=\linewidth
+  \readmdpavailable=\textheight
+  \global\readmdpheight=0pt
+  \global\readmdpdepth=0pt
+  % Zero baseline measurement avoids a maxdimen overflow for long paragraphs.
+  % Its line boxes still have their actual native font/formula height/depth.
+  % The contents are validated pure inlines; no note, counter, write or image
+  % operation is repeated. Clearing everypar avoids consuming heading hooks.
+  \setbox\readmdpmeasure=\vbox{%
+    \hsize=\linewidth\parskip=0pt\everypar{}%
+    \baselineskip=0pt\lineskip=0pt\lineskiplimit=-\maxdimen
+    #5\par
+  }%
+  \setbox\readmdpscan=\vbox{%
+    \unvcopy\readmdpmeasure
+    \readmdpsteps=0
+    \readmdpmoretrue
+    \loop\ifreadmdpmore
+      \advance\readmdpsteps by1
+      \ifnum\readmdpsteps>32768\relax
+        \PackageError{ReadMD}{publication_line_spacing_unsupported}{Paragraph measurement node budget exceeded}%
+        \readmdpmorefalse
+      \else
+        \ifcase\numexpr\lastnodetype+1\relax
+          \readmdpmorefalse % empty (-1)
+        \or % character (0), not a vertical paragraph node
+          \PackageError{ReadMD}{publication_line_spacing_unsupported}{Unexpected paragraph measurement node}\readmdpmorefalse
+        \or % hlist (1)
+          \setbox\readmdpline=\lastbox
+          \ifdim\ht\readmdpline>\readmdpheight\global\readmdpheight=\ht\readmdpline\fi
+          \ifdim\dp\readmdpline>\readmdpdepth\global\readmdpdepth=\dp\readmdpline\fi
+        \else
+          \ifnum\lastnodetype=11\relax\unskip
+          \else\ifnum\lastnodetype=12\relax\unkern
+          \else\ifnum\lastnodetype=13\relax\unpenalty
+          \else
+            \PackageError{ReadMD}{publication_line_spacing_unsupported}{Unexpected paragraph measurement node}\readmdpmorefalse
+          \fi\fi\fi
+        \fi
+      \fi
+    \repeat
+  }%
+  \readmdprequired=\dimexpr\readmdpheight+\readmdpdepth\relax
+  \ifdim\readmdprequired>\readmdpavailable
+    \readmdpgeometry{#1}{#2}%
+  \fi
+  \ifnum#2=1\relax
+    % Exact uses a conservative union of native line boxes. A rejected union
+    % is never silently converted to AtLeast, shrunk, clipped or overlapped.
+    \ifdim\readmdprequired>\readmdprequested
+      \readmdpgeometry{#1}{#2}%
+    \fi
+    % Exact governs baselines within this paragraph, not the preceding story.
+    % A preceding tall line must not acquire negative inter-paragraph ink gap.
+    % The added glue precedes only this boundary; native pagination may discard
+    % it at a page top and the original paragraph/heading hooks remain active.
+    \ifdim\prevdepth>-1000pt\relax
+      \readmdpboundary=\dimexpr\prevdepth+\readmdpheight-\readmdprequested\relax
+      \ifdim\readmdpboundary>0pt\penalty10000\vskip\readmdpboundary\fi
+    \fi
+    \lineskiplimit=-\maxdimen
+  \else
+    % Multiple/AtLeast retain natural expansion at tall adjacent native lines.
+    \lineskiplimit=0pt
+  \fi
+  \baselineskip=\readmdprequested\lineskip=0pt
+  #6\par
+  \endgroup
+}

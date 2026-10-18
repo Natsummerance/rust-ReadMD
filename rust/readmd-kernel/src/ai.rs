@@ -529,6 +529,19 @@ impl AIClient {
     /// success here, exactly like `ai.py:949`, which raises
     /// `ChatError("接口未返回模型列表（data 为空）")`.
     pub fn list_models(&self) -> Result<Vec<String>, ApiError> {
+        self.list_models_budget(None)
+    }
+
+    /// Cold-start discovery must not turn an inline suggestion into a long
+    /// connection test. Fail back to the saved model within two seconds.
+    pub fn completion_models(mut self) -> Result<Vec<String>, ApiError> {
+        self.agent=AgentBuilder::new().timeout_connect(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(2)).redirects(0).build();
+        self.list_models_budget(Some(std::time::Duration::from_secs(2)))
+    }
+
+    fn list_models_budget(&self, budget: Option<std::time::Duration>) -> Result<Vec<String>, ApiError> {
+        let started=std::time::Instant::now();
         // `ai.py:885-887`
         let clean = normalize_base_url(&self.provider.base_url);
         if clean.is_empty() {
@@ -548,7 +561,9 @@ impl AIClient {
 
         let mut last_error: Option<String> = None;
         for url in candidates {
-            match self.http_get_json(&url) {
+            let remaining=budget.map(|limit| limit.saturating_sub(started.elapsed()));
+            if remaining.is_some_and(|limit| limit.is_zero()) { break; }
+            match self.http_get_json(&url, remaining) {
                 Ok(text) => {
                     match model_ids_from_json(&text) {
                         Ok(ids) => return Ok(ids),
@@ -570,8 +585,9 @@ impl AIClient {
     ///
     /// The reason string is diagnostics only: `AiRoute::Models::raised_error`
     /// puts it in `detail`, so a provider body never reaches the client.
-    fn http_get_json(&self, url: &str) -> Result<String, String> {
+    fn http_get_json(&self, url: &str, timeout: Option<std::time::Duration>) -> Result<String, String> {
         let mut request = self.agent.get(url);
+        if let Some(timeout)=timeout { request=request.timeout(timeout); }
         for (name, value) in &self.model_headers { request = request.set(name, value); }
         if let Some(ref api_key) = self.api_key {
             let header = if self.provider.auth_header.is_empty() {
@@ -1305,6 +1321,9 @@ impl<B: SecretBackend> AiSettings<B> {
                 }
                 let headers = sanitize_headers(p.get("headers"));
                 p.insert("headers".into(), Value::Object(headers));
+                if p.contains_key("autocomplete") {
+                    p.insert("autocomplete".into(), crate::ai_completion::normalize_settings(p.get("autocomplete")));
+                }
 
                 let previous_provider = find_prev(&provider_id, &name);
                 let api_key = p
@@ -2324,6 +2343,19 @@ mod tests {
         assert_eq!(cleared["providers"][0].get("credential_id"), None);
         assert_eq!(store.credentials().resolve_key(&cleared["providers"][0]), "");
         assert!(!on_disk(dir.path()).contains(FAKE_KEY));
+    }
+
+    #[test]
+    fn autocomplete_settings_roundtrip_does_not_change_chat_or_accept_route_secrets() {
+        let dir=tempfile::tempdir().unwrap();
+        let store=settings_in(dir.path(),MemoryBackend::online());
+        store.save_config(&json!({"providers":[{"id":"custom:completion","name":"Completion",
+            "autocomplete":{"mode":"model","model":"fast-model","api_key":"bad","base_url":"bad"}}],
+            "current":{"provider_id":"custom:completion","model":"chat-model"}})).unwrap();
+        let cfg=store.ensure_config().unwrap();
+        assert_eq!(cfg["providers"][0]["autocomplete"],json!({"mode":"model","model":"fast-model"}));
+        assert_eq!(cfg["current"]["model"],"chat-model");
+        assert!(!on_disk(dir.path()).contains("bad"));
     }
 
     /// `ai.py:200-201` — the config endpoint reports status only.

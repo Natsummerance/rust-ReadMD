@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs/promises');
 const os = require('os');
@@ -6,7 +7,7 @@ const { pathToFileURL } = require('url');
 
 async function enterEdit(page) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.original = '# 标题\n\n正文 $x^2$'; state.fixed = state.original;
     state.mode = 'virtual'; await toggleEdit();
@@ -15,7 +16,7 @@ async function enterEdit(page) {
 }
 
 async function setEditorContent(page, content) {
-  await page.waitForFunction(() => {
+  await waitForPage(page, () => {
     const cmReady = document.querySelector('#edit-cm .cm-content');
     const fallbackReady = document.getElementById('edit-area') && !document.getElementById('edit-area').classList.contains('hidden');
     return !!(cmReady || fallbackReady);
@@ -91,7 +92,7 @@ test('image editor exposes professional lightweight controls', async ({ page }) 
     state.dir = 'C:/ReadMD-test'; openImgModal();
     loadImgSrc('data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="#3b6ef5"/></svg>'));
   });
-  await page.waitForFunction(() => imgState.img && imgState.rawW === 800);
+  await waitForPage(page, () => imgState.img && imgState.rawW === 800);
   await expect(page.locator('.crop-handle')).toHaveCount(8);
   await expect(page.locator('.crop-se')).toHaveAttribute('aria-label', /右下|bottom right/i);
   const handleSize = await page.locator('.crop-se').evaluate(el => Math.min(el.offsetWidth, el.offsetHeight));
@@ -100,7 +101,7 @@ test('image editor exposes professional lightweight controls', async ({ page }) 
   await page.keyboard.press('Alt+ArrowLeft');
   const cropWidthBefore = await page.evaluate(() => imgState.crop.w);
   await page.keyboard.press('Alt+ArrowRight');
-  await page.waitForFunction(previous => imgState.crop.w > previous, cropWidthBefore);
+  await waitForPage(page, previous => imgState.crop.w > previous, cropWidthBefore);
   await page.locator('#img-angle-number').fill('37.5'); await page.locator('#img-angle-number').press('Enter');
   await page.locator('#img-flip-x').click();
   await page.locator('#img-out-w').fill('640'); await page.locator('#img-out-w').press('Enter');
@@ -110,7 +111,7 @@ test('image editor exposes professional lightweight controls', async ({ page }) 
 
 test('export scroll, history and AI narrow layout remain usable', async ({ page }) => {
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
-  await page.goto('/'); await page.waitForFunction(() => typeof openHistoryModal === 'function');
+  await page.goto('/'); await waitForPage(page, () => typeof openHistoryModal === 'function');
   await page.evaluate(() => {
     document.querySelector('#export-modal').classList.remove('hidden');
     document.querySelector('.export-customize').open = true;
@@ -129,7 +130,7 @@ test('export scroll, history and AI narrow layout remain usable', async ({ page 
 
 test('select controls expose their localized selected action', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openExportModal === 'function');
+  await waitForPage(page, () => typeof openExportModal === 'function');
   await page.evaluate(() => {
     document.getElementById('formula-modal').classList.remove('hidden');
     document.getElementById('tpl-modal').classList.remove('hidden');
@@ -157,7 +158,7 @@ test('select controls expose their localized selected action', async ({ page }) 
 test('dragging alternatives and control targets satisfy accessibility contracts', async ({ page }) => {
   await page.goto('/');
   await page.setViewportSize({ width: 1100, height: 760 });
-  await page.waitForFunction(() => typeof bindAiResize === 'function' && typeof openTabContextMenu === 'function');
+  await waitForPage(page, () => typeof bindAiResize === 'function' && typeof openTabContextMenu === 'function');
 
   await page.evaluate(() => document.getElementById('ai-panel').classList.remove('hidden'));
   const handle = page.locator('#ai-resize-handle');
@@ -166,7 +167,7 @@ test('dragging alternatives and control targets satisfy accessibility contracts'
   const widthBefore = await page.evaluate(() => state.aiPanelWidth);
   await handle.focus();
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(previous => state.aiPanelWidth > previous, widthBefore);
+  await waitForPage(page, previous => state.aiPanelWidth > previous, widthBefore);
   const widthAfter = await page.evaluate(() => ({
     panel: state.aiPanelWidth,
     reported: Number(document.getElementById('ai-resize-handle').getAttribute('aria-valuenow')),
@@ -186,7 +187,7 @@ test('dragging alternatives and control targets satisfy accessibility contracts'
   await expect(page.locator('[data-action="move-left"]')).toBeEnabled();
   await expect(page.locator('[data-action="move-right"]')).toBeEnabled();
   await page.locator('[data-action="move-left"]').click();
-  await page.waitForFunction(() => state.tabs.map(tab => tab.id).join(',') === 'two,one,three');
+  await waitForPage(page, () => state.tabs.map(tab => tab.id).join(',') === 'two,one,three');
   await expect(page.locator('.tab-item[data-tab-id="two"]')).toBeFocused();
 
   await page.evaluate(() => {
@@ -218,7 +219,7 @@ test('dragging alternatives and control targets satisfy accessibility contracts'
 
 test('continuous mode uses a managed confirmation dialog', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof togglePaginationMode === 'function');
+  await waitForPage(page, () => typeof togglePaginationMode === 'function');
   await page.evaluate(() => {
     Object.assign(state.pagination, {
       enabled: true,
@@ -232,7 +233,7 @@ test('continuous mode uses a managed confirmation dialog', async ({ page }) => {
   await expect(modal).toBeVisible();
   await expect(page.locator('#continuous-confirm')).toBeFocused();
   await page.locator('#continuous-confirm').click();
-  await page.waitForFunction(() => state.pagination.mode === 'continuous');
+  await waitForPage(page, () => state.pagination.mode === 'continuous');
 });
 
 test('AI keeps configured keys usable, autosaves, and supports incognito history', async ({ page }) => {
@@ -247,7 +248,7 @@ test('AI keeps configured keys usable, autosaves, and supports incognito history
   });
   await page.route('**/api/ai/chat', route => route.fulfill({ status: 200, contentType: 'text/event-stream', body: 'data: {"d":"已完成"}\n\ndata: {"done":true}\n\n' }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleAiPanel === 'function');
+  await waitForPage(page, () => typeof toggleAiPanel === 'function');
   await page.evaluate(() => { state.original = '# 文档\n\n内容'; toggleAiPanel(); });
   await expect(page.locator('#ai-panel')).toBeVisible();
   await expect(page.locator('#ai-connection-label')).toContainText(/连接就绪|已就绪|Ready/);
@@ -276,14 +277,14 @@ test('module entry actively starts an idle module once before polling', async ({
   await page.goto('/');
   await page.route('**/api/modules/load', route => {
     starts++; expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toEqual({ name: 'convert' });
+    expect(route.request().postDataJSON()).toEqual({ name: 'convert', retry:true });
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
   });
   await page.route('**/api/modules', route => {
     const value = ['idle', 'loading', 'ready'][Math.min(checks++, 2)]; states.push(value);
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ modules: { convert: value } }) });
   });
-  await page.waitForFunction(() => typeof ensureModule === 'function');
+  await waitForPage(page, () => typeof ensureModule === 'function');
   expect(await page.evaluate(() => Promise.all([ensureModule('convert', 4000), ensureModule('convert', 4000)]))).toEqual([true, true]);
   expect(starts).toBe(1);
   expect(states).toEqual(expect.arrayContaining(['idle', 'loading', 'ready']));
@@ -298,8 +299,8 @@ test('welcome keeps toolbar disabled and six modules; clipboard lives in more me
   });
   await page.goto('/');
   await expect(page.locator('#btn-print')).toBeDisabled();
-  await expect(page.locator('#btn-a')).toBeDisabled();
-  await expect(page.locator('#btn-A')).toBeDisabled();
+  await expect(page.locator('#btn-a, #btn-A')).toHaveCount(0);
+  await expect(page.locator('#titlebar-actions #rd-prefs-btn')).toBeVisible();
   for (const id of ['w-open', 'w-folder', 'w-ai', 'w-convert', 'w-web', 'w-ocr']) {
     await expect(page.locator('#' + id)).toBeVisible();
   }
@@ -322,8 +323,8 @@ test('opened file re-enables export/font tools and shows home button', async ({ 
   await page.goto('/');
   await page.locator('#w-open').click();
   await expect(page.locator('#btn-print')).toBeEnabled();
-  await expect(page.locator('#btn-a')).toBeEnabled();
-  await expect(page.locator('#btn-A')).toBeEnabled();
+  await expect(page.locator('#btn-a, #btn-A')).toHaveCount(0);
+  await expect(page.locator('#titlebar-actions #rd-prefs-btn')).toBeEnabled();
   await expect(page.locator('#btn-home')).toBeVisible();
   await page.locator('#btn-home').click();
   await expect(page.locator('#w-open')).toBeVisible();
@@ -346,7 +347,7 @@ test('toolbar filename supports accessible inline rename', async ({ page }) => {
     } };
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof openFileRename === 'function');
+  await waitForPage(page, () => typeof openFileRename === 'function');
   await page.evaluate(() => {
     state.mode = 'file'; state.source = 'file'; state.file = 'C:\\docs\\old.md';
     state.dir = 'C:\\docs'; state.editing = false;
@@ -414,7 +415,7 @@ test('web to Markdown renders dynamic pages with progress and actionable errors'
     }) });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof openWebDialog === 'function');
+  await waitForPage(page, () => typeof openWebDialog === 'function');
   await page.evaluate(() => openWebDialog());
   await expect(page.locator('#url-modal')).toBeVisible();
   await expect(page.locator('#url-images')).not.toBeChecked();
@@ -425,7 +426,7 @@ test('web to Markdown renders dynamic pages with progress and actionable errors'
   await page.locator('#url-input').fill('example.com/article');
   await page.locator('#url-go').click();
   await expect(page.locator('#url-progress')).toBeVisible();
-  await page.waitForFunction(() => state.source === 'url');
+  await waitForPage(page, () => state.source === 'url');
   await expect(page.locator('#url-modal')).toBeVisible();
   expect(await page.locator('#url-input').inputValue()).toBe('https://example.com/article');
   expect(extractCalls).toBe(2);
@@ -489,7 +490,7 @@ test('cancelling a batch keeps pages already extracted', async ({ page }) => {
     }) });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof openWebDialog === 'function');
+  await waitForPage(page, () => typeof openWebDialog === 'function');
   await page.evaluate(() => openWebDialog());
   await page.locator('#url-input').fill('https://example.com/one');
   await page.locator('#url-pages').fill('3');
@@ -631,7 +632,7 @@ test('tab inline rename fixes extension and expands space by folding sibling tab
 
 test('v2.3.0 i18n language modal and switching', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window.i18n && typeof window.i18n.openModal === 'function');
+  await waitForPage(page, () => window.i18n && typeof window.i18n.openModal === 'function');
 
   // Open language modal
   await page.evaluate(() => i18n.openModal());
@@ -808,7 +809,7 @@ test('v2.3.2 dirty tab close confirmation modal UI, styling, and actions', async
 
 test('v2.3.7 top bar zen mode toggle & keyboard escape shortcut', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleZenMode === 'function');
+  await waitForPage(page, () => typeof toggleZenMode === 'function');
 
   const zenBtn = page.locator('#btn-zen');
   await expect(zenBtn).toBeVisible();
@@ -977,7 +978,7 @@ test('v2.3.7 presentation mode floating toolbar, themes, font zoom & escape', as
 test('in-app updates refuse binaries without a verified checksum', async ({ page }) => {
   const downloads = [];
   await page.goto('/');
-  await page.waitForFunction(() => typeof startUpdateDownload === 'function');
+  await waitForPage(page, () => typeof startUpdateDownload === 'function');
   await page.route('**/api/update/download', route => {
     downloads.push(route.request().postDataJSON());
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
@@ -997,7 +998,7 @@ test('update failures reset controls and downloads block accidental closure', as
     } };
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof startUpdateDownload === 'function');
+  await waitForPage(page, () => typeof startUpdateDownload === 'function');
   await page.evaluate(() => {
     updateInfo = {
       flavor: 'win_installer',
@@ -1034,7 +1035,7 @@ test('canceling a dirty editor asks before discarding changes', async ({ page })
     renderTabsBar();
   });
   await setEditorContent(page, '# changed');
-  await page.waitForFunction(() => hasUnsavedEditorChanges());
+  await waitForPage(page, () => hasUnsavedEditorChanges());
   await expect(page.locator('.tab-item:visible').first().locator('.tab-dirty')).toBeVisible();
   await expect(page.locator('.tab-item:visible').first()).toHaveAttribute('aria-description', /未保存|unsaved/i);
   await page.locator('#edit-cancel').click();
@@ -1042,13 +1043,13 @@ test('canceling a dirty editor asks before discarding changes', async ({ page })
   await expect(page.locator('#close-confirm-cancel')).toBeFocused();
   await page.locator('#close-confirm-discard').click();
   await expect(page.locator('#close-confirm-modal')).toBeHidden();
-  await page.waitForFunction(() => state.editing === false);
+  await waitForPage(page, () => state.editing === false);
   await expect(page.locator('.tab-item:visible .tab-dirty')).toHaveCount(0);
 });
 
 test('switching tabs cannot discard a dirty editor', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.tabs = [
       { id: 'one', path: 'C:/one.md', title: 'one.md', name: 'one.md', content: '# one', original: '# one' },
@@ -1063,7 +1064,7 @@ test('switching tabs cannot discard a dirty editor', async ({ page }) => {
   await page.locator('.tab-item:visible').nth(1).click();
   await expect(page.locator('#close-confirm-modal')).toBeVisible();
   await page.locator('#close-confirm-cancel').click();
-  await page.waitForFunction(() => state.activeTabId === 'one' && state.editing === true);
+  await waitForPage(page, () => state.activeTabId === 'one' && state.editing === true);
 });
 
 test('saving a dirty background tab writes that tab, not the active editor', async ({ page }) => {
@@ -1087,7 +1088,7 @@ test('saving a dirty background tab writes that tab, not the active editor', asy
     body: JSON.stringify({ ok: true, path: 'C:/two.md', dir: 'C:/', name: 'two.md', mtime: 3, size: 13 }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(async () => {
     state.tabs = [
       { id: 'one', path: 'C:/one.md', title: 'one.md', name: 'one.md', content: '# one', original: '# one' },
@@ -1102,12 +1103,12 @@ test('saving a dirty background tab writes that tab, not the active editor', asy
   await activeEditor.click();
   await page.keyboard.press('Control+A');
   await page.keyboard.type('# one changed');
-  await page.waitForFunction(() => hasUnsavedEditorChanges());
+  await waitForPage(page, () => hasUnsavedEditorChanges());
   await page.evaluate(() => { void closeTab('two'); });
   await expect(page.locator('#close-confirm-modal')).toBeVisible();
   await page.locator('#close-confirm-save').click();
   await expect.poll(() => saves).toEqual([expect.objectContaining({ path: 'C:/two.md', content: '# two changed' })]);
-  await page.waitForFunction(() => state.tabs.length === 1 && state.tabs[0].id === 'one');
+  await waitForPage(page, () => state.tabs.length === 1 && state.tabs[0].id === 'one');
   expect(await page.evaluate(() => ({
     oneDirty: state.tabs.find(tab => tab.id === 'one').isDirty,
     oneDraft: state.tabs.find(tab => tab.id === 'one').content,
@@ -1126,7 +1127,7 @@ test('saving a dirty background tab does not mark a clean active tab dirty', asy
     body: JSON.stringify({ ok: true, path: 'C:/two.md', dir: 'C:/', name: 'two.md', content: '# two changed', original: '# two changed', encoding: 'utf-8', mtime: 3, fixes: [], stats: {} }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof closeTab === 'function');
+  await waitForPage(page, () => typeof closeTab === 'function');
   await page.evaluate(() => {
     state.tabs = [
       { id: 'one', path: 'C:/one.md', title: 'one.md', name: 'one.md', content: '# one', original: '# one' },
@@ -1149,7 +1150,7 @@ test('saving a dirty background tab does not mark a clean active tab dirty', asy
 
 test('keyboard delete closes a tab and restores visible tab focus', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderTabsBar === 'function');
+  await waitForPage(page, () => typeof renderTabsBar === 'function');
   await page.evaluate(() => {
     state.tabs = [
       { id: 'one', title: 'one.md', name: 'one.md', content: '# one' },
@@ -1164,7 +1165,7 @@ test('keyboard delete closes a tab and restores visible tab focus', async ({ pag
   await expect(activeTab.locator('.tab-close')).toHaveAttribute('tabindex', '-1');
   await expect(activeTab).toHaveAttribute('aria-keyshortcuts', 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
   await page.keyboard.press('Delete');
-  await page.waitForFunction(() => state.tabs.length === 2 && state.activeTabId === 'one');
+  await waitForPage(page, () => state.tabs.length === 2 && state.activeTabId === 'one');
   await expect(page.locator('.tab-item:visible[data-tab-id="three"]')).toBeFocused();
 });
 
@@ -1179,7 +1180,7 @@ test('auto reload does not overwrite an active editor', async ({ page }) => {
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, path: 'C:/doc.md', dir: 'C:/', name: 'doc.md', content: '# external', original: '# external', encoding: 'utf-8', mtime: 2, fixes: [], stats: {} }) });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof startAutoReload === 'function');
+  await waitForPage(page, () => typeof startAutoReload === 'function');
   await page.evaluate(async () => {
     state.file = 'C:/doc.md';
     state.mode = 'file';
@@ -1210,17 +1211,17 @@ test('forced reload updates a clean tab while preserving its page', async ({ pag
     }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   await page.evaluate(() => loadFile('C:/doc.md'));
-  await page.waitForFunction(() => state.pagination.enabled && state.pagination.totalPages > 1);
+  await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
   await page.evaluate(() => renderPage(2));
   await expect(page.locator('#content')).toContainText('external v1');
 
   revision = 2;
   await page.evaluate(() => loadFile('C:/doc.md', { force: true }));
   await expect(page.locator('#toast')).toContainText(/Reload|重新加载/);
-  await page.waitForFunction(() => state.mtime === 2 && state.fixed.includes('external v2'));
-  await page.waitForFunction(() => state.pagination.currentPage === 2);
+  await waitForPage(page, () => state.mtime === 2 && state.fixed.includes('external v2'));
+  await waitForPage(page, () => state.pagination.currentPage === 2);
   await expect(page.locator('#content')).toContainText('external v2');
 });
 
@@ -1231,7 +1232,7 @@ test('forced reload refuses to overwrite an unsaved draft', async ({ page }) => 
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
   });
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   await page.evaluate(() => {
     const tab = {
       id: 'one', mode: 'file', source: 'file', path: 'C:/draft.md', dir: 'C:/',
@@ -1246,7 +1247,7 @@ test('forced reload refuses to overwrite an unsaved draft', async ({ page }) => 
   await page.evaluate(() => loadFile('C:/draft.md', { force: true }));
   await expect(page.locator('#toast')).toContainText('未保存修改已保留');
   expect(fileRequests).toBe(0);
-  await page.waitForFunction(() => state.fixed === '# draft' && state.original === '# saved');
+  await waitForPage(page, () => state.fixed === '# draft' && state.original === '# saved');
 });
 
 test('global TOC identities resolve duplicate headings across pages', async ({ page }) => {
@@ -1267,20 +1268,20 @@ test('global TOC identities resolve duplicate headings across pages', async ({ p
     }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   await page.evaluate(() => loadFile('C:/duplicate.md'));
-  await page.waitForFunction(() => state.pagination.allHeadings?.length === 3);
+  await waitForPage(page, () => state.pagination.allHeadings?.length === 3);
   await page.evaluate(() => document.querySelectorAll('#toc-list details:not([open])').forEach(group => { group.open = true; }));
   await page.evaluate(() => showSide('toc'));
-  await page.locator('#toc-list [data-heading-id="same-2"]').click();
-  await expect(page.locator('#content [id="same-2"]')).toBeFocused();
-  await expect(page.locator('#content [id="same-2"]')).toHaveClass(/search-arrival/);
-  await expect(page.locator('#toc-list [data-heading-id="same-2"]')).toHaveClass(/toc-heading-active/);
+  await page.locator('#toc-list [data-heading-id="same-1"]').click();
+  await expect(page.locator('#content [id="same-1"]')).toBeFocused();
+  await expect(page.locator('#content [id="same-1"]')).toHaveClass(/search-arrival/);
+  await expect(page.locator('#toc-list [data-heading-id="same-1"]')).toHaveClass(/toc-heading-active/);
 });
 
 test('folder tree exposes semantic keyboard navigation and selection', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderFolderList === 'function');
+  await waitForPage(page, () => typeof renderFolderList === 'function');
   await page.evaluate(() => {
     state.folder = '/readmd-fixture';
     state.folderFiles = ['/readmd-fixture/sub/readme.md', '/readmd-fixture/zeta.md'];
@@ -1301,7 +1302,7 @@ test('folder tree exposes semantic keyboard navigation and selection', async ({ 
 
 test('url dialog participates in managed modal focus containment', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openWebDialog === 'function');
+  await waitForPage(page, () => typeof openWebDialog === 'function');
   await page.evaluate(() => openWebDialog());
   await expect(page.locator('#url-modal')).toBeVisible();
   await expect(page.locator('#url-input')).toBeFocused();
@@ -1322,7 +1323,7 @@ test('saving refreshes the existing tab with new content', async ({ page }) => {
     body: JSON.stringify({ ok: true, path: 'C:/doc.md', dir: 'C:/', name: 'doc.md', content: savedContent || '# old', original: savedContent || '# old', encoding: 'utf-8', mtime: 2, fixes: [], stats: {} }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof saveEdit === 'function');
+  await waitForPage(page, () => typeof saveEdit === 'function');
   await page.evaluate(async () => {
     state.file = 'C:/doc.md';
     state.mode = 'file';
@@ -1336,7 +1337,7 @@ test('saving refreshes the existing tab with new content', async ({ page }) => {
   await setEditorContent(page, '# updated');
   await page.locator('#edit-save').click();
   await expect(page.locator('#content')).toContainText('updated');
-  await page.waitForFunction(() => getActiveTab() && getActiveTab().original === '# updated');
+  await waitForPage(page, () => getActiveTab() && getActiveTab().original === '# updated');
 });
 
 test('browser mode opens, edits, and saves a local document end to end', async ({ page }) => {
@@ -1359,7 +1360,7 @@ test('browser mode opens, edits, and saves a local document end to end', async (
       toast: document.getElementById('toast')?.textContent,
     }));
     expect(uploadState).toMatchObject({ mode: 'file', browserCopy: true });
-    await page.waitForFunction(() => (
+    await waitForPage(page, () => (
       state.mode === 'file' && state.browserCopy === true && state.original.includes('Original body')
     ));
     await expect(page.locator('#toast')).toContainText(/已打开/);
@@ -1372,7 +1373,7 @@ test('browser mode opens, edits, and saves a local document end to end', async (
     await page.locator('#edit-save').click();
 
     await expect(page.locator('#toast')).toContainText(/已保存/);
-    await page.waitForFunction(() => state.editing === true && state.original.includes('Saved live'));
+    await waitForPage(page, () => state.editing === true && state.original.includes('Saved live'));
     await expect(page.locator('#edit-bar')).toBeVisible();
     const importedPath = await page.evaluate(() => state.file);
     await expect(await fs.readFile(importedPath, 'utf8')).toContain('Authorized browser write');
@@ -1405,7 +1406,7 @@ test('browser-copy provenance survives reload and clears on native save-as', asy
     }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function' && typeof saveAs === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function' && typeof saveAs === 'function');
   await page.evaluate(() => {
     const tab = {
       id: 'copy', mode: 'file', source: 'file', browserCopy: true,
@@ -1418,7 +1419,7 @@ test('browser-copy provenance survives reload and clears on native save-as', asy
   });
 
   await page.evaluate(() => loadFile('C:/doc.md', { force: true }));
-  await page.waitForFunction(() => state.fixed.includes('# external'));
+  await waitForPage(page, () => state.fixed.includes('# external'));
   const reloaded = await page.evaluate(() => ({
     browserCopy: state.browserCopy,
     title: getActiveTab().title,
@@ -1443,7 +1444,7 @@ test('upload failures surface the server recovery detail', async ({ page }) => {
     body: JSON.stringify({ error: 'storage is full' }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof uploadFile === 'function');
+  await waitForPage(page, () => typeof uploadFile === 'function');
   await page.evaluate(() => uploadFile(new File(['body'], 'document.md', { type: 'text/markdown' })));
   await expect(page.locator('#toast')).toContainText(/上传失败：storage is full|Upload failed: storage is full/i);
 });
@@ -1464,7 +1465,7 @@ test('save conflicts offer save-as, reload, and cancel recovery', async ({ page 
     }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof saveEdit === 'function');
+  await waitForPage(page, () => typeof saveEdit === 'function');
   await page.evaluate(async () => {
     state.file = 'C:/doc.md';
     state.mode = 'file';
@@ -1492,7 +1493,7 @@ test('save conflicts offer save-as, reload, and cancel recovery', async ({ page 
   await page.keyboard.press('Escape');
   await closing;
   await expect(page.locator('#save-conflict-modal')).toBeHidden();
-  await page.waitForFunction(() => state.tabs.length === 1 && state.activeTabId === 'one' && state.editing);
+  await waitForPage(page, () => state.tabs.length === 1 && state.activeTabId === 'one' && state.editing);
 
   await page.evaluate(() => {
     window.__conflictSavedContent = '';
@@ -1504,9 +1505,9 @@ test('save conflicts offer save-as, reload, and cancel recovery', async ({ page 
   await page.locator('#edit-save').click();
   await expect(page.locator('#save-conflict-modal')).toBeVisible();
   await page.locator('#save-conflict-save-as').click();
-  await page.waitForFunction(() => window.__conflictSavedContent === '# external update');
+  await waitForPage(page, () => window.__conflictSavedContent === '# external update');
   await expect(page.locator('#edit-bar')).toBeVisible();
-  await page.waitForFunction(() => state.editing && getActiveTab()?.isDirty);
+  await waitForPage(page, () => state.editing && getActiveTab()?.isDirty);
 });
 
 test('tab switches preserve paged reading positions', async ({ page }) => {
@@ -1518,7 +1519,7 @@ test('tab switches preserve paged reading positions', async ({ page }) => {
     ]).flat(),
   ].join('\n');
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderTabsBar === 'function');
+  await waitForPage(page, () => typeof renderTabsBar === 'function');
   await page.evaluate(async document => {
     state.tabs = [
       { id: 'long', path: '/long.md', title: 'long.md', name: 'long.md', content: document, original: document },
@@ -1529,17 +1530,17 @@ test('tab switches preserve paged reading positions', async ({ page }) => {
     renderTabsBar();
     await renderContent(document, 'long.md');
   }, longDocument);
-  await page.waitForFunction(() => state.pagination.enabled && state.pagination.totalPages > 1);
+  await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
   await page.evaluate(() => renderPage(3));
   await page.evaluate(() => switchTab('short'));
   await expect(page.locator('#content')).toContainText('short');
   await page.evaluate(() => switchTab('long'));
-  await page.waitForFunction(() => state.pagination.currentPage === 3);
+  await waitForPage(page, () => state.pagination.currentPage === 3);
 });
 
 test('search highlights a term spanning adjacent inline elements', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'inline.md', '', 'Before read<span>me</span> after', []);
   });
@@ -1556,7 +1557,7 @@ test('search highlights a term spanning adjacent inline elements', async ({ page
 
 test('enter immediately jumps even when the search debounce has not fired', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderContent === 'function');
+  await waitForPage(page, () => typeof renderContent === 'function');
   await page.evaluate(async () => {
     const lines = ['# Search race'];
     for (let section = 0; section < 4200; section += 1) {
@@ -1572,7 +1573,7 @@ test('enter immediately jumps even when the search debounce has not fired', asyn
     await renderContent(content, 'search-race.md');
     updateStatus();
   });
-  await page.waitForFunction(() => state.pagination.enabled && state.pagination.totalPages > 1);
+  await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
   await page.evaluate(() => renderPage(0));
 
   await page.locator('#btn-search').click();
@@ -1590,7 +1591,7 @@ test('enter immediately jumps even when the search debounce has not fired', asyn
   });
 
   await expect(page.locator('#search-count')).toHaveText(/1\/1 \(P\.\d+\)/);
-  await page.waitForFunction(() => (
+  await waitForPage(page, () => (
     state.pagination.currentPage === state.pagination.totalPages - 1
   ));
   await expect(page.locator('#content mark.cur')).toHaveText('READMD_SEARCH_RACE_MARKER');
@@ -1604,7 +1605,7 @@ test('home resets pagination state and failed opens clear progress', async ({ pa
     body: JSON.stringify({ ok: false, error: 'missing' }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof goHome === 'function');
+  await waitForPage(page, () => typeof goHome === 'function');
   await page.evaluate(() => {
     Object.assign(state.pagination, {
       enabled: true, mode: 'paged', rawContent: '# stale', pages: [{ pageIndex: 0, title: 'stale', content: '# stale' }],
@@ -1617,16 +1618,16 @@ test('home resets pagination state and failed opens clear progress', async ({ pa
   await expect(page.locator('#pagination-bar')).toBeVisible();
   await page.evaluate(() => goHome());
   await expect(page.locator('#pagination-bar')).toBeHidden();
-  await page.waitForFunction(() => !state.pagination.enabled && state.pagination.pages.length === 0);
+  await waitForPage(page, () => !state.pagination.enabled && state.pagination.pages.length === 0);
 
   await page.evaluate(() => loadFile('missing.md'));
   await expect(page.locator('#toast')).toContainText(/无法打开/);
-  await page.waitForFunction(() => document.getElementById('progress').style.width === '0%');
+  await waitForPage(page, () => document.getElementById('progress').style.width === '0%');
 });
 
 test('rendered Markdown cannot inject active content or privileged URLs', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'security.md', '', [
       '<img src="x" onerror="window.__readmdpwned = true">',
@@ -1649,7 +1650,7 @@ test('rendered Markdown cannot inject active content or privileged URLs', async 
 
 test('core workflow controls satisfy accessibility contracts', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderTabsBar === 'function');
+  await waitForPage(page, () => typeof renderTabsBar === 'function');
   const buildVersion = (await fs.readFile(path.join(__dirname, '../VERSION'), 'utf8')).trim();
   await expect(page.locator('#status-version')).toHaveText(`v${buildVersion}`);
   await expect(page.locator('#menu-version-label')).toHaveText(new RegExp(`当前版本 [vV]${buildVersion}`));
@@ -1719,7 +1720,7 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
   await expect(firstTab).toHaveAttribute('aria-selected', 'true');
   await firstTab.focus();
   await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.querySelector('#doc-tabs-bar .tab-item')?.getAttribute('aria-selected') === 'true');
+  await waitForPage(page, () => document.querySelector('#doc-tabs-bar .tab-item')?.getAttribute('aria-selected') === 'true');
 
   const field = page.locator('#accessibility-field-probe');
   await page.evaluate(() => {
@@ -1777,7 +1778,7 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
 
 test('tabs, status regions, and stacked dialogs meet keyboard contracts', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderTabsBar === 'function');
+  await waitForPage(page, () => typeof renderTabsBar === 'function');
 
   await expect(page.locator('#search-count')).toHaveAttribute('role', 'status');
   await expect(page.locator('#search-count')).toHaveAttribute('aria-live', 'polite');
@@ -1851,7 +1852,7 @@ test('tabs, status regions, and stacked dialogs meet keyboard contracts', async 
 test('rename and BibTeX metadata cannot inject markup', async ({ page }) => {
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
 
   const hostileName = 'old"><img src=x onerror="window.__renamed=1">';
   await page.evaluate(name => {
@@ -1896,7 +1897,7 @@ test('rename and BibTeX metadata cannot inject markup', async ({ page }) => {
 
 test('unsupported actions and destructive choices give managed feedback', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof deleteCurrentTpl === 'function');
+  await waitForPage(page, () => typeof deleteCurrentTpl === 'function');
 
   await expect(page.locator('#btn-folder')).toBeDisabled();
   await expect(page.locator('#btn-folder')).toHaveAttribute('aria-description', /浏览器模式|browser mode/i);

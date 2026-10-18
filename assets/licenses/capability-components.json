@@ -1,0 +1,213 @@
+{
+  "reviewedOn": "2026-10-10",
+  "buildPolicy": "Exact versions and Cargo/npm lockfiles; builds offline and locked. Network is limited to explicit locked-input preparation, configured user services and actual owned-release delivery tests.",
+  "reviewScope": "Source, license, dependency defaults and loading behavior checked. This record is not a security certification or a claim that all transitive licenses have been independently audited.",
+  "components": [
+    {
+      "name": "quick-xml",
+      "version": "0.42.0",
+      "license": "MIT",
+      "source": "https://crates.io/crates/quick-xml/0.42.0",
+      "notice": "quick-xml-MIT.txt",
+      "purpose": "Bounded, namespace-aware math XML parsing",
+      "loading": "Rust core; no external runtime or network calls",
+      "maintenanceReview": "Pinned published Rust source inspected; input length and nesting limits are enforced by ReadMD."
+    },
+    {
+      "name": "yrs",
+      "version": "0.28.0",
+      "license": "MIT",
+      "source": "https://github.com/y-crdt/y-crdt/tree/v0.28.0",
+      "notice": "yrs-MIT.txt",
+      "purpose": "UTF-16 CRDT, relative positions and persisted collaboration",
+      "loading": "Rust collaboration service; no external runtime",
+      "maintenanceReview": "Pinned Rust release inspected; real Yjs interoperability, duplicates, out-of-order recovery, concurrent clients, permissions and snapshots tested."
+    },
+    {
+      "name": "hayagriva",
+      "version": "0.10.1",
+      "license": "MIT OR Apache-2.0",
+      "source": "https://crates.io/crates/hayagriva/0.10.1",
+      "notice": "hayagriva-MIT.txt",
+      "purpose": "Offline CSL processing of BibTeX and CSL JSON",
+      "loading": "Rust core, including its pinned style/locale archive",
+      "maintenanceReview": "Published source and archive inspected; output is serialized with ReadMD escaping rather than trusting raw HTML. Complex style projection remains explicitly diagnosed."
+    },
+    {
+      "name": "Hayagriva bundled CSL styles and locales",
+      "version": "archive bundled with 0.10.1",
+      "license": "CC-BY-SA-3.0",
+      "source": "https://github.com/typst/hayagriva",
+      "notice": "hayagriva-NOTICE.txt",
+      "licenseText": "CC-BY-SA-3.0.txt",
+      "attribution": "csl-attribution.json",
+      "modified": false,
+      "styleCount": 80,
+      "purpose": "Author-attributed offline style archive; separate from Rust source license",
+      "maintenanceReview": "Names, original identifiers, authors, contributors, rights and update dates extracted from the exact locked archive. Style modifications must retain attribution and applicable share-alike notices."
+    },
+    {
+      "name": "yjs",
+      "version": "13.6.33",
+      "license": "MIT",
+      "source": "https://www.npmjs.com/package/yjs/v/13.6.33",
+      "notice": "../vendor/yjs.LICENSE.txt",
+      "purpose": "Browser collaboration protocol and personal undo",
+      "loading": "Only the collaboration page loads vendor/yjs.bundle.js (86074 bytes); ordinary reading does not load it.",
+      "maintenanceReview": "Version and integrity locked in tools/collaboration-bundle/package-lock.json; tested against Yrs 0.28.0."
+    },
+    {
+      "name": "lib0",
+      "license": "MIT",
+      "versionSource": "tools/collaboration-bundle/package-lock.json",
+      "notice": "../vendor/lib0.LICENSE.txt",
+      "purpose": "Yjs protocol helpers",
+      "loading": "Included in the lazy Yjs bundle"
+    },
+    {
+      "name": "esbuild",
+      "version": "0.28.1",
+      "license": "MIT",
+      "source": "https://www.npmjs.com/package/esbuild/v/0.28.1",
+      "purpose": "Offline collaboration bundle tooling",
+      "loading": "Development only; node_modules and esbuild executables are excluded from the application."
+    },
+    {
+      "name": "pdfium-render",
+      "version": "0.9.4",
+      "license": "MIT OR Apache-2.0 (Apache-2.0 chosen)",
+      "source": "https://github.com/ajrcarey/pdfium-render",
+      "notice": "pdfium-render-APACHE-2.0.txt",
+      "purpose": "PDF object API in an optional disposable Rust worker",
+      "loading": "Feature pdfium-worker only; not linked into the ordinary desktop build. Exact Cargo version; V8/XFA and default image/network features disabled.",
+      "maintenanceReview": "Source and library ABI checked against pinned PDFium 7881. AES permission enum and cross-reader annotation differences are handled in ReadMD; native regression coverage is recorded separately."
+    },
+    {
+      "name": "PDFium Windows x64 runtime",
+      "version": "chromium/7881 (151.0.7881.0)",
+      "license": "BSD-3-Clause; separate third-party notices; binary package scripts MIT",
+      "source": "https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium%2F7881",
+      "notice": "Offline pack licenses/pdfium.txt, LICENSE and 15 upstream notices",
+      "purpose": "Optional native page-object rendering and modification",
+      "loading": "Only a reviewed, hashed DLL in a bounded worker. No V8/XFA; never loaded into the reader process.",
+      "maintenanceReview": "Upstream release archive SHA-256 verified against the GitHub release digest. DLL SHA-256 pinned in Rust and application lock. Install checks every file and runs an actual render/text probe. Other platform binaries have not been prepared or verified."
+    },
+    {
+      "name": "Microsoft Visual C++ app-local runtime",
+      "version": "14.51.36247.0 (Windows x64)",
+      "license": "Microsoft Distributable Code; separate from ReadMD MIT license",
+      "source": "https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170",
+      "notice": "Microsoft-VCRuntime-NOTICE.txt and Microsoft-VCRuntime-LICENSE.docx",
+      "purpose": "Small required core support, bundled rather than requiring a globally installed VC Redistributable",
+      "loading": "Two locked DLLs, 228728 bytes total, beside ReadMD.exe; owned workers inherit the application DLL directory",
+      "maintenanceReview": "Official signed archive and DLL Authenticode checked; immutable source URL and SHA-256 in assets/runtimes/windows-x64/runtime.lock.json. Actual Windows process-module inspection verifies both main-reader DLLs and Typst worker runtime load from the bundled directory before System32. Windows 10/11 kernel/UCRT APIs and native GUI engine remain platform requirements."
+    },
+    {
+      "name": "Typst Windows x64 runtime",
+      "version": "0.15.1",
+      "license": "Apache-2.0; embedded dependency and font notices retained",
+      "source": "https://github.com/typst/typst/releases/tag/v0.15.1",
+      "notice": "Offline pack LICENSE and NOTICE",
+      "purpose": "Optional academic PDF typesetting",
+      "loading": "Owned, pinned capability worker; bounded generated source/root, package imports disabled; absent during ordinary reading",
+      "maintenanceReview": "Official release archive and runtime hashes locked. Actual compile, atomic output, vector figures, preview/output identity, repair and uninstall tested. CJK and additional language font delivery remains a separate gap; do not claim the engine's embedded fonts cover all 46 languages. See assets/capabilities/typst-0.15.1-windows-x64.lock.json."
+    },
+    {
+      "name": "Tesseract + Leptonica static OCR runtime",
+      "version": "Tesseract 5.5.3 / Leptonica 1.87.0; ReadMD pack 5.5.3-r1",
+      "license": "Apache-2.0 / BSD-2-Clause; static MSVC runtime",
+      "source": "https://github.com/tesseract-ocr/tesseract/releases/tag/5.5.3",
+      "notice": "Offline pack licenses/TESSERACT-LICENSE, licenses/LEPTONICA-LICENSE and NOTICE",
+      "purpose": "Portable offline printed-text recognition",
+      "loading": "On demand only; Rust decodes bounded image input, a static process reads local PNM and locked local models",
+      "maintenanceReview": "Official source/model/tool digests in tools/ocr-runtime-inputs.lock.json; built offline with networking, codecs, GUI, training and legacy OCR disabled. PE imports checked: KERNEL32.dll only. Six real image formats, scanned PDF, cancellation, corrupt-model repair and restart tested without third-party runtimes in PATH. Handwriting and universal OCR accuracy are not certified."
+    },
+    {
+      "name": "tessdata_fast English, simplified Chinese and traditional Chinese models",
+      "version": "87416418657359cb625c412a48b6e1d6d41c29bd",
+      "license": "Apache-2.0",
+      "source": "https://github.com/tesseract-ocr/tessdata_fast/tree/87416418657359cb625c412a48b6e1d6d41c29bd",
+      "notice": "Offline pack licenses/MODELS-LICENSE",
+      "purpose": "Three locally installed OCR language models",
+      "loading": "Only the managed OCR process loads these files; no system OCR language-pack installation",
+      "maintenanceReview": "Each official traineddata file has exact length and SHA-256 in the OCR source and application locks. These are recognition languages, not a claim of OCR coverage for all UI languages."
+    },
+    {
+      "name": "image and selected pure Rust codecs",
+      "version": "image 0.25.10; transitive versions in Cargo.lock",
+      "license": "MIT OR Apache-2.0; individual MIT/BSD notices retained",
+      "source": "https://github.com/image-rs/image",
+      "notice": "image-codecs.json and image-codecs/",
+      "purpose": "Core PNG, JPEG, BMP, GIF, TIFF and WebP decoding without system image programs",
+      "loading": "Rust core; default features disabled; no AVIF, EXR, external codec libraries or Rayon",
+      "maintenanceReview": "Exact feature/dependency metadata and source licenses reviewed; 15 newly resolved packages have hashed notices in image-codecs.json. Bounded input/decode allocation and malformed-input tests. Equivalent release-size baseline has not been measured."
+    },
+    {
+      "name": "vega-interpreter",
+      "version": "1.0.5",
+      "license": "BSD-3-Clause",
+      "source": "https://vega.github.io/vega/usage/interpreter/",
+      "notice": "vega-interpreter-1.0.5-BSD.txt",
+      "purpose": "Scientific Vega expressions under the application's production CSP",
+      "loading": "Lazy 5046-byte browser bundle; desktop figures do not launch Node",
+      "maintenanceReview": "Official npm integrity and SHA-256 locked in assets/vendor/diagrams/vega/interpreter.lock.json; real native CSP and vector export tested with system runtimes absent from PATH. Separate headless MCP Vega rendering still needs a portable solution."
+    },
+    {
+      "name": "yaml-rust2",
+      "version": "0.13.0",
+      "license": "MIT OR Apache-2.0",
+      "notice": "yaml-rust2-0.13.0-MIT.txt",
+      "source": "https://github.com/Ethiraric/yaml-rust2",
+      "purpose": "Offline OpenAPI JSON/YAML parsing",
+      "loading": "Rust core; default encoding feature disabled; no network or external runtime",
+      "maintenanceReview": "Pure Rust YAML 1.2 parser; upstream declares stable API/basic maintenance. Exact published source reviewed. ReadMD limits depth, event count, aliases and expanded bytes, rejects duplicate keys and application-defined tags."
+    },
+    {
+      "name": "arraydeque",
+      "version": "0.5.1",
+      "license": "MIT OR Apache-2.0",
+      "notice": "arraydeque-0.5.1-MIT.txt",
+      "source": "https://crates.io/crates/arraydeque/0.5.1",
+      "purpose": "Bounded YAML scanner queue",
+      "loading": "Rust core; default encoding feature disabled; no network or external runtime",
+      "maintenanceReview": "Pinned scanner dependency. License and source inspected; no new runtime or script execution."
+    },
+    {
+      "name": "STIX Two Math core font",
+      "version": "2.13 b171",
+      "license": "OFL-1.1",
+      "source": "https://github.com/stipub/stixfonts/tree/744a22a4dd626cd14d75728aef34fc8ad7c85db0",
+      "notice": "STIX-OFL-1.1.txt",
+      "purpose": "Core vector formula layout and native PDF symbol subsets, independent of installed Office/math fonts",
+      "loading": "1518116-byte unmodified TrueType resource compiled into the Rust core; lazy layout",
+      "maintenanceReview": "Official immutable Git blob and SHA-256 in tools/publication-font-inputs.lock.json. OpenType MATH constants, Greek and supplementary-plane outlines and embedding permission tested. Host font directories are not searched."
+    },
+    {
+      "name": "ReadMD Chinese publication fonts",
+      "version": "2026.10.10",
+      "license": "OFL-1.1",
+      "source": "https://github.com/google/fonts/tree/a85815a42757630ce188fdad368c2dfc444d4773",
+      "notice": "Offline pack licenses/NotoSansSC-OFL.txt, licenses/NotoSerifSC-OFL.txt and NOTICE",
+      "purpose": "Private Chinese sans/serif regular and real bold weights for PDF publishing",
+      "loading": "Optional universal fonts capability pack; scoped to the app profile, not globally registered",
+      "maintenanceReview": "Noto Sans SC and Noto Serif SC inputs pinned by Git identity and SHA-256. Static weight 400/700 derivatives are renamed ReadMD Sans SC/ReadMD Serif SC; original copyright and OFL retained. All glyphs preserved. Outputs fixed in tools/publication-static-fonts.lock.json. Further scripts, arbitrary Unicode, font substitution and native non-Windows evidence remain open."
+    },
+    {
+      "name": "fontTools resource preparation",
+      "version": "4.63.0",
+      "license": "MIT",
+      "source": "https://github.com/fonttools/fonttools/tree/4.63.0",
+      "purpose": "Explicit offline preparation of static weight font resources",
+      "loading": "Development only; not packaged, not invoked by runtime or ordinary application builds",
+      "maintenanceReview": "Installed exact version checked. Official instancer semantics reviewed; input/output hashes locked. Normal application and capability-pack assembly read prepared locked bytes offline and do not need Python/fontTools."
+    }
+  ],
+  "footprintLimits": {
+    "minimumRust": "1.88 (the existing encoding_rs lock already requires this version)",
+    "coreBinaryDelta": "Not yet measured against an equivalent release baseline; do not claim a percentage improvement.",
+    "externalEngines": "Windows x64 PDFium, Typst and static OCR engines plus a universal Chinese publication font pack are implemented. FFmpeg/whisper, TeX bundles, further script coverage, headless figures and other engine platforms remain pending. No claim that all 46 UI languages have complete export font coverage.",
+    "deliveryRepository": "https://github.com/Natsummerance/tool-ReadMD",
+    "packTransport": "Raw POST /api/capabilities/upload, bounded at 128 MiB; no base64 request expansion or retained uploads copy. Payload files remain inert JSON/base64, optionally gzip-compressed, with application-locked manifests and per-file sizes/hashes.",
+    "packBytes": "Download/installed sizes and owned URLs in assets/capabilities/catalog.json; independent per-platform file locks in assets/capabilities/."
+  }
+}

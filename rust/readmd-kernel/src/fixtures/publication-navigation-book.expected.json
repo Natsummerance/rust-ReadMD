@@ -1,0 +1,19 @@
+{
+  "scope": "Original fixed expectation, independent of product output",
+  "options": {"cover": {"enabled": false}, "frontMatter": {"mode": "none"}, "epub": {"splitLevel": "h1"}},
+  "chapters": 3,
+  "pages": [
+    {"href": "chapter_1.xhtml#h-readmd-epub-front", "label": "i"},
+    {"href": "chapter_2.xhtml#h-readmd-epub-main", "label": "1"},
+    {"href": "chapter_2.xhtml#h-readmd-epub-middle", "label": "2"},
+    {"href": "chapter_3.xhtml#h-readmd-epub-last", "label": "3"}
+  ],
+  "landmarks": [
+    {"href": "nav.xhtml#toc", "label": "Contents", "type": "toc"},
+    {"href": "chapter_1.xhtml#h-readmd-epub-front", "label": "Preface", "type": "preface"},
+    {"href": "chapter_2.xhtml#h-readmd-epub-main", "label": "Start of content", "type": "bodymatter"},
+    {"href": "chapter_3.xhtml#h-readmd-epub-last", "label": "Index", "type": "index"}
+  ],
+  "sourceOfPagination": "urn:isbn:978-0-00-000000-2",
+  "bodyTokens": ["FRONT_SENTINEL", "MAIN_BEGIN", "MAIN_END", "INDEX_SENTINEL"]
+}

@@ -1,0 +1,188 @@
+{
+  "schema": 1,
+  "id": "pdfium",
+  "version": "7881",
+  "platform": "windows-x64",
+  "files": [
+    {
+      "path": "bin/pdfium.dll",
+      "size": 7211520,
+      "sha256": "79d4676b656cfb1abcea88f9ade3b4b0826c5200382db5f4ec72a636c598c118"
+    },
+    {
+      "path": "bin/readmd-pdf-worker.exe",
+      "size": 6209536,
+      "sha256": "dc7864b8c6392e9e5294260aa0e386e159b9512ad782018589215fbc58d085de"
+    },
+    {
+      "path": "LICENSE",
+      "size": 1184,
+      "sha256": "8854f4388f1ca13b3ad9baa42e95f5546b4c0b17109c159256d3eca7be39b09b"
+    },
+    {
+      "path": "VERSION",
+      "size": 37,
+      "sha256": "9ea21b933a52e57cd585f5a543c16155513f8195a158b0526f3a3c50fc3431cd"
+    },
+    {
+      "path": "args.gn",
+      "size": 216,
+      "sha256": "161bf08999e403b7da9d924c45b7ee7bc8beb3038b08f9e174ba6761dd06a976"
+    },
+    {
+      "path": "licenses/abseil.txt",
+      "size": 11564,
+      "sha256": "f54fff0b905df5b3464527c652a30e903b172d6dcab4d89b5e6f105d5e4a4603"
+    },
+    {
+      "path": "licenses/agg23.txt",
+      "size": 725,
+      "sha256": "c110d3ea2ad77467ce0dcff7d3337e6c8be8049a5103f4b9bd5fd911a77972e5"
+    },
+    {
+      "path": "licenses/fast_float.txt",
+      "size": 1106,
+      "sha256": "bf1b57355feca8fce77ee95f48002f8d4789fb71b30ec7599c06cda4901fbb2b"
+    },
+    {
+      "path": "licenses/freetype.txt",
+      "size": 6741,
+      "sha256": "f4b133e25df1f86ad3ffea453aa0e613f0474f34778dbbb3e437e7b2724937d8"
+    },
+    {
+      "path": "licenses/icu.txt",
+      "size": 28286,
+      "sha256": "93679f4389d53b6835d89843f251844fb9bc455b35bab036d3c8e7abe497a47a"
+    },
+    {
+      "path": "licenses/lcms.txt",
+      "size": 1353,
+      "sha256": "7312b68c5b25e9bf2b828706fb4e29588f22705112f411fd42e1f7d84c3d139a"
+    },
+    {
+      "path": "licenses/libjpeg_turbo.ijg",
+      "size": 13059,
+      "sha256": "db16a04128171879c60708d171b88d97345a2dd20f9bfc173680a4497c73f704"
+    },
+    {
+      "path": "licenses/libjpeg_turbo.md",
+      "size": 5755,
+      "sha256": "be2b2b5ab168bce87bc3e31f2a5c5adba4b7f6e9e51d618e958d1d46972ebd95"
+    },
+    {
+      "path": "licenses/libopenjpeg.txt",
+      "size": 1794,
+      "sha256": "c5ab0890a737c2dfa7ba675036554f6d17741d98629b0c2a145354d00617e6b2"
+    },
+    {
+      "path": "licenses/libpng.txt",
+      "size": 5479,
+      "sha256": "452390433ba0f88aa3e2b122c647741b72a0c117cd6ed7a329b49785aecb5511"
+    },
+    {
+      "path": "licenses/libtiff.txt",
+      "size": 1139,
+      "sha256": "92b72ba97e6c2749c2a94bc0ef646b47080217f1e772a482b33cf5a5f98a6506"
+    },
+    {
+      "path": "licenses/llvm-libc.txt",
+      "size": 15418,
+      "sha256": "3b6226c32e168c83b891d8d6f0d3c29c2116dc3ef93dc93c307b54f279ecf383"
+    },
+    {
+      "path": "licenses/pdfium.txt",
+      "size": 12818,
+      "sha256": "961eacd9633fff6d051db7208b755e9210e30efac7adec3e6a6d52798f0ccf0e"
+    },
+    {
+      "path": "licenses/simdutf.txt",
+      "size": 1077,
+      "sha256": "c172a0ba936ff31230febb5dad869e25cb7c1a07480c7a381be8cf011bb52719"
+    },
+    {
+      "path": "licenses/zlib.txt",
+      "size": 1332,
+      "sha256": "33fd641c9f3b0e0be64bc78fea9e94807674cdd70c48477599226cb8956565fe"
+    },
+    {
+      "path": "licenses/pdfium-render-NOTICE.md",
+      "size": 202,
+      "sha256": "819dfb7c49a24bec7511f29304478d67f272bfd1f976b728095f2eb2c522791c"
+    },
+    {
+      "path": "licenses/pdfium-render-APACHE-2.0.txt",
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/bytemuck-1.25.2-LICENSE-APACHE",
+      "size": 10398,
+      "sha256": "e3ba223bb1423f0aad8c3dfce0fe3148db48926d41e6fbc3afbbf5ff9e1c89cb"
+    },
+    {
+      "path": "licenses/bytemuck-1.25.2-LICENSE-MIT",
+      "size": 1110,
+      "sha256": "9df9ba60a11af705f2e451b53762686e615d86f76b169cf075c3237730dbd7e2"
+    },
+    {
+      "path": "licenses/bytemuck-1.25.2-LICENSE-ZLIB",
+      "size": 851,
+      "sha256": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151"
+    },
+    {
+      "path": "licenses/byteorder-1.5.0-COPYING",
+      "size": 126,
+      "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f"
+    },
+    {
+      "path": "licenses/byteorder-1.5.0-LICENSE-MIT",
+      "size": 1081,
+      "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f"
+    },
+    {
+      "path": "licenses/itertools-0.15.0-LICENSE-APACHE",
+      "size": 10847,
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "path": "licenses/itertools-0.15.0-LICENSE-MIT",
+      "size": 1043,
+      "sha256": "7576269ea71f767b99297934c0b2367532690f8c4badc695edf8e04ab6a1e545"
+    },
+    {
+      "path": "licenses/libloading-0.9.0-LICENSE",
+      "size": 736,
+      "sha256": "b29f8b01452350c20dd1af16ef83b598fea3053578ccc1c7a0ef40e57be2620f"
+    },
+    {
+      "path": "licenses/maybe-owned-0.3.4-LICENSE-APACHE",
+      "size": 10834,
+      "sha256": "aecc100d0547aa3bcbe04bcf5cb87c7db0be11004602adfa5056edf8bb847b35"
+    },
+    {
+      "path": "licenses/maybe-owned-0.3.4-LICENSE-MIT",
+      "size": 1058,
+      "sha256": "ef2b3bbd7b718a7881253226313f103e89b379e1279681a3c1ebcb65a27d209d"
+    },
+    {
+      "path": "licenses/piston-float-1.0.1-LICENSE",
+      "size": 1084,
+      "sha256": "97d06daf5f54a5a5e12776d7f30613b30538c6c7ce4d326731084c27233c6b9b"
+    },
+    {
+      "path": "licenses/utf16string-0.2.0-LICENSE-APACHE",
+      "size": 10847,
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+    },
+    {
+      "path": "licenses/utf16string-0.2.0-LICENSE-MIT",
+      "size": 1108,
+      "sha256": "b5dd5bfd08ec04894af18caa0028257b3d868ef223393e5155eb6de140565286"
+    },
+    {
+      "path": "licenses/vecmath-1.0.0-LICENSE",
+      "size": 1082,
+      "sha256": "c7766d2e29f88a4be81b6ac6216c62d2d0918c7d3f2fc98be6fecac8f6595e60"
+    }
+  ]
+}

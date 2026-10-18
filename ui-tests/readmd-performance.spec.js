@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs/promises');
 const os = require('os');
@@ -26,11 +27,11 @@ function corpusDocument(lineCount) {
 async function openCorpus(page, size) {
   const file = path.join(corpusDir, `readmd-${size}.md`);
   await page.goto(`/?file=${encodeURIComponent(file)}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(expected => state.file === expected && state.original.length > 0, file);
+  await waitForPage(page, expected => state.file === expected && state.original.length > 0, file);
   await expect(page.locator('#toast')).toContainText(/已打开/);
   await expect(page.locator('#content .markdown-body h1')).toContainText('Long document performance');
   if (size > 8000) {
-    await page.waitForFunction(() => state.pagination.enabled && state.pagination.totalPages > 1);
+    await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
     await expect(page.locator('#pg-total-label')).toHaveText(/\/ \d+/);
     await expect(page.locator('#pagination-bar')).toBeVisible();
   }
@@ -60,9 +61,20 @@ test('long-document interaction stays bounded from 1k through 50k lines', async 
     body: JSON.stringify({ ok: false }),
   }));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => typeof loadFile === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function');
   for (const size of CORPUS_SIZES) {
+    let profiler;
+    if (size === 50000 && process.env.READMD_PROFILE_READER === '1') {
+      profiler = await page.context().newCDPSession(page);
+      await profiler.send('Profiler.enable');
+      await profiler.send('Profiler.start');
+    }
     results[size] = await openCorpus(page, size);
+    if (profiler) {
+      const {profile} = await profiler.send('Profiler.stop');
+      await testInfo.attach('reader-50k-cpu', {body:JSON.stringify(profile),contentType:'application/json'});
+      await profiler.detach();
+    }
     if (size === 1000) continue;
 
     const targetSection = Math.ceil(size * 0.375);
@@ -97,7 +109,7 @@ test('long-document interaction stays bounded from 1k through 50k lines', async 
     await page.locator('#search-input').fill('READMD_PERF_UNIQUE_ANCHOR_7351');
     await page.locator('#search-input').press('Enter');
     await expect(page.locator('#search-count')).toHaveText('1/1 (P.' + (expectedPage + 1) + ')');
-    await page.waitForFunction(expected => state.pagination.currentPage === expected, expectedPage);
+    await waitForPage(page, expected => state.pagination.currentPage === expected, expectedPage);
     await expect(page.locator(`#toc-list details[data-page-idx="${expectedPage}"]`)).toHaveAttribute('open', '');
     results[size].searchJumpMs = Date.now() - started;
 
@@ -153,6 +165,7 @@ test('long-document interaction stays bounded from 1k through 50k lines', async 
     });
   }
 
+  await testInfo.attach('reader-performance', {body:JSON.stringify(results,null,2),contentType:'application/json'});
   for (const size of CORPUS_SIZES) {
     expect(results[size].firstReadableMs, `${size}-line first readable content`).toBeLessThan(3000);
   }

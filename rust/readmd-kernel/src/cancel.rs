@@ -55,6 +55,10 @@ pub struct TaskGuard {
 }
 
 impl TaskGuard {
+    pub fn checker(&self) -> Arc<dyn Fn() -> bool + Send + Sync> {
+        let entry = self.entry.clone();
+        Arc::new(move || entry.cancel.load(Ordering::SeqCst))
+    }
     pub fn is_cancelled(&self) -> bool {
         self.entry.cancel.load(Ordering::SeqCst)
     }
@@ -87,6 +91,20 @@ pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// Bridge an external synchronous caller's cancellation flag into the same
+/// worker cancellation context used by desktop tasks, without borrowed TLS.
+pub fn with_external<T>(cancel:Option<&AtomicBool>, action:impl FnOnce()->T)->T{
+    let Some(cancel)=cancel else{return action()};
+    let stopping=Arc::new(AtomicBool::new(false));let observed=Arc::new(AtomicBool::new(cancel.load(Ordering::Acquire)));
+    std::thread::scope(|scope|{
+        let stop=stopping.clone();let flag=observed.clone();
+        scope.spawn(move||{while !stop.load(Ordering::Acquire){if cancel.load(Ordering::Acquire){flag.store(true,Ordering::Release);break;}std::thread::sleep(std::time::Duration::from_millis(10));}});
+        struct Stop(Arc<AtomicBool>);impl Drop for Stop{fn drop(&mut self){self.0.store(true,Ordering::Release);}}
+        let _stop=Stop(stopping);
+        crate::speech::with_cancel(Arc::new(move||observed.load(Ordering::Acquire)),action)
+    })
+}
+
 /// Register `id`; `None` for an empty or malformed id (the request then runs
 /// uncancellable, exactly as before `task_id` existed).
 pub fn register(id: &str) -> Option<TaskGuard> {
@@ -95,7 +113,12 @@ pub fn register(id: &str) -> Option<TaskGuard> {
     }
     let entry = Arc::new(Entry::default());
     entry.phase.store(RUNNING, Ordering::SeqCst);
-    table().lock().unwrap_or_else(|e| e.into_inner()).insert(id.to_string(), entry.clone());
+    let mut tasks=table().lock().unwrap_or_else(|e| e.into_inner());
+    // Preserve the existing newest-request contract, while stopping the
+    // replaced worker so it cannot become an uncancellable late writer.
+    if let Some(previous)=tasks.insert(id.to_string(), entry.clone()){
+        previous.cancel.store(true,Ordering::SeqCst);
+    }
     Some(TaskGuard { id: id.to_string(), entry })
 }
 
@@ -148,6 +171,30 @@ mod tests {
             assert!(register(id).is_none(), "{id:?}");
         }
         assert_eq!(cancel("never-registered"), CancelState::Unknown);
+    }
+
+    #[test]
+    fn duplicate_task_ids_cancel_old_workers_and_keep_the_new_target(){
+        let original=register("duplicate-task-check").unwrap();
+        let replacement=register("duplicate-task-check").unwrap();
+        assert!(original.is_cancelled());assert!(!original.try_commit());
+        assert!(!replacement.is_cancelled());
+        assert_eq!(cancel("duplicate-task-check"),CancelState::Cancelling);
+        assert!(replacement.is_cancelled());drop(original);
+        assert_eq!(cancel("duplicate-task-check"),CancelState::Cancelling);
+    }
+
+    #[test]
+    fn external_cancellation_reaches_active_workers_and_restores_thread_context(){
+        let flag=AtomicBool::new(false);
+        std::thread::scope(|scope|{
+            scope.spawn(||{std::thread::sleep(std::time::Duration::from_millis(30));flag.store(true,Ordering::Release);});
+            with_external(Some(&flag),||{
+                let start=std::time::Instant::now();
+                while !crate::speech::cancelled(){assert!(start.elapsed()<std::time::Duration::from_secs(1));std::thread::sleep(std::time::Duration::from_millis(5));}
+            });
+        });
+        assert!(!crate::speech::cancelled());
     }
 
     #[test]

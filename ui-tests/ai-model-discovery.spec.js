@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Exercise the real Rust routes and a local OpenAI-compatible provider.
 const { test, expect } = require('@playwright/test');
 const http = require('node:http');
@@ -21,7 +22,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', r => r.fulfill({ json: { ok: false } }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'zh-CN'));
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadAiConfig === 'function');
+  await waitForPage(page, () => typeof loadAiConfig === 'function');
   const saved = await page.evaluate(async ({ providerId, baseUrl }) => {
     const res = await apiFetch('/api/ai/config', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ providers: [{ id: providerId, name: 'Test relay', base_url: baseUrl, api_key: 'regression-fake-key', models: [] }], current: { provider_id: providerId, model: '' } }) });
@@ -44,7 +45,7 @@ test('discover models with saved opaque credentials, persist selection and reuse
   expect(await page.locator('#ai-model').inputValue()).toBe('regression-model');
   expect(await page.locator('#ai-key').inputValue()).toBe('');
   await page.reload();
-  await page.waitForFunction(() => typeof loadAiConfig === 'function');
+  await waitForPage(page, () => typeof loadAiConfig === 'function');
   await page.evaluate(() => loadAiConfig());
   expect(await page.locator('#ai-model').inputValue()).toBe('regression-model');
   const actual = await page.evaluate(async () => {

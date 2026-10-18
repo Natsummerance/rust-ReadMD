@@ -22,7 +22,7 @@ function serverCommand(port, dataDir) {
   if (process.env.READMD_BIN) return { cmd: process.env.READMD_BIN, args };
   return {
     cmd: 'cargo',
-    args: ['run', '--offline', '--locked', '--quiet', '--release', '--manifest-path', path.join(ROOT, 'rust', 'Cargo.toml'), '-p', 'readmd-kernel', '--', ...args],
+    args: ['run', '--offline', '--locked', '--quiet', '--release', '--manifest-path', path.join(ROOT, 'rust', 'Cargo.toml'), '-p', 'readmd-kernel', '--bin', 'readmd', '--', ...args],
   };
 }
 

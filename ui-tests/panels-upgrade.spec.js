@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Panels upgrade: welcome → editor, empty docs, export preset gallery, AI config view.
 const { test, expect } = require('@playwright/test');
 
@@ -7,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function' && typeof openExportModal === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function' && typeof openExportModal === 'function');
 });
 
 test('edit is disabled on the welcome screen until a document is open', async ({ page }) => {
@@ -21,7 +22,7 @@ test('an empty document can be edited', async ({ page }) => {
   await page.evaluate(() => renderVirtual('clipboard', 'empty.md', '', '', []));
   await expect(page.locator('#btn-edit')).toBeEnabled();
   await page.evaluate(() => toggleEdit());
-  await page.waitForFunction(() => state.editing === true);
+  await waitForPage(page, () => state.editing === true);
 });
 
 test('export preset gallery applies a preset and marks it pressed', async ({ page }) => {
@@ -48,7 +49,7 @@ test('AI config answers annotated providers without secrets', async ({ page }) =
 test('editor opens with live preview and scroll sync on, and remembers the caret', async ({ page }) => {
   await page.evaluate(() => renderVirtual('clipboard', 'mem.md', '', '# A\n\nline two\n\nline three\n', []));
   await page.evaluate(() => toggleEdit());
-  await page.waitForFunction(() => window.cmView);
+  await waitForPage(page, () => window.cmView);
   expect(await page.evaluate(() => [state.pvLayout, state.pvSync])).toEqual(['right', true]);
   await expect(page.locator('#preview-wrap')).toBeVisible();
   await page.evaluate(() => { cmView.dispatch({ selection: { anchor: 9 } }); });
@@ -56,9 +57,9 @@ test('editor opens with live preview and scroll sync on, and remembers the caret
   await expect(page.locator('#close-confirm-modal')).toBeVisible();
   await page.locator('#close-confirm-discard').click();
   await page.evaluate(() => window.exitPreviewResult);
-  await page.waitForFunction(() => !state.editing);
+  await waitForPage(page, () => !state.editing);
   await page.evaluate(() => toggleEdit());
-  await page.waitForFunction(() => window.cmView);
+  await waitForPage(page, () => window.cmView);
   expect(await page.evaluate(() => cmView.state.selection.main.head)).toBe(9);
 });
 
@@ -72,10 +73,10 @@ test('AI provider browser renders a bounded card list', async ({ page }) => {
 test('welcome offers New document, and Ctrl+N opens a blank editor', async ({ page }) => {
   await expect(page.locator('#w-new')).toBeVisible();
   await page.locator('#w-new').click();
-  await page.waitForFunction(() => state.editing === true && state.mode === 'virtual');
+  await waitForPage(page, () => state.editing === true && state.mode === 'virtual');
   await page.evaluate(() => { state.editing = false; exitEdit(); });
   await page.keyboard.press('Control+n');
-  await page.waitForFunction(() => state.editing === true);
+  await waitForPage(page, () => state.editing === true);
 });
 
 test('AI empty state shows six starters and a connect card when no key is set', async ({ page }) => {
@@ -113,20 +114,20 @@ test('AI conversation renders a typing state, rich answer, code copy and regener
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, content: '## Answer ' + calls + '\n\n```js\nlet a = 1;\n```\n' }) });
   });
   await page.reload();
-  await page.waitForFunction(() => typeof toggleAiPanel === 'function');
+  await waitForPage(page, () => typeof toggleAiPanel === 'function');
   await page.evaluate(() => renderVirtual('clipboard', 'doc.md', '', '# Doc\n\nText.\n', []));
   await page.evaluate(() => toggleAiPanel());
   await page.evaluate(() => { $('ai-stream').checked = false; });
   await page.fill('#ai-prompt', 'hello');
   await page.click('#ai-run');
   await expect(page.locator('#ai-output .ai-typing')).toBeVisible();
-  await page.waitForFunction(() => !state.ai.busy);
+  await waitForPage(page, () => !state.ai.busy);
   const answer = page.locator('#ai-output .ai-msg.ai').last();
   await expect(answer.locator('h2')).toHaveText('Answer 1');
   await expect(answer.locator('pre .ai-code-copy')).toHaveCount(1);
   await expect(answer.locator('.ai-tag-name')).not.toHaveText('');
   await answer.locator('.ai-regen-btn').click();
-  await page.waitForFunction(() => !state.ai.busy && document.querySelector('#ai-output .ai-msg.ai:last-child h2')?.textContent === 'Answer 2');
+  await waitForPage(page, () => !state.ai.busy && document.querySelector('#ai-output .ai-msg.ai:last-child h2')?.textContent === 'Answer 2');
   await expect(page.locator('#ai-output .ai-msg.ai')).toHaveCount(1);
   await expect(page.locator('#ai-output .ai-msg.user')).toHaveCount(1);
   expect(await page.evaluate(() => state.ai.messages.length)).toBe(2);

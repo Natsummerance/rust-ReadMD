@@ -134,3 +134,6 @@ ReadMD.exe
 
 # Local incremental videos and production scripts never enter software releases.
 /showcase/updates/
+/website/public/showcase/updates/
+/website/public/media/v005-ai-autocomplete.mp4
+/website/public/media/v005-ai-autocomplete.webp

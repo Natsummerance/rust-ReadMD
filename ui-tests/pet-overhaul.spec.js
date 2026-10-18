@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Real offline renderer + Rust preload. No fake sprites or Cubism implementation.
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
@@ -28,11 +29,11 @@ async function mount(page, character = 'mochi', kind = 'hermes-sprite', assetDel
   });
   await page.addInitScript(preload);
   await page.goto(`/pet-fixture/renderer/index.html?generation=1&session=fixture&renderer=${kind}`);
-  await page.waitForFunction(() => window.__bongoPet);
+  await waitForPage(page, () => window.__bongoPet);
   await page.evaluate(character => window.__readmdRustDispatch.state({ info: { character } }), character);
   await expect.poll(() => page.evaluate(() => window.__petCommands.some(c => c.payload?.type === 'renderer-ready'))).toBe(true);
-  if (character === 'arch-chan') await page.waitForFunction(() => window.__readmdLive2d);
-  else await page.waitForFunction(() => window.__bongoPet.spritePose);
+  if (character === 'arch-chan') await waitForPage(page, () => window.__readmdLive2d);
+  else await waitForPage(page, () => window.__bongoPet.spritePose);
 }
 
 async function localized(page, extra = {}) {

@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test } = require('@playwright/test');
 
 test('measure tpl-box width and layout', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window.__readmdAppReady === true);
+  await waitForPage(page, () => window.__readmdAppReady === true);
   await page.evaluate(() => {
     const btn = document.getElementById('ai-tpl-btn');
     if (btn) btn.click();

@@ -1,10 +1,11 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', r => r.fulfill({ contentType:'application/json', body:'{"ok":false,"error_code":"update_network_error"}' }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.goto('/');
-  await page.waitForFunction(() => window.ReadMDRecovery && document.getElementById('btn-open').closest('#app-titlebar'));
+  await waitForPage(page, () => window.ReadMDRecovery && document.getElementById('btn-open').closest('#app-titlebar'));
 });
 async function document(page, content) {
   await page.evaluate(async text => { const path = await uploadFile(new File([text], 'window-fixture.md')); await loadFile(path); await toggleEdit(); }, content);
@@ -55,11 +56,28 @@ test('an AI copy still asks to save its newly created content', async ({page}) =
   await beginClose(page); await expect(page.locator('#close-confirm-modal')).toBeVisible(); await page.locator('#close-confirm-cancel').click();
 });
 test('global actions move above tabs and browser mode hides native window controls', async ({page}) => {
-  for (const id of ['btn-open','btn-folder','btn-recent','btn-palette','btn-theme','btn-more']) await expect(page.locator('#app-titlebar #' + id)).toBeVisible();
-  for (const id of ['btn-toc','btn-search','btn-edit','btn-print','btn-ai']) expect(await page.locator('#toolbar #' + id).count()).toBe(1);
+  for (const id of ['btn-open','btn-folder','btn-recent','btn-palette','btn-theme','btn-zen','rd-prefs-btn']) await expect(page.locator('#app-titlebar #' + id)).toBeVisible();
+  for (const id of ['btn-toc','btn-search','btn-edit','btn-print','btn-more','btn-ai']) expect(await page.locator('#toolbar #' + id).count()).toBe(1);
+  expect(await page.locator('#btn-more').evaluate(button => button.nextElementSibling.id)).toBe('btn-ai');
   await expect(page.locator('#window-controls')).toBeHidden();
   await page.locator('#btn-more').click(); await expect(page.locator('#more-menu')).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.locator('#more-menu')).toBeHidden();
+});
+test('reading preferences fit a narrow viewport and retain 44px chrome targets', async ({page}) => {
+  await page.setViewportSize({width:360,height:740});
+  await page.locator('#rd-prefs-btn').click();
+  await page.locator('#rd-prefs').evaluate(panel => Promise.all(panel.getAnimations({subtree:true}).map(animation => animation.finished.catch(()=>{}))));
+  const panel=await page.locator('#rd-prefs').boundingBox();
+  expect(panel.x).toBeGreaterThanOrEqual(0);expect(panel.x+panel.width).toBeLessThanOrEqual(360);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBe(0);
+  const buttons=await page.locator('#app-titlebar button:visible').evaluateAll(buttons=>buttons.map(b=>({width:b.getBoundingClientRect().width,height:b.getBoundingClientRect().height})));
+  for(const button of buttons){expect(button.width).toBeGreaterThanOrEqual(44);expect(button.height).toBeGreaterThanOrEqual(44);}
+});
+test('zen releases titlebar and document toolbar height instead of reserving padding', async ({page}) => {
+  await page.evaluate(async()=>{await renderVirtual('clipboard','Zen.md','','# Focus\n\nThe document begins at the top.',[]);toggleZenMode(true);});
+  const bounds=await page.locator('#content').boundingBox();expect(bounds.y).toBe(0);
+  expect(await page.locator('#content').evaluate(content=>getComputedStyle(content).paddingTop)).toBe('0px');
+  await page.keyboard.press('Escape');await expect(page.locator('body')).not.toHaveClass(/zen-mode/);
 });
 test('update checks share a request and recover on reconnect', async ({page}) => {
   await page.evaluate(() => clearTimeout(updateRetryTimer));

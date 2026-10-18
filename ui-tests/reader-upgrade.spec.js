@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 // Reader lane: callouts, code headers, outline scroll-spy, table wrappers,
 // footnotes, reading preferences and the image lightbox.
 const { test, expect } = require('@playwright/test');
@@ -11,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openDoc(page, md, name = 'reader.md') {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function' && window.ReadMDReader);
+  await waitForPage(page, () => typeof renderVirtual === 'function' && window.ReadMDReader);
   await page.evaluate(async ({ md, name }) => { await renderVirtual('clipboard', name, '', md, []); }, { md, name });
   await expect(page.locator('#content .rd-article')).toBeVisible();
 }
@@ -22,6 +23,34 @@ const LONG_SECTIONS = Array.from({ length: 8 }, (_, i) => [
   ...Array.from({ length: 14 }, (_, k) => `Paragraph ${k} of section ${i + 1}. The quick brown fox jumps over the lazy dog, again and again, to fill the page.`),
   '',
 ].join('\n\n')).join('\n');
+
+test('language changes refresh generated reading chrome without rewriting author titles', async ({page}) => {
+  await openDoc(page, '# Study\n\n> [!NOTE]\n> Observation.\n\n> [!TIP] Author title\n> Advice.\n\n'+LONG_SECTIONS);
+  await expect(page.locator('.rd-doc-meta')).toContainText('min read');
+  await page.evaluate(()=>i18n.setLanguage('zh-CN',false));
+  await expect(page.locator('.rd-doc-meta')).toContainText('分钟');
+  await expect(page.locator('#content .rd-callout--note .rd-callout-label')).toHaveText('注意');
+  await expect(page.locator('#content .rd-callout--tip .rd-callout-label')).toHaveText('Author title');
+  await page.evaluate(()=>i18n.setLanguage('ar',false));
+  await expect(page.locator('.rd-doc-meta')).not.toContainText('分钟');
+  await expect(page.locator('#content .rd-callout--note .rd-callout-label')).not.toHaveText('注意');
+});
+
+test('first document keeps footnotes when the lazy reader module arrives late', async ({page}) => {
+  let requested=false,release;
+  const gate=new Promise(resolve=>{release=resolve;});
+  await page.route('**/assets/js/reader/enhance.js*',async route=>{requested=true;await gate;await route.continue();});
+  await page.goto('/');await waitForPage(page, ()=>window.__readmdAppReady);
+  expect(await page.evaluate(()=>!!window.ReadMDReader)).toBe(false);
+  try {
+    await page.evaluate(()=>{window.__coldReader=renderVirtual('clipboard','footnotes.md','','# Evidence\n\nOne claim[^a], another[^b].\n\n[^a]: First source.\n[^b]: Second source.',[]);});
+    await expect.poll(()=>requested).toBe(true);
+  } finally {release();}
+  await page.evaluate(()=>window.__coldReader);
+  await expect(page.locator('#content .rd-footnotes li')).toHaveCount(2);
+  await expect(page.locator('#content sup.rd-fnref a')).toHaveCount(2);
+  await expect(page.locator('#content .rd-footnotes')).toContainText('Second source.');
+});
 
 test('GitHub alerts and Obsidian callouts render with icons and fold', async ({ page }) => {
   await openDoc(page, [
@@ -37,6 +66,7 @@ test('GitHub alerts and Obsidian callouts render with icons and fold', async ({ 
     const box = page.locator(`#content .rd-callout--${variant}`).first();
     await expect(box).toBeVisible();
     await expect(box.locator('.rd-callout-icon')).toHaveCount(1);
+    await expect(box.locator('.rd-callout-icon')).toHaveCSS('fill', 'none');
   }
   await expect(page.locator('#content .rd-callout--note .rd-callout-label').first()).toHaveText('Note');
   await expect(page.locator('#content .rd-callout')).toHaveCount(6);

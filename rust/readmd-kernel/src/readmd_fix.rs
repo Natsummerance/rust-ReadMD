@@ -280,9 +280,8 @@ fn mask_code_spans(s: &str, start_idx: usize) -> (String, Vec<(String, String)>)
     (out, spans)
 }
 
-fn mask_all_code(text: &str) -> (String, Vec<(String, String)>) {
+fn mask_all_code(text: &str, mut spans: Vec<(String, String)>) -> (String, Vec<(String, String)>) {
     let lines: Vec<&str> = text.split('\n').collect();
-    let mut spans = Vec::new();
     let mut out = Vec::new();
     let n = lines.len();
     let mut i = 0;
@@ -332,6 +331,37 @@ fn mask_all_code(text: &str) -> (String, Vec<(String, String)>) {
     }
 
     (out.join("\n"), spans)
+}
+
+/// Keep publication fields and parsed citation affixes out of ordinary prose
+/// repair. Per-line placeholders preserve diagnostics and table/list boundaries.
+fn mask_publication_literals(text: &str) -> (String, Vec<(String, String)>) {
+    let mut ranges=Vec::new();
+    let body=crate::md_ast::source_without_front_matter(text);
+    if body.len()<text.len(){ranges.push(0..text.len()-body.len());}
+    if text.contains('@') {
+        if let Ok(scan)=crate::publication::citations::scan(text,"en-US") {
+            ranges.extend(scan.citations.into_iter().map(|citation|citation.span.byte_from..citation.span.byte_to));
+        }
+    }
+    if ranges.is_empty(){return (text.into(),Vec::new());}
+    ranges.sort_by_key(|range|range.start);
+    let prefix=format!("P{}",uuid::Uuid::new_v4().simple());
+    let mut output=String::with_capacity(text.len());let mut spans=Vec::new();let mut cursor=0;
+    for range in ranges {
+        if range.start<cursor||range.end>text.len()||!text.is_char_boundary(range.start)||!text.is_char_boundary(range.end){continue;}
+        output.push_str(&text[cursor..range.start]);
+        for line in text[range.clone()].split_inclusive('\n') {
+            let value=line.strip_suffix('\n').unwrap_or(line);
+            if !value.is_empty(){
+                let placeholder=format!("\x1a{prefix}Q{}\x1a",spans.len());
+                output.push_str(&placeholder);spans.push((placeholder,value.to_string()));
+            }
+            if line.ends_with('\n'){output.push('\n');}
+        }
+        cursor=range.end;
+    }
+    output.push_str(&text[cursor..]);(output,spans)
 }
 
 fn restore(text: &str, spans: &[(String, String)]) -> String {
@@ -1030,7 +1060,8 @@ pub fn fix_markdown(mut text: &str) -> FixResult {
     }
 
     let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let (masked, spans) = mask_all_code(&normalized);
+    let (publication, spans)=mask_publication_literals(&normalized);
+    let (masked, spans) = mask_all_code(&publication, spans);
     let mut lines: Vec<String> = masked.split('\n').map(|s| s.to_string()).collect();
 
     process_tables(&mut lines, &mut fixes, &mut stats);
@@ -1096,6 +1127,27 @@ mod tests {
         println!("FIXED RESULT:\n{}", res.text);
         assert!(res.text.contains("# Heading"));
         assert!(res.text.contains("| --- | --- |"));
+    }
+    #[test]
+    fn publication_literals_survive_prose_repair_and_keep_line_numbers() {
+        let input="\u{feff}---\r\ntitle: \"Keep __name and *literal\"\r\nbibliography: refs.json\r\nunknown: \"[not @a]\"\r\n---\r\n\r\n[&lt;script&gt;window.__qaInjected=1&lt;/script&gt; @study]\r\n\r\n#Heading\r\n\r\nOrdinary **unfinished\r\n";
+        let result=fix_markdown(input);
+        assert!(result.text.contains("title: \"Keep __name and *literal\""));
+        assert!(result.text.contains("[&lt;script&gt;window.__qaInjected=1&lt;/script&gt; @study]"));
+        assert!(result.text.contains("# Heading"));assert!(result.text.contains("Ordinary **unfinished**"));
+        assert_eq!(result.text.lines().count(),input.lines().count());
+        assert!(!result.text.contains('\x1a'));
+        assert_eq!(fix_markdown(&result.text).text,result.text);
+        assert_eq!(result.stats["bold"],1);
+        assert!(result.fixes.iter().any(|message|message.contains("第 9 行")));
+    }
+    #[test]
+    fn citation_literals_in_tables_and_multiline_clusters_do_not_disable_other_repairs() {
+        let input="| Source |\n|---|\n| [cf. __literal @a] |\n\n[see __prefix @b, p. 4;\n @c]\n\n- **unfinished\n";
+        let result=fix_markdown(input);
+        for unchanged in ["[cf. __literal @a]","[see __prefix @b, p. 4;\n @c]"] {assert!(result.text.contains(unchanged),"{}",result.text);}
+        assert!(result.text.contains("- **unfinished**"));assert!(!result.text.contains('\x1a'));
+        assert_eq!(result.text.lines().count(),input.lines().count());
     }
 }
 

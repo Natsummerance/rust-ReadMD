@@ -15,22 +15,31 @@ pub const SOURCES: &[&str] = &[
     "js/core/dialog.js",
     "js/core/settings.js",
     "js/core/modules.js",
+    "js/core/capabilities.js",
     "js/core/tabs.js",
     "js/core/history.js",
     "js/core/dragdrop.js",
     "js/reader/formula.js",
     "js/reader/fixes.js",
+    "js/reader/heading-identity.js",
     "js/reader/toc.js",
     "js/reader/search.js",
     "js/reader/folder.js",
+    "js/reader/publication.js",
     "js/reader/render.js",
     "js/editor/preview.js",
     "js/editor/image.js",
     "js/editor/md-transforms.js",
+    "js/editor/publication-metadata.js",
     "js/editor/editor.js",
+    "js/editor/formula-studio.js",
+    "js/editor/formula-inline.js",
+    "js/editor/formula-properties.js",
+    "js/reader/math-metadata.js",
     "js/features/ai.js",
     "js/features/document-history.js",
     "js/features/share.js",
+    "js/features/collaboration.js",
     "js/features/convert.js",
     "js/features/batch.js",
     "js/features/pet-batch.js",
@@ -40,6 +49,8 @@ pub const SOURCES: &[&str] = &[
     "js/features/web.js",
     "js/features/clipboard.js",
     "js/features/export.js",
+    "js/features/pdf.js",
+    "js/features/openapi.js",
     "js/features/updater.js",
     "js/features/graph.js",
     "js/shell/command-palette.js",
@@ -86,7 +97,12 @@ pub fn bundle(root: &Path, check: bool) -> Result<bool, String> {
         println!("[FAIL] assets/readmd.boot.js is stale; run `cargo xtask bundle-boot`");
         return Ok(false);
     }
-    fs::write(&out, &body).map_err(|e| format!("write {}: {e}", out.display()))?;
+    // WebView2 may memory-map the previous bundle. Stage and replace it instead
+    // of truncating a live mapped file; failure preserves the working bundle.
+    use std::io::Write;
+    let mut staged=tempfile::Builder::new().prefix(".readmd-boot-").tempfile_in(out.parent().unwrap()).map_err(|e|e.to_string())?;
+    staged.write_all(&body).and_then(|_|staged.as_file().sync_all()).map_err(|e|e.to_string())?;
+    staged.persist(&out).map_err(|e|format!("replace {}: {}",out.display(),e.error))?;
     println!("[SYNC] Rebundled assets/readmd.boot.js ({} bytes)", body.len());
     Ok(true)
 }

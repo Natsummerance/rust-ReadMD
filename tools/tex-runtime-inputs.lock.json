@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "id": "latex",
+  "version": "2026.10-r1",
+  "platform": "windows-x64",
+  "archive": {
+    "name": "TinyTeX-v2026.10.zip",
+    "url": "https://github.com/rstudio/tinytex-releases/releases/download/v2026.10/TinyTeX-v2026.10.zip",
+    "size": 247389422,
+    "sha256": "dc1d6e63b21af62130ede1dcc4113bffdc184544690a23e3f489d75340f4ff61"
+  },
+  "source": "https://github.com/rstudio/tinytex-releases/releases/tag/v2026.10",
+  "review": {
+    "distribution": "TeX Live 2026 through official TinyTeX; upstream byte digest pinned",
+    "redistributionApproved": false,
+    "remaining": [
+      "Component licences, notices and matching source obligations",
+      "Chinese publication packages and their complete offline dependencies",
+      "Managed pack installation and repair",
+      "Native portable compile and font coverage evidence"
+    ]
+  }
+}

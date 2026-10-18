@@ -35,7 +35,7 @@
 - [GitHub repository](https://github.com/Natsummerance/rust-ReadMD): MIT-licensed source code, releases, checksums, issues, and platform download assets.
 
 ## Key Facts
-- Current candidate version: V0.0.4 (formal release pending evidence)
+- Published stable version: V0.0.4; candidate V0.0.5 is not yet published
 - License: MIT
 - Languages: 46 interface languages, including LTR and RTL layouts
 - Core model: local-first processing; no cloud account required for core document work
@@ -43,3 +43,5 @@
 - Formats converted to Markdown: DOCX, PPTX, XLSX, PDF, HTML, LaTeX
 
 - [ReadMD in VS Code and MCP](https://rust.readmd.asia/integrations/): Local engine integrations and V0.0.5 preview.
+
+- [AI autocomplete in V0.0.5](https://rust.readmd.asia/ai-autocomplete/): Suggestions stream beside your cursor. Tab accepts the visible words; Esc dismisses, and undo restores your draft.

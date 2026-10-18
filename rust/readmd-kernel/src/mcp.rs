@@ -31,6 +31,7 @@ const MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
 
 /// Tools that write files, touch the network or run code.
 const CONFIRM_REQUIRED: &[&str] = &[
+    "readmd_pdf_document",
     "readmd_web_to_markdown",
     "readmd_export_document",
     "readmd_export_presentation",
@@ -68,6 +69,21 @@ fn schema(props: Value, required: &[&str]) -> Value {
     json!({ "type": "object", "properties": props, "required": required, "additionalProperties": false })
 }
 
+fn math_input_schema() -> Value {
+    let mut props=json!({"operation":{"type":"string","enum":["parse","patch","serialize","migrate","schema"]},
+        "source":{"type":"string"},"content":{"type":"string"},
+        "dialect":{"type":"string","enum":["dsl","latex","omml","mathml","unicodemath"]},
+        "display":{"type":"boolean"},"expected_revision":{"type":"string"},"patch":{"type":"object"},
+        "target":{"type":"string"},"latex":{"type":"string"},"id":{"type":"string"}});
+    props["font_size"]=json!({"type":"number","minimum":4,"maximum":512,
+        "description":"Formula font size in physical points; defaults to 12."});
+    props["layout_width"]=json!({"type":"number","minimum":1,"maximum":20000,
+        "description":"Available content width in physical points. Omit for intrinsic layout."});
+    props["metadata"]=json!({"type":"string",
+        "description":"Optional legacy math metadata for read-only identity and stale-state inspection."});
+    schema(props,&["operation"])
+}
+
 fn confirm_prop() -> Value {
     json!({ "type": "boolean", "const": true, "description": "Explicit confirmation for this side effect" })
 }
@@ -76,8 +92,33 @@ fn overwrite_prop() -> Value {
     json!({ "type": "boolean", "default": false, "description": "Replace the target if it already exists" })
 }
 
+fn pdf_document_schema()->Value{
+    let mut props=json!({"action":{"type":"string","enum":["probe","open","render","edit","undo","redo","save","close","drafts","resume","history","restore_history"]},"path":{"type":"string"},"session":{"type":"string"},"revision":{"type":"integer"},"page":{"type":"integer"},"width":{"type":"integer"},"operation":{"type":"object"},"draft":{"type":"string"}});
+    props.as_object_mut().unwrap().extend(json!({"checkpoint":{"type":"string"},"expected_source_revision":{"type":"string"},"password":{"type":"string"},"allow_signatures":{"type":"boolean"},"discard":{"type":"boolean"},"confirm":confirm_prop()}).as_object().unwrap().clone());
+    schema(props,&["action","confirm"])
+}
 pub fn tools() -> Value {
+    // Keep nested option schemas outside the large tool-list macro.
+    let epub_navigation_schema=json!({"anyOf":[crate::publication_navigation::request_schema(),{"type":"null"}]});
+    let epub_export_options=json!({"type":"object",
+        "description":"The same publication metadata, book layout and citation overrides as the desktop export panel.",
+        "properties":{"epub":{"type":"object","properties":{"navigation":epub_navigation_schema}}}});
+
     let mut list = json!([
+        { "name":"readmd_publication_metadata", "description":"Read structured publication metadata or plan a revision-checked, source-preserving metadata edit and inverse. Authors, institutions, funding and book data share the desktop/export model. Never writes files.",
+          "inputSchema":crate::publication_metadata::request_schema() },
+        { "name":"readmd_publication_blocks", "description":"List exact UTF-16 publication block ranges or return a revision-checked local-formatting transaction and its inverse. Readable Markdown metadata supports Word, Typst PDF and EPUB. Never writes files; unsupported targets and properties are rejected.",
+          "inputSchema":schema(json!({"action":{"type":"string","enum":["list","apply"]},"content":{"type":"string"},"base_revision":{"type":"string"},"id":{"type":"string"},"patch":{"type":"object"}}), &["content"]) },
+        { "name":"readmd_openapi_document", "description":"Generate or update a provenance-tracked Markdown region from local OpenAPI 3.0/3.1 JSON or YAML. Returns a revision-checked transaction, operation changes, source maps and unresolved-reference diagnostics. Preserves surrounding prose and refuses to overwrite manual edits. Never writes files or fetches references.",
+          "inputSchema":schema(json!({"source":{"type":"string"},"source_name":{"type":"string"},"source_id":{"type":"string"},"file_path":{"type":"string"},"content":{"type":"string"},"base_revision":{"type":"string"},"expected_source_revision":{"type":"string"},"locale":{"type":"string"}}), &["content","base_revision"]) },
+        { "name":"readmd_pdf_document", "description":"Use the desktop PDF object editor and managed offline PDFium worker. Open/render/edit/undo/redo/save/recovery share revision-guarded drafts. Only save modifies the original PDF. Requires the matching installed capability pack and explicit confirmation; never returns passwords.",
+          "inputSchema":pdf_document_schema() },
+        { "name":"readmd_academic_document", "description":"Prepare Markdown citations and a bibliography with the shared offline CSL processor. bibliography/csl resources must stay under baseDir. Returns an ephemeral publication view and diagnostics; never writes source files.",
+          "inputSchema":schema(json!({"content":{"type":"string"},"baseDir":{"type":"string"},"options":{"type":"object","description":"Publication metadata overrides; meta.language controls CSL localization independently of the UI language."}}), &["content","baseDir"]) },
+        { "name":"readmd_content_transaction", "description":"Apply revision-checked, nonoverlapping UTF-16 edits in memory. Returns new content and an inverse transaction; does not write a file.",
+          "inputSchema":schema(json!({"content":{"type":"string"},"transaction":{"type":"object"}}), &["content","transaction"]) },
+        { "name":"readmd_math", "description":"Use the desktop's mathematical model to parse, patch, serialize or plan migration to readable DSL. Patches require expected_revision; migration plans never write files. Unknown macros and invalid properties are diagnosed.",
+          "inputSchema":math_input_schema() },
         { "name": "readmd_fix_markdown",
           "description": "Diagnose and repair Markdown syntax problems (broken formulas, misaligned tables, unclosed code fences, CJK/Latin spacing and punctuation).",
           "inputSchema": schema(json!({ "content": { "type": "string", "description": "Markdown to repair" } }), &["content"]) },
@@ -88,7 +129,7 @@ pub fn tools() -> Value {
           "description": "Fetch an http(s) URL and extract its main content as clean Markdown.",
           "inputSchema": schema(json!({ "url": { "type": "string" }, "confirm": confirm_prop() }), &["url", "confirm"]) },
         { "name": "readmd_ocr_to_markdown",
-          "description": "Recognise text in a local image or scanned PDF with the system OCR engine and return Markdown.",
+          "description": "Read text from a local image or scanned PDF with ReadMD's managed offline OCR engine and model pack. Never searches for host OCR or requires Office.",
           "inputSchema": schema(json!({ "file_path": { "type": "string", "description": "Absolute path of the image or PDF" } }), &["file_path"]) },
         { "name": "readmd_export_document",
           "description": "Export Markdown to PDF (vector formulas, embedded fonts), Word .docx (native equations), HTML or LaTeX.",
@@ -97,6 +138,7 @@ pub fn tools() -> Value {
               "output_path": { "type": "string", "description": "Absolute target path; the extension must match output_format" },
               "output_format": { "type": "string", "enum": ["pdf", "docx", "html", "tex"] },
               "style_preset": { "type": "string", "description": "Style preset (default minimal)" },
+              "options": { "type":"object", "description":"Override desktop export parameters; pdf.engine supports rust, typst, xelatex or pdflatex. Heavy engines use application-locked capability packs, with no host PATH or Office requirement. Unavailable packs return an explicit error." },
               "title": { "type": "string" },
               "base_dir": { "type": "string", "description": "Directory relative images resolve against (default: the output directory)" },
               "overwrite": overwrite_prop(),
@@ -130,6 +172,9 @@ pub fn tools() -> Value {
         { "name": "readmd_ai_models",
           "description": "Discover models from a saved ReadMD connection. Uses the credential vault; never accepts or returns raw API keys.",
           "inputSchema": schema(json!({ "provider": { "type": "string" }, "credential_id": { "type": "string" }, "confirm": confirm_prop() }), &["provider", "confirm"]) },
+        { "name": "readmd_ai_complete",
+          "description": "Return a bounded Markdown insertion at the cursor using the saved AI connection. Ephemeral: no file write or conversation history. Caller must discard obsolete contexts.",
+          "inputSchema": schema(json!({"prefix":{"type":"string"},"suffix":{"type":"string"},"provider":{"type":"string"},"model":{"type":"string"},"protocol":{"type":"string","enum":["chat","qwen","starcoder","deepseek"]}}), &["prefix"]) },
         { "name": "readmd_ai_chat",
           "description": "Run one AI document task through a ReadMD Skill using a saved credential (credential_id, never a raw key).",
           "inputSchema": schema(json!({
@@ -159,6 +204,7 @@ pub fn tools() -> Value {
           "inputSchema": schema(json!({
               "markdown_content": { "type": "string" }, "output_path": { "type": "string" }, "title": { "type": "string" },
               "author": { "type": "string" }, "language": { "type": "string" }, "base_dir": { "type": "string" },
+              "options": epub_export_options,
               "overwrite": overwrite_prop(), "confirm": confirm_prop() }), &["markdown_content", "output_path", "confirm"]) },
         { "name": "readmd_run_code_chunk",
           "description": "Run a code block (python, javascript, bash, powershell, r, rust …) with the locally installed runtime and capture its output.",
@@ -174,6 +220,12 @@ pub fn tools() -> Value {
         { "name": "readmd_search_workspace",
           "description": "Read-only, bounded search of current local Markdown files. Combine quoted phrases, path:, title:, tag:, and -exclusions. Ignores hidden and generated directories; reports skipped/truncated results.",
           "inputSchema": schema(json!({"workspace_root":{"type":"string"},"query":{"type":"string"},"limit":{"type":"integer","default":20}}), &["workspace_root","query"]) },
+        { "name": "readmd_suggest_links",
+          "description": "Read-only local file/image, heading, footnote and bibliography-key suggestions. Uses the supplied unsaved draft for current-document headings. Bounded workspace scan; never fetches URLs.",
+          "inputSchema": schema(json!({"workspace_root":{"type":"string"},"file_path":{"type":"string"},"content":{"type":"string"},"kind":{"type":"string","enum":["wiki","link","image","footnote","citation"]},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":60,"default":40}}), &["workspace_root","kind","query"]) },
+        { "name": "readmd_resolve_link",
+          "description": "Resolve a local wiki note and optional heading to its real path and UTF-16 source location. Rejects ambiguous note names and paths outside the workspace. Never creates a missing note.",
+          "inputSchema": schema(json!({"workspace_root":{"type":"string"},"file_path":{"type":"string"},"target":{"type":"string"}}), &["workspace_root","target"]) },
         { "name": "readmd_read_document",
           "description": "Read at most 1000 lines of a local text document with its byte SHA-256 revision, encoding and EOL. Limited to 2 MiB; use the revision for conflict-protected edits.",
           "inputSchema": schema(json!({"file_path":{"type":"string"},"start_line":{"type":"integer","default":1},"end_line":{"type":"integer","default":1000}}), &["file_path"]) },
@@ -193,8 +245,10 @@ pub fn tools() -> Value {
         let name = tool["name"].as_str().unwrap_or("");
         let read_only = matches!(name, "readmd_fix_markdown" | "readmd_generate_toc" | "readmd_latex_to_md" | "readmd_md_to_latex" | "readmd_latex_to_omml" | "readmd_parse_bibtex" | "readmd_process_imports" | "readmd_ai_assistant" | "readmd_ai_providers" | "readmd_export_presets" | "readmd_pdf_audit");
         let read_only = read_only || matches!(name, "readmd_analyze_document" | "readmd_search_workspace" | "readmd_read_document" | "readmd_document_history");
-        let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_models" | "readmd_run_code_chunk");
-        tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only, "openWorldHint": open_world });
+        let read_only = read_only || matches!(name, "readmd_ai_complete" | "readmd_suggest_links" | "readmd_resolve_link");
+        let read_only = read_only || matches!(name, "readmd_math" | "readmd_content_transaction" | "readmd_academic_document" | "readmd_openapi_document" | "readmd_publication_blocks" | "readmd_publication_metadata");
+        let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_complete" | "readmd_ai_models" | "readmd_run_code_chunk");
+        tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only && name != "readmd_ai_complete", "openWorldHint": open_world });
     }
     list
 }
@@ -397,22 +451,8 @@ fn call_tool_cancellable(app: &Arc<App>, name: &str, args: &Value, cancel: Optio
 fn validate_tool_arguments(name: &str, args: &Value) -> Result<(), &'static str> {
     let catalog = tools();
     let tool = catalog.as_array().unwrap().iter().find(|t| t["name"] == name).ok_or("unknown_tool")?;
-    let obj = args.as_object().ok_or("invalid_arguments")?;
     let schema = &tool["inputSchema"];
-    for required in schema["required"].as_array().unwrap() {
-        if !obj.contains_key(required.as_str().unwrap()) { return Err("invalid_arguments"); }
-    }
-    for (key, value) in obj {
-        let Some(prop) = schema["properties"].get(key) else { return Err("invalid_arguments"); };
-        let valid = match prop["type"].as_str().unwrap_or("") {
-            "string" => value.is_string(), "boolean" => value.is_boolean(),
-            "integer" => value.is_i64() || value.is_u64(), _ => false,
-        };
-        if !valid || prop.get("enum").and_then(Value::as_array).is_some_and(|allowed| !allowed.contains(value)) {
-            return Err("invalid_arguments");
-        }
-        if prop.get("const").is_some_and(|expected| expected != value) { return Err("invalid_arguments"); }
-    }
+    if !matches_tool_schema(args,schema,0){return Err("invalid_arguments");}
     if name == "readmd_generate_toc" {
         let from = arg_i64(args, "depth_from", 1);
         let to = arg_i64(args, "depth_to", 6);
@@ -421,8 +461,73 @@ fn validate_tool_arguments(name: &str, args: &Value) -> Result<(), &'static str>
     Ok(())
 }
 
+fn matches_tool_schema(value:&Value,schema:&Value,depth:usize)->bool{
+    if depth>32||schema.get("const").is_some_and(|expected|expected!=value)||schema.get("enum").and_then(Value::as_array).is_some_and(|allowed|!allowed.contains(value)){return false;}
+    if let Some(allowed)=schema["type"].as_array(){
+        return allowed.iter().any(|kind|{
+            if !kind.is_string(){return false;}
+            let mut branch=schema.clone();branch["type"]=kind.clone();
+            matches_tool_schema(value,&branch,depth+1)
+        });
+    }
+    if schema["anyOf"].as_array().is_some_and(|branches|!branches.iter().any(|branch|matches_tool_schema(value,branch,depth+1))){return false;}
+    if schema["allOf"].as_array().is_some_and(|branches|!branches.iter().all(|branch|matches_tool_schema(value,branch,depth+1))){return false;}
+    if schema["oneOf"].as_array().is_some_and(|branches|branches.iter().filter(|branch|matches_tool_schema(value,branch,depth+1)).count()!=1){return false;}
+    match schema["type"].as_str().unwrap_or(""){
+        "string"=>value.as_str().is_some_and(|s|schema["minLength"].as_u64().is_none_or(|n|s.chars().count() as u64>=n)&&schema["maxLength"].as_u64().is_none_or(|n|s.chars().count() as u64<=n)),
+        "boolean"=>value.is_boolean(),
+        "integer"|"number"=>{
+            if schema["type"]=="integer"&&!value.is_i64()&&!value.is_u64(){return false;}
+            value.as_f64().is_some_and(|n|schema["minimum"].as_f64().is_none_or(|min|n>=min)&&schema["maximum"].as_f64().is_none_or(|max|n<=max))
+        },
+        "object"=>value.as_object().is_some_and(|object|{
+            if schema["required"].as_array().is_some_and(|required|required.iter().any(|key|key.as_str().is_none_or(|key|!object.contains_key(key)))){return false;}
+            object.iter().all(|(key,value)|match schema["properties"].get(key){
+                Some(prop)=>matches_tool_schema(value,prop,depth+1),
+                None=>match schema.get("additionalProperties"){Some(Value::Bool(false))=>false,Some(prop)if prop.is_object()=>matches_tool_schema(value,prop,depth+1),_=>true},
+            })
+        }),
+        "array"=>value.as_array().is_some_and(|array|{
+            schema["minItems"].as_u64().is_none_or(|n|array.len() as u64>=n)&&schema["maxItems"].as_u64().is_none_or(|n|array.len() as u64<=n)&&schema.get("items").is_none_or(|items|array.iter().all(|v|matches_tool_schema(v,items,depth+1)))&&(!schema["uniqueItems"].as_bool().unwrap_or(false)||array.iter().enumerate().all(|(i,item)|!array[..i].contains(item)))
+        }),
+        "null"=>value.is_null(),
+        ""=>schema.get("type").is_none()&&schema.is_object(),
+        _=>false,
+    }
+}
+
 fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
+    crate::ocr_portable::with_paths(&app.paths,||dispatch_tool_with_profile(app,name,args,cancel))
+}
+fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
     match name {
+        "readmd_publication_metadata" => {
+            let (status,body)=server::call_in_process(app,"POST","/api/publication/metadata",Some(args));
+            if (200..300).contains(&status)&&body["ok"]!=false {Ok(json_result(&body))}
+            else {Err(metadata_error_result(body))}
+        },
+        "readmd_publication_blocks" => Ok(json_result(&api(app,"POST","/api/publication/blocks",Some(args))?)),
+        "readmd_pdf_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/pdf/workspace",Some(args))?))),
+        "readmd_academic_document" => Ok(json_result(&api(app,"POST","/api/academic/document",Some(args))?)),
+        "readmd_openapi_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/developer/openapi",Some(args))?))),
+        "readmd_content_transaction" => Ok(json_result(&api(app,"POST","/api/documents/transaction",Some(args))?)),
+        "readmd_math" => {
+            let operation=args["operation"].as_str().unwrap_or("parse");
+            let target=match operation {"parse"=>"/api/math/parse","patch"=>"/api/math/patch","serialize"=>"/api/math/serialize","migrate"=>"/api/math/migrate","schema"=>"/api/math/schema",_=>return Err(error_result("invalid_arguments",None))};
+            Ok(json_result(&api(app,if operation=="schema"{"GET"}else{"POST"},target,if operation=="schema"{None}else{Some(args)})?))
+        },
+        "readmd_suggest_links" | "readmd_resolve_link" => {
+            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) { return Err(error_result("cancelled", None)); }
+            let root=arg_str(args,"workspace_root",""); let file=arg_str(args,"file_path","");
+            let file=(!file.is_empty()).then(||Path::new(&file));
+            let result=if name == "readmd_resolve_link" {
+                crate::document_intelligence::resolve_knowledge_link(Path::new(&root),file,&arg_str(args,"target",""))
+            } else {
+                crate::document_intelligence::suggest_knowledge_links(Path::new(&root),file,&arg_str(args,"content",""),&arg_str(args,"kind",""),&arg_str(args,"query",""),arg_i64(args,"limit",40).try_into().unwrap_or(0))
+            };
+            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) { return Err(error_result("cancelled", None)); }
+            result.map(|v|json_result(&v)).map_err(|code|error_result(&code,None))
+        }
         "readmd_analyze_document" => {
             let file = arg_str(args, "file_path", ""); let root = arg_str(args, "workspace_root", "");
             if (!file.is_empty() && !Path::new(&file).is_absolute()) || (!root.is_empty() && !Path::new(&root).is_absolute()) {
@@ -471,7 +576,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
         }
         "readmd_convert_to_markdown" => {
             let path = existing_file(&arg_str(args, "file_path", ""))?;
-            let t = crate::convert::convert_triple(&path.to_string_lossy(), true);
+            let t = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &path.to_string_lossy(), true, None);
             if let Some(err) = t.error {
                 return Err(error_result("conversion_failed", Some(&err)));
             }
@@ -502,7 +607,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
         }
         "readmd_ocr_to_markdown" => {
             let path = existing_file(&arg_str(args, "file_path", ""))?;
-            let text = crate::ocr::ocr_any(&path.to_string_lossy()).map_err(|e| {
+            let text = crate::cancel::with_external(cancel,||crate::ocr::ocr_any(&path.to_string_lossy())).map_err(|e| {
                 let code = serde_json::to_value(&e.error_code).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "ocr_failed".into());
                 error_result(&code, Some(&e.code))
             })?;
@@ -541,10 +646,10 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
             };
             Ok(json_result(&json!({ "ok": true, "count": entries.len(), "entries": entries })))
         }
-        "readmd_latex_to_omml" => Ok(text_result(crate::latex2omml::latex_to_omml(
+        "readmd_latex_to_omml" => crate::latex2omml::latex_to_native_omml(
             &arg_str(args, "latex_formula", ""),
             arg_bool(args, "display", false),
-        ))),
+        ).map(|xml|text_result(xml)).map_err(|code|error_result(code,None)),
         "readmd_ai_assistant" => {
             let wf = arg_str(args, "workflow_id", "");
             let requested = [arg_str(args, "skill_id", ""), wf.clone()].into_iter().find(|s| !s.trim().is_empty()).unwrap_or_else(|| "readmd-quick-read".into());
@@ -561,6 +666,7 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
         "readmd_export_presets" => Ok(json_result(&api(app, "GET", "/api/export/presets", None)?)),
         "readmd_ai_models" => Ok(json_result(&api(app, "POST", "/api/ai/models", Some(args))?)),
         "readmd_render_diagram" => Ok(json_result(&api(app, "POST", "/api/diagram/render", Some(&json!({ "engine": args["engine"], "code": args["code"], "allow_remote": false })))?)),
+        "readmd_ai_complete" => Ok(json_result(&api(app, "POST", "/api/ai/complete", Some(args))?)),
         "readmd_ai_chat" => {
             if args.get("api_key").is_some() || args.get("key").is_some() {
                 return Err(error_result("raw_key_rejected", Some("AI Chat 只接受 credential_id，不接受 API Key")));
@@ -629,17 +735,20 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
             let overwrite = arg_bool(args, "overwrite", false);
             let out = output_target(&arg_str(args, "output_path", ""), ".epub", overwrite).map_err(|c| error_result(c, None))?;
             let base = arg_str(args, "base_dir", &out.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
+            let content=arg_str(args,"markdown_content","");
+            let options=args.get("options").unwrap_or(&Value::Null);
+            let title=arg_str(args,"title","ReadMD 电子书");
             let (bytes, warns) = crate::mdexport::epub_build_bytes(
-                &json!(arg_str(args, "markdown_content", "")),
+                &json!(content),
                 &base,
-                &json!({}),
-                &arg_str(args, "title", "ReadMD 电子书"),
+                options,
+                &title,
                 &arg_str(args, "author", "ReadMD Author"),
                 &arg_str(args, "language", "zh-CN"),
                 &uuid::Uuid::new_v4().to_string(),
                 &crate::mdexport::now_iso_z(),
             )
-            .map_err(|e| error_result("export_failed", Some(&e)))?;
+            .map_err(|e|crate::publication_metadata_formats::error_body(&content,options,&title,"epub",&e).map(metadata_error_result).unwrap_or_else(||export_error(Some(&e))))?;
             check_cancel(cancel)?;
             write_output(&out, &bytes, overwrite).map_err(|c| error_result(c, None))?;
             Ok(json_result(&json!({ "ok": true, "output_path": out, "file_size": bytes.len(), "warnings": warns })))
@@ -670,6 +779,19 @@ fn dispatch_tool(app: &Arc<App>, name: &str, args: &Value, cancel: Option<&Atomi
     }
 }
 
+fn export_error(message:Option<&str>)->Value {
+    let Some(message)=message else{return error_result("export_failed",None)};
+    let body=crate::latex_compile::error_body(message);
+    if matches!(body["error_code"].as_str(),Some(crate::api_codes::PDF_MISSING_GLYPH | crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY))
+        &&body["details"].is_object(){return metadata_error_result(body);}
+    error_result(body["error_code"].as_str().unwrap_or("export_failed"),Some(message))
+}
+fn metadata_error_result(body: Value) -> Value {
+    let mut result=json_result(&body);
+    result["isError"]=json!(true);
+    result
+}
+
 fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) -> Result<Value, Value> {
     let fmt = arg_str(args, "output_format", "pdf").to_lowercase();
     if !matches!(fmt.as_str(), "pdf" | "docx" | "html" | "tex") {
@@ -680,26 +802,38 @@ fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) ->
     let base = arg_str(args, "base_dir", &out.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
     let preset = arg_str(args, "style_preset", "minimal");
     let catalog = api(app, "GET", "/api/export/presets", None)?;
-    let options = catalog["presets"].get(&preset).or_else(|| catalog["custom"].get(&preset))
-        .map(crate::export_styles::sanitize).ok_or_else(|| error_result("unknown_style_preset", None))?;
+    let preset_options = catalog["presets"].get(&preset).or_else(|| catalog["custom"].get(&preset))
+        .ok_or_else(|| error_result("unknown_style_preset", None))?;
+    let inherited = crate::publication_typography::ResolvedOptions::from_request(preset_options).map_err(|code| export_error(Some(code)))?;
+    let mut options=crate::export_styles::sanitize(preset_options);
+    if let Some(meta)=preset_options.get("meta"){options["meta"]=meta.clone();}
+    if args.get("options").is_some_and(|v|!v.is_object()){return Err(error_result("invalid_options",None));}
+    let resolved = inherited.with_completed_values(options).map_err(|code| export_error(Some(code)))?
+        .merge(args.get("options").unwrap_or(&json!({})))
+        .map_err(|error|metadata_error_result(error.response_body()))?;
+    let options = resolved.values();
     let title = arg_str(args, "title", "ReadMD Document");
+    let content=arg_str(args,"markdown_content","");
+    crate::publication_typography::validate_export(&fmt, &content, &options).map_err(|code| export_error(Some(code)))?;
     // TeX has a companion assets directory and commits when rendering begins.
     // Single-file formats are rendered in isolation before atomic publication.
     check_cancel(cancel)?;
     let stage = if fmt == "tex" { None } else {
-        Some(tempfile::Builder::new().prefix(".readmd-export-").tempdir_in(out.parent().unwrap())
+        Some(crate::task_workspace::Workspace::create(&app.paths.data_dir, "mcp-export")
             .map_err(|_| error_result("write_failed", None))?)
     };
     let write_to = stage.as_ref().map(|dir| dir.path().join(out.file_name().unwrap())).unwrap_or_else(|| out.clone());
     let out_s = write_to.to_string_lossy().into_owned();
-    let res = crate::mdexport::export_document(&fmt, &arg_str(args, "markdown_content", ""), &base, &out_s, &options, &title, &app.paths.assets_dir)
-        .map_err(|e| error_result("export_failed", Some(&e)))?;
+    let render = || crate::cancel::with_external(cancel,||crate::mdexport::export_document_with_resolved_options(&fmt, &content, &base, &out_s, &resolved, &title, &app.paths.assets_dir,&app.paths.data_dir));
+    let res = stage.as_ref().map_or_else(render, |stage| stage.scope(render))
+        .map_err(|e|crate::publication_metadata_formats::error_body(&content,&options,&title,&fmt,&e).map(metadata_error_result).unwrap_or_else(||export_error(Some(&e))))?;
     if !res.ok {
-        return Err(error_result("export_failed", res.error.as_deref()));
+        return Err(export_error(res.error.as_deref()));
     }
     if stage.is_some() {
         let bytes = std::fs::read(&write_to).map_err(|_| error_result("export_failed", None))?;
         check_cancel(cancel)?;
+        stage.as_ref().unwrap().finish().map_err(|_|error_result("write_failed",None))?;
         write_output(&out, &bytes, overwrite).map_err(|code| error_result(code, None))?;
     }
     let warns = res.warns.unwrap_or_default();
@@ -960,6 +1094,85 @@ pub fn run_stdio(app: Arc<App>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn managed_export_keeps_retryable_busy_code_and_original_output() {
+        let root=tempfile::tempdir().unwrap();let data=root.path().join("profile");
+        let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&data,root.path(),&root.path().join("assets"))).unwrap());
+        let output=root.path().join("Protected.pdf");std::fs::write(&output,b"KEEP ORIGINAL").unwrap();
+        static ACTIVE:AtomicUsize=AtomicUsize::new(0);
+        let _first=crate::capability_process::reserve_worker(&data,"typst",&ACTIVE).unwrap();
+        let _second=crate::capability_process::reserve_worker(&data,"typst",&ACTIVE).unwrap();
+        let result=call_tool(&app,"readmd_export_document",&json!({"markdown_content":"```readmd-math v999\nx\n```","output_path":output,"output_format":"pdf","options":{"pdf":{"engine":"typst"}},"overwrite":true,"confirm":true}));
+        assert_eq!(result["isError"],true);assert_eq!(result["structuredContent"]["error_code"],"typst_busy");
+        assert_eq!(std::fs::read(&output).unwrap(),b"KEEP ORIGINAL");
+        assert!(!std::fs::read_dir(root.path()).unwrap().any(|e|e.unwrap().file_name().to_string_lossy().starts_with(".readmd-export-")));
+        assert_eq!(export_error(Some("cancelled"))["structuredContent"]["error_code"],"cancelled");
+        assert_eq!(export_error(Some("typst_timeout"))["structuredContent"]["error_code"],"typst_timeout");
+        assert_eq!(export_error(Some("unrecognized render failure"))["structuredContent"]["error_code"],"export_failed");
+    }
+
+    #[test]
+    fn math_layout_parameters_share_desktop_bounds_and_preserve_legacy_calls() {
+        assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","dialect":"latex"})).is_ok());
+        for (size,width) in [(4,1),(12,96),(512,20000)] {
+            assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","font_size":size,"layout_width":width})).is_ok());
+        }
+        for value in [json!(0),json!(513),json!("12"),json!(null)] {
+            assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","font_size":value})).is_err());
+        }
+        for value in [json!(0),json!(20001),json!("96"),json!(null)] {
+            assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","layout_width":value})).is_err());
+        }
+        assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","metadata":"old source-associated payload"})).is_ok());
+        assert!(validate_tool_arguments("readmd_math", &json!({"operation":"parse","source":"x","metadata":{}})).is_err());
+    }
+    #[test]
+    fn structured_parameters_validate_against_the_declared_tool_schema(){
+        assert!(validate_tool_arguments("readmd_export_document",&json!({"markdown_content":"# test","output_path":"fixture.pdf","output_format":"pdf","options":{"pdf":{"engine":"xelatex"}},"confirm":true})).is_ok());
+        assert!(validate_tool_arguments("readmd_pdf_document",&json!({"action":"edit","session":"id","revision":1,"operation":{"kind":"text","text":"hello"},"confirm":true})).is_ok());
+        assert!(validate_tool_arguments("readmd_math",&json!({"operation":"patch","patch":{"op":"replace","node":"r1"}})).is_ok());
+        assert!(validate_tool_arguments("readmd_pdf_document",&json!({"action":"edit","operation":[],"confirm":true})).is_err());
+        assert!(validate_tool_arguments("readmd_pdf_document",&json!({"action":"edit","unexpected":true,"confirm":true})).is_err());
+        assert!(validate_tool_arguments("readmd_pdf_document",&json!({"action":"edit","confirm":"true"})).is_err());
+        assert!(validate_tool_arguments("readmd_pdf_document",&json!({"action":"unknown","confirm":true})).is_err());
+        let schema=json!({"type":"object","properties":{"items":{"type":"array","items":{"type":"integer","minimum":1},"maxItems":2}},"required":["items"],"additionalProperties":false});
+        assert!(matches_tool_schema(&json!({"items":[1,2]}),&schema,0));assert!(!matches_tool_schema(&json!({"items":[0]}),&schema,0));assert!(!matches_tool_schema(&json!({"items":[1,2,3]}),&schema,0));
+    }
+    #[test]
+    fn every_advertised_tool_has_a_callable_object_contract() {
+        for tool in tools().as_array().unwrap() {
+            assert_eq!(tool["inputSchema"]["type"],"object","{} exposes a model descriptor instead of a request schema",tool["name"]);
+        }
+        for args in [
+            json!({"content":"Body","options":{"meta":{"subtitle":null,"authors":null,"series":{"title":"Series","number":null}}}}),
+            json!({"action":"patch","content":"Body","base_revision":"0".repeat(64),"patch":{"subtitle":null,"bibliography":["references.json"]}}),
+        ] {assert!(validate_tool_arguments("readmd_publication_metadata",&args).is_ok(),"{args}");}
+        for args in [json!({"content":false}),json!({"content":"Body","unexpected":true}),json!({"content":"Body","patch":{"keywords":[false]}}),json!({"content":"Body","options":{"meta":{"clear":["subtitle","subtitle"]}}})] {
+            assert_eq!(validate_tool_arguments("readmd_publication_metadata",&args),Err("invalid_arguments"),"{args}");
+        }
+    }
+    #[test]
+    fn metadata_tool_dispatches_the_real_contract_and_keeps_inverse_and_error_ranges() {
+        let root=tempfile::tempdir().unwrap();let assets=root.path().join("assets");std::fs::create_dir(&assets).unwrap();
+        let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&root.path().join("profile"),root.path(),&assets)).unwrap());
+        let source="\u{feff}---\r\ntitle: Study\r\nauthors:\r\n  - id: ada\r\n    name: \"Ada, Example\" # keep this comment\r\nunknown: {value: preserved}\r\n---\r\nBody 😀 unchanged\r\n";
+        let read=call_tool(&app,"readmd_publication_metadata",&json!({"action":"get","content":source,"source_name":"Study.md"}));
+        assert_ne!(read["isError"],true,"{read}");let metadata=&read["structuredContent"];
+        assert_eq!(metadata["metadata"]["authors"][0]["name"],"Ada, Example");
+        let edited=call_tool(&app,"readmd_publication_metadata",&json!({"action":"patch","content":source,"base_revision":metadata["revision"],"patch":{"authors":[{"id":"ada","name":"Ada revised"}]}}));
+        assert_ne!(edited["isError"],true,"{edited}");let body=&edited["structuredContent"];
+        assert_eq!(body["content"],source.replace("\"Ada, Example\"","\"Ada revised\""));
+        assert_eq!(body["transaction"]["edits"].as_array().unwrap().len(),1);
+        let inverse=call_tool(&app,"readmd_content_transaction",&json!({"content":body["content"],"transaction":{"base_revision":body["revision"],"origin":"editor","edits":body["inverse"]}}));
+        assert_ne!(inverse["isError"],true,"{inverse}");assert_eq!(inverse["structuredContent"]["result"]["content"],source);
+        let stale=call_tool(&app,"readmd_publication_metadata",&json!({"action":"patch","content":body["content"],"base_revision":metadata["revision"],"patch":{"subtitle":"stale"}}));
+        assert_eq!(stale["isError"],true);assert_eq!(stale["structuredContent"]["error_code"],"transaction_conflict");
+        assert!(stale["structuredContent"]["path"].is_string());assert!(stale["structuredContent"]["from"].is_u64());
+        let invalid=source.replace("name: \"Ada, Example\" # keep this comment","name: \"Ada, Example\" # keep this comment\r\n    orcid: \"0000-0000-0000-0000\"");
+        let rejected=call_tool(&app,"readmd_publication_metadata",&json!({"content":invalid}));
+        assert_eq!(rejected["isError"],true);assert_eq!(rejected["structuredContent"]["error_code"],"publication_metadata_orcid");
+        assert_eq!(rejected["structuredContent"]["path"],"authors[0].orcid");assert!(rejected["structuredContent"]["to"].as_u64()>rejected["structuredContent"]["from"].as_u64());
+    }
     use super::*;
     use std::sync::mpsc;
 
@@ -1171,4 +1384,43 @@ fn read_message(input: &mut impl BufRead, limit: usize) -> std::io::Result<Optio
     }
     if oversized { return Ok(Some(Err(-32600))); }
     Ok(Some(String::from_utf8(bytes).map_err(|_| -32700)))
+}
+
+#[cfg(test)]
+mod p13_navigation_schema_tests {
+    use super::*;
+    fn args(navigation:Value)->Value {
+        json!({"markdown_content":"# Synthetic\n\nBODY","output_path":"Synthetic.epub",
+            "confirm":true,"options":{"epub":{"navigation":navigation}}})
+    }
+    #[test]
+    fn p13_mcp_navigation_null_inherits_and_field_false_or_empty_list_stay_valid() {
+        for navigation in [
+            Value::Null, json!({}),
+            json!({"landmarks":null,"pageList":null,"paginationSource":null,"labels":null}),
+            json!({"landmarks":false,"pageList":false,"paginationSource":false}),
+            json!({"landmarks":[]}),
+            json!({"paginationSource":{"description":"Synthetic printed edition"}}),
+            json!({"paginationSource":{"identifier":"0013","description":"Synthetic printed edition"}}),
+            json!({"landmarks":[{"type":"bodymatter","target":"@bodymatter"}],
+                "paginationSource":{"identifier":"0013"},"labels":{"pageList":"Pages"}}),
+        ] {
+            assert_eq!(validate_tool_arguments("readmd_export_epub",&args(navigation.clone())),Ok(()),"{navigation}");
+            assert!(crate::publication_navigation::validate_options(&json!({"epub":{"navigation":navigation}})).is_ok());
+        }
+    }
+    #[test]
+    fn p13_mcp_navigation_top_level_false_and_other_invalid_shapes_are_rejected() {
+        for navigation in [
+            json!(false),json!(true),json!([]),json!("auto"),
+            json!({"pageList":true}),json!({"landmarks":true}),
+            json!({"landmarks":[false]}),json!({"paginationSource":{}}),
+            json!({"paginationSource":{"identifier":false}}),
+            json!({"labels":{"landmarks":false}}),
+            json!({"pageBreakSource":"unsupported"}),
+        ] {
+            assert_eq!(validate_tool_arguments("readmd_export_epub",&args(navigation.clone())),Err("invalid_arguments"),"{navigation}");
+            assert!(crate::publication_navigation::validate_options(&json!({"epub":{"navigation":navigation}})).is_err());
+        }
+    }
 }

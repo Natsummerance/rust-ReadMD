@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 const DOC_A = 'C:/conv-test/a.docx';
@@ -6,8 +7,8 @@ const IMG_C = 'C:/conv-test/c.png';
 
 async function waitForApp(page) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openBatchModal === 'function');
-  await page.waitForFunction(() => window.i18n && window.i18n.dict && Object.keys(window.i18n.dict).length > 0);
+  await waitForPage(page, () => typeof openBatchModal === 'function');
+  await waitForPage(page, () => window.i18n && window.i18n.dict && Object.keys(window.i18n.dict).length > 0);
 }
 
 async function mockModulesReady(page) {

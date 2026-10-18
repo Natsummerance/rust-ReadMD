@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('real pet API persists controls and gallery selection', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof window.openPetSettings === 'function');
+  await waitForPage(page, () => typeof window.openPetSettings === 'function');
   expect((await page.evaluate(() => requestConfigurePet({ enabled: false, in_app: true, renderer: 'hermes-sprite', character: 'hermes' }))).ok).toBe(true);
   await page.evaluate(() => window.openPetSettings());
   await expect(page.locator('#pet-settings-modal')).toBeVisible();
@@ -17,7 +18,7 @@ test('real pet API persists controls and gallery selection', async ({ page }) =>
 
 test('unreachable pet API reports failure', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof window.requestConfigurePet === 'function');
+  await waitForPage(page, () => typeof window.requestConfigurePet === 'function');
   await page.route('**/api/pets/configure', route => route.abort());
   const result = await page.evaluate(() => window.requestConfigurePet({ enabled: true }));
   expect(result.ok).toBe(false);

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.5.0)
+project(ReadMDHarmony)
+add_library(readmd_kernel SHARED IMPORTED)
+set_target_properties(readmd_kernel PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/${OHOS_ARCH}/libreadmd_kernel.so")
+add_library(readmd_bridge SHARED readmd_bridge.cpp)
+target_compile_features(readmd_bridge PRIVATE cxx_std_17)
+target_link_libraries(readmd_bridge PUBLIC readmd_kernel libace_napi.z.so)

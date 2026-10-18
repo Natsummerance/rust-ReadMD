@@ -16,11 +16,19 @@ path = "src/lib.rs"
 name = "readmd"
 path = "src/main.rs"
 
+[[bin]]
+name = "readmd-pdf-worker"
+path = "src/bin/readmd-pdf-worker.rs"
+required-features = ["pdfium-worker"]
+
 [features]
 default = ["desktop"]
 # tao + wry window.  `--no-default-features` builds the same kernel as a
 # browser/headless server only.
 desktop = ["dep:tao", "dep:wry"]
+mobile-ffi = []
+# Loaded only by the optional capability worker, never by the default reader.
+pdfium-worker = ["dep:pdfium-render"]
 
 [dependencies]
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
@@ -45,8 +53,17 @@ time = { version = "=0.3.44", features = ["serde-human-readable"] }
 uuid = { version = "=1.18.0", features = ["v4", "serde"] }
 flate2 = "=1.1.0"
 base64 = "=0.22.1"
+# Shared, portable image decoding. Keep only document image formats; no AVIF,
+# EXR, Rayon, system codec DLLs or host image applications.
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "bmp", "gif", "tiff", "webp"] }
 ureq = { version = "=2.12.1", features = ["json"] }
 regex = "=1.11.1"
+quick-xml = "=0.42.0"
+# Pure Rust YAML 1.2 parser. Stream events are budgeted before building the
+# OpenAPI value tree; implicit network references and executable tags are not used.
+yaml-rust2 = { version = "=0.13.0", default-features = false }
+yrs = { version = "=0.28.0", features = ["sync", "small-client"] }
+hayagriva = { version = "=0.10.1", features = ["csl-json"] }
 # GB18030/GBK/Big5/Windows-1252 encoders for encoding-preserving saves; already
 # in Cargo.lock (lopdf dependency), so the offline build is unaffected.
 encoding_rs = "=0.8.41"
@@ -66,6 +83,7 @@ cbc = "=0.1.2"
 # TrueType parsing for PDF font subsetting and vector math; already in Cargo.lock
 # (pulled in by the webview stack), so the offline build is unaffected.
 ttf-parser = "=0.25.1"
+pdfium-render = { version = "=0.9.4", default-features = false, features = ["pdfium_7881"], optional = true }
 
 # Windows.Media.Ocr / Windows.Data.Pdf for native OCR; the same version wry
 # already pulls in, so Cargo.lock gains no new package.
@@ -80,6 +98,12 @@ windows = { version = "=0.62.2", features = [
     "Storage_Streams",
     "Data_Pdf",
     "Win32_System_WinRT",
+    "Win32_Security_Authorization",
+    "Win32_Security_Isolation",
+    "Win32_System_Threading",
+    "Win32_System_JobObjects",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
 ] }
 
 [dev-dependencies]

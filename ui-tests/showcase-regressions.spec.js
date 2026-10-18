@@ -1,9 +1,10 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs/promises');
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":false}' }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof readerPrepare === 'function' && window.ReadMDRecovery);
+  await waitForPage(page, () => typeof readerPrepare === 'function' && window.ReadMDRecovery);
 });
 async function open(page, name, content) {
   return page.evaluate(async ({name,content}) => {

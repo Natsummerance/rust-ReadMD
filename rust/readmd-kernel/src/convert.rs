@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
+mod docx_notes;
+
 // ============================================================================
 // Document Asset & OOXML Helpers (FID-1)
 // ============================================================================
@@ -42,6 +44,7 @@ fn py_url_quote(input: &str, safe: &str) -> String {
 /// Save an extracted document asset (image) to `<stem>.assets/<hash24>.<ext>`
 /// and return the relative Markdown URL path.
 pub fn save_doc_asset(source_path: &Path, data: &[u8], ext: &str) -> Option<String> {
+    if let Some(staged) = crate::document_assets::extract(source_path, data, ext) { return staged; }
     if data.is_empty() || data.len() > 32 * 1024 * 1024 {
         return None;
     }
@@ -54,7 +57,7 @@ pub fn save_doc_asset(source_path: &Path, data: &[u8], ext: &str) -> Option<Stri
     let stem = source_path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
     let dir_name = format!("{}.assets", stem);
     let assets_dir = parent.join(&dir_name);
-    let _ = fs::create_dir_all(&assets_dir);
+    fs::create_dir_all(&assets_dir).ok()?;
 
     let mut hasher = Sha256::new();
     hasher.update(data);
@@ -64,7 +67,7 @@ pub fn save_doc_asset(source_path: &Path, data: &[u8], ext: &str) -> Option<Stri
     let target_file = assets_dir.join(&file_name);
 
     if !target_file.exists() {
-        let _ = fs::write(&target_file, data);
+        crate::content::write_bytes_atomic(&target_file, data).ok()?;
     }
 
     let raw = format!("{}/{}", dir_name, file_name);
@@ -270,14 +273,15 @@ pub struct ConvertTriple {
     pub text: String,
     pub engine: String,
     pub error: Option<String>,
+    pub assets: Vec<crate::document_assets::AssetHandle>,
 }
 
 impl ConvertTriple {
     pub(crate) fn ok(text: impl Into<String>, engine: impl Into<String>) -> ConvertTriple {
-        ConvertTriple { text: text.into(), engine: engine.into(), error: None }
+        ConvertTriple { text: text.into(), engine: engine.into(), error: None, assets: Vec::new() }
     }
     fn err(error: impl Into<String>) -> ConvertTriple {
-        ConvertTriple { text: String::new(), engine: String::new(), error: Some(error.into()) }
+        ConvertTriple { text: String::new(), engine: String::new(), error: Some(error.into()), assets: Vec::new() }
     }
 }
 
@@ -293,13 +297,14 @@ fn triple(r: Result<ConvertResult, String>, engine: &str, prefix: Option<&str>) 
             let text = res.content.unwrap_or_default();
             match res.error {
                 Some(e) if text.is_empty() => ConvertTriple::err(wrap(&e)),
-                Some(e) => ConvertTriple { text, engine: engine.to_string(), error: Some(wrap(&e)) },
+                Some(e) => ConvertTriple { text, engine: engine.to_string(), error: Some(wrap(&e)), assets: Vec::new() },
                 None if text.is_empty() && !res.success => ConvertTriple {
                     text,
                     engine: engine.to_string(),
                     error: Some(wrap("转换失败")),
+                    assets: Vec::new(),
                 },
-                None => ConvertTriple { text, engine: engine.to_string(), error: None },
+                None => ConvertTriple { text, engine: engine.to_string(), error: None, assets: Vec::new() },
             }
         }
         Err(e) => ConvertTriple::err(wrap(&e)),
@@ -356,7 +361,7 @@ pub fn convert_triple(path: &str, form_tables: bool) -> ConvertTriple {
 
 pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Option<&str>) -> ConvertTriple {
     if crate::speech::cancelled() {
-        return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()) };
+        return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()), assets: Vec::new() };
     }
     let ext = ext_of(path);
     if ext == ".eml" { return match crate::mail::eml_to_md(path) { Ok(md)=>ConvertTriple::ok(md,"mime"),Err(e)=>ConvertTriple::err(e) }; }
@@ -365,6 +370,9 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
     if ext == ".docx" {
         return match docx_to_md(path, form_tables) {
             Ok(res) if res.success => ConvertTriple::ok(res.content.unwrap_or_default(), "docx"),
+            // A lossy fallback must never turn an invalid note story into a
+            // successful body-only conversion or erase its localized error.
+            Err(error) if matches!(error.as_str(), crate::api_codes::DOCX_NOTES_INVALID | crate::api_codes::DOCX_NESTED_FOOTNOTE) => ConvertTriple::err(error),
             r => match markitdown_text(path) {
                 Some(t) => ConvertTriple::ok(t, "markitdown"),
                 None => ConvertTriple::err(legacy_markitdown_failure(&err_text(r))),
@@ -400,7 +408,7 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
                 // but the "no text" placeholder is remembered and returned last.
                 let err = err_text(r);
                 if crate::speech::cancelled() {
-                    return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()) };
+                    return ConvertTriple { text: String::new(), engine: String::new(), error: Some("cancelled".into()), assets: Vec::new() };
                 }
                 let mut ocr_fallback_text: Option<String> = None;
                 if let Ok(ocr_text) = crate::ocr::ocr_pdf_to_md(path, 200) {
@@ -449,11 +457,13 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
                 text: String::new(),
                 engine: "system-speech".to_string(),
                 error: Some("音视频转写未产生内容".to_string()),
+                assets: Vec::new(),
             },
             Err(e) => ConvertTriple {
                 text: String::new(),
                 engine: "system-speech".to_string(),
                 error: Some(format!("音视频转写未就绪或失败：{e}")),
+                assets: Vec::new(),
             },
         };
     }
@@ -935,6 +945,10 @@ fn readmd_export_source(document: &crate::headless_renderer::Element) -> Option<
 
 pub fn write_md_managed(data_dir: &Path, path: &str, content: &str, overwrite: bool) -> Result<(), String> {
     let _guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    write_md_managed_locked(data_dir, path, content, overwrite)
+}
+
+pub(crate) fn write_md_managed_locked(data_dir: &Path, path: &str, content: &str, overwrite: bool) -> Result<(), String> {
     let target = Path::new(path);
     if target.exists() && !overwrite { return Err("output_exists".into()); }
     if target.is_file() && fs::read(target).ok().as_deref() == Some(content.as_bytes()) { return Ok(()); }
@@ -1238,6 +1252,7 @@ pub fn mdcheck_check(text: &str, base_dir: &str) -> (String, Vec<Value>) {
                 || rel.starts_with("https://")
                 || rel.starts_with("data:")
                 || rel.starts_with('#')
+                || rel.starts_with("/raw?p=")
             {
                 continue;
             }
@@ -2163,8 +2178,8 @@ const DOCX_MONO_FONTS: &[&str] = &[
 ];
 
 /// `rich_documents.py:143-150` `word_children`.
-const DOCX_FLATTEN_TAGS: &[&str] = &["sdt", "sdtContent", "ins", "smartTag", "customXml"];
-const DOCX_SKIP_TAGS: &[&str] = &["del", "sdtPr"];
+const DOCX_FLATTEN_TAGS: &[&str] = &["sdt", "sdtContent", "ins", "smartTag", "customXml", "fldSimple", "moveTo"];
+const DOCX_SKIP_TAGS: &[&str] = &["del", "sdtPr", "moveFrom"];
 
 /// `rich_documents.py:143-150` — content controls and accepted insertions are
 /// transparent, deletions and `sdtPr` are dropped.
@@ -2361,6 +2376,7 @@ fn docx_para_list_info(p: &XmlNode, styles: &DocxStyles) -> (bool, usize, bool) 
 }
 
 /// One relationship of the main document part — python-docx's `doc.part.rels`.
+#[derive(Clone)]
 struct DocxRel {
     id: String,
     raw: String,
@@ -2372,6 +2388,82 @@ struct DocxPackage<'a> {
     entries: &'a [(String, Vec<u8>)],
     rels: Vec<DocxRel>,
     source: &'a Path,
+    base_dir: String,
+    strict_story: bool,
+    notes: &'a docx_notes::Notes,
+    numbering: &'a docx_notes::Numbering,
+    namespaces: Vec<(String,String)>,
+    math_defaults: Option<&'a str>,
+    math_styles: &'a crate::math_word::WordMathStyles,
+    math_theme: &'a crate::math_theme::ThemeColors,
+    math_fonts: &'a crate::math_font_theme::ThemeFonts,
+}
+
+/// Preserve Word's complex mathematical properties beside a readable LaTeX
+/// projection. Ordinary unstyled formulas retain the existing clean Markdown.
+fn docx_math_metadata(node:&XmlNode,paragraph:&XmlNode,latex:&str,pkg:&DocxPackage)->Result<String,String> {
+    let rich=std::iter::once(node).chain(node.descendants()).any(|n|
+        n.name.starts_with("w:") || (n.name.starts_with("m:")&&n.local.ends_with("Pr")&&!n.children.is_empty()) || n.attrs.iter().any(|(k,_)|!k.starts_with("xmlns")));
+    let grouped=node.local=="oMathPara"&&el_children(node,"m:oMath").len()>1;
+    let equation=crate::math_document::parse_xml(&docx_xml_fragment(node,&pkg.namespaces)).map_err(str::to_string)?;
+    let ppr=el_child(paragraph,"w:pPr").map(|p|crate::math_document::parse_xml(&docx_xml_fragment(p,&pkg.namespaces))).transpose().map_err(str::to_string)?;
+    let mut context=pkg.math_styles.capture(ppr.as_ref().and_then(|p|p.children().next()),&equation).map_err(str::to_string)?;
+    let mut inputs=context.iter().collect::<Vec<_>>();inputs.push(&equation);
+    let theme=pkg.math_theme.capture(&inputs).map_err(str::to_string)?;context.extend(theme);
+    let mut inputs=context.iter().collect::<Vec<_>>();inputs.push(&equation);
+    let fonts=pkg.math_fonts.capture(&inputs).map_err(str::to_string)?;context.extend(fonts);
+    if !rich && !grouped && pkg.math_defaults.is_none() && context.is_empty(){return Ok(String::new());}
+    let source=format!("{}{}{}",pkg.math_defaults.as_deref().unwrap_or(""),context.iter().map(|n|n.xml()).collect::<String>(),equation.xml());
+    let doc=crate::math_document::parse(&source,"omml",node.local=="oMathPara").map_err(str::to_string)?;
+    // A malformed/cyclic style cannot silently turn into an unstyled equation.
+    crate::omml::parse(&source)?;
+    crate::math_document::metadata(latex,&doc.root.xml(),&format!("eq-{}",uuid::Uuid::new_v4())).map_err(str::to_string)
+}
+
+fn docx_xml_fragment(node:&XmlNode,namespaces:&[(String,String)])->String {
+    fn esc(s:&str)->String{s.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;").replace('"',"&quot;")}
+    fn emit(n:&XmlNode,out:&mut String){
+        out.push('<');out.push_str(&n.name);for(k,v)in &n.attrs{out.push(' ');out.push_str(k);out.push_str("=\"");out.push_str(&esc(v));out.push('"');}out.push('>');out.push_str(&esc(&n.text));
+        for c in &n.children{emit(c,out);out.push_str(&esc(&c.tail));}out.push_str("</");out.push_str(&n.name);out.push('>');
+    }
+    let mut node=node.clone();for(k,v)in namespaces{if !node.attrs.iter().any(|(a,_)|a==k){node.attrs.push((k.clone(),v.clone()));}}
+    let mut out=String::new();emit(&node,&mut out);out
+}
+
+/// Read the related settings part, including non-default package paths and
+/// namespace aliases. External relationships never grant filesystem/network
+/// access. A declared but broken local part is an import error, not a silently
+/// discarded set of defaults.
+fn docx_math_defaults(entries: &[(String, Vec<u8>)], rels: &[DocxRel]) -> Result<Option<String>, String> {
+    use crate::math_document::{self, XmlPart, MATH_NS, WORD_NS};
+    let Some(rel) = rels.iter().find(|r| r.kind.ends_with("/settings") && r.mode != "External") else { return Ok(None); };
+    let member = normalize_zip_path(if rel.raw.starts_with('/') { "" } else { "word" }, &rel.raw);
+    let data = find_zip_entry(entries, &member).ok_or("math_invalid_xml")?;
+    let parsed = math_document::parse_xml(&String::from_utf8_lossy(data)).map_err(str::to_string)?;
+    let settings = parsed.children().find(|n| n.namespace == WORD_NS && n.local() == "settings").ok_or("math_invalid_xml")?;
+    let mut math = settings.children().filter(|n| n.namespace == MATH_NS && n.local() == "mathPr");
+    let Some(mut defaults) = math.next().cloned() else { return Ok(None); };
+    if math.next().is_some() { return Err("math_invalid_xml".into()); }
+    for (key, value) in &settings.attributes {
+        if key == "xmlns" || key.starts_with("xmlns:") { defaults.attributes.entry(key.clone()).or_insert_with(|| value.clone()); }
+    }
+    // Whitespace between settings properties is not mathematical content.
+    fn clean(node: &mut math_document::XmlNode) {
+        if node.local() != "t" { node.content.retain(|p| !matches!(p, XmlPart::Text(t) if t.trim().is_empty())); }
+        for part in &mut node.content { if let XmlPart::Element(child) = part { clean(child); } }
+    }
+    clean(&mut defaults);
+    Ok(Some(defaults.xml()))
+}
+
+fn docx_math_theme(entries:&[(String,Vec<u8>)],rels:&[DocxRel])->Result<(crate::math_theme::ThemeColors,crate::math_font_theme::ThemeFonts),String>{
+    fn part(entries:&[(String,Vec<u8>)],rels:&[DocxRel],kind:&str)->Result<Option<String>,String>{
+        let mut related=rels.iter().filter(|r|r.kind.ends_with(kind)&&r.mode!="External");let first=related.next();if related.next().is_some(){return Err("math_invalid_xml".into());}
+        let Some(rel)=first else{return Ok(None);};let member=normalize_zip_path(if rel.raw.starts_with('/') {""}else{"word"},&rel.raw);
+        let data=find_zip_entry(entries,&member).ok_or("math_invalid_xml")?;Ok(Some(String::from_utf8_lossy(data).into_owned()))
+    }
+    let theme=part(entries,rels,"/theme")?;let settings=part(entries,rels,"/settings")?;
+    Ok((crate::math_theme::ThemeColors::from_parts(theme.as_deref(),settings.as_deref()).map_err(str::to_string)?,crate::math_font_theme::ThemeFonts::from_parts(theme.as_deref(),settings.as_deref()).map_err(str::to_string)?))
 }
 
 fn docx_document_rels(entries: &[(String, Vec<u8>)]) -> Vec<DocxRel> {
@@ -2404,64 +2496,80 @@ impl DocxPackage<'_> {
     fn target_ref(&self, rid: &str) -> String {
         match self.rel(rid) {
             Some(rel) if rel.mode == "External" => rel.raw.clone(),
-            Some(rel) => normalize_zip_path("word", &rel.raw),
+            Some(rel) => normalize_zip_path(if rel.raw.starts_with('/') { "" } else { &self.base_dir }, &rel.raw),
             None => String::new(),
         }
     }
 }
 
+fn docx_formatted_run(run: &XmlNode, text: &str) -> String {
+    if text.is_empty() { return String::new(); }
+    let mut text = text.to_string();
+    if DOCX_MONO_FONTS.contains(&docx_run_font_lower(run).as_str()) { text = format!("`{text}`"); }
+    if docx_run_flag(run,"b") { text = format!("**{text}**"); }
+    if docx_run_flag(run,"i") { text = format!("*{text}*"); }
+    text
+}
+
 /// `convert.py:1562-1622` `_para_inline_with_math`.
-fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> String {
+fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> Result<String,String> {
     let mut parts: Vec<String> = Vec::new();
     for child in docx_word_children(p) {
         match child.local.as_str() {
             "r" => {
-                // `convert.py:1577-1583` — every `a:blip` inside the run, even when
-                // the run itself has no text.
-                for blip in child.descendants().iter().filter(|n| n.name == "a:blip") {
+                // Keep markers and images at their actual position inside a run.
+                let mut text = String::new();
+                for item in &child.children {
+                    match item.name.as_str() {
+                        "w:t" => { text.push_str(&item.text); continue; },
+                        "w:tab" => { text.push('\t'); continue; },
+                        "w:br" | "w:cr" => { text.push('\n'); continue; },
+                        "w:footnoteRef" | "w:endnoteRef" => continue,
+                        _ => (),
+                    }
+                    if let Some(reference) = pkg.notes.reference(item)? {
+                        parts.push(docx_formatted_run(child,&text)); text.clear();
+                        parts.push(reference); continue;
+                    }
+                    let images: Vec<_> = std::iter::once(item).chain(item.descendants()).filter(|n| n.name == "a:blip").collect();
+                    if !images.is_empty() { parts.push(docx_formatted_run(child,&text)); text.clear(); }
+                    for blip in images {
                     let rid = blip.attr_prefixed("embed").unwrap_or("");
                     if rid.is_empty() {
+                        if pkg.strict_story { return Err(docx_notes::INVALID.into()); }
                         continue;
                     }
-                    let Some(rel) = pkg.rel(rid) else { continue };
-                    let member = normalize_zip_path("word", &rel.raw);
-                    let Some(bytes) = find_zip_entry(pkg.entries, &member) else { continue };
+                    let Some(rel) = pkg.rel(rid) else {
+                        if pkg.strict_story { return Err(docx_notes::INVALID.into()); } else { continue; }
+                    };
+                    if pkg.strict_story && (rel.mode.eq_ignore_ascii_case("External") || !rel.kind.ends_with("/image")) { return Err(docx_notes::INVALID.into()); }
+                    let member = if pkg.strict_story { docx_notes::member(&pkg.base_dir,&rel.raw)? } else { normalize_zip_path(if rel.raw.starts_with('/') { "" } else { &pkg.base_dir }, &rel.raw) };
+                    let bytes = if pkg.strict_story { Some(docx_notes::unique(pkg.entries,&member)?) } else { find_zip_entry(pkg.entries, &member) };
+                    let Some(bytes) = bytes else {
+                        if pkg.strict_story { return Err(docx_notes::INVALID.into()); } else { continue; }
+                    };
                     let ext = Path::new(&member)
                         .extension()
                         .and_then(|s| s.to_str())
                         .unwrap_or("bin");
                     if let Some(uri) = save_doc_asset(pkg.source, bytes, ext) {
                         parts.push(format!("![image]({})", uri));
+                    } else if pkg.strict_story {
+                        return Err(docx_notes::INVALID.into());
+                    }
                     }
                 }
-                let mut t = docx_run_text(child);
-                if t.is_empty() {
-                    continue;
-                }
-                if DOCX_MONO_FONTS.contains(&docx_run_font_lower(child).as_str()) {
-                    t = format!("`{}`", t);
-                }
-                if docx_run_flag(child, "b") {
-                    t = format!("**{}**", t);
-                }
-                if docx_run_flag(child, "i") {
-                    t = format!("*{}*", t);
-                }
-                parts.push(t);
+                parts.push(docx_formatted_run(child,&text));
             }
             "hyperlink" => {
                 let rid = child.attr_prefixed("id").unwrap_or("");
                 let url = if rid.is_empty() {
-                    String::new()
+                    child.attr("w:anchor").map(|anchor|format!("#{}",py_url_quote(anchor,"-_.~"))).unwrap_or_default()
                 } else {
+                    if pkg.strict_story && pkg.rel(rid).is_none() { return Err(docx_notes::INVALID.into()); }
                     pkg.target_ref(rid)
                 };
-                let link_text: String = child
-                    .descendants()
-                    .iter()
-                    .filter(|n| n.name == "w:t")
-                    .map(|n| n.text.as_str())
-                    .collect();
+                let link_text = docx_para_inline(child,pkg)?;
                 if !url.is_empty() && !link_text.is_empty() {
                     parts.push(format!("[{}]({})", link_text, url));
                 } else if !link_text.is_empty() {
@@ -2471,16 +2579,13 @@ fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> String {
             "oMath" => {
                 let latex = omml_to_latex(child).trim().to_string();
                 if !latex.is_empty() {
-                    parts.push(format!("${}$", latex));
+                    parts.push(format!("${}${}", latex,docx_math_metadata(child,p,&latex,pkg)?));
                 }
             }
             "oMathPara" => {
-                for om in el_children(child, "m:oMath") {
-                    let latex = omml_to_latex(om).trim().to_string();
-                    if !latex.is_empty() {
-                        parts.push(format!("$${}$$", latex));
-                    }
-                }
+                let equations:Vec<_>=el_children(child,"m:oMath").into_iter().map(|om|omml_to_latex(om).trim().to_string()).filter(|s|!s.is_empty()).collect();
+                let latex=if equations.len()>1{format!("\\begin{{aligned}}{}\\end{{aligned}}",equations.join(" \\\\ "))}else{equations.first().cloned().unwrap_or_default()};
+                if !latex.is_empty(){parts.push(format!("$${}$${}",latex,docx_math_metadata(child,p,&latex,pkg)?));}
             }
             _ => {}
         }
@@ -2500,10 +2605,10 @@ fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> String {
             || inner.contains(r"\int")
             || inner.contains(r"\aligned");
         if complex {
-            return format!("$${}$$", inner);
+            return Ok(format!("$${}$$", inner));
         }
     }
-    res
+    Ok(res)
 }
 
 /// `convert.py:1625-1637` `_form_table_items`.
@@ -2540,7 +2645,7 @@ fn docx_form_table_items(rows: &[Vec<String>]) -> Vec<String> {
 }
 
 /// `convert.py:1640-1691` `_table_to_md`.
-fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> String {
+fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Result<String,String> {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut restart_texts: HashMap<usize, String> = HashMap::new();
     for tr in el_children(tbl, "w:tr") {
@@ -2552,7 +2657,7 @@ fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Stri
             let joined: String = el_children(tc, "w:p")
                 .iter()
                 .map(|pp| docx_para_inline(pp, pkg))
-                .collect::<Vec<_>>()
+                 .collect::<Result<Vec<_>,_>>()?
                 .join("\n");
             let txt = joined.replace('\n', " ").replace('|', "\\|").trim().to_string();
             let mut span = 1usize;
@@ -2597,7 +2702,7 @@ fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Stri
         rows.push(cells);
     }
     if rows.is_empty() {
-        return String::new();
+        return Ok(String::new());
     }
     let ncol = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     for r in rows.iter_mut() {
@@ -2608,7 +2713,7 @@ fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Stri
     if form_tables && ncol == 2 {
         let items = docx_form_table_items(&rows);
         if !items.is_empty() {
-            return items.join("\n");
+            return Ok(items.join("\n"));
         }
     }
     let mut out: Vec<String> = Vec::new();
@@ -2617,7 +2722,7 @@ fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Stri
     for r in &rows[1..] {
         out.push(format!("| {} |", r.join(" | ")));
     }
-    out.join("\n")
+    Ok(out.join("\n"))
 }
 
 /// `convert.py:1746-1753` `flush_code`.
@@ -2627,9 +2732,11 @@ fn docx_flush_code(
     code_lang: &mut String,
 ) {
     if !code_buf.is_empty() {
-        lines.push(format!("```{}", code_lang));
+        let longest=code_buf.iter().flat_map(|line|line.split(|c|c!='`')).map(str::len).max().unwrap_or(0);
+        let fence="`".repeat(3.max(longest+1));
+        lines.push(format!("{fence}{}", code_lang));
         lines.extend(code_buf.drain(..));
-        lines.push("```".to_string());
+        lines.push(fence);
         lines.push(String::new());
         code_lang.clear();
     }
@@ -2644,7 +2751,7 @@ fn docx_handle_para(
     code_buf: &mut Vec<String>,
     code_lang: &mut String,
     ordered_n: &mut i64,
-) {
+) -> Result<(),String> {
     let style = docx_style_for_para(p, styles);
     let style_name: String = style.map(|s| s.name.clone()).unwrap_or_default();
     let lowered = style_name.to_lowercase();
@@ -2658,55 +2765,79 @@ fn docx_handle_para(
             docx_int_or(&digits, 1)
         };
         let level = level.clamp(1, 6) as usize;
-        let txt = docx_para_inline(p, pkg);
+        let txt = docx_para_inline(p, pkg)?;
         if !txt.is_empty() {
             lines.push(format!("{} {}", "#".repeat(level), txt));
             lines.push(String::new());
         }
-        return;
+        return Ok(());
     }
     if !style_name.is_empty() && lowered == "title" {
         docx_flush_code(lines, code_buf, code_lang);
         *ordered_n = 0;
-        let txt = docx_para_inline(p, pkg);
+        let txt = docx_para_inline(p, pkg)?;
         if !txt.is_empty() {
             lines.push(format!("# {}", txt));
             lines.push(String::new());
         }
-        return;
+        return Ok(());
     }
     let has_math = p.descendants().iter().any(|n| n.name == "m:oMath");
-    if docx_para_has_mono(p) && !has_math {
-        let txt = docx_para_plain(p).trim().to_string();
+    let has_note = p.descendants().iter().any(|n| matches!(n.name.as_str(),"w:footnoteReference"|"w:endnoteReference"));
+    let code_style=matches!(lowered.as_str(),"code"|"source code"|"code block") || docx_pstyle_raw(p).as_deref()==Some("Code");
+    if (code_style || docx_para_has_mono(p)) && !has_math && !has_note {
+        let mut txt = docx_para_plain(p).trim_end_matches('\n').to_string();
+        if code_style && code_buf.is_empty() {
+            // ReadMD's small language label is not part of the source program.
+            // Ordinary Word code paragraphs keep their first line unchanged.
+            let runs=el_children(p,"w:r");
+            if let Some(first)=runs.first() {
+                let properties=el_child(first,"w:rPr");
+                let label=docx_run_text(first);
+                let generated=properties.and_then(|n|el_child(n,"w:color")).and_then(|n|n.attr("w:val"))==Some("8A8F98")
+                    && properties.and_then(|n|el_child(n,"w:sz")).and_then(|n|n.attr("w:val"))==Some("15")
+                    && runs.get(1).is_some_and(|r|docx_run_text(r)=="\n")
+                    && !label.is_empty() && label.len()<=40 && label.chars().all(|c|c.is_ascii_alphanumeric()||"_+.#-".contains(c));
+                if generated && txt.starts_with(&format!("{label}\n")) { *code_lang=label.clone();txt=txt[label.len()+1..].to_string(); }
+            }
+        }
         if !txt.is_empty() {
             if code_lang.is_empty() {
                 *code_lang = docx_lang_hint(&txt);
             }
             code_buf.push(txt);
         }
-        return;
+        return Ok(());
     }
     docx_flush_code(lines, code_buf, code_lang);
-    let txt = docx_para_inline(p, pkg);
+    let txt = docx_para_inline(p, pkg)?;
     if txt.is_empty() {
         // Python returns *before* resetting the ordered counter.
-        return;
+        return Ok(());
     }
-    let (is_list, ilvl, ordered) = docx_para_list_info(p, styles);
+    if lowered.contains("quote") || docx_pstyle_raw(p).as_deref()==Some("Quote") {
+        *ordered_n = 0;
+        lines.push(txt.lines().map(|line|format!("> {line}")).collect::<Vec<_>>().join("\n"));
+        lines.push(String::new());
+        return Ok(());
+    }
+    let (is_list, ilvl, fallback_ordered) = docx_para_list_info(p, styles);
+    let (ordered,start) = pkg.numbering.level(p,ilvl).unwrap_or((fallback_ordered,1));
     if is_list {
         if ordered {
-            *ordered_n += 1;
+            *ordered_n = if *ordered_n == 0 { start } else { *ordered_n + 1 };
             lines.push(format!("{}{}. {}", "   ".repeat(ilvl), ordered_n, txt));
         } else {
             *ordered_n = 0;
             lines.push(format!("{}- {}", "  ".repeat(ilvl), txt));
         }
         lines.push(String::new());
-        return;
+        return Ok(());
     }
     *ordered_n = 0;
     lines.push(txt);
     lines.push(String::new());
+    Ok(())
 }
 
 /// `convert.py:1731-1826` `docx2md`.
@@ -2718,14 +2849,18 @@ fn docx_convert(
     let doc_data =
         find_zip_entry(entries, "word/document.xml")
             .ok_or_else(|| "No word/document.xml found in DOCX file".to_string())?;
-    let roots = xml_parse(doc_data)?;
+    let has_note_xml = [b"footnoteReference".as_slice(),b"endnoteReference".as_slice()].iter().any(|name|doc_data.windows(name.len()).any(|s|s==*name));
+    if has_note_xml { docx_notes::unique(entries,"word/document.xml")?; }
+    let roots = if has_note_xml { vec![docx_notes::xml(doc_data)?] } else { xml_parse(doc_data)? };
     let root = roots
         .first()
         .ok_or_else(|| "empty word/document.xml".to_string())?;
     let body = el_child(root, "w:body")
         .ok_or_else(|| "no w:body in word/document.xml".to_string())?;
 
-    let rels = docx_document_rels(entries);
+    let rels = if has_note_xml { docx_notes::relationships(entries,"word/document.xml")? } else { docx_document_rels(entries) };
+    let notes = docx_notes::Notes::load(entries,body,&rels)?;
+    let numbering = if has_note_xml { docx_notes::Numbering::load(entries,&rels)? } else { docx_notes::Numbering::default() };
     let styles = match rels.iter().find(|rel| rel.kind.ends_with("/styles")) {
         Some(rel) => {
             let member = normalize_zip_path("word", &rel.raw);
@@ -2736,7 +2871,19 @@ fn docx_convert(
         }
         None => DocxStyles::default(),
     };
-    let pkg = DocxPackage { entries, rels, source };
+    let math_defaults = docx_math_defaults(entries, &rels)?;
+    let has_math=notes.has_math() || body.descendants().iter().any(|n| n.local=="oMath" || n.local=="oMathPara");
+    let math_styles = if has_math {
+        match rels.iter().find(|r|r.kind.ends_with("/styles") && r.mode!="External") {
+            Some(rel) => {
+                let member=normalize_zip_path(if rel.raw.starts_with('/') {""} else {"word"},&rel.raw);
+                let data=find_zip_entry(entries,&member).ok_or("math_invalid_xml")?;
+                crate::math_word::WordMathStyles::parse(&String::from_utf8_lossy(data)).map_err(str::to_string)?
+            }, None => crate::math_word::WordMathStyles::default(),
+        }
+    } else { crate::math_word::WordMathStyles::default() };
+    let (math_theme,math_fonts)=if has_math{docx_math_theme(entries,&rels)?}else{(crate::math_theme::ThemeColors::default(),crate::math_font_theme::ThemeFonts::default())};
+    let pkg = DocxPackage { entries, rels, source, base_dir:"word".into(),strict_story:has_note_xml,notes:&notes,numbering:&numbering,math_defaults:math_defaults.as_deref(),math_styles:&math_styles,math_theme:&math_theme,math_fonts:&math_fonts,namespaces:root.attrs.iter().filter(|(k,_)|k=="xmlns"||k.starts_with("xmlns:")).cloned().collect() };
 
     let mut lines: Vec<String> = Vec::new();
     let mut code_buf: Vec<String> = Vec::new();
@@ -2745,10 +2892,10 @@ fn docx_convert(
     for child in docx_word_children(body) {
         // `convert.py:1812-1821` matches full Clark names, not local names.
         match child.name.as_str() {
-            "w:p" => docx_handle_para(child, &pkg, &styles, &mut lines, &mut code_buf, &mut code_lang, &mut ordered_n),
+            "w:p" => docx_handle_para(child, &pkg, &styles, &mut lines, &mut code_buf, &mut code_lang, &mut ordered_n)?,
             "w:tbl" => {
                 docx_flush_code(&mut lines, &mut code_buf, &mut code_lang);
-                let md = docx_table_to_md(child, &pkg, form_tables);
+                let md = docx_table_to_md(child, &pkg, form_tables)?;
                 if !md.is_empty() {
                     lines.push(md);
                     lines.push(String::new());
@@ -2758,6 +2905,9 @@ fn docx_convert(
         }
     }
     docx_flush_code(&mut lines, &mut code_buf, &mut code_lang);
+    notes.ensure_rendered()?;
+    let note_content = notes.render(&pkg,&styles)?;
+    if !note_content.is_empty() { lines.push(note_content); }
     let text = lines.join("\n").trim().to_string();
     if text.is_empty() {
         // `convert.py:1825` `raise ValueError('docx 未提取到文字内容')`.
@@ -9762,6 +9912,113 @@ mod texmd_wire_tests {
 #[cfg(test)]
 mod native_legacy_lanes {
     use super::*;
+
+    #[test]
+    fn math_word_inherited_styles_survive_import_readable_save_and_three_exports() {
+        use crate::math_document::{MATH_NS,WORD_NS};
+        let xml=format!(r#"<w:document xmlns:w="{WORD_NS}" xmlns:m="{MATH_NS}"><w:body><w:p><w:pPr><w:pStyle w:val="Equation"/></w:pPr><m:oMathPara><m:oMath><m:r><m:t>x</m:t></m:r><m:r><w:rPr><w:rStyle w:val="Accent"/><w:sz w:val="30"/></w:rPr><m:t>y</m:t></m:r></m:oMath></m:oMathPara></w:p></w:body></w:document>"#);
+        let styles=format!(r#"<v:styles xmlns:v="{WORD_NS}"><v:docDefaults><v:rPrDefault><v:rPr><v:sz v:val="24"/></v:rPr></v:rPrDefault></v:docDefaults>
+            <v:style v:type="paragraph" v:styleId="Normal" v:default="1"><v:rPr><v:b/></v:rPr></v:style>
+            <v:style v:type="paragraph" v:styleId="Equation"><v:basedOn v:val="Normal"/><v:rPr><v:color v:val="336699"/></v:rPr></v:style>
+            <v:style v:type="character" v:styleId="Accent"><v:rPr><v:i/></v:rPr></v:style>
+            <v:style v:type="character" v:styleId="Unused"><v:rPr><v:sz v:val="120"/></v:rPr></v:style></v:styles>"#);
+        let rels=r#"<Relationships><Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="config/academic.xml"/></Relationships>"#;
+        let entries=vec![("word/document.xml".into(),xml.into_bytes()),("word/_rels/document.xml.rels".into(),rels.as_bytes().to_vec()),("word/config/academic.xml".into(),styles.into_bytes())];let before=entries.clone();
+        let md=docx_convert(&entries,Path::new("style-proof.docx"),true).unwrap();assert_eq!(entries,before);
+        let saved=crate::math_migration::plan(&md).unwrap();assert!(saved.recoveries.is_empty());assert!(saved.content.contains("word.styles(")&&saved.content.contains("Accent")&&!saved.content.contains("Unused"),"{} / {:?}",saved.content,saved.diagnostics);
+        assert_eq!(crate::math_migration::plan(&saved.content).unwrap().content,saved.content);
+        for source in [&md,&saved.content] {
+            let document=crate::md_ast::parse(source);let package=crate::docx_writer::build(&document,&serde_json::json!({}),"proof.md",&|_|None);assert!(package.warns.is_empty(),"{:?}",package.warns);
+            let body=String::from_utf8(package.parts.iter().find(|(n,_)|n=="word/document.xml").unwrap().1.clone()).unwrap();
+            assert!(!body.contains("w:styles")&&!body.contains("v:styles")&&!body.contains("rStyle"));
+            let parsed=crate::math_document::parse_xml(&body).unwrap();
+            fn math(n:&crate::math_document::XmlNode)->Option<&crate::math_document::XmlNode>{if n.namespace==MATH_NS&&n.local()=="oMath"{Some(n)}else{n.children().find_map(math)}}
+            let original=math(&parsed).unwrap();let rendered=crate::omml::parse(&original.xml()).unwrap();
+            let runs=rendered.children[0].children.iter().map(crate::omml::run_style).collect::<Vec<_>>();
+            assert!(runs[0].bold&&runs[0].half_points==Some(24));assert!(runs[1].bold&&runs[1].word_italic==Some(true)&&runs[1].half_points==Some(30));
+            assert!(runs.iter().all(|r|r.color==Some([0x33,0x66,0x99])));
+        }
+    }
+
+    #[test]
+    fn math_word_broken_styles_are_reported_instead_of_dropping_metadata() {
+        use crate::math_document::{MATH_NS,WORD_NS};
+        let document=format!(r#"<w:document xmlns:w="{WORD_NS}" xmlns:m="{MATH_NS}"><w:body><w:p><w:pPr><w:pStyle w:val="A"/></w:pPr><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:p></w:body></w:document>"#);
+        let rels=r#"<Relationships><Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#;
+        let mut entries=vec![("word/document.xml".into(),document.into_bytes()),("word/_rels/document.xml.rels".into(),rels.as_bytes().to_vec())];
+        assert_eq!(docx_convert(&entries,Path::new("missing.docx"),true).unwrap_err(),"math_invalid_xml");
+        entries.push(("word/styles.xml".into(),format!(r#"<w:styles xmlns:w="{WORD_NS}"><w:style w:type="paragraph" w:styleId="A"><w:basedOn w:val="A"/></w:style></w:styles>"#).into_bytes()));
+        assert_eq!(docx_convert(&entries,Path::new("cyclic.docx"),true).unwrap_err(),"math_invalid_property");
+    }
+
+    #[test]
+    fn rich_docx_equations_keep_native_properties_and_word_run_styles(){
+        let xml=r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body><w:p><m:oMath><m:f><m:fPr><m:type m:val="skw"/></m:fPr><m:num><m:r><w:rPr><w:b w:val="0"/><w:rFonts w:ascii="Cambria Math"/></w:rPr><m:t>a</m:t></m:r></m:num><m:den><m:r><m:t>b</m:t></m:r></m:den></m:f></m:oMath></w:p></w:body></w:document>"#;
+        let markdown=docx_convert(&[("word/document.xml".into(),xml.as_bytes().to_vec())],Path::new("proof.docx"),true).unwrap();
+        let from=markdown.find("<!--readmd:math:v1:").unwrap();let comment=&markdown[from..];let latex=&markdown[1..from-1];
+        let (metadata,current)=crate::math_document::read_metadata(comment,latex).unwrap();assert!(current);assert!(metadata.omml.contains("m:val=\"skw\"")&&metadata.omml.contains("w:val=\"0\"")&&metadata.omml.contains("Cambria Math"));
+        let doc=crate::md_ast::parse(&markdown);let package=crate::docx_writer::build(&doc,&serde_json::json!({}),"proof.md",&|_|None);
+        let word=String::from_utf8_lossy(&package.parts.iter().find(|(name,_)|name=="word/document.xml").unwrap().1);assert!(word.contains("m:val=\"skw\"")&&word.contains("Cambria Math"));
+    }
+
+    #[test]
+    fn math_document_defaults_follow_settings_relationship_through_readable_save_and_word_export() {
+        use crate::math_document::{self, MATH_NS, WORD_NS};
+        let document = format!(r#"<w:document xmlns:w="{WORD_NS}" xmlns:m="{MATH_NS}"><w:body><w:p><m:oMath><m:nary><m:naryPr><m:chr m:val="∑"/></m:naryPr><m:sub><m:r><m:t>0</m:t></m:r></m:sub><m:sup><m:r><m:t>1</m:t></m:r></m:sup><m:e><m:r><m:t>x</m:t></m:r></m:e></m:nary></m:oMath></w:p></w:body></w:document>"#);
+        let relationships = r#"<Relationships><Relationship Id="settings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="config/alternate.xml"/></Relationships>"#;
+        let settings = format!(r#"<v:settings xmlns:v="{WORD_NS}" xmlns:q="{MATH_NS}"><q:mathPr><q:mathFont q:val="Cambria Math"/><q:intLim q:val="undOvr"/><q:naryLim q:val="subSup"/></q:mathPr></v:settings>"#);
+        let entries = vec![("word/document.xml".into(), document.into_bytes()), ("word/_rels/document.xml.rels".into(), relationships.as_bytes().to_vec()), ("word/config/alternate.xml".into(), settings.into_bytes())];
+        let before = entries.clone();
+        let markdown = docx_convert(&entries, Path::new("defaults.docx"), true).unwrap();
+        assert_eq!(entries, before);
+        assert!(markdown.contains("<!--readmd:math:v1:"));
+        let saved = crate::math_migration::plan(&markdown).unwrap();
+        assert!(saved.recoveries.is_empty(), "{:?}", saved.recoveries);
+        assert!(saved.content.contains("office.mathPr("), "{}", saved.content);
+        assert!(!saved.content.contains("<!--readmd:math:v1:"));
+        assert_eq!(crate::math_migration::plan(&saved.content).unwrap().content, saved.content);
+        for source in [&markdown, &saved.content] {
+            let document = crate::md_ast::parse(source);
+            let package = crate::docx_writer::build(&document, &serde_json::json!({}), "defaults.md", &|_|None);
+            assert!(package.warns.is_empty(), "{:?}", package.warns);
+            let part = |name: &str| String::from_utf8(package.parts.iter().find(|(p,_)|p==name).unwrap().1.clone()).unwrap();
+            let body = part("word/document.xml"); assert!(!body.contains("mathPr"));
+            let settings = math_document::parse_xml(&part("word/settings.xml")).unwrap();
+            let math = settings.children().next().unwrap().children().find(|n| n.namespace==MATH_NS && n.local()=="mathPr").unwrap();
+            assert!(math.xml().contains("Cambria Math"));
+            assert!(math.children().any(|n|n.local()=="intLim" && n.attributes.values().any(|v|v=="undOvr")));
+            let output = crate::omml::parse(&body).unwrap();
+            fn nary(n: &crate::omml::Node) -> Option<&crate::omml::Node> {
+                if n.is_math() && n.name == "nary" { Some(n) } else { n.children.iter().find_map(nary) }
+            }
+            assert_eq!(nary(&output).unwrap().prop("naryPr", "limLoc"), Some("subSup"));
+            let again = docx_convert(&package.parts, Path::new("again.docx"), true).unwrap();
+            assert!(crate::math_migration::plan(&again).unwrap().recoveries.is_empty());
+        }
+        let mut broken = entries.clone(); broken.retain(|(name,_)|name!="word/config/alternate.xml");
+        assert_eq!(docx_convert(&broken, Path::new("broken.docx"), true).unwrap_err(), "math_invalid_xml");
+        let rels = docx_document_rels(&entries);
+        let external = DocxRel { id: "external".into(), raw: "file:///not-authorized.xml".into(), mode: "External".into(), kind: rels[0].kind.clone() };
+        assert!(docx_math_defaults(&entries, &[external]).unwrap().is_none());
+        let absolute = DocxRel { id: "absolute".into(), raw: "/word/config/alternate.xml".into(), mode: String::new(), kind: rels[0].kind.clone() };
+        assert!(docx_math_defaults(&entries, &[absolute]).unwrap().unwrap().contains("Cambria Math"));
+    }
+
+    #[test]
+    fn math_word_paragraph_is_not_split_before_readable_migration_and_export() {
+        let xml=r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><w:body><w:p><m:oMathPara><m:oMathParaPr><m:jc m:val="right"/></m:oMathParaPr><m:oMath><m:r><m:t>a</m:t></m:r></m:oMath><m:oMath><m:r><m:t>b</m:t></m:r></m:oMath></m:oMathPara></w:p></w:body></w:document>"#;
+        let entries=vec![("word/document.xml".into(),xml.as_bytes().to_vec())];
+        let markdown=docx_convert(&entries,Path::new("paragraph.docx"),true).unwrap();
+        assert_eq!(markdown.matches("<!--readmd:math:v1:").count(),1);assert!(markdown.contains("\\begin{aligned}"));
+        let migrated=crate::math_migration::plan(&markdown).unwrap();assert!(migrated.recoveries.is_empty());
+        let doc=crate::md_ast::parse(&migrated.content);
+        let word=crate::docx_writer::build(&doc,&serde_json::json!({}),"paragraph.md",&|_|None);
+        assert!(word.warns.is_empty(),"{:?}",word.warns);
+        let body=String::from_utf8(word.parts.iter().find(|(n,_)|n=="word/document.xml").unwrap().1.clone()).unwrap();
+        let tree=crate::math_document::parse_xml(&body).unwrap();let mut pending=vec![&tree];let(mut paragraphs,mut equations)=(0,0);
+        while let Some(n)=pending.pop(){if n.namespace==crate::math_document::MATH_NS{match n.local(){"oMathPara"=>paragraphs+=1,"oMath"=>equations+=1,_=>{}}}pending.extend(n.children());}
+        assert_eq!(paragraphs,1);assert_eq!(equations,2);assert!(body.contains("m:val=\"right\""));
+    }
 
     fn write(dir: &Path, name: &str, data: &[u8]) -> String {
         let p = dir.join(name);

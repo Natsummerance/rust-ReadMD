@@ -3098,9 +3098,13 @@ fn build_webview<'a>(
                 "readmd:quit" => { quit.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
                 "readmd:show-window" => { show.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
                 "readmd:fullscreen-on" => {
-                    fullscreen.store(FULLSCREEN_ENTER, Ordering::SeqCst)
+                    fullscreen.store(FULLSCREEN_ENTER, Ordering::SeqCst);
+                    let _ = render_proxy.send_event(HostEvent::Web);
                 }
-                "readmd:fullscreen-off" => fullscreen.store(FULLSCREEN_EXIT, Ordering::SeqCst),
+                "readmd:fullscreen-off" => {
+                    fullscreen.store(FULLSCREEN_EXIT, Ordering::SeqCst);
+                    let _ = render_proxy.send_event(HostEvent::Web);
+                }
                 _ => {
                     if request.body().len() < 64 * 1024 && crate::desktop_web::origin(&request.uri().to_string()) == reader_origin {
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) {
@@ -3196,6 +3200,22 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 } catch (e) {}
                 return h;
             }
+            // All native pickers distinguish user cancellation from failure.
+            // Keep the bridge's path/array return contract, report errors once
+            // here so import, folders, image, Skills and pets cannot fail silently.
+            async function bridgePick(url, body, multiple) {
+                try {
+                    const res = await fetch(url, { method: 'POST', headers: bridgeHeaders(body !== undefined),
+                        ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+                    const data = await res.json();
+                    if (!res.ok || data.ok === false || data.error_code) throw new Error('dialog_unavailable');
+                    return multiple ? (data.paths || []) : (data.path || null);
+                } catch (_) {
+                    if (typeof window.showToast === 'function') window.showToast(
+                        window.i18n ? window.i18n.t('error.dialog_unavailable') : 'The system file dialog is not available.');
+                    return multiple ? [] : null;
+                }
+            }
             // JS twin of `safe_external_url()`
             // (`src/readmd_core/safe_open.py:55-71`) + `validate_url()`'s scheme
             // rule (`src/readmd_modules/validators.py:110-115`): reject
@@ -3229,12 +3249,20 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             // wry's IPC channel is one-way (`window.ipc.postMessage` returns
             // nothing), so a *toggle* has to be resolved to an explicit
             // on/off message on this side.  The mirror is what Python does not
-            // need: `Api.toggle_native_fullscreen()` (`readmd.py:5981`) asks the
-            // host window object for the flip.  `assets/js/reader/render.js:2549`
-            // keeps its own `window.__readmdNativeFullscreen` copy of the same
-            // bit, so both sides only ever drift the way they already drift in
-            // the Python app (an OS-level exit from borderless fullscreen).
-            var nativeFullscreen = false;
+            // need: the host reports the actual state after applying a request
+            // and after window changes, so external exits resynchronize this bit.
+            var nativeFullscreen = false, nativeFullscreenPending = null;
+            window.__readmdNativeFullscreenState = function(value) {
+                nativeFullscreen = !!value;
+                window.__readmdNativeFullscreen = nativeFullscreen;
+                window.ReadMDViewMode?.syncNative(nativeFullscreen);
+                if (nativeFullscreenPending && nativeFullscreenPending.wanted === nativeFullscreen) {
+                    const pending = nativeFullscreenPending;
+                    nativeFullscreenPending = null;
+                    clearTimeout(pending.timer);
+                    pending.resolve({ok:true, supported:true, fullscreen:nativeFullscreen});
+                }
+            };
             var webSequence = 0, webPending = new Map();
             window.__readmdWebResolve = function(message) {
                 const entry = webPending.get(message.id);
@@ -3260,47 +3288,23 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 },
                 custom_titlebar: @@READMD_CUSTOM_TITLEBAR@@,
                 choose_folder: async function(initial_dir) {
-                    try {
-                        const res = await fetch('/api/dialog/choose-folder', { method: 'POST', headers: bridgeHeaders(true), body: JSON.stringify({initial_dir:initial_dir||''}) });
-                        const data = await res.json();
-                        return data.path;
-                    } catch(e) { return null; }
+                    return bridgePick('/api/dialog/choose-folder', {initial_dir:initial_dir||''}, false);
                 },
                 choose_file: async function() {
-                    try {
-                        const res = await fetch('/api/dialog/choose-file', { method: 'POST', headers: bridgeHeaders(false) });
-                        const data = await res.json();
-                        return data.path;
-                    } catch(e) { return null; }
+                    return bridgePick('/api/dialog/choose-file', undefined, false);
                 },
                 choose_any_file: async function() {
-                    try {
-                        const res = await fetch('/api/dialog/choose-any-file', { method: 'POST', headers: bridgeHeaders(false) });
-                        const data = await res.json();
-                        return data.path;
-                    } catch(e) { return null; }
+                    return bridgePick('/api/dialog/choose-any-file', undefined, false);
                 },
                 choose_many_files: async function() {
-                    try {
-                        const res = await fetch('/api/dialog/choose-many-files', { method: 'POST', headers: bridgeHeaders(false) });
-                        const data = await res.json();
-                        return data.paths || [];
-                    } catch(e) { return []; }
+                    return bridgePick('/api/dialog/choose-many-files', undefined, true);
                 },
                 choose_skill_source: async function(type) {
-                    try {
-                        const ep = (type === 'zip' || type === 'archive') ? '/api/dialog/choose-file' : '/api/dialog/choose-folder';
-                        const res = await fetch(ep, { method: 'POST', headers: bridgeHeaders(false) });
-                        const data = await res.json();
-                        return data.path;
-                    } catch(e) { return null; }
+                    const ep = (type === 'zip' || type === 'archive') ? '/api/dialog/choose-file' : '/api/dialog/choose-folder';
+                    return bridgePick(ep, undefined, false);
                 },
                 choose_pet_plugin: async function() {
-                    try {
-                        const res = await fetch('/api/dialog/choose-file', { method: 'POST', headers: bridgeHeaders(false) });
-                        const data = await res.json();
-                        return data.path;
-                    } catch(e) { return null; }
+                    return bridgePick('/api/dialog/choose-file', undefined, false);
                 },
                 save_as: async function(content, suggested, assets, options) {
                     try {
@@ -3673,6 +3677,9 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         const res = await fetch('/api/bibtex?p=' + encodeURIComponent(path || ''), { headers: bridgeHeaders(false) });
                         const data = await res.json();
                         if (!data || typeof data !== 'object') { return {}; }
+                        // Current responses contain citations plus an empty
+                        // legacy entries array. Prefer the populated map.
+                        if (data.citations && typeof data.citations === 'object') { return data.citations; }
                         if (Array.isArray(data.entries)) {
                             const map = {};
                             for (const e of data.entries) {
@@ -3686,7 +3693,6 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             }
                             return map;
                         }
-                        if (data.citations && typeof data.citations === 'object') { return data.citations; }
                         if ('ok' in data) { return {}; }
                         return data;
                     } catch(e) { return {}; }
@@ -4066,15 +4072,27 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 // `native_fullscreen_unavailable` cannot happen here: this script
                 // is injected into the only window, and tao implements
                 // `set_fullscreen`.
-                toggle_native_fullscreen: function() {
-                    nativeFullscreen = !nativeFullscreen;
-                    try {
-                        window.ipc.postMessage(nativeFullscreen ? 'readmd:fullscreen-on' : 'readmd:fullscreen-off');
-                        return { ok: true, supported: true, fullscreen: nativeFullscreen };
-                    } catch(e) {
-                        nativeFullscreen = !nativeFullscreen;
-                        return { ok: false, code: 'native_fullscreen_failed', supported: false };
+                toggle_native_fullscreen: function(force) {
+                    const wanted = typeof force === 'boolean' ? force : !(nativeFullscreenPending?.wanted ?? nativeFullscreen);
+                    if (nativeFullscreenPending) {
+                        return nativeFullscreenPending.wanted === wanted ? nativeFullscreenPending.promise :
+                            nativeFullscreenPending.promise.then(() => window.pywebview.api.toggle_native_fullscreen(wanted));
                     }
+                    // IPC delivery is not completion. Wait for the real window
+                    // state before changing Zen or accepting the next request.
+                    const pending = {wanted};
+                    pending.promise = new Promise(resolve => { pending.resolve = resolve; });
+                    nativeFullscreenPending = pending;
+                    const fail = () => {
+                        if (nativeFullscreenPending !== pending) return;
+                        nativeFullscreenPending = null;
+                        clearTimeout(pending.timer);
+                        pending.resolve({ok:false, code:'native_fullscreen_failed', supported:true, fullscreen:nativeFullscreen});
+                    };
+                    pending.timer = setTimeout(fail, 5000);
+                    try { window.ipc.postMessage(wanted ? 'readmd:fullscreen-on' : 'readmd:fullscreen-off'); }
+                    catch (_) { fail(); }
+                    return pending.promise;
                 },
                 request_quit: function() {
                     // `Api.request_quit()` -> `quit_app()` (`readmd.py:460-474`).
@@ -4280,6 +4298,11 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
                 let state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available});
                 let _ = reader.evaluate_script(&format!("window.__readmdWindowState?.({state});"));
+                // Do not publish the previous fullscreen state while an IPC
+                // transition is queued; acknowledge after applying it below.
+                if fullscreen_flag.load(Ordering::SeqCst) == FULLSCREEN_IDLE {
+                    let _ = reader.evaluate_script(&format!("window.__readmdNativeFullscreenState?.({});", window.fullscreen().is_some()));
+                }
             }
         }
         if closing && deadline.is_none() && page_ready_flag.load(Ordering::SeqCst) && !quit_flag.load(Ordering::SeqCst) {
@@ -4317,7 +4340,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         // `Api.toggle_native_fullscreen()` (`readmd.py:5981`) returns
         // `{ok, supported, fullscreen}`; the bridge computes the wanted state and
         // posts it, so the kernel only applies it to the real window.
-        match fullscreen_flag.swap(FULLSCREEN_IDLE, Ordering::SeqCst) {
+        let fullscreen_request = fullscreen_flag.swap(FULLSCREEN_IDLE, Ordering::SeqCst);
+        match fullscreen_request {
             FULLSCREEN_ENTER => {
                 if let Some(window) = window_handle.as_ref() {
                     window.set_fullscreen(Some(tao::window::Fullscreen::Borderless(None)));
@@ -4329,6 +4353,12 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 }
             }
             _ => {}
+        }
+        if fullscreen_request != FULLSCREEN_IDLE {
+            if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
+                let state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available});
+                let _ = reader.evaluate_script(&format!("window.__readmdWindowState?.({state});window.__readmdNativeFullscreenState?.({});", window.fullscreen().is_some()));
+            }
         }
         if loaded_flag.load(Ordering::SeqCst) {
             probe_mark(&probe, "window_loaded");
@@ -4409,6 +4439,28 @@ fn enable_share(port: u16) {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        // Core DLLs ship beside ReadMD.exe. Children (Typst/PDF workers and
+        // desktop extensions) inherit this directory ahead of System32, even
+        // when their working directory is an isolated task folder.
+        use std::os::windows::ffi::OsStrExt;
+        if let Some(directory)=std::env::current_exe().ok().and_then(|p|p.parent().map(Path::to_path_buf)) {
+            if ["vcruntime140.dll","vcruntime140_1.dll"].iter().all(|name|directory.join(name).is_file()) {
+                #[link(name="kernel32")]
+                extern "system" {fn SetDllDirectoryW(path:*const u16)->i32;}
+                let wide:Vec<u16>=directory.as_os_str().encode_wide().chain(Some(0)).collect();
+                unsafe {SetDllDirectoryW(wide.as_ptr());}
+            }
+        }
+    }
+    if std::env::args().nth(1).as_deref() == Some("--install-capability") {
+        let args:Vec<_>=std::env::args_os().skip(2).collect();
+        let valid=args.len()==1||(args.len()==3&&args[1]=="--assets");
+        let result=if valid{args.first().and_then(|s|s.to_str()).ok_or("capability_pack_invalid".into()).and_then(|id|readmd_kernel::capability_delivery::install_cli(id,args.get(2).map(Path::new)))}else{Err("capability_pack_invalid".into())};
+        if let Err(code)=&result{eprintln!("{}",code);}
+        exit(if result.is_ok(){0}else{1});
+    }
     if std::env::args().nth(1).as_deref() == Some("--install-update") {
         let result = std::env::args_os().nth(2).map(PathBuf::from).ok_or_else(|| "update_plan_missing".to_string())
             .and_then(|path| readmd_kernel::update_install::run_helper(&path));

@@ -1,0 +1,1746 @@
+{
+  "schema": 1,
+  "config": {
+    "font": "Arial",
+    "background": "white",
+    "view": {
+      "stroke": null
+    },
+    "axis": {
+      "labelFont": "Arial",
+      "titleFont": "Arial",
+      "labelColor": "#111111",
+      "titleColor": "#111111",
+      "titleFontWeight": "normal",
+      "domainColor": "#333333",
+      "tickColor": "#333333",
+      "domainWidth": 0.7,
+      "tickWidth": 0.7,
+      "grid": false,
+      "labelPadding": 4,
+      "titlePadding": 6,
+      "labelLimit": 160
+    },
+    "legend": {
+      "labelFont": "Arial",
+      "titleFont": "Arial",
+      "labelColor": "#111111",
+      "titleColor": "#111111",
+      "titleFontWeight": "normal",
+      "orient": "bottom",
+      "direction": "horizontal",
+      "symbolStrokeWidth": 1.2,
+      "padding": 4
+    },
+    "title": {
+      "font": "Arial",
+      "color": "#111111",
+      "fontWeight": "normal",
+      "anchor": "start"
+    },
+    "text": {
+      "font": "Arial",
+      "fill": "#111111"
+    },
+    "line": {
+      "strokeWidth": 1.25
+    },
+    "point": {
+      "size": 25,
+      "filled": false,
+      "strokeWidth": 1.1
+    },
+    "range": {
+      "category": [
+        "#0072b2",
+        "#d55e00",
+        "#009e73",
+        "#cc79a7",
+        "#e69f00",
+        "#56b4e9",
+        "#111111"
+      ]
+    }
+  },
+  "templates": [
+    {
+      "id": "estimates",
+      "label": "diagram.researchEstimates",
+      "engine": "vega-lite",
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "readmd": {
+          "style": "research",
+          "widthMm": 89,
+          "fontSizePt": 7
+        },
+        "description": "Synthetic estimates with precomputed 95% confidence intervals; replace with your own estimates and bounds.",
+        "data": {
+          "values": [
+            {
+              "group": "Control",
+              "estimate": 12.4,
+              "low": 10.9,
+              "high": 13.9
+            },
+            {
+              "group": "Treatment A",
+              "estimate": 15.8,
+              "low": 14.2,
+              "high": 17.4
+            },
+            {
+              "group": "Treatment B",
+              "estimate": 17.1,
+              "low": 15.7,
+              "high": 18.5
+            }
+          ]
+        },
+        "encoding": {
+          "x": {
+            "field": "group",
+            "type": "nominal",
+            "title": "Study group",
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "estimate",
+            "type": "quantitative",
+            "title": "Response (mg/L)",
+            "scale": {
+              "zero": false
+            }
+          }
+        },
+        "layer": [
+          {
+            "mark": {
+              "type": "errorbar",
+              "ticks": true
+            },
+            "encoding": {
+              "y": {
+                "field": "low",
+                "type": "quantitative"
+              },
+              "y2": {
+                "field": "high"
+              }
+            }
+          },
+          {
+            "mark": {
+              "type": "point",
+              "filled": true,
+              "size": 30
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "scatter",
+      "label": "diagram.researchScatter",
+      "engine": "vega-lite",
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "readmd": {
+          "style": "research",
+          "widthMm": 89,
+          "fontSizePt": 7
+        },
+        "description": "Synthetic observations and an ordinary least-squares fit; no confidence band is inferred.",
+        "data": {
+          "values": [
+            {
+              "dose": 1,
+              "response": 8,
+              "cohort": "B"
+            },
+            {
+              "dose": 2,
+              "response": 10.806490201681054,
+              "cohort": "A"
+            },
+            {
+              "dose": 3,
+              "response": 7.852726850831747,
+              "cohort": "B"
+            },
+            {
+              "dose": 4,
+              "response": 8.623423252025432,
+              "cohort": "A"
+            },
+            {
+              "dose": 5,
+              "response": 12.746215245672417,
+              "cohort": "B"
+            },
+            {
+              "dose": 6,
+              "response": 10.97715242293784,
+              "cohort": "A"
+            },
+            {
+              "dose": 7,
+              "response": 9.665544390971245,
+              "cohort": "B"
+            },
+            {
+              "dose": 8,
+              "response": 13.950010453052183,
+              "cohort": "A"
+            },
+            {
+              "dose": 9,
+              "response": 14.158716984363739,
+              "cohort": "B"
+            },
+            {
+              "dose": 10,
+              "response": 11.406650488312222,
+              "cohort": "A"
+            },
+            {
+              "dose": 11,
+              "response": 14.644717582224791,
+              "cohort": "B"
+            },
+            {
+              "dose": 12,
+              "response": 16.970462315992407,
+              "cohort": "A"
+            },
+            {
+              "dose": 13,
+              "response": 13.895962061098242,
+              "cohort": "B"
+            },
+            {
+              "dose": 14,
+              "response": 15.225469893031566,
+              "cohort": "A"
+            },
+            {
+              "dose": 15,
+              "response": 19.107682979919026,
+              "cohort": "B"
+            },
+            {
+              "dose": 16,
+              "response": 16.935362027570367,
+              "cohort": "A"
+            },
+            {
+              "dose": 17,
+              "response": 16.125071194477545,
+              "cohort": "B"
+            },
+            {
+              "dose": 18,
+              "response": 20.488654146002307,
+              "cohort": "A"
+            },
+            {
+              "dose": 19,
+              "response": 20.144888148600337,
+              "cohort": "B"
+            },
+            {
+              "dose": 20,
+              "response": 17.670921972128554,
+              "cohort": "A"
+            },
+            {
+              "dose": 21,
+              "response": 21.281647731031587,
+              "cohort": "B"
+            },
+            {
+              "dose": 22,
+              "response": 23.088338828434065,
+              "cohort": "A"
+            },
+            {
+              "dose": 23,
+              "response": 19.97678915910826,
+              "cohort": "B"
+            },
+            {
+              "dose": 24,
+              "response": 21.84930600569502,
+              "cohort": "A"
+            },
+            {
+              "dose": 25,
+              "response": 25.41747020871355,
+              "cohort": "B"
+            },
+            {
+              "dose": 26,
+              "response": 22.905197696991358,
+              "cohort": "A"
+            },
+            {
+              "dose": 27,
+              "response": 22.628761332536357,
+              "cohort": "B"
+            },
+            {
+              "dose": 28,
+              "response": 26.98711668356652,
+              "cohort": "A"
+            }
+          ]
+        },
+        "encoding": {
+          "x": {
+            "field": "dose",
+            "type": "quantitative",
+            "title": "Dose (μg)",
+            "scale": {
+              "zero": false
+            }
+          },
+          "y": {
+            "field": "response",
+            "type": "quantitative",
+            "title": "Response (a.u.)",
+            "scale": {
+              "zero": false
+            }
+          }
+        },
+        "layer": [
+          {
+            "mark": "point",
+            "encoding": {
+              "color": {
+                "field": "cohort",
+                "type": "nominal",
+                "title": "Cohort"
+              },
+              "shape": {
+                "field": "cohort",
+                "type": "nominal",
+                "title": "Cohort"
+              }
+            }
+          },
+          {
+            "transform": [
+              {
+                "regression": "response",
+                "on": "dose"
+              }
+            ],
+            "mark": {
+              "type": "line",
+              "color": "#111111",
+              "strokeDash": [
+                5,
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "distribution",
+      "label": "diagram.researchDistribution",
+      "engine": "vega-lite",
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "readmd": {
+          "style": "research",
+          "widthMm": 89,
+          "fontSizePt": 7
+        },
+        "description": "Synthetic raw measurements. Box: Q1–Q3; median; whiskers at 1.5×IQR; outliers shown.",
+        "data": {
+          "values": [
+            {
+              "group": "A",
+              "measurement": 17
+            },
+            {
+              "group": "B",
+              "measurement": 22.922327221368157
+            },
+            {
+              "group": "C",
+              "measurement": 22.025481688970558
+            },
+            {
+              "group": "A",
+              "measurement": 13.765047983011016
+            },
+            {
+              "group": "B",
+              "measurement": 20.69398036670275
+            },
+            {
+              "group": "C",
+              "measurement": 24.212436219638786
+            },
+            {
+              "group": "A",
+              "measurement": 13.27965759981504
+            },
+            {
+              "group": "B",
+              "measurement": 16.067201399742927
+            },
+            {
+              "group": "C",
+              "measurement": 23.045557693351526
+            },
+            {
+              "group": "A",
+              "measurement": 15.2327686310744
+            },
+            {
+              "group": "B",
+              "measurement": 13.783255481801682
+            },
+            {
+              "group": "C",
+              "measurement": 18.91553372400264
+            },
+            {
+              "group": "A",
+              "measurement": 16.14323328000934
+            },
+            {
+              "group": "B",
+              "measurement": 15.69702657207298
+            },
+            {
+              "group": "C",
+              "measurement": 16.090749225854637
+            },
+            {
+              "group": "A",
+              "measurement": 14.171538632877896
+            },
+            {
+              "group": "B",
+              "measurement": 18.92076631746797
+            },
+            {
+              "group": "C",
+              "measurement": 17.805051058231744
+            },
+            {
+              "group": "A",
+              "measurement": 11.731634112833817
+            },
+            {
+              "group": "B",
+              "measurement": 19.64850694718036
+            },
+            {
+              "group": "C",
+              "measurement": 22.362943004489964
+            },
+            {
+              "group": "A",
+              "measurement": 12.505680119651334
+            },
+            {
+              "group": "B",
+              "measurement": 17.797290571714807
+            },
+            {
+              "group": "C",
+              "measurement": 25.048849060335197
+            },
+            {
+              "group": "A",
+              "measurement": 16.56735559379078
+            },
+            {
+              "group": "B",
+              "measurement": 16.73412532496426
+            },
+            {
+              "group": "C",
+              "measurement": 23.556742441717958
+            },
+            {
+              "group": "A",
+              "measurement": 19.815933189868222
+            },
+            {
+              "group": "B",
+              "measurement": 18.60048313983532
+            },
+            {
+              "group": "C",
+              "measurement": 20.385260144707434
+            },
+            {
+              "group": "A",
+              "measurement": 18.642137727780838
+            },
+            {
+              "group": "B",
+              "measurement": 21.273584290168515
+            },
+            {
+              "group": "C",
+              "measurement": 19.43538877829464
+            },
+            {
+              "group": "A",
+              "measurement": 14.220556007264934
+            },
+            {
+              "group": "B",
+              "measurement": 20.916161770650586
+            },
+            {
+              "group": "C",
+              "measurement": 21.17781286119035
+            },
+            {
+              "group": "A",
+              "measurement": 11.17909347485383
+            },
+            {
+              "group": "B",
+              "measurement": 16.98434950328101
+            },
+            {
+              "group": "C",
+              "measurement": 22.392649462867567
+            },
+            {
+              "group": "A",
+              "measurement": 12.240938905052502
+            },
+            {
+              "group": "B",
+              "measurement": 13.356529715123798
+            },
+            {
+              "group": "C",
+              "measurement": 20.656529424355398
+            },
+            {
+              "group": "A",
+              "measurement": 15.321995443053181
+            },
+            {
+              "group": "B",
+              "measurement": 13.971893396507117
+            },
+            {
+              "group": "C",
+              "measurement": 17.774650430816905
+            },
+            {
+              "group": "A",
+              "measurement": 16.472720543281905
+            },
+            {
+              "group": "B",
+              "measurement": 18.19251101228034
+            },
+            {
+              "group": "C",
+              "measurement": 17.69726897323331
+            },
+            {
+              "group": "A",
+              "measurement": 14.844864897493284
+            },
+            {
+              "group": "B",
+              "measurement": 21.53856252185575
+            },
+            {
+              "group": "C",
+              "measurement": 21.43838265766025
+            },
+            {
+              "group": "A",
+              "measurement": 13.479866131980465
+            },
+            {
+              "group": "B",
+              "measurement": 20.908778393834698
+            },
+            {
+              "group": "C",
+              "measurement": 25.39440251138655
+            },
+            {
+              "group": "A",
+              "measurement": 15.060193833766219
+            },
+            {
+              "group": "B",
+              "measurement": 17.952972866888647
+            },
+            {
+              "group": "C",
+              "measurement": 25.346555438995598
+            },
+            {
+              "group": "A",
+              "measurement": 18.121889840200907
+            },
+            {
+              "group": "B",
+              "measurement": 16.62324654378586
+            },
+            {
+              "group": "C",
+              "measurement": 29.38773869529946
+            },
+            {
+              "group": "A",
+              "measurement": 18.646110129973312
+            },
+            {
+              "group": "B",
+              "measurement": 18.131606894142408
+            },
+            {
+              "group": "C",
+              "measurement": 17.79168298374394
+            },
+            {
+              "group": "A",
+              "measurement": 15.154803095007214
+            },
+            {
+              "group": "B",
+              "measurement": 19.644501340159334
+            },
+            {
+              "group": "C",
+              "measurement": 17.994176607665523
+            },
+            {
+              "group": "A",
+              "measurement": 10.927326559371153
+            },
+            {
+              "group": "B",
+              "measurement": 18.24575688552086
+            },
+            {
+              "group": "C",
+              "measurement": 20.793623423596244
+            },
+            {
+              "group": "A",
+              "measurement": 10.407561617100185
+            },
+            {
+              "group": "B",
+              "measurement": 15.037522095539469
+            },
+            {
+              "group": "C",
+              "measurement": 22.280370416860563
+            }
+          ]
+        },
+        "mark": {
+          "type": "boxplot",
+          "extent": 1.5,
+          "ticks": true,
+          "outliers": true
+        },
+        "encoding": {
+          "x": {
+            "field": "group",
+            "type": "nominal",
+            "title": "Study group",
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "measurement",
+            "type": "quantitative",
+            "title": "Measurement (mm)",
+            "scale": {
+              "zero": false
+            }
+          },
+          "color": {
+            "field": "group",
+            "type": "nominal",
+            "legend": null
+          }
+        }
+      }
+    },
+    {
+      "id": "heatmap",
+      "label": "diagram.researchHeatmap",
+      "engine": "vega-lite",
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "readmd": {
+          "style": "research",
+          "widthMm": 89,
+          "fontSizePt": 7
+        },
+        "description": "Synthetic standardized effects; diverging scale centered at zero.",
+        "data": {
+          "values": [
+            {
+              "condition": "C1",
+              "marker": "M1",
+              "effect": 0
+            },
+            {
+              "condition": "C2",
+              "marker": "M1",
+              "effect": 1.42
+            },
+            {
+              "condition": "C3",
+              "marker": "M1",
+              "effect": 2.17
+            },
+            {
+              "condition": "C4",
+              "marker": "M1",
+              "effect": 1.9
+            },
+            {
+              "condition": "C5",
+              "marker": "M1",
+              "effect": 0.74
+            },
+            {
+              "condition": "C6",
+              "marker": "M1",
+              "effect": -0.77
+            },
+            {
+              "condition": "C1",
+              "marker": "M2",
+              "effect": -1.92
+            },
+            {
+              "condition": "C2",
+              "marker": "M2",
+              "effect": -2.16
+            },
+            {
+              "condition": "C3",
+              "marker": "M2",
+              "effect": -1.39
+            },
+            {
+              "condition": "C4",
+              "marker": "M2",
+              "effect": 0.04
+            },
+            {
+              "condition": "C5",
+              "marker": "M2",
+              "effect": 1.45
+            },
+            {
+              "condition": "C6",
+              "marker": "M2",
+              "effect": 2.17
+            },
+            {
+              "condition": "C1",
+              "marker": "M3",
+              "effect": 1.88
+            },
+            {
+              "condition": "C2",
+              "marker": "M3",
+              "effect": 0.7
+            },
+            {
+              "condition": "C3",
+              "marker": "M3",
+              "effect": -0.81
+            },
+            {
+              "condition": "C4",
+              "marker": "M3",
+              "effect": -1.94
+            },
+            {
+              "condition": "C5",
+              "marker": "M3",
+              "effect": -2.15
+            },
+            {
+              "condition": "C6",
+              "marker": "M3",
+              "effect": -1.36
+            },
+            {
+              "condition": "C1",
+              "marker": "M4",
+              "effect": 0.07
+            },
+            {
+              "condition": "C2",
+              "marker": "M4",
+              "effect": 1.47
+            },
+            {
+              "condition": "C3",
+              "marker": "M4",
+              "effect": 2.18
+            },
+            {
+              "condition": "C4",
+              "marker": "M4",
+              "effect": 1.86
+            },
+            {
+              "condition": "C5",
+              "marker": "M4",
+              "effect": 0.67
+            },
+            {
+              "condition": "C6",
+              "marker": "M4",
+              "effect": -0.84
+            },
+            {
+              "condition": "C1",
+              "marker": "M5",
+              "effect": -1.95
+            },
+            {
+              "condition": "C2",
+              "marker": "M5",
+              "effect": -2.15
+            },
+            {
+              "condition": "C3",
+              "marker": "M5",
+              "effect": -1.33
+            },
+            {
+              "condition": "C4",
+              "marker": "M5",
+              "effect": 0.11
+            },
+            {
+              "condition": "C5",
+              "marker": "M5",
+              "effect": 1.5
+            },
+            {
+              "condition": "C6",
+              "marker": "M5",
+              "effect": 2.18
+            }
+          ]
+        },
+        "mark": {
+          "type": "rect",
+          "stroke": "white",
+          "strokeWidth": 0.5
+        },
+        "encoding": {
+          "x": {
+            "field": "condition",
+            "type": "ordinal",
+            "title": "Condition",
+            "axis": {
+              "labelAngle": 0
+            }
+          },
+          "y": {
+            "field": "marker",
+            "type": "ordinal",
+            "title": "Marker"
+          },
+          "color": {
+            "field": "effect",
+            "type": "quantitative",
+            "title": "Standardized effect",
+            "scale": {
+              "scheme": "blueorange",
+              "domainMid": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "functions",
+      "label": "diagram.researchFunctions",
+      "engine": "vega-lite",
+      "spec": {
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "readmd": {
+          "style": "research",
+          "widthMm": 89,
+          "fontSizePt": 7
+        },
+        "description": "Analytic functions sampled at Δx=0.05. Function values are original data, not smoothing.",
+        "data": {
+          "values": [
+            {
+              "x": -4,
+              "sine": 0.7568024953079282,
+              "gaussian": 0.00033546262790251185
+            },
+            {
+              "x": -3.95,
+              "sine": 0.7231881240865121,
+              "gaussian": 0.0004092231302281785
+            },
+            {
+              "x": -3.9,
+              "sine": 0.6877661591839738,
+              "gaussian": 0.0004979554215032739
+            },
+            {
+              "x": -3.85,
+              "sine": 0.6506251370651673,
+              "gaussian": 0.0006044147037595549
+            },
+            {
+              "x": -3.8,
+              "sine": 0.6118578909427189,
+              "gaussian": 0.0007318024188804728
+            },
+            {
+              "x": -3.75,
+              "sine": 0.5715613187423437,
+              "gaussian": 0.00088382630693505
+            },
+            {
+              "x": -3.7,
+              "sine": 0.5298361409084934,
+              "gaussian": 0.0010647662366679196
+            },
+            {
+              "x": -3.65,
+              "sine": 0.4867866486556994,
+              "gaussian": 0.0012795459378999237
+            },
+            {
+              "x": -3.6,
+              "sine": 0.44252044329485246,
+              "gaussian": 0.001533810679324463
+            },
+            {
+              "x": -3.55,
+              "sine": 0.3971481672859598,
+              "gaussian": 0.0018340108300731598
+            },
+            {
+              "x": -3.5,
+              "sine": 0.35078322768961984,
+              "gaussian": 0.002187491118182885
+            },
+            {
+              "x": -3.45,
+              "sine": 0.30354151270842933,
+              "gaussian": 0.0026025852527254006
+            },
+            {
+              "x": -3.4,
+              "sine": 0.2555411020268312,
+              "gaussian": 0.0030887154082367718
+            },
+            {
+              "x": -3.35,
+              "sine": 0.20690197167339977,
+              "gaussian": 0.003656495880052896
+            },
+            {
+              "x": -3.3,
+              "sine": 0.1577456941432482,
+              "gaussian": 0.0043178400076330815
+            },
+            {
+              "x": -3.25,
+              "sine": 0.10819513453010837,
+              "gaussian": 0.005086069231012701
+            },
+            {
+              "x": -3.2,
+              "sine": 0.058374143427580086,
+              "gaussian": 0.0059760228950059375
+            },
+            {
+              "x": -3.15,
+              "sine": 0.008407247367148618,
+              "gaussian": 0.007004167149362422
+            },
+            {
+              "x": -3.1,
+              "sine": -0.04158066243329049,
+              "gaussian": 0.008188701014374074
+            },
+            {
+              "x": -3.05,
+              "sine": -0.0914646422324372,
+              "gaussian": 0.009549657395020316
+            },
+            {
+              "x": -3,
+              "sine": -0.1411200080598672,
+              "gaussian": 0.011108996538242306
+            },
+            {
+              "x": -2.95,
+              "sine": -0.19042264736102704,
+              "gaussian": 0.01289068914400147
+            },
+            {
+              "x": -2.9,
+              "sine": -0.23924932921398243,
+              "gaussian": 0.014920786069067842
+            },
+            {
+              "x": -2.85,
+              "sine": -0.2874780123425444,
+              "gaussian": 0.017227471311635108
+            },
+            {
+              "x": -2.8,
+              "sine": -0.3349881501559051,
+              "gaussian": 0.019841094744370298
+            },
+            {
+              "x": -2.75,
+              "sine": -0.38166099205233167,
+              "gaussian": 0.022794180883612347
+            },
+            {
+              "x": -2.7,
+              "sine": -0.4273798802338298,
+              "gaussian": 0.026121409853918223
+            },
+            {
+              "x": -2.65,
+              "sine": -0.47203054128988264,
+              "gaussian": 0.029859566641115533
+            },
+            {
+              "x": -2.6,
+              "sine": -0.5155013718214642,
+              "gaussian": 0.03404745473459933
+            },
+            {
+              "x": -2.55,
+              "sine": -0.557683717391417,
+              "gaussian": 0.038725770351664364
+            },
+            {
+              "x": -2.5,
+              "sine": -0.5984721441039564,
+              "gaussian": 0.04393693362340742
+            },
+            {
+              "x": -2.45,
+              "sine": -0.6377647021345036,
+              "gaussian": 0.04972487341234958
+            },
+            {
+              "x": -2.4,
+              "sine": -0.675463180551151,
+              "gaussian": 0.056134762834133725
+            },
+            {
+              "x": -2.35,
+              "sine": -0.7114733527908443,
+              "gaussian": 0.06321270307528883
+            },
+            {
+              "x": -2.3,
+              "sine": -0.7457052121767203,
+              "gaussian": 0.07100535373963701
+            },
+            {
+              "x": -2.25,
+              "sine": -0.7780731968879212,
+              "gaussian": 0.07955950871822769
+            },
+            {
+              "x": -2.2,
+              "sine": -0.8084964038195901,
+              "gaussian": 0.0889216174593863
+            },
+            {
+              "x": -2.15,
+              "sine": -0.8368987907984977,
+              "gaussian": 0.0991372525107474
+            },
+            {
+              "x": -2.1,
+              "sine": -0.8632093666488737,
+              "gaussian": 0.11025052530448522
+            },
+            {
+              "x": -2.05,
+              "sine": -0.8873623686333755,
+              "gaussian": 0.12230345334690061
+            },
+            {
+              "x": -2,
+              "sine": -0.9092974268256817,
+              "gaussian": 0.1353352832366127
+            },
+            {
+              "x": -1.95,
+              "sine": -0.9289597150038693,
+              "gaussian": 0.14938177525041804
+            },
+            {
+              "x": -1.9,
+              "sine": -0.9463000876874145,
+              "gaussian": 0.1644744565771549
+            },
+            {
+              "x": -1.85,
+              "sine": -0.9612752029752999,
+              "gaussian": 0.18063985161889395
+            },
+            {
+              "x": -1.8,
+              "sine": -0.9738476308781951,
+              "gaussian": 0.19789869908361465
+            },
+            {
+              "x": -1.75,
+              "sine": -0.9839859468739369,
+              "gaussian": 0.21626516682988728
+            },
+            {
+              "x": -1.7,
+              "sine": -0.9916648104524686,
+              "gaussian": 0.23574607655586358
+            },
+            {
+              "x": -1.65,
+              "sine": -0.9968650284539189,
+              "gaussian": 0.25634015141507366
+            },
+            {
+              "x": -1.6,
+              "sine": -0.9995736030415051,
+              "gaussian": 0.2780373004531941
+            },
+            {
+              "x": -1.55,
+              "sine": -0.999783764189357,
+              "gaussian": 0.3008179543572755
+            },
+            {
+              "x": -1.5,
+              "sine": -0.9974949866040544,
+              "gaussian": 0.32465246735834974
+            },
+            {
+              "x": -1.45,
+              "sine": -0.9927129910375885,
+              "gaussian": 0.3495006001997565
+            },
+            {
+              "x": -1.4,
+              "sine": -0.9854497299884601,
+              "gaussian": 0.37531109885139957
+            },
+            {
+              "x": -1.35,
+              "sine": -0.9757233578266591,
+              "gaussian": 0.40202138309465485
+            },
+            {
+              "x": -1.3,
+              "sine": -0.963558185417193,
+              "gaussian": 0.4295573582107391
+            },
+            {
+              "x": -1.25,
+              "sine": -0.9489846193555862,
+              "gaussian": 0.45783336177161427
+            },
+            {
+              "x": -1.2,
+              "sine": -0.9320390859672263,
+              "gaussian": 0.4867522559599717
+            },
+            {
+              "x": -1.15,
+              "sine": -0.912763940260521,
+              "gaussian": 0.5162056739454964
+            },
+            {
+              "x": -1.1,
+              "sine": -0.8912073600614354,
+              "gaussian": 0.5460744266397094
+            },
+            {
+              "x": -1.05,
+              "sine": -0.867423225594017,
+              "gaussian": 0.5762290736717999
+            },
+            {
+              "x": -1,
+              "sine": -0.8414709848078965,
+              "gaussian": 0.6065306597126334
+            },
+            {
+              "x": -0.95,
+              "sine": -0.8134155047893737,
+              "gaussian": 0.6368316143717432
+            },
+            {
+              "x": -0.9,
+              "sine": -0.7833269096274834,
+              "gaussian": 0.6669768108584744
+            },
+            {
+              "x": -0.85,
+              "sine": -0.7512804051402927,
+              "gaussian": 0.6968047754960348
+            },
+            {
+              "x": -0.8,
+              "sine": -0.7173560908995228,
+              "gaussian": 0.7261490370736909
+            },
+            {
+              "x": -0.75,
+              "sine": -0.6816387600233341,
+              "gaussian": 0.7548396019890073
+            },
+            {
+              "x": -0.7,
+              "sine": -0.644217687237691,
+              "gaussian": 0.7827045382418683
+            },
+            {
+              "x": -0.65,
+              "sine": -0.6051864057360395,
+              "gaussian": 0.8095716486678869
+            },
+            {
+              "x": -0.6,
+              "sine": -0.5646424733950354,
+              "gaussian": 0.835270211411272
+            },
+            {
+              "x": -0.55,
+              "sine": -0.5226872289306592,
+              "gaussian": 0.8596327636025423
+            },
+            {
+              "x": -0.5,
+              "sine": -0.479425538604203,
+              "gaussian": 0.8824969025845955
+            },
+            {
+              "x": -0.45,
+              "sine": -0.43496553411123023,
+              "gaussian": 0.903707077873196
+            },
+            {
+              "x": -0.4,
+              "sine": -0.3894183423086505,
+              "gaussian": 0.9231163463866358
+            },
+            {
+              "x": -0.35,
+              "sine": -0.34289780745545134,
+              "gaussian": 0.9405880633643421
+            },
+            {
+              "x": -0.3,
+              "sine": -0.29552020666133955,
+              "gaussian": 0.9559974818331
+            },
+            {
+              "x": -0.25,
+              "sine": -0.24740395925452294,
+              "gaussian": 0.9692332344763441
+            },
+            {
+              "x": -0.2,
+              "sine": -0.19866933079506122,
+              "gaussian": 0.9801986733067553
+            },
+            {
+              "x": -0.15,
+              "sine": -0.14943813247359922,
+              "gaussian": 0.9888130446112331
+            },
+            {
+              "x": -0.1,
+              "sine": -0.09983341664682815,
+              "gaussian": 0.9950124791926823
+            },
+            {
+              "x": -0.05,
+              "sine": -0.04997916927067833,
+              "gaussian": 0.9987507809245809
+            },
+            {
+              "x": 0,
+              "sine": 0,
+              "gaussian": 1
+            },
+            {
+              "x": 0.05,
+              "sine": 0.04997916927067833,
+              "gaussian": 0.9987507809245809
+            },
+            {
+              "x": 0.1,
+              "sine": 0.09983341664682815,
+              "gaussian": 0.9950124791926823
+            },
+            {
+              "x": 0.15,
+              "sine": 0.14943813247359922,
+              "gaussian": 0.9888130446112331
+            },
+            {
+              "x": 0.2,
+              "sine": 0.19866933079506122,
+              "gaussian": 0.9801986733067553
+            },
+            {
+              "x": 0.25,
+              "sine": 0.24740395925452294,
+              "gaussian": 0.9692332344763441
+            },
+            {
+              "x": 0.3,
+              "sine": 0.29552020666133955,
+              "gaussian": 0.9559974818331
+            },
+            {
+              "x": 0.35,
+              "sine": 0.34289780745545134,
+              "gaussian": 0.9405880633643421
+            },
+            {
+              "x": 0.4,
+              "sine": 0.3894183423086505,
+              "gaussian": 0.9231163463866358
+            },
+            {
+              "x": 0.45,
+              "sine": 0.43496553411123023,
+              "gaussian": 0.903707077873196
+            },
+            {
+              "x": 0.5,
+              "sine": 0.479425538604203,
+              "gaussian": 0.8824969025845955
+            },
+            {
+              "x": 0.55,
+              "sine": 0.5226872289306592,
+              "gaussian": 0.8596327636025423
+            },
+            {
+              "x": 0.6,
+              "sine": 0.5646424733950354,
+              "gaussian": 0.835270211411272
+            },
+            {
+              "x": 0.65,
+              "sine": 0.6051864057360395,
+              "gaussian": 0.8095716486678869
+            },
+            {
+              "x": 0.7,
+              "sine": 0.644217687237691,
+              "gaussian": 0.7827045382418683
+            },
+            {
+              "x": 0.75,
+              "sine": 0.6816387600233341,
+              "gaussian": 0.7548396019890073
+            },
+            {
+              "x": 0.8,
+              "sine": 0.7173560908995228,
+              "gaussian": 0.7261490370736909
+            },
+            {
+              "x": 0.85,
+              "sine": 0.7512804051402927,
+              "gaussian": 0.6968047754960348
+            },
+            {
+              "x": 0.9,
+              "sine": 0.7833269096274834,
+              "gaussian": 0.6669768108584744
+            },
+            {
+              "x": 0.95,
+              "sine": 0.8134155047893737,
+              "gaussian": 0.6368316143717432
+            },
+            {
+              "x": 1,
+              "sine": 0.8414709848078965,
+              "gaussian": 0.6065306597126334
+            },
+            {
+              "x": 1.05,
+              "sine": 0.867423225594017,
+              "gaussian": 0.5762290736717999
+            },
+            {
+              "x": 1.1,
+              "sine": 0.8912073600614354,
+              "gaussian": 0.5460744266397094
+            },
+            {
+              "x": 1.15,
+              "sine": 0.912763940260521,
+              "gaussian": 0.5162056739454964
+            },
+            {
+              "x": 1.2,
+              "sine": 0.9320390859672263,
+              "gaussian": 0.4867522559599717
+            },
+            {
+              "x": 1.25,
+              "sine": 0.9489846193555862,
+              "gaussian": 0.45783336177161427
+            },
+            {
+              "x": 1.3,
+              "sine": 0.963558185417193,
+              "gaussian": 0.4295573582107391
+            },
+            {
+              "x": 1.35,
+              "sine": 0.9757233578266591,
+              "gaussian": 0.40202138309465485
+            },
+            {
+              "x": 1.4,
+              "sine": 0.9854497299884601,
+              "gaussian": 0.37531109885139957
+            },
+            {
+              "x": 1.45,
+              "sine": 0.9927129910375885,
+              "gaussian": 0.3495006001997565
+            },
+            {
+              "x": 1.5,
+              "sine": 0.9974949866040544,
+              "gaussian": 0.32465246735834974
+            },
+            {
+              "x": 1.55,
+              "sine": 0.999783764189357,
+              "gaussian": 0.3008179543572755
+            },
+            {
+              "x": 1.6,
+              "sine": 0.9995736030415051,
+              "gaussian": 0.2780373004531941
+            },
+            {
+              "x": 1.65,
+              "sine": 0.9968650284539189,
+              "gaussian": 0.25634015141507366
+            },
+            {
+              "x": 1.7,
+              "sine": 0.9916648104524686,
+              "gaussian": 0.23574607655586358
+            },
+            {
+              "x": 1.75,
+              "sine": 0.9839859468739369,
+              "gaussian": 0.21626516682988728
+            },
+            {
+              "x": 1.8,
+              "sine": 0.9738476308781951,
+              "gaussian": 0.19789869908361465
+            },
+            {
+              "x": 1.85,
+              "sine": 0.9612752029752999,
+              "gaussian": 0.18063985161889395
+            },
+            {
+              "x": 1.9,
+              "sine": 0.9463000876874145,
+              "gaussian": 0.1644744565771549
+            },
+            {
+              "x": 1.95,
+              "sine": 0.9289597150038693,
+              "gaussian": 0.14938177525041804
+            },
+            {
+              "x": 2,
+              "sine": 0.9092974268256817,
+              "gaussian": 0.1353352832366127
+            },
+            {
+              "x": 2.05,
+              "sine": 0.8873623686333755,
+              "gaussian": 0.12230345334690061
+            },
+            {
+              "x": 2.1,
+              "sine": 0.8632093666488737,
+              "gaussian": 0.11025052530448522
+            },
+            {
+              "x": 2.15,
+              "sine": 0.8368987907984977,
+              "gaussian": 0.0991372525107474
+            },
+            {
+              "x": 2.2,
+              "sine": 0.8084964038195901,
+              "gaussian": 0.0889216174593863
+            },
+            {
+              "x": 2.25,
+              "sine": 0.7780731968879212,
+              "gaussian": 0.07955950871822769
+            },
+            {
+              "x": 2.3,
+              "sine": 0.7457052121767203,
+              "gaussian": 0.07100535373963701
+            },
+            {
+              "x": 2.35,
+              "sine": 0.7114733527908443,
+              "gaussian": 0.06321270307528883
+            },
+            {
+              "x": 2.4,
+              "sine": 0.675463180551151,
+              "gaussian": 0.056134762834133725
+            },
+            {
+              "x": 2.45,
+              "sine": 0.6377647021345036,
+              "gaussian": 0.04972487341234958
+            },
+            {
+              "x": 2.5,
+              "sine": 0.5984721441039564,
+              "gaussian": 0.04393693362340742
+            },
+            {
+              "x": 2.55,
+              "sine": 0.557683717391417,
+              "gaussian": 0.038725770351664364
+            },
+            {
+              "x": 2.6,
+              "sine": 0.5155013718214642,
+              "gaussian": 0.03404745473459933
+            },
+            {
+              "x": 2.65,
+              "sine": 0.47203054128988264,
+              "gaussian": 0.029859566641115533
+            },
+            {
+              "x": 2.7,
+              "sine": 0.4273798802338298,
+              "gaussian": 0.026121409853918223
+            },
+            {
+              "x": 2.75,
+              "sine": 0.38166099205233167,
+              "gaussian": 0.022794180883612347
+            },
+            {
+              "x": 2.8,
+              "sine": 0.3349881501559051,
+              "gaussian": 0.019841094744370298
+            },
+            {
+              "x": 2.85,
+              "sine": 0.2874780123425444,
+              "gaussian": 0.017227471311635108
+            },
+            {
+              "x": 2.9,
+              "sine": 0.23924932921398243,
+              "gaussian": 0.014920786069067842
+            },
+            {
+              "x": 2.95,
+              "sine": 0.19042264736102704,
+              "gaussian": 0.01289068914400147
+            },
+            {
+              "x": 3,
+              "sine": 0.1411200080598672,
+              "gaussian": 0.011108996538242306
+            },
+            {
+              "x": 3.05,
+              "sine": 0.0914646422324372,
+              "gaussian": 0.009549657395020316
+            },
+            {
+              "x": 3.1,
+              "sine": 0.04158066243329049,
+              "gaussian": 0.008188701014374074
+            },
+            {
+              "x": 3.15,
+              "sine": -0.008407247367148618,
+              "gaussian": 0.007004167149362422
+            },
+            {
+              "x": 3.2,
+              "sine": -0.058374143427580086,
+              "gaussian": 0.0059760228950059375
+            },
+            {
+              "x": 3.25,
+              "sine": -0.10819513453010837,
+              "gaussian": 0.005086069231012701
+            },
+            {
+              "x": 3.3,
+              "sine": -0.1577456941432482,
+              "gaussian": 0.0043178400076330815
+            },
+            {
+              "x": 3.35,
+              "sine": -0.20690197167339977,
+              "gaussian": 0.003656495880052896
+            },
+            {
+              "x": 3.4,
+              "sine": -0.2555411020268312,
+              "gaussian": 0.0030887154082367718
+            },
+            {
+              "x": 3.45,
+              "sine": -0.30354151270842933,
+              "gaussian": 0.0026025852527254006
+            },
+            {
+              "x": 3.5,
+              "sine": -0.35078322768961984,
+              "gaussian": 0.002187491118182885
+            },
+            {
+              "x": 3.55,
+              "sine": -0.3971481672859598,
+              "gaussian": 0.0018340108300731598
+            },
+            {
+              "x": 3.6,
+              "sine": -0.44252044329485246,
+              "gaussian": 0.001533810679324463
+            },
+            {
+              "x": 3.65,
+              "sine": -0.4867866486556994,
+              "gaussian": 0.0012795459378999237
+            },
+            {
+              "x": 3.7,
+              "sine": -0.5298361409084934,
+              "gaussian": 0.0010647662366679196
+            },
+            {
+              "x": 3.75,
+              "sine": -0.5715613187423437,
+              "gaussian": 0.00088382630693505
+            },
+            {
+              "x": 3.8,
+              "sine": -0.6118578909427189,
+              "gaussian": 0.0007318024188804728
+            },
+            {
+              "x": 3.85,
+              "sine": -0.6506251370651673,
+              "gaussian": 0.0006044147037595549
+            },
+            {
+              "x": 3.9,
+              "sine": -0.6877661591839738,
+              "gaussian": 0.0004979554215032739
+            },
+            {
+              "x": 3.95,
+              "sine": -0.7231881240865121,
+              "gaussian": 0.0004092231302281785
+            },
+            {
+              "x": 4,
+              "sine": -0.7568024953079282,
+              "gaussian": 0.00033546262790251185
+            }
+          ]
+        },
+        "transform": [
+          {
+            "fold": [
+              "sine",
+              "gaussian"
+            ],
+            "as": [
+              "function",
+              "value"
+            ]
+          }
+        ],
+        "mark": {
+          "type": "line"
+        },
+        "encoding": {
+          "x": {
+            "field": "x",
+            "type": "quantitative",
+            "title": "x (dimensionless)"
+          },
+          "y": {
+            "field": "value",
+            "type": "quantitative",
+            "title": "f(x)"
+          },
+          "color": {
+            "field": "function",
+            "type": "nominal",
+            "title": "Function"
+          },
+          "strokeDash": {
+            "field": "function",
+            "type": "nominal",
+            "title": "Function"
+          }
+        }
+      }
+    }
+  ]
+}

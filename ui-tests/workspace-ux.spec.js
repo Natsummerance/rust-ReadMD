@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => console.log('Workspace runtime error:', error.message));
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.ReadMDGraph && typeof openSkillIdeaDialog === 'function');
+  await waitForPage(page, () => window.ReadMDGraph && typeof openSkillIdeaDialog === 'function');
 });
 test('Skill form validates inline, restores draft and submits chosen output', async ({ page }) => {
   await page.evaluate(() => { window.skillResult = undefined; openSkillIdeaDialog().then(v => window.skillResult = v); });

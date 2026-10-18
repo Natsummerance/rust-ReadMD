@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 async function openWorkbench(page, templates) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openTplModal === 'function');
+  await waitForPage(page, () => typeof openTplModal === 'function');
   await page.evaluate(items => {
     state.ai.templates = items;
     state.ai.templateId = items[0] ? items[0].id : '';
@@ -21,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 
 test('small windows do not cause horizontal overflow', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openTplModal === 'function');
+  await waitForPage(page, () => typeof openTplModal === 'function');
   for (const width of [640, 700, 900]) {
     await page.setViewportSize({ width, height: 800 });
     const m = await page.evaluate(() => ({
@@ -40,7 +41,7 @@ test('small windows do not cause horizontal overflow', async ({ page }) => {
 
 test('doc import modal offers a browse button and keeps the modal open in browser mode', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openDocImportModal === 'function');
+  await waitForPage(page, () => typeof openDocImportModal === 'function');
   await page.evaluate(() => { state.editing = true; openDocImportModal(); });
   await expect(page.locator('#doc-import-modal')).toBeVisible();
   await expect(page.locator('#doc-import-browse')).toBeVisible();
@@ -55,11 +56,11 @@ test('provider search input filters provider cards', async ({ page }) => {
     body: JSON.stringify({ schema_version: 3, presets: [], custom: [], upstream_catalog: [], current: {} }),
   }));
   await page.goto('/');
-  await page.waitForFunction(() => typeof fillAiProviders === 'function');
+  await waitForPage(page, () => typeof fillAiProviders === 'function');
   // Hydrate the same config path used by the settings modal before seeding;
   // this makes the fixture deterministic even when startup keeps AI lazy.
   await page.evaluate(() => loadAiConfig());
-  await page.waitForFunction(() => window.state && state.ai && state.ai.config, null, { timeout: 15000 });
+  await waitForPage(page, () => window.state && state.ai && state.ai.config, null, { timeout: 15000 });
   await page.evaluate(() => openAiModal('ai-settings-modal', $('ai-settings-open')));
   await page.evaluate(() => {
     state.ai.providers = [
@@ -119,7 +120,7 @@ test('skill import menu stays inside the viewport at 600/900/1440 widths', async
 
 test('long user message collapses into an expandable summary card', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof appendAiUserBubble === 'function');
+  await waitForPage(page, () => typeof appendAiUserBubble === 'function');
   const info = await page.evaluate(() => {
     const out = document.createElement('div');
     out.id = 'bubble-test-out';
@@ -154,7 +155,7 @@ test('long user message collapses into an expandable summary card', async ({ pag
 
 test('offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ without network', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderAllDiagrams === 'function');
+  await waitForPage(page, () => typeof renderAllDiagrams === 'function');
   const result = await page.evaluate(async () => {
     const cases = [
       ['mermaid', 'graph TD; A[Start] --> B[Done]'],
@@ -194,7 +195,7 @@ test('offline diagram dispatcher renders Mermaid, WaveDrom, Bitfield and TikZ wi
 
 test('offline Chart.js fence renders a bounded canvas without network', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderAllDiagrams === 'function');
+  await waitForPage(page, () => typeof renderAllDiagrams === 'function');
   const result = await page.evaluate(async () => {
     const card = document.createElement('div');
     card.className = 'diagram-card';

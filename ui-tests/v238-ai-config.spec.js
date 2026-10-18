@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
@@ -36,7 +37,7 @@ test('all document AI entry points reuse the provider and opaque credential save
   });
 
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadAiConfig === 'function' && typeof generateExportStyleWithAi === 'function');
+  await waitForPage(page, () => typeof loadAiConfig === 'function' && typeof generateExportStyleWithAi === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'shared.md', '', '# document', []);
     await toggleEdit();
@@ -62,7 +63,7 @@ test('all document AI entry points reuse the provider and opaque credential save
 
 test('Save As in the More menu is localized by the active dictionary', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window.i18n && window.i18n.currentLang === 'zh-CN');
+  await waitForPage(page, () => window.i18n && window.i18n.currentLang === 'zh-CN');
   await page.locator('#btn-more').click();
   await expect(page.locator('#btn-saveas > span')).toHaveText('另存为');
   await expect(page.locator('#btn-saveas > em')).toHaveText('.md 文件');

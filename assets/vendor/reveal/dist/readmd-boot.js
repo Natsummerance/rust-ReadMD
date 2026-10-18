@@ -30,7 +30,17 @@
   if (katexPlugin && cfg.katexLocal) init.katex = { local: cfg.katexLocal };
 
   window.deck = new Reveal(init);
-  deck.initialize();
+  deck.initialize().then(async function () {
+    if (document.fonts) await document.fonts.ready;
+    await Promise.allSettled(Array.from(document.images).map(function (image) { return image.decode(); }));
+    await new Promise(function (resolve) { requestAnimationFrame(function () { requestAnimationFrame(resolve); }); });
+    if (window.parent !== window) {
+      var request = document.querySelector('meta[name="readmd-presentation-request"]');
+      window.parent.postMessage({type:'pres-ready',generation:request && request.content}, '*');
+    }
+  }).catch(function () {
+    if(window.parent!==window){var request=document.querySelector('meta[name="readmd-presentation-request"]');window.parent.postMessage({type:'pres-failed',generation:request&&request.content},'*');}
+  });
 
   if (cfg.standalone && typeof renderMathInElement === 'function') {
     deck.on('ready', function () {
@@ -62,9 +72,11 @@
   window.addEventListener('keydown', function (e) {
     if (e.key === 'F11') {
       e.preventDefault();
-      if (window.parent && window.parent !== window) {
+      if (!e.repeat && window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'pres-toggle-fullscreen' }, '*');
       }
+    } else if (e.key === 'Escape' && !e.isComposing && window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'pres-exit-fullscreen' }, '*');
     }
   });
 

@@ -361,6 +361,12 @@ function insertImgUrl() {
   showToast(_t('toast.imgUrlInserted') || '已插入图片 URL');
 }
 
+function registerStagedImage(asset, tab = getActiveTab()) {
+  if (!asset || !tab || !asset.path || !asset.reference) return;
+  tab.webAssets = [...(tab.webAssets || []).filter(item => item.reference !== asset.reference), asset];
+  if (getActiveTab() === tab) state.webAssets = tab.webAssets;
+}
+
 function cmInsertImage(rel) {
   if (!cmView) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -433,11 +439,12 @@ async function exportAndInsertImgOnce() {
   try {
     const resp = await apiFetch('/api/image/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dir: target.dir, data: b64, format: 'png', name: 'img_' + Date.now() }),
+      body: JSON.stringify({ stage: true, data: b64, format: 'png', name: 'image' }),
     });
     const d = await resp.json();
     if (!resp.ok || !d.ok) throw new Error(d.error || _t('toast.unknownError'));
     if (!targetUnchanged()) { showToast(_t('toast.imgExportFail')); return; }
+    registerStagedImage(d.asset);
     cmInsertImage(d.rel);
     closeImgModal(true);
     showToast(_t('toast.imgInsertedRel', { rel: d.rel }) || ('图片已插入（' + d.rel + '）'));

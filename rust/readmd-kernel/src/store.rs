@@ -132,6 +132,15 @@ impl Store {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // SQLite's Windows VFS does not reliably expand long plain paths.
+        // Resolve the existing parent at this native boundary, retaining the
+        // verbatim prefix; public document/display paths remain unchanged.
+        #[cfg(windows)]
+        let native = std::fs::canonicalize(
+            path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")),
+        )?.join(path.file_name().unwrap_or_default());
+        #[cfg(windows)]
+        let path = native.as_path();
         Store::connect(path.to_string_lossy().as_ref())
     }
 
@@ -1978,6 +1987,29 @@ fn find_in(directory: &str, include_children: bool, name: &str) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn non_verbatim_long_unicode_database_reopens_and_shares_one_wal() {
+        use std::os::windows::ffi::OsStrExt;
+        let root = tempfile::tempdir().unwrap();
+        let segment = "资料".repeat(35);
+        let db = crate::paths::strip_verbatim(root.path().to_path_buf())
+            .join(&segment).join(&segment).join(&segment).join(&segment).join("readmd.db");
+        assert!(db.as_os_str().encode_wide().count() > 300);
+        assert!(!db.to_string_lossy().starts_with(r"\\?\"));
+        let first = Store::open(&db).unwrap();
+        first.upsert_document("research.md", "研究记录", 1, 100, 12, "md", "保留原始证据").unwrap();
+        let second = Store::open(&db).unwrap();
+        assert_eq!(second.get_doc("research.md").unwrap().unwrap().title, "研究记录");
+        second.upsert_document("notes.md", "共同资料", 2, 50, 8, "md", "核对研究结论").unwrap();
+        assert_eq!(first.get_doc("notes.md").unwrap().unwrap().title, "共同资料");
+        assert!(db.is_file());
+        drop(second); drop(first);
+        let reopened = Store::open(&db).unwrap();
+        assert_eq!(reopened.search("证据", 10).unwrap().len(), 1);
+        assert_eq!(reopened.stats().unwrap()["docs"], 2);
+    }
 
     #[test]
     fn tokenizer_handles_mixed_scripts() {

@@ -1,0 +1,232 @@
+{
+  "en": {
+    "equation": "Equation",
+    "figure": "Figure",
+    "table": "Table"
+  },
+  "zh-CN": {
+    "equation": "公式",
+    "figure": "图",
+    "table": "表"
+  },
+  "zh-TW": {
+    "equation": "公式",
+    "figure": "圖",
+    "table": "表"
+  },
+  "zh-HK": {
+    "equation": "公式",
+    "figure": "圖",
+    "table": "表"
+  },
+  "ja": {
+    "equation": "式",
+    "figure": "図",
+    "table": "表"
+  },
+  "ko": {
+    "equation": "수식",
+    "figure": "그림",
+    "table": "표"
+  },
+  "fr": {
+    "equation": "Équation",
+    "figure": "Figure",
+    "table": "Tableau"
+  },
+  "de": {
+    "equation": "Gleichung",
+    "figure": "Abbildung",
+    "table": "Tabelle"
+  },
+  "es": {
+    "equation": "Ecuación",
+    "figure": "Figura",
+    "table": "Tabla"
+  },
+  "it": {
+    "equation": "Equazione",
+    "figure": "Figura",
+    "table": "Tabella"
+  },
+  "pt": {
+    "equation": "Equação",
+    "figure": "Figura",
+    "table": "Tabela"
+  },
+  "ru": {
+    "equation": "Уравнение",
+    "figure": "Рисунок",
+    "table": "Таблица"
+  },
+  "uk": {
+    "equation": "Рівняння",
+    "figure": "Рисунок",
+    "table": "Таблиця"
+  },
+  "ar": {
+    "equation": "معادلة",
+    "figure": "شكل",
+    "table": "جدول"
+  },
+  "he": {
+    "equation": "משוואה",
+    "figure": "איור",
+    "table": "טבלה"
+  },
+  "hi": {
+    "equation": "समीकरण",
+    "figure": "चित्र",
+    "table": "तालिका"
+  },
+  "bn": {
+    "equation": "সমীকরণ",
+    "figure": "চিত্র",
+    "table": "সারণি"
+  },
+  "ne": {
+    "equation": "समीकरण",
+    "figure": "चित्र",
+    "table": "तालिका"
+  },
+  "th": {
+    "equation": "สมการ",
+    "figure": "รูป",
+    "table": "ตาราง"
+  },
+  "vi": {
+    "equation": "Phương trình",
+    "figure": "Hình",
+    "table": "Bảng"
+  },
+  "id": {
+    "equation": "Persamaan",
+    "figure": "Gambar",
+    "table": "Tabel"
+  },
+  "ms": {
+    "equation": "Persamaan",
+    "figure": "Rajah",
+    "table": "Jadual"
+  },
+  "tl": {
+    "equation": "Ekwasyon",
+    "figure": "Larawan",
+    "table": "Talahanayan"
+  },
+  "tr": {
+    "equation": "Denklem",
+    "figure": "Şekil",
+    "table": "Tablo"
+  },
+  "nl": {
+    "equation": "Vergelijking",
+    "figure": "Figuur",
+    "table": "Tabel"
+  },
+  "sv": {
+    "equation": "Ekvation",
+    "figure": "Figur",
+    "table": "Tabell"
+  },
+  "no": {
+    "equation": "Ligning",
+    "figure": "Figur",
+    "table": "Tabell"
+  },
+  "da": {
+    "equation": "Ligning",
+    "figure": "Figur",
+    "table": "Tabel"
+  },
+  "fi": {
+    "equation": "Yhtälö",
+    "figure": "Kuva",
+    "table": "Taulukko"
+  },
+  "el": {
+    "equation": "Εξίσωση",
+    "figure": "Σχήμα",
+    "table": "Πίνακας"
+  },
+  "ro": {
+    "equation": "Ecuație",
+    "figure": "Figură",
+    "table": "Tabel"
+  },
+  "hu": {
+    "equation": "Egyenlet",
+    "figure": "Ábra",
+    "table": "Táblázat"
+  },
+  "hr": {
+    "equation": "Jednadžba",
+    "figure": "Slika",
+    "table": "Tablica"
+  },
+  "sl": {
+    "equation": "Enačba",
+    "figure": "Slika",
+    "table": "Tabela"
+  },
+  "eo": {
+    "equation": "Ekvacio",
+    "figure": "Figuro",
+    "table": "Tabelo"
+  },
+  "ga": {
+    "equation": "Cothromóid",
+    "figure": "Fíor",
+    "table": "Tábla"
+  },
+  "mt": {
+    "equation": "Ekwazzjoni",
+    "figure": "Figura",
+    "table": "Tabella"
+  },
+  "mn": {
+    "equation": "Тэгшитгэл",
+    "figure": "Зураг",
+    "table": "Хүснэгт"
+  },
+  "bo": {
+    "equation": "མཉམ་བྱ།",
+    "figure": "རི་མོ།",
+    "table": "རེའུ་མིག"
+  },
+  "ug": {
+    "equation": "تەڭلىمە",
+    "figure": "رەسىم",
+    "table": "جەدۋەل"
+  },
+  "km": {
+    "equation": "សមីការ",
+    "figure": "រូបភាព",
+    "table": "តារាង"
+  },
+  "lo": {
+    "equation": "ສົມຜົນ",
+    "figure": "ຮູບ",
+    "table": "ຕາຕະລາງ"
+  },
+  "my": {
+    "equation": "ညီမျှခြင်း",
+    "figure": "ပုံ",
+    "table": "ဇယား"
+  },
+  "kg": {
+    "equation": "Ndambu ya ntalu",
+    "figure": "Kifwanisu",
+    "table": "Tablo"
+  },
+  "kl": {
+    "equation": "Naligiissitsineq",
+    "figure": "Assiliaq",
+    "table": "Takussutissiaq"
+  },
+  "rw": {
+    "equation": "Ikigereranyo",
+    "figure": "Ishusho",
+    "table": "Imbonerahamwe"
+  }
+}

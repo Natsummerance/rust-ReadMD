@@ -56,51 +56,11 @@ function buildToc() {
     }
 
     list.innerHTML = '';
-    const seen = {};
+    const allocate = ReadMDHeadings.createIds();
     const globalHeadings = [];
 
     state.pagination.pages.forEach((pg, pageIdx) => {
-    const lines = pg.content.split('\n');
-    let inFence = false;
-    let fenceMarker = '';
-    lines.forEach((line, lineIndex) => {
-      const trimmed = line.trim();
-      if (/^(```|~~~)/.test(trimmed)) {
-        const marker = trimmed.slice(0, 3);
-        if (!inFence) {
-          inFence = true;
-          fenceMarker = marker;
-        } else if (trimmed.startsWith(fenceMarker)) {
-          inFence = false;
-          fenceMarker = '';
-        }
-        return;
-      }
-      if (inFence) return;
-
-        const m = trimmed.match(/^(#{1,6})\s+(.+)$/);
-        if (m) {
-          const level = m[1].length;
-          const rawText = m[2].replace(/[*_`#]/g, '').trim();
-          let slug = rawText.toLowerCase()
-            .replace(/[^\w\u4e00-\u9fff\s-]/g, '')
-            .replace(/\s+/g, '-');
-          if (!slug) slug = 'toc-h-' + globalHeadings.length;
-          if (seen[slug]) {
-            seen[slug]++;
-            slug = slug + '-' + seen[slug];
-          } else {
-            seen[slug] = 1;
-          }
-          globalHeadings.push({
-            id: slug,
-            text: rawText,
-            level,
-            pageIndex: pageIdx,
-            sourceLine: lineIndex + 1,
-          });
-        }
-      });
+      for(const heading of ReadMDHeadings.fromMarkdown(pg.content,allocate))globalHeadings.push({...heading,pageIndex:pageIdx});
     });
 
     state.pagination.allHeadings = globalHeadings;

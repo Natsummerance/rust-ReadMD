@@ -127,6 +127,7 @@ function applyPvLayout() {
       schedulePreview();
     }
   } else {
+    if(window.ReadMDPublication)ReadMDPublication.stopPaged();
     pw.classList.add('hidden');
     $('pv-splitter').classList.add('hidden');
   }
@@ -276,19 +277,28 @@ async function renderPreview() {
   const renderEpoch = ++pvRenderEpoch;
   const pane = $('preview-pane');
   if (!pane || state.pvLayout === 'none' || !state.editing) return;
-  let src = getEditContent();
-  if (src === pvLast) return;
-  pvLast = src;
+  const source = getEditContent(),view=cmView,tab=state.activeTabId;
+  let src = source;
+  const current=()=>renderEpoch===pvRenderEpoch&&state.editing&&state.pvLayout!=='none'&&cmView===view&&state.activeTabId===tab&&getEditContent()===source;
+  if(state.pvPublication&&view){await ReadMDPublication.renderPaged(pane,{view,tab,current});return;}
+  ReadMDPublication.stopPaged();pane.classList.remove('publication-paged');
+  if (source === pvLast) return;
+
+  if(source.includes('[^')&&!window.ReadMDReader){await loadReaderAssets();if(!current())return;}
+
+  if(window.ReadMDPublication){src=await ReadMDPublication.prepare(src,state.file||'');if(!current())return;}
 
   // 预处理 @import
   if (window.processDocImports) {
     src = await window.processDocImports(src, state.file || '');
-    if (renderEpoch !== pvRenderEpoch) return;
+    if (!current()) return;
   }
 
   let html;
   try {
-    const transformed = window.transformAcademicCallouts ? transformAcademicCallouts(src) : src;
+    let transformed = window.readerPrepare ? readerPrepare(src) : src;
+    if (window.transformWikilinks) transformed = transformWikilinks(transformed);
+    if (window.transformAcademicCallouts) transformed = transformAcademicCallouts(transformed);
     const prot = protectMath(transformed);
     if (window.parseMarkdownWithSourceMap) {
       html = restoreMath(parseMarkdownWithSourceMap(prot.src), prot.saved);
@@ -299,17 +309,26 @@ async function renderPreview() {
     const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
     html = '<p class="ai-err">' + (_t('editor.previewRenderFail') || '预览渲染失败') + '</p>';
   }
-  if (renderEpoch !== pvRenderEpoch) return;
+  if (!current()) return;
   pvLastRenderAt = Date.now();
   const safe = window.sanitizeRenderedHtml ? window.sanitizeRenderedHtml(html) : html;
   const fresh = pvPatchPane(pane, safe);
+  if(window.ReadMDReader)ReadMDReader.enhanceFootnotes(pane);
+  if(window.ReadMDPublication)ReadMDPublication.applyLayout(pane);
+  // Cache only a committed render. A second request for the same source must
+  // not invalidate an in-flight render and then skip it as already displayed.
+  pvLast = source;
+  ensureHeadingIds(pane);
   if (!fresh.length) return;
   // Post-process only the blocks that changed: fixLinks binds click handlers,
   // so it sees just the fresh links while heading lookup spans the whole pane.
   const freshLinks = fresh.flatMap(n => (n.tagName === 'A' ? [n] : Array.from(n.querySelectorAll('a'))));
+  freshLinks.push(...pane.querySelectorAll('.rd-footnotes a'));
   fixLinks({ querySelectorAll: sel => (sel === 'a' ? freshLinks : pane.querySelectorAll(sel)) });
   fixImages(pane);
-  fresh.forEach(n => renderMath(n));
+  // Schedule the pane as a batch so large math documents can defer offscreen
+  // formulas. Already rendered MathJax containers are excluded by its adapter.
+  renderMath(pane);
   if (window.renderAllCodeChunks) renderAllCodeChunks(pane);
   if (window.renderAllDiagrams) renderAllDiagrams(pane);
   if (state.pvSync) pvSyncFromEditor();
@@ -360,6 +379,7 @@ function pvAnchors(wrap, pane) {
 }
 
 function pvSyncFromEditor() {
+  if(state.pvPublication)return;
   if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'preview') return;
   if (pvSyncFrame) return;
   pvSyncFrame = requestAnimationFrame(() => {
@@ -394,6 +414,7 @@ function pvSyncFromEditor() {
 }
 
 function pvSyncFromPreview() {
+  if(state.pvPublication)return;
   if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'editor') return;
   if (pvSyncFrame) return;
   pvSyncFrame = requestAnimationFrame(() => {
@@ -496,9 +517,11 @@ async function toggleEdit() {
   }
   applyPvUi();
   syncSearchMode();
+  if(window.ReadMDInlineMath)await ReadMDInlineMath.restore();
 }
 
 async function confirmExitEdit() {
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
   if (!hasUnsavedEditorChanges()) {
     exitEdit();
     return true;
@@ -511,6 +534,7 @@ async function confirmExitEdit() {
   }
   const activeTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
   if (window.ReadMDRecovery && !await window.ReadMDRecovery.discard(activeTab)) return false;
+  await window.ReadMDCollaborationShare?.detach(activeTab,true);
   if (activeTab) {
     activeTab.content = state.original;
     activeTab.fixed = state.original;
@@ -522,6 +546,7 @@ async function confirmExitEdit() {
 }
 
 function exitEdit() {
+  window.ReadMDInlineMath?.suspend();
   ++editorOpenEpoch;
   if (state.editing) rememberEditPosition();
   if (typeof switchEditAiToChatPanel === 'function') switchEditAiToChatPanel();
@@ -575,7 +600,40 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
   if (unchanged && savedContent !== draft) {
     draft = savedContent;
     if (active && state.editing) {
-      if (cmView) cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft }, annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('save.assets') });
+      if (cmView) {
+        const CM = window.ReadMDCodeMirror;
+        const edits = result.save_edits || result.asset_edits;
+        let editorEdits;
+        let localized = Array.isArray(edits) && edits.length > 0;
+        if (localized) {
+          const parts = []; let cursor = 0;
+          for (const edit of edits) {
+            if (!Number.isInteger(edit.from) || !Number.isInteger(edit.to) || edit.from < cursor || edit.to < edit.from || edit.to > snapshot.content.length || typeof edit.insert !== 'string') { localized = false; break; }
+            parts.push(snapshot.content.slice(cursor, edit.from), edit.insert); cursor = edit.to;
+          }
+          if (localized) { parts.push(snapshot.content.slice(cursor)); localized = parts.join('') === draft; }
+          if (localized) {
+            // Service ranges refer to persisted UTF-16 text. CodeMirror keeps
+            // LF internally, including when getEditContent preserves CRLF.
+            // Walk CRLF boundaries once, keeping save cost linear in source.
+            const pairs=snapshot.content.matchAll(/\r\n/g);let next=pairs.next(),removed=0;
+            const position=at=>{
+              if(at>0&&snapshot.content[at-1]==='\r'&&snapshot.content[at]==='\n')throw Error('split line ending');
+              while(!next.done&&next.value.index+2<=at){removed++;next=pairs.next();}
+              return at-removed;
+            };
+            try{
+              editorEdits=edits.map(edit=>({from:position(edit.from),to:position(edit.to),insert:edit.insert.replace(/\r\n?/g,'\n')}));
+              localized=cmView.state.doc.toString()===snapshot.content.replace(/\r\n?/g,'\n');
+            }catch(_){localized=false;}
+          }
+        }
+        // This is the final continuation of the preceding content edit. The
+        // documented composition event coalesces across asynchronous save I/O;
+        // addToHistory:false would leave replaced paths behind during undo.
+        cmView.dispatch({ changes: localized ? editorEdits : { from: 0, to: cmView.state.doc.length, insert: draft },
+          annotations: CM.Transaction.userEvent.of(localized ? 'input.type.compose' : 'save') });
+      }
       else $('edit-area').value = draft;
     }
   }
@@ -584,7 +642,7 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
   tab.name = String(path).split(/[\\/]/).pop(); tab.title = tab.browserCopy && !options.retarget ? tab.title : tab.name;
   if (options.retarget) tab.browserCopy = false;
   tab.original = savedContent; tab.content = draft; tab.fixed = draft; tab.fixes = [];
-  if (Array.isArray(result.saved_assets)) tab.webAssets = unchanged ? result.saved_assets : [...(result.source_assets || snapshot.assets), ...result.saved_assets];
+  if (Array.isArray(result.saved_assets)) tab.webAssets = [...(result.source_assets || snapshot.assets), ...result.saved_assets].filter((asset,index,all)=>all.findIndex(a=>a.path===asset.path&&a.reference===asset.reference)===index);
   tab.isDirty = !unchanged; tab.mtime = result.mtime || 0; tab.revision = result.revision || ''; tab.encoding = snapshot.encoding;
   if (active) {
     state.file = path; state.dir = tab.dir; state.mode = 'file'; state.browserCopy = tab.browserCopy;
@@ -597,13 +655,25 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
   }
   renderTabsBar(); updateUnloadGuard(); updateStatus();
   await window.ReadMDRecovery?.saved(snapshot, tab);
+  await window.ReadMDCollaborationShare?.documentSaved(tab);
   showToast(window.i18n.t(unchanged ? 'storage.saved' : 'storage.savedEarlier'));
+  if(result.math_recoveries>0)showToast(window.i18n.t('storage.recoveryAvailable',{count:result.math_recoveries}),6000);
+  else if(result.migration_diagnostics?.length)showToast(window.i18n.t('formula.metadataInvalid'),6000);
   return !options.exitAfterSave || (active && unchanged);
 }
 
 async function saveEdit(options = {}) {
   if (!state.editing) return false;
-  return window.ReadMDTask.run('document-save', () => saveEditOnce(options), { trigger: ['edit-save', 'btn-saveas'] });
+  const tab=getActiveTab(),view=cmView;
+  let mathKept=false;
+  if (window.ReadMDInlineMath && !await ReadMDInlineMath.commit({focus:false})) {
+    if(!await ReadMDInlineMath.flush())return false;
+    mathKept=true;
+  }
+  if(getActiveTab()!==tab||cmView!==view||!state.editing)return false;
+  const saved=await window.ReadMDTask.run('document-save', () => saveEditOnce(options), { trigger: ['edit-save', 'btn-saveas'] });
+  if(mathKept&&saved)ReadMDRecovery.mathKept();
+  return saved;
 }
 
 async function saveEditOnce(options = {}) {
@@ -613,7 +683,7 @@ async function saveEditOnce(options = {}) {
     // Use one acknowledgement shape for native and browser editing. The API is the Rust writer in both.
     const response = await apiFetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding,
-        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null }) });
+        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null, assets: snapshot.assets }) });
     const result = await response.json();
     if (!response.ok && !result.conflict && result.error_code !== 'encoding_unrepresentable') throw new Error(result.error || 'HTTP ' + response.status);
     return result;
@@ -686,6 +756,11 @@ function promptSaveConflict() {
 }
 
 async function saveAs(contentOverride = null) {
+  if(state.editing&&window.ReadMDInlineMath){
+    const tab=getActiveTab(),view=cmView;
+    if(typeof contentOverride!=='string')await ReadMDInlineMath.commit({focus:false});
+    if(!await ReadMDInlineMath.flush()||getActiveTab()!==tab||cmView!==view)return false;
+  }
   // DOM event listeners pass a MouseEvent, which is not document content.
   const snapshot = documentSaveSnapshot(typeof contentOverride === 'string' ? contentOverride : null);
   return window.ReadMDTask.run('document-save', () => saveAsSnapshot(snapshot, { retarget: true }), { trigger: ['edit-save', 'btn-saveas'] });

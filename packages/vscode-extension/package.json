@@ -60,7 +60,8 @@
     "onCommand:readmd.setupMcpServer",
     "onCommand:readmd.openSkillByUri",
     "onCommand:readmd.inspectDocument",
-    "onCommand:readmd.searchWorkspace"
+    "onCommand:readmd.searchWorkspace",
+    "onCommand:readmd.openApiDocument"
   ],
   "contributes": {
     "snippets": [
@@ -187,6 +188,11 @@
       {
         "command": "readmd.searchWorkspace",
         "title": "%command.searchWorkspace%"
+      },
+      {
+        "command": "readmd.openApiDocument",
+        "title": "%command.openApiDocument%",
+        "icon": "$(code)"
       }
     ],
     "viewsContainers": {
@@ -277,6 +283,16 @@
     "configuration": {
       "title": "%configuration.title%",
       "properties": {
+        "readmd.aiAutocomplete": {
+          "type": "boolean",
+          "default": false,
+          "description": "%configuration.aiAutocomplete%"
+        },
+        "readmd.aiAutocompleteModel": {
+          "type": "string",
+          "default": "",
+          "description": "%configuration.aiAutocompleteModel%"
+        },
         "readmd.executablePath": {
           "type": "string",
           "default": "",

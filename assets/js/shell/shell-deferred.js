@@ -164,6 +164,8 @@
     { id: 'file.home', group: 'file', title: 'cmd.home', icon: 'home', keywords: 'home welcome start', when: ctx.notWelcome, run: () => call('goHome') },
     // Import & convert
     { id: 'import.convert', group: 'import', title: 'cmd.convert', icon: 'convert', keywords: 'convert docx pdf xlsx pptx word excel import', run: () => call('openConvertModal') },
+    { id: 'document.pdfEdit', group: 'import', title: 'pdf.title', icon: 'pen', keywords: 'PDF edit original text 编辑 文字 原位', run: () => call('openPdfEditor') },
+    { id: 'import.openapi', group: 'import', title: 'openapi.title', icon: 'code', keywords: 'OpenAPI Swagger REST API 接口 文档 generate update', run: () => call('openOpenAPIDocument') },
     { id: 'import.web', group: 'import', title: 'cmd.web', icon: 'globe', shortcut: 'Mod+U', keywords: 'web url page import html fetch', run: () => call('openWebDialog') },
     { id: 'import.ocr', group: 'import', title: 'cmd.ocr', icon: 'scan', keywords: 'ocr scan image pdf recognize', run: () => call('chooseFile', 'ocr') },
     // Export
@@ -178,7 +180,8 @@
     { id: 'view.toc', group: 'view', title: 'cmd.toggleToc', icon: 'sidebar', shortcut: 'Mod+Shift+F', keywords: 'toc outline sidebar headings', run: () => call('toggleSide', 'toc') },
     { id: 'view.files', group: 'view', title: 'cmd.toggleFiles', icon: 'folder', keywords: 'files sidebar tree explorer', run: () => call('toggleSide', 'files') },
     { id: 'view.search', group: 'view', title: 'cmd.search', icon: 'search', shortcut: 'Mod+F', keywords: 'find search in document', when: ctx.hasDoc, run: () => call('toggleSearch') },
-    { id: 'view.zen', group: 'view', title: 'cmd.zen', icon: 'zen', shortcut: 'F11', keywords: 'zen focus fullscreen distraction free', run: () => call('toggleZenMode') },
+    { id: 'view.zen', group: 'view', title: 'cmd.zen', icon: 'zen', keywords: 'zen focus distraction free', run: () => call('toggleZenMode') },
+    { id: 'view.fullscreen', group: 'view', title: 'presentation.fullscreenLabel', icon: 'zen', shortcut: 'F11', keywords: 'fullscreen full screen', run: () => window.ReadMDViewMode.toggleFullscreen() },
     { id: 'view.reading', group: 'view', title: 'cmd.readingMode', icon: 'book', keywords: 'reading mode paged continuous pagination', when: ctx.paged, run: () => call('togglePaginationMode') },
     { id: 'view.zoomIn', group: 'view', title: 'cmd.zoomIn', icon: 'zoomIn', shortcut: 'Mod+=', keywords: 'zoom in bigger font size larger', when: ctx.notWelcome, run: () => call('zoom', 10) },
     { id: 'view.zoomOut', group: 'view', title: 'cmd.zoomOut', icon: 'zoomOut', shortcut: 'Mod+-', keywords: 'zoom out smaller font size', when: ctx.notWelcome, run: () => call('zoom', -10) },

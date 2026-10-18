@@ -16,19 +16,19 @@
   const fmtNum = n => { try { return Number(n).toLocaleString(window.i18n?.currentLang || undefined); } catch (_) { return String(n); } };
 
   /* ---------------- source pre-pass ---------------- */
-  // "[^id]: word" is a valid CommonMark link reference definition, which
-  // would silently swallow a footnote.  Escaping the bracket keeps the line
-  // literal so the DOM pass can collect it.  Fenced code is left untouched.
+  // Keep whole note definitions out of CommonMark's link-definition/indented
+  // code parsing. A transient payload is rendered by the same Markdown/math
+  // pipeline, sanitized, then moved into the note list. The editor and file
+  // retain their ordinary Markdown. Preserve line count for source mapping.
   function prepareSource(src) {
     if (!src || src.indexOf('[^') < 0) return src;
-    const fences = [];
-    const guarded = String(src).replace(/(^|\n)(```|~~~)[^\n]*\n[\s\S]*?\n\2[^\n]*/g, m => {
-      fences.push(m);
-      return '\x00RDF' + (fences.length - 1) + '\x00';
-    });
-    return guarded
-      .replace(/^( {0,3})\[\^([^\]\s]+)\]:/gm, '$1\\[^$2]:')
-      .replace(/\x00RDF(\d+)\x00/g, (_, i) => fences[+i]);
+    const lines=String(src).split('\n'),output=lines.slice();
+    for(const note of ReadMDPublication.noteDefinitions(src)){
+      const i=note.startLine,payload=esc(encodeURIComponent(JSON.stringify(note.content)));
+      output[i]='<div data-readmd-footnote="'+esc(note.label)+'" data-readmd-note-line="'+(i+1)+'" data-readmd-note-source="'+payload+'"></div>'+(lines[i].endsWith('\r')?'\r':'');
+      for(let k=i+1;k<note.endLine;k++)output[k]=lines[k].endsWith('\r')?'\r':'';
+    }
+    return output.join('\n');
   }
 
   /** Split an element's children at a regex that matches inside its direct text nodes. */
@@ -70,7 +70,7 @@
   };
   function icon(name, cls) {
     const t = document.createElement('template');
-    t.innerHTML = `<svg class="${cls || 'rd-ic'}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name] || ''}</svg>`;
+    t.innerHTML = `<svg class="rd-ic${cls && cls !== 'rd-ic' ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICONS[name] || ''}</svg>`;
     return t.content.firstChild;
   }
   function chrome(el) { el.setAttribute(CHROME, ''); return el; }
@@ -143,7 +143,7 @@
     head.appendChild(icon(variant === 'quote' ? 'quote' : variant, 'rd-callout-icon'));
     const label = make('span', 'rd-callout-label');
     if (hasOwnTitle) label.appendChild(titleFrag);
-    else { label.textContent = calloutTitleText(type, variant); chrome(label); }
+    else { label.textContent = calloutTitleText(type, variant); label.dataset.rdAutoTitle = 'true'; chrome(label); }
     head.appendChild(label);
     if (fold) head.appendChild(icon('chevron', 'rd-callout-chevron'));
     const content = make('div', 'rd-callout-body');
@@ -156,28 +156,30 @@
   /* ---------------- footnotes ---------------- */
   function upgradeFootnotes(body) {
     const defs = new Map();
-    const DEF_RE = /(?:^|\n)\[\^([^\]\s]+)\]:[ \t]*/g;
-    body.querySelectorAll('p').forEach(p => {
-      if (p.closest('pre, code, .rd-footnotes')) return;
-      const lead = p.firstChild;
-      if (!lead || lead.nodeType !== 3 || !/^\s*\[\^[^\]\s]+\]:/.test(lead.nodeValue)) return;
-      lead.nodeValue = lead.nodeValue.replace(/^\s+/, '');
-      const pieces = splitChildren(p, DEF_RE);
-      if ((pieces[0].frag.textContent || '').trim()) return;
-      pieces.slice(1).forEach(piece => { if (!defs.has(piece.key)) defs.set(piece.key, piece.frag); });
-      p.remove();
+    const prefix=body.id==='preview-pane'?'pv-':'';
+    body.querySelectorAll('[data-readmd-footnote][data-readmd-note-source]').forEach(marker=>{
+      try{
+        const raw=JSON.parse(decodeURIComponent(marker.getAttribute('data-readmd-note-source'))),key=marker.getAttribute('data-readmd-footnote');if(typeof raw!=='string'||!key)return;
+        const math=window.protectMath?protectMath(raw):{src:raw,saved:[]};
+        let html=window.parseMarkdownWithSourceMap?parseMarkdownWithSourceMap(math.src):marked.parse(math.src,{gfm:true});
+        if(window.restoreMath)html=restoreMath(html,math.saved);
+        const template=document.createElement('template');template.innerHTML=sanitizeRenderedHtml(html);
+        const line=Number(marker.getAttribute('data-readmd-note-line'))||1;
+        template.content.querySelectorAll('[data-source-line]').forEach(n=>{n.dataset.sourceLine=String((Number(n.dataset.sourceLine)||1)+line-1);});
+        if(!defs.has(key))defs.set(key,{frag:template.content});marker.remove();
+      }catch(_){/* Keep an invalid placeholder visible for normal diagnostics. */}
     });
     if (!defs.size) return;
 
     const order = [];
     const REF_RE = /\[\^([^\]\s]+)\]/g;
-    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-      acceptNode: n => (n.nodeValue.indexOf('[^') >= 0 && !n.parentElement.closest('pre, code, a, [' + CHROME + ']'))
+    function references(container){
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.nodeValue.indexOf('[^') >= 0 && !n.parentElement?.closest('pre, code, a, [' + CHROME + ']'))
         ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
     });
     const hits = [];
     while (walker.nextNode()) hits.push(walker.currentNode);
-    const refCount = new Map();
     hits.forEach(textNode => {
       const text = textNode.nodeValue;
       const frag = document.createDocumentFragment();
@@ -195,9 +197,9 @@
         if (m.index > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, m.index)));
         const sup = make('sup', 'rd-fnref');
         const a = make('a', null, String(n));
-        a.href = '#fn-' + slugKey(key);
-        a.id = 'fnref-' + slugKey(key) + (k > 1 ? '-' + k : '');
-        a.setAttribute('aria-describedby', 'rd-footnotes-label');
+        a.href = '#'+prefix+'fn-' + slugKey(key);
+        a.id = prefix+'fnref-' + slugKey(key) + (k > 1 ? '-' + k : '');
+        a.setAttribute('aria-describedby', prefix+'rd-footnotes-label');
         sup.appendChild(a);
         frag.appendChild(sup);
         cursor = REF_RE.lastIndex;
@@ -207,27 +209,29 @@
       if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
       textNode.replaceWith(frag);
     });
+    }
+    const refCount = new Map();references(body);
+    for(const definition of defs.values())references(definition.frag);
     defs.forEach((_, key) => { if (!order.includes(key)) order.push(key); });
 
     const section = make('section', 'rd-footnotes');
     const label = chrome(make('div', 'rd-footnotes-label', _t('reader.footnotes')));
-    label.id = 'rd-footnotes-label';
+    label.id = prefix+'rd-footnotes-label';
     const ol = make('ol');
     order.forEach(key => {
       const li = make('li');
-      li.id = 'fn-' + slugKey(key);
-      const p = make('p');
-      p.appendChild(defs.get(key));
+      li.id = prefix+'fn-' + slugKey(key);
+      li.appendChild(defs.get(key).frag);let p=li.lastElementChild;
+      if(!p||p.tagName!=='P'){p=make('p');li.appendChild(p);}
       const refs = refCount.get(key) || 0;
       for (let k = 1; k <= refs; k += 1) {
         const back = chrome(make('a', 'rd-fnback'));
-        back.href = '#fnref-' + slugKey(key) + (k > 1 ? '-' + k : '');
+        back.href = '#'+prefix+'fnref-' + slugKey(key) + (k > 1 ? '-' + k : '');
         back.setAttribute('aria-label', _t('reader.footnoteBack'));
         back.title = _t('reader.footnoteBack');
         back.appendChild(icon('back', 'rd-ic'));
         p.append(' ', back);
       }
-      li.appendChild(p);
       ol.appendChild(li);
     });
     section.append(label, ol);
@@ -773,6 +777,9 @@
     b.dataset.readingFont = PREF_FONTS.includes(state.readingFont) ? state.readingFont : 'sans';
     b.dataset.readingWidth = PREF_WIDTHS.includes(state.readingWidth) ? state.readingWidth : 'normal';
     b.dataset.readingLeading = PREF_LEADING.includes(state.readingLeading) ? state.readingLeading : 'normal';
+    // Font/zoom can change the real label width without resizing the article.
+    // Re-measure on the same idle queue; never rebuild or alter the source.
+    window.ReadMDPublication?.refreshLayout?.();
     syncPrefsPanel();
     invalidateSpy();
   }
@@ -871,7 +878,8 @@
     if (!content || !content.parentElement) return null;
     toolsEl = chrome(make('div', 'rd-tools'));
     toolsEl.id = 'rd-tools';
-    const btn = make('button', 'rd-tools-btn');
+    toolsEl.hidden = true;
+    const btn = make('button', 'rd-tools-btn tb-btn icon');
     btn.id = 'rd-prefs-btn';
     btn.type = 'button';
     btn.setAttribute('aria-haspopup', 'dialog');
@@ -879,7 +887,7 @@
     btn.setAttribute('aria-controls', 'rd-prefs');
     btn.setAttribute('aria-label', _t('reader.prefsTitle'));
     btn.title = _t('reader.prefsTitle');
-    btn.appendChild(icon('type', 'rd-ic'));
+    btn.appendChild(icon('type', 'rd-ic tb-ic'));
     btn.addEventListener('click', () => (prefsEl && !prefsEl.classList.contains('hidden') ? closePrefs(true) : openPrefs()));
     prefsEl = buildPrefsPanel();
     toolsEl.append(btn, prefsEl);
@@ -890,7 +898,9 @@
         closePrefs(true);
       }
     });
-    content.parentElement.insertBefore(toolsEl, content);
+    const editButton = byId('btn-edit');
+    if (editButton) editButton.after(toolsEl);
+    else (byId('toolbar') || content.parentElement).appendChild(toolsEl);
     document.addEventListener('pointerdown', event => {
       if (prefsEl && !prefsEl.classList.contains('hidden') && !toolsEl.contains(event.target)) closePrefs(false);
     }, true);
@@ -899,12 +909,22 @@
   }
   function openPrefs() {
     ensureTools();
+    if (!toolsEl || toolsEl.hidden) return;
     syncPrefsPanel();
     prefsEl.classList.remove('hidden');
+    positionPrefs();
     toolsEl.classList.add('is-open');
     byId('rd-prefs-btn').setAttribute('aria-expanded', 'true');
     const first = prefsEl.querySelector('button:not([disabled])');
     if (first) first.focus({ preventScroll: true });
+  }
+  function positionPrefs() {
+    if (!prefsEl || prefsEl.classList.contains('hidden')) return;
+    const anchor = byId('rd-prefs-btn').getBoundingClientRect();
+    const width = prefsEl.getBoundingClientRect().width;
+    const rtl = getComputedStyle(toolsEl).direction === 'rtl';
+    prefsEl.style.left = Math.max(12, Math.min(innerWidth - width - 12, rtl ? anchor.left : anchor.right - width)) + 'px';
+    prefsEl.style.top = anchor.bottom + 8 + 'px';
   }
   function closePrefs(restoreFocus) {
     if (!prefsEl || prefsEl.classList.contains('hidden')) return;
@@ -927,18 +947,18 @@
     syncPrefsPanel();
   }
   /* ---------------- floating chrome placement ---------------- */
-  // The progress bar and the preferences button live outside #content (its
-  // children are replaced on every render and some specs count buttons in
-  // it), so they are fixed-positioned against the reading area's rect.
+  // Reading settings live beside Edit; only the progress bar follows the
+  // reading area's rectangle. Neither is part of the document's content.
   let placeFrame = 0;
   function placeChrome() {
     placeFrame = 0;
+    positionPrefs();
     const content = byId('content');
     const tools = ensureTools();
     const bar = ensureProgress();
     if (!content) return;
     const r = content.getBoundingClientRect();
-    const visible = r.width > 0 && r.height > 0 && !content.classList.contains('hidden') && !!content.querySelector(':scope > .markdown-body');
+    const visible = state.mode !== 'welcome' && !state.editing && r.width > 0 && r.height > 0 && !content.classList.contains('hidden') && !!content.querySelector(':scope > .markdown-body');
     const scrollbar = content.offsetWidth - content.clientWidth;
     const zenTop = document.body.classList.contains('zen-mode') ? 0 : r.top;
     [tools, bar].forEach(el => {
@@ -948,7 +968,8 @@
       el.style.setProperty('--rd-stage-width', Math.max(0, Math.round(r.width - scrollbar)) + 'px');
     });
     if (tools) {
-      tools.classList.toggle('is-visible', visible && !(window.state && state.editing));
+      tools.hidden = !visible;
+      tools.classList.toggle('is-visible', visible);
       if (!visible) closePrefs(false);
     }
     if (bar && !visible) bar.classList.remove('is-active');
@@ -1088,8 +1109,8 @@
     body.__rdEnhanced = true;
     if (hlObserver) hlObserver.disconnect();
     try {
-      body.querySelectorAll('blockquote').forEach(upgradeCallout);
       upgradeFootnotes(body);
+      body.querySelectorAll('blockquote').forEach(upgradeCallout);
       upgradeDefinitionLists(body);
       upgradeCode(body);
       upgradeTables(body);
@@ -1157,9 +1178,18 @@
     }
     window.addEventListener('resize', schedulePlace);
     new MutationObserver(schedulePlace).observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    new MutationObserver(schedulePlace).observe(content, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(schedulePlace).observe(content, { childList: true, attributes: true, attributeFilter: ['class'] });
     window.addEventListener('readmd:language-changed', () => {
       relabelTools();
+      document.querySelectorAll('.rd-callout-label[data-rd-auto-title]').forEach(label => {
+        const type = label.closest('[data-callout]').dataset.callout;
+        label.textContent = calloutTitleText(type, CALLOUT_VARIANT[type] || 'note');
+      });
+      if (lastStats && articleEl()) {
+        insertDocMeta(articleEl(), lastStats);
+        const stats = byId('rd-toc-stats');
+        if (stats) stats.textContent = statsText(lastStats);
+      }
       if (lightbox) lightbox.setAttribute('aria-label', _t('reader.imagePreview'));
     });
     applyReadingPrefs();
@@ -1169,6 +1199,7 @@
   window.ReadMDReader = {
     enhance,
     prepare: prepareSource,
+    enhanceFootnotes: upgradeFootnotes,
     afterRender,
     applyReadingPrefs,
     openPrefs,

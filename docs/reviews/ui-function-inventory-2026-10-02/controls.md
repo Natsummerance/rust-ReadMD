@@ -1,6 +1,6 @@
 # 静态控件逐项索引
 
-[返回总清单](../readmd-ui-function-inventory-2026-10-02.md)。2026-10-04 更新，共 399 项。范围含输入、隐藏文件输入、summary 和 role=button；运行时列表另见 dynamic.md。全局按钮在运行时移入应用顶栏。
+[返回总清单](../readmd-ui-function-inventory-2026-10-02.md)。2026-10-07 增量更新，机器清单共 406 项（405 个有效控件、1 个已移除历史控件）。范围含输入、隐藏文件输入、summary 和 role=button；运行时列表另见 dynamic.md。全局按钮在运行时移入应用顶栏。
 
 | 作用域 | 数量 |
 | --- | --- |
@@ -637,3 +637,16 @@
 | S275 / F068 | url-render | 完整动态渲染 保留复杂排版与脚本 | 点击执行所属流程；禁用/隐藏时不执行 | {} | — | 依文档/平台/面板状态显示 | [assets/index.html:1013](../../../assets/index.html)；assets/js/features/web.js:42,247；assets/app.js:327 |
 | S276 / F068 | url-cancel | 取消 | 点击执行所属流程；禁用/隐藏时不执行 | {"data-i18n": "convert.cancel"} | — | 初始隐藏 | [assets/index.html:1022](../../../assets/index.html)；assets/js/features/web.js:44；assets/app.js:332 |
 | S277 / F067 | url-private | url-private | 点击切换开关；按所属流程立即保存、仅影响本次任务或待保存表单 | {"type": "checkbox", "checked": null} | — | 依文档/平台/面板状态显示 | [assets/index.html:1027](../../../assets/index.html)；assets/js/features/web.js:50,171,248 |
+
+## 公式辅助编辑增量（2026-10-07）
+
+以下入口补入原公式面板；历史行号是定位参考，以机器清单中的元素身份为准。
+
+| 编号 | 控件 | 操作 | 实现 |
+| --- | --- | --- | --- |
+| S401 / F032 | formula-source | 展开后修改源码，防抖渲染，验证通过才能确认 | [公式草稿](../../../assets/js/editor/formula-studio.js) |
+| S402 / F032 | formula-token | 点击渲染符号后编辑；Enter 替换所选源范围 | [公式草稿](../../../assets/js/editor/formula-studio.js) |
+| S403 / F032 | formula-token-replace | 在公式草稿中替换当前符号 | [公式草稿](../../../assets/js/editor/formula-studio.js) |
+| S404 / F032 | formula-more | 每次增加 72 项，不一次挂载全部字符 | [公式草稿](../../../assets/js/editor/formula-studio.js) |
+| S405 / F032 | formula-apply | 确认一次写入；原文修订变化时拒绝覆盖 | [公式草稿](../../../assets/js/editor/formula-studio.js) |
+| S406 / F032 | LaTeX 源码 summary | 展开/折叠源码；折叠不丢失公式草稿 | [公式草稿](../../../assets/js/editor/formula-studio.js) |

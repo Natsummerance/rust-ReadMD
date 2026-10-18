@@ -6,6 +6,8 @@
 
 本轮桌面窗口、托盘、关联、插件与更新的实机验证见[升级验收记录](readmd-window-system-upgrade-2026-10-04.md)。
 
+2026-10-07 增量：公式 F032 已更新为辅助编辑与精确符号替换，目录含 46 个结构/函数预设、2,432 个数学字符；当前机器清单为 104 流程、405 个有效静态控件及 1 个已移除的历史控件、80 动态族、102 路由。下文未更新的历史数量按原盘点保留；以 inventory.json 与[能力规划](../design/readmd-experience-and-capabilities.md)为当前依据。
+
 ## 使用与附件
 
 
@@ -527,15 +529,15 @@ ReadMD
 
 **实现状态：** 已接线；是否可用取决于下述前置条件。
 
-### F032 公式模板选择
+### F032 公式辅助编辑与符号替换
 
-**入口/控件：** `formula-open`、`formula-close`、`formula-search`、`formula-mode`。动态类名/委托属性和容器名是定位标识，不代表都存在同名按钮。
+**入口/控件：** `formula-open`、`formula-close`、`formula-search`、`formula-mode`、`formula-source`、`formula-token`、`formula-token-replace`、`formula-more`、`formula-apply`，以及“ LaTeX 源码”折叠入口。编辑态双击实时预览中的公式也可进入。符号、结构缩略图和分类动态生成。
 
-**操作流程与交互：** 公式按钮 → 搜索模板、选择分类/模板 → 查看公式预览 → 按行内/块公式模式插入 LaTeX。分类和模板按钮动态生成，具体模板目录见数据清单；正文公式由本地 MathJax/KaTeX 类资源渲染。
+**操作流程与交互：** 打开对应公式草稿 → 可视结构/函数或搜索符号 → 点选渲染符号并替换 → 按需展开源码 → 确认一次写入。19 个结构模板、27 个函数、2,432 个数学字符与 446 个 TeX 别名；支持行内/块级切换，关闭不改文档，修改可一次撤销，文档变化拒绝迟到覆盖。未知命令和超预算草稿不能确认。
 
-**前端实现：** [assets/js/editor/editor.js:1090 · renderFormulaPicker](../../assets/js/editor/editor.js)；[assets/js/editor/editor.js:1118 · insertFormula](../../assets/js/editor/editor.js)。
+**前端实现：** [公式草稿、渲染点选与确认事务](../../assets/js/editor/formula-studio.js)；[离线 MathJax 加载和串行渲染](../../assets/js/reader/formula.js)。精确源范围区分相同公式，代码示例不参与替换。
 
-**后端与状态：** 前端模板插入；Rust 读取修复与导出公式另由 formula_repair.rs/formula 系列实现。
+**后端与状态：** 前端与 Rust 共用 [math-catalog.json](../../assets/math-catalog.json)；[Rust 数学符号解析](../../rust/readmd-kernel/src/math_catalog.rs)进入 LaTeX→OMML 导出。现有保存修订检查与恢复机制继续生效。Windows 原生 CSP、真实保存、DOCX/PDF/EPUB 导出通过专项检查；完整 OMML 属性往返、槽位导航、矩阵行列操作及预览原位浮层仍待实施，不能称完整 Word 公式编辑器。
 
 **实现状态：** 已接线；是否可用取决于下述前置条件。
 

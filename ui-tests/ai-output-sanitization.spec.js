@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('AI history renders untrusted markdown through the shared sanitizer', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => (
+  await waitForPage(page, () => (
     typeof renderAiHistory === 'function' && typeof window.renderSafeMarkdown === 'function'
   ));
 

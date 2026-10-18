@@ -1000,9 +1000,23 @@ mod tests {
     ];
 
     /// Serialises the tests that repoint the process-wide data directory.
-    fn data_dir_guard() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    struct DataDirGuard {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for DataDirGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("READMD_DATA_DIR", value),
+                None => std::env::remove_var("READMD_DATA_DIR"),
+            }
+        }
+    }
+
+    fn data_dir_guard() -> DataDirGuard {
+        let lock = crate::test_data_dir_guard();
+        DataDirGuard { _lock: lock, previous: std::env::var_os("READMD_DATA_DIR") }
     }
 
     fn key_file(dir: &Path, name: &str, key: &str) -> PathBuf {
@@ -1473,7 +1487,7 @@ mod tests {
                 "and exactly one trailing newline"
             );
             assert!(
-                !String::from_utf8_lossy(&vault).contains("sk-"),
+                !vault.windows(secret.len()).any(|bytes| bytes == secret.as_bytes()),
                 "the secret must not be recoverable from the file bytes"
             );
             assert!(!tmp.path().join("credentials.vault.tmp").exists());

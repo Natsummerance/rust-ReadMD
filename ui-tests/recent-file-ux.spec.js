@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test.describe('Recent files status and removal UX', () => {
@@ -51,7 +52,7 @@ test.describe('Recent files status and removal UX', () => {
     await page.goto('/');
 
     // Wait for the app boot scripts to settle
-    await page.waitForFunction(() => typeof refreshRecent === 'function');
+    await waitForPage(page, () => typeof refreshRecent === 'function');
 
     // Trigger renderRecentList
     await page.evaluate(async () => {

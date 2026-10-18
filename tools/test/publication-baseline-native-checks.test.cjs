@@ -1,0 +1,14 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {checkPdf,checkDocx,source,secondRange}=require('../../ui-tests/publication-baseline-native.cjs');
+function pdf(shift){const markers={};for(const [n,marker]of ['BASELINEABCDE','BOLD','LINK','CODE'].entries())markers[marker]=[...marker].map((c,index)=>({c,font:'QA-Owned-Regular',size:11,origin:[10+index*6+n*100,80-(marker==='CODE'?0:shift)],bbox:[10+index*6,70-(marker==='CODE'?0:shift),16+index*6,83-(marker==='CODE'?0:shift)]}));return{pages:1,text:'BASELINEABCDEBOLDLINKCODE',markers,fonts:[{font:'QA-Owned-Regular',programSha256:'c'.repeat(64),toUnicodeSha256:'d'.repeat(64)}],vectorPathsSha256:'a'.repeat(64),links:[{uri:'https://example.invalid/baseline',rect:[210,70-shift,234,83-shift]}]};}
+test('native independent glyph checks accept signed origins and reject font code advance vector and link regressions',()=>{
+  for(const shift of [0,3,-2.5])assert.equal(checkPdf(pdf(0),pdf(shift),shift).actualGlyphOrigins,true);
+  for(const mutate of [p=>p.markers.BASELINEABCDE[0].origin[1]+=1,p=>p.markers.CODE[0].origin[1]-=3,p=>p.markers.BOLD[0].size=10,p=>p.markers.LINK[0].font='Other',p=>p.markers.BASELINEABCDE[1].origin[0]+=.5,p=>p.markers.BOLD[0].bbox[2]+=1,p=>p.vectorPathsSha256='b'.repeat(64),p=>p.fonts[0].programSha256='e'.repeat(64),p=>p.fonts[0].toUnicodeSha256='e'.repeat(64),p=>p.links[0].rect[1]+=3,p=>p.text+='duplicate',p=>p.links=[]]){const proof=pdf(3);mutate(proof);assert.throws(()=>checkPdf(pdf(0),proof,3));}
+});
+function opc(){const run=(text,half,code=false)=>({text,positionHalfPt:half,properties:code?{rStyle:{val:'CodeChar'}}:{}}),repeat=(half)=>({text:'Repeated baseline sample',runs:[run('Repeated baseline ',half),run('bold ',half),run('link ',half),run('CODE',null,true)]});return{crcAndXml:true,wordRoundTrip:false,sourceLeak:false,mathPositions:0,mathHashes:['a'.repeat(64),'a'.repeat(64)],paragraphs:[{text:'GLOBALBODY sample',runs:[run('GLOBALBODY',6)]},repeat(6),repeat(-5),{text:'END BODY remains.',runs:[run('END BODY',6)]}]};}
+test('native OPC checks require position reset and quantisation while protecting code and math',()=>{
+  assert(checkDocx(opc(),6,-5).ordinaryRuns>=6);
+  for(const mutate of [p=>p.paragraphs[1].runs[0].positionHalfPt=5,p=>p.paragraphs[2].runs[0].positionHalfPt=6,p=>p.paragraphs[2].runs[3].positionHalfPt=-5,p=>p.mathPositions=1,p=>p.sourceLeak=true,p=>p.paragraphs.push(p.paragraphs[1]),p=>p.wordRoundTrip=true]){const proof=opc();mutate(proof);assert.throws(()=>checkDocx(proof,6,-5));}
+});
+test('native original duplicate locator binds UTF-16 source offsets and preserves BOM CRLF',()=>{assert(source.startsWith('\uFEFF'));assert(!/(?<!\r)\n/u.test(source));const range=secondRange(source);assert(range.from>range.first);assert(source.slice(range.from,range.to).includes('中文 😀'));});

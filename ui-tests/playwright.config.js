@@ -6,11 +6,11 @@ module.exports = defineConfig({
   testMatch: '*.spec.js',
   timeout: 45000,
   workers: 1,
-  retries: 1,
+  retries: 0,
   use: {
     baseURL: `http://127.0.0.1:${uiPort}`,
     viewport: { width: 720, height: 600 },
-    bypassCSP: true,
+    bypassCSP: false,
     trace: 'retain-on-failure',
     locale: 'zh-CN',
   },

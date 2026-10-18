@@ -1,0 +1,238 @@
+{
+  "schema": 1,
+  "updated": "2026-10-13",
+  "acceptanceLedger": "capability-upgrade-acceptance.json",
+  "policy": "Scheduling only. No scheduling state is evidence of implementation or verification. Preserve all unmet requirements.",
+  "concurrency": {
+    "total": 4,
+    "coordinator": 1,
+    "children": 3,
+    "buildOwners": [
+      "root"
+    ],
+    "cargoTarget": ".cache/community-upgrade/build",
+    "offline": true,
+    "childModel": "gpt-6.1-sol",
+    "childReasoningEffort": "max",
+    "modelPreferenceSource": "2026-10-13 用户指定，后续所有子代理使用 GPT-6.1 Sol/max"
+  },
+  "active": [],
+  "sharedFileRules": {
+    "math_layout.rs": {
+      "state": "M01/M02 font-geometry candidate frozen; subsequent changes need a new candidate and evidence",
+      "frozenManifest": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json"
+    },
+    "build": "root is the only Cargo owner; no new target or online resolution"
+  },
+  "groups": [
+    {
+      "id": "foundation",
+      "requirements": [
+        "R001",
+        "R002",
+        "R003",
+        "R004",
+        "R005",
+        "R006",
+        "R058"
+      ],
+      "scope": "事务、资源和能力公共链路",
+      "initialOwner": "root"
+    },
+    {
+      "id": "math",
+      "requirements": [
+        "R007",
+        "R008",
+        "R009",
+        "R010",
+        "R011",
+        "R012",
+        "R013",
+        "R059"
+      ],
+      "scope": "公式标准语义与交互",
+      "initialOwner": "math_sol"
+    },
+    {
+      "id": "publication",
+      "requirements": [
+        "R025",
+        "R026",
+        "R027",
+        "R028",
+        "R029",
+        "R030",
+        "R048",
+        "R069",
+        "R073",
+        "R074"
+      ],
+      "scope": "出版参数、文献及科研图表",
+      "initialOwner": "publication_sol"
+    },
+    {
+      "id": "interop_delivery",
+      "requirements": [
+        "R053",
+        "R054",
+        "R055",
+        "R056",
+        "R057",
+        "R071",
+        "R072",
+        "R075"
+      ],
+      "scope": "互操作、跨平台、语言、压力和交付",
+      "initialOwner": "sol-max queue"
+    },
+    {
+      "id": "review_tasks",
+      "requirements": [
+        "R031",
+        "R039",
+        "R040",
+        "R041",
+        "R042",
+        "R043",
+        "R062",
+        "R063",
+        "R064",
+        "R065",
+        "R070"
+      ],
+      "scope": "持久审阅、导出快照与多轮任务",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "developer",
+      "requirements": [
+        "R014",
+        "R015",
+        "R016",
+        "R017",
+        "R018"
+      ],
+      "scope": "开发文档、运行与编辑器集成",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "office",
+      "requirements": [
+        "R019",
+        "R020",
+        "R021",
+        "R022",
+        "R023",
+        "R024"
+      ],
+      "scope": "表格与协作",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "conversion",
+      "requirements": [
+        "R032",
+        "R033",
+        "R034",
+        "R035",
+        "R036",
+        "R037",
+        "R038",
+        "R068"
+      ],
+      "scope": "外部文档、PDF、媒体与 OCR",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "learning",
+      "requirements": [
+        "R044",
+        "R045",
+        "R046",
+        "R047"
+      ],
+      "scope": "教学、手稿与长篇",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "creative",
+      "requirements": [
+        "R049",
+        "R050",
+        "R051",
+        "R052",
+        "R066",
+        "R067"
+      ],
+      "scope": "阅读、图像与绘画",
+      "initialOwner": "queue"
+    },
+    {
+      "id": "ux",
+      "requirements": [
+        "R060",
+        "R061"
+      ],
+      "scope": "顶栏与演讲交互",
+      "initialOwner": "queue"
+    }
+  ],
+  "queue": [
+    "P01 shared publication metadata; P07 full citation contexts, audit/spec first",
+    "M04 equation-array alignment and distribution",
+    "M07-M15 math defaults, shaping, source mapping, unknown extensions and input evidence",
+    "P03/P04/P06/P08-P15 remaining publication parameters and workflows",
+    "I01-I10 independent application interoperability; M01/M02 Office comparison remains open",
+    "D01-D07 capability lifetimes, licensing, immutable packs and cold-start performance",
+    "R063/R064 persistent review and atomic export snapshots before R065/R070 task/collaboration integrations",
+    "Remaining developer/office/conversion/learning/creative workflows using the common service",
+    "Full regression, 46-language semantic review, stress and native platform evidence; release remains gated"
+  ],
+  "environment": {
+    "windows": "available",
+    "macOS": "no native environment supplied",
+    "linux": "no native environment supplied",
+    "word": "installed; prior COM timeout, do not count XML validation as native round-trip",
+    "epubReaders": "inventory needed; EPUBCheck alone is insufficient"
+  },
+  "latestIncrement": {
+    "evidence": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+    "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+    "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+    "fullRequirementCertification": false,
+    "capacityEvidence": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-capacity-manifest.json",
+    "capacityChecks": 3,
+    "cleanup": {
+      "removedBytes": 582924208,
+      "removedDirectories": 18,
+      "ownedProfiles": 9
+    }
+  },
+  "nextExecution": [
+    "P01/P07 code-gap audit, normative contracts, file ownership and actionable tests before implementation",
+    "Remaining M04/M07-M15 and P03/P04/P06/P08-P15 using the common model",
+    "I01-I10 native application workflows; preserve missing evidence without blocking independent Windows work",
+    "D04 traceable complete replacement closure if exact historic containers remain unavailable",
+    "D01-D07 and all B4/B5 requirements remain in the ledger"
+  ],
+  "next": [
+    {
+      "item": "P01 shared publication metadata",
+      "exit": "multi-author/institution and book metadata across DOCX/PDF/EPUB with real save and outputs",
+      "spec": "docs/design/v005-batch3-publication-metadata-spec.md",
+      "state": "audit_and_spec_ready_not_implemented"
+    },
+    {
+      "item": "P07 full citation contexts",
+      "exit": "prefix/suffix/suppress-author/author-only/locator source mapping and actual style outputs",
+      "spec": "docs/design/v005-batch3-citation-context-spec.md",
+      "state": "audit_and_spec_ready_not_implemented",
+      "prerequisite": "Freeze selected official independent RESULT/INPUT/CSL fixtures with commit, file digests and licenses before vendor code changes."
+    },
+    {
+      "item": "I01/I02/I06/I07 independent application interop",
+      "exit": "actual Word/editor and independent EPUB reader evidence; retained as unverified until obtained"
+    }
+  ]
+}

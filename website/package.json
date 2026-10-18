@@ -5,7 +5,7 @@
   "scripts": {
     "clean": "node tools/clean.mjs",
     "build:css": "tailwindcss -i ./src/site.css -o ./dist/assets/site.css --minify",
-    "build": "node tools/build-integrations.mjs && node tools/build-motion-pages.mjs && npm run clean && npm run build:css && node tools/copy-static.mjs && node tools/sync-version.mjs && node tools/build-scroll-media.mjs",
+    "build": "node tools/build-integrations.mjs && node tools/build-ai-pages.mjs && node tools/build-motion-pages.mjs && npm run clean && npm run build:css && node tools/copy-static.mjs && node tools/sync-version.mjs && node tools/build-scroll-media.mjs",
     "verify": "node tools/validate-website.mjs",
     "verify:themes": "node tools/theme-smoke.cjs",
     "verify:motion": "node tools/motion-smoke.cjs",

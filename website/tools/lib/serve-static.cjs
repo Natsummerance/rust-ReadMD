@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 exports.start=async root=>{
  root=path.resolve(root);
- const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.json':'application/json','.xml':'application/xml','.webp':'image/webp','.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.vtt':'text/vtt'};
+ const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.mjs':'text/javascript','.json':'application/json','.xml':'application/xml','.webp':'image/webp','.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.vtt':'text/vtt'};
  const server=http.createServer((request,response)=>{
   let file;
   try{file=path.resolve(root,'.'+decodeURIComponent(new URL(request.url,'http://local').pathname));}catch{response.writeHead(400).end();return;}
@@ -12,7 +12,7 @@ exports.start=async root=>{
   if(!stat?.isFile()){response.writeHead(404).end();return;}
   let start=0,end=stat.size-1,status=200;
   const headers={'Content-Type':types[path.extname(file)]||'application/octet-stream','Accept-Ranges':'bytes',
-   'Content-Security-Policy':"default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'"};
+   'Content-Security-Policy':"default-src 'self'; connect-src 'self' https://api.github.com; img-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'"};
   if(request.headers.range){
    const match=request.headers.range.match(/^bytes=(\d*)-(\d*)$/);
    if(!match||(!match[1]&&!match[2])){response.writeHead(416).end();return;}

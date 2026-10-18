@@ -5,14 +5,37 @@
 //! loopback HTTP contract consumed by the web UI.
 
 pub mod ai;
+pub mod ai_completion;
+#[cfg(feature = "mobile-ffi")]
+pub mod mobile_ffi;
 #[cfg(test)]
 mod production_audit_tests;
 pub mod batch2;
 pub mod bibtex;
+pub mod academic;
+#[cfg(test)]mod academic_display_punctuation_tests;
+#[cfg(test)]mod academic_citation_intext_tests;
+#[cfg(test)]mod academic_empty_names_tests;
+pub mod publication;
+pub mod publication_rich;
+pub mod publication_sections;
+#[cfg(test)]mod publication_structure_export_tests;
+pub mod publication_metadata;
+pub mod publication_navigation;
+pub mod publication_metadata_formats;
+pub mod publication_pdf_metadata;
+#[cfg(test)]mod publication_export_tests;
+pub mod cross_references;
 pub mod code_chunk_runner;
 pub mod codecs;
 pub mod content;
 pub mod document_history;
+pub mod document_transaction;
+pub mod document_assets;
+pub mod openapi_document;
+pub mod collaboration;
+pub mod collaboration_host;
+pub mod capabilities;
 pub mod document_intelligence;
 pub mod convert;
 pub mod convert_ext;
@@ -21,6 +44,28 @@ pub mod diagrams;
 pub mod headless_renderer;
 pub mod import_processor;
 pub mod latex2omml;
+pub mod math_catalog;
+pub mod math_document;
+pub mod math_dsl;
+pub mod math_extension;
+pub mod math_migration;
+pub mod math_formats;
+mod math_word;
+mod math_theme;
+mod math_font_theme;
+pub mod unicode_math;
+pub mod upgrade_api;
+pub mod worker_sandbox;
+pub mod task_workspace;
+pub mod capability_archive;
+
+/// Tests that temporarily override the shared data root must also serialize
+/// ambient readers of that root. This is absent from production builds.
+#[cfg(test)]
+pub(crate) fn test_data_dir_guard() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 pub mod link_indexer;
 pub mod mdexport;
 pub mod native_diagrams;
@@ -38,8 +83,11 @@ pub mod text_encoding;
 pub mod pdf_fonts;
 /// OMML tree reader + MathML writer shared by EPUB/PDF math.
 pub mod omml;
+pub mod math_equation_array;
+pub mod math_spacing;
 /// OpenType MATH layout → vector glyph paths for PDF formulas.
 pub mod math_layout;
+mod html_math;
 /// AST-based EPUB chapter (XHTML) writer.
 pub mod epub_writer;
 /// In-process Win32 `IFileDialog` pickers (no PowerShell spawn).
@@ -53,6 +101,7 @@ pub mod ppt_binary;
 /// MOBI / AZW / PalmDOC → HTML → Markdown.
 pub mod mobi;
 pub mod ocr;
+pub(crate) mod ocr_portable;
 /// Windows.Media.Ocr / Windows.Data.Pdf native OCR (no-op elsewhere).
 pub mod ocr_winrt;
 pub mod parity_aichat;
@@ -74,6 +123,7 @@ pub mod transcribe;
 pub mod speech;
 pub mod mail;
 pub mod export_preview;
+pub mod svg_render;
 pub mod validators;
 pub mod version_spec;
 pub mod lan_guard;
@@ -83,6 +133,11 @@ pub mod ole2;
 pub mod pet_queue;
 pub mod texmd;
 pub mod pdf_editor;
+pub mod pdf_workspace;
+pub mod capability_packs;
+pub mod capability_store;
+pub(crate) mod capability_process;
+pub mod capability_delivery;
 /// Legacy `.doc` (Word 6/95 WordDocument stream) text extraction, line-for-line
 /// against `src/readmd_modules/convert.py::parse_doc_stream_to_md`.
 pub mod doc_legacy;
@@ -92,6 +147,9 @@ pub mod updater;
 pub mod toc_engine;
 pub mod source_map;
 pub mod epub_render;
+pub mod epub_preview;
+pub mod export_profiles;
+pub mod pdf_text;
 pub mod native_system;
 pub mod win_registry;
 pub mod update_install;
@@ -120,6 +178,19 @@ pub mod pdf_render;
 /// Stable error / note / warning codes riding next to the legacy Chinese text.
 pub mod api_codes;
 pub mod cancel;
+pub mod latex_compile;
+pub mod typst_compile;
+pub mod publication_fonts;
+pub mod typst_writer;
+pub mod publication_layout;
+pub mod publication_blocks;
+pub mod publication_typography;
+#[cfg(test)] mod publication_typography_docx_tests;
+#[cfg(test)]
+mod publication_typography_entry_tests;
+pub mod publication_pagination;
+mod docx_local_style;
+pub mod scientific_figures;
 /// `readmd --mcp`: Model Context Protocol server on stdio.
 pub mod mcp;
 
@@ -839,6 +910,9 @@ pub struct App {
     pub authorized_save_paths: Mutex<std::collections::HashSet<String>>,
     /// Mirror of `src.readmd_modules`' `_status` / `_error` maps.
     pub modules: Mutex<modules::Registry>,
+    /// Ephemeral completion cache, observed latency and pooled HTTP transport.
+    pub completion: ai_completion::Runtime,
+    pub collaboration: collaboration_host::Runtime,
 }
 
 /// Mirrors `readmd.py`'s `_CONTROL` dictionary: every entry is a queue that a
@@ -862,7 +936,7 @@ const BOOT_INDEX_LIMIT: usize = 4000;
 /// The legacy server imports each optional module the first time an endpoint
 /// needs it and reports the state through `/api/modules`.  The Rust kernel
 /// compiles every engine in, so the registry exists to keep the *contract*
-/// identical: `idle` until a route has been proven served, then `ready`,
+/// identical: `idle` until a real local engine operation passes, then `ready`,
 /// `error` or `disabled`.
 pub mod modules {
     use serde_json::Value;
@@ -897,6 +971,7 @@ pub mod modules {
                 return;
             }
             self.status.insert(name.to_string(), state.to_string());
+            self.error.remove(name);
         }
 
         pub fn set_error(&mut self, name: &str, message: &str) {
@@ -964,8 +1039,12 @@ impl App {
             app_token: session_token(&paths.data_dir),
             authorized_save_paths: Mutex::new(std::collections::HashSet::new()),
             modules: Mutex::new(modules::Registry::fresh()),
+            completion: ai_completion::Runtime::default(),
+            collaboration: collaboration_host::Runtime::default(),
             paths,
         };
+        capability_delivery::cleanup_uploads(&app.paths.data_dir);
+        task_workspace::recover_background(&app.paths.data_dir);
         let _ = content::index_workspace_at_startup(&app, BOOT_INDEX_LIMIT);
         Ok(app)
     }

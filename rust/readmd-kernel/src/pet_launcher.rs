@@ -2029,7 +2029,9 @@ pub fn terminate_tree_with(
 /// descendant of `pid` (in the psutil sweep order) and then `pid` itself.
 /// Returns the pids actually terminated.
 pub fn terminate_tree(pid: u32) -> Vec<u32> {
-    terminate_tree_with(list_processes().as_deref(), pid, terminate_process)
+    // Termination needs only PID/parent edges. Querying every unrelated
+    // process image can turn a one-second timeout into several extra seconds.
+    terminate_tree_with(win::list_process_edges().as_deref(), pid, terminate_process)
 }
 
 /// The psutil branch of `status()` (`hermes_adapter.py:288-299`):
@@ -2127,8 +2129,17 @@ pub fn replace_with_retry_timed(
     attempts: u32,
     delay: Duration,
 ) -> io::Result<()> {
+    replace_with_retry_policy(attempts, delay, || std::fs::rename(source, destination), std::thread::sleep)
+}
+
+fn replace_with_retry_policy(
+    attempts: u32,
+    delay: Duration,
+    mut rename: impl FnMut() -> io::Result<()>,
+    mut sleep: impl FnMut(Duration),
+) -> io::Result<()> {
     for remaining in (0..attempts).rev() {
-        match std::fs::rename(source, destination) {
+        match rename() {
             Ok(()) => return Ok(()),
             Err(error) => {
                 // Rust maps WinError 5/29/30/32/33 to `PermissionDenied`, the
@@ -2139,7 +2150,7 @@ pub fn replace_with_retry_timed(
                 if remaining == 0 {
                     return Err(error);
                 }
-                std::thread::sleep(delay);
+                sleep(delay);
             }
         }
     }
@@ -2466,6 +2477,15 @@ mod win {
     /// could not be taken at all — the case the authority answers with
     /// PowerShell.
     pub fn list_processes() -> Option<Vec<NativeProcess>> {
+        process_snapshot(true)
+    }
+
+    /// Minimal snapshot for descendants: never open unrelated process images.
+    pub fn list_process_edges() -> Option<Vec<NativeProcess>> {
+        process_snapshot(false)
+    }
+
+    fn process_snapshot(include_images: bool) -> Option<Vec<NativeProcess>> {
         let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
         if unusable(snapshot) {
             return None;
@@ -2479,7 +2499,7 @@ mod win {
                 pid: entry.th32ProcessID,
                 parent: entry.th32ParentProcessID,
                 name: wide_to_string(&entry.szExeFile),
-                exe: image_name(entry.th32ProcessID),
+                exe: if include_images { image_name(entry.th32ProcessID) } else { None },
             });
             entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
             ok = unsafe { Process32NextW(snapshot, &mut entry) };
@@ -2537,6 +2557,10 @@ mod win {
         None
     }
 
+    pub fn list_process_edges() -> Option<Vec<NativeProcess>> {
+        None
+    }
+
     pub fn terminate_process(_pid: u32) -> bool {
         false
     }
@@ -2548,6 +2572,17 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static SEQ: AtomicU64 = AtomicU64::new(0);
+
+    #[cfg(windows)]
+    #[test]
+    fn termination_snapshot_omits_images_but_keeps_owned_parent_edges() {
+        let table=win::list_process_edges().expect("native process-edge snapshot");
+        assert!(table.iter().all(|p|p.exe.is_none()));
+        let current=table.iter().find(|p|p.pid==std::process::id()).expect("own process");
+        assert!(current.parent>0);
+        assert!(!current.name.is_empty());
+        assert!(table.iter().any(|p|p.pid==current.parent));
+    }
 
     /// A private temporary directory, removed when the test ends.
     struct Scratch {
@@ -3972,17 +4007,39 @@ mod tests {
         let destination = scratch.path().join("destination");
         std::fs::create_dir_all(&source).expect("source dir");
         write(&source.join("a.txt"), b"hello");
-        let started = Instant::now();
         replace_with_retry(&source, &destination).expect("rename");
-        assert!(started.elapsed() < SWAP_RETRY_DELAY, "a first-try success never sleeps");
         assert!(destination.join("a.txt").is_file());
         assert!(!source.exists());
         // A missing source is `FileNotFoundError`, not `PermissionError`, so the
         // retry budget is never spent.
-        let started = Instant::now();
         let error = replace_with_retry(&scratch.path().join("absent"), &destination).expect_err("must fail");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert!(started.elapsed() < SWAP_RETRY_DELAY, "no sleep on a non-permission error");
+    }
+
+    #[test]
+    fn replace_retry_policy_counts_attempts_and_sleeps_exactly() {
+        // Scheduling and filesystem latency are outside the retry policy.
+        // Exercise the production loop and assert exact operations instead
+        // of inferring them from a fragile wall-clock upper bound.
+        let delay = Duration::from_millis(50);
+        for (failures, kind, expected_attempts, expected_sleeps, success) in [
+            (0, io::ErrorKind::PermissionDenied, 1, 0, true),
+            (2, io::ErrorKind::PermissionDenied, 3, 2, true),
+            (3, io::ErrorKind::PermissionDenied, 3, 2, false),
+            (3, io::ErrorKind::NotFound, 1, 0, false),
+            (3, io::ErrorKind::InvalidInput, 1, 0, false),
+        ] {
+            let mut calls = 0;
+            let mut waits = Vec::new();
+            let result = replace_with_retry_policy(3, delay, || {
+                calls += 1;
+                if calls <= failures { Err(io::Error::from(kind)) } else { Ok(()) }
+            }, |duration| waits.push(duration));
+            assert_eq!(result.is_ok(), success);
+            if let Err(error) = result { assert_eq!(error.kind(), kind); }
+            assert_eq!(calls, expected_attempts);
+            assert_eq!(waits, vec![delay; expected_sleeps]);
+        }
     }
 
     #[test]
@@ -3999,13 +4056,16 @@ mod tests {
         write(&source, b"x");
         let destination = scratch.path().join("destination");
         std::fs::create_dir_all(&destination).expect("dir");
-        let started = Instant::now();
-        let error = replace_with_retry_timed(&source, &destination, 3, Duration::from_millis(50))
+        let mut calls = 0;
+        let mut waits = Vec::new();
+        let error = replace_with_retry_policy(3, Duration::from_millis(50), || {
+            calls += 1;
+            std::fs::rename(&source, &destination)
+        }, |duration| waits.push(duration))
             .expect_err("renaming a file onto a directory is a permission error");
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
-        let spent = started.elapsed();
-        assert!(spent >= Duration::from_millis(100), "three attempts sleep twice: {spent:?}");
-        assert!(spent < Duration::from_millis(400), "the loop stops at the last attempt: {spent:?}");
+        assert_eq!(calls, 3);
+        assert_eq!(waits, vec![Duration::from_millis(50); 2]);
         assert!(source.is_file(), "a failed rename leaves the staged source alone");
         assert!(destination.is_dir(), "as does the destination");
         // The authority's own budget: 40 attempts, 0.75 s apart, i.e. the ~30 s
@@ -4015,16 +4075,16 @@ mod tests {
         assert_eq!((SWAP_ATTEMPTS - 1) as u128 * SWAP_RETRY_DELAY.as_millis(), 29_250);
         // A non-permission failure never enters the sleep path: a missing source
         // is CPython's `FileNotFoundError`, so the first attempt returns.
-        let started = Instant::now();
-        let error = replace_with_retry_timed(
-            &scratch.path().join("absent"),
-            &destination,
-            4,
-            Duration::from_millis(50),
-        )
+        calls = 0;
+        waits.clear();
+        let error = replace_with_retry_policy(4, Duration::from_millis(50), || {
+            calls += 1;
+            std::fs::rename(scratch.path().join("absent"), &destination)
+        }, |duration| waits.push(duration))
         .expect_err("must fail");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
-        assert!(started.elapsed() < Duration::from_millis(50), "no sleep on a non-permission error");
+        assert_eq!(calls, 1);
+        assert!(waits.is_empty());
     }
 
     #[test]

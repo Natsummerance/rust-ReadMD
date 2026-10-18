@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkRecoveryAssets } from './lib/capability-recovery.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const UPSTREAM = path.join(root, 'assets', 'upstream');
@@ -81,6 +82,22 @@ export function diffManifest(expected, actual) {
     const got = have.get(p);
     if (got && (got.bytes !== item.bytes || got.sha256 !== item.sha256)) problems.push(`upstream manifest hash mismatch: ${p}`);
   }
+  return problems;
+}
+
+export function checkMathComponents(directory=path.join(root,'assets/vendor/mathjax')){
+  const problems=[];let lock;
+  try{lock=JSON.parse(fs.readFileSync(path.join(directory,'components.lock.json'),'utf8'));}catch{return ['missing or invalid MathJax component lock'];}
+  if(lock.schema!==1||lock.version!=='3.2.2'||lock.license!=='Apache-2.0'||!/^[a-f0-9]{40}$/.test(lock.commit)||!Array.isArray(lock.files))return ['invalid MathJax component provenance'];
+  const want=new Set();
+  for(const item of lock.files){
+    const target=typeof item.path==='string'?path.resolve(directory,item.path):directory,relative=path.relative(directory,target);
+    if(!relative||relative.startsWith('..')||path.isAbsolute(relative)||want.has(item.path)){problems.push('invalid MathJax resource path');continue;}
+    want.add(item.path);
+    if(!fs.existsSync(target)||!fs.statSync(target).isFile()){problems.push('missing MathJax resource: '+item.path);continue;}
+    const data=fs.readFileSync(target);if(data.length!==item.bytes||sha256(data)!==item.sha256)problems.push('MathJax resource hash mismatch: '+item.path);
+  }
+  for(const file of walk(directory).filter(f=>f.endsWith('.js')||path.basename(f)==='LICENSE')){const name=path.relative(directory,file).split(path.sep).join('/');if(!want.has(name))problems.push('unlocked MathJax resource: '+name);}
   return problems;
 }
 
@@ -233,6 +250,8 @@ function main(argv) {
     if (current !== encode(catalog)) problems.push('provider catalog is stale; run node tools/check-assets.mjs --write');
   }
   problems.push(...promptViolations(promptFiles()));
+  problems.push(...checkMathComponents());
+  problems.push(...checkRecoveryAssets(path.join(root, 'assets')));
   if (problems.length) {
     console.error('asset check failed:');
     for (const p of problems) console.error('  ' + p);

@@ -372,12 +372,18 @@ process.stdin.on('end', async () => {
   try {
     const source = JSON.parse(raw);
     const compiled = language === 'vega-lite' ? vegaLite.compile(source).spec : source;
-    const loader = (typeof vega.loader === 'function')
-      ? vega.loader({ load: () => Promise.reject(new Error('external data loading blocked in offline mode')) })
-      : undefined;
+    const loader = vega.loader();
+    // loader(options) does not override the load method. Override the actual
+    // method, so a document cannot initiate network or local-file reads.
+    let denied = false;
+    loader.load = () => { denied = true; return Promise.reject(new Error('external data loading blocked in offline mode')); };
     const view = new vega.View(vega.parse(compiled), { renderer: 'none', loader });
     await view.runAsync();
     const svg = await view.toSVG();
+    view.finalize();
+    // Vega may log a loader failure and still produce a blank SVG. A blocked
+    // dependency is a failed render, never a successful empty publication.
+    if (denied) throw new Error('external data loading blocked in offline mode');
     process.stdout.write(String(svg || ''));
   } catch (_) {
     process.exitCode = 2;
@@ -398,6 +404,9 @@ fn vega_assets(root: &Path) -> (PathBuf, PathBuf) {
 /// `spec_text` 已经是 Python `str(spec_text or "")` 之后的结果；语言非法、输入过大、
 /// JSON 非法、依赖缺失分别对应各自的稳定码，全部 422。
 pub fn render_vega_svg(spec_text: &str, language: &str, timeout: Duration) -> DiagramResult<String> {
+    render_vega_with_profile(spec_text,language,timeout,&json!({}))
+}
+pub fn render_vega_with_profile(spec_text: &str, language: &str, timeout: Duration, profile:&Value) -> DiagramResult<String> {
     let normalized = py_strip(language).to_lowercase();
     if normalized != "vega" && normalized != "vega-lite" {
         return Err(expected("diagram_engine_invalid"));
@@ -413,6 +422,7 @@ pub fn render_vega_svg(spec_text: &str, language: &str, timeout: Duration) -> Di
     if !spec.is_object() {
         return Err(expected("diagram_invalid_input"));
     }
+    let spec=crate::scientific_figures::prepare_spec(spec,profile).map_err(|_|expected("diagram_invalid_input"))?;
 
     let root = repo_root();
     let node = match node_runtime(&root) {
@@ -424,8 +434,8 @@ pub fn render_vega_svg(spec_text: &str, language: &str, timeout: Duration) -> Di
         return Err(expected("diagram_dependency_missing"));
     }
 
-    let mut cmd = Command::new(&node);
-    cmd.arg("-e")
+    let mut cmd = crate::silent_command(&node);
+    cmd.arg("--max-old-space-size=256").arg("-e")
         .arg(VEGA_SCRIPT)
         .arg(&vega_path)
         .arg(&vega_lite_path)
@@ -449,7 +459,20 @@ pub fn render_vega_svg(spec_text: &str, language: &str, timeout: Duration) -> Di
     if !svg.starts_with("<svg") || svg.as_bytes().len() > MAX_SVG_BYTES {
         return Err(expected("diagram_render_failed"));
     }
+    crate::svg_render::validate(svg.as_bytes()).map_err(|_|expected("diagram_render_failed"))?;
     Ok(svg)
+}
+
+pub fn render_graphviz_svg(code:&str,profile:&Value)->DiagramResult<String>{
+    if code.is_empty()||code.len()>MAX_SOURCE_BYTES{return Err(expected("diagram_input_too_large"));}
+    let root=repo_root();let node=node_runtime(&root).ok_or_else(||expected("diagram_dependency_missing"))?;
+    let module=root.join("assets/vendor/diagrams/viz/viz-standalone.js");if !module.is_file(){return Err(expected("diagram_dependency_missing"));}
+    const SCRIPT:&str=r#"const Viz=require(process.argv[1]);let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>raw+=s);process.stdin.on('end',async()=>{try{const input=JSON.parse(raw),instance=await Viz.instance();let opts={format:'svg',engine:'dot'};if(input.profile.style==='research'){let font=String(input.profile.fontSizePt||7);opts.graphAttributes={bgcolor:'white',fontname:'Arial',fontsize:font};opts.nodeAttributes={fontname:'Arial',fontsize:font,color:'#333333',fontcolor:'#111111',penwidth:'0.7'};opts.edgeAttributes={...opts.nodeAttributes};}let svg=instance.renderString(input.code,opts);process.stdout.write(svg.slice(svg.indexOf('<svg')));}catch(_){process.exitCode=2;}});"#;
+    let input=serde_json::to_vec(&json!({"code":code,"profile":profile})).map_err(|_|DiagramError::Fatal)?;
+    let outcome=run_captured(crate::silent_command(node).arg("--max-old-space-size=256").arg("-e").arg(SCRIPT).arg(module),&input,VEGA_TIMEOUT).ok_or_else(||expected("diagram_engine_timeout"))?;
+    if !outcome.success{return Err(expected("diagram_render_failed"));}
+    let svg=String::from_utf8(outcome.stdout).map_err(|_|DiagramError::Fatal)?;
+    if !svg.starts_with("<svg")||svg.len()>MAX_SVG_BYTES{return Err(expected("diagram_render_failed"));}Ok(svg)
 }
 
 // ------------------------------------------------------------- capabilities
@@ -511,7 +534,10 @@ pub fn diagram_capabilities(root: &Path) -> Value {
     let (vega_path, vega_lite_path) = vega_assets(root);
     let vega_ready = node_ok && vega_path.is_file() && vega_lite_path.is_file();
     for engine in ["vega", "vega-lite"] {
-        let entry = engine_entry(vega_ready, "node", false);
+        let mut entry = engine_entry(vega_ready, "node", false);
+        // Keep the headless endpoint contract truthful. Desktop preview and
+        // export use the bundled browser engine, independently of system Node.
+        entry["client"] = engine_entry(vega_path.is_file() && vega_lite_path.is_file(), "browser", false);
         let reason = if vega_ready { "" } else { "diagram_dependency_missing" };
         engines.insert(engine.into(), with_reason(entry, reason));
     }
@@ -611,10 +637,11 @@ fn run_captured(cmd: &mut Command, input: &[u8], timeout: Duration) -> Option<Ru
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
-                if Instant::now() >= deadline {
+                if Instant::now() >= deadline || crate::speech::cancelled() {
                     // Python 超时路径：`process.kill()` 随后 `process.wait()`；
                     // `Child::kill` 已经是“终止并回收”的稳态等价物。
                     let _ = child.kill();
+                    let _ = child.wait();
                     return None;
                 }
                 thread::sleep(Duration::from_millis(5));

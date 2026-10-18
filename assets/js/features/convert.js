@@ -105,11 +105,15 @@ async function ocrFileOnce(path) {
   // Windows separators are Markdown escapes in the kernel's original-image link.
   // Forward slashes keep both the filesystem path and the generated link valid.
   if (/^[A-Za-z]:[\\/]/.test(path)) path = path.replace(/\\/g, '/');
+  if(window.ReadMDCapabilities&&!(await window.ReadMDCapabilities.ensure('ocr')))return false;
   if (!(await ensureModule('ocr'))) return false;
   busy(true);
   try {
-    const r = await apiFetch('/api/ocr?p=' + encodeURIComponent(path));
-    const d = await r.json();
+    let r = await apiFetch('/api/ocr?p=' + encodeURIComponent(path)),d=await r.json();
+    if(d.error_code==='pdf_engine_unavailable'&&window.ReadMDCapabilities){
+      busy(false);if(!(await window.ReadMDCapabilities.ensure('pdfium')))return false;busy(true);
+      r=await apiFetch('/api/ocr?p='+encodeURIComponent(path));d=await r.json();
+    }
     if (r.status === 409) { showToast(d.error || (_t('toast.moduleLoading') || '模块加载中…')); return false; }
     if (!r.ok) { showToast(apiMessage(d, 'toast.ocrFail') || 'OCR 失败'); return false; }
     if (!d.content || d.empty) { showToast(apiMessage(d, 'toast.ocrNoText') || '未识别到文字'); return false; }
@@ -201,6 +205,9 @@ function convertOrOcr(p, mode) {
 let pluginPollTimer = null;
 let pluginRefreshVersion = 0;
 let pluginTogglePending = false;
+let pluginRefreshPending = null;
+let pluginRefreshFailures = 0;
+let pluginRefreshAbort = null;
 
 function setPluginListStatus(message, retry = false) {
   const status = $('plugin-list-status');
@@ -224,29 +231,43 @@ async function openPluginModal() {
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
+  window.refreshOfflineCapabilityPack?.();
   setPluginListStatus(_t('plugin.loading'));
   await refreshPluginList();
 }
 
 function closePluginModal() {
   pluginRefreshVersion++;
+  pluginRefreshAbort?.abort();
   const modal = $('plugin-modal');
   if (modal) modal.classList.add('hidden');
   if (pluginPollTimer) {
-    clearInterval(pluginPollTimer);
+    clearTimeout(pluginPollTimer);
     pluginPollTimer = null;
   }
 }
 
-async function refreshPluginList() {
+function refreshPluginList() {
+  if (pluginRefreshPending?.version === pluginRefreshVersion) return pluginRefreshPending.promise;
   const version = ++pluginRefreshVersion;
+  const pending = { version, promise: null };
+  pluginRefreshPending = pending;
+  pending.promise = refreshPluginListOnce(version).finally(() => {
+    if (pluginRefreshPending === pending) pluginRefreshPending = null;
+  });
+  return pending.promise;
+}
+
+async function refreshPluginListOnce(version) {
   const grid = $('plugin-cards-grid');
   const ffmpegBadge = $('plugin-ffmpeg-badge');
   const sandboxPath = $('plugin-sandbox-path');
   if (!grid) return;
-
+  const controller = new AbortController();
+  pluginRefreshAbort = controller;
+  const deadline = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await apiFetch('/api/plugins/list');
+    const res = await apiFetch('/api/plugins/list', { signal: controller.signal });
     const data = await res.json();
     if (version !== pluginRefreshVersion) return false;
     if (!res.ok || !data.ok) throw new Error('Failed to list plugins');
@@ -267,19 +288,26 @@ async function refreshPluginList() {
     }
 
     renderPluginCards(data.plugins || {});
+    pluginRefreshFailures = 0;
 
     // 如果有安装任务进行中，保持轮询
     const hasInstalling = Object.values(data.plugins || {}).some(p => p.installing);
-    if (hasInstalling && !pluginPollTimer && !$('plugin-modal').classList.contains('hidden')) {
-      pluginPollTimer = setInterval(refreshPluginList, 1500);
-    } else if (!hasInstalling && pluginPollTimer) {
-      clearInterval(pluginPollTimer);
-      pluginPollTimer = null;
-    }
+    clearTimeout(pluginPollTimer);
+    pluginPollTimer = hasInstalling && !$('plugin-modal').classList.contains('hidden')
+      ? setTimeout(() => { pluginPollTimer = null; refreshPluginList(); }, 1500) : null;
     return true;
   } catch (err) {
-    if (version === pluginRefreshVersion) setPluginListStatus(_t('plugin.loadFailed'), true);
+    if (version === pluginRefreshVersion) {
+      setPluginListStatus(_t('plugin.loadFailed'), true);
+      if (Object.values(lastPluginsCache).some(p => p.installing) && !$('plugin-modal').classList.contains('hidden')) {
+        clearTimeout(pluginPollTimer);
+        pluginPollTimer = setTimeout(() => { pluginPollTimer = null; refreshPluginList(); }, Math.min(10000, 1500 * (2 ** Math.min(++pluginRefreshFailures, 3))));
+      }
+    }
     return false;
+  } finally {
+    clearTimeout(deadline);
+    if (pluginRefreshAbort === controller) pluginRefreshAbort = null;
   }
 }
 
@@ -591,6 +619,11 @@ function renderPluginCards(plugins) {
 async function setPluginToggle(id, enabled, name) {
   if (pluginTogglePending) return;
   pluginTogglePending = true;
+  // Discard any list fetched before the mutation; it must not roll the
+  // confirmed toggle back while the follow-up refresh is being requested.
+  pluginRefreshVersion++;
+  pluginRefreshAbort?.abort();
+  clearTimeout(pluginPollTimer); pluginPollTimer = null;
   document.querySelectorAll('#plugin-cards-grid input[data-action="toggle"]').forEach(input => { input.disabled = true; });
   setPluginListStatus(_t('plugin.saving'));
   try {

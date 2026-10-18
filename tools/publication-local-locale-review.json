@@ -1,0 +1,18 @@
+{
+  "export.bold": {
+    "de": "Fett",
+    "ar": "غامق"
+  },
+  "export.alignLeft": {
+    "de": "Linksbündig"
+  },
+  "export.alignRight": {
+    "de": "Rechtsbündig"
+  },
+  "app.enabled": {
+    "de": "Aktiviert"
+  },
+  "app.disabled": {
+    "de": "Deaktiviert"
+  }
+}

@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('rendered code chunks preserve only sanctioned interactive buttons', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'interactive.md', '', [
       '```python cmd=true',
@@ -27,7 +28,7 @@ test('rendered code chunks preserve only sanctioned interactive buttons', async 
 
 test('MPE-style fenced attributes select the command and presentation options', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'attributes.md', '', [
       '```text {cmd=python echo=false output=markdown}',
@@ -48,7 +49,7 @@ test('MPE-style fenced attributes select the command and presentation options', 
 
 test('cmd=false stays a normal fenced block and never enables execution', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'attributes-disabled.md', '', [
       '```python {cmd=false output=markdown}',

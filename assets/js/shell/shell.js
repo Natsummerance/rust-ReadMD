@@ -3,15 +3,19 @@
 (function () {
   const byId = id => document.getElementById(id);
   const reduceMotion = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  let themeTransition = null;
+  window.addEventListener('readmd:modal-opened', () => themeTransition?.skipTransition());
 
   function withThemeTransition(apply) {
     const root = document.documentElement;
-    if (typeof document.startViewTransition !== 'function' || reduceMotion() || document.hidden) { apply(); return; }
+    if (typeof document.startViewTransition !== 'function' || reduceMotion() || document.hidden || window.ReadMDModal?.depth()) { apply(); return; }
+    themeTransition?.skipTransition();
     root.classList.add('rm-theme-vt');
     let vt;
     try { vt = document.startViewTransition(() => { apply(); }); }
     catch (e) { root.classList.remove('rm-theme-vt'); apply(); return; }
-    const done = () => root.classList.remove('rm-theme-vt');
+    themeTransition = vt;
+    const done = () => { if (themeTransition === vt) { themeTransition = null; root.classList.remove('rm-theme-vt'); } };
     vt.finished.then(done, done);
   }
   function wrapToggleTheme() {
@@ -100,9 +104,11 @@ function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;
   actions.dataset.initialized = 'true';
-  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-more', 'more-menu']) {
+  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-zen']) {
     if ($(id)) actions.appendChild($(id));
   }
+  const ai = $('btn-ai');
+  if (ai && $('btn-more')) ai.before($('btn-more'));
   const title = $('window-title');
   const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const command = (action, options) => { if (native) py.window_control(action, options); };
@@ -133,14 +139,15 @@ function initWindowChrome() {
     syncWindowPreferences();
     if (!await saveSettings()) { state.closeToTray = previous; syncWindowPreferences(); }
   };
-  const drag = $('window-drag-region');
+  const drag = $('app-titlebar');
+  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions,#window-controls');
   let press = null;
-  drag.addEventListener('pointerdown', e => { if (e.button === 0) press = { x: e.screenX, y: e.screenY }; });
+  drag.addEventListener('pointerdown', e => { if (e.button === 0 && !interactive(e.target)) press = { x: e.screenX, y: e.screenY }; });
   drag.addEventListener('pointermove', e => {
     if (press && (e.buttons & 1) && Math.hypot(e.screenX - press.x, e.screenY - press.y) >= 4) { press = null; command('drag'); }
   });
   window.addEventListener('pointerup', () => { press = null; });
-  drag.addEventListener('dblclick', () => command('maximize'));
+  drag.addEventListener('dblclick', e => { if (!interactive(e.target)) command('maximize'); });
   for (const edge of ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw']) {
     const handle = document.createElement('div'); handle.className = 'window-resize-edge edge-' + edge;
     handle.setAttribute('aria-hidden', 'true');

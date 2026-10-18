@@ -333,7 +333,11 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> std::io::Result<Option<Req
         .into_owned();
     let query = parse_query(raw_query);
 
-    let body = read_body(reader, &headers)?;
+    let body = if path.trim_end_matches('/')=="/api/capabilities/upload/chunk" {
+        read_body_with_limit(reader,&headers,crate::capability_delivery::UPLOAD_CHUNK_BYTES)?
+    }else if method=="POST"&&path.trim_end_matches('/')=="/api/capabilities/upload" {
+        read_body_with_limit(reader,&headers,128*1024*1024)?
+    }else{read_body(reader,&headers)?};
     Ok(Some(Request {
         method,
         path,
@@ -344,6 +348,9 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> std::io::Result<Option<Req
 }
 
 fn read_body(reader: &mut BufReader<TcpStream>, headers: &HashMap<String, String>) -> std::io::Result<Vec<u8>> {
+    read_body_with_limit(reader,headers,MAX_BODY)
+}
+fn read_body_with_limit(reader: &mut BufReader<TcpStream>, headers: &HashMap<String, String>,limit:usize) -> std::io::Result<Vec<u8>> {
     let chunked = headers
         .get("transfer-encoding")
         .map(|v| v.to_ascii_lowercase().contains("chunked"))
@@ -366,7 +373,7 @@ fn read_body(reader: &mut BufReader<TcpStream>, headers: &HashMap<String, String
                 reader.read_until(b'\n', &mut trailer)?;
                 break;
             }
-            if out.len() + size > MAX_BODY {
+            if size>limit.saturating_sub(out.len()) {
                 return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "body too large"));
             }
             let mut chunk = vec![0u8; size + 2];
@@ -379,7 +386,7 @@ fn read_body(reader: &mut BufReader<TcpStream>, headers: &HashMap<String, String
         .get("content-length")
         .and_then(|v| v.trim().parse().ok())
         .unwrap_or(0);
-    if len > MAX_BODY {
+    if len > limit {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "body too large"));
     }
     if len == 0 {
@@ -521,6 +528,16 @@ fn handle_connection(stream: TcpStream, app: Arc<App>) {
             Ok(Some(req)) => req,
             _ => break,
         };
+        if req.method == "POST" && req.path.trim_end_matches('/') == "/api/ai/complete"
+            && req.header("accept").is_some_and(|s| s.contains("text/event-stream")) {
+            if let Err(error) = authorize(&app,&req,peer_is_loopback) {
+                let _ = write_response(&mut writer,&error_response(error),false,false);
+            } else {
+                let _ = writer.set_write_timeout(Some(Duration::from_secs(5)));
+                serve_completion_stream(&app,&req,&mut writer);
+            }
+            break;
+        }
         let mut keep_alive = req.wants_keep_alive() && reader.buffer().len() < MAX_HEADER;
         let head_only = req.method == "HEAD";
         let res = match dispatch_guarded(&app, &req, peer_is_loopback) {
@@ -622,7 +639,27 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/kernel/status", h_kernel_status), // KERNEL BRIDGE — non-parity, see its doc comment
     ("/api/file", h_file),
     ("/api/document/analyze", h_document_analyze), // V0.0.5 KERNEL BRIDGE, non-parity
+    ("/api/documents/transaction", crate::upgrade_api::transact),
+    ("/api/collaboration/create", crate::collaboration_host::desktop),
+    ("/api/collaboration/resume", crate::collaboration_host::desktop),
+    ("/api/collaboration/session", crate::collaboration_host::desktop),
+    ("/api/math/parse", crate::upgrade_api::math_parse),
+    ("/api/math/patch", crate::upgrade_api::math_patch),
+    ("/api/math/serialize", crate::upgrade_api::math_serialize),
+    ("/api/math/migrate", crate::upgrade_api::math_migrate),
+    ("/api/math/schema", crate::upgrade_api::math_schema),
+    ("/api/academic/citations", crate::upgrade_api::academic_citations),
+    ("/api/academic/document", crate::upgrade_api::academic_document),
+    ("/api/publication/blocks", crate::upgrade_api::publication_blocks),
+    ("/api/publication/metadata", crate::upgrade_api::publication_metadata),
+    ("/api/pdf/workspace", crate::pdf_workspace::endpoint),
+    ("/api/developer/openapi", crate::openapi_document::endpoint),
+    ("/api/capabilities/packs", crate::capability_packs::endpoint),
+    ("/api/capabilities/upload", crate::capability_delivery::upload),
+    ("/api/capabilities/upload/chunk", crate::capability_delivery::upload_chunk),
     ("/api/workspace/search", h_workspace_search), // V0.0.5 KERNEL BRIDGE, non-parity
+    ("/api/workspace/suggest", h_workspace_suggest), // V0.0.5 KERNEL BRIDGE, non-parity
+    ("/api/workspace/resolve", h_workspace_resolve), // V0.0.5 KERNEL BRIDGE, non-parity
     ("/api/list", h_list),
     ("/raw", h_raw),
     ("/api/save", h_save),
@@ -657,6 +694,7 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/ai/config", h_ai_config),
     ("/api/ai/models", h_ai_models),
     ("/api/ai/chat", h_ai_chat),
+    ("/api/ai/complete", h_ai_complete),
     ("/api/ai/history", h_ai_history),
     ("/api/ai/prompts", crate::skill_workbench::prompts),
     ("/api/image/save", h_image_save),
@@ -950,6 +988,9 @@ pub fn call_in_process(app: &Arc<App>, method: &str, target: &str, body: Option<
 }
 
 fn dispatch(app: &Arc<App>, req: &Request, peer_is_loopback: bool) -> Response {
+    crate::ocr_portable::with_paths(&app.paths,||dispatch_with_profile(app,req,peer_is_loopback))
+}
+fn dispatch_with_profile(app: &Arc<App>, req: &Request, peer_is_loopback: bool) -> Response {
     if req.method == "OPTIONS" {
         // `readmd.py` defines no `do_OPTIONS` and sends no `Access-Control-*`
         // header anywhere (`Handler._send`, `readmd.py:1397-1412`), so
@@ -2150,6 +2191,14 @@ fn h_raw(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 /// `{'ok': False, 'error': <str(exc)>}`, and a stale editor state comes back as
 /// the four-key `conflict` dict.  `_do_save` maps those onto 500 / 409.
 fn save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtime: Option<f64>, history_dir: &Path) -> Value {
+    let original_content = content;
+    let migration = if matches!(content::ext_of(path).as_str(), "md" | "markdown" | "mkd") && content.contains("<!--readmd:math:") {
+        match crate::math_migration::plan(content) {
+            Ok(plan) => Some(plan),
+            Err(code) => return json!({"ok":false,"error":code,"error_code":code}),
+        }
+    } else { None };
+    let content = migration.as_ref().map(|m| m.content.as_str()).unwrap_or(content);
     // Encode first: an unrepresentable character must fail the save *before*
     // any backup or write happens, never be replaced silently.
     let bytes = match crate::text_encoding::encode(content, encoding) {
@@ -2199,20 +2248,43 @@ fn save_text_atomic(path: &Path, content: &str, encoding: &str, expected_mtime: 
             });
         }
     }
-    if old_exists && std::fs::read(&abspath).ok().as_deref() == Some(bytes.as_slice()) {
-        return json!({"ok": true, "path": abspath, "backup": null, "mtime": old_mtime, "revision": document_revision(content)});
+    let acknowledge=|mut result:Value|{
+        result["revision"]=json!(document_revision(content));
+        if let Some(plan)=&migration{
+            result["saved_content"]=json!(content);
+            result["save_edits"]=json!(crate::math_migration::saved_edits(original_content,content));
+            result["math_recoveries"]=json!(plan.recoveries.len());
+            result["migration_diagnostics"]=json!(plan.diagnostics);
+        }
+        result
+    };
+    let unchanged=old_exists && std::fs::read(&abspath).ok().as_deref()==Some(bytes.as_slice());
+    if !unchanged {
+        if let Err(e) = crate::document_history::checkpoint_file(history_dir, &abspath, "save") {
+            return json!({"ok": false, "error": e, "error_code": "recovery_failed"});
+        }
     }
-    if let Err(e) = crate::document_history::checkpoint_file(history_dir, &abspath, "save") {
-        return json!({"ok": false, "error": e, "error_code": "recovery_failed"});
+    if let Some(plan) = &migration {
+        let path = abspath.to_string_lossy();
+        let name = abspath.file_name().and_then(|n| n.to_str()).unwrap_or("document.md");
+        for recovery in &plan.recoveries {
+            let context = json!({"dir":abspath.parent(),"from":recovery.from,"to":recovery.to,"formula_id":recovery.formula_id,"source_revision":plan.revision,"reason":recovery.code});
+            if let Err(error) = crate::document_history::record_with_context(history_dir, &path, &path, name, "math_recovery", &recovery.code, &recovery.content, context) {
+                return json!({"ok":false,"error":error,"error_code":"recovery_failed"});
+            }
+        }
     }
+    // Undoing a migration and saving again can produce identical disk bytes.
+    // Still preserve stale properties and acknowledge the actual saved source.
+    if unchanged{return acknowledge(json!({"ok":true,"path":abspath,"backup":null,"mtime":old_mtime}));}
     match content::write_bytes_atomic(&abspath, &bytes) {
-        Ok(()) => { let mut result = json!({
+        Ok(()) => acknowledge(json!({
             "ok": true,
             // Preserve the legacy acknowledgement fields, with a content revision.
             "path": abspath.to_string_lossy().into_owned(),
             "backup": null,
             "mtime": content::modified_millis(&abspath) as f64 / 1000.0,
-        }); result["revision"] = json!(document_revision(content)); result },
+        })),
         Err(e) => json!({ "ok": false, "error": e.to_string() }),
     }
 }
@@ -2366,6 +2438,9 @@ fn h_save(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         if !expected.is_empty() && content::read_text(&safe_path).map(|s| document_revision(&s)).ok().as_deref() != Some(expected) {
             return Ok(Response::json_status(409, &json!({"ok": false, "conflict": true, "error": "文件内容已在编辑后变化，未覆盖", "current_mtime": content::modified_millis(&safe_path) as f64 / 1000.0})));
         }
+    }
+    if payload.get("assets").and_then(Value::as_array).is_some_and(|a| !a.is_empty()) {
+        return save_document_assets_locked(app, &payload, &safe_path, expected_mtime);
     }
     let result = save_text_atomic(&safe_path, &text, &enc, expected_mtime, &app.paths.data_dir);
     let status = if result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -3371,17 +3446,17 @@ fn set_autostart(_app: &Arc<App>, enabled: bool) -> ApiResult<()> {
 /// separate argument, and subkey path relative to it.
 const AUTOSTART_SUBKEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
-fn h_modules(_app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
+fn h_modules(app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
+    for name in crate::modules::MODULES {crate::capabilities::start(app,name,false);}
+    let (states, errors)=app.modules.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
     ok_json(json!({
         "ok": true,
         "engine": "rust",
         "version": VERSION,
-        "modules": {
-            "convert": "ready",
-            "ocr": "ready",
-            "web": "ready",
-            "ai": "ready"
-        },
+        "modules": states,
+        "errors": errors,
+        "probe_scope": "local_engine_operation",
+        "ai_connection": "not_checked",
         "win7": false
     }))
 }
@@ -3526,6 +3601,40 @@ fn h_ai_models(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     }
 }
 
+/// Native mobile hosts embed the same authenticated HTTP kernel. Bind before
+/// returning the port; shutdown joins the owned accept thread. Never bind LAN.
+pub struct EmbeddedServer {
+    pub port: u16,
+    stopped: Arc<std::sync::atomic::AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+impl Drop for EmbeddedServer {
+    fn drop(&mut self) {
+        self.stopped.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+    }
+}
+pub fn start_embedded(app: Arc<App>) -> std::io::Result<EmbeddedServer> {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
+    listener.set_nonblocking(true)?;
+    let port = listener.local_addr()?.port();
+    let stopped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = stopped.clone();
+    let worker = std::thread::Builder::new().name("readmd-embedded".into()).spawn(move || {
+        while !flag.load(Ordering::Acquire) {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let app = app.clone();
+                    let _ = std::thread::Builder::new().name("readmd-mobile-conn".into()).spawn(move || handle_connection(stream, app));
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(10)),
+                Err(_) => break,
+            }
+        }
+    })?;
+    Ok(EmbeddedServer { port, stopped, worker: Some(worker) })
+}
+
 /// V0.0.5 KERNEL BRIDGE: inspect a current draft, without repairing or saving it.
 fn h_document_analyze(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     if req.method != "POST" { return Err(ApiError::bad_request("method_not_allowed")); }
@@ -3550,6 +3659,32 @@ fn h_workspace_search(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             .ok_or_else(||ApiError::bad_request("invalid_search_limit"))? as usize,
     };
     crate::document_intelligence::search_workspace(root,query,limit,None).map_err(|e|ApiError::bad_request(&e)).and_then(ok_json)
+}
+
+fn h_workspace_suggest(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::bad_request("method_not_allowed")); }
+    let body = body_value(req);
+    let root = body.get("workspace_root").and_then(Value::as_str).filter(|s| !s.is_empty()).map(Path::new).unwrap_or(&app.paths.workspace);
+    let file = body.get("file_path").and_then(Value::as_str).filter(|s| !s.is_empty()).map(Path::new);
+    let kind = body.get("kind").and_then(Value::as_str).ok_or_else(|| ApiError::bad_request("invalid_request"))?;
+    let query = body.get("query").and_then(Value::as_str).ok_or_else(|| ApiError::bad_request("invalid_request"))?;
+    let draft = body.get("content").and_then(Value::as_str).unwrap_or("");
+    let limit = match body.get("limit") {
+        None => 40,
+        Some(v) => v.as_u64().filter(|n| (1..=60).contains(n)).ok_or_else(|| ApiError::bad_request("invalid_request"))? as usize,
+    };
+    crate::document_intelligence::suggest_knowledge_links(root,file,draft,kind,query,limit)
+        .map_err(|e| ApiError::bad_request(&e)).and_then(ok_json)
+}
+
+fn h_workspace_resolve(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::bad_request("method_not_allowed")); }
+    let body = body_value(req);
+    let root = body.get("workspace_root").and_then(Value::as_str).filter(|s| !s.is_empty()).map(Path::new).unwrap_or(&app.paths.workspace);
+    let file = body.get("file_path").and_then(Value::as_str).filter(|s| !s.is_empty()).map(Path::new);
+    let target = body.get("target").and_then(Value::as_str).ok_or_else(|| ApiError::bad_request("invalid_request"))?;
+    crate::document_intelligence::resolve_knowledge_link(root,file,target)
+        .map_err(|e| ApiError::bad_request(&e)).and_then(ok_json)
 }
 
 // ---------------------------------------------------------------------------
@@ -4006,6 +4141,198 @@ fn h_ai_chat(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     ai_chat(app, req, &ai_providers::ureq_transport::UreqTransport::new())
 }
 
+fn h_ai_complete(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    ai_complete_events(app, req, None, &mut |_| Ok(()))
+}
+
+/// Same authenticated endpoint and engine as JSON/MCP. Frames carry complete
+/// sanitized candidate snapshots so retries can replace, not concatenate text.
+fn serve_completion_stream(app: &Arc<App>, req: &Request, writer: &mut TcpStream) {
+    let started = std::cell::Cell::new(false);
+    let outcome;
+    {
+        let mut emit = |event: Value| -> ApiResult<()> {
+            if !started.get() {
+                writer.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nX-Accel-Buffering: no\r\nConnection: close\r\n\r\n")
+                    .map_err(|_| ApiError::new(409,"cancelled"))?;
+                started.set(true);
+            }
+            write!(writer,"data: {}\n\n",event).and_then(|_| writer.flush()).map_err(|_| ApiError::new(409,"cancelled"))
+        };
+        outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let result = ai_complete_events(app,req,None,&mut emit);
+            match result {
+                Ok(response) => {
+                    let mut value: Value=serde_json::from_slice(&response.body).unwrap_or(json!({}));
+                    value["type"]=json!("done"); emit(value)
+                }
+                Err(error) if started.get() => emit(json!({"type":"error","ok":false,"error_code":error.code})),
+                Err(error) => Err(error),
+            }
+        }));
+    }
+    match outcome {
+        Ok(Err(error)) if !started.get() => { let _=write_response(writer,&error_response(error),false,false); }
+        Err(_) if !started.get() => { let _=write_response(writer,&internal_error_response(),false,false); }
+        Err(_) => { let _=writer.write_all(b"data: {\"type\":\"error\",\"ok\":false,\"error_code\":\"internal_error\"}\n\n"); }
+        _ => {}
+    }
+}
+
+#[cfg(test)]
+fn ai_complete(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transport) -> ApiResult<Response> {
+    ai_complete_events(app,req,Some(transport),&mut |_| Ok(()))
+}
+
+fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_providers::Transport>, emit: &mut dyn FnMut(Value) -> ApiResult<()>) -> ApiResult<Response> {
+    if req.method != "POST" { return Err(ApiError::new(405, "method_not_allowed")); }
+    if req.body.len() > 50000 { return Err(ApiError::bad_request("completion_context_too_large")); }
+    let body = req.json()?;
+    let context = crate::ai_completion::Context::parse(&body)?;
+    let task_id = body.get("task_id").and_then(Value::as_str).unwrap_or("");
+    let task = if task_id.is_empty() { None } else { Some(crate::cancel::register(task_id).ok_or_else(|| ApiError::bad_request("invalid_task_id"))?) };
+    let cancelled = || task.as_ref().is_some_and(|t| t.is_cancelled());
+    let directory = AiProviderDirectory::new(app);
+    use ai_providers::ProviderDirectory as _;
+    let current = directory.current_config();
+    let provider_id = body.get("provider").and_then(Value::as_str).filter(|s| !s.is_empty())
+        .or_else(|| current.get("provider_id").or_else(|| current.get("provider")).and_then(Value::as_str)).unwrap_or("");
+    let mut provider = directory.find_provider(provider_id);
+    // Scope measurements by connection configuration, not just a model name.
+    let scope = crate::ai_completion::fingerprint(&provider);
+    let automatic = body.get("model").and_then(Value::as_str).is_none_or(|s| s.is_empty())
+        && crate::ai_completion::normalize_settings(provider.get("autocomplete"))["mode"] == "auto";
+    if automatic && provider.get("models").and_then(Value::as_array).is_none_or(Vec::is_empty) && provider.is_object() {
+        let models=if let Some(models)=app.completion.catalog(&scope) { models } else if let Ok(_discovery)=app.completion.catalog_discovery.try_lock() {
+            let models=crate::ai::AIClient::for_model_request(&json!({"provider":provider_id}),&directory)
+                .ok().and_then(|client| client.completion_models().ok()).unwrap_or_default();
+            app.completion.remember_catalog(scope.clone(),models.clone()); models
+        } else { Vec::new() };
+        if !models.is_empty() { provider["models"]=json!(models); }
+        if cancelled() { return Err(ApiError::new(409,"cancelled")); }
+    }
+    let current_provider = current.get("provider_id").or_else(|| current.get("provider")).and_then(Value::as_str).unwrap_or("");
+    let current_model = if directory.find_provider(current_provider).get("id") == provider.get("id") {
+        current.get("model").and_then(Value::as_str).filter(|s| !s.is_empty())
+    } else { None }.or_else(|| provider.get("models").and_then(Value::as_array).and_then(|m| m.first()).and_then(Value::as_str)).unwrap_or("");
+    let plan = app.completion.plan(&provider, current_model, &body, &scope);
+    if plan.models.is_empty() { return Err(ApiError::new(503, "ai_completion_no_available_model")); }
+    let instructions = skill_render(app, "readmd-autocomplete", &json!({})).map_err(|_| ApiError::internal("completion_skill_unavailable"))?;
+    let prompt_context = context.compact();
+    let protocol = body.get("protocol").and_then(Value::as_str).unwrap_or("chat");
+    // Dedicated FIM servers receive their actual token protocol, not a chat
+    // prompt pretending to implement FIM. Standard chat providers use the
+    // existing provider adapter, with a small generation budget injected below.
+    struct Bounded<'a>(&'a dyn ai_providers::Transport, bool);
+    struct CompletionLines(Box<dyn ai_providers::LineStream>);
+    impl ai_providers::LineStream for CompletionLines {
+        fn content_type(&self) -> Option<&str> { self.0.content_type() }
+        fn next_line(&mut self) -> Result<Option<String>,String> {
+            let Some(line) = self.0.next_line()? else { return Ok(None) };
+            if let Some(raw) = line.strip_prefix("data:") {
+                if let Ok(mut value) = serde_json::from_str::<Value>(raw.trim()) {
+                    if let Some(choices) = value.get_mut("choices").and_then(Value::as_array_mut) {
+                        for choice in choices {
+                            if let Some(text) = choice.get("text").and_then(Value::as_str).map(str::to_owned) {
+                                if choice.get("delta").is_none() { choice["delta"] = json!({"text":text}); }
+                            }
+                        }
+                    }
+                    return Ok(Some(format!("data: {value}")));
+                }
+            }
+            Ok(Some(line))
+        }
+    }
+    fn budget(body: &str, url: &str) -> String {
+        let mut value: Value = serde_json::from_str(body).unwrap_or(json!({}));
+        if url.trim_end_matches('/').ends_with("/responses") { value["max_output_tokens"] = json!(128); }
+        else { value["max_tokens"] = json!(128); }
+        value.to_string()
+    }
+    impl ai_providers::Transport for Bounded<'_> {
+        fn post_json(&self, url: &str, headers: &ai_providers::Headers, body: &str) -> Result<String, ai_providers::HttpError> {
+            self.0.post_json(url, headers, &budget(body,url))
+        }
+        fn open_stream(&self, url: &str, headers: &ai_providers::Headers, body: &str) -> Result<Box<dyn ai_providers::LineStream>, ai_providers::HttpError> {
+            let stream = self.0.open_stream(url, headers, &budget(body,url))?;
+            if self.1 { Ok(Box::new(CompletionLines(stream))) } else { Ok(stream) }
+        }
+    }
+    let began = std::time::Instant::now();
+    let mut last_error = None;
+    let mut permit = None;
+    for model in plan.models.iter().take(if plan.automatic { 2 } else { 1 }) {
+        if cancelled() { return Err(ApiError::new(409, "cancelled")); }
+        if began.elapsed() > Duration::from_secs(16) { break; }
+        let mut payload = prompt_context.payload(&body, &instructions);
+        payload["model"] = json!(model);
+        let mut route = ai_providers::resolve_chat(&payload, &directory, &AiSkillService { app }).map_err(ai_chat_failure)?;
+        if route.args.base_url.is_empty() { return Err(ApiError::bad_request("ai_not_configured")); }
+        if protocol != "chat" {
+            if route.target != ai_providers::RouteTarget::Completion { return Err(ApiError::bad_request("fim_requires_completion_provider")); }
+            route.args.messages = vec![json!({"role":"user","content":prompt_context.fim_prompt(protocol)?})];
+        }
+        // Include the resolved secret only inside a SHA-256 cache key so key
+        // replacement invalidates old entries. Never keep or return that input.
+        let cache_key = crate::ai_completion::fingerprint(&json!([scope,context.revision,model,protocol,instructions,route.args.api_key]));
+        if let Some(text) = app.completion.cached(&cache_key) {
+            return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"model":model,"selection":plan.selection,"cached":true}));
+        }
+        if permit.is_none() { permit = Some(crate::ai_completion::Permit::acquire()?); }
+        route.args.stream = provider.get("autocomplete").and_then(|p| p.get("stream")).and_then(Value::as_bool).unwrap_or(true);
+        let transport=transport.unwrap_or_else(|| if plan.automatic && model!=current_model { &app.completion.fast_transport } else { &app.completion.transport });
+        let bounded = Bounded(transport,route.target == ai_providers::RouteTarget::Completion);
+        let started = std::time::Instant::now();
+        let response = (|| -> ApiResult<String> {
+            let mut stream = match ai_providers::dispatch_chat(&route, &bounded) {
+                Ok(stream) => stream,
+                Err(error) if route.args.stream && ["HTTP 400", "HTTP 405", "HTTP 415"].iter().any(|s| error.message.starts_with(s)) => {
+                    // A saved compatible gateway may not implement SSE. Retry
+                    // once on the SAME model; never silently switch a fixed one.
+                    route.args.stream = false;
+                    ai_providers::dispatch_chat(&route, &bounded).map_err(ai_chat_failure)?
+                }
+                Err(error) => return Err(ai_chat_failure(error)),
+            };
+            let mut raw = String::new();
+            let mut last_sent = String::new();
+            let mut sent_at = std::time::Instant::now();
+            for event in &mut stream {
+                if cancelled() { return Err(ApiError::new(409, "cancelled")); }
+                if began.elapsed() > Duration::from_secs(30) { return Err(ApiError::new(504, "ai_completion_timeout")); }
+                if let ai_providers::ChatEvent::Delta(Value::String(delta)) = event.map_err(ai_chat_failure)? {
+                    raw.push_str(&delta);
+                    let ready = prompt_context.ready(&raw);
+                    let candidate = ready.clone().unwrap_or_else(|| prompt_context.preview(&raw));
+                    if candidate.chars().count() >= 2 && candidate != last_sent
+                        && (last_sent.is_empty() || ready.is_some() || sent_at.elapsed() >= Duration::from_millis(35)) {
+                        emit(json!({"type":"suggestion","completion":candidate,"model":model,"context_revision":context.revision}))?;
+                        last_sent = candidate; sent_at = std::time::Instant::now();
+                    }
+                    if let Some(text) = ready { return Ok(text); }
+                    if raw.len() > 16000 { break; }
+                }
+            }
+            Ok(prompt_context.clean(&raw))
+        })();
+        if cancelled() { return Err(ApiError::new(409, "cancelled")); }
+        match response {
+            Ok(text) if crate::ai_completion::usable(&text) => {
+                app.completion.observe(&scope,model,started.elapsed(),true);
+                app.completion.remember(cache_key,text.clone());
+                return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"model":model,"selection":plan.selection,"cached":false,"elapsed_ms":began.elapsed().as_millis()}));
+            }
+            Ok(_) => { last_error = Some(ApiError::new(502,"ai_completion_empty")); }
+            Err(error) if error.code == "cancelled" => { return Err(error); }
+            Err(error) => { last_error = Some(error); }
+        }
+        emit(json!({"type":"suggestion","completion":"","model":model,"context_revision":context.revision}))?;
+        app.completion.observe(&scope,model,started.elapsed(),false);
+    }
+    Err(last_error.unwrap_or_else(|| ApiError::new(504,"ai_completion_timeout")))
+}
+
 /// `h_ai_chat` with its egress injected, so the envelope the frontend gets can
 /// be pinned by a test that never opens a socket.
 fn ai_chat(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transport) -> ApiResult<Response> {
@@ -4035,6 +4362,9 @@ fn ai_chat(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transpor
     // in-process `ureq` + rustls stack as before — no Python, no subprocess.
     let stream = ai_providers::dispatch_chat(&route, transport).map_err(ai_chat_failure)?;
     let (content, usage) = collapse_chat_stream(stream).map_err(ai_chat_failure)?;
+    if crate::ai_completion::retired_model_notice(&content) {
+        return Err(ApiError::new(502,"provider_model_unavailable"));
+    }
     let model = ai_providers::py_str(&route.args.model);
 
     let session = payload.get("session").and_then(value_to_string).unwrap_or_else(|| "default".into());
@@ -4138,6 +4468,11 @@ fn h_image_save(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let name = payload.get("name").and_then(value_to_string).unwrap_or_else(|| {
         format!("img_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis())
     });
+    if payload.get("stage").and_then(Value::as_bool) == Some(true) {
+        let asset = crate::document_assets::stage(&app.paths.data_dir, &bytes, &name, &ext)
+            .map_err(|code| ApiError::bad_request(code))?;
+        return ok_json(json!({"ok": true, "path": asset.path, "rel": asset.reference, "relPath": asset.reference, "asset": asset, "size": bytes.len()}));
+    }
     let dir_val = payload.get("dir").or_else(|| payload.get("path")).and_then(value_to_string);
     let (target, rel) = if let Some(dir_str) = dir_val.filter(|d| !d.trim().is_empty() && std::path::Path::new(d).is_dir()) {
         let images_dir = std::path::PathBuf::from(&dir_str).join("images");
@@ -4184,7 +4519,9 @@ fn h_image_save(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 /// file answers `404 {'error': '文件不存在'}` and the `ocr` module gate runs
 /// before any work.
 fn h_ocr_parity(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
-    Ok(parity_web::h_ocr(app, req))
+    let task=match req.q("task_id").filter(|s|!s.is_empty()){Some(id)=>Some(crate::cancel::register(id).ok_or_else(||ApiError::bad_request("invalid_task_id"))?),None=>None};
+    let check=task.as_ref().map(crate::cancel::TaskGuard::checker).unwrap_or_else(||Arc::new(||false));
+    Ok(crate::speech::with_cancel(check,||parity_web::h_ocr(app,req)))
 }
 
 /// `Handler._api_transcribe` (`readmd.py:2052`): POST-only, `path`/`language`/
@@ -4891,6 +5228,14 @@ pub fn known_routes() -> Vec<(&'static str, bool)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capability_chunk_transport_rejects_over_budget_before_reading_body(){
+        for header in [format!("Content-Length: {}\r\n\r\n",crate::capability_delivery::UPLOAD_CHUNK_BYTES+1),format!("Transfer-Encoding: chunked\r\n\r\n{:x}\r\n",crate::capability_delivery::UPLOAD_CHUNK_BYTES+1)]{
+            let listener=TcpListener::bind("127.0.0.1:0").unwrap();let mut client=TcpStream::connect(listener.local_addr().unwrap()).unwrap();let (server,_)=listener.accept().unwrap();server.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            client.write_all(format!("POST /api/capabilities/upload/chunk HTTP/1.1\r\nHost: localhost\r\n{header}").as_bytes()).unwrap();
+            let error=read_request(&mut BufReader::new(server)).unwrap_err();assert_eq!(error.kind(),std::io::ErrorKind::InvalidInput);assert_eq!(error.to_string(),"body too large");
+        }
+    }
 
     /// `authorize()` reads `READMD_REQUIRE_TOKEN` from the environment on every
     /// request, so any test that mutates it must exclude every other dispatching
@@ -5409,12 +5754,13 @@ mod tests {
         let _env = env_guard(); let app = sample_app("save-copy-assets");
         let dir = tempfile::tempdir().unwrap(); let source = dir.path().join("source.png");
         std::fs::write(&source, "NEW ASSET").unwrap();
-        let target = dir.path().join("note.md"); let assets = dir.path().join("note.assets");
+        let target = dir.path().join("note.md"); let assets = dir.path().join("readmd-assets");
         std::fs::create_dir(&assets).unwrap(); std::fs::write(assets.join("photo.png"), "USER ASSET").unwrap();
         let body = json!({"content": format!("![image]({})", source.to_string_lossy()), "assets": [{"path": source, "name": "photo.png"}]});
         let saved = save_document_copy(&app, &body, target.to_str().unwrap()).unwrap();
         let result: Value = serde_json::from_slice(&saved.body).unwrap(); assert_eq!(result["ok"], true);
-        assert_eq!(result["saved_content"], "![image](note.assets/photo-2.png)");
+        assert!(result["saved_content"].as_str().unwrap().starts_with("![image](readmd-assets/"));
+        assert_eq!(std::fs::read_to_string(result["saved_assets"][0]["path"].as_str().unwrap()).unwrap(), "NEW ASSET");
         assert_eq!(std::fs::read_to_string(assets.join("photo.png")).unwrap(), "USER ASSET");
         save_document_copy(&app, &body, target.to_str().unwrap()).unwrap();
         assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 2);
@@ -5423,16 +5769,21 @@ mod tests {
         let failed_target = dir.path().join("failed.md"); std::fs::create_dir(&failed_target).unwrap();
         let failed = save_document_copy(&app, &body, failed_target.to_str().unwrap()).unwrap();
         assert_eq!(serde_json::from_slice::<Value>(&failed.body).unwrap()["ok"], false);
-        assert!(!dir.path().join("failed.assets").exists());
+        assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 2);
         let invalid = json!({"content":"中文", "encoding":"ascii", "assets": body["assets"]});
         let _ = save_document_copy(&app, &invalid, dir.path().join("bad.md").to_str().unwrap()).unwrap();
-        assert!(!dir.path().join("bad.assets").exists()); assert!(!dir.path().join("bad.md").exists());
+        assert_eq!(std::fs::read_dir(&assets).unwrap().count(), 2); assert!(!dir.path().join("bad.md").exists());
         let export = dir.path().join("export"); std::fs::create_dir(&export).unwrap();
         let relative = json!({"content":"![relative](source.png)", "base_dir": dir.path()});
         let copied = save_document_copy(&app, &relative, export.join("relative.md").to_str().unwrap()).unwrap();
         let copied: Value = serde_json::from_slice(&copied.body).unwrap();
-        assert_eq!(copied["saved_content"], "![relative](relative.assets/source.png)");
-        assert_eq!(std::fs::read_to_string(export.join("relative.assets/source.png")).unwrap(), "NEW ASSET");
+        assert!(copied["saved_content"].as_str().unwrap().starts_with("![relative](readmd-assets/"));
+        assert_eq!(std::fs::read_to_string(copied["saved_assets"][0]["path"].as_str().unwrap()).unwrap(), "NEW ASSET");
+        assert!(!export.join("relative.assets").exists());
+        let body = serde_json::to_vec(&json!({"path": target, "content": "Second save", "expected_revision": result["revision"]})).unwrap();
+        let second = dispatch(&app, &app_request(&app, "POST", "/api/save", &body), true);
+        assert_eq!(second.status, 200);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "Second save");
     }
 
     /// A GBK file keeps its bytes' encoding through open → edit → save, and a
@@ -5803,6 +6154,83 @@ mod tests {
         let _g = crate::cancel::register("route-live").unwrap();
         let res = dispatch(&app, &request("POST", "/api/task/cancel", br#"{"id":"route-live"}"#), true);
         assert_eq!(serde_json::from_slice::<Value>(&res.body).unwrap()["state"], "cancelling");
+    }
+    #[test]
+    fn explicit_save_migrates_math_retains_stale_properties_and_acknowledges_composed_asset_edits() {
+        let _env = env_guard(); let app = sample_app("math-migration-save");
+        let directory=tempfile::tempdir().unwrap();let target=directory.path().join("paper.md");
+        let xml=crate::latex2omml::latex_to_omml("a/b",false);
+        let metadata=crate::math_document::metadata("a/b",&xml,"old-id").unwrap();
+        let original=format!("# Study\r\n\r\nCurrent $a/b${metadata}, externally changed $z+1${metadata}, duplicate $z+1${metadata}.\r\n");
+        std::fs::write(&target,&original).unwrap();
+        let planned=crate::math_migration::plan(&original).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(),original);
+        assert!(crate::document_history::list(&app.paths.data_dir,None).unwrap().is_empty());
+        let refused=save_text_atomic(&target,&original,"utf-8",Some(0.),&app.paths.data_dir);
+        assert_eq!(refused["conflict"],true);assert!(crate::document_history::list(&app.paths.data_dir,None).unwrap().is_empty());
+        let result=save_text_atomic(&target,&original,"utf-8",None,&app.paths.data_dir);
+        assert_eq!(result["ok"],true);assert_eq!(result["saved_content"],planned.content);
+        assert!(result["saved_content"].as_str().unwrap().contains("$z+1$"));
+        assert_eq!(result["math_recoveries"],2);
+        let entries=crate::document_history::list(&app.paths.data_dir,None).unwrap();
+        let old=entries.iter().find(|e|e.kind=="version").unwrap();
+        assert_eq!(crate::document_history::read(&app.paths.data_dir,&old.id).unwrap().1,original);
+        let recoveries=entries.iter().filter(|e|e.kind=="math_recovery").collect::<Vec<_>>();
+        assert_eq!(recoveries.len(),2);assert_ne!(recoveries[0].context["from"],recoveries[1].context["from"]);
+        crate::document_history::delete(&app.paths.data_dir,&recoveries[0].id).unwrap();
+        let again=save_text_atomic(&target,&original,"utf-8",result["mtime"].as_f64(),&app.paths.data_dir);
+        assert_eq!(again["ok"],true);assert_eq!(again["saved_content"],planned.content);assert_eq!(again["mtime"],result["mtime"]);
+        assert_eq!(crate::document_history::list(&app.paths.data_dir,None).unwrap().iter().filter(|e|e.kind=="math_recovery").count(),2);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(),1);
+        let image=directory.path().join("image.png");std::fs::write(&image,b"sample image").unwrap();
+        let content=format!("{original}\r\n![chart]({})\r\n",image.to_string_lossy());
+        let body=json!({"content":content,"assets":[{"path":image,"name":"chart.png"}]});
+        let response=save_document_copy(&app,&body,target.to_str().unwrap()).unwrap();
+        let saved:Value=serde_json::from_slice(&response.body).unwrap();assert_eq!(saved["ok"],true);
+        let edits:Vec<crate::document_transaction::TextEdit>=serde_json::from_value(saved["save_edits"].clone()).unwrap();
+        let applied=crate::document_transaction::apply(&content,&crate::document_transaction::ContentTransaction {base_revision:document_revision(&content),origin:"formula".into(),edits}).unwrap();
+        assert_eq!(applied.content,saved["saved_content"]);
+        assert_eq!(applied.content,std::fs::read_to_string(&target).unwrap());
+        assert!(applied.content.contains("readmd-assets/"));assert!(!applied.content.contains("<!--readmd:math:v1:"));
+    }
+
+    #[test]
+    fn export_cancel_while_choosing_destination_preserves_existing_file() {
+        let app = sample_app("export-dialog-cancel");
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("existing.html");
+        std::fs::write(&out, "ORIGINAL").unwrap();
+        let body = json!({"format":"html", "content":"# Changed", "task_id":"exp-dialog-cancel"}).to_string();
+        let req = request("POST", "/api/export", body.as_bytes());
+        let res = h_export_with_dialog(&app, &req, |_| {
+            assert_eq!(crate::cancel::cancel("exp-dialog-cancel"), crate::cancel::CancelState::Cancelling);
+            crate::native_dialogs::DialogOutcome::Picked(vec![out.to_string_lossy().into_owned()])
+        }).unwrap();
+        let body: Value = serde_json::from_slice(&res.body).unwrap();
+        assert_eq!(body["error_code"], "cancelled");
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "ORIGINAL");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(crate::cancel::cancel("exp-dialog-cancel"), crate::cancel::CancelState::Unknown);
+    }
+
+    #[test]
+    fn export_invalid_task_never_opens_a_chooser_or_writes() {
+        let app = sample_app("export-invalid-task");
+        let body = br##"{"format":"html","content":"# Changed","task_id":"../bad"}"##;
+        let req = request("POST", "/api/export", body);
+        let error = h_export_with_dialog(&app, &req, |_| panic!("invalid request opened chooser")).err().expect("invalid task must fail");
+        assert_eq!(error.code, "invalid_task_id");
+    }
+
+    #[test]
+    fn export_unavailable_chooser_is_an_error_not_user_cancellation() {
+        let app = sample_app("export-dialog-unavailable");
+        let req = request("POST", "/api/export", br##"{"format":"html"}"##);
+        let res = h_export_with_dialog(&app, &req, |_| crate::native_dialogs::DialogOutcome::Unavailable).unwrap();
+        let body: Value = serde_json::from_slice(&res.body).unwrap();
+        assert_eq!(body["error_code"], "dialog_unavailable");
+        assert_eq!(body["ok"], false);
+        assert!(body.get("canceled").is_none());
     }
 
     /// Wave E1 (F3): `readmd.py:1279` and `readmd.py:1283` are the only two
@@ -6258,6 +6686,91 @@ mod tests {
     }
 
     #[test]
+    fn completion_wire_is_bounded_ephemeral_and_supports_real_fim() {
+        let app = sample_app("completion-wire");
+        let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"), include_str!("../../../assets/skills/readmd-autocomplete/SKILL.md")).unwrap();
+        std::fs::write(app.paths.data_dir.join("ai.json"), json!({
+            "schema_version": crate::ai::CONFIG_SCHEMA_VERSION,
+            "providers":[{"id":"local-completion","name":"Completion","base_url":"http://127.0.0.1:1/v1","category":"local","format":"openai","mode":"chat","models":["test"]}],
+            "current":{"provider_id":"local-completion","model":"test"}
+        }).to_string()).unwrap();
+        let fake = FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"比较解释，再检查反例。"}}]}"#, "data: [DONE]"]);
+        let body = json!({"prefix":"研究方法：","suffix":"，再检查反例。","api_key":"must-not-forward","session":"must-not-save"}).to_string();
+        let reply = ai_complete(&app,&request("POST","/api/ai/complete",body.as_bytes()),&fake).unwrap();
+        let result:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(result["completion"],"比较解释");
+        let wire=fake.recorded();
+        let payload:Value=serde_json::from_str(&wire[0].body).unwrap();
+        assert_eq!(payload["max_tokens"],128); assert_eq!(payload["stream"],true);
+        assert!(!wire[0].body.contains("must-not"));
+        assert!(!app.paths.data_dir.join("chat_history.json").exists());
+        let mut settings:Value=serde_json::from_str(&std::fs::read_to_string(app.paths.data_dir.join("ai.json")).unwrap()).unwrap();
+        settings["providers"][0]["mode"]=json!("completion");
+        std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
+        let fim=FakeTransport::new(&[r#"data: {"choices":[{"text":"提出问题<|endoftext|>junk"}]}"#, "data: [DONE]"]);
+        let body=json!({"prefix":"研究方法：","suffix":"。","protocol":"qwen"}).to_string();
+        let reply=ai_complete(&app,&request("POST","/api/ai/complete",body.as_bytes()),&fim).unwrap();
+        assert_eq!(serde_json::from_slice::<Value>(&reply.body).unwrap()["completion"],"提出问题");
+        let wire=fim.recorded();let p:Value=serde_json::from_str(&wire[0].body).unwrap();
+        assert_eq!(p["prompt"],"<|fim_prefix|>研究方法：<|fim_suffix|>。<|fim_middle|>");
+        assert!(wire[0].url.ends_with("/completions"));
+        assert!(ai_complete(&app,&request("GET","/api/ai/complete",b"{}"),&fim).is_err());
+    }
+
+    #[test]
+    fn completion_stream_stops_at_useful_unit_and_cache_invalidates_with_policy() {
+        let app = sample_app("completion-stream-cache");
+        let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(skill.join("SKILL.md"),include_str!("../../../assets/skills/readmd-autocomplete/SKILL.md")).unwrap();
+        let mut settings=json!({"schema_version":crate::ai::CONFIG_SCHEMA_VERSION,
+            "providers":[{"id":"custom:local","name":"Local","category":"local","base_url":"http://127.0.0.1:1/v1",
+                "models":["claude-sonnet-4-6","claude-haiku-4-5"],"autocomplete":{"mode":"auto"}}],
+            "current":{"provider_id":"custom:local","model":"claude-sonnet-4-6"}});
+        std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
+        let fake=FakeTransport::new(&[
+            r#"data: {"choices":[{"delta":{"content":"主动核对原始证据，"}}]}"#,
+            r#"data: {"choices":[{"delta":{"content":"并用反例检验每个结论。"}}]}"#,
+            // Reading the rest of the stream would cause a failure.
+            r#"data: {"choices":42}"#,
+        ]);
+        let body=json!({"prefix":"研究不能只凭感觉，我们应该"}).to_string();
+        let req=request("POST","/api/ai/complete",body.as_bytes());
+        let mut frames=Vec::new();
+        let reply=ai_complete_events(&app,&req,Some(&fake),&mut |frame| { frames.push(frame); Ok(()) }).unwrap();
+        let result:Value=serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(result["model"],"claude-haiku-4-5");assert_eq!(result["selection"],"automatic");
+        assert_eq!(result["completion"],"主动核对原始证据，并用反例检验每个结论。");
+        assert_eq!(frames.len(),2);assert_eq!(frames[0]["completion"],"主动核对原始证据，");
+        assert_eq!(frames[1]["completion"],result["completion"]);
+        let again:Value=serde_json::from_slice(&ai_complete(&app,&req,&fake).unwrap().body).unwrap();
+        assert_eq!(again["cached"],true);assert_eq!(fake.recorded().len(),1);
+        settings["providers"][0]["autocomplete"]=json!({"mode":"model","model":"claude-sonnet-4-6"});
+        std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
+        let fixed:Value=serde_json::from_slice(&ai_complete(&app,&req,&fake).unwrap().body).unwrap();
+        assert_eq!(fixed["model"],"claude-sonnet-4-6");assert_eq!(fixed["selection"],"fixed");assert_eq!(fake.recorded().len(),2);
+        assert_eq!(ai_settings(&app).ensure_config().unwrap()["current"]["model"],"claude-sonnet-4-6");
+        let retired=FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
+        let failed_body=json!({"prefix":"这是一段不同的研究文字，我们应该"}).to_string();
+        let failed_req=request("POST","/api/ai/complete",failed_body.as_bytes());
+        assert_eq!(ai_complete(&app,&failed_req,&retired).err().unwrap().code,"ai_completion_empty");
+        assert_eq!(retired.recorded().len(),1,"A fixed model cannot silently fail over");
+        settings["providers"][0]["autocomplete"]=json!({"mode":"auto"});
+        std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
+        let retired_auto=FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
+        assert!(ai_complete(&app,&failed_req,&retired_auto).is_err());
+        assert_eq!(retired_auto.recorded().len(),2,"Automatic retries are bounded to two models");
+        let cancelled_body=json!({"prefix":"取消测试的研究文字，我们应该","model":"claude-sonnet-4-6","task_id":"completion-stream-cancel-test"}).to_string();
+        let cancelled_req=request("POST","/api/ai/complete",cancelled_body.as_bytes());
+        let failure=ai_complete_events(&app,&cancelled_req,Some(&fake),&mut |_| {
+            crate::cancel::cancel("completion-stream-cancel-test");Ok(())
+        }).err().unwrap();
+        assert_eq!(failure.code,"cancelled");
+    }
+
+    #[test]
     fn skill_rendering_goes_through_the_on_disk_registry() {
         let app = sample_app("aiskill");
         // `assets/skills` == `skills.py::default_skill_roots()[0]`.
@@ -6551,17 +7064,20 @@ fn h_modules_load(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     } else {
         name
     };
-    let Some((_, probe)) = MODULE_PROBES.iter().find(|(m, _)| *m == name.as_str()) else {
+    let Some(_) = MODULE_PROBES.iter().find(|(m, _)| *m == name.as_str()) else {
         return Err(ApiError::bad_request("module_invalid"));
     };
-    let _ = app;
-    if table().contains_key(*probe) {
+    crate::capabilities::start(app,&name,payload["retry"].as_bool().unwrap_or(false));
+    let registry=app.modules.lock().unwrap_or_else(|e|e.into_inner());
+    let (states,errors)=registry.snapshot();
+    let status=states[&name].as_str().unwrap_or("error");
+    if status=="ready" {
         return ok_json(json!({ "ok": true, "name": name, "status": "ready" }));
     }
-    if PENDING.iter().any(|p| p == probe) {
+    if status=="error" {
         return Ok(Response::json_status(
             503,
-            &json!({ "ok": false, "name": name, "status": "unavailable", "error_code": "module_unavailable", "detail": "rust_kernel_pending" }),
+            &json!({ "ok": false, "name": name, "status": "error", "error_code": "module_unavailable", "reason":errors[&name] }),
         ));
     }
     Ok(Response::json_status(
@@ -7183,7 +7699,7 @@ fn h_skill_source_apply(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 }
 
 fn save_document_copy(app: &Arc<App>, body: &Value, target_str: &str) -> ApiResult<Response> {
-    let mut content = body.get("content").and_then(Value::as_str).unwrap_or("").to_string();
+    let content = body.get("content").and_then(Value::as_str).unwrap_or("").to_string();
     let encoding = body.get("encoding").and_then(Value::as_str).unwrap_or("utf-8");
     let target_path = PathBuf::from(&target_str);
     if body.get("blocked_paths").and_then(Value::as_array).map(|paths| paths.iter().filter_map(Value::as_str)
@@ -7196,92 +7712,65 @@ fn save_document_copy(app: &Arc<App>, body: &Value, target_str: &str) -> ApiResu
         return ok_json(save_text_atomic(&target_path, &content, encoding, None, &app.paths.data_dir));
     }
     let _save_guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut warns: Vec<String> = Vec::new();
-    let mut created_assets = Vec::new();
-    let mut created_folder = None;
-    let mut assets = body.get("assets").and_then(Value::as_array).cloned().unwrap_or_default();
-    let mut saved_assets = Vec::new();
+    save_document_assets_locked(app, body, &target_path, None)
+}
+
+/// Save lock is held by the caller through materialization and document commit.
+fn save_document_assets_locked(app: &Arc<App>, body: &Value, target_path: &Path, expected_mtime: Option<f64>) -> ApiResult<Response> {
+    let content = body.get("content").and_then(Value::as_str).unwrap_or("");
+    let encoding = body.get("encoding").and_then(Value::as_str).unwrap_or("utf-8");
+    if crate::text_encoding::encode(content, encoding).is_err() {
+        let value = save_text_atomic(target_path, content, encoding, expected_mtime, &app.paths.data_dir);
+        return Ok(Response::json_status(422, &value));
+    }
+    let mut assets: Vec<crate::document_assets::AssetHandle> = Vec::new();
+    if let Some(items) = body.get("assets").and_then(Value::as_array) {
+        if items.len() > 10_000 { return Err(ApiError::bad_request("asset_total_limit")); }
+        for item in items {
+            let path = item.get("path").and_then(Value::as_str).unwrap_or("");
+            let name = item.get("name").and_then(Value::as_str).unwrap_or("");
+            let reference = item.get("reference").and_then(Value::as_str).unwrap_or(path);
+            if !path.is_empty() { assets.push(crate::document_assets::AssetHandle { path: path.into(), name: name.into(), reference: reference.into() }); }
+        }
+    }
     if let Some(base) = body.get("base_dir").and_then(Value::as_str).filter(|s| !s.is_empty()) {
         if target_path.parent().map(paths::canonicalize_or_clean).as_ref() != Some(&paths::canonicalize_or_clean(Path::new(base))) {
-            use pulldown_cmark::{Event, Parser, Tag};
-            for event in Parser::new(&content) {
-                if let Event::Start(Tag::Image { dest_url, .. }) = event {
-                    let reference = dest_url.to_string();
-                    if reference.starts_with("data:") || reference.starts_with("blob:") || reference.starts_with("//") || reference.contains("://") && !reference.starts_with("file://") { continue; }
-                    let source = if reference.starts_with("file://") {
-                        let decoded = percent_encoding::percent_decode_str(&reference[7..]).decode_utf8_lossy();
-                        let mut raw = decoded.strip_prefix("localhost").unwrap_or(&decoded);
-                        if cfg!(windows) && raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') { raw = &raw[1..]; }
-                        PathBuf::from(raw)
-                    } else { let p = PathBuf::from(percent_encoding::percent_decode_str(&reference).decode_utf8_lossy().as_ref()); if p.is_absolute() { p } else { Path::new(base).join(p) } };
-                    if let Some(name) = source.file_name().and_then(|s| s.to_str()) {
-                        assets.push(json!({"path": source, "name": name, "reference": reference}));
-                    }
+            for (_, reference) in crate::document_assets::image_references(content) {
+                if reference.starts_with("data:") || reference.starts_with("blob:") || reference.starts_with("//") || reference.starts_with("/raw?") || reference.contains("://") && !reference.starts_with("file://") { continue; }
+                let source = if reference.starts_with("file://") {
+                    let decoded = percent_encoding::percent_decode_str(&reference[7..]).decode_utf8_lossy();
+                    let mut raw = decoded.strip_prefix("localhost").unwrap_or(&decoded);
+                    if cfg!(windows) && raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') { raw = &raw[1..]; }
+                    PathBuf::from(raw)
+                } else { let p = PathBuf::from(percent_encoding::percent_decode_str(&reference).decode_utf8_lossy().as_ref()); if p.is_absolute() { p } else { Path::new(base).join(p) } };
+                if let Some(name) = source.file_name().and_then(|s| s.to_str()) {
+                    assets.push(crate::document_assets::AssetHandle { path: source.to_string_lossy().into_owned(), name: name.into(), reference });
                 }
             }
         }
     }
-    {
-        if !assets.is_empty() {
-            let stem = target_path.file_stem().and_then(|s| s.to_str()).unwrap_or("doc");
-            let asset_folder_name = format!("{}.assets", stem);
-            if let Some(parent) = target_path.parent() {
-                let asset_dir = parent.join(&asset_folder_name);
-                for item in &assets {
-                    let source = item.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                    let reference = item.get("reference").and_then(Value::as_str).unwrap_or(source);
-                    let raw_name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    // The name is a single path segment; anything else is dropped.
-                    let name = Path::new(raw_name).file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if source.is_empty() || name.is_empty() || !Path::new(source).is_file() {
-                        if !source.is_empty() {
-                            warns.push(format!("资源不存在，已跳过：{source}"));
-                        }
-                        continue;
-                    }
-                    if !content.contains(reference) && !content.contains(source) && !content.contains(&source.replace('\\', "/")) { continue; }
-                    let bytes = match std::fs::read(source) { Ok(bytes) => bytes, Err(e) => { warns.push(format!("资源复制失败：{name}（{e}）")); continue; } };
-                    if !asset_dir.exists() {
-                        if let Err(e) = std::fs::create_dir_all(&asset_dir) { warns.push(format!("无法创建资源目录：{e}")); continue; }
-                        created_folder = Some(asset_dir.clone());
-                    }
-                    // Existing user assets are reused only if identical; otherwise choose a new name.
-                    let mut dest = asset_dir.join(name); let mut n = 2;
-                    while dest.exists() && std::fs::read(&dest).ok().as_deref() != Some(bytes.as_slice()) {
-                        let p = Path::new(name); let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("asset");
-                        let ext = p.extension().and_then(|s| s.to_str()).map(|s| format!(".{s}")).unwrap_or_default();
-                        dest = asset_dir.join(format!("{stem}-{n}{ext}")); n += 1;
-                    }
-                    let existed = dest.exists();
-                    match if existed { Ok(()) } else { content::write_bytes_atomic(&dest, &bytes) } {
-                        Ok(_) => {
-                            if !existed { created_assets.push(dest.clone()); }
-                            let rel = format!("{}/{}", asset_folder_name, dest.file_name().unwrap().to_string_lossy());
-                            content = content.replace(&source.replace('\\', "/"), &rel);
-                            content = content.replace(source, &rel);
-                            content = content.replace(reference, &rel);
-                            saved_assets.push(json!({"path": dest, "name": dest.file_name().unwrap().to_string_lossy(), "reference": rel}));
-                        }
-                        Err(e) => warns.push(format!("资源复制失败：{name}（{e}）")),
-                    }
-                }
-            }
-        }
-    }
-
-    let mut saved = save_text_atomic(&target_path, &content, &encoding, None, &app.paths.data_dir);
+    let mut resources = match crate::document_assets::materialize(content, target_path, &assets) {
+        Ok(resources) => resources,
+        Err(code) => return Ok(Response::json_status(500, &json!({"ok": false, "error_code": code, "error": code}))),
+    };
+    let mut saved = save_text_atomic(target_path, &resources.text, encoding, expected_mtime, &app.paths.data_dir);
     if saved.get("ok") != Some(&Value::Bool(true)) {
-        for path in created_assets { let _ = std::fs::remove_file(path); }
-        if let Some(dir) = created_folder { let _ = std::fs::remove_dir(dir); }
-        return ok_json(saved);
+        let status = if saved.get("conflict") == Some(&Value::Bool(true)) { 409 } else { 500 };
+        return Ok(Response::json_status(status, &saved));
     }
+    resources.commit();
+    remember_authorized_save(target_path);
+    let target_str = target_path.to_string_lossy();
     let display_title = target_path.file_name().and_then(|n| n.to_str()).unwrap_or(&target_str).to_string();
     let _ = app.store.touch_recent(&target_str, &display_title);
     if let Some(map) = saved.as_object_mut() {
         map.insert("path".to_string(), json!(target_str));
-        map.insert("warns".to_string(), json!(warns));
-        map.insert("saved_content".to_string(), json!(content));
-        map.insert("saved_assets".to_string(), json!(saved_assets));
+        map.insert("warns".to_string(), json!([]));
+        let final_content = map.get("saved_content").and_then(Value::as_str).unwrap_or(&resources.text).to_string();
+        map.insert("saved_content".to_string(), json!(final_content));
+        map.insert("save_edits".to_string(), json!(crate::math_migration::saved_edits(content, &final_content)));
+        map.insert("saved_assets".to_string(), json!(resources.assets));
+        map.insert("asset_edits".to_string(), json!(resources.edits));
         map.insert("source_assets".to_string(), json!(assets));
     }
     crate::api_codes::attach_warn_items(&mut saved);
@@ -7316,20 +7805,28 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             let Some(map) = c.as_object() else {
                 return Err(ApiError::bad_request("invalid_presets"));
             };
-            let builtin = es::preset_names();
+            let builtin:Vec<_> = crate::export_profiles::catalog().iter().filter_map(|p|p["id"].as_str()).collect();
             let mut next = serde_json::Map::new();
             for (name, opts) in map {
                 let name = name.trim();
                 if name.is_empty() || name.chars().count() > 64 {
                     continue;
                 }
-                if builtin.contains(&name) {
+                if builtin.contains(&name) && !custom.contains_key(name) {
                     return Ok(Response::json_status(409, &json!({ "ok": false, "error_code": "preset_name_conflict", "name": name })));
                 }
                 if next.len() >= EXPORT_PRESETS_MAX {
                     break;
                 }
-                next.insert(name.to_string(), es::sanitize(opts));
+                // A preset stores explicit overrides, never values resolved
+                // from a particular document or stringified author arrays.
+                crate::publication_typography::validate_request(opts).map_err(|code| ApiError::new(422, code).noted("field", crate::publication_typography::request_error_field(opts)))?;
+                crate::epub_writer::validate_numeric_request(opts).map_err(|code| ApiError::new(422, code).noted("field", crate::epub_writer::numeric_error_field(opts)))?;
+                crate::publication_navigation::validate_options(opts).map_err(|e|e.api_error())?;
+                crate::publication_metadata::validate_options(opts).map_err(|e|ApiError::new(422,e.code).noted("field",e.path))?;
+                let mut sanitized=es::sanitize(opts);
+                if let Some(meta)=opts.get("meta"){sanitized["meta"]=meta.clone();}
+                next.insert(name.to_string(), sanitized);
             }
             custom = next;
         }
@@ -7337,6 +7834,9 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             if l.is_object() {
                 let fmt = l.get("fmt").and_then(|v| v.as_str()).unwrap_or("pdf");
                 let opts = l.get("options").cloned().unwrap_or_else(|| json!({}));
+                crate::publication_typography::validate_request(&opts).map_err(|code| ApiError::new(422, code).noted("field", crate::publication_typography::request_error_field(&opts)))?;
+                crate::epub_writer::validate_numeric_request(&opts).map_err(|code| ApiError::new(422, code).noted("field", crate::epub_writer::numeric_error_field(&opts)))?;
+                crate::publication_navigation::validate_options(&opts).map_err(|e|e.api_error())?;
                 last = json!({ "fmt": fmt, "options": opts, "preset": l.get("preset").cloned().unwrap_or(Value::Null) });
             }
         }
@@ -7348,13 +7848,17 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return ok_json(json!({ "ok": true }));
     }
     let mut presets = serde_json::Map::new();
-    for n in es::preset_names() {
-        presets.insert(n.to_string(), es::preset(n).unwrap_or_else(|| json!({})));
+    let catalog:Vec<_>=crate::export_profiles::catalog().iter().filter(|p|!custom.contains_key(p["id"].as_str().unwrap_or(""))).cloned().collect();
+    for profile in &catalog {
+        let n=profile["id"].as_str().unwrap();
+        presets.insert(n.to_string(), crate::export_profiles::preset(n).unwrap_or_else(|| json!({})));
     }
     ok_json(json!({
         "ok": true,
         "defaults": es::default_style(),
+        "htmlDarkPalette": es::html_dark_palette(),
         "presets": presets,
+        "catalog": catalog,
         "custom": custom,
         "last": last,
     }))
@@ -7429,13 +7933,37 @@ fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let base=body.get("baseDir").and_then(Value::as_str).unwrap_or("");
     let name=body.get("suggestedName").and_then(Value::as_str).unwrap_or("export");
     let options=body.get("options").cloned().unwrap_or_else(||json!({}));
-    match crate::export_preview::prepare(format,content,base,&options,name,&app.paths.assets_dir)
+    if let Err(error)=crate::publication_navigation::preflight_export(format,content,&options){return ok_json(error.response_body());}
+    if let Err(code) = crate::publication_typography::validate_pdf_preview(format, content, &options) { return ok_json(crate::latex_compile::error_body(code)); }
+    let task=match body.get("task_id").and_then(Value::as_str).filter(|s|!s.is_empty()){
+        Some(id)=>Some(crate::cancel::register(id).ok_or_else(||ApiError::bad_request("invalid_task_id"))?),None=>None,
+    };
+    let check=task.as_ref().map(|t|t.checker()).unwrap_or_else(||Arc::new(||false));
+    if format=="epub" {
+        return match crate::speech::with_cancel(check,||crate::epub_preview::prepare(content,base,&options,name)){
+            Ok(value)=>ok_json(value),Err(error)=>{
+                // Codes are translated by the client; raw parser messages are
+                // diagnostic details, never the visible UI message.
+                if let Some(body)=crate::publication_metadata_formats::error_body(content,&options,name,format,&error){return ok_json(body);}
+                let (code,details)=error.split_once(": ").unwrap_or((&error,""));
+                ok_json(json!({"ok":false,"error_code":code,"details":details}))
+            },
+        };
+    }
+    match crate::speech::with_cancel(check,||crate::export_preview::prepare_with_data(format,content,base,&options,name,&app.paths.assets_dir,&app.paths.data_dir))
         .and_then(|artifact|crate::export_preview::payload(&artifact)) {
-        Ok(value)=>ok_json(value),Err(error)=>ok_json(json!({"ok":false,"error":error})),
+        Ok(value)=>ok_json(value),Err(error)=>ok_json(crate::publication_metadata_formats::error_body(content,&options,name,format,&error).unwrap_or_else(||crate::latex_compile::error_body(&error))),
     }
 }
 
 fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    h_export_with_dialog(app, req, crate::native_dialogs::run)
+}
+
+fn h_export_with_dialog(
+    app: &Arc<App>, req: &Request,
+    pick: impl FnOnce(&crate::native_dialogs::Request) -> crate::native_dialogs::DialogOutcome,
+) -> ApiResult<Response> {
     let body = body_value(req);
     let format = body.get("format").and_then(|v| v.as_str()).unwrap_or("pdf").to_lowercase();
     let content = body.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -7456,9 +7984,17 @@ fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         .unwrap_or("")
         .to_string();
 
+    if let Err(error)=crate::publication_navigation::preflight_export(&format,&content,&options){return ok_json(error.response_body());}
     if crate::win_dialogs::DialogShape::export_filter_text(&format).is_none() {
         return Err(ApiError::bad_request("unsupported_export_format"));
     }
+    if let Err(code) = crate::publication_typography::validate_export(&format, &content, &options) { return ok_json(crate::latex_compile::error_body(code)); }
+    // Register before the native chooser blocks: Cancel remains effective
+    // while choosing a destination, and is checked again before any writing.
+    let task = match body.get("task_id").and_then(Value::as_str).filter(|id| !id.is_empty()) {
+        Some(id) => Some(crate::cancel::register(id).ok_or_else(|| ApiError::bad_request("invalid_task_id"))?),
+        None => None,
+    };
     // Strip the source extension so `note.md` suggests `note.pdf`, not `note.md.pdf`.
     let stem = {
         let s = suggested_name.trim();
@@ -7473,23 +8009,17 @@ fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let stem = if stem.is_empty() { "export".to_string() } else { stem };
 
     if out_path.is_empty() {
-        use crate::native_dialogs::{run, DialogOutcome, DialogShape, Request as Dlg};
+        use crate::native_dialogs::{DialogOutcome, DialogShape, Request as Dlg};
         let dlg = Dlg::new(DialogShape::Export).name(&stem).export(&format).dir(&base_dir);
-        match run(&dlg) {
+        match pick(&dlg) {
             DialogOutcome::Picked(v) if !v.is_empty() => out_path = v[0].clone(),
             DialogOutcome::Unavailable => {
-                return ok_json(json!({ "ok": false, "canceled": true, "error_code": "dialog_unavailable" }))
+                return ok_json(json!({ "ok": false, "error_code": "dialog_unavailable" }))
             }
             _ => return ok_json(json!({ "ok": false, "canceled": true })),
         }
     }
 
-    // Optional `task_id`: the export becomes cancellable through
-    // `/api/task/cancel` (without it, behaviour is exactly as before).
-    let task = body
-        .get("task_id")
-        .and_then(|v| v.as_str())
-        .and_then(crate::cancel::register);
     if let Some(t) = &task {
         if t.is_cancelled() {
             return ok_json(cancelled_body());
@@ -7554,13 +8084,14 @@ fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         };
     }
 
-    let cached_key = crate::export_preview::key(&format, &content, &base_dir, &options, &suggested_name);
-    let result = if let Some(artifact) = crate::export_preview::cached(&cached_key) {
+    let cached_key = crate::export_preview::key_with_data(&format, &content, &base_dir, &options, &suggested_name,&app.paths.data_dir,&app.paths.assets_dir);
+    let check=task.as_ref().map(|t|t.checker()).unwrap_or_else(||Arc::new(||false));
+    let result = crate::speech::with_cancel(check,|| if let Some(artifact) = crate::export_preview::cached(&cached_key) {
         std::fs::read(&artifact.file).map_err(|e|e.to_string()).and_then(|bytes| {
             content::write_bytes_atomic(Path::new(&out_path), &bytes).map_err(|e|e.to_string())?;
             Ok(crate::mdexport::ExportResult { ok:true, path:Some(out_path.clone()), size:Some(bytes.len() as u64), warns:Some(artifact.warnings.clone()), error:None, canceled:Some(false) })
         })
-    } else {crate::mdexport::export_document(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir)};
+    } else {crate::mdexport::export_document_with_data(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir,&app.paths.data_dir)});
     match result {
         Ok(res) => {
             if let Err(body) = commit(res.ok) {
@@ -7580,10 +8111,7 @@ fn h_export(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         }
         Err(e) => {
             let _ = commit(false);
-            ok_json(json!({
-                "ok": false,
-                "error": e
-            }))
+            ok_json(crate::publication_metadata_formats::error_body(&content,&options,&suggested_name,&format,&e).unwrap_or_else(||crate::latex_compile::error_body(&e)))
         }
     }
 }
@@ -7808,12 +8336,12 @@ mod batch1_tests {
     }
 
     #[test]
-    fn module_gate_reflects_the_real_route_table() {
+    fn module_gate_reflects_operations_instead_of_route_presence() {
         let res = h_modules_load_noapp("web");
         assert_eq!(res.status, 200);
-        // All legacy endpoints now have stub handlers returning 501 (pending)
         let res = h_modules_load_noapp("ocr");
-        assert_eq!(res.status, 200);
+        assert_eq!(res.status, if crate::capabilities::probe("ocr").is_ok(){200}else{503});
+        assert_eq!(h_modules_load_noapp("pdf_editor").status,503);
         let res = h_modules_load_noapp("nonsense");
         assert_eq!(res.status, 400);
     }
@@ -7827,9 +8355,41 @@ mod batch1_tests {
             App::bootstrap(paths::AppPaths::with_dirs(&tmp, &ws, &tmp.join("assets"))).unwrap(),
         );
         let req = dreq("POST", "/api/modules/load", json!({ "name": name }).to_string().as_bytes());
-        let out = h_modules_load(&app, &req).unwrap_or_else(|e| Response::json_status(e.status, &e.payload()));
+        let until=std::time::Instant::now()+std::time::Duration::from_secs(15);
+        let out = loop {
+            let out=h_modules_load(&app, &req).unwrap_or_else(|e| Response::json_status(e.status, &e.payload()));
+            if out.status!=202 || std::time::Instant::now()>=until {break out;}
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
         let _ = std::fs::remove_dir_all(&tmp);
         out
     }
 
+}
+
+#[cfg(test)]
+mod p04_line_spacing_dialog_guard_tests {
+    use super::*;
+
+    #[test]
+    fn p04_unsupported_or_invalid_request_never_opens_native_chooser() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = root.path().join("assets"); std::fs::create_dir_all(&assets).unwrap();
+        let app = Arc::new(App::bootstrap(paths::AppPaths::with_dirs(
+            &root.path().join("profile"), root.path(), &assets,
+        )).unwrap());
+        for (options, expected) in [
+            (json!({"pdf":{"engine":"xelatex"},"typography":{"lineSpacing":{"mode":"exact","pt":18}}}), crate::publication_typography::UNSUPPORTED),
+            (json!({"typography":{"lineHeight":1.6,"lineSpacing":{"mode":"exact","pt":18}}}), crate::publication_typography::INVALID),
+            (json!({"_publicationLineSpacingLegacy":1.55}), crate::publication_typography::INVALID),
+        ] {
+            let req = Request {
+                method: "POST".into(), path: "/api/export".into(), query: HashMap::new(), headers: HashMap::new(),
+                body: serde_json::to_vec(&json!({"format":"pdf","content":"<!-- readmd:layout v1 {\"id\":\"heading\",\"paragraph\":{\"lineSpacing\":{\"mode\":\"exact\",\"pt\":18}}} -->\n\n# Synthetic heading\n","options":options})).unwrap(),
+            };
+            let response = h_export_with_dialog(&app, &req, |_| panic!("Rejected P04 request opened native chooser")).unwrap();
+            let body: Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(body["ok"], false); assert_eq!(body["error_code"], expected);
+        }
+    }
 }

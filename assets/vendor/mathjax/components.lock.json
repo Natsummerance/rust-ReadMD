@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "MathJax",
+  "version": "3.2.2",
+  "repository": "https://github.com/mathjax/MathJax",
+  "commit": "600692ad9d3552cc25f85510d5797bc942ecc9f7",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "input/mml.js",
+      "bytes": 14583,
+      "sha256": "65c93277d980860f34341112c59520b9d2745cd46280d9c2fe036718b826624d"
+    },
+    {
+      "path": "input/tex/extensions/boldsymbol.js",
+      "bytes": 4056,
+      "sha256": "d6771fee0772db2657796c8d0e20e1878bb3237f6d3ed1e828e1834a4ff743ca"
+    },
+    {
+      "path": "input/tex/extensions/html.js",
+      "bytes": 2969,
+      "sha256": "e3647c848f26ad228d07043f1e63c56a646da9d20a6c0f180a4067fa9e10facc"
+    },
+    {
+      "path": "tex-svg.js",
+      "bytes": 2108580,
+      "sha256": "d4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882"
+    },
+    {
+      "path": "ui/safe.js",
+      "bytes": 11189,
+      "sha256": "9fef48d868277a8bc1852f7ba796b33ead812d38916a7131b0a29ea48961a6a4"
+    }
+  ]
+}

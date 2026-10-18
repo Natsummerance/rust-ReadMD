@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -12,7 +13,8 @@ for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }])
       await page.route('**/api/update/check', route => json(route, { ok: false }));
       await page.addInitScript(locale => localStorage.setItem('readmd_language', locale), locale);
       await page.setViewportSize(size); await page.emulateMedia({ reducedMotion: 'reduce' });
-      await page.goto('/'); await page.waitForFunction(() => typeof openPetSettings === 'function');
+      await page.goto('/'); await waitForPage(page, locale => window.__readmdAppReady && i18n.currentLang===locale,locale);
+      await page.evaluate(()=>window.__readmdSessionReady);
       await page.evaluate(theme => { state.theme = theme; applySettings(); }, theme);
       await page.evaluate(async () => {
         const path = await uploadFile(new File(['# Layout\n\nBody'], 'layout.md', { type: 'text/markdown' }));

@@ -29,3 +29,11 @@ test('duplicate named click handlers fail the gate without rejecting distinct ev
   assert.deepEqual(analyse(html, [once + 'document.getElementById("insert").addEventListener("click", insertContent);']),
     [{ kind:'duplicate-listener', id:'insert' }]);
 });
+
+test('classic globals cannot silently replace module retry and save implementations', () => {
+  assert.deepEqual(analyse('', ['async function ensureModule(name) {}', 'function ensureModule(name) {}']),
+    [{kind:'duplicate-global-function',id:'ensureModule'}]);
+  assert.deepEqual(analyse('', ['function busy() {}\nfunction busy() {}']),
+    [{kind:'duplicate-global-function',id:'busy'}]);
+  assert.deepEqual(analyse('', ['function first() {}\n// function first() {}', '/* function first() {} */\nfunction second() {}']), []);
+});

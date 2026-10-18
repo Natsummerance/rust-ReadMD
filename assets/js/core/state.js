@@ -104,6 +104,16 @@ const state = {
 };
 window.state = state;
 
+function knowledgeWorkspaceRoot() {
+  const clean = value => String(value || '').replace(/\\/g, '/').replace(/\/$/, '');
+  const folder = clean(state.folder), file = clean(state.file);
+  // An externally opened file may be outside the folder currently displayed
+  // in the sidebar. Scope its links to its own directory in that case.
+  const insensitive = /^[A-Za-z]:\//.test(file);
+  const inside = folder && file && (insensitive ? file.toLowerCase().startsWith(folder.toLowerCase() + '/') : file.startsWith(folder + '/'));
+  return inside || !file ? (state.folder || state.dir || '') : (state.dir || '');
+}
+
 
 /* ---------------- 工具 ---------------- */
 
@@ -128,8 +138,20 @@ function apiMessage(d, fallbackKey) {
   if (d.error_code) {
     const s = tr('error.' + d.error_code) || (d.reason ? tr('convert.reason.' + d.reason) : '');
     if (s) return s;
+    if(String(d.error_code).startsWith('diagram_')&&typeof diagramErrorKey==='function')return tr(diagramErrorKey(d.error_code))||tr(fallbackKey);
   }
   if (d.note_code) { const s = tr('note.' + d.note_code); if (s) return s; }
+  const svgErrors={svg_unsafe:'reader.diagramInvalidInput',svg_invalid:'reader.diagramInvalidInput',svg_budget:'reader.diagramInputTooLarge',svg_engine_unavailable:'reader.diagramDependencyMissing',svg_render_failed:'reader.diagramRenderFailed'};
+  const svgKey=svgErrors[d.error_code||d.error];if(svgKey)return tr(svgKey)||tr(fallbackKey);
+  // Keep export/preview failures actionable as well as inline validation.
+  // Also understand old kernels' legacy error field during upgrades.
+  const mathErrors = {
+    math_invalid_source:'formula.invalid', math_invalid_property:'formula.invalid', math_invalid_xml:'formula.invalid',
+    math_unsupported_version:'formula.unsupportedVersion', math_budget:'error.math_budget',
+    math_unsupported_extension:'error.math_unsupported_extension'
+  };
+  const mathKey = mathErrors[d.error_code || d.error];
+  if (mathKey) return tr(mathKey) || tr(fallbackKey);
   if (typeof d.error === 'string' && d.error) return d.error;
   if (typeof d.note === 'string' && d.note) return d.note;
   return fallbackKey ? (tr(fallbackKey) || '') : '';
@@ -185,6 +207,6 @@ function installAssoc() {
   if (!hasPy) { showToast(_t('toast.assocBrowserNotice')); return; }
   py.install_association().then(ok => {
     showToast(ok === true || ok?.ok === true ? _t(ok?.all_default ? 'toast.assocSuccess' : 'window.assocChoose') : _t('toast.assocFailed', { error: ok?.error || ok?.error_code || ok }));
-  });
+  }).catch(e => showToast(_t('toast.assocFailed', { error: e.message })));
 }
 

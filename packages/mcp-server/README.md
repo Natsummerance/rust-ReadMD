@@ -39,7 +39,7 @@ VS Code 扩展的「ReadMD: 一键配置工作区 MCP Server」会自动探测 R
 
 ## 工具
 
-以客户端返回的 `tools/list` 为准，V0.0.5 共 27 项：
+以客户端返回的 `tools/list` 为准，当前开发实现共 35 项；版本号另行确定：
 
 `readmd_fix_markdown`、`readmd_convert_to_markdown`、`readmd_web_to_markdown`、`readmd_ocr_to_markdown`、`readmd_export_document`、`readmd_latex_to_md`、`readmd_md_to_latex`、`readmd_parse_bibtex`、`readmd_latex_to_omml`、`readmd_ai_assistant`、`readmd_ai_providers`、`readmd_ai_chat`、`readmd_process_imports`、`readmd_generate_toc`、`readmd_export_presentation`、`readmd_export_epub`、`readmd_run_code_chunk`、`readmd_pdf_audit`、`readmd_pdf_rollback`。
 
@@ -57,6 +57,21 @@ V0.0.5 新增五项（无需新界面）：
 | `readmd_edit_document` | `file_path`、`expected_revision`、`old_text`、`new_text` 必填；默认 `dry_run:true`。写入必须 `dry_run:false, confirm:true`，版本冲突停止；多处匹配必须明确 `replace_all:true`。保留编码及未修改部分的换行，原子写入前保留恢复记录。 |
 | `readmd_document_history` | 按绝对 `file_path` 列出恢复记录；`operation:read` 与 `checkpoint_id` 读取同一文件的历史内容，只读，不自动覆盖。 |
 
+另外提供 `readmd_ai_complete`（只返回流式编辑补全候选，不写入文件），以及与桌面端共用 Rust 实现的两项知识导航工具：
+
+| 工具 | 用途与边界 |
+| --- | --- |
+| `readmd_suggest_links` | 在指定工作区建议本地文件、图片、标题、脚注和文献键。`kind` 为 `wiki/link/image/footnote/citation`；当前文档标题与脚注使用传入的未保存 `content`；`limit` 为 1–60，默认 40。不获取外链。 |
+| `readmd_resolve_link` | 将 `target` 如 `认识与经验#观察笔记` 解析为真实文件与标题位置。同名笔记有歧义时返回错误，不选取任意文件、不创建缺失笔记。 |
+
+两项导航工具均要求绝对 `workspace_root`；可选 `file_path` 为链接所在文件的绝对路径。扫描忽略隐藏和生成目录，最多 20,000 个目录项、5,000 个匹配文件、24 层目录，超限报告截断；解析显式相对路径仍可避免大目录扫描。文献补全只读取本篇元数据显式指定的本地 BibTeX 文件。
+
+新增共享内核工具：`readmd_math` 提供解析、修订保护的补丁和格式序列化；`readmd_content_transaction` 接收 UTF-16 局部事务；`readmd_academic_document` 生成只读 CSL 出版投影；`readmd_pdf_document` 调用桌面同一 PDF 草稿、对象编辑、保存和恢复服务。对象参数现在按公开 schema 接受，错误类型及未知顶层字段仍会拒绝。
+
+`readmd_openapi_document` 从本地 OpenAPI 3.0/3.1 JSON/YAML 生成或更新 Markdown 的对应区域。传入 `file_path` 或内存 `source`，以及目标 `content`、其 SHA-256 `base_revision`；返回差异事务、操作变化、UTF-16 源映射和引用诊断，只读，不写文件、不联网解析外部引用。接受前传 `expected_source_revision` 再检查来源；之后由调用方审阅并使用受修订保护的写入流程。生成区已有手工修改、标记损坏或基础版本变化时明确拒绝。源码上限 8 MiB、最多 2,048 个操作，同时最多两项生成任务；YAML 深度、事件及别名展开均有预算。完整说明见 [OpenAPI 文档工作流](../../docs/guides/openapi-documentation.md)。
+
+`readmd_export_document.options` 与桌面导出参数一致，例如 `{"pdf":{"engine":"xelatex"}}`。引擎必须本机离线安装。`readmd_pdf_document` 需要匹配平台的 PDFium 能力包及 `confirm:true`；修改草稿不立即写原文件，`save` 才提交，`history/restore_history` 提供带源文件修订保护的版本恢复。恢复前必须关闭同一文件的活动 PDF 会话。密码仅用于当前会话，不返回或写入恢复元数据。Windows 原生验证不代表其他平台已验收。
+
 检查及编辑的单文档上限为 2 MiB，工作区检索最多 5,000 个 Markdown 文件、累计 64 MiB。恢复区复用桌面端上限（每文档最多 10 项、总计 64 MiB、最长 30 天），不会在原目录留下 `.bak`。模型可先读版本、预览，再经用户确认提交；要撤回时先读取历史，重新获取当前版本后预览恢复，禁止盲目覆盖。其他应用写入与最终原子替换之间仍存在操作系统层面的竞争窗口；版本检查会尽量缩小该窗口，不能宣称跨程序事务锁。
 
 `resources/list` 公开 Skills（`readmd://skills/<id>`）、Provider 目录（`readmd://providers`，不含密钥）和本地会话记录（`readmd://sessions`）；`prompts/list` 与当前 Skill Registry 一一对应。旧的 workflow id（如 `polish`、`summary`）仍可在 `prompts/get` 和 `readmd_ai_assistant` 中使用。
@@ -69,6 +84,7 @@ V0.0.5 新增五项（无需新界面）：
 - `readmd_export_document`、`readmd_export_presentation`、`readmd_export_epub`（写文件）
 - `readmd_run_code_chunk`（执行代码）
 - `readmd_pdf_rollback`（改写 PDF）
+- `readmd_pdf_document`（加载本地工作进程及可提交 PDF 修改）
 - `readmd_ai_models`（连接上游）、`readmd_render_diagram`（可能调用本地渲染程序）
 
 输出路径必须是绝对路径，扩展名须与格式一致，父目录必须存在，路径上不允许符号链接；目标已存在时只有 `"overwrite": true` 才会替换，否则返回 `output_exists`。`readmd_ai_chat` 只接受 `credential_id`，传入原始 API Key 会被拒绝。MCP 不暴露更新、托盘、开机启动、通知和窗口控制。

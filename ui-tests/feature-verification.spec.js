@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,7 +10,7 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await page.waitForFunction(() => typeof runEditAiAction === 'function' && window.ReadMDTask);
+  await waitForPage(page, () => typeof runEditAiAction === 'function' && window.ReadMDTask);
 });
 
 async function edit(page, text = '# Original\n\nBody\n') {
@@ -300,7 +301,7 @@ test('F021 changing documents during editor loading cannot mount the old editor 
   await page.evaluate(async () => { await renderVirtual('clipboard', 'first.md', '', 'FIRST', []); void toggleEdit(); });
   await expect.poll(() => requested).toBe(true);
   await page.evaluate(() => renderVirtual('clipboard', 'second.md', '', 'SECOND', []));
-  release(); await page.waitForFunction(() => window.ReadMDCodeMirror);
+  release(); await waitForPage(page, () => window.ReadMDCodeMirror);
   expect(await page.evaluate(() => state.editing)).toBe(false);
   expect(await page.evaluate(() => state.tabs[0].content)).toBe('FIRST');
   await expect(page.locator('#content')).toContainText('SECOND');

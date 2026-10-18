@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('QR code stays out of startup and loads once on demand', async ({ page }) => {
@@ -8,11 +9,11 @@ test('QR code stays out of startup and loads once on demand', async ({ page }) =
   });
 
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadQrLibrary === 'function');
+  await waitForPage(page, () => typeof loadQrLibrary === 'function');
   expect(await page.evaluate(() => typeof qrcode)).toBe('undefined');
 
   await page.evaluate(() => loadQrLibrary());
-  await page.waitForFunction(() => typeof qrcode === 'function');
+  await waitForPage(page, () => typeof qrcode === 'function');
   const generated = await page.evaluate(() => {
     const qr = qrcode(0, 'M');
     qr.addData('readmd:lazy-qr');
@@ -51,7 +52,7 @@ test('presentation renders offline with initialized Reveal assets', async ({ pag
   });
 
   await page.goto('/');
-  await page.waitForFunction(() => typeof launchPresentationMode === 'function' && window.i18n && Object.keys(window.i18n.dict || {}).length > 0);
+  await waitForPage(page, () => typeof launchPresentationMode === 'function' && window.i18n && Object.keys(window.i18n.dict || {}).length > 0);
   await page.locator('#btn-zen').focus();
   await page.evaluate(async () => {
     state.original = [
@@ -104,11 +105,20 @@ test('presentation renders offline with initialized Reveal assets', async ({ pag
   await expect(page.locator('#btn-zen')).toBeFocused();
 });
 
+test('presentation uses the current edited draft and leaves saved text unchanged', async ({page}) => {
+  await page.goto('/');await waitForPage(page,()=>window.__readmdAppReady&&window.ReadMDRecovery);
+  await page.evaluate(async()=>{await renderVirtual('clipboard','Talk.md','','# Saved title\n\nSaved body.',[]);await toggleEdit();cmView.dispatch({changes:{from:0,to:cmView.state.doc.length,insert:'# Current draft\n\nThis has not been saved.'}});await launchPresentationMode();});
+  await expect(page.frameLocator('.presentation-iframe').locator('.slides h1')).toHaveText('Current draft');
+  await expect(page.locator('#presentation-loading')).toBeHidden();
+  await page.locator('#presentation-close-btn').click();
+  expect(await page.evaluate(()=>getEditContent())).toContain('Current draft');
+  expect(await page.evaluate(()=>state.original)).toContain('Saved title');
+});
 test('F11 enters immersive Zen once without layout jitter', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleEdit === 'function');
+  await waitForPage(page, () => typeof toggleEdit === 'function');
   await page.evaluate(() => {
     state.original = '# Zen target\n\nImmersive writing body.';
     state.fixed = state.original;
@@ -165,7 +175,7 @@ test('F11 enters immersive Zen once without layout jitter', async ({ page }) => 
 
 test('clicked Zen remains immersive until the pointer moves away', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof toggleZenMode === 'function' && typeof renderContent === 'function');
+  await waitForPage(page, () => typeof toggleZenMode === 'function' && typeof renderContent === 'function');
   await page.evaluate(() => renderContent('# Clicked Zen\n\nImmersive reading body.', 'clicked-zen.md'));
   await page.click('#btn-zen');
   await expect(page.locator('body')).toHaveClass(/zen-mode/);
@@ -197,7 +207,7 @@ test('clicked Zen remains immersive until the pointer moves away', async ({ page
 
 test('rapid tab switching stays aligned and reveals the active tab', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderTabsBar === 'function');
+  await waitForPage(page, () => typeof renderTabsBar === 'function');
   await page.setViewportSize({ width: 720, height: 600 });
 
   const result = await page.evaluate(async () => {
@@ -242,7 +252,7 @@ test('rapid tab switching stays aligned and reveals the active tab', async ({ pa
 
 test('superseded incremental renders stop without stale content', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderContent === 'function');
+  await waitForPage(page, () => typeof renderContent === 'function');
 
   const result = await page.evaluate(async () => {
     const originalSplit = splitMdBlocks;
@@ -284,7 +294,7 @@ test('superseded incremental renders stop without stale content', async ({ page 
 
 test('a completed stale tab switch cannot restore the abandoned document', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof switchTab === 'function');
+  await waitForPage(page, () => typeof switchTab === 'function');
 
   const result = await page.evaluate(async () => {
     const originalSplit = splitMdBlocks;
@@ -376,7 +386,7 @@ test('going home cancels a still-loading document', async ({ page }) => {
     }));
 
   await page.goto('/');
-  await page.waitForFunction(() => typeof loadFile === 'function' && typeof goHome === 'function');
+  await waitForPage(page, () => typeof loadFile === 'function' && typeof goHome === 'function');
   void page.evaluate(() => loadFile('slow.md'));
   await page.waitForTimeout(50);
   await page.evaluate(() => goHome());

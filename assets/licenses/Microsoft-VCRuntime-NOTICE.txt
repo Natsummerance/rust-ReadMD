@@ -1,0 +1,16 @@
+Microsoft Visual C++ Runtime 14.51.36247.0 (Windows x64)
+Copyright Microsoft Corporation. All rights reserved.
+
+vcruntime140.dll and vcruntime140_1.dll are Microsoft Distributable Code,
+shipped unmodified with ReadMD by application-local deployment. They are not
+covered by ReadMD's MIT license. No global runtime installer is executed.
+
+License: Microsoft-VCRuntime-LICENSE.docx
+Official license: https://aka.ms/VCRedistLicense
+Deployment: https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170
+
+The official signed archive, exact source URL, SHA-256 and per-file locks are
+recorded in assets/runtimes/windows-x64/runtime.lock.json. The archive and both
+DLLs were checked for valid Microsoft Authenticode signatures during preparation.
+Only the two required x64 runtime DLLs are distributed. Windows kernel/UCRT and
+the host's native webview remain operating-system/platform requirements.

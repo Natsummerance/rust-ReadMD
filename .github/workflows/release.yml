@@ -120,9 +120,12 @@ jobs:
       - name: Package Windows Artifacts
         if: runner.os == 'Windows'
         run: |
+          node tools/sync-capability-installer.mjs --check
           $pkgDir = "dist\ReadMD-windows-x64"
           New-Item -ItemType Directory -Force -Path $pkgDir
           Copy-Item "rust\target\${{ matrix.platform.target }}\release\readmd.exe" -Destination "$pkgDir\ReadMD.exe"
+          node tools/stage-windows-runtime.mjs "$pkgDir"
+          if ($LASTEXITCODE -ne 0) { throw "Bundled Windows runtime validation failed" }
           Copy-Item "assets" -Destination "$pkgDir\assets" -Recurse
           Copy-Item "LICENSE" -Destination "$pkgDir\LICENSE"
           Copy-Item "README.md" -Destination "$pkgDir\README.md"

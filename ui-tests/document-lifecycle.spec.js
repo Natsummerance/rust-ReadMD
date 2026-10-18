@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":false}' }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.goto('/');
-  await page.waitForFunction(() => window.ReadMDRecovery && typeof saveAs === 'function');
+  await expect.poll(()=>page.evaluate(()=>Boolean(window.ReadMDRecovery&&typeof saveAs==='function'))).toBe(true);
 });
 async function file(page, text = '# Original\n') {
   return page.evaluate(async text => {
@@ -76,7 +76,7 @@ test('recovery draft survives reload and opens safely without rewriting its sour
   await page.evaluate(() => ReadMDRecovery.flush());
   const entry = (await history(page)).find(e => e.path === source && e.kind === 'draft'); expect(entry).toBeTruthy();
   await page.evaluate(() => { window.onbeforeunload = null; }); await page.reload();
-  await page.waitForFunction(() => window.ReadMDRecovery);
+  await expect.poll(()=>page.evaluate(()=>Boolean(window.ReadMDRecovery))).toBe(true);
   await page.evaluate(() => ReadMDRecovery.open());
   const row = page.locator('[data-history-id="' + entry.id + '"]');
   await row.getByRole('button', { name: 'Open as copy', exact: true }).click();
@@ -156,7 +156,7 @@ test('a delayed history restore cannot replace input added during its checkpoint
   });
   await page.locator('.document-history-row').filter({ hasText: source }).filter({ hasText: 'Previous saved version' }).getByRole('button', { name: 'Apply to current editor' }).click();
   await change(page, 'NEWER INPUT'); release();
-  await page.waitForFunction(() => getActiveTab().source === 'recovery');
+  await expect.poll(()=>page.evaluate(()=>getActiveTab().source)).toBe('recovery');
   expect(await current(page)).toBe('# Original\n');
   expect(await page.evaluate(id => state.tabs.find(tab => tab.id === id).content, id)).toBe('NEWER INPUT');
   expect(await fs.readFile(source, 'utf8')).toBe('SAVED');
@@ -166,7 +166,7 @@ test('Ctrl Shift S invokes Save As and sends the actual current draft', async ({
   await file(page); await change(page, 'SHORTCUT DRAFT');
   await page.evaluate(() => { hasPy = true; py = { save_as: async content => { window.shortcutContent = content; return null; } }; });
   await page.keyboard.press('Control+Shift+S');
-  await page.waitForFunction(() => window.shortcutContent === 'SHORTCUT DRAFT');
+  await expect.poll(()=>page.evaluate(()=>window.shortcutContent)).toBe('SHORTCUT DRAFT');
   expect(await page.evaluate(() => getActiveTab().isDirty)).toBe(true);
 });
 
@@ -200,7 +200,7 @@ test('editing copies and recovered virtual documents retain resource references 
   expect(entry.context.dir).toBe('C:/clips'); expect(entry.context.assets).toHaveLength(1);
   await page.evaluate(() => ReadMDRecovery.open());
   await page.locator('[data-history-id="' + entry.id + '"]').getByRole('button', { name: 'Open as copy', exact: true }).click();
-  await page.waitForFunction(() => getActiveTab().source === 'recovery');
+  await expect.poll(()=>page.evaluate(()=>getActiveTab().source)).toBe('recovery');
   expect(await page.evaluate(() => ({ dir: state.dir, assets: getActiveTab().webAssets }))).toEqual({ dir: 'C:/clips', assets: [{ path: 'C:/clips/photo.png', name: 'photo.png' }] });
 });
 

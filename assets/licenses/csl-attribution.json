@@ -1,0 +1,5108 @@
+{
+  "library": "Hayagriva 0.10.1",
+  "archiveLicense": "CC-BY-SA-3.0",
+  "modified": false,
+  "styles": [
+    {
+      "names": [
+        "alphanumeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Martin Haug",
+            "email": "martin.haug@typst.app"
+          },
+          {
+            "name": "Laurenz Mädje",
+            "email": "laurenz.maedje@typst.app"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "label"
+          }
+        ],
+        "field": [],
+        "id": "http://typst.org/csl/alphanumeric",
+        "issn": [],
+        "link": [],
+        "rights": {
+          "$text": "MIT OR Apache-2.0"
+        },
+        "summary": {
+          "$value": "Alphanumeric citations"
+        },
+        "title": {
+          "$value": "Alphanumeric"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-anthropological-association"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Mark Dingemanse",
+            "email": "mark.dingemanse@mpi.nl"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "anthropology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-anthropological-association",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-anthropological-association",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.aaanet.org/publications/style_guide.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Citation style for the American Anthropological Association - Support from the Society for Cultural Anthropology is thankfully acknowledged"
+        },
+        "title": {
+          "$value": "American Anthropological Association"
+        },
+        "title-short": {
+          "$value": "AAA"
+        },
+        "updated": {
+          "$text": "2012-09-27T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-chemical-society"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Ivan Bushmarinov",
+            "email": "ib@ineos.ac.ru"
+          },
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "chemistry"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-chemical-society",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-chemical-society",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://doi.org/10.1021/acsguide.40303",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://doi.org/10.1021/acsguide",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The American Chemical Society style"
+        },
+        "title": {
+          "$value": "ACS Guide 2022 revision"
+        },
+        "title-short": {
+          "$value": "American Chemical Society"
+        },
+        "updated": {
+          "$text": "2022-09-19T18:32:56+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-geophysical-union"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Simon Kornblith",
+            "email": "simon@simonster.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Bruce D'Arcus"
+          },
+          {
+            "name": "Curtis M. Humphrey"
+          },
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": " Brenton M. Wiernik",
+            "email": "zotero@wiernik.org"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "geology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-geophysical-union",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-geophysical-union",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/apa",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://publications.agu.org/brief-guide-agu-style-grammar/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The American Geophysical Union generic style"
+        },
+        "title": {
+          "$value": "American Geophysical Union"
+        },
+        "title-short": {
+          "$value": "AGU"
+        },
+        "updated": {
+          "$text": "2012-09-27T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-institute-of-aeronautics-and-astronautics"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Garrett Foster",
+            "email": "garrett.d.foster@gmail.com",
+            "uri": "http://sdoresearch.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-institute-of-aeronautics-and-astronautics",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-institute-of-aeronautics-and-astronautics",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/ieee",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.aiaa.org/publications/journals/reference-style-and-format",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for AIAA"
+        },
+        "title": {
+          "$value": "American Institute of Aeronautics and Astronautics"
+        },
+        "title-short": {
+          "$value": "AIAA"
+        },
+        "updated": {
+          "$text": "2023-09-26T07:49:11+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-institute-of-physics"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "physics"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-institute-of-physics",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-institute-of-physics",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.aip.org/pubservs/style/4thed/toc.html",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://publishing.aip.org/wp-content/uploads/2021/03/AIP_Style_4thed.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Common style used by AIP publications."
+        },
+        "title": {
+          "$value": "AIP Style Manual 4th edition"
+        },
+        "title-short": {
+          "$value": "American Institute of Physics"
+        },
+        "updated": {
+          "$text": "2024-03-27T11:18:50+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-medical-association"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "uri": "https://orcid.org/0000-0001-5192-6856"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Christian Pietsch",
+            "uri": "https://orcid.org/0000-0001-8778-1273"
+          },
+          {
+            "name": "Daniel W. Chan",
+            "uri": "https://orcid.org/0000-0002-8082-2316"
+          },
+          {
+            "name": "Patrick O'Brien",
+            "email": "obrienpat86@gmail.com"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-medical-association",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-medical-association",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/american-medical-association-10th-edition",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://doi.org/10.1093/jama/9780190246556.003.0003",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/QW4JGG9G",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "AMA Manual of Style: A Guide for Authors and Editors (11th ed.)"
+        },
+        "title": {
+          "$value": "AMA Manual of Style 11th edition"
+        },
+        "title-short": {
+          "$value": "American Medical Association (numeric/Vancouver/citation-sequence)"
+        },
+        "updated": {
+          "$text": "2026-02-06T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-meteorological-society"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Carl J. Schreck, III",
+            "email": "carl.schreck@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Patrick O'Brien",
+            "uri": "https://citationstyler.com/"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "geography"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-meteorological-society",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-meteorological-society",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/cold-spring-harbor-laboratory-press",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.ametsoc.org/ams/index.cfm/publications/authors/journal-and-bams-authors/formatting-and-manuscript-components/references/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for all journals by the American Meteorological Society"
+        },
+        "title": {
+          "$value": "American Meteorological Society"
+        },
+        "title-short": {
+          "$value": "AMS"
+        },
+        "updated": {
+          "$text": "2025-03-22T15:43:16+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-physics-society"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Brenton M. Wiernik"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Anna C. Véron"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "physics"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-physics-society",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-physics-society",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/american-institute-of-physics",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://journals.aps.org/prl/authors#techformat",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Common style use by APS publications."
+        },
+        "title": {
+          "$value": "American Physical Society"
+        },
+        "title-short": {
+          "$value": "APS"
+        },
+        "updated": {
+          "$text": "2024-12-17T11:58:54+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-physiological-society"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-physiological-society",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-physiological-society",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://journals.physiology.org/author-info.references",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for many APS journals"
+        },
+        "title": {
+          "$value": "American Physiological Society"
+        },
+        "title-short": {
+          "$value": "APS"
+        },
+        "updated": {
+          "$text": "2020-05-21T09:18:04+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-political-science-association"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Aaron Guerra"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "political_science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-political-science-association",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-political-science-association",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://connect.apsanet.org/stylemanual/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The American Political Science Association style. Et al rules based on published APSR articles"
+        },
+        "title": {
+          "$value": "APSA Style Manual revised 2018 edition"
+        },
+        "title-short": {
+          "$value": "American Political Science Association"
+        },
+        "updated": {
+          "$text": "2024-03-13T15:37:50+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-psychological-association",
+        "apa"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Brenton M. Wiernik",
+            "email": "zotero@wiernik.org",
+            "uri": "https://orcid.org/0000-0001-9560-6336"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "psychology"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/apa",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/apa",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/apa-6th-edition",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://apastyle.apa.org/style-grammar-guidelines/references",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/MR2N872S",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Author-date system of the Publication Manual of the American Psychological Association (2020)"
+        },
+        "title": {
+          "$value": "APA Style 7th edition"
+        },
+        "title-short": {
+          "$value": "Publication Manual of the American Psychological Association, with Bluebook"
+        },
+        "updated": {
+          "$text": "2026-02-07T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-society-for-microbiology"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "biology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-society-for-microbiology",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-society-for-microbiology",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://journals.asm.org/references",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for all American Society for Microbiology journals."
+        },
+        "title": {
+          "$value": "American Society for Microbiology"
+        },
+        "title-short": {
+          "$value": "ASM"
+        },
+        "updated": {
+          "$text": "2022-01-13T16:47:12+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-society-of-civil-engineers"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-society-of-civil-engineers",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-society-of-civil-engineers",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://ascelibrary.org/author-center/journal#peer-review-process",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for American Society of Civil Engineers publications"
+        },
+        "title": {
+          "$value": "American Society of Civil Engineers"
+        },
+        "title-short": {
+          "$value": "ASCE"
+        },
+        "updated": {
+          "$text": "2025-11-14T09:39:51+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-society-of-mechanical-engineers"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-society-of-mechanical-engineers",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-society-of-mechanical-engineers",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/ieee",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.asme.org/publications-submissions/journals/information-for-authors/journal-guidelines/references",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for the ASME's 23 journals"
+        },
+        "title": {
+          "$value": "American Society of Mechanical Engineers"
+        },
+        "title-short": {
+          "$value": "ASME"
+        },
+        "updated": {
+          "$text": "2023-11-03T07:25:27+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "american-sociological-association"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "sociology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/american-sociological-association",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/american-sociological-association",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.asanet.org/publications/journals/asa-style-guide/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://owl.purdue.edu/owl/research_and_citation/asa_style/index.html",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The ASA style following the 6th/7th edition of the Style Guide (reference formatting is the same for both editions)."
+        },
+        "title": {
+          "$value": "ASA Style Guide 6th/7th edition"
+        },
+        "title-short": {
+          "$value": "American Sociological Association"
+        },
+        "updated": {
+          "$text": "2025-06-30T13:17:50+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "angewandte-chemie"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          },
+          {
+            "@field": "chemistry"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/angewandte-chemie",
+        "issn": [
+          "1433-7851"
+        ],
+        "eissn": "1521-3773",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/angewandte-chemie",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://onlinelibrary.wiley.com/page/journal/15213773/homepage/notice-to-authors",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for Wiley-VCH's journal \"Angewandte Chemie International Edition\"\nThis style has many limits due to csl constraints, most notably the inability to include pages/page ranges for books, the wrong square brackets for two items cited together, and the lack of support for citing 1a)... b)...c)...."
+        },
+        "title": {
+          "$value": "Angewandte Chemie International Edition"
+        },
+        "updated": {
+          "$text": "2025-08-21T12:42:21+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "annual-reviews"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Aurimas Vinckevicius",
+            "email": "aurimas.dev@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/annual-reviews",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/annual-reviews",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.annualreviews.org/page/authors/author-instructions/preparing/handbooks",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Annual Reviews (sorted by order of appearance)"
+        },
+        "updated": {
+          "$text": "2013-03-28T21:58:08+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "annual-reviews-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Aurimas Vinckevicius",
+            "email": "aurimas.dev@gmail.com"
+          },
+          {
+            "name": "Brenton Wiernik",
+            "email": "wiernik@workpsy.ch"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/annual-reviews-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/annual-reviews-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/annual-reviews-alphabetical",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.annualreviews.org/page/authors/author-instructions/preparing/handbooks",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Annual Reviews (author-date)"
+        },
+        "updated": {
+          "$text": "2018-10-24T03:09:48+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "associacao-brasileira-de-normas-tecnicas"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Juliana Geyna Régis",
+            "email": "juliana.regis@ipea.gov.br"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Lucas Mation",
+            "email": "lucas.mation@ipea.gov.br"
+          },
+          {
+            "name": "Eduardo Michelotti Bettoni",
+            "email": "webtur@ufpr.br"
+          },
+          {
+            "name": "Paulo Augusto Nascimento",
+            "email": "paulo.nascimento@ipea.gov.br"
+          },
+          {
+            "name": "Iuri Gavronski",
+            "email": "iuri at ufrgs dot br"
+          },
+          {
+            "name": "José Antonio Meira da Rocha",
+            "email": "joseantoniorocha@gmail.com",
+            "uri": "http://meiradarocha.jor.br"
+          },
+          {
+            "name": "Mario José",
+            "email": "gnumario [at-mark] gmail [dot-mark] com"
+          },
+          {
+            "name": "Pedro P. Palazzo",
+            "email": "palazzo@unb.br",
+            "uri": "https://palazzo.pt"
+          },
+          {
+            "name": "Daniel Corrêa Lobato",
+            "email": "daniel@lobato.org"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/associacao-brasileira-de-normas-tecnicas",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/associacao-brasileira-de-normas-tecnicas",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://forums.zotero.org/discussion/22148/how-to-apply-disambiguation-in-citation-just-when-works-of-different-authors-are-in-the-same-year/?Focus=147094#Comment_147094",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Brazilian Standard Style in accordance with ABNT-NBR 10520.2023 and ABNT-NBR 6023.2002"
+        },
+        "title": {
+          "$value": "Associação Brasileira de Normas Técnicas (Português - Brasil)"
+        },
+        "title-short": {
+          "$value": "ABNT"
+        },
+        "updated": {
+          "$text": "2023-08-20T17:15:26+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "association-for-computing-machinery"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Brien",
+            "email": "obrienpat86@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Junliang Hu",
+            "email": "vtta0124@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/association-for-computing-machinery",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/association-for-computing-machinery",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/acm-sigchi-proceedings",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.acm.org/publications/authors/reference-formatting",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Association for Computing Machinery"
+        },
+        "title-short": {
+          "$value": "ACM"
+        },
+        "updated": {
+          "$text": "2024-01-24T11:32:48+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "biomed-central"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Robert M Flight",
+            "email": "rflight79@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Nour Edin Darwish"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "biology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/biomed-central",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/biomed-central",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://bmcbioinformatics.biomedcentral.com/submission-guidelines/preparing-your-manuscript/research-article",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "BioMed Central"
+        },
+        "updated": {
+          "$text": "2025-07-26T16:12:16+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "bristol-university-press"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "humanities"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/bristol-university-press",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/bristol-university-press",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/harvard-university-of-birmingham",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://bristoluniversitypressdigital.com/view/journals/evp/evp-overview.xml?tab_body=instructions-for-authors",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Bristol University Press"
+        },
+        "updated": {
+          "$text": "2025-03-08T10:51:15+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "british-medical-journal",
+        "bmj"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sean Takats",
+            "email": "stakats@gmu.edu"
+          },
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/bmj",
+        "issn": [
+          "0959-8138"
+        ],
+        "eissn": "1756-1833",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/bmj",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://group.bmj.com/products/journals/instructions-for-authors/formatting#references",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://authors.bmj.com/writing-and-formatting/formatting-your-paper/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Vancouver style adapted for BMJ journals"
+        },
+        "title": {
+          "$value": "BMJ"
+        },
+        "updated": {
+          "$text": "2024-06-06T09:34:02+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "cell"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Adam Mark",
+            "email": "a.mark@uoguelph.ca"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Aurimas Vinckevicius",
+            "email": "aurimas.dev@gmail.com"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "biology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/cell",
+        "issn": [
+          "0092-8674"
+        ],
+        "eissn": "1097-4172",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/cell",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.cell.com/cell/authors",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Cell journal style, switched to numeric superscript as per the Cell editorial office in Sept. 2022"
+        },
+        "title": {
+          "$value": "Cell"
+        },
+        "updated": {
+          "$text": "2024-03-28T09:46:58+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "chicago-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "geography"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "political_science"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chicago-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chicago-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.chicagomanualofstyle.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/5V67EPX3",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Chicago-style source citations (with Bluebook for legal citations), author-date system"
+        },
+        "title": {
+          "$value": "Chicago Manual of Style 18th edition (author-date)"
+        },
+        "title-short": {
+          "$value": "CMOS/CMS with Bluebook (author-date/AD [13.102])"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "chicago-notes",
+        "chicago-fullnotes"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "note"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "geography"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "political_science"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chicago-notes-bibliography",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.chicagomanualofstyle.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/5V67EPX3",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Chicago-style source citations (with Bluebook for legal citations), notes and bibliography system"
+        },
+        "title": {
+          "$value": "Chicago Manual of Style 18th edition (notes and bibliography)"
+        },
+        "title-short": {
+          "$value": "CMOS/CMS with Bluebook (full notes and bibliography/NB [13.18])"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "chicago-shortened-notes"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "note"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "geography"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "political_science"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chicago-shortened-notes-bibliography",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chicago-shortened-notes-bibliography",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.chicagomanualofstyle.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/5V67EPX3",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Chicago-style source citations (with Bluebook for legal citations), shortened author-title notes and bibliography system"
+        },
+        "title": {
+          "$value": "Chicago Manual of Style 18th edition (shortened notes and bibliography)"
+        },
+        "title-short": {
+          "$value": "CMOS/CMS with Bluebook (shortened author-title notes [13.32])"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "copernicus"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Didier Voisin"
+          },
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Johannes Wagner",
+            "email": "johannes.wagner@copernicus.org"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/copernicus-publications",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/copernicus-publications",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://publications.copernicus.org/for_authors/manuscript_preparation.html",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Copernicus generic style"
+        },
+        "title": {
+          "$value": "Copernicus Publications"
+        },
+        "updated": {
+          "$text": "2023-06-05T10:43:11+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "cse-citation-sequence-brackets-8th-edition",
+        "council-of-science-editors"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Pavel Giverts"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "astronomy"
+          },
+          {
+            "@field": "biology"
+          },
+          {
+            "@field": "botany"
+          },
+          {
+            "@field": "chemistry"
+          },
+          {
+            "@field": "geology"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "zoology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/cse-citation-sequence-brackets-8th-edition",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/cse-citation-sequence-brackets-8th-edition",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/cse-citation-sequence-8th-edition",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.scientificstyleandformat.org/Tools/SSF-Citation-Quick-Guide.html",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Council of Science Editors style, 8th edition, citation-sequence system: numbers in text in brackets, sorted by order of appearance in text."
+        },
+        "title": {
+          "$value": "CSE Manual: Scientific Style and Format 8th edition (citation-sequence, brackets)"
+        },
+        "title-short": {
+          "$value": "Council of Science Editors SSF C-S/numeric/Vancouver, brackets"
+        },
+        "updated": {
+          "$text": "2021-08-12T04:37:16+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "cse-name-year",
+        "council-of-science-editors-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "astronomy"
+          },
+          {
+            "@field": "biology"
+          },
+          {
+            "@field": "botany"
+          },
+          {
+            "@field": "chemistry"
+          },
+          {
+            "@field": "geology"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "zoology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/cse-name-year",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/cse-name-year",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/cse-citation-sequence",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.csemanual.org/Tools/CSE-Citation-Quick-Guide.html",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Council of Science Editors style, 9th edition, name-year system: author-date in text, sorted alphabetically."
+        },
+        "title": {
+          "$value": "CSE Manual: Scientific Style and Format 9th edition (name-year)"
+        },
+        "title-short": {
+          "$value": "Council of Science Editors SSF N-Y/author-date/Harvard"
+        },
+        "updated": {
+          "$text": "2025-09-12T07:37:16+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "current-opinion"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "David M. Kaplan",
+            "email": "david.kaplan@ird.fr"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/current-opinion",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/current-opinion",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.elsevier.com/journals/current-opinion-in-biotechnology/0958-1669/guide-for-authors",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Current Opinion journals"
+        },
+        "updated": {
+          "$text": "2012-09-27T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "deutsche-gesellschaft-für-psychologie"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Daniel Hirsbrunner",
+            "email": "dhirsbrunner@gmx.ch"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Michael Zaugg"
+          },
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Tobias Stocker",
+            "email": "tobistocker@gmail.com"
+          },
+          {
+            "name": "Marius Steffen"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "psychology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/deutsche-gesellschaft-fur-psychologie",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/deutsche-gesellschaft-fur-psychologie",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://github.com/citation-style-language/styles/pull/432",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://doi.org/10.1026/02954-000",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for the German society for psychology, based on the 5th style manual (2019)."
+        },
+        "title": {
+          "$value": "Deutsche Gesellschaft für Psychologie 5. Auflage (Deutsch)"
+        },
+        "title-short": {
+          "$value": "DGP 5. Auflage"
+        },
+        "updated": {
+          "$text": "2026-02-04T15:02:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "deutsche-sprache"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Philipp Zumstein"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/deutsche-sprache",
+        "issn": [
+          "0340-9341"
+        ],
+        "eissn": "1866-5233",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/deutsche-sprache",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://pub.ids-mannheim.de/laufend/deusprach/hinweise.pdf",
+            "@rel": "documentation",
+            "@xml:lang": "de"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for the German Journal 'Deutsche Sprache : Zeitschrift fuer Theorie Praxis Dokumentation', published by Erich Schmidt Verlag, edited by IDS Mannheim"
+        },
+        "title": {
+          "$value": "Deutsche Sprache (Deutsch)"
+        },
+        "updated": {
+          "$text": "2014-08-12T18:40:54+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "elsevier-harvard"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "David Kaplan",
+            "email": "david.kaplan@ird.fr"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Simon Kornblith",
+            "email": "simon@simonster.com"
+          },
+          {
+            "name": "Bruce D'Arcus"
+          },
+          {
+            "name": "Curtis M. Humphrey"
+          },
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "biology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/elsevier-harvard",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/elsevier-harvard",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/ecology-letters",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.elsevier.com/journals/biological-conservation/0006-3207/guide-for-authors#68000",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Elsevier (author-date/Harvard, with titles)"
+        },
+        "updated": {
+          "$text": "2014-03-04T00:09:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "elsevier-vancouver"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/elsevier-vancouver",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/elsevier-vancouver",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.elsevier.com/journals/energy/0360-5442/guide-for-authors#68000",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for some Elsevier journals, resembles Vancouver style"
+        },
+        "title": {
+          "$value": "Elsevier - NLM/Vancouver (citation-sequence)"
+        },
+        "title-short": {
+          "$value": "Elsevier - Vancouver"
+        },
+        "updated": {
+          "$text": "2019-10-15T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "elsevier-with-titles"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/elsevier-with-titles",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/elsevier-with-titles",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/elsevier-without-titles",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.elsevier.com/journals/journal-of-hazardous-materials/0304-3894/guide-for-authors#68001",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "A style for many of Elsevier's journals that includes article titles in the reference list"
+        },
+        "title": {
+          "$value": "Elsevier (numeric, with titles)"
+        },
+        "updated": {
+          "$text": "2019-10-15T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "frontiers"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/frontiers",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/frontiers",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.frontiersin.org/guidelines/author-guidelines",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for the Open Access Frontiers in ... Journals"
+        },
+        "title": {
+          "$value": "Frontiers journals"
+        },
+        "updated": {
+          "$text": "2024-02-20T20:07:43+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "future-medicine"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Bien"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "biology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/future-medicine",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/future-medicine",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/journal-of-applied-pharmaceutical-research",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.futuremedicine.com/authorguide/preparingyourarticle",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://www.futuremedicine.com/pb-assets/Future-Medicine-Author-Guidelines-1585216135307.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Future Medicine journals"
+        },
+        "updated": {
+          "$text": "2020-06-03T12:27:46+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "future-science"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sean Takats",
+            "email": "stakats@gmu.edu"
+          },
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/future-science-group",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/future-science-group",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.futuremedicine.com/pb-assets/Nanomedicine%20Author%20Guidelines-1540302236583.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style used by the journals of the Future Science Group, as per Oct-2018 guidelines."
+        },
+        "title": {
+          "$value": "Future Science Group"
+        },
+        "updated": {
+          "$text": "2019-01-14T11:57:07+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "gb-7714-2005-numeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "heromyth",
+            "email": "zxpmyth@yahoo.com.cn"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Zeping Lee",
+            "email": "zepinglee@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chinese-gb7714-2005-numeric",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chinese-gb7714-2005-numeric",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D78562D3A7E05397BE0A0AB82A",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Chinese GB/T 7714-2005 numeric style"
+        },
+        "title": {
+          "$value": "China National Standard GB/T 7714-2005 (numeric, 中文)"
+        },
+        "updated": {
+          "$text": "2024-01-22T22:56:37+08:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "gb-7714-2015-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "牛耕田",
+            "email": "buffalo_d@163.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Zeping Lee",
+            "email": "zepinglee@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D8055ED3A7E05397BE0A0AB82A",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Chinese GB/T 7714-2015 author-date style"
+        },
+        "title": {
+          "$value": "China National Standard GB/T 7714-2015 (author-date, 中文)"
+        },
+        "updated": {
+          "$text": "2024-01-22T23:27:33+08:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "gb-7714-2015-note"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "牛耕田",
+            "email": "buffalo_d@163.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Zeping Lee",
+            "email": "zepinglee@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "note"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-note",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-note",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D8055ED3A7E05397BE0A0AB82A",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Chinese GB/T 7714-2015 with notes and bibliography"
+        },
+        "title": {
+          "$value": "China National Standard GB/T 7714-2015 (note, 中文)"
+        },
+        "updated": {
+          "$text": "2024-01-22T22:42:27+08:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "gb-7714-2015-numeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "牛耕田",
+            "email": "buffalo_d@163.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Zeping Lee",
+            "email": "zepinglee@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://std.samr.gov.cn/gb/search/gbDetailed?id=71F772D8055ED3A7E05397BE0A0AB82A",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Chinese GB/T 7714-2015 numeric style"
+        },
+        "title": {
+          "$value": "China National Standard GB/T 7714-2015 (numeric, 中文)"
+        },
+        "updated": {
+          "$text": "2024-01-22T22:07:03+08:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "gost-r-705-2008-numeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Yurkin Maxim",
+            "email": "yurkin@gmail.com",
+            "uri": "http://sites.google.com/site/yurkin/"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Andrew Voynov",
+            "uri": "https://codeberg.org/Andrew15-5"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/gost-r-7-0-5-2008-numeric",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/gost-r-7-0-5-2008-numeric",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://protect.gost.ru/document.aspx?control=7&id=173511",
+            "@rel": "documentation"
+          }
+        ],
+        "published": {
+          "$text": "2010-03-22T10:40:00+06:00"
+        },
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "This style is independent from style \"GOST-R-7.0.5-2008\", and the main difference is that this is numeric, contrary to author-date. The structure of these two styles is also very different. !!! IMPORTANT !!! Citations are numeric, order of bibliography is in order of citations, default locale is \"ru-RU\".\n\n    Стиль основан на ГОСТ Р 7.0.5-2008 и ГОСТ 7.1.2003. Основная проблема сейчас — это локализация терминов (С., Т., под ред., и др. ... или соответственно P., Vol., ed., et al.). В принципе это работает и контролируется полем  default-locale (выше, во второй строчке). Для русского надо заменить на \"ru-RU\". Это определяет одни настройки для всей библиографии. Однако, идеальное решение — это выбирать язык локализации терминов в зависимости от языка записи (как и предписывает ГОСТ). Это невозможно сделать в рамках Zotero 4.0 и CSL 1.0, но уже сейчас что-то можно сделать в рамках MultiLingual Zotero — см. например http://forums.zotero.org/discussion/18482/multilingual-zotero-fields-and-csl-variables. Typst позволяет изменять локаль библиографии и цитат, используя поле lang элемента text.\n\n    И последнее, патенты по умолчанию представлены как USA, поскольку в CSL 1.0 нет переменной, соответствующей полю country в базе Zotero 4.0+. Надеюсь, это будет исправлено в будущих версиях."
+        },
+        "title": {
+          "$value": "Russian GOST R 7.0.5-2008 (numeric)"
+        },
+        "updated": {
+          "$text": "2025-09-29T20:34:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "harvard-cite-them-right"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/harvard-cite-them-right",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/harvard-cite-them-right",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/harvard-cite-them-right-11th-edition",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.citethemrightonline.com/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Harvard according to Cite Them Right, 11th edition."
+        },
+        "title": {
+          "$value": "Cite Them Right 12th edition (author-date/Harvard)"
+        },
+        "updated": {
+          "$text": "2026-02-12T10:08:06+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "institute-of-electrical-and-electronics-engineers",
+        "ieee"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Stephen Frank",
+            "uri": "http://www.zotero.org/sfrank"
+          },
+          {
+            "name": "Sebastian Karcher"
+          },
+          {
+            "name": "Giuseppe Silano",
+            "email": "g.silano89@gmail.com",
+            "uri": "http://giuseppesilano.net"
+          },
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Brenton M. Wiernik"
+          },
+          {
+            "name": "Oliver Couch",
+            "email": "oliver.couch@gmail.com"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/ieee",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/ieee",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://journals.ieeeauthorcenter.ieee.org/your-role-in-article-production/ieee-editorial-style-manual/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "IEEE style as per the 2023 guidelines."
+        },
+        "title": {
+          "$value": "IEEE Reference Guide version 11.29.2023"
+        },
+        "title-short": {
+          "$value": "Institute of Electrical and Electronics Engineers"
+        },
+        "updated": {
+          "$text": "2024-03-27T11:41:27+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "institute-of-physics-numeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "physics"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/institute-of-physics-numeric",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/institute-of-physics-numeric",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://authors.iop.org/atom/help.nsf/7765E7F03B07DE5080257020002E4D9B/$File/IOPWordGuidelines.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Institute of Physics (numeric)"
+        },
+        "title-short": {
+          "$value": "IOP"
+        },
+        "updated": {
+          "$text": "2012-09-27T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "iso-690-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Laure Mellifluo",
+            "email": "laure.melli@gmail.com"
+          },
+          {
+            "name": "Raphael Grolimund",
+            "email": "grolimur@protonmail.ch"
+          },
+          {
+            "name": "Michel Hardegger",
+            "email": "hardegger@gmail.com"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/iso690-author-date-en",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/iso690-author-date-en",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://forums.zotero.org/discussion/20342",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.iso.org/iso/catalogue_detail.htm?csnumber=43320",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style based on ISO 690:2021(E)"
+        },
+        "title": {
+          "$value": "ISO-690 (author-date, English)"
+        },
+        "updated": {
+          "$text": "2023-10-20T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "iso-690-numeric"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Laure Mellifluo",
+            "email": "laure.melli@gmail.com"
+          },
+          {
+            "name": "Raphael Grolimund",
+            "email": "raphael.grolimund@epfl.ch"
+          },
+          {
+            "name": "Michel Hardegger",
+            "email": "hardegger@gmail.com"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/iso690-numeric-en",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/iso690-numeric-en",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://forums.zotero.org/discussion/20342",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style based on ISO 690:2010(E), V1.1"
+        },
+        "title": {
+          "$value": "ISO-690 (numeric, English)"
+        },
+        "updated": {
+          "$text": "2022-03-24T00:29:32+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "karger"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sean Takats",
+            "email": "stakats@gmu.edu"
+          },
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Patrick O'Brien",
+            "email": "citationstyler@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/karger-journals",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/karger-journals",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.karger.com/Journal/Guidelines/223832#05",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Vancouver style for Journals published by Karger"
+        },
+        "title": {
+          "$value": "Karger journals"
+        },
+        "updated": {
+          "$text": "2019-07-08T19:49:43+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "mary-ann-liebert-vancouver"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Patrick O'Brien",
+            "email": "obrienpat86@gmail.com"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/mary-ann-liebert-vancouver",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/mary-ann-liebert-vancouver",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/mary-ann-liebert-harvard",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://home.liebertpub.com/authors/writing-guidelines/151",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Mary Ann Liebert - NLM/Vancouver"
+        },
+        "title-short": {
+          "$value": "MAL - Vancouver"
+        },
+        "updated": {
+          "$text": "2022-09-09T07:53:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "modern-humanities-research-association-notes",
+        "modern-humanities-research-association"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "note"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/mhra-notes",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/mhra-notes",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.mhra.org.uk/style/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/D9MVMAFF",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "MHRA source citations, notes system"
+        },
+        "title": {
+          "$value": "MHRA Style Guide 4th edition (notes)"
+        },
+        "title-short": {
+          "$value": "Modern Humanities Research Association (notes)"
+        },
+        "updated": {
+          "$text": "2025-02-04T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "modern-language-association",
+        "mla",
+        "modern-language-association-8",
+        "mla-8"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher",
+            "uri": "https://orcid.org/0000-0001-8249-7388"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "literature"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/modern-language-association",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/modern-language-association",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://style.mla.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/L96HMJXY",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "MLA source citations, in-text citations system (chapter 6)"
+        },
+        "title": {
+          "$value": "MLA Handbook 9th edition (in-text citations)"
+        },
+        "title-short": {
+          "$value": "Modern Language Association (in-text citations)"
+        },
+        "updated": {
+          "$text": "2026-02-03T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "multidisciplinary-digital-publishing-institute"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          },
+          {
+            "name": "Johan van der Molen Moris"
+          },
+          {
+            "name": "Szilárd Enyedi"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/multidisciplinary-digital-publishing-institute",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/multidisciplinary-digital-publishing-institute",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/american-chemical-society",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.mdpi.com/authors/references",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for the MDPI Open access journals"
+        },
+        "title": {
+          "$value": "Multidisciplinary Digital Publishing Institute"
+        },
+        "title-short": {
+          "$value": "MDPI"
+        },
+        "updated": {
+          "$text": "2024-08-03T20:34:58+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "nature"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien",
+            "email": "citationstyler@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/nature",
+        "issn": [
+          "0028-0836"
+        ],
+        "eissn": "1476-4687",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/nature",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.nature.com/nature/for-authors/formatting-guide",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Nature"
+        },
+        "updated": {
+          "$text": "2025-09-10T18:26:21+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "nlm-citation-sequence",
+        "vancouver"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Petr Hlustik",
+            "uri": "https://orcid.org/0000-0002-1951-0671"
+          },
+          {
+            "name": "Sebastian Karcher",
+            "uri": "https://orcid.org/0000-0001-8249-7388"
+          },
+          {
+            "name": "Charles Parnot",
+            "uri": "https://orcid.org/0000-0002-7346-5883"
+          },
+          {
+            "name": "Sean Takats",
+            "uri": "https://orcid.org/0000-0002-7851-5069"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/nlm-citation-sequence",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence",
+            "@rel": "self"
+          },
+          {
+            "@href": "https://www.nlm.nih.gov/citingmedicine",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://www.nlm.nih.gov/bsd/uniform_requirements.html",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://www.icmje.org/recommendations/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Citing Medicine: The NLM Style Guide for Authors, Editors, and Publishers, 2nd edition (2015), based on ANSI/NISO Z39.29-2005 (R2010); citation-sequence system."
+        },
+        "title": {
+          "$value": "NLM/Vancouver: Citing Medicine 2nd edition (citation-sequence)"
+        },
+        "title-short": {
+          "$value": "National Library of Medicine, ANSI/NISO Z39.29-2005 (R2010), ICMJE Recommendations/URMs (C-S)"
+        },
+        "updated": {
+          "$text": "2026-01-07T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "nlm-citation-sequence-superscript",
+        "vancouver-superscript"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Petr Hlustik",
+            "uri": "https://orcid.org/0000-0002-1951-0671"
+          },
+          {
+            "name": "Sebastian Karcher",
+            "uri": "https://orcid.org/0000-0001-8249-7388"
+          },
+          {
+            "name": "Charles Parnot",
+            "uri": "https://orcid.org/0000-0002-7346-5883"
+          },
+          {
+            "name": "Sean Takats",
+            "uri": "https://orcid.org/0000-0002-7851-5069"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/nlm-citation-sequence-superscript",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence-superscript",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.nlm.nih.gov/citingmedicine",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://www.nlm.nih.gov/bsd/uniform_requirements.html",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://www.icmje.org/recommendations/",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Citing Medicine: The NLM Style Guide for Authors, Editors, and Publishers, 2nd edition (2015), based on ANSI/NISO Z39.29-2005 (R2010); citation-sequence system, with superscripted in-text indicators."
+        },
+        "title": {
+          "$value": "NLM/Vancouver: Citing Medicine 2nd edition (citation-sequence, superscript)"
+        },
+        "title-short": {
+          "$value": "National Library of Medicine, ANSI/NISO Z39.29-2005 (R2010), ICMJE Recommendations/URMs (C-S, superscript)"
+        },
+        "updated": {
+          "$text": "2026-01-07T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "pensoft"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Brian Stucky",
+            "email": "stuckyb@colorado.edu"
+          },
+          {
+            "name": "Teodor Georgiev",
+            "email": "t.georgiev@pensoft.net"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/pensoft-journals",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/pensoft-journals",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/zootaxa",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://zookeys.pensoft.net/about#CitationsandReferences",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Pensoft Journals style"
+        },
+        "title": {
+          "$value": "Pensoft Journals"
+        },
+        "updated": {
+          "$text": "2020-08-21T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "public-library-of-science",
+        "plos"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/plos",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/plos",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.plosone.org/static/guidelines#references",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Vancouver for PLoS Journals as of January 2015"
+        },
+        "title": {
+          "$value": "Public Library of Science"
+        },
+        "title-short": {
+          "$value": "PLOS"
+        },
+        "updated": {
+          "$text": "2019-09-29T19:19:07+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "royal-society-of-chemistry"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Ivan Bushmarinov",
+            "email": "ib@ineos.ac.ru"
+          },
+          {
+            "name": "Steven R. Kirk",
+            "email": "steven.kirk@cantab.net"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "chemistry"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/royal-society-of-chemistry",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/royal-society-of-chemistry",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.rsc.org/learn-chemistry/resource/download/res00001664/cmp00004956/pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.rsc.org/journals-books-databases/journal-authors-reviewers/prepare-your-article/#format-layout",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "The Royal Society of Chemistry journal style."
+        },
+        "title": {
+          "$value": "Royal Society of Chemistry"
+        },
+        "updated": {
+          "$text": "2026-01-28T19:49:13+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "sage-vancouver"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sean Takats",
+            "email": "stakats@gmu.edu"
+          },
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/sage-vancouver",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/sage-vancouver",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.uk.sagepub.com/repository/binaries/pdf/SAGE_Vancouver_reference_style.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Vancouver superscript style modified to italicize journal names strip periods for use in SAGE journals"
+        },
+        "title": {
+          "$value": "SAGE - NLM/Vancouver"
+        },
+        "updated": {
+          "$text": "2016-04-07T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "sist02"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Shoji Takahashi",
+            "email": "s.takahashi@elsevier.com",
+            "uri": "http://www.mendeley.com/profiles/shoji-takahashi3/"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Eriko Amano",
+            "uri": "http://www.mendeley.com/profiles/eriko-amano/"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/sist02",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/sist02",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://sti.jst.go.jp/sist/handbook/sist02_2007/main.htm",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "SIST02 (日本語)"
+        },
+        "updated": {
+          "$text": "2015-12-13T06:04:50+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "spie"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Yurkin Maxim",
+            "email": "yurkin@gmail.com",
+            "uri": "http://sites.google.com/site/yurkin/"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "physics"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/spie-journals",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/spie-journals",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://spie.org/x85036.xml",
+            "@rel": "documentation"
+          }
+        ],
+        "published": {
+          "$text": "2009-10-24T23:00:00+06:00"
+        },
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Designed for SPIE journals, based on information at http://spie.org/x85036.xml and sample .docx manuscript given there (http://spie.org/Documents/Publications/Journals/journal%20Word%20template.doc). The latter probably originated from the style for e-journals (which was previously available at http://spie.org/x3658.xml), and thus slightly contradicts former requirements. The differences are:\n    1) style on the web page requires using et al., when there are more than three authors - we follow this rule.\n    2) style in the sample manuscript asks to add DOI if available, while the style on the web page says nothing about it - we do include DOI (this should not harm in all cases).\n    Also previous versions of this style were based on more detailed instructions for SPIE e-journals (including larger number of document types). Those details are present in the current version as well, but no more supported by a documented style."
+        },
+        "title": {
+          "$value": "SPIE journals"
+        },
+        "updated": {
+          "$text": "2015-01-23T09:18:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-basic"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-basic-brackets",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-basic-brackets",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/springer-basic-author-date",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/instruct-authors-e.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/manuscript-guidelines-1.0.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/Key_Style_Points_1.0.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Springer Numbered Style for the disciplines Medicine, Biomedicine, Life Sciences, Chemistry, Geosciences, Computer Science, Engineering, Economics. This style is based on Harvard style and recommendations of the Council of Biology Editors."
+        },
+        "title": {
+          "$value": "Springer - Basic (numeric, brackets)"
+        },
+        "updated": {
+          "$text": "2016-03-04T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-basic-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Jens Allmer",
+            "email": "jens@allmer.de",
+            "uri": "http://jens.allmer.de"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-basic-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-basic-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/instruct-authors-e.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/manuscript-guidelines-1.0.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/Key_Style_Points_1.0.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Springer Author Date Style for the disciplines Medicine, Biomedicine, Life Sciences, Chemistry, Geosciences, Computer Science, Engineering, Economics. This style is based on Harvard style and recommendations of the Council of Biology Editors."
+        },
+        "title": {
+          "$value": "Springer - Basic (author-date)"
+        },
+        "updated": {
+          "$text": "2019-09-25T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-fachzeitschriften-medizin-psychologie"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Philipp Zumstein",
+            "uri": "https://github.com/zuphilip"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          },
+          {
+            "@field": "psychology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-fachzeitschriften-medizin-psychologie",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-fachzeitschriften-medizin-psychologie",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/springer-basic-brackets-no-et-al-alphabetical",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://static.springer.com/sgw/documents/135255/application/pdf/Musterbeitrag_Uebersichten_Leitthema_Schwerpunkt.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://static.springer.com/sgw/documents/69331/application/pdf/Leitfaden_Uebersichten_Leitthemen_Schwerpunkt.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Springer Basic style (German, numeric, brackets, alphabetical) for Springer journals in medicine and psychology."
+        },
+        "title": {
+          "$value": "Springer - Fachzeitschriften Medizin Psychologie (Deutsch)"
+        },
+        "updated": {
+          "$text": "2019-09-25T17:55:52+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-humanities-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Richard Karnesky",
+            "email": "karnesky+zotero@gmail.com",
+            "uri": "http://arc.nucapt.northwestern.edu/Richard_Karnesky"
+          },
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "humanities"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-humanities-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-humanities-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/Key_Style_Points_1.0.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for Springer's humanities journals - the journals do look slightly different from each other, but this should work quite closely"
+        },
+        "title": {
+          "$value": "Springer - Humanities (author-date)"
+        },
+        "updated": {
+          "$text": "2019-09-25T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-lecture-notes-in-computer-science"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Ammar Memari",
+            "email": "memari@wi-ol.de"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Mikko Ronkko"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-lecture-notes-in-computer-science",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-lecture-notes-in-computer-science",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.springer.com/computer/lncs?SGWID=0-164-6-793341-0",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "title": {
+          "$value": "Springer - Lecture Notes in Computer Science"
+        },
+        "title-short": {
+          "$value": "Springer LNCS"
+        },
+        "updated": {
+          "$text": "2019-09-25T13:54:37+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-mathphys"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "science"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-mathphys-brackets",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-mathphys-brackets",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/springer-lecture-notes-in-computer-science",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/manuscript-guidelines-1.0.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/Key_Style_Points_1.0.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "This style is used by a number of Springer publications."
+        },
+        "title": {
+          "$value": "Springer - MathPhys (numeric, brackets)"
+        },
+        "updated": {
+          "$text": "2019-09-25T12:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-socpsych-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "psychology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-socpsych-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-socpsych-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/apa",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/instruct-authors-e.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/manuscript-guidelines-1.0.pdf",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.springer.com/cda/content/document/cda_downloaddocument/Key_Style_Points_1.0.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "This style corresponds to 'Springer SocPsych' in the pdf document 'Key Style Points' at this url"
+        },
+        "title": {
+          "$value": "Springer - SocPsych (author-date)"
+        },
+        "updated": {
+          "$text": "2019-09-25T20:48:24+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "springer-vancouver"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Charles Parnot",
+            "email": "charles.parnot@gmail.com",
+            "uri": "http://twitter.com/cparnot"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien",
+            "email": "citationstyler@gmail.com"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "generic-base"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/springer-vancouver-brackets",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/springer-vancouver-brackets",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.springer.com/gp/authors-editors/book-authors-editors/your-publication-journey/manuscript-preparation",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://dam.springernature.com/file/1iVex7Gr46Q8xLzdF9RNhT/*/Key+Style+Points_Dec_24.pdf?authcred=Q29weVVSTDpDMHB5X1VSTA==",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Based on the document \"Key Style Points 2.0 І December 2024\"."
+        },
+        "title": {
+          "$value": "Springer - NLM/Vancouver (citation-sequence, brackets)"
+        },
+        "updated": {
+          "$text": "2025-09-14T15:13:05+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "taylor-and-francis-chicago-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/taylor-and-francis-chicago-author-date",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/taylor-and-francis-chicago-author-date",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/chicago-author-date-17th-edition",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://files.taylorandfrancis.com/tf_ChicagoAD.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Taylor & Francis Journals adaptation of Chicago-style source citations (with Bluebook for legal citations), author-date system, 17th edition: with expanded page ranges, no substitution of repeated authors with em dashes"
+        },
+        "title": {
+          "$value": "Taylor & Francis Journals Standard Reference Style Guide: Chicago author-date version 2.0"
+        },
+        "title-short": {
+          "$value": "TF-Standard Chicago AD"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "taylor-and-francis-national-library-of-medicine"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/taylor-and-francis-national-library-of-medicine",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/taylor-and-francis-national-library-of-medicine",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/nlm-citation-sequence-brackets",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://files.taylorandfrancis.com/tf_NLM.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "NLM style as used by T & F : Brackets, no et-al, no issue numbers, locators in text possible as per Version 2.2 from 30 May 2023."
+        },
+        "title": {
+          "$value": "Taylor & Francis - NLM/Vancouver (citation-sequence, brackets)"
+        },
+        "title-short": {
+          "$value": "TF-NLM"
+        },
+        "updated": {
+          "$text": "2024-03-11T10:34:15+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "the-institution-of-engineering-and-technology"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "engineering"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/the-institution-of-engineering-and-technology",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/the-institution-of-engineering-and-technology",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/acta-polytechnica",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://digital-library.theiet.org/journals/author-guide",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for all IET Journals"
+        },
+        "title": {
+          "$value": "The Institution of Engineering and Technology"
+        },
+        "title-short": {
+          "$value": "IET"
+        },
+        "updated": {
+          "$text": "2013-05-09T23:17:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "the-lancet"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/the-lancet",
+        "issn": [
+          "0099-5355"
+        ],
+        "eissn": "1474-547X",
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/the-lancet",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/bmj",
+            "@rel": "template"
+          },
+          {
+            "@href": "http://download.thelancet.com/flatcontentassets/authors/lancet-information-for-authors.pdf",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Vancouver style adapted for The Lancet"
+        },
+        "title": {
+          "$value": "The Lancet"
+        },
+        "updated": {
+          "$text": "2012-09-27T22:06:38+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "thieme"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Sebastian Karcher"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Sean Takats",
+            "email": "stakats@gmu.edu"
+          },
+          {
+            "name": "Christoph Mann",
+            "email": "rounzli@googlemail.com"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/thieme-german",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/thieme-german",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.thieme.de/de/autorenlounge/fuer-zeitschriftenautoren-1789.htm",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Modified version of the \"Vancouver Bracket\" for Thieme Journals"
+        },
+        "title": {
+          "$value": "Thieme-German (Deutsch)"
+        },
+        "updated": {
+          "$text": "2021-11-10T14:09:06+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "trends"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Adam Zeilinger",
+            "email": "arzeilinger@gmail.com"
+          }
+        ],
+        "contributor": [
+          {
+            "name": "Julian Onions",
+            "email": "julian.onions@gmail.com"
+          },
+          {
+            "name": "Rintze Zelle",
+            "uri": "http://twitter.com/rintzezelle"
+          },
+          {
+            "name": "Stephen Frank",
+            "uri": "http://www.zotero.org/sfrank"
+          },
+          {
+            "name": "Michael Berkowitz",
+            "email": "mberkowi@gmu.edu"
+          },
+          {
+            "name": "Thomas Kluyver",
+            "email": "takowl@gmail.com"
+          },
+          {
+            "name": "Patrick O'Brien"
+          }
+        ],
+        "category": [
+          {
+            "@citation-format": "numeric"
+          },
+          {
+            "@field": "biology"
+          },
+          {
+            "@field": "medicine"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/trends-journals",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/trends-journals",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.cell.com/trends/ecology-evolution/authors",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "http://www.cell.com/cellpress/trends",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Style for the \"Trends\" journals by Cell Press"
+        },
+        "title": {
+          "$value": "Trends journals"
+        },
+        "updated": {
+          "$text": "2022-09-12T12:37:15+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "turabian-author-date"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "author-date"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "geography"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "political_science"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chicago-author-date-17th-edition",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chicago-author-date-17th-edition",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.chicagomanualofstyle.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/5V67EPX3",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Chicago-style source citations (with Bluebook for legal citations), author-date system, 17th edition"
+        },
+        "title": {
+          "$value": "Chicago Manual of Style 17th edition (author-date)"
+        },
+        "title-short": {
+          "$value": "CMOS/CMS 17e with Bluebook (author-date/AD [15.5])"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "names": [
+        "turabian-fullnote-8"
+      ],
+      "info": {
+        "author": [
+          {
+            "name": "Andrew Dunning",
+            "uri": "https://orcid.org/0000-0003-0464-5036"
+          }
+        ],
+        "contributor": [],
+        "category": [
+          {
+            "@citation-format": "note"
+          },
+          {
+            "@field": "anthropology"
+          },
+          {
+            "@field": "communications"
+          },
+          {
+            "@field": "generic-base"
+          },
+          {
+            "@field": "geography"
+          },
+          {
+            "@field": "history"
+          },
+          {
+            "@field": "humanities"
+          },
+          {
+            "@field": "law"
+          },
+          {
+            "@field": "linguistics"
+          },
+          {
+            "@field": "literature"
+          },
+          {
+            "@field": "philosophy"
+          },
+          {
+            "@field": "political_science"
+          },
+          {
+            "@field": "science"
+          },
+          {
+            "@field": "social_science"
+          },
+          {
+            "@field": "sociology"
+          },
+          {
+            "@field": "theology"
+          }
+        ],
+        "field": [],
+        "id": "http://www.zotero.org/styles/chicago-notes-bibliography-subsequent-author-title-17th-edition",
+        "issn": [],
+        "link": [
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography-subsequent-author-title-17th-edition",
+            "@rel": "self"
+          },
+          {
+            "@href": "http://www.zotero.org/styles/chicago-notes-bibliography",
+            "@rel": "template"
+          },
+          {
+            "@href": "https://www.chicagomanualofstyle.org/",
+            "@rel": "documentation"
+          },
+          {
+            "@href": "https://zotero.org/groups/2205533/collections/5V67EPX3",
+            "@rel": "documentation"
+          }
+        ],
+        "rights": {
+          "$text": "This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 License",
+          "@license": "http://creativecommons.org/licenses/by-sa/3.0/"
+        },
+        "summary": {
+          "$value": "Chicago-style source citations (with Bluebook for legal citations), notes and bibliography system, 17th edition, with author-title subsequent shortened citations (CMOS17 14.34)"
+        },
+        "title": {
+          "$value": "Chicago Manual of Style 17th edition (notes and bibliography, subsequent author-title)"
+        },
+        "title-short": {
+          "$value": "CMOS/CMS 17e with Bluebook (notes and bibliography/NB [14.19], subsequent author-title [14.34])"
+        },
+        "updated": {
+          "$text": "2025-02-09T00:00:00+00:00"
+        }
+      }
+    }
+  ]
+}

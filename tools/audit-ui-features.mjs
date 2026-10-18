@@ -4,12 +4,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { locateControl, hasDeclaration } from './ui-inventory-identity.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const directory = path.join(root, 'docs/reviews/ui-function-inventory-2026-10-02');
 const inventory = JSON.parse(fs.readFileSync(path.join(directory, 'inventory.json'), 'utf8'));
 const verification = JSON.parse(fs.readFileSync(path.join(directory, 'verification.json'), 'utf8'));
 const errors = [];
+// Requested removal of the redundant Settings → Exit item. Native/titlebar
+// exit remains covered by F084/F104; historical inventory rows stay intact.
+const retiredControls = new Map([['S396', 'btn-app-exit']]);
 const sourceCache = new Map();
 function source(relative) {
   const absolute = path.resolve(root, relative);
@@ -27,6 +31,9 @@ for (const [collection, count] of [
   if (inventory[collection].length !== inventory.counts[count]) errors.push(`Wrong count: ${collection}`);
 }
 if (new Set(inventory.features.map(feature => feature.section)).size !== inventory.counts.sections) errors.push('Wrong section count');
+const mathCatalog = JSON.parse(source('assets/math-catalog.json'));
+if (inventory.formulas.length !== mathCatalog.templates.length + mathCatalog.symbols.length
+    || inventory.counts.formulas !== inventory.formulas.length) errors.push('Formula inventory is stale');
 for (const feature of inventory.features) {
   if (!feature.controls.length || !feature.flow || !feature.backend || !feature.frontend.length) errors.push(`Incomplete feature: ${feature.id}`);
   for (const [file, symbol] of feature.frontend) {
@@ -36,11 +43,24 @@ for (const feature of inventory.features) {
 }
 for (const control of inventory.controls) {
   if (!featureIds.has(control.feature_id)) errors.push(`Unassigned control: ${control.inventory_id}`);
-  const line = source(control.source).split(/\r?\n/)[control.line - 1];
-  if (!line || !line.includes(`<${control.tag}`) || (control.id && !line.includes(`id="${control.id}"`))) errors.push(`Stale control location: ${control.inventory_id}`);
+  if (retiredControls.get(control.inventory_id) === control.id) {
+    if (locateControl(source(control.source), control)) errors.push(`Retired control returned: ${control.id}`);
+    continue;
+  }
+  if (!locateControl(source(control.source), control)) errors.push(`Missing control: ${control.inventory_id} ${control.id}`);
 }
 for (const row of [...inventory.api, ...inventory.commands]) {
-  if (!source(row.source).split(/\r?\n/)[row.line - 1]) errors.push(`Invalid source line: ${row.route || row.id}`);
+  const text = source(row.source);
+  const generated = !row.route && /^(?:export|theme)\./.test(row.id) && (() => {
+    const [prefix, item] = row.id.split('.');
+    const variable = prefix === 'export' ? 'fmt' : 'choice';
+    return new RegExp(`\\bid\\s*:\\s*['"]${prefix}\\.['"]\\s*\\+\\s*${variable}\\b`).test(text)
+      && hasDeclaration(text, item);
+  })();
+  const registered = row.route
+    ? hasDeclaration(source('rust/readmd-kernel/src/server.rs'), row.route) && new RegExp(`\\bfn\\s+${escape(row.handler.split('::').at(-1))}\\b`).test(text)
+    : hasDeclaration(text, row.id, 'id') || generated;
+  if (!registered) errors.push(`Missing declaration: ${row.route || row.id}`);
 }
 const reviewed = new Set();
 for (const row of verification.features) {
@@ -54,6 +74,6 @@ if (errors.length) {
   for (const error of errors) process.stderr.write(`${error}\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write(`OK: ${featureIds.size} reviewed flows, ${inventory.controls.length} assigned controls, ${inventory.dynamic.length} dynamic families, ${inventory.api.length} routes; source and evidence links exist.\n`);
+  process.stdout.write(`OK: ${featureIds.size} reviewed flows, ${inventory.controls.length - retiredControls.size} current/assigned controls + ${retiredControls.size} requested retirement, ${inventory.dynamic.length} dynamic families, ${inventory.api.length} routes; source identities and evidence links exist.\n`);
   process.stdout.write('Run the referenced UI and Rust tests to verify behavior. This gate checks inventory coverage and implementation entry points.\n');
 }

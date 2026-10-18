@@ -154,6 +154,10 @@ window.i18n = {
 
   /** 初始化多语言模块（毫秒级极速初始化，零阻塞启动） */
   async init() {
+    // The shell is interactive before preferences finish loading. An explicit
+    // choice made in that interval is newer than automatic language detection.
+    const generation = this.languageEpoch || 0;
+    if (generation) return;
     // 首选语言决策：1. LocalStorage 缓存 2. 系统侦测
     let preferred = null;
     try {
@@ -163,6 +167,7 @@ window.i18n = {
     if (!preferred) {
       preferred = await this.detectSystemLanguage();
     }
+    if ((this.languageEpoch || 0) !== generation) return;
     preferred = preferred || 'zh-CN';
 
     // 如果是默认简体中文，DOM 本身即为中文，直接初始化并载入词库
@@ -173,6 +178,7 @@ window.i18n = {
       const currentLabel = document.getElementById('lang-current-label');
       if (currentLabel) currentLabel.textContent = '简体中文';
       const d = await this.fetchDict('zh-CN');
+      if ((this.languageEpoch || 0) !== generation) return;
       if (d) {
         this.dict = d;
         // zh-CN is the canonical complete dictionary. Reusing it as the
@@ -241,11 +247,13 @@ window.i18n = {
 
   /** 切换语言 */
   async setLanguage(langCode, save = true) {
+    const generation = this.languageEpoch = (this.languageEpoch || 0) + 1;
     if (!langCode || (!this.meta[langCode] && langCode !== 'zh-CN' && langCode !== 'en')) {
       langCode = 'zh-CN';
     }
 
     const dict = await this.fetchDict(langCode);
+    if (generation !== this.languageEpoch) return false;
     if (dict) {
       this.dict = dict;
       this.currentLang = langCode;
@@ -267,6 +275,7 @@ window.i18n = {
 
     // 动态更新 DOM 文本
     this.translateDOM();
+    if (typeof setEditBtn === 'function') setEditBtn(this.t(state.editing ? 'editor.editing' : 'toolbar.edit'));
 
     // 更新菜单中的当前语言标签
     const currentLabel = document.getElementById('lang-current-label');

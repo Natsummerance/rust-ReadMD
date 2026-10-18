@@ -411,6 +411,13 @@ impl HtmlImageResolver {
 /// hence the explicit range.  Any whitespace still reaches `a2b_base64` and
 /// fails its strict-mode check there, exactly like CPython.
 fn decode_data_image(src: &str) -> Option<Resolved> {
+    // Generated figures use self-contained SVG data URIs. Validate before
+    // they enter the shared image pipeline; arbitrary inline XML is rejected.
+    if let Some(encoded)=src.strip_prefix("data:image/svg+xml;base64,") {
+        if encoded.len()>6*1024*1024{return None;}
+        let data=a2b_base64_strict(encoded)?;crate::svg_render::validate(&data).ok()?;
+        return Some(Resolved::Inline{mime:"image/svg+xml".into(),data});
+    }
     static DATA_IMAGE_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = DATA_IMAGE_RE.get_or_init(|| {
         regex::Regex::new(r"^data:image/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/=\s\x1c-\x1f]+)$")
@@ -423,6 +430,7 @@ fn decode_data_image(src: &str) -> Option<Resolved> {
     let data = a2b_base64_strict(&caps[2])?;
     Some(Resolved::Inline { mime: format!("image/{}", &caps[1]), data })
 }
+fn inline_image_extension(mime:&str)->&str {if mime=="image/svg+xml"{"svg"}else{mime.rsplit('/').next().unwrap_or("png")}}
 
 /// `binascii.a2b_base64(data, strict_mode=True)` (Modules/binascii.c, CPython
 /// 3.11) ported statement for statement, so every strict-mode rejection —
@@ -977,12 +985,23 @@ fn build_export_css(options: &Value) -> String {
     ));
     css.push("h1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }".to_string());
     for idx in 1..=6usize {
-        if style_bool(heading_at(options, &format!("h{idx}")), "pageBreakBefore", false) {
+        let heading=heading_at(options, &format!("h{idx}"));
+        if style_bool(heading, "pageBreakBefore", false) {
             css.push(format!("h{idx} {{ break-before:page; }}"));
+        }
+        for (key,property) in [("keepNext","after"),("keepLines","inside")]{
+            if val_at(heading,key).is_some(){let value=if style_bool(heading,key,true){"avoid"}else{"auto"};
+                css.push(format!("h{idx} {{ break-{property}:{value}; page-break-{property}:{value}; }}"));
+            }
         }
     }
     css.push("@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }".to_string());
+    // After the legacy print rule so explicit off wins in paged output too.
+    let paragraph_css=crate::publication_layout::paragraph_flow_css(options);
+    if !paragraph_css.is_empty(){css.push(paragraph_css);}
     css.push(".readmd-pagebreak { break-after:page; page-break-after:always; }".to_string());
+    let scholarly_css=crate::export_styles::scientific_table_css(options,"#content");
+    if !scholarly_css.is_empty(){css.push(scholarly_css);}
     css.join("\n")
 }
 
@@ -1089,10 +1108,35 @@ pub fn export_html(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
+    crate::publication_typography::validate_export("html", content, options).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
+    crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
     let mut warns: Vec<String> = Vec::new();
+    if crate::publication_blocks::has_overrides(content){warns.push("publication_local_style_unsupported".into());}
     // `__init__.py:131` runs before `html_render.render`, so image warnings
     // precede the asset warnings.
-    let embedded_md = embed_images_for_html(content, base_dir, &mut warns);
+    let style=crate::export_styles::sanitize(options);
+    // Legacy HTML options coerced flat title/author/subject values. Keep that
+    // boundary compatible; new structured metadata and document declarations
+    // still use the strict shared model without stringifying people or IDs.
+    let source_declared=crate::publication_metadata::from_source(content,&Value::Null,source_name).map_err(|e|e.code)?.declared;
+    let legacy_html=!source_declared&&options.get("meta").and_then(Value::as_object).is_none_or(|meta|meta.keys().all(|key|matches!(key.as_str(),"title"|"author"|"subject")))&&options.pointer("/frontMatter/mode").and_then(Value::as_str).is_none_or(|mode|mode=="none");
+    let mut publication_options=options.clone();if legacy_html&&publication_options.is_object(){publication_options["meta"]=serde_json::json!({});}
+    let metadata=crate::publication_metadata::from_source(content,&publication_options,source_name).map_err(|e|e.code)?;
+    warns.extend(crate::publication_metadata_formats::warnings(&metadata));
+    let publication=crate::publication::prepare_with_options(content,base_dir,&publication_options).map_err(|e|e.code.to_string())?;
+    warns.extend(publication.warnings);
+    let reader_content=publication.projection.reader_content(content).map_err(|e|e.code.to_string())?;
+    let reader_content=section_flow_source(&reader_content,&style)?;
+    if crate::publication_sections::has_sections(&crate::md_ast::parse(content)){warns.push("publication_layout_paged_unsupported".into());}
+    let math=crate::html_math::lower_dsl(crate::md_ast::source_without_front_matter(&reader_content),style["typography"]["size"].as_f64().unwrap_or(12.0))?;
+    warns.extend(math.warnings.iter().cloned());
+    let front=crate::publication_metadata::front_matter_blocks(&metadata,options);
+    let front=if front.is_empty(){String::new()}else{
+        crate::epub_writer::render_chapters(&crate::md_ast::Document{front_matter:None,blocks:front},"none",&mut |_|None).into_iter().map(|chapter|chapter.body).collect::<String>()
+    };
+    let html_markdown=if front.is_empty(){math.markdown.to_string()}else{format!("{front}\n\n{}",math.markdown)};
+    let embedded_md = embed_images_for_html(&html_markdown, base_dir, &mut warns);
 
     let marked_js = read_asset_file(assets_dir, "marked.min.js");
     let mathjax_js = read_asset_file(assets_dir, "mathjax/tex-svg.js");
@@ -1103,7 +1147,10 @@ pub fn export_html(
         warns.push("MathJax 未找到，公式可能无法渲染".to_string());
     }
 
-    let css = build_export_css(options);
+    let display_options=crate::export_styles::html_display_options(options);
+    let mut css = build_export_css(&display_options);
+    if options["htmlTheme"].as_str()==Some("dark") {css.push_str("\n:not(pre) > code { color:#ff99b0; }");}
+    if math.formulas>0{css.push('\n');css.push_str(crate::html_math::CSS);}
     // `plugin_runtime.highlighted_blocks` / `.keywords` are optional-plugin
     // bridges: `run_plugin('pygments', ..., default={})` and
     // `run_plugin('jieba', ..., default='')` return their default whenever the
@@ -1112,7 +1159,7 @@ pub fn export_html(
     // disabled-plugin path as `texmd::latex_label`.
     let highlights = "{}".to_string();
     let keyword_text = "";
-    let title = {
+    let title = if metadata.declared {metadata.title.clone()} else {
         let meta_title = meta_text(options, "meta", "title");
         if !meta_title.is_empty() {
             meta_title
@@ -1123,8 +1170,10 @@ pub fn export_html(
         }
     };
     let md_esc = json_dump_escaped(&embedded_md);
+    let language=metadata.language.clone();
 
-    let html = EXPORT_TEMPLATE
+    let mut html = EXPORT_TEMPLATE
+        .replacen("<html lang=\"zh-CN\">",&format!("<html lang=\"{}\">",esc_attr(language.as_deref().unwrap_or("zh-CN"))),1)
         .replace("__TITLE__", &esc_attr(&title))
         .replace("__CSS__", &css)
         .replace("__KEYWORDS__", &esc_attr(keyword_text))
@@ -1132,13 +1181,17 @@ pub fn export_html(
         .replace("__MARKED__", &marked_js)
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
+    if metadata.declared{
+        let tags=format!("<meta name=\"author\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"readmd-publication\" content=\"{}\">",esc_attr(&metadata.author_text()),esc_attr(&metadata.keywords.join("; ")),esc_attr(&serde_json::to_string(&metadata).map_err(|_|"publication_metadata_type")?));
+        html=html.replacen("</head>",&format!("{tags}\n</head>"),1);
+    }
 
     if let Some(parent) = Path::new(out_path).parent() {
         let _ = fs::create_dir_all(parent);
     }
     // `render()` writes with `newline='\n'`, so no translation happens and the
     // string bytes are the file bytes.
-    fs::write(out_path, html.as_bytes()).map_err(|e| format!("Failed to write HTML: {}", e))?;
+    crate::content::write_bytes_atomic(Path::new(out_path), html.as_bytes()).map_err(|e| format!("Failed to write HTML: {}", e))?;
     let size = fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
 
     Ok(ExportResult {
@@ -1155,6 +1208,143 @@ pub fn export_html(
 // LaTeX Export
 // ============================================================================
 
+fn tex_core_text_font_name() -> String {
+    use sha2::Digest;
+    format!("readmd-core-{:x}.ttf", sha2::Sha256::digest(crate::publication_fonts::CORE_TEXT_FALLBACK))
+}
+
+fn tex_resource_metadata_is_plain(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() { return false; }
+    #[cfg(windows)] {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 { return false; }
+    }
+    true
+}
+
+fn tex_core_resource_matches(path: &Path, expected: &[u8]) -> std::io::Result<bool> {
+    use std::io::Read;
+    use sha2::Digest;
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)] {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0020_0000).share_mode(1);
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || !tex_resource_metadata_is_plain(&metadata) || metadata.len() != expected.len() as u64 {
+        return Ok(false);
+    }
+    let mut actual = Vec::with_capacity(expected.len());
+    file.take(expected.len() as u64 + 1).read_to_end(&mut actual)?;
+    Ok(actual.len() == expected.len() && sha2::Sha256::digest(&actual) == sha2::Sha256::digest(expected))
+}
+
+fn tex_resource_handle(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)] {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x0220_0000).share_mode(7);
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    if !tex_resource_metadata_is_plain(&file.metadata()?) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Not a plain TeX resource"));
+    }
+    Ok(file)
+}
+
+fn tex_resource_same_identity(original: &fs::File, path: &Path) -> bool {
+    let Ok(current) = tex_resource_handle(path) else { return false; };
+    #[cfg(windows)] {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle}};
+        let mut before = BY_HANDLE_FILE_INFORMATION::default();
+        let mut after = BY_HANDLE_FILE_INFORMATION::default();
+        unsafe {
+            if GetFileInformationByHandle(HANDLE(original.as_raw_handle()), &mut before).is_err()
+                || GetFileInformationByHandle(HANDLE(current.as_raw_handle()), &mut after).is_err() { return false; }
+        }
+        return before.dwVolumeSerialNumber == after.dwVolumeSerialNumber
+            && before.nFileIndexHigh == after.nFileIndexHigh && before.nFileIndexLow == after.nFileIndexLow;
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::MetadataExt;
+        let (Ok(before), Ok(after)) = (original.metadata(), current.metadata()) else { return false; };
+        return before.dev() == after.dev() && before.ino() == after.ino();
+    }
+    #[cfg(not(any(windows, unix)))] { let _ = (original, current); false }
+}
+
+struct TexCoreTextResources {
+    created: Vec<(PathBuf, fs::File)>,
+    directory: Option<(PathBuf, fs::File)>,
+    committed: bool,
+}
+impl Drop for TexCoreTextResources {
+    fn drop(&mut self) {
+        if self.committed { return; }
+        while let Some((path, original)) = self.created.pop() {
+            if tex_resource_same_identity(&original, &path) { let _ = fs::remove_file(&path); }
+        }
+        if let Some((path, original)) = &self.directory {
+            if tex_resource_same_identity(original, path) { let _ = fs::remove_dir(path); }
+        }
+    }
+}
+
+fn tex_core_text_resources(assets_dir: &Path, font_name: &str) -> Result<TexCoreTextResources, String> {
+    let license_name = format!("{}.LICENSE.txt", font_name.trim_end_matches(".ttf"));
+    let resources = [(font_name, crate::publication_fonts::CORE_TEXT_FALLBACK),
+        (license_name.as_str(), crate::publication_fonts::CORE_TEXT_FALLBACK_LICENSE)];
+    fs::create_dir_all(assets_dir.parent().filter(|path| !path.as_os_str().is_empty()).unwrap_or(Path::new(".")))
+        .map_err(|_| "latex_workspace_failed")?;
+    let created_directory = match fs::create_dir(assets_dir) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(_) => return Err("latex_workspace_failed".into()),
+    };
+    let directory_handle = tex_resource_handle(assets_dir).map_err(|_| "latex_workspace_failed")?;
+    let mut owned = TexCoreTextResources { created: Vec::new(),
+        directory: created_directory.then(|| (assets_dir.to_path_buf(), directory_handle)), committed: false };
+    let metadata = fs::symlink_metadata(assets_dir).map_err(|_| "latex_workspace_failed")?;
+    if !metadata.is_dir() || !tex_resource_metadata_is_plain(&metadata) {
+        return Err("latex_workspace_failed: core text resource directory is not a plain directory".into());
+    }
+    // Check both paths before creating either resource. Never replace a foreign
+    // file, even if it occupies this application's content-addressed name.
+    let mut missing = Vec::new();
+    for (name, bytes) in resources {
+        let path = assets_dir.join(name);
+        match tex_core_resource_matches(&path, bytes) {
+            Ok(true) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => missing.push((path, bytes)),
+            _ => return Err("latex_workspace_failed: core text resource conflicts with existing content".into()),
+        }
+    }
+    for (path, bytes) in missing {
+        let mut staged = tempfile::Builder::new().prefix(".readmd-font-").tempfile_in(assets_dir)
+            .map_err(|_| "latex_workspace_failed")?;
+        staged.write_all(bytes).and_then(|_| staged.as_file().sync_all()).map_err(|_| "latex_workspace_failed")?;
+        match staged.persist_noclobber(&path) {
+            Ok(file) => owned.created.push((path, file)),
+            Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists
+                && tex_core_resource_matches(&path, bytes).unwrap_or(false) => {},
+            Err(_) => return Err("latex_workspace_failed: core text resource could not be committed without replacement".into()),
+        }
+    }
+    Ok(owned)
+}
+
 /// LaTeX export built on the shared AST ([`crate::md_ast`]) and
 /// [`crate::latex_writer`].
 ///
@@ -1168,20 +1358,96 @@ pub fn export_tex(
     options: &Value,
     source_name: &str,
 ) -> Result<ExportResult, String> {
-    let doc = crate::md_ast::parse(content);
+    export_tex_with_resources(content, base_dir, out_path, options, source_name).map(|result| result.0)
+}
+
+/// Preserve the existing explicit TeX controls only where the sparse original
+/// request has no canonical publication value. Never infer user intent from
+/// the sanitized profile, which already contains defaults for every field.
+fn tex_publication_style(options:&Value,mut style:Value)->Result<Value,String>{
+    let tex=|key:&str|options.pointer(&format!("/tex/{key}")).or_else(||options.pointer(&format!("/latex/{key}")));
+    let canonical=|pointer:&str|options.pointer(pointer).is_some_and(|v|!v.is_null());
+    if let Some(value)=tex("fontSize"){
+        let size=match value.as_str(){Some("10pt")=>10.,Some("11pt")=>11.,Some("12pt")=>12.,_=>return Err("latex_invalid_options".into())};
+        if !canonical("/typography/size"){style["typography"]["size"]=serde_json::json!(size);}
+    }
+    if let Some(value)=tex("paperSize"){
+        let size=match value.as_str(){Some("a4paper")=>"A4",Some("a5paper")=>"A5",Some("b5paper")=>"B5",Some("letterpaper")=>"Letter",Some("legalpaper")=>"Legal",_=>return Err("latex_invalid_options".into())};
+        if !canonical("/page/size")&&!canonical("/page/width")&&!canonical("/page/height"){style["page"]["size"]=serde_json::json!(size);}
+    }
+    if let Some(value)=tex("margin"){
+        // Same literal units as the managed compiler's validated TeX contract;
+        // no macros, arithmetic, arbitrary TeX or filesystem interpretation.
+        let value=value.as_str().ok_or("latex_invalid_options")?;
+        let (number,factor)=if let Some(n)=value.strip_suffix("mm"){(n,1.)}else if let Some(n)=value.strip_suffix("cm"){(n,10.)}else if let Some(n)=value.strip_suffix("in"){(n,25.4)}else{return Err("latex_invalid_options".into());};
+        let digits=number.strip_prefix('+').unwrap_or(number);
+        if digits.is_empty()||digits.bytes().any(|b|!b.is_ascii_digit()&&b!=b'.')||digits.bytes().filter(|b|*b==b'.').count()>1{return Err("latex_invalid_options".into());}
+        let number=number.parse::<f64>().map_err(|_|"latex_invalid_options")?;
+        let mm=number*factor;
+        if !number.is_finite()||number<=0.||number>60.||!mm.is_finite()||mm>60.{return Err("latex_invalid_options".into());}
+        for key in ["marginTop","marginRight","marginBottom","marginLeft"]{
+            if !canonical(&format!("/page/{key}")){style["page"][key]=serde_json::json!(mm);}
+        }
+    }
+    if !canonical("/toc/enabled"){
+        if let Some(value)=tex("toc").and_then(Value::as_bool){style["toc"]["enabled"]=serde_json::json!(value);}
+    }
+    Ok(style)
+}
+
+/// The managed PDF caller receives the actual typed resource requirement,
+/// without parsing generated TeX or treating a warning as a control message.
+pub(crate) fn export_tex_with_resources(
+    content: &str,
+    base_dir: &str,
+    out_path: &str,
+    options: &Value,
+    source_name: &str,
+) -> Result<(ExportResult, bool), String> {
+    export_tex_with_geometry(content,base_dir,out_path,options,source_name).map(|(result,used,_)|(result,used))
+}
+
+/// The private generated-source context follows the actual managed task. It
+/// never travels in JSON or gets reconstructed from arbitrary engine output.
+pub(crate) fn export_tex_with_geometry(
+    content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str,
+) -> Result<(ExportResult, bool, Option<crate::latex_writer::ParagraphGeometry>), String> {
+    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    export_tex_with_geometry_and_lines(content,base_dir,out_path,options,source_name,resolved.line_context())
+}
+
+pub(crate) fn export_tex_with_geometry_and_lines(
+    content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,
+    lines:crate::publication_typography::LineContext,
+) -> Result<(ExportResult,bool,Option<crate::latex_writer::ParagraphGeometry>),String> {
+    crate::publication_typography::validate_export("tex", content, options).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
+    crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
+    let engine_option=options.pointer("/tex/bibEngine").or_else(||options.pointer("/latex/bibEngine"));
+    if engine_option.is_some_and(|value|!value.is_null()&&!value.as_str().is_some_and(|engine|matches!(engine,""|"biblatex"|"natbib"|"bibtex"))){return Err("latex_invalid_options".into());}
+    let native_engine=engine_option.and_then(Value::as_str).filter(|engine|!engine.is_empty()&&options.pointer("/tex/renderBibliography").or_else(||options.pointer("/latex/renderBibliography")).and_then(Value::as_bool)!=Some(false));
+    if native_engine.is_some()&&crate::publication_metadata::bibliography_sources(content).map_err(|e|e.code)?.iter().any(|name|Path::new(name).extension().is_some_and(|ext|ext.eq_ignore_ascii_case("json"))){return Err("academic_tex_context".into());}
+    let (doc,citation_warnings)=if native_engine.is_some(){native_citation_document(content,options)?}else{publication_document(content,base_dir,options)?};
+    if crate::math_spacing::document_has_spacing(&doc).map_err(str::to_string)?{return Err("math_unsupported_extension".into());}
+    if native_engine.is_none(){validate_static_citation_weight(&doc)?;}
+    let body_block_count = doc.blocks.len();
+    let (doc,publication_style,metadata)=crate::publication_metadata_formats::prepare(&doc,options,source_name,"tex")?;
+    let front_block_count = doc.blocks.len().saturating_sub(body_block_count);
+    let publication_style=tex_publication_style(options,publication_style)?;
+    let resolved_sections=crate::publication_sections::resolve(&doc,&publication_style).map_err(str::to_string)?;
     let opt_str = |ptrs: &[&str]| -> Option<String> {
         ptrs.iter()
             .filter_map(|p| options.pointer(p).and_then(|v| v.as_str()))
             .map(|s| s.trim().to_string())
             .find(|s| !s.is_empty())
     };
-    let title = opt_str(&["/meta/title", "/tex/title", "/latex/title"])
+    let title = if metadata.declared {metadata.title.clone()} else {opt_str(&["/meta/title", "/tex/title", "/latex/title"])
         .or_else(|| doc.meta("title"))
         .or_else(|| Some(source_name.trim().to_string()).filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| "Document".to_string());
-    let author = opt_str(&["/meta/author", "/tex/author", "/latex/author"])
+        .unwrap_or_else(|| "Document".to_string())};
+    let author = if metadata.declared {metadata.author_text()} else {opt_str(&["/meta/author", "/tex/author", "/latex/author"])
         .or_else(|| doc.meta("author"))
-        .unwrap_or_default();
+        .unwrap_or_default()};
     let tex_bool = |key: &str| -> Option<bool> {
         options
             .pointer(&format!("/tex/{key}"))
@@ -1192,26 +1458,47 @@ pub fn export_tex(
     let mut lopts = crate::latex_writer::LatexOptions {
         title,
         author,
-        date: doc.meta("date"),
+        date: metadata.date.clone().or_else(||doc.meta("date")),
         doc_class: opt_str(&["/tex/docClass", "/latex/docClass"]).unwrap_or(defaults.doc_class),
         font_size: opt_str(&["/tex/fontSize", "/latex/fontSize"]).unwrap_or(defaults.font_size),
         paper: opt_str(&["/tex/paperSize", "/latex/paperSize"]).unwrap_or(defaults.paper),
         margin: opt_str(&["/tex/margin", "/latex/margin"]).unwrap_or(defaults.margin),
         use_ctex: tex_bool("useCtex"),
-        toc: tex_bool("toc").unwrap_or(false),
+        toc: publication_style["toc"]["enabled"].as_bool().unwrap_or(false),
         bib_engine: opt_str(&["/tex/bibEngine", "/latex/bibEngine"])
             .filter(|v| matches!(v.as_str(), "biblatex" | "natbib" | "bibtex"))
-            .unwrap_or_else(|| "biblatex".into()),
+            .unwrap_or_default(),
         bibliography: Vec::new(),
+        core_text_font: None,
+        publication_sections: resolved_sections,
+        publication_style: Some(publication_style),
+        publication_front_block_count: front_block_count,
+        publication_legacy_line_height: lines.legacy_multiple(),
     };
+    // Managed TeX consumes the same typed CSL tree as all other PDF engines.
+    // Standalone TeX may opt into a bibliography engine and exported sources.
+    if tex_bool("renderBibliography")==Some(false) { lopts.bib_engine.clear(); }
+    crate::latex_writer::validate_native(&doc,&lopts.bib_engine)?;
+    crate::latex_writer::validate_paragraphs(&doc,&lopts)?;
 
     // `<stem>.assets/` beside the output, created only if an image is copied.
     let out = Path::new(out_path);
     let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("document").to_string();
     let assets_name = format!("{stem}.assets");
     let assets_dir = out.parent().unwrap_or_else(|| Path::new(".")).join(&assets_name);
+    let core_font_name = tex_core_text_font_name();
+    lopts.core_text_font = Some(format!("{assets_name}/{core_font_name}"));
     let resolver = std::cell::RefCell::new(HtmlImageResolver::new(base_dir));
-    let warns = std::cell::RefCell::new(Vec::<String>::new());
+    let warns = std::cell::RefCell::new(citation_warnings);
+    // The managed runtime uses its reviewed Latin/CJK faces, not the platform
+    // family requested by the shared publication profile. Size/layout is shared;
+    // passing the style must never certify an unavailable font as preserved.
+    if !warns.borrow().iter().any(|warning|warning=="publication_font_substituted"){
+        warns.borrow_mut().push("publication_font_substituted".into());
+    }
+    warns.borrow_mut().extend(crate::publication_metadata_formats::warnings(&metadata));
+    if crate::latex_writer::has_small_caps(&doc){warns.borrow_mut().push("font_fallback: TeX Gyre Termes".into());}
+    if crate::latex_writer::has_unsupported_local_styles_with_spacing(&doc,lopts.publication_style.as_ref()){warns.borrow_mut().push("publication_local_style_unsupported".into());}
     let copied = std::cell::RefCell::new(Vec::<(String, String)>::new());
     let images = |src: &str| -> Option<String> {
         if let Some((_, rel)) = copied.borrow().iter().find(|(s, _)| s == src) {
@@ -1249,7 +1536,7 @@ pub fn export_tex(
     };
     {
         let root = Path::new(base_dir).canonicalize().ok();
-        for (index, name) in doc.meta_list("bibliography").iter().enumerate() {
+        for (index, name) in crate::publication_metadata::bibliography_sources(content).map_err(|e|e.code)?.iter().filter(|_|!lopts.bib_engine.is_empty()).enumerate() {
             let name = name.as_str();
             if name.is_empty() { continue; }
             let source = Path::new(base_dir).join(name).canonicalize().ok();
@@ -1265,20 +1552,31 @@ pub fn export_tex(
             }
         }
     }
-    let tex = crate::latex_writer::render_document(&doc, &lopts, &images);
+    let (tex, core_text_used, mut geometry) = crate::latex_writer::render_document_with_geometry(&doc, &lopts, &images)?;
+    if let Some(context) = &mut geometry {
+        let directory = out.parent().unwrap_or_else(||Path::new("."));
+        let directory = dunce::canonicalize(directory).map_err(|_|"latex_workspace_failed")?;
+        context.bind_worker_directory(&directory)?;
+    }
+    let mut core_resources = if core_text_used {
+        let resources = tex_core_text_resources(&assets_dir, &core_font_name)?;
+        warns.borrow_mut().push("font_fallback: DejaVu Sans".into());
+        Some(resources)
+    } else { None };
 
     crate::content::write_bytes_atomic(out, tex.as_bytes())
         .map_err(|e| format!("Failed to write TeX: {}", e))?;
+    if let Some(resources) = &mut core_resources { resources.committed = true; }
     let size = fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
 
-    Ok(ExportResult {
+    Ok((ExportResult {
         ok: true,
         path: Some(out_path.to_string()),
         size: Some(size),
         warns: Some(warns.into_inner()),
         error: None,
         canceled: Some(false),
-    })
+    }, core_text_used, geometry))
 }
 
 // ============================================================================
@@ -1341,27 +1639,6 @@ fn py_repr(v: &Value) -> String {
     }
 }
 
-/// Python f-string number rendering: `11` stays `11`, `11.0` becomes `11.0`.
-fn py_number_text(n: &serde_json::Number) -> String {
-    if let Some(i) = n.as_i64() {
-        return i.to_string();
-    }
-    if let Some(u) = n.as_u64() {
-        return u.to_string();
-    }
-    match n.as_f64() {
-        Some(f) => {
-            let s = f.to_string();
-            if s.contains('.') || s.contains('e') || s.contains("inf") || s.contains("NaN") {
-                s
-            } else {
-                format!("{s}.0")
-            }
-        }
-        None => n.to_string(),
-    }
-}
-
 /// `x = opts.get(key) or {}` followed by `x.get(...)` in Python.
 ///
 /// A truthy non-dict value makes Python raise `AttributeError`, which the API
@@ -1390,6 +1667,7 @@ fn nested_get(opts: &Value, name: &str, key: &str) -> Result<Value, String> {
 
 /// `epub_render.build_epub_css`
 pub(crate) fn build_epub_css(opts: &Value) -> Result<String, String> {
+    let numeric = crate::epub_writer::numeric_profile(opts).map_err(str::to_string)?;
     let epub_opts = sub_dict(opts, "epub")?;
     let pick = |key: &str, fallback: Value| -> Value {
         match epub_opts.get(key) {
@@ -1398,41 +1676,10 @@ pub(crate) fn build_epub_css(opts: &Value) -> Result<String, String> {
         }
     };
 
-    // font_size = epub_opts.get('fontSize') or opts.get('typography', {}).get('size') or 11
-    let font_size = match epub_opts.get("fontSize") {
-        Some(v) if py_truthy(v) => v.clone(),
-        _ => {
-            let size = nested_get(opts, "typography", "size")?;
-            if py_truthy(&size) {
-                size
-            } else {
-                Value::from(11)
-            }
-        }
-    };
-    // line_height = epub_opts.get('lineHeight') or opts.get('typography', {}).get('lineHeight') or 1.8
-    let line_height = match epub_opts.get("lineHeight") {
-        Some(v) if py_truthy(v) => v.clone(),
-        _ => {
-            let lh = nested_get(opts, "typography", "lineHeight")?;
-            if py_truthy(&lh) {
-                lh
-            } else {
-                Value::from(1.8)
-            }
-        }
-    };
-    let margin_v = pick("marginV", Value::from(5));
-    let margin_h = pick("marginH", Value::from(8));
     let font_family = py_str(&pick(
         "fontFamily",
         Value::String("-apple-system, BlinkMacSystemFont, \"PingFang SC\", \"Microsoft YaHei\", serif".to_string()),
     ));
-
-    let num = |v: &Value| match v {
-        Value::Number(n) => py_number_text(n),
-        other => py_str(other),
-    };
 
     Ok(format!(
         r#"@charset "utf-8";
@@ -1481,11 +1728,13 @@ th, td {{
     text-align: left;
 }}
 th {{ background-color: #f8fafc; }}
+{data_table_reflow_css}
 "#,
-        fs = num(&font_size),
-        mv = num(&margin_v),
-        mh = num(&margin_h),
-        lh = num(&line_height),
+        fs = numeric.font_size,
+        mv = numeric.margin_v,
+        mh = numeric.margin_h,
+        lh = numeric.line_height,
+        data_table_reflow_css = crate::epub_writer::DATA_TABLE_REFLOW_CSS,
     ))
 }
 
@@ -1502,18 +1751,66 @@ pub fn epub_build_bytes(
     book_uuid: &str,
     mod_time: &str,
 ) -> Result<(Vec<u8>, Vec<String>), String> {
+    let (entries,warnings)=epub_build_entries(markdown,base_dir,options,title,author,language,book_uuid,mod_time)?;
+    Ok((write_zip(&entries)?,warnings))
+}
+
+/// Bounded image staging shared with the managed publication writer. The
+/// engine receives only these bytes, never the user's source directory.
+pub(crate) fn publication_image(base:&str,src:&str,warnings:&mut Vec<String>)->Result<Option<(Vec<u8>,String)>,String>{
+    let Some(resolved)=HtmlImageResolver::new(base).resolve(src,warnings)else{return Ok(None)};
+    let (bytes,mime)=match resolved{
+        Resolved::Inline{mime,data}=>(data,mime),
+        Resolved::File(path)=>{
+            if fs::metadata(&path).map_err(|_|"typst_invalid_content")?.len()>32*1024*1024{return Err("typst_output_limit".into());}
+            let mime=mime_image_of(&path).unwrap_or("").to_string();(fs::read(&path).map_err(|_|"typst_invalid_content")?,mime)
+        },
+    };
+    let extension=match mime.as_str(){"image/png"=>"png","image/jpeg"=>"jpg","image/gif"=>"gif","image/webp"=>"webp","image/svg+xml"=>{
+        crate::svg_render::validate(&bytes).map_err(|_|"typst_invalid_content")?;"svg"
+    },_=>return Err("typst_invalid_content".into())};
+    Ok(Some((bytes,extension.into())))
+}
+
+/// The actual publication resources, also consumed by the reflow preview.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn epub_build_entries(
+    markdown:&Value,base_dir:&str,options:&Value,title:&str,author:&str,language:&str,book_uuid:&str,mod_time:&str,
+) -> Result<(Vec<ZipEntry>,Vec<String>),String> {
     // `markdown_content.splitlines()` requires a str: `None` (JSON null) and
     // every other non-str raise AttributeError in Python -> `export_failed`.
     let markdown = match markdown {
         Value::String(s) => s.clone(),
         _ => return Err(EPI_TYPE_ERROR.to_string()),
     };
+    crate::epub_writer::validate_numeric_request(options).map_err(str::to_string)?;
+    let mut navigation_request=crate::publication_navigation::preflight_export("epub",&markdown,options).map_err(|e|e.code.to_string())?;
+    crate::publication_typography::validate_export("epub", &markdown, options).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(&markdown).map_err(str::to_string)?;
+    crate::publication_blocks::validate_geometry(&markdown,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
+    // All EPUB entry points (legacy bridge, MCP and unified export) share CSL.
+    crate::math_dsl::expand_markdown(&markdown).map_err(str::to_string)?;
+    let markdown=crate::scientific_figures::materialize(&markdown,options)?;
     let opts = match options {
         Value::Object(_) => options.clone(),
         Value::Null => Value::Object(serde_json::Map::new()),
         _ => return Err(EPI_TYPE_ERROR.to_string()),
     };
+    let opts=crate::publication_metadata_formats::format_options(&opts,"epub")?;
+    let epub_numeric=crate::epub_writer::numeric_profile(&opts).map_err(str::to_string)?;
     let epub_opts = sub_dict(&opts, "epub")?;
+    // Select the book's effective language before CSL. Every entry point,
+    // including the legacy byte builder, now uses the same value for both
+    // rendered references and OPF/XHTML declarations.
+    let resolved=crate::publication_metadata::from_source(&markdown,&opts,title).map_err(|e|e.code)?;
+    let book_lang = resolved.language.clone()
+        .or_else(||resolved.cleared_fields.contains("language").then(||"en".into()))
+        .or_else(||crate::md_ast::publication_language_tag(language))
+        .unwrap_or_else(||"zh-CN".into());
+    let publication = crate::publication::prepare_with_language(&markdown, base_dir, Some(&book_lang)).map_err(|e|e.code.to_string())?;
+    let source_doc=crate::md_ast::parse_prepared(&markdown,&publication.projection).map_err(|e|e.code.to_string())?;
+    let (source_doc,publication_style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(&source_doc,&opts,title,"epub")?;
+    crate::publication_sections::resolve(&source_doc,&publication_style).map_err(str::to_string)?;
 
     // book_title = epub_opts.get('title') or opts.get('meta', {}).get('title') or title or "ReadMD 电子书"
     let mut book_title_v = epub_opts.get("title").filter(|v| py_truthy(v)).cloned().unwrap_or(Value::Null);
@@ -1521,19 +1818,26 @@ pub fn epub_build_bytes(
         book_title_v = nested_get(&opts, "meta", "title")?;
     }
     if !py_truthy(&book_title_v) {
+        book_title_v=source_doc.meta("title").map(Value::String).unwrap_or(Value::Null);
+    }
+    if !py_truthy(&book_title_v) {
         book_title_v = Value::String(title.to_string());
     }
     if !py_truthy(&book_title_v) {
         book_title_v = Value::String("ReadMD 电子书".to_string());
     }
-    let book_title = match book_title_v {
+    let book_title = if metadata.declared {metadata.title.clone()} else {match book_title_v {
         Value::String(s) => s,
         _ => return Err(EPI_TYPE_ERROR.to_string()),
-    };
+    }};
 
     let mut book_author_v = epub_opts.get("author").filter(|v| py_truthy(v)).cloned().unwrap_or(Value::Null);
     if !py_truthy(&book_author_v) {
         book_author_v = nested_get(&opts, "meta", "author")?;
+    }
+    if !py_truthy(&book_author_v) {
+        let authors=source_doc.meta_list("author");
+        if !authors.is_empty(){book_author_v=Value::String(authors.join(", "));}
     }
     if !py_truthy(&book_author_v) {
         book_author_v = Value::String(author.to_string());
@@ -1541,29 +1845,20 @@ pub fn epub_build_bytes(
     if !py_truthy(&book_author_v) {
         book_author_v = Value::String("ReadMD Author".to_string());
     }
-    let book_author = match book_author_v {
+    let book_author = if metadata.declared {metadata.author_text()} else {match book_author_v {
         Value::String(s) => s,
         _ => return Err(EPI_TYPE_ERROR.to_string()),
-    };
+    }};
 
-    let book_lang = epub_opts
-        .get("language")
-        .filter(|v| py_truthy(v))
-        .map(py_str)
-        .or_else(|| {
-            let param = Value::String(language.to_string());
-            if py_truthy(&param) { Some(py_str(&param)) } else { None }
-        })
-        .unwrap_or_else(|| "zh-CN".to_string());
     let book_publisher = match epub_opts.get("publisher").filter(|v| py_truthy(v)) {
         Some(Value::String(s)) => s.clone(),
         Some(_) => return Err(EPI_TYPE_ERROR.to_string()),
-        None => "ReadMD".to_string(),
+        None => source_doc.meta("publisher").unwrap_or_else(||"ReadMD".to_string()),
     };
     let book_isbn = match epub_opts.get("isbn").filter(|v| py_truthy(v)) {
         Some(Value::String(s)) => s.clone(),
         Some(_) => return Err(EPI_TYPE_ERROR.to_string()),
-        None => String::new(),
+        None => source_doc.meta("isbn").unwrap_or_default(),
     };
     let split_level = epub_opts
         .get("splitLevel")
@@ -1571,14 +1866,51 @@ pub fn epub_build_bytes(
         .map(py_str)
         .unwrap_or_else(|| "h1".to_string());
 
-    let custom_css = format!("{}\n{}", build_epub_css(&opts)?, crate::epub_writer::EXTRA_CSS);
+    let custom_css = format!("{}\n{}\n{}", build_epub_css(&opts)?, crate::epub_writer::EXTRA_CSS,crate::epub_writer::profile_css(&opts));
 
     // Local images are packaged once each as `OEBPS/images/img_N.ext`.
-    let mut warns: Vec<String> = Vec::new();
+    let mut warns: Vec<String> = publication.warnings;
+    if let Some(warning)=crate::publication_navigation::localize(&mut navigation_request,&book_lang){warns.push(warning.into());}
+    if crate::publication_sections::has_sections(&source_doc){warns.push("publication_layout_paged_unsupported".into());}
+    warns.extend(crate::publication_metadata_formats::warnings(&metadata));
+    warns.extend(crate::epub_writer::mathml_alignment_warnings(&source_doc));
     let mut resolver = HtmlImageResolver::new(base_dir);
     let mut packaged: Vec<(String, String, Vec<u8>)> = Vec::new(); // (href, media type, bytes)
     let mut by_src: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
-    let doc = crate::md_ast::parse(&markdown);
+    let doc = source_doc;
+    let cover_opts=sub_dict(&opts,"cover")?;
+    let cover_source=epub_opts.get("cover").and_then(Value::as_str).filter(|s|!s.trim().is_empty()).map(str::to_string)
+        .or_else(||doc.meta("cover"));
+    let cover_title=cover_opts.get("title").and_then(Value::as_str).filter(|s|!s.is_empty()).unwrap_or(&book_title);
+    let cover_image=if let Some(src)=cover_source{
+        let inline_svg=if let Some(data)=src.strip_prefix("data:image/svg+xml;base64,"){
+            if data.len()>6*1024*1024{return Err("epub_cover".into());}
+            Some(Resolved::Inline{mime:"image/svg+xml".into(),data:base64::engine::general_purpose::STANDARD.decode(data).map_err(|_|"epub_cover")?})
+        }else{None};
+        let (ext,mt,bytes)=match inline_svg.or_else(||resolver.resolve(&src,&mut warns)){
+            Some(Resolved::File(p))=>{
+                use std::io::Read;
+                let ext=p.extension().and_then(|e|e.to_str()).unwrap_or("").to_ascii_lowercase();
+                let mt=epub_image_media_type(&ext).ok_or("unsupported_format")?;
+                let mut bytes=Vec::new();fs::File::open(p).map_err(|_|"file_not_found")?.take(25*1024*1024+1).read_to_end(&mut bytes).map_err(|_|"file_not_found")?;
+                (ext,mt.to_string(),bytes)
+            },
+            Some(Resolved::Inline{mime,data})=>{
+                let ext=match mime.as_str(){"image/png"=>"png","image/jpeg"=>"jpg","image/gif"=>"gif","image/webp"=>"webp","image/svg+xml"=>"svg",_=>return Err("unsupported_format".into())};
+                (ext.to_string(),mime,data)
+            },
+            None=>return Err("file_not_found".into()),
+        };
+        if bytes.len()>25*1024*1024{return Err("epub_cover".into());}
+        let dimensions=epub_cover_dimensions(&ext,&bytes)?;
+        let href=format!("images/cover.{ext}");by_src.insert(src,Some(href.clone()));
+        Some((href,mt,bytes,dimensions))
+    }else if cover_opts.get("enabled").is_some_and(py_truthy){
+        let text=|key:&str|cover_opts.get(key).and_then(Value::as_str).unwrap_or("");
+        let bytes=crate::epub_writer::cover_svg(cover_title,text("subtitle"),&book_author,text("date"),text("align")).into_bytes();
+        let dimensions=epub_cover_dimensions("svg",&bytes)?;
+        Some(("images/cover.svg".to_string(),"image/svg+xml".to_string(),bytes,dimensions))
+    }else{None};
     let chapters = {
         let mut map = |src: &str| -> Option<String> {
             if let Some(hit) = by_src.get(src) {
@@ -1600,7 +1932,7 @@ pub fn epub_build_bytes(
                     }
                 }
                 Some(Resolved::Inline { mime, data }) => {
-                    let ext = mime.rsplit('/').next().unwrap_or("png").replace("jpeg", "jpg");
+                    let ext = inline_image_extension(&mime).replace("jpeg", "jpg");
                     epub_image_media_type(&ext).map(|mt| (ext.clone(), mt.to_string(), data))
                 }
                 None => None,
@@ -1613,17 +1945,43 @@ pub fn epub_build_bytes(
             by_src.insert(src.to_string(), href.clone());
             href
         };
-        crate::epub_writer::render_chapters(&doc, &split_level, &mut map)
+        let mut style=crate::export_styles::sanitize(&opts);
+        style["typography"]["size"]=serde_json::json!(epub_numeric.font_size);
+        style["typography"]["lineHeight"]=serde_json::json!(epub_numeric.line_height);
+        crate::epub_writer::render_chapters_with_navigation(&doc,&split_level,&mut map,&style,front_count,&navigation_request).map_err(|e|e.code.to_string())?
     };
     let mut chapters = chapters;
     if chapters.is_empty() {
-        chapters.push(crate::epub_writer::Chapter { title: book_title.clone(), body: String::new(), has_math: false });
+        chapters.push(crate::epub_writer::Chapter { title: book_title.clone(), body: String::new(), headings:Vec::new(), has_math: false, math_fonts:Default::default(), math_font_warnings:false });
     }
     // A document without any split heading is one chapter named after the book.
-    if chapters.len() == 1 && chapters[0].title == "序言" {
+    if chapters[0].title == "序言" {
         chapters[0].title = book_title.clone();
     }
     let math_chapters: Vec<bool> = chapters.iter().map(|c| c.has_math).collect();
+    let has_math=math_chapters.iter().any(|v|*v);
+    let mut custom_css=if has_math{format!("{custom_css}\n@font-face{{font-family:'ReadMD Math';src:url('fonts/STIXTwoMath-Regular.ttf') format('truetype')}}\n@font-face{{font-family:'STIX Two Math';src:url('fonts/STIXTwoMath-Regular.ttf') format('truetype')}}\nmath{{font-family:'ReadMD Math',math}}\n")}else{custom_css};
+    if chapters.iter().any(|c|c.math_font_warnings)&&!warns.iter().any(|w|w=="math_font_substituted"){warns.push("math_font_substituted".into());}
+    let math_fonts=chapters.iter().flat_map(|c|c.math_fonts.iter().cloned()).collect::<std::collections::BTreeSet<_>>();
+    let mut math_font_entries=Vec::<(String,String,Vec<u8>)>::new();
+    if let Some(resources)=crate::publication_fonts::current(){
+        let mut licenses=std::collections::BTreeSet::new();
+        for (family,bold) in math_fonts{
+            let (base,license)=match family.as_str(){"ReadMD Sans SC"=>(&resources.sans,"NotoSansSC-OFL.txt"),"ReadMD Serif SC"=>(&resources.serif,"NotoSerifSC-OFL.txt"),_=>continue};
+            let path=if bold{base.with_file_name(base.file_name().ok_or("publication_fonts_unavailable")?.to_string_lossy().replace("-Regular","-Bold"))}else{base.clone()};
+            let name=path.file_name().and_then(|v|v.to_str()).ok_or("publication_fonts_unavailable")?;
+            let bytes=fs::read(&path).map_err(|_|"publication_fonts_unavailable")?;
+            let face=ttf_parser::Face::parse(&bytes,0).map_err(|_|"publication_fonts_unavailable")?;
+            if matches!(face.permissions(),Some(ttf_parser::Permissions::Restricted)){return Err("publication_fonts_unavailable".into());}
+            custom_css.push_str(&format!("\n@font-face{{font-family:'{family}';font-weight:{};font-style:normal;src:url('fonts/{name}') format('truetype')}}\n",if bold{700}else{400}));
+            drop(face);math_font_entries.push((format!("fonts/{name}"),"font/ttf".into(),bytes));
+            if licenses.insert(license){
+                let root=base.parent().and_then(|v|v.parent()).ok_or("publication_fonts_unavailable")?;
+                let bytes=fs::read(root.join("licenses").join(license)).map_err(|_|"publication_fonts_unavailable")?;
+                math_font_entries.push((format!("fonts/{license}"),"text/plain".into(),bytes));
+            }
+        }
+    }
 
     let mut chapter_files: Vec<(String, String, String, String)> = Vec::new();
     for (idx, chap) in chapters.iter().enumerate() {
@@ -1644,59 +2002,48 @@ pub fn epub_build_bytes(
     {body}
 </body>
 </html>"#,
-            lang = book_lang,
+            lang = crate::epub_writer::esc(&book_lang),
             title = html_escape(chap_title, false),
             body = chap_body,
         );
         chapter_files.push((chap_id, chap_filename, chap_title.clone(), chap_xhtml));
     }
 
-    let nav_items = chapter_files
-        .iter()
-        .map(|(_, fn_, t, _)| format!("        <li><a href=\"{f}\">{t}</a></li>", f = fn_, t = html_escape(t, false)))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let navigation=crate::epub_writer::navigation(&chapters,crate::publication_layout::toc_depth(&opts));
+    let nav_items=crate::epub_writer::navigation_xhtml(&navigation);
+    let resolved_navigation=crate::publication_navigation::resolve(&navigation_request,&chapters,cover_image.is_some()).map_err(|e|e.code.to_string())?;
+    let semantic_navigation=crate::publication_navigation::navigation_xhtml(&navigation_request,&resolved_navigation);
     let nav_xhtml = format!(
         r#"<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{lang}" lang="{lang}">
 <head>
     <meta charset="utf-8"/>
-    <title>目录</title>
+    <title>{nav_title}</title>
     <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
     <nav epub:type="toc" id="toc">
-        <h1>目录</h1>
+        <h1>{nav_title}</h1>
         <ol>
 {items}
         </ol>
     </nav>
+{semantic_navigation}
 </body>
 </html>"#,
-        lang = book_lang,
+        lang = crate::epub_writer::esc(&book_lang),
+        nav_title=crate::epub_writer::esc(&book_title),
         items = nav_items,
     );
 
-    let ncx_points = chapter_files
-        .iter()
-        .enumerate()
-        .map(|(i, (_, fn_, t, _))| {
-            format!(
-                "    <navPoint id=\"navPoint-{n}\" playOrder=\"{n}\">\n        <navLabel><text>{t}</text></navLabel>\n        <content src=\"{f}\"/>\n    </navPoint>",
-                n = i + 1,
-                t = html_escape(t, false),
-                f = fn_,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let (ncx_points,ncx_depth)=crate::epub_writer::navigation_ncx(&navigation);
     let toc_ncx = format!(
         r#"<?xml version="1.0" encoding="utf-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
     <head>
-        <meta name="dtb:uid" content="urn:uuid:{uid}"/>
-        <meta name="dtb:depth" content="1"/>
+        <meta name="dtb:uid" content="{uid}"/>
+        <meta name="dtb:depth" content="{ncx_depth}"/>
         <meta name="dtb:totalPageCount" content="0"/>
         <meta name="dtb:maxPageNumber" content="0"/>
     </head>
@@ -1705,7 +2052,7 @@ pub fn epub_build_bytes(
 {points}
     </navMap>
 </ncx>"#,
-        uid = book_uuid,
+        uid = html_escape(&metadata.primary_identifier().map(|identifier|identifier.value.clone()).unwrap_or_else(||format!("urn:uuid:{book_uuid}")),true),
         title = html_escape(&book_title, false),
         points = ncx_points,
     );
@@ -1715,6 +2062,11 @@ pub fn epub_build_bytes(
         "<item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>".to_string(),
         "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>".to_string(),
     ];
+    if has_math{
+        manifest_items.push("<item id=\"math-font\" href=\"fonts/STIXTwoMath-Regular.ttf\" media-type=\"font/ttf\"/>".into());
+        manifest_items.push("<item id=\"math-font-license\" href=\"fonts/STIX-OFL-1.1.txt\" media-type=\"text/plain\"/>".into());
+    }
+    for (i,(href,media,_)) in math_font_entries.iter().enumerate(){manifest_items.push(format!("<item id=\"math-text-font-{i}\" href=\"{href}\" media-type=\"{media}\"/>"));}
     for (i, (cid, fn_, _, _)) in chapter_files.iter().enumerate() {
         let props = if math_chapters.get(i).copied().unwrap_or(false) { " properties=\"mathml\"" } else { "" };
         manifest_items.push(format!(
@@ -1727,6 +2079,11 @@ pub fn epub_build_bytes(
         manifest_items.push(format!("<item id=\"img_{}\" href=\"{href}\" media-type=\"{mt}\"/>", i + 1));
     }
     let mut spine_items = vec!["<itemref idref=\"nav\"/>".to_string()];
+    if let Some((href,mt,_,_))=&cover_image{
+        manifest_items.push(format!("<item id=\"cover-image\" href=\"{href}\" media-type=\"{mt}\" properties=\"cover-image\"/>"));
+        manifest_items.push("<item id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\" properties=\"svg\"/>".into());
+        spine_items.insert(0,"<itemref idref=\"cover\"/>".into());
+    }
     for (cid, _, _, _) in &chapter_files {
         spine_items.push(format!("<itemref idref=\"{cid}\"/>"));
     }
@@ -1740,7 +2097,11 @@ pub fn epub_build_bytes(
     } else {
         format!("<dc:identifier id=\"ISBN\">{}</dc:identifier>", html_escape(&book_isbn, false))
     };
-    let content_opf = format!(
+    let extra_meta=["description","rights","date"].iter().filter_map(|key|{
+        epub_opts.get(*key).and_then(Value::as_str).map(str::to_string).or_else(||doc.meta(key))
+            .map(|text|format!("<dc:{key}>{}</dc:{key}>",crate::epub_writer::esc(&text)))
+    }).chain(doc.meta_list("keywords").into_iter().map(|text|format!("<dc:subject>{}</dc:subject>",crate::epub_writer::esc(&text)))).collect::<String>();
+    let mut content_opf = format!(
         r#"<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
     <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -1750,6 +2111,7 @@ pub fn epub_build_bytes(
         <dc:creator>{author}</dc:creator>
         {publisher}
         <dc:language>{lang}</dc:language>
+        {extra_meta}
         <meta property="dcterms:modified">{mod_time}</meta>
     </metadata>
     <manifest>
@@ -1764,12 +2126,26 @@ pub fn epub_build_bytes(
         title = html_escape(&book_title, false),
         author = html_escape(&book_author, false),
         publisher = publisher_tag,
-        lang = book_lang,
+        lang = crate::epub_writer::esc(&book_lang),
         mod_time = mod_time,
         manifest = manifest_items.join("\n"),
         spine = spine_items.join("\n"),
     );
+    if metadata.declared {
+        let start=content_opf.find("<metadata ").ok_or("publication_metadata_type")?;
+        let end=content_opf.find("</metadata>").ok_or("publication_metadata_type")?+"</metadata>".len();
+        let xml=crate::publication_metadata_formats::epub_metadata(&metadata,&format!("urn:uuid:{book_uuid}"),&book_lang);
+        content_opf.replace_range(start..end,&format!("<metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">{xml}<meta property=\"dcterms:modified\">{}</meta></metadata>",crate::epub_writer::esc(mod_time)));
+        content_opf=content_opf.replacen(" version=\"3.0\"", " version=\"3.0\" prefix=\"readmd: urn:readmd:publication:v1:\"",1);
+    }
 
+    // Merge navigation source metadata AFTER the final P01 replacement.
+    let pagination=crate::publication_navigation::pagination_metadata(&navigation_request,&resolved_navigation);
+    if !pagination.is_empty(){
+        let end=content_opf.find("</metadata>").ok_or("publication_navigation_invalid")?;
+        content_opf.insert_str(end,&pagination);
+        if !content_opf.contains("prefix=\"readmd:"){content_opf=content_opf.replacen(" version=\"3.0\""," version=\"3.0\" prefix=\"readmd: urn:readmd:publication:v1:\"",1);}
+    }
     let container_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
     <rootfiles>
@@ -1792,6 +2168,16 @@ pub fn epub_build_bytes(
     entries.push(ZipEntry { path: "OEBPS/nav.xhtml".to_string(), data: nav_xhtml.into_bytes(), compress: true });
     entries.push(ZipEntry { path: "OEBPS/toc.ncx".to_string(), data: toc_ncx.into_bytes(), compress: true });
     entries.push(ZipEntry { path: "OEBPS/style.css".to_string(), data: custom_css.into_bytes(), compress: true });
+    if has_math{
+        entries.push(ZipEntry{path:"OEBPS/fonts/STIXTwoMath-Regular.ttf".into(),data:crate::publication_fonts::MATH.to_vec(),compress:true});
+        entries.push(ZipEntry{path:"OEBPS/fonts/STIX-OFL-1.1.txt".into(),data:include_bytes!("../../../assets/licenses/STIX-OFL-1.1.txt").to_vec(),compress:true});
+    }
+    for (href,_,data) in math_font_entries{entries.push(ZipEntry{path:format!("OEBPS/{href}"),data,compress:true});}
+    if let Some((href,_,data,dimensions))=cover_image{
+        let page=epub_cover_document(&href,cover_title,&book_lang,dimensions);
+        entries.push(ZipEntry{path:"OEBPS/cover.xhtml".into(),data:page.into_bytes(),compress:true});
+        entries.push(ZipEntry{path:format!("OEBPS/{href}"),data,compress:href.ends_with(".svg")});
+    }
     for (_, fn_, _, xhtml) in chapter_files {
         entries.push(ZipEntry { path: format!("OEBPS/{fn_}"), data: xhtml.into_bytes(), compress: true });
     }
@@ -1800,7 +2186,124 @@ pub fn epub_build_bytes(
         let compress = href.ends_with(".svg");
         entries.push(ZipEntry { path: format!("OEBPS/{href}"), data, compress });
     }
-    Ok((write_zip(&entries)?, warns))
+    Ok((entries, warns))
+}
+
+/// Read the intrinsic cover geometry without rasterizing, decoding its pixels,
+/// or changing the packaged original. SVG absolute dimensions take precedence
+/// over viewBox; a missing/percentage dimension uses its intrinsic aspect ratio.
+fn epub_cover_dimensions(ext: &str, bytes: &[u8]) -> Result<(f64, f64), String> {
+    let dimensions = if ext == "svg" {
+        use quick_xml::{events::Event, Reader, XmlVersion};
+        crate::svg_render::validate(bytes).map_err(|_| "epub_cover")?;
+        let source = std::str::from_utf8(bytes).map_err(|_| "epub_cover")?;
+        let mut reader = Reader::from_str(source);
+        let mut width = None;
+        let mut height = None;
+        let mut view_box = None;
+        let mut style = None;
+        loop {
+            match reader.read_event().map_err(|_| "epub_cover")? {
+                Event::Start(root) | Event::Empty(root) => {
+                    for attr in root.attributes() {
+                        let attr = attr.map_err(|_| "epub_cover")?;
+                        let value = attr.normalized_value(XmlVersion::Implicit1_0)
+                            .map_err(|_| "epub_cover")?.into_owned();
+                        match attr.key.as_ref() {
+                            "width" => width = Some(value),
+                            "height" => height = Some(value),
+                            "viewBox" => view_box = Some(value),
+                            "style" => style = Some(value),
+                            _ => {}
+                        }
+                    }
+                    break;
+                }
+                Event::Eof => return Err("epub_cover".into()),
+                _ => {}
+            }
+        }
+        // Inline sizing declarations override presentation attributes. Other
+        // SVG styles stay in the original image rather than leaking into XHTML.
+        if let Some(style) = style {
+            let mut priority = [false; 2];
+            for declaration in style.split(';') {
+                let Some((key, value)) = declaration.split_once(':') else { continue; };
+                let index = match key.trim().to_ascii_lowercase().as_str() {
+                    "width" => 0, "height" => 1, _ => continue,
+                };
+                let value = value.trim().to_ascii_lowercase();
+                let important = value.ends_with("!important");
+                if priority[index] && !important { continue; }
+                priority[index] = important;
+                let value = value.strip_suffix("!important").unwrap_or(&value).trim().to_string();
+                if index == 0 { width = Some(value); } else { height = Some(value); }
+            }
+        }
+        fn length(value: Option<&str>) -> Result<Option<f64>, String> {
+            let Some(value) = value else { return Ok(None); };
+            let value = value.trim().to_ascii_lowercase();
+            if value == "auto" { return Ok(None); }
+            let (number, scale) = [
+                ("px", 1.0), ("in", 96.0), ("cm", 96.0 / 2.54),
+                ("mm", 96.0 / 25.4), ("q", 96.0 / 101.6),
+                ("pt", 96.0 / 72.0), ("pc", 16.0), ("%", 1.0),
+            ].into_iter().find_map(|(unit, scale)| value.strip_suffix(unit).map(|number| (number, scale)))
+                .unwrap_or((&value, 1.0));
+            let number = number.trim().parse::<f64>().map_err(|_| "epub_cover")? * scale;
+            if !number.is_finite() || number <= 0.0 { return Err("epub_cover".into()); }
+            Ok((!value.ends_with('%')).then_some(number))
+        }
+        let width = length(width.as_deref())?;
+        let height = length(height.as_deref())?;
+        let view_box = view_box.map(|value| {
+            let values = value.split(|c: char| c.is_ascii_whitespace() || c == ',')
+                .filter(|part| !part.is_empty()).map(str::parse::<f64>).collect::<Result<Vec<_>, _>>()
+                .map_err(|_| "epub_cover")?;
+            if values.len() != 4 || values.iter().any(|v| !v.is_finite()) || values[2] <= 0.0 || values[3] <= 0.0 {
+                return Err("epub_cover");
+            }
+            Ok((values[2], values[3]))
+        }).transpose()?;
+        match (width, height, view_box) {
+            (Some(w), Some(h), _) => (w, h),
+            (Some(w), None, Some((vw, vh))) => (w, w * vh / vw),
+            (None, Some(h), Some((vw, vh))) => (h * vw / vh, h),
+            (None, None, Some(size)) => size,
+            (w, h, None) => (w.unwrap_or(300.0), h.unwrap_or(150.0)),
+        }
+    } else {
+        use image::{metadata::Orientation, ImageDecoder, ImageFormat, ImageReader};
+        let format = match ext {
+            "png" => ImageFormat::Png, "jpg" | "jpeg" => ImageFormat::Jpeg,
+            "gif" => ImageFormat::Gif, "webp" => ImageFormat::WebP,
+            _ => return Err("epub_cover".into()),
+        };
+        let mut decoder = ImageReader::with_format(std::io::Cursor::new(bytes), format)
+            .into_decoder().map_err(|_| "epub_cover")?;
+        let (mut width, mut height) = decoder.dimensions();
+        // Readers honor EXIF orientation on the unchanged image. Quarter turns
+        // also change its intrinsic aspect ratio in the surrounding viewport.
+        if matches!(decoder.orientation().map_err(|_| "epub_cover")?,
+            Orientation::Rotate90 | Orientation::Rotate270 | Orientation::Rotate90FlipH | Orientation::Rotate270FlipH) {
+            std::mem::swap(&mut width, &mut height);
+        }
+        (f64::from(width), f64::from(height))
+    };
+    if dimensions.0.is_finite() && dimensions.1.is_finite() && dimensions.0 > 0.0 && dimensions.1 > 0.0 {
+        Ok(dimensions)
+    } else { Err("epub_cover".into()) }
+}
+
+/// A cover has its own viewport, not the body's margins, font metrics or page
+/// breaks. Block SVG avoids an inline baseline; percentage sizing avoids a
+/// 100vh image overflowing the reader's paginated content box on first open.
+fn epub_cover_document(href: &str, title: &str, language: &str, size: (f64, f64)) -> String {
+    let title = crate::epub_writer::esc(title);
+    let language = crate::epub_writer::esc(language);
+    let href = crate::epub_writer::esc(href);
+    let (width, height) = size;
+    format!(r#"<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="{language}" lang="{language}"><head><title>{title}</title><style type="text/css">@page{{margin:0;padding:0}}html,body{{margin:0;padding:0;width:100%;height:100%;line-height:0}}section{{display:block;margin:0;padding:0;width:100%;height:100%}}svg{{display:block;margin:0;padding:0;width:100%;height:100%}}</style></head><body><section epub:type="cover"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" role="img" aria-labelledby="cover-image-title" width="100%" height="100%" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet"><title id="cover-image-title">{title}</title><image width="{width}" height="{height}" xlink:href="{href}" preserveAspectRatio="xMidYMid meet"/></svg></section></body></html>"#)
 }
 
 fn epub_image_media_type(ext: &str) -> Option<&'static str> {
@@ -1826,6 +2329,7 @@ pub fn export_epub(
     options: &Value,
     source_name: &str,
 ) -> Result<ExportResult, String> {
+    crate::publication_typography::validate_export("epub", content, options).map_err(str::to_string)?;
     let title = options
         .pointer("/epub/title")
         .or_else(|| options.pointer("/meta/title"))
@@ -1855,7 +2359,7 @@ pub fn export_epub(
     if let Some(parent) = Path::new(out_path).parent() {
         let _ = fs::create_dir_all(parent);
     }
-    fs::write(out_path, &bytes).map_err(|e| format!("Failed to write EPUB: {}", e))?;
+    crate::content::write_bytes_atomic(Path::new(out_path), &bytes).map_err(|e| format!("Failed to write EPUB: {}", e))?;
     Ok(ExportResult {
         ok: true,
         path: Some(out_path.to_string()),
@@ -1909,17 +2413,21 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 
 /// DOCX export built on the shared AST ([`crate::md_ast`]) and
 /// [`crate::docx_writer`], applying the sanitized export style.
-pub fn export_docx(
-    content: &str,
-    base_dir: &str,
-    out_path: &str,
-    options: &Value,
-    source_name: &str,
-) -> Result<ExportResult, String> {
-    let doc = crate::md_ast::parse(content);
+pub fn export_docx(content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str) -> Result<ExportResult, String> {
+    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    export_docx_with_lines(content, base_dir, out_path, resolved.values(), source_name, resolved.line_context())
+}
+fn export_docx_with_lines(content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str, lines: crate::publication_typography::LineContext) -> Result<ExportResult, String> {
+    crate::publication_typography::validate_export("docx", content, options).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
+    crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
+    let (doc,citation_warnings)=publication_document(content,base_dir,options)?;
+    validate_static_citation_weight(&doc)?;
+    validate_docx_citation_spacing(&doc)?;
     let style = crate::export_styles::sanitize_options(Some(options));
+    crate::publication_layout::Layout::from_style(&style).validate(&style)?;
     let resolver = std::cell::RefCell::new(HtmlImageResolver::new(base_dir));
-    let warns = std::cell::RefCell::new(Vec::<String>::new());
+    let warns = std::cell::RefCell::new(citation_warnings);
     let images = |src: &str| -> Option<(String, Vec<u8>)> {
         let hit = resolver.borrow_mut().resolve(src, &mut warns.borrow_mut())?;
         match hit {
@@ -1933,10 +2441,13 @@ pub fn export_docx(
                     }
                 }
             }
-            Resolved::Inline { mime, data } => Some((mime.rsplit('/').next().unwrap_or("png").to_string(), data)),
+            Resolved::Inline { mime, data } => Some((inline_image_extension(&mime).to_string(), data)),
         }
     };
-    let pkg = crate::docx_writer::build(&doc, &style, source_name, &images);
+    let pkg = crate::docx_writer::build_with_lines(&doc, options, source_name, &images, lines);
+    if pkg.parts.is_empty(){return Err(pkg.warns.first().cloned().unwrap_or_else(||"publication_metadata_type".into()));}
+    if pkg.warns.iter().any(|s| s == crate::api_codes::DOCX_NESTED_FOOTNOTE) { return Err(crate::api_codes::DOCX_NESTED_FOOTNOTE.into()); }
+    if pkg.warns.iter().any(|s|s=="publication_local_style_invalid"){return Err("publication_local_style_invalid".into());}
     let entries: Vec<ZipEntry> = pkg
         .parts
         .into_iter()
@@ -2136,7 +2647,7 @@ impl PdfImageResolver {
             }
             if let Some(target) = decode_data_image(&src) {
                 if let Resolved::Inline { mime, data } = target {
-                    let subtype = mime.rsplit('/').next().unwrap_or("png").to_string();
+                    let subtype = inline_image_extension(&mime).to_string();
                     let path = Path::new(&self.tmpdir)
                         .join(format!("{}.{}", pdf_digest_hex(&data), subtype));
                     if !path.is_file() {
@@ -2192,12 +2703,19 @@ pub fn export_pdf(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
-    // Neither is part of the PDF contract any more: nothing is rendered to HTML
-    // first, so there is no document to inline marked.js/MathJax assets into and
-    // no `<title>` to name after the source file.  The signature is kept stable
-    // because `export_document` (the `"pdf"` arm below) and `server.rs`'s
-    // `/api/export` both pass all six arguments.
-    let _ = (source_name, assets_dir);
+    let resolved=crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    export_pdf_with_lines(content,base_dir,out_path,resolved.values(),source_name,assets_dir,resolved.line_context())
+}
+
+fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,assets_dir:&Path,
+    lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
+{
+    crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::RustPdf,content,options).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
+    crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
+    // No HTML/MathJax intermediary. Resolve an otherwise empty cover title
+    // from the same document metadata/heading as Word, without changing prose.
+    let _ = assets_dir;
 
     // `blocks = _parser.parse(content)` / `style = _styles.sanitize(options)`
     // (`mdexport/__init__.py:88-90`).  `export_styles::sanitize_options` is the
@@ -2209,8 +2727,28 @@ pub fn export_pdf(
     // (`html_render.py:81`, `pdf_render::page_dimensions`).
     // The shared AST carries fence languages, table alignment, task markers,
     // list starts and nesting, which the old line parser dropped.
-    let blocks = crate::md_ast::to_render_json(&crate::md_ast::parse(content).blocks);
-    let style = crate::export_styles::sanitize_options(Some(options));
+    let (doc,citation_warnings)=publication_document(content,base_dir,options)?;
+    let (doc,mut style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(&doc,options,source_name,"pdf")?;
+    crate::publication_typography::baseline::validate_document(&doc, &style,
+        crate::publication_typography::baseline::Consumer::RustPdf).map_err(str::to_string)?;
+    crate::publication_sections::resolve(&doc,&style).map_err(str::to_string)?;
+    if crate::publication_sections::has_sections(&doc){return Err("publication_sections_require_paged_engine".into());}
+    let baseline_used=crate::publication_typography::baseline::used(content,options).map_err(str::to_string)?;
+    let blocks = if crate::publication_typography::validate_input(content,options).map_err(str::to_string)? || baseline_used {
+        if baseline_used && front_count>0 {
+            // Generated metadata paragraphs own their typography. Project the
+            // actual AST prefix separately; AST count is not a flat-JSON count.
+            let mut front=crate::md_ast::to_publication_render_json(&doc.blocks[..front_count])
+                .as_array().cloned().ok_or("publication_local_style_invalid")?;
+            for block in &mut front { block["publicationContext"]=serde_json::json!("frontMatter"); }
+            let body=crate::md_ast::to_publication_render_json(&doc.blocks[front_count..]);
+            front.extend(body.as_array().ok_or("publication_local_style_invalid")?.iter().cloned());
+            Value::Array(front)
+        } else { crate::md_ast::to_publication_render_json(&doc.blocks) }
+    } else {crate::md_ast::to_render_json(&doc.blocks)};
+    if style.pointer("/cover/enabled")==Some(&Value::Bool(true))&&style.pointer("/cover/title").and_then(Value::as_str).is_none_or(|s|s.trim().is_empty()){
+        style["cover"]["title"]=Value::String(crate::docx_writer::doc_title(&doc,&style,source_name));
+    }
 
     // `tmpdir = tempfile.mkdtemp(prefix='readmd-export-')`, dropped in `finally`.
     let tmpdir_path = std::env::temp_dir().join(format!("readmd-export-{}", pdf_random_tail()));
@@ -2239,8 +2777,10 @@ pub fn export_pdf(
     // `stage = 'formula'` warnings, ahead of the render exactly as in CPython,
     // where `formula.prepare(blocks, style, warns)` runs before `pdf_render`.
     let mut warns = pdf_math_fallback_warns(&blocks);
+    warns.extend(citation_warnings);
+    warns.extend(crate::publication_metadata_formats::warnings(&metadata));
     if let Err(e) =
-        crate::pdf_render::render(&blocks, &stage_path, &style, &tmpdir, &resolve, &mut warns)
+        crate::pdf_render::render_with_lines(&blocks, &stage_path, &style, &tmpdir, &resolve, &mut warns, lines)
     {
         let _ = fs::remove_file(&stage_path);
         let _ = fs::remove_dir_all(&tmpdir_path);
@@ -2257,6 +2797,12 @@ pub fn export_pdf(
         return Err("导出器未生成有效文件".to_string());
     }
 
+    if metadata.declared {
+        let updated=fs::read(&stage_path).map_err(|_|"publication_metadata_pdf".to_string())
+            .and_then(|bytes|crate::publication_metadata_formats::pdf_metadata(&bytes,&metadata))
+            .and_then(|bytes|crate::content::write_bytes_atomic(Path::new(&stage_path),&bytes).map_err(|_|"publication_metadata_pdf".to_string()));
+        if let Err(error)=updated{let _=fs::remove_file(&stage_path);let _=fs::remove_dir_all(&tmpdir_path);return Err(error);}
+    }
     if let Err(e) = fs::rename(&stage_path, out_path) {
         let _ = fs::remove_file(&stage_path);
         let _ = fs::remove_dir_all(&tmpdir_path);
@@ -2298,15 +2844,169 @@ pub fn export_document(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
-    let fmt = format.to_lowercase();
-    match fmt.as_str() {
-        "html" => export_html(content, base_dir, out_path, options, source_name, assets_dir),
-        "tex" | "latex" => export_tex(content, base_dir, out_path, options, source_name),
-        "epub" => export_epub(content, base_dir, out_path, options, source_name),
-        "docx" => export_docx(content, base_dir, out_path, options, source_name),
-        "pdf" => export_pdf(content, base_dir, out_path, options, source_name, assets_dir),
-        _ => Err(format!("Unsupported export format: {}", fmt)),
+    export_document_with_data(format,content,base_dir,out_path,options,source_name,assets_dir,&crate::paths::data_dir())
+}
+/// Resolve CSL once into a source-bound, typed tree. No format writer parses
+/// processor-generated Markdown, and no internal slot reaches a saved file.
+fn native_citation_document(source:&str,options:&Value)->Result<(crate::md_ast::Document,Vec<String>),String>{
+    let locale=crate::publication_metadata::from_source(source,options,"").map_err(|e|e.code)?.language;
+    let scan=crate::publication::citations::scan(source,locale.as_deref().unwrap_or("en-US")).map_err(|e|e.code.to_string())?;
+    let mut projection=crate::publication_rich::Projection::new(source);
+    projection.citations=scan.citations.into_iter().map(|source|crate::publication_rich::ProjectedCitation{rich:vec![crate::publication_rich::RichNode::text(&source.span.source)],source,inline_rich:Vec::new(),note_rich:Vec::new(),note_label:None,rendered:true}).collect();
+    let doc=crate::md_ast::parse_prepared(source,&projection).map_err(|e|e.code.to_string())?;
+    Ok((doc,Vec::new()))
+}
+pub(crate) fn publication_document(source:&str,base:&str,options:&Value)->Result<(crate::md_ast::Document,Vec<String>),String>{
+    crate::publication_typography::validate_input(source, options).map_err(str::to_string)?;
+    let publication=crate::publication::prepare_with_options(source,base,options).map_err(|e|e.code.to_string())?;
+    let document=crate::md_ast::parse_prepared(source,&publication.projection).map_err(|e|e.code.to_string())?;
+    Ok((document,publication.warnings))
+}
+// DOCX has no portable Light-weight run property and the managed static TeX
+// faces do not expose that weight. Reject before resources/staging rather than
+// silently changing valid CSL output to Regular. HTML/EPUB remain CSS-based;
+// core PDF retains its existing explicit loss diagnostic.
+fn validate_static_citation_weight(doc:&crate::md_ast::Document)->Result<(),String>{
+    use crate::md_ast::{Block,Inline};
+    fn light(values:&[Inline])->bool{values.iter().any(|value|match value{
+        Inline::Styled{format,children}=>format.font_weight==crate::publication_rich::RichFontWeight::Light||light(children),
+        Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)|Inline::Display{children,..}|Inline::Citation{children,..}|Inline::Link{children,..}=>light(children),_=>false,
+    })}
+    fn blocks(values:&[Block])->bool{values.iter().any(|value|match value{
+        Block::Styled{block,..}=>blocks(std::slice::from_ref(block.as_ref())),
+        Block::Heading{inlines,..}|Block::Caption{inlines,..}|Block::Paragraph(inlines)=>light(inlines),
+        Block::List{items,..}=>items.iter().any(|item|blocks(&item.blocks)),
+        Block::Quote(inner)|Block::FootnoteDef{blocks:inner,..}=>blocks(inner),
+        Block::Table{header,rows,..}=>header.iter().any(|cell|light(cell))||rows.iter().flatten().any(|cell|light(cell)),
+        Block::Bibliography(bib)=>bib.items.iter().any(|item|light(&crate::md_ast::rich_inlines(&item.first_field))||light(&crate::md_ast::rich_inlines(&item.rich))),_=>false,
+    })}
+    if blocks(&doc.blocks){Err("academic_rich_unsupported".into())}else{Ok(())}
+}
+fn validate_docx_citation_spacing(doc:&crate::md_ast::Document)->Result<(),String>{
+    use crate::md_ast::Block;
+    fn invalid(values:&[Block])->bool{values.iter().any(|value|match value{
+        Block::Bibliography(bib)=>bib.line_spacing==0||u128::from(bib.line_spacing)*u128::from(bib.entry_spacing)*100>i32::MAX as u128,
+        Block::Styled{block,..}=>invalid(std::slice::from_ref(block.as_ref())),
+        Block::List{items,..}=>items.iter().any(|item|invalid(&item.blocks)),
+        Block::Quote(inner)|Block::FootnoteDef{blocks:inner,..}=>invalid(inner),_=>false,
+    })}
+    if invalid(&doc.blocks){Err("academic_rich_spacing".into())}else{Ok(())}
+}
+#[cfg(test)]mod citation_weight_tests{
+    use super::*;
+    #[test]fn portable_static_formats_reject_unavailable_light_before_replacing_files(){
+        let dir=tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("references.json"),r#"[{"id":"a","type":"book","title":"Synthetic Light Evidence","author":[{"family":"Example"}]}]"#).unwrap();
+        fs::write(dir.path().join("light.csl"),r#"<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text"><info><title>Own Light QA</title><id>urn:readmd:qa:light</id><updated>2026-10-14T00:00:00Z</updated></info><citation><layout><text variable="title" font-weight="light"/></layout></citation><bibliography><layout><text variable="title" font-weight="light"/></layout></bibliography></style>"#).unwrap();
+        let source="---\nbibliography: references.json\ncsl: light.csl\n---\n\nRead [@a].\n";
+        for (format,extension) in [("docx","docx"),("tex","tex")]{
+            let target=dir.path().join(format!("old.{extension}"));fs::write(&target,b"original owned result").unwrap();
+            let result=if format=="docx"{export_docx(source,dir.path().to_str().unwrap(),target.to_str().unwrap(),&serde_json::json!({}),"Rich")}else{export_tex(source,dir.path().to_str().unwrap(),target.to_str().unwrap(),&serde_json::json!({}),"Rich")};
+            assert_eq!(result.err().as_deref(),Some("academic_rich_unsupported"));
+            assert_eq!(fs::read(&target).unwrap(),b"original owned result");
+            assert!(!target.with_extension("assets").exists());
+        }
     }
+    #[test]fn light_preflight_includes_nested_notes_and_bibliography_labels(){
+        use crate::md_ast::{Block,Document,Inline};use crate::publication_rich::*;
+        let light=Inline::Styled{format:RichFormat{font_weight:RichFontWeight::Light,..Default::default()},children:vec![Inline::Text("Light".into())]};
+        let doc=Document{blocks:vec![Block::Quote(vec![Block::FootnoteDef{label:"a".into(),blocks:vec![Block::Paragraph(vec![light])]}])],..Default::default()};
+        assert_eq!(validate_static_citation_weight(&doc).err().as_deref(),Some("academic_rich_unsupported"));
+        let doc=Document{blocks:vec![Block::Bibliography(RichBibliography{title:"References".into(),items:vec![RichBibliographyItem{key:"a".into(),first_field:vec![RichNode::Text{text:"9".into(),format:RichFormat{font_weight:RichFontWeight::Light,..Default::default()}}],rich:vec![RichNode::text("Entry")]}],hanging_indent:false,line_spacing:1,entry_spacing:0,source_span:None})],..Default::default()};
+        assert_eq!(validate_static_citation_weight(&doc).err().as_deref(),Some("academic_rich_unsupported"));
+        assert!(validate_static_citation_weight(&crate::md_ast::parse("Literal Light is ordinary text.")).is_ok());
+    }
+    #[test]fn docx_rejects_unrepresentable_signed_after_lines_instead_of_clamping(){
+        use crate::md_ast::{Block,Document};use crate::publication_rich::*;
+        for (line,entry,valid) in [(11,2,true),(1,21_474_836,true),(1,21_474_837,false),(u32::MAX,u32::MAX,false),(0,0,false)]{
+            let doc=Document{blocks:vec![Block::Quote(vec![Block::Bibliography(RichBibliography{title:"References".into(),items:vec![],hanging_indent:false,line_spacing:line,entry_spacing:entry,source_span:None})])],..Default::default()};
+            assert_eq!(validate_docx_citation_spacing(&doc).is_ok(),valid);
+        }
+    }
+}
+pub(crate) fn prepare_export_source(_format:&str,content:&str,_base_dir:&str,options:&Value)->Result<(String,Vec<String>),String>{
+    crate::publication_typography::validate_export(_format, content, options).map_err(str::to_string)?;
+    crate::publication_navigation::preflight_export(_format,content,options).map_err(|e|e.code.to_string())?;
+    crate::publication_sections::validate_source(content).map_err(str::to_string)?;
+    crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
+    let figures=crate::scientific_figures::materialize(content,options)?;
+    let content=figures.as_str();
+    // Reject invalid DSL before creating an output; never export it as a code
+    // listing while claiming the formula was rendered successfully.
+    crate::math_dsl::expand_markdown(content).map_err(str::to_string)?;
+    // Keep original citation ranges until each writer consumes the typed tree.
+    Ok((figures,Vec::new()))
+}
+
+/// Print-only declarations become stable, invisible targets in flow output.
+/// Replace actual top-level source ranges only; code examples remain literal.
+pub(crate) fn section_flow_source(source:&str,style:&Value)->Result<String,String>{
+    crate::publication_sections::resolve(&crate::md_ast::parse(source),style).map_err(str::to_string)?;
+    let mut output=source.to_string();
+    for declaration in crate::publication_sections::analyze(source).map_err(str::to_string)?.into_iter().rev(){
+        output.replace_range(declaration.bytes,&format!("<span id=\"readmd-section-{}\" class=\"publication-section-boundary\"></span>\n\n",declaration.section.id));
+    }
+    Ok(output)
+}
+pub fn export_document_with_data(format:&str,content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    export_document_with_resolved_options(format, content, base_dir, out_path, &resolved, source_name, assets_dir, data_dir)
+}
+pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    let options = resolved.values();
+    let fmt = format.to_lowercase();
+    crate::publication_navigation::preflight_export(&fmt,content,options).map_err(|e|e.code.to_string())?;
+    crate::publication_typography::validate_export(&fmt, content, options).map_err(str::to_string)?;
+    // Reject a saturated managed engine before hashing fonts, resolving
+    // resources or transforming a long document. The engine still reserves
+    // its real slot later, so this cheap check cannot overcommit a race.
+    if crate::speech::cancelled(){return Err("cancelled".into());}
+    if fmt=="pdf" {
+        let managed=match options.pointer("/pdf/engine").and_then(Value::as_str) {
+            Some("typst")=>Some("typst"),Some("xelatex"|"pdflatex")=>Some("latex"),_=>None,
+        };
+        if let Some(id)=managed{crate::capability_process::check_worker_capacity(data_dir,id).map_err(|e|e.code)?;}
+    }
+    let managed_pdf=fmt=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust"|"typst"));
+    let _fonts=if managed_pdf||matches!(fmt.as_str(),"epub"|"html"){Some(crate::publication_fonts::scope(data_dir,assets_dir))}else{None};
+    if managed_pdf{crate::publication_fonts::require_cjk(&format!("{content}{}",options))?;}
+    let (prepared,warnings)=prepare_export_source(&fmt,content,base_dir,options)?;
+    let content=prepared.as_str();
+    let mut result=match fmt.as_str() {
+        "html" => export_html(content, base_dir, out_path, options, source_name, assets_dir),
+        "tex" | "latex" => export_tex_with_geometry_and_lines(content,base_dir,out_path,options,source_name,resolved.line_context()).map(|v|v.0),
+        "epub" => export_epub(content, base_dir, out_path, options, source_name),
+        "docx" => export_docx_with_lines(content, base_dir, out_path, options, source_name, resolved.line_context()),
+        "pdf" if options.pointer("/pdf/engine").and_then(Value::as_str)==Some("typst") => crate::typst_compile::export_pdf(content,base_dir,out_path,options,source_name,data_dir,assets_dir),
+        "pdf" if options.pointer("/pdf/engine").and_then(Value::as_str).is_some_and(|e|e!="rust") => crate::latex_compile::export_pdf_with_lines(content,base_dir,out_path,options,source_name,data_dir,assets_dir,resolved.line_context()),
+        "pdf" => export_pdf_with_lines(content, base_dir, out_path, options, source_name, assets_dir, resolved.line_context()),
+        _ => Err(format!("Unsupported export format: {}", fmt)),
+    }?;
+    result.warns.get_or_insert_with(Vec::new).extend(warnings);
+    result.warns.get_or_insert_with(Vec::new).extend(crate::publication_layout::warnings(&fmt,options));
+    Ok(result)
+}
+
+/// Cache identity uses the same resolver as export. Hash bytes with bounded
+/// memory; unusually large resource sets deliberately bypass artifact reuse.
+pub(crate) fn image_resource_revision(source:&str,base:&str)->Option<String>{
+    use sha2::{Digest,Sha256};use std::io::Read;
+    let mut resolver=HtmlImageResolver::new(base);let mut digest=Sha256::new();let mut seen=std::collections::BTreeSet::new();
+    let mut budget=128*1024*1024u64;let mut buffer=[0u8;32768];
+    for event in pulldown_cmark::Parser::new_ext(source,pulldown_cmark::Options::all()){
+        let pulldown_cmark::Event::Start(pulldown_cmark::Tag::Image{dest_url,..})=event else{continue};
+        if !seen.insert(dest_url.to_string()){continue;}if seen.len()>4096{return None;}
+        digest.update((dest_url.len() as u64).to_le_bytes());digest.update(dest_url.as_bytes());
+        if let Some(Resolved::File(file))=resolver.resolve(&dest_url,&mut Vec::new()){
+            let mut file=fs::File::open(file).ok()?;let before=file.metadata().ok()?;let size=before.len();
+            if size>budget{return None;}budget-=size;digest.update(size.to_le_bytes());
+            let mut read=0u64;
+            loop{let count=file.read(&mut buffer).ok()?;if count==0{break;}read+=count as u64;if read>size{return None;}digest.update(&buffer[..count]);}
+            let after=file.metadata().ok()?;
+            if read!=size||after.len()!=size||before.modified().ok()!=after.modified().ok(){return None;}
+        }else{digest.update(b"inline-remote-or-missing");}
+    }
+    Some(format!("{:x}",digest.finalize()))
 }
 
 // ============================================================================
@@ -4460,7 +5160,44 @@ fn json_escape_python(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]fn html_and_epub_use_publication_language_without_rendering_metadata_as_body(){
+        let dir=tempfile::tempdir().unwrap();let content="---\nlang: de_DE\n---\n# Evidence\n\nActual body.\n\n```yaml\nlang: en-US\n```\n";
+        for (options,expected) in [(serde_json::json!({}),"de-DE"),(serde_json::json!({"meta":{"language":"fr-CA"}}),"fr-CA")] {
+            let out=dir.path().join("Paper.html");export_html(content,"",out.to_str().unwrap(),&options,"Paper",dir.path()).unwrap();let html=fs::read_to_string(&out).unwrap();assert!(html.contains(&format!("<html lang=\"{expected}\">")));assert!(!html.contains("lang: de_DE"));assert!(html.contains("lang: en-US"));
+            let (entries,_)=epub_build_entries(&serde_json::json!(content),"",&options,"Paper","Author","zh-CN","urn:uuid:01234567-89ab-4cde-8012-3456789abcde","2026-10-12T00:00:00Z").unwrap();let parts:Vec<_>=entries.iter().map(|e|(e.path.as_str(),String::from_utf8_lossy(&e.data))).collect();assert!(parts.iter().any(|(_,s)|s.contains(&format!("<dc:language>{expected}</dc:language>"))));assert!(parts.iter().filter(|(p,_)|p.ends_with(".xhtml")).all(|(_,s)|s.contains(&format!("xml:lang=\"{expected}\""))));
+        }
+    }
+    #[test]fn html_export_dsl_preflight_keeps_existing_target_and_input_directory(){
+        let dir=tempfile::tempdir().unwrap();let out=dir.path().join("Keep.html");fs::write(&out,b"ORIGINAL").unwrap();
+        for (source,expected) in [(":math[frac(a]","math_invalid_source"),("```readmd-math v99\nx\n```","math_unsupported_version")] {
+            let error=export_html(source,dir.path().to_str().unwrap(),out.to_str().unwrap(),&serde_json::json!({}),"Synthetic",dir.path()).unwrap_err();assert_eq!(error,expected);assert_eq!(fs::read(&out).unwrap(),b"ORIGINAL");assert_eq!(fs::read_dir(dir.path()).unwrap().count(),1);
+        }
+    }
+    #[test]fn heading_html_css_applies_explicit_per_level_keep_and_break_rules(){
+        let options=serde_json::json!({"headings":{"h2":{"before":18,"after":7,"pageBreakBefore":true,"keepNext":false,"keepLines":false},"h3":{"keepNext":true,"keepLines":true}}});
+        let html=super::build_export_css(&crate::export_styles::sanitize(&options));
+        for value in ["h2 { break-before:page; }","h2 { break-after:auto; page-break-after:auto; }","h2 { break-inside:auto; page-break-inside:auto; }","h3 { break-after:avoid; page-break-after:avoid; }"]{assert!(html.contains(value),"{value}");}
+        let old=super::build_export_css(&crate::export_styles::sanitize(&serde_json::json!({})));
+        assert!(!old.contains("h2 { break-after:")&&!old.contains("h2 { break-inside:"));
+    }
     use super::*;
+
+    #[test]
+    fn managed_export_busy_and_cancel_precede_resources_and_source_preparation() {
+        use std::sync::atomic::AtomicUsize;
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+        let root=tempfile::tempdir().unwrap();
+        let output=root.path().join("Protected.pdf");fs::write(&output,b"KEEP ORIGINAL").unwrap();
+        for (engine,id) in [("typst","typst"),("xelatex","latex"),("pdflatex","latex")] {
+            let _first=crate::capability_process::reserve_worker(root.path(),id,&ACTIVE).unwrap();
+            let _second=crate::capability_process::reserve_worker(root.path(),id,&ACTIVE).unwrap();
+            let options=serde_json::json!({"pdf":{"engine":engine}});
+            let run=||export_document_with_data("pdf","```readmd-math v999\nx\n```","missing-base",output.to_str().unwrap(),&options,"Busy publication",&root.path().join("missing-assets"),root.path());
+            assert_eq!(run().unwrap_err(),format!("{id}_busy"));
+            crate::speech::with_cancel(std::sync::Arc::new(||true),||assert_eq!(run().unwrap_err(),"cancelled"));
+            assert_eq!(fs::read(&output).unwrap(),b"KEEP ORIGINAL");
+        }
+    }
 
     #[test]
     fn test_presentation_sanitizer_matches_python_goldens() {
@@ -4582,6 +5319,71 @@ mod tests {
     }
 
     #[test]
+    fn epub_citations_and_package_use_same_effective_language() {
+        let dir=tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("refs.json"),r#"[{"id":"study","type":"book","title":"Evidence","issued":{"date-parts":[[2026,1,13]]}}]"#).unwrap();
+        fs::write(dir.path().join("locale.csl"),r#"<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0" class="in-text"><info><title>Locale probe</title><id>urn:readmd:test:locale</id><updated>2026-10-13T00:00:00Z</updated></info><citation><layout><date variable="issued"><date-part name="month" form="long"/></date></layout></citation></style>"#).unwrap();
+        let md="---\nbibliography: refs.json\ncsl: locale.csl\nlanguage: de-DE\n---\n# Research\n\nSource [@study].\n";
+        for (options,language,month) in [(serde_json::json!({}),"de-DE","Januar"),(serde_json::json!({"meta":{"language":"fr-CA"}}),"fr-CA","janvier"),(serde_json::json!({"meta":{"language":"de-DE"},"epub":{"language":"fr_CA"}}),"fr-CA","janvier")] {
+            let (entries,_)=epub_build_entries(&serde_json::json!(md),dir.path().to_str().unwrap(),&options,"Study","Author","en-US","urn:uuid:0f68f2c4-8907-4e11-a437-c2c841439e17","2026-10-13T00:00:00Z").unwrap();
+            let opf=entries.iter().find(|e|e.path=="OEBPS/content.opf").unwrap();
+            assert!(String::from_utf8_lossy(&opf.data).contains(&format!("<dc:language>{language}</dc:language>")));
+            let body=entries.iter().filter(|e|e.path.ends_with(".xhtml")).map(|e|String::from_utf8_lossy(&e.data)).collect::<Vec<_>>().join("\n");
+            assert!(body.contains(month),"{body}");assert!(!body.contains("[@study]"));
+        }
+        let options=serde_json::json!({"meta":{"language":"fr-CA"}});
+        let (prepared,_)=prepare_export_source("docx",md,dir.path().to_str().unwrap(),&options).unwrap();
+        assert_eq!(prepared,md,"The shared pipeline must preserve citation source until typed parsing");
+        let (doc,_)=publication_document(&prepared,dir.path().to_str().unwrap(),&options).unwrap();
+        let package=crate::docx_writer::build(&doc,&options,"Study",&|_|None);
+        let part=|name:&str|String::from_utf8(package.parts.iter().find(|(path,_)|path==name).unwrap().1.clone()).unwrap();
+        assert!(part("word/document.xml").contains("janvier"));
+        assert!(part("docProps/core.xml").contains("<dc:language>fr-CA</dc:language>"));
+        assert!(part("word/styles.xml").contains("<w:lang w:val=\"fr-CA\""));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(),2);
+    }
+    #[test]
+    fn epub_all_entry_points_include_real_csl_without_duplicate_bibliography() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("refs.bib"), "@book{kant,title={Critique of Pure Reason},author={Kant, Immanuel},year={1781}}").unwrap();
+        let md = "---\nbibliography: refs.bib\ncsl: apa\nlang: en-US\n---\n# Research\n\nConsult [@kant, p. 42].\n\n`[@kant]`\n\n$x^2$\n";
+        for unified in [false, true] {
+            let target = dir.path().join(if unified {"unified.epub"} else {"legacy.epub"});
+            if unified {
+                export_document("epub", md, dir.path().to_str().unwrap(), target.to_str().unwrap(), &serde_json::json!({}), "Research", dir.path()).unwrap();
+            } else {
+                export_epub(md, dir.path().to_str().unwrap(), target.to_str().unwrap(), &serde_json::json!({}), "Research").unwrap();
+            }
+            let mut text = String::new();
+            for (name, method, _, _, _, payload) in local_entries(&fs::read(target).unwrap()) {
+                if name.ends_with(".xhtml") {
+                    text.push_str(&if method==8 {inflate(&payload)}else{String::from_utf8(payload).unwrap()});
+                }
+            }
+            assert!(text.contains("Kant, 1781, p. 42"), "CSL locator was lost: {text}");
+            assert!(text.contains("Critique of Pure Reason"));
+            assert!(text.contains("<em>Critique of Pure Reason</em>"));
+            assert_eq!(text.matches(">References</h").count(), 1, "bibliography duplicated: {text}");
+            assert!(text.contains("<code>[@kant]</code>"), "code example was rewritten");
+            assert!(text.contains("<math"), "formula must remain MathML");
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3, "export must not leave temporary assets");
+    }
+
+    #[test]
+    fn epub_math_font_is_self_contained_licensed_and_only_packaged_when_needed() {
+        for (content,expected) in [("# Plain\n\nText only.\n",false),("# Math\n\n$x^2$\n",true)] {
+            let (entries,_)=epub_build_entries(&serde_json::json!(content),"",&serde_json::json!({}),"Book","","en-US","urn:uuid:test","2026-10-12T00:00:00Z").unwrap();
+            let font=entries.iter().find(|e|e.path=="OEBPS/fonts/STIXTwoMath-Regular.ttf");assert_eq!(font.is_some(),expected);
+            if let Some(font)=font{assert_eq!(font.data,crate::publication_fonts::MATH);}
+            let license=entries.iter().find(|e|e.path=="OEBPS/fonts/STIX-OFL-1.1.txt");assert_eq!(license.is_some(),expected);
+            if let Some(license)=license{assert!(String::from_utf8_lossy(&license.data).contains("SIL OPEN FONT LICENSE"));}
+            let opf=entries.iter().find(|e|e.path=="OEBPS/content.opf").unwrap();assert_eq!(String::from_utf8_lossy(&opf.data).contains("id=\"math-font\""),expected);
+            let css=entries.iter().find(|e|e.path=="OEBPS/style.css").unwrap();assert_eq!(String::from_utf8_lossy(&css.data).contains("ReadMD Math"),expected);
+        }
+    }
+
+    #[test]
     fn test_tex_export() {
         let temp_dir = tempfile::tempdir().unwrap();
         let out_tex = temp_dir.path().join("test.tex");
@@ -4590,8 +5392,154 @@ mod tests {
             .expect("export_tex should succeed");
         assert!(res.ok);
         let content = fs::read_to_string(out_tex).unwrap();
-        assert!(content.contains(r"\section{Academic Paper}"));
+        assert!(content.contains(r"\csname readmdheading1\endcsname{Academic Paper}"));
+        assert!(!content.contains(r"\maketitle") && !content.contains(r"\today"));
         assert!(content.contains(r"\begin{lstlisting}"));
+    }
+
+    #[test]
+    fn tex_local_termes_warning_tracks_supported_and_mixed_visual_properties() {
+        let dir = tempfile::tempdir().unwrap();
+        for (index, attributes, unsupported, applied) in [
+            (0, serde_json::json!({"text":{"font":"TeX Gyre Termes"}}), false, true),
+            (1, serde_json::json!({"id":"stable","text":{},"paragraph":{}}), false, false),
+            (2, serde_json::json!({"text":{"font":"TeX Gyre Termes","bold":false}}), true, true),
+            (3, serde_json::json!({"text":{"font":"TeX Gyre Termes"},"paragraph":{"lineHeight":1.5}}), true, true),
+            (4, serde_json::json!({"text":{"font":"Other Font"}}), true, false),
+        ] {
+            let directive = crate::publication_blocks::comment(&attributes).unwrap();
+            let source = format!("{directive}\n\nPreserved paragraph.\n\nAfter paragraph.\n");
+            let target = dir.path().join(format!("case{index}.tex"));
+            let result = export_tex(&source, "", target.to_str().unwrap(), &serde_json::json!({}), "Local font").unwrap();
+            assert!(result.ok);
+            assert_eq!(result.warns.unwrap_or_default().iter().any(|warning| warning == "publication_local_style_unsupported"), unsupported);
+            let tex = fs::read_to_string(&target).unwrap();
+            assert_eq!(tex.contains("\\begingroup\\readmdtermesblockfont"), applied);
+            assert!(tex.contains("Preserved paragraph.") && tex.contains("After paragraph."));
+            assert!(!tex.contains("Other Font") && !tex.contains(crate::publication_blocks::PREFIX));
+            assert!(!target.with_extension("assets").exists(), "The managed family must not create new font sidecars");
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 5);
+    }
+
+    #[test]
+    fn tex_invalid_local_font_keeps_existing_target_and_creates_no_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("existing.tex");
+        fs::write(&target, b"Original owned TeX").unwrap();
+        for bad_style in [r#"{"text":{"font":false}}"#, r#"{"text":{"font":"TeX Gyre Termes","unknown":true}}"#] {
+            let source = format!("<!-- readmd:layout v1 {bad_style} -->\n\nVisible 😀.\n");
+            let error = export_tex(&source, "", target.to_str().unwrap(), &serde_json::json!({}), "Invalid local font").unwrap_err();
+            assert_eq!(error, "publication_local_style_invalid");
+            assert_eq!(fs::read(&target).unwrap(), b"Original owned TeX");
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            assert!(!target.with_extension("assets").exists());
+        }
+    }
+
+    #[test]
+    fn tex_smp_font_and_license_are_conditional_exact_and_reused() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain.tex");
+        let options = serde_json::json!({});
+        let (_, used) = export_tex_with_resources("# Plain\n\nLatin α 中文.", "", plain.to_str().unwrap(), &options, "Plain").unwrap();
+        assert!(!used);
+        assert!(!dir.path().join("plain.assets").exists());
+        assert!(!fs::read_to_string(&plain).unwrap().contains("readmdcorefallback"));
+
+        let target = dir.path().join("paper %{} space.tex");
+        let assets = dir.path().join("paper %{} space.assets");
+        let font_name = tex_core_text_font_name();
+        assert!(font_name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b".-".contains(&byte)));
+        let license_name = format!("{}.LICENSE.txt", font_name.trim_end_matches(".ttf"));
+        let (result, used) = export_tex_with_resources("# Paper\n\nVisible 😀.", "", target.to_str().unwrap(), &options, "Paper").unwrap();
+        assert!(used && result.ok);
+        assert!(result.warns.unwrap().contains(&"font_fallback: DejaVu Sans".into()));
+        assert_eq!(fs::read(assets.join(&font_name)).unwrap(), crate::publication_fonts::CORE_TEXT_FALLBACK);
+        assert_eq!(fs::read(assets.join(&license_name)).unwrap(), crate::publication_fonts::CORE_TEXT_FALLBACK_LICENSE);
+        assert_eq!(fs::read_dir(&assets).unwrap().count(), 2);
+        let text = fs::read_to_string(&target).unwrap();
+        assert!(text.contains("Visible \\readmdunicode{😀}."));
+        assert!(!text.contains("paper %{} space.assets/"), "Special file-name characters must be token-encoded");
+
+        // On Windows, retaining a read-only lease also proves that repeated
+        // export does not replace or truncate the existing font resource.
+        let mut reader = fs::OpenOptions::new();
+        reader.read(true);
+        #[cfg(windows)] {
+            use std::os::windows::fs::OpenOptionsExt;
+            reader.share_mode(1);
+        }
+        let _font_lease = reader.open(assets.join(&font_name)).unwrap();
+        let (_, used) = export_tex_with_resources("# Updated\n\nAgain 😀.", "", target.to_str().unwrap(), &options, "Paper").unwrap();
+        assert!(used);
+        assert!(fs::read_to_string(&target).unwrap().contains("Again \\readmdunicode{😀}."));
+        assert_eq!(fs::read_dir(&assets).unwrap().count(), 2);
+        assert_eq!(fs::read(assets.join(&license_name)).unwrap(), crate::publication_fonts::CORE_TEXT_FALLBACK_LICENSE);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3, "Only the two requested TeX files and one existing-style assets folder belong beside the output");
+    }
+
+    #[test]
+    fn tex_smp_resource_conflicts_preserve_existing_tex_and_foreign_bytes() {
+        for conflict_font in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let target = dir.path().join("paper.tex");
+            let assets = dir.path().join("paper.assets");
+            fs::create_dir(&assets).unwrap();
+            fs::write(&target, b"Existing TeX remains intact").unwrap();
+            let font_name = tex_core_text_font_name();
+            let license_name = format!("{}.LICENSE.txt", font_name.trim_end_matches(".ttf"));
+            let conflict_name = if conflict_font { &font_name } else { &license_name };
+            fs::write(assets.join(conflict_name), b"Foreign resource remains intact").unwrap();
+            let error = export_tex("Visible 😀.", "", target.to_str().unwrap(), &serde_json::json!({}), "Paper").unwrap_err();
+            assert!(error.starts_with("latex_workspace_failed: core text resource conflicts"), "{error}");
+            assert_eq!(fs::read(&target).unwrap(), b"Existing TeX remains intact");
+            assert_eq!(fs::read(assets.join(conflict_name)).unwrap(), b"Foreign resource remains intact");
+            assert_eq!(fs::read_dir(&assets).unwrap().count(), 1, "Both names must be checked before any resource is written");
+        }
+    }
+
+    #[test]
+    fn tex_smp_resources_roll_back_after_final_tex_commit_failure() {
+        for reuse_font in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            // A foreign directory cannot be atomically replaced by a .tex file.
+            let target = dir.path().join("paper.tex");
+            fs::create_dir(&target).unwrap();
+            fs::write(target.join("foreign.txt"), b"Foreign destination data").unwrap();
+            let assets = dir.path().join("paper.assets");
+            let font_name = tex_core_text_font_name();
+            if reuse_font {
+                fs::create_dir(&assets).unwrap();
+                fs::write(assets.join(&font_name), crate::publication_fonts::CORE_TEXT_FALLBACK).unwrap();
+                fs::write(assets.join("foreign.txt"), b"Foreign asset data").unwrap();
+            }
+            let error = export_tex("Visible 😀.", "", target.to_str().unwrap(), &serde_json::json!({}), "Paper").unwrap_err();
+            assert!(error.starts_with("Failed to write TeX:"), "{error}");
+            assert_eq!(fs::read(target.join("foreign.txt")).unwrap(), b"Foreign destination data");
+            if reuse_font {
+                assert_eq!(fs::read(assets.join(&font_name)).unwrap(), crate::publication_fonts::CORE_TEXT_FALLBACK);
+                assert_eq!(fs::read(assets.join("foreign.txt")).unwrap(), b"Foreign asset data");
+                assert_eq!(fs::read_dir(&assets).unwrap().count(), 2, "Only this attempt's new license may be removed");
+            } else {
+                assert!(!assets.exists(), "New owned fonts, license and empty assets directory must roll back");
+            }
+        }
+    }
+
+    #[test]
+    fn tex_smp_resource_rollback_preserves_replaced_file_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let assets = dir.path().join("paper.assets");
+        let font_name = tex_core_text_font_name();
+        let guard = tex_core_text_resources(&assets, &font_name).unwrap();
+        let moved = dir.path().join("retained-original.ttf");
+        fs::rename(assets.join(&font_name), &moved).unwrap();
+        fs::write(assets.join(&font_name), b"Foreign replacement data").unwrap();
+        drop(guard);
+        assert_eq!(fs::read(assets.join(&font_name)).unwrap(), b"Foreign replacement data");
+        assert_eq!(fs::read(&moved).unwrap(), crate::publication_fonts::CORE_TEXT_FALLBACK);
+        assert_eq!(fs::read_dir(&assets).unwrap().count(), 1, "The replaced identity and non-empty assets directory belong to the other writer");
     }
 
     #[test]
@@ -4610,7 +5558,19 @@ mod tests {
         assert!(text.contains(r"\addbibresource{paper.assets/references1.bib}"));
         assert_eq!(fs::read(base.join("refs.bib")).unwrap(), fs::read(dir.path().join("paper.assets/references1.bib")).unwrap());
         assert!(!dir.path().join("paper.assets/references2.bib").exists());
-        assert_eq!(result.warns.unwrap().len(), 2);
+        let mut resources=fs::read_dir(dir.path().join("paper.assets")).unwrap()
+            .map(|entry|entry.unwrap().file_name().into_string().unwrap()).collect::<Vec<_>>();
+        resources.sort();
+        assert_eq!(resources,["references1.bib"],"Rejected paths and hidden metadata must not stage extra bibliography/font/license resources");
+        assert_eq!(fs::read(base.join("refs.bib")).unwrap(),b"@book{alpha,title={Local reference}}\n");
+        assert_eq!(fs::read(dir.path().join("outside.bib")).unwrap(),b"outside reference");
+        let mut warnings=result.warns.unwrap();warnings.sort();
+        let mut expected=vec![
+            "publication_font_substituted".to_string(),
+            "参考文献文件不可读取或超出文档目录：../outside.bib".to_string(),
+            "参考文献文件不可读取或超出文档目录：missing.bib".to_string(),
+        ];expected.sort();
+        assert_eq!(warnings,expected,"Font substitution is an explicit capability diagnostic, independent of the two path rejections");
     }
 
     // ------------------------------------------------------------ PDF (native)
@@ -4747,24 +5707,22 @@ mod tests {
 
     #[test]
     fn test_pdf_math_fallback_warns_like_python() {
-        // There is no LaTeX rasteriser in this kernel, so math lands on
-        // `formula.prepare`'s own `fallback: true` rung (`formula.py:156-158`).
-        // The authority does *not* swallow that silently: it appends
-        // `公式无法渲染，已按文本保留：<latex[:60]>` per node (`formula.py:161`).
-        // A green `ok` with no warning here would be faked success, so this
-        // guards the warning, not just the file.
+        // Available math fonts produce real vector formulas and searchable
+        // source. A missing renderer must still report degraded text output.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("math.pdf");
         let md = "Inline $a+b$ then display:\n\n$$c \\times d$$\n\nA second one $e^2$.\n";
         let res = export_pdf(md, "", out.to_str().unwrap(), &serde_json::json!({}), "math", dir.path()).unwrap();
         let warns = res.warns.unwrap_or_default();
         if crate::math_layout::available() {
-            // A math font exists: every formula is drawn as vector paths with
-            // its LaTeX as /ActualText, and nothing is reported as degraded.
+            // Verify actual extraction, rather than searching compressed PDF
+            // bytes for a tag that may have no usable text object.
             assert!(!warns.iter().any(|w| w.starts_with("公式无法渲染")), "{warns:?}");
             let bytes = fs::read(&out).unwrap();
-            let text = crate::pdf_render::tests_inflate_all(&bytes);
-            assert!(text.contains("/ActualText"), "formulas carry their source");
+            let text = pdf_extract::extract_text_from_mem(&bytes).unwrap();
+            for source in ["a+b", r"c \times d", "e^2"] {
+                assert_eq!(text.matches(source).count(), 1, "{text}");
+            }
             return;
         }
         assert!(
@@ -4954,6 +5912,230 @@ mod tests {
         assert!(!opf.contains("href=\"chapter_1.xhtml\" media-type=\"application/xhtml+xml\" properties"), "{opf}");
         assert!(text("OEBPS/chapter_1.xhtml").contains("src=\"images/img_1.png\""));
         assert!(text("OEBPS/chapter_2.xhtml").contains("<math"));
+    }
+
+    #[test]
+    fn nested_word_note_rejection_preserves_existing_output_and_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("notes.docx");
+        let original = "Body[^n].\n\n[^n]: First note.\n";
+        export_docx(original, dir.path().to_str().unwrap(), output.to_str().unwrap(), &serde_json::json!({}), "Notes").unwrap();
+        let bytes = fs::read(&output).unwrap();
+        for source in ["Body[^n].\n\n[^n]: Nested[^other].\n\n[^other]: Other.\n", "Body[^n].\n\n[^n]: Cycle[^n].\n"] {
+            assert_eq!(export_docx(source, dir.path().to_str().unwrap(), output.to_str().unwrap(), &serde_json::json!({}), "Notes").unwrap_err(), crate::api_codes::DOCX_NESTED_FOOTNOTE);
+            assert_eq!(fs::read(&output).unwrap(), bytes);
+        }
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn epub_cover_metadata_and_repeat_notes_survive_the_real_package() {
+        let dir=tempfile::tempdir().unwrap();let output=dir.path().join("book.epub");
+        let md="---\ntitle: Evidence & reasoning\nauthor: [Alice, Bob]\nlang: en-GB\npublisher: Reading group\nkeywords: [inquiry, evidence]\nrights: Author copyright\n---\n# One\n\nFirst[^a] and repeated[^a].\n\n# Two\n\nAgain[^a].\n\n[^a]: A note.\n";
+        export_epub(md,dir.path().to_str().unwrap(),output.to_str().unwrap(),&serde_json::json!({"cover":{"enabled":true,"subtitle":"Workshop <2026>","date":"2026"}}),"File name").unwrap();
+        let bytes=fs::read(output).unwrap();let got=local_entries(&bytes);
+        let text=|name:&str|{let e=got.iter().find(|e|e.0==name).unwrap();if e.1==0{String::from_utf8(e.5.clone()).unwrap()}else{inflate(&e.5)}};
+        let opf=text("OEBPS/content.opf");
+        // Compare XML values, not attribute-free serialization. Authors must be
+        // separate ordered creators so readers can index and attribute them.
+        let dc_values=|local:&str|{
+            use quick_xml::{events::Event,name::ResolveResult,NsReader,XmlVersion};
+            let mut reader=NsReader::from_str(&opf);
+            let mut stack:Vec<Option<String>>=Vec::new();let mut values=Vec::new();
+            loop{match reader.read_event().unwrap(){
+                Event::Start(element)=>{
+                    let (ns,name)=reader.resolver().resolve_element(element.name());
+                    let matches=matches!(ns,ResolveResult::Bound(uri) if uri.as_ref()=="http://purl.org/dc/elements/1.1/")&&name.as_ref()==local;
+                    stack.push(matches.then(String::new));
+                },
+                Event::Text(value)=>{let decoded=value.xml_content(XmlVersion::Implicit1_0);for text in stack.iter_mut().flatten(){text.push_str(&decoded);}},
+                Event::CData(value)=>{let decoded=value.xml_content(XmlVersion::Implicit1_0);for text in stack.iter_mut().flatten(){text.push_str(&decoded);}},
+                Event::GeneralRef(value)=>{let encoded=format!("&{};",value.as_ref());let decoded=quick_xml::escape::unescape(&encoded).unwrap();for text in stack.iter_mut().flatten(){text.push_str(&decoded);}},
+                Event::End(_)=>{if let Some(Some(value))=stack.pop(){values.push(value);}},
+                Event::DocType(_)=>panic!("Unexpected document type in generated OPF"),
+                Event::Eof=>break,
+                _=>(),
+            }}
+            assert!(stack.is_empty());values
+        };
+        assert_eq!(dc_values("title"),["Evidence & reasoning"]);
+        assert_eq!(dc_values("creator"),["Alice","Bob"]);
+        assert_eq!(dc_values("language"),["en-GB"]);
+        assert_eq!(dc_values("subject"),["inquiry","evidence"]);
+        assert_eq!(dc_values("rights"),["Author copyright"]);
+        assert_eq!(opf.matches("property=\"role\" scheme=\"marc:relators\">aut</meta>").count(),2,"{opf}");
+        assert!(opf.contains("properties=\"cover-image\""));assert!(opf.find("idref=\"cover\"")<opf.find("idref=\"chap_1\""));
+        let svg=text("OEBPS/images/cover.svg");assert!(svg.contains("2400 3200"));crate::svg_render::validate(svg.as_bytes()).unwrap();assert!(svg.contains("Workshop &lt;2026&gt;"));
+        assert!(text("OEBPS/cover.xhtml").contains("images/cover.svg"));
+        let first=text("OEBPS/chapter_1.xhtml");assert_eq!(first.matches("id=\"fnref-1\"").count(),1);assert!(first.contains("id=\"fnref-1-2\""));assert!(first.contains("href=\"#fnref-1-2\""));
+        assert!(text("OEBPS/chapter_2.xhtml").contains("href=\"#fn-1\""));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(),1,"no cover side files");
+    }
+
+    #[test]
+    fn epub_custom_cover_is_shared_and_bad_cover_never_replaces_existing_output() {
+        let dir=tempfile::tempdir().unwrap();let output=dir.path().join("book.epub");let image=dir.path().join("cover.svg");
+        fs::write(&image,r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><rect width="100" height="150" fill="red"/></svg>"#).unwrap();
+        let opts=serde_json::json!({"epub":{"cover":"cover.svg"}});
+        export_epub("# Book\n\n![Cover](cover.svg)\n",dir.path().to_str().unwrap(),output.to_str().unwrap(),&opts,"Book").unwrap();
+        let saved=fs::read(&output).unwrap();let entries=local_entries(&saved);assert_eq!(entries.iter().filter(|e|e.0.starts_with("OEBPS/images/")).count(),1);
+        fs::write(&image,r#"<svg xmlns="http://www.w3.org/2000/svg"><script>bad()</script></svg>"#).unwrap();
+        assert_eq!(export_epub("# Book",dir.path().to_str().unwrap(),output.to_str().unwrap(),&opts,"Book").unwrap_err(),"epub_cover");assert_eq!(fs::read(&output).unwrap(),saved);
+        assert_eq!(export_epub("# Book",dir.path().to_str().unwrap(),output.to_str().unwrap(),&serde_json::json!({"epub":{"cover":"missing.png"}}),"Book").unwrap_err(),"file_not_found");assert_eq!(fs::read(output).unwrap(),saved);
+    }
+
+    #[test]
+    fn epub_cover_isolated_viewport_preserves_accessible_title_and_body_styles() {
+        use crate::math_document::{parse_xml, XmlNode};
+        fn nodes<'a>(node: &'a XmlNode, output: &mut Vec<&'a XmlNode>) {
+            output.push(node);
+            for child in node.children() { nodes(child, output); }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("cover.epub");
+        let title = "Original <cover> & \"quoted\" 😀";
+        let options = serde_json::json!({
+            "cover":{"enabled":true,"title":title},
+            "epub":{"fontSize":61,"lineHeight":4.5,"marginV":19,"marginH":23,"fontFamily":"body-only-sentinel"}
+        });
+        export_epub("# Body\n\nBody text.", dir.path().to_str().unwrap(), output.to_str().unwrap(), &options, "Book").unwrap();
+        let bytes = fs::read(output).unwrap();
+        let entries = local_entries(&bytes);
+        let text = |name: &str| {
+            let entry = entries.iter().find(|entry| entry.0 == name).unwrap();
+            if entry.1 == 0 { String::from_utf8(entry.5.clone()).unwrap() } else { inflate(&entry.5) }
+        };
+        let cover = text("OEBPS/cover.xhtml");
+        let document = parse_xml(&cover).unwrap();
+        let mut all = Vec::new();
+        nodes(&document, &mut all);
+        assert!(!all.iter().any(|node| node.local() == "link" || node.local() == "script"));
+        assert!(!cover.contains("100vh") && !cover.contains("body-only-sentinel"));
+        let style = all.iter().find(|node| node.local() == "style").unwrap().text();
+        for rule in [
+            "@page{margin:0;padding:0}",
+            "html,body{margin:0;padding:0;width:100%;height:100%;line-height:0}",
+            "svg{display:block;margin:0;padding:0;width:100%;height:100%}",
+        ] { assert!(style.contains(rule), "{style}"); }
+        let svg = all.iter().find(|node| node.local() == "svg").unwrap();
+        assert_eq!(svg.namespace, "http://www.w3.org/2000/svg");
+        assert_eq!(svg.attributes["viewBox"], "0 0 2400 3200");
+        assert_eq!(svg.attributes["preserveAspectRatio"], "xMidYMid meet");
+        assert_eq!(svg.attributes["role"], "img");
+        assert_eq!(svg.attributes["aria-labelledby"], "cover-image-title");
+        let labels: Vec<_> = all.iter().filter(|node| node.local() == "title").collect();
+        assert_eq!(labels.len(), 2);
+        assert!(labels.iter().all(|node| node.text() == title));
+        assert_eq!(labels.iter().find(|node| node.namespace == "http://www.w3.org/2000/svg").unwrap().attributes["id"], "cover-image-title");
+        let image = all.iter().find(|node| node.local() == "image").unwrap();
+        assert_eq!(image.attributes["xlink:href"], "images/cover.svg");
+        assert_eq!(image.attributes["preserveAspectRatio"], "xMidYMid meet");
+        let opf = text("OEBPS/content.opf");
+        assert!(opf.contains("id=\"cover\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\" properties=\"svg\""));
+        assert!(opf.find("idref=\"cover\"") < opf.find("idref=\"nav\""));
+        assert!(text("OEBPS/style.css").contains("body-only-sentinel"));
+        assert!(text("OEBPS/chapter_1.xhtml").contains("href=\"style.css\""));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1, "cover has no external side files");
+    }
+
+    #[test]
+    fn epub_cover_raster_viewports_use_real_headers_and_preserve_shared_image_bytes() {
+        use image::{DynamicImage, ImageFormat};
+        for (extension, format, width, height) in [
+            ("png", ImageFormat::Png, 48, 30),
+            ("jpeg", ImageFormat::Jpeg, 36, 52),
+            ("gif", ImageFormat::Gif, 44, 28),
+            ("webp", ImageFormat::WebP, 32, 46),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut encoded = std::io::Cursor::new(Vec::new());
+            DynamicImage::new_rgb8(width, height).write_to(&mut encoded, format).unwrap();
+            let encoded = encoded.into_inner();
+            let name = format!("original-cover.{extension}");
+            let source = dir.path().join(&name);
+            fs::write(&source, &encoded).unwrap();
+            let output = dir.path().join("book.epub");
+            let options = serde_json::json!({"epub":{"cover":name}});
+            export_epub(&format!("# Body\n\n![Shared cover]({name})\n"), dir.path().to_str().unwrap(), output.to_str().unwrap(), &options, "Book").unwrap();
+            let bytes = fs::read(output).unwrap();
+            let entries = local_entries(&bytes);
+            let cover = entries.iter().find(|entry| entry.0 == "OEBPS/cover.xhtml").unwrap();
+            let cover = inflate(&cover.5);
+            let document = crate::math_document::parse_xml(&cover).unwrap();
+            let svg = document.children().next().unwrap().children().find(|node| node.local() == "body").unwrap()
+                .children().next().unwrap().children().next().unwrap();
+            assert_eq!(svg.attributes["viewBox"], format!("0 0 {width} {height}"), "{extension}");
+            let packaged: Vec<_> = entries.iter().filter(|entry| entry.0.starts_with("OEBPS/images/")).collect();
+            assert_eq!(packaged.len(), 1, "body and cover share the unchanged resource");
+            assert_eq!(packaged[0].1, 0);
+            assert_eq!(packaged[0].5, encoded);
+            assert_eq!(fs::read(source).unwrap(), encoded);
+        }
+    }
+
+    #[test]
+    fn epub_cover_svg_intrinsic_units_viewbox_and_inline_size_cascade() {
+        for (attributes, expected) in [
+            (r#"width="10cm" height="5cm""#, (960.0 / 2.54, 480.0 / 2.54)),
+            (r#"width="120px" viewBox="-20 10 40 60""#, (120.0, 180.0)),
+            (r#"height="30pt" viewBox="1 2 4 2""#, (80.0, 40.0)),
+            (r#"width="100%" height="50%" viewBox="0,0,360,640""#, (360.0, 640.0)),
+            (r#"viewBox="0 0 1080 1920""#, (1080.0, 1920.0)),
+            (r#"width="100" height="100" style="width:300px!important;width:500px;height:200px""#, (300.0, 200.0)),
+            ("", (300.0, 150.0)),
+        ] {
+            let source = format!(r#"<svg xmlns="http://www.w3.org/2000/svg" {attributes}><rect width="10" height="10"/></svg>"#);
+            let actual = epub_cover_dimensions("svg", source.as_bytes()).unwrap();
+            assert!((actual.0 - expected.0).abs() < 1e-9 && (actual.1 - expected.1).abs() < 1e-9, "{attributes}: {actual:?}");
+            let page = epub_cover_document("images/cover.svg", "Title", "en-GB", actual);
+            assert!(page.contains(&format!("viewBox=\"0 0 {} {}\"", actual.0, actual.1)));
+            assert!(page.contains("preserveAspectRatio=\"xMidYMid meet\""));
+        }
+    }
+
+    #[test]
+    fn epub_cover_exif_quarter_turn_swaps_viewport_without_rewriting_image() {
+        use image::{DynamicImage, ImageFormat};
+        let mut jpeg = std::io::Cursor::new(Vec::new());
+        DynamicImage::new_rgb8(36, 52).write_to(&mut jpeg, ImageFormat::Jpeg).unwrap();
+        let mut jpeg = jpeg.into_inner();
+        // Original, minimal TIFF IFD containing EXIF Orientation=6 (Rotate90).
+        let exif = b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
+        let mut app1 = vec![0xff, 0xe1];
+        app1.extend_from_slice(&u16::try_from(exif.len() + 2).unwrap().to_be_bytes());
+        app1.extend_from_slice(exif);
+        jpeg.splice(2..2, app1);
+        let original = jpeg.clone();
+        assert_eq!(epub_cover_dimensions("jpeg", &jpeg).unwrap(), (52.0, 36.0));
+        assert_eq!(jpeg, original);
+    }
+
+    #[test]
+    fn epub_cover_invalid_geometry_and_external_svg_never_replace_existing_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("book.epub");
+        let image = dir.path().join("cover.svg");
+        let saved = b"existing publication remains intact";
+        fs::write(&output, saved).unwrap();
+        let options = serde_json::json!({"epub":{"cover":"cover.svg"}});
+        for source in [
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="0" height="100"/>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="NaN" height="100"/>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 0"/>"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"><image href="https://example.test/cover.png"/></svg>"#,
+            r#"<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg" width="100" height="150"/>"#,
+        ] {
+            fs::write(&image, source).unwrap();
+            assert_eq!(export_epub("# Body", dir.path().to_str().unwrap(), output.to_str().unwrap(), &options, "Book").unwrap_err(), "epub_cover", "{source}");
+            assert_eq!(fs::read(&output).unwrap(), saved);
+            assert_eq!(fs::read(&image).unwrap(), source.as_bytes());
+        }
+        let corrupt = dir.path().join("corrupt.png");
+        fs::write(&corrupt, b"\x89PNG\r\n\x1a\ntruncated").unwrap();
+        let options = serde_json::json!({"epub":{"cover":"corrupt.png"}});
+        assert_eq!(export_epub("# Body", dir.path().to_str().unwrap(), output.to_str().unwrap(), &options, "Book").unwrap_err(), "epub_cover");
+        assert_eq!(fs::read(&output).unwrap(), saved);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 3);
     }
 
     // ---- ZIP container invariants measured against CPython 3.11.15 ----------
@@ -5886,54 +7068,54 @@ mod tests {
      }
     ]"##;
     const MD_HTML_DOC_CASES: &str = r##"[
-     {
-      "name": "no_assets",
-      "md": "# 标题\n\n段落 <tag> 与 $x^2$ 以及 `code`\n\n<!-- page-break -->\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n\tindented\n\n</script>\n\\newpage\n",
-      "options": {
-       "htmlTheme": "sepia",
-       "typography": {
-        "size": 11.5
-       }
-      },
-      "source_name": "文档.txt",
-      "assets": {},
-      "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>文档.txt</title>\n<style>\n:root { --bg:#faf4e7; --fg:#3b2f1d; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#3b2f1d; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11.5px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#1a1a1a; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#1f2937; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#2d3748; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#374151; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #c8cdd4; padding:6px 6px; text-align:left; }\nth { background:#3b6ef5; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#f3f5f9; }\npre { background:#f5f6f8; color:#2f3b4a; border:0.50px solid #dfe3e8; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#f5f6f8; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#f3f6ff; color:#4a5568; border-left:4px solid #3b6ef5; }\na { color:#2b6cb0; }\nhr { border:none; border-top:1px solid #d8dce2; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11.5pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n\n</script>\n<script>\n\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
-      "warns": [
-       "marked.min.js 未找到，HTML 导出可能无法渲染",
-       "MathJax 未找到，公式可能无法渲染"
-      ]
-     },
-     {
-      "name": "vendor_assets",
-      "md": "# 标题\n\n段落 <tag> 与 $x^2$ 以及 `code`\n\n<!-- page-break -->\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n\tindented\n\n</script>\n\\newpage\n",
-      "options": {
-       "htmlTheme": "dark"
-      },
-      "source_name": "notes.md",
-      "assets": {
-       "marked.min.js": "/*__TITLE__*/window.marked={parse:function(m){return m}};var s='__MD__'+__CSS__;",
-       "vendor/mathjax/tex-svg.js": "/*__KEYWORDS__*/MathJax;/*__HIGHLIGHTS__*/"
-      },
-      "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>notes.md</title>\n<style>\n:root { --bg:#14161a; --fg:#d6d9de; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#d6d9de; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#1a1a1a; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#1f2937; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#2d3748; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#374151; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #c8cdd4; padding:6px 6px; text-align:left; }\nth { background:#3b6ef5; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#f3f5f9; }\npre { background:#f5f6f8; color:#2f3b4a; border:0.50px solid #dfe3e8; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#f5f6f8; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#f3f6ff; color:#4a5568; border-left:4px solid #3b6ef5; }\na { color:#2b6cb0; }\nhr { border:none; border-top:1px solid #d8dce2; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n/*__TITLE__*/window.marked={parse:function(m){return m}};var s='\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"'+__CSS__;\n</script>\n<script>\n/*__KEYWORDS__*/MathJax;/*__HIGHLIGHTS__*/\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
-      "warns": []
-     },
-     {
-      "name": "keywords_in_title",
-      "md": "x",
-      "options": {
-       "meta": {
-        "title": "<a href=\"q\">&</a>"
-       }
-      },
-      "source_name": "",
-      "assets": {},
-      "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>&lt;a href=&quot;q&quot;&gt;&amp;&lt;/a&gt;</title>\n<style>\n:root { --bg:#ffffff; --fg:#262626; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#262626; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#1a1a1a; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#1f2937; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#2d3748; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#374151; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #c8cdd4; padding:6px 6px; text-align:left; }\nth { background:#3b6ef5; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#f3f5f9; }\npre { background:#f5f6f8; color:#2f3b4a; border:0.50px solid #dfe3e8; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#f5f6f8; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#f3f6ff; color:#4a5568; border-left:4px solid #3b6ef5; }\na { color:#2b6cb0; }\nhr { border:none; border-top:1px solid #d8dce2; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"x\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n\n</script>\n<script>\n\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
-      "warns": [
-       "marked.min.js 未找到，HTML 导出可能无法渲染",
-       "MathJax 未找到，公式可能无法渲染"
-      ]
-     }
-    ]"##;
+ {
+  "name": "no_assets",
+  "md": "# 标题\n\n段落 <tag> 与 $x^2$ 以及 `code`\n\n<!-- page-break -->\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n\tindented\n\n</script>\n\\newpage\n",
+  "options": {
+   "htmlTheme": "sepia",
+   "typography": {
+    "size": 11.5
+   }
+  },
+  "source_name": "文档.txt",
+  "assets": {},
+  "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>文档.txt</title>\n<style>\n:root { --bg:#faf4e7; --fg:#3b2f1d; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#3b2f1d; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11.5px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#1a1a1a; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#1f2937; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#2d3748; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#374151; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #c8cdd4; padding:6px 6px; text-align:left; }\nth { background:#3b6ef5; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#f3f5f9; }\npre { background:#f5f6f8; color:#2f3b4a; border:0.50px solid #dfe3e8; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#f5f6f8; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#f3f6ff; color:#4a5568; border-left:4px solid #3b6ef5; }\na { color:#2b6cb0; }\nhr { border:none; border-top:1px solid #d8dce2; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11.5pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n\n</script>\n<script>\n\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
+  "warns": [
+   "marked.min.js 未找到，HTML 导出可能无法渲染",
+   "MathJax 未找到，公式可能无法渲染"
+  ]
+ },
+ {
+  "name": "vendor_assets",
+  "md": "# 标题\n\n段落 <tag> 与 $x^2$ 以及 `code`\n\n<!-- page-break -->\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n\tindented\n\n</script>\n\\newpage\n",
+  "options": {
+   "htmlTheme": "dark"
+  },
+  "source_name": "notes.md",
+  "assets": {
+   "marked.min.js": "/*__TITLE__*/window.marked={parse:function(m){return m}};var s='__MD__'+__CSS__;",
+   "vendor/mathjax/tex-svg.js": "/*__KEYWORDS__*/MathJax;/*__HIGHLIGHTS__*/"
+  },
+  "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>notes.md</title>\n<style>\n:root { --bg:#14161a; --fg:#d6d9de; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#d6d9de; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#d6d9de; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #414854; padding:6px 6px; text-align:left; }\nth { background:#345bd1; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#1d232e; }\npre { background:#20242c; color:#d6d9de; border:0.50px solid #414854; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#20242c; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#1c2440; color:#cbd3e6; border-left:4px solid #7298ff; }\na { color:#8ebfff; }\nhr { border:none; border-top:1px solid #414854; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n:not(pre) > code { color:#ff99b0; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n/*__TITLE__*/window.marked={parse:function(m){return m}};var s='\"# 标题\\n\\n段落 \\u003ctag> 与 $x^2$ 以及 `code`\\n\\n\\u003c!-- page-break -->\\n\\n| a | b |\\n|---|---|\\n| 1 | 2 |\\n\\n- [x] done\\n\\n\\tindented\\n\\n\\u003c/script>\\n\\\\newpage\\n\"'+__CSS__;\n</script>\n<script>\n/*__KEYWORDS__*/MathJax;/*__HIGHLIGHTS__*/\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
+  "warns": []
+ },
+ {
+  "name": "keywords_in_title",
+  "md": "x",
+  "options": {
+   "meta": {
+    "title": "<a href=\"q\">&</a>"
+   }
+  },
+  "source_name": "",
+  "assets": {},
+  "html": "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<meta name=\"generator\" content=\"ReadMD\">\n<meta name=\"keywords\" content=\"\">\n<title>&lt;a href=&quot;q&quot;&gt;&amp;&lt;/a&gt;</title>\n<style>\n:root { --bg:#ffffff; --fg:#262626; }\n* { box-sizing: border-box; }\nbody { margin:0; background:var(--bg); color:#262626; font-family:\"Microsoft YaHei\", \"Microsoft YaHei UI\", \"PingFang SC\", \"微软雅黑\", sans-serif; font-size:11px; line-height:1.6; padding:24px 16px 64px; }\n#content { max-width:820px; margin:0 auto; word-wrap:break-word; }\nh1 { font-size:20pt; color:#1a1a1a; font-weight:bold; text-align:left; margin-top:18pt; margin-bottom:10pt; line-height:1.35; }\nh2 { font-size:16pt; color:#1f2937; font-weight:bold; text-align:left; margin-top:14pt; margin-bottom:8pt; line-height:1.35; }\nh3 { font-size:14pt; color:#2d3748; font-weight:bold; text-align:left; margin-top:12pt; margin-bottom:6pt; line-height:1.35; }\nh4 { font-size:12pt; color:#374151; font-weight:bold; text-align:left; margin-top:10pt; margin-bottom:6pt; line-height:1.35; }\nh5 { font-size:11pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\nh6 { font-size:10.5pt; color:#4a5568; font-weight:bold; text-align:left; margin-top:8pt; margin-bottom:4pt; line-height:1.35; }\ntable { border-collapse:collapse; width:100%; margin:8px auto; font-size:10pt; }\nth, td { border:0.75px solid #c8cdd4; padding:6px 6px; text-align:left; }\nth { background:#3b6ef5; color:#ffffff; font-weight:bold; }\ntbody tr:nth-child(even) { background:#f3f5f9; }\npre { background:#f5f6f8; color:#2f3b4a; border:0.50px solid #dfe3e8; border-radius:8px; padding:12px 14px; overflow:auto; font-family:Consolas, Consolas, monospace; font-size:9.5pt; line-height:1.5; }\ncode { font-family:Consolas, Consolas, monospace; }\n:not(pre) > code { background:#f5f6f8; color:#c7254e; padding:2px 5px; border-radius:4px; font-size:.92em; }\nblockquote { margin:8px 0; padding:8px 14px; background:#f3f6ff; color:#4a5568; border-left:4px solid #3b6ef5; }\na { color:#2b6cb0; }\nhr { border:none; border-top:1px solid #d8dce2; margin:16px 0; }\nimg { max-width:100%; height:auto; }\np > img:only-child { display:block; max-width:92%; margin:0 auto; object-fit:contain; }\nli.task-list-item { list-style:none; margin-left:-20px; }\nblockquote p, blockquote li { margin:4px 0; }\n@page { size:210mm 297mm; margin:20mm 18mm 20mm 18mm; }\nbody { font-size:11pt; } p { text-align:left; text-indent:0mm; margin-bottom:6pt; }\nh1,h2,h3,h4,h5,h6 { break-after:avoid; text-indent:0; } thead { display:table-header-group; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }\n@media print { body { padding:0; } #content { max-width:none; } p { orphans:3; widows:3; } }\n.readmd-pagebreak { break-after:page; page-break-after:always; }\n</style>\n</head>\n<body>\n<article id=\"content\" class=\"readmd-export\"></article>\n<script type=\"application/json\" id=\"md-source\">\"x\"</script>\n<script>\nwindow.MathJax = {\n  tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },\n  svg: { fontCache: 'global' },\n  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }\n};\n</script>\n<script>\n\n</script>\n<script>\n\n</script>\n<script>\n(function () {\n  var md = JSON.parse(document.getElementById('md-source').textContent);\n  var html;\n  try { html = marked.parse(md, { gfm: true, breaks: true }); }\n  catch (e) { html = '<p>渲染失败：' + e.message + '</p>'; }\n  document.getElementById('content').innerHTML = html;\n  var root = document.getElementById('content');\n  var highlights = {};\n  root.querySelectorAll('pre > code').forEach(function (code) {\n    var key = code.textContent.replace(/\\n+$/, '');\n    if (Object.prototype.hasOwnProperty.call(highlights, key)) code.innerHTML = highlights[key];\n  });\n  var walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);\n  var breaks = [], node;\n  while ((node = walker.nextNode())) {\n    if (/^page-?break$/.test(node.textContent.trim())) breaks.push(node);\n  }\n  root.querySelectorAll('p').forEach(function (p) {\n    if (p.textContent.trim() === '\\\\newpage') breaks.push(p);\n  });\n  breaks.forEach(function (node) {\n    var div = document.createElement('div');\n    div.className = 'readmd-pagebreak'; node.replaceWith(div);\n  });\n  if (window.MathJax && MathJax.typesetPromise) {\n    try { MathJax.typesetPromise().catch(function () {}); } catch (e) {}\n  }\n})();\n</script>\n</body>\n</html>\n",
+  "warns": [
+   "marked.min.js 未找到，HTML 导出可能无法渲染",
+   "MathJax 未找到，公式可能无法渲染"
+  ]
+ }
+]"##;
     const MD_HTML_TITLE_CASES: &str = r#"[
      {
       "name": "angles",
@@ -6542,10 +7724,10 @@ mod tests {
         }
         assert_eq!(checked, cases.len());
     }
-    /// `html_render.render()` end to end: template, substitution order, asset
-    /// warnings, `newline='\n'` write.
+    /// Legacy end-to-end rendering plus the explicitly revised dark-theme
+    /// golden. Default light surfaces in dark output are an intentional fix.
     #[test]
-    fn test_export_html_matches_python_render() {
+    fn test_export_html_matches_legacy_render_with_dark_readability_fix() {
         for case in md_html_cases(MD_HTML_DOC_CASES).as_array().unwrap() {
             let name = case["name"].as_str().unwrap();
             let dir = tempfile::tempdir().unwrap();

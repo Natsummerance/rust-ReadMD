@@ -2,6 +2,7 @@
 // Validate the staged website, SEO metadata and inventory-backed recordings.
 // Usage: node website/tools/validate-website.mjs [--release] [--root DIR]
 import fs from 'node:fs';
+import { publishedRelease } from '../public/assets/release-contract.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,7 @@ const pageSet = slug => Object.fromEntries(Object.entries(LANG_PREFIX).map(([lan
 const INTENT_PAGES = pageSet('workflows');
 const DOWNLOAD_PAGES = pageSet('download');
 const INTEGRATION_PAGES = pageSet('integrations');
+const AI_PAGES = pageSet('ai-autocomplete');
 const ANSWER_TOPICS = [
   ['large-files', 'large-markdown-files'], ['slides', 'markdown-to-slides'], ['conversion', 'convert-to-markdown'],
   ['pdf', 'pdf-to-markdown'], ['tables', 'markdown-tables'], ['release-notes', 'release-notes'],
@@ -42,12 +44,7 @@ for (const [key, slug] of ANSWER_TOPICS) {
 
 const RELEASE_INFO = JSON.parse(fs.readFileSync(path.join(SITE, 'release.json'), 'utf8'));
 const VERSION = RELEASE_INFO.stable;
-const RELEASE_ASSETS = new Set([
-  'ReadMDSetup-windows-x64.exe', 'ReadMD-windows-x64.zip',
-  'ReadMD-macos-arm64.zip', 'ReadMD-macos-x64.zip', 'ReadMD-macos-arm64.dmg', 'ReadMD-macos-x64.dmg',
-  'ReadMD-linux-x86_64.tar.gz', 'ReadMD-linux-x86_64.deb', 'SHA256SUMS.txt',
-  `readmd-vscode-${VERSION}.vsix`, `readmd-mcp-server-${VERSION}.zip`,
-]);
+const RELEASE_ASSETS = new Set(publishedRelease(JSON.parse(fs.readFileSync(path.join(SITE, 'published-release.json'), 'utf8'))).assets.map(asset => asset.name));
 const AI_CRAWLERS = ['GPTBot', 'OAI-SearchBot', 'ClaudeBot', 'PerplexityBot'];
 const FAQ_QUESTION_COUNTS = {};
 for (const c of Object.values(LANGUAGES)) FAQ_QUESTION_COUNTS[c.canonical] = 6;
@@ -252,7 +249,7 @@ function validateRobotsAndSitemap() {
   if (!robots.includes('Sitemap: https://rust.readmd.asia/sitemap.xml')) errors.push('robots.txt omits canonical sitemap');
   const sitemap = read(P('sitemap.xml'));
   if (!sitemap.includes('xmlns:xhtml="http://www.w3.org/1999/xhtml"')) errors.push('sitemap omits XHTML hreflang namespace');
-  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
+  const expected = new Set([LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES, AI_PAGES].flatMap(g => Object.values(g).map(c => c.canonical)));
   expected.add('https://rust.readmd.asia/showcase/');
   const actual = new Set([...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(m => m[1]));
   if (!setEq(actual, expected)) errors.push(`sitemap mismatch: missing=${pySet(minus(expected, actual))}, extra=${pySet(minus(actual, expected))}`);
@@ -495,11 +492,11 @@ function main() {
     if(/data-webm=/.test(html))errors.push('Derived WebM belongs to ignored dist only: '+c.path);
     if(/class="journey-caption[^>]*\sinert\b/.test(html))errors.push('Static chapters must remain accessible without JavaScript: '+c.path);
   }
-  for (const c of Object.values(INTEGRATION_PAGES)) {
+  for (const c of [...Object.values(INTEGRATION_PAGES),...Object.values(AI_PAGES)]) {
     if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
     const html=read(c.path);
     if (!html.includes('rel="canonical" href="'+c.canonical+'"')) errors.push('Integration canonical mismatch: '+c.canonical);
-    if (!html.includes('V'+RELEASE_INFO.candidate) || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
+    if (!html.includes('V'+RELEASE_INFO.candidate) || (!html.includes('--mcp') && !html.includes('ai-autocomplete.mp4'))) errors.push('Integration capabilities missing: '+c.canonical);
   }
   const groups = [[LANGUAGES, 'index'], [INTENT_PAGES, 'workflow page'], [DOWNLOAD_PAGES, 'download page'], [ANSWER_PAGES, 'answer page']];
   for (const [group, label] of groups) {
@@ -526,7 +523,7 @@ function main() {
     answer_pages: Object.keys(ANSWER_PAGES),
     showcase_features: JSON.parse(read(P('showcase/catalog.json'))).features.length,
     broad_seo: {
-      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
+      canonical_pages: 1 + [LANGUAGES, INTENT_PAGES, DOWNLOAD_PAGES, ANSWER_PAGES, INTEGRATION_PAGES, AI_PAGES].reduce((n, g) => n + Object.keys(g).length, 0),
       atom_feed: true, entity_graph: true, security_txt: true, quality_404: true, genuine_operation_gallery: true,
     },
   }));

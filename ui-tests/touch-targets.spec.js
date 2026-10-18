@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test('mobile reader controls meet touch target budgets', async ({ page }, testInfo) => {
@@ -9,7 +10,7 @@ test('mobile reader controls meet touch target budgets', async ({ page }, testIn
   }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'zh-CN'));
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
 
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'touch.md', '', '# Touch target\n\nReadable body.', []);

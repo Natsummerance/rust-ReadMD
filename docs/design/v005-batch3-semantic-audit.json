@@ -1,0 +1,7837 @@
+{
+  "schema": 1,
+  "kind": "planning-only",
+  "date": "2026-10-12",
+  "version": "V0.0.5",
+  "scope": "B3-51 through B3-57; no requirement completion status changes",
+  "source": {
+    "path": "docs/design/office-math-coverage.json",
+    "fileSha256": "4b70f8bf4ab29029b3aa2b64daad456c9a3c92d1fa32eba8bcf2a517cee78e5e",
+    "upstream": "https://github.com/dotnet/Open-XML-SDK/blob/b424997c2c81410d375a72bf68837b87b7b807e8/data/schemas/schemas_openxmlformats_org_officeDocument_2006_math.json",
+    "upstreamSha256": "237395f1e5cee42e34ab12675251f5c01c212fe0dac5484aa36ffcbdfa58d892"
+  },
+  "policy": "Pending final certification is not equivalent to missing implementation. Search is navigation only. Retain prior incremental evidence; attach final build and actual application evidence separately.",
+  "counts": {
+    "schemaEntries": 133,
+    "abstractTypes": 9,
+    "concreteElements": 124,
+    "coreObjects": 19,
+    "enumerations": 12,
+    "enumerationValues": 43
+  },
+  "workItems": {
+    "math": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+      "M09",
+      "M10",
+      "M11",
+      "M12",
+      "M13",
+      "M14",
+      "M15"
+    ],
+    "publication": [
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09",
+      "P10",
+      "P11",
+      "P12",
+      "P13",
+      "P14",
+      "P15"
+    ],
+    "interoperability": [
+      "I01",
+      "I02",
+      "I03",
+      "I04",
+      "I05",
+      "I06",
+      "I07",
+      "I08",
+      "I09",
+      "I10"
+    ],
+    "delivery": [
+      "D01",
+      "D02",
+      "D03",
+      "D04",
+      "D05",
+      "D06",
+      "D07"
+    ]
+  },
+  "testTemplates": {
+    "S01": "Valid DSL -> MathDocument -> OMML -> DSL; compare explicit presence, values and untouched subtree semantics.",
+    "S02": "For each legal parent: order, choice, min/max occurrence, missing/duplicate child, namespace and input budgets.",
+    "S03": "Absent/empty-if-allowed/explicit-default/nondefault/off-if-switch; units, boundary and invalid values; conflicts adjudicated by M15.",
+    "S04": "Real rendered geometry and ink bounds using an independent font/standard oracle; SVG/PDF and editing hit map.",
+    "S05": "Native exact-node edit, undo/redo, cancel, save, process restart and stale-revision rejection.",
+    "S06": "Actual Word open/edit/save/reopen and ReadMD reimport; SDK-only validation is insufficient.",
+    "S07": "MathML/EPUB actual independent-reader projection; identify standard limitations and report semantic losses.",
+    "S08": "Inherited abstract-type constraints verified through concrete descendants; no user insertable abstract object.",
+    "S09": "Every enumeration facet compiles/decompiles and is consumed in the intended parent, with invalid alternatives rejected."
+  },
+  "elements": [
+    {
+      "id": "OMML-E-001",
+      "element": "scr",
+      "className": "Script",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "rPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.ScriptValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-002",
+      "element": "sty",
+      "className": "Style",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "rPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.StyleValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-003",
+      "element": "r",
+      "className": "Run",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMathPara",
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "rPr",
+        "w:rPr",
+        "w:br",
+        "w:t",
+        "w:delText",
+        "w:instrText",
+        "w:delInstrText",
+        "w:noBreakHyphen",
+        "w:softHyphen",
+        "w:dayShort",
+        "w:monthShort",
+        "w:yearShort",
+        "w:dayLong",
+        "w:monthLong",
+        "w:yearLong",
+        "w:annotationRef",
+        "w:footnoteRef",
+        "w:endnoteRef",
+        "w:separator",
+        "w:continuationSeparator",
+        "w:sym",
+        "w:pgNum",
+        "w:cr",
+        "w:tab",
+        "w:object",
+        "w:pict",
+        "w:fldChar",
+        "w:ruby",
+        "w:footnoteReference",
+        "w:endnoteReference",
+        "w:commentReference",
+        "w:drawing",
+        "w:ptab",
+        "w:lastRenderedPageBreak",
+        "t"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-004",
+      "element": "acc",
+      "className": "Accent",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "accPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-005",
+      "element": "bar",
+      "className": "Bar",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "barPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-006",
+      "element": "box",
+      "className": "Box",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "boxPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "2026-10-13 limited differential/transparent-phantom spacing and explicit box wrapping implemented with native geometry/edit/save/restart. Literal and multi-character run semantics, complete combinations and actual Word remain pending.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "id": "OMML-E-007",
+      "element": "borderBox",
+      "className": "BorderBox",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "borderBoxPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-008",
+      "element": "d",
+      "className": "Delimiter",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "dPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-009",
+      "element": "eqArr",
+      "className": "EquationArray",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "eqArrPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-010",
+      "element": "f",
+      "className": "Fraction",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "fPr",
+        "num",
+        "den"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-011",
+      "element": "func",
+      "className": "MathFunction",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "funcPr",
+        "fName",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-012",
+      "element": "groupChr",
+      "className": "GroupChar",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "groupChrPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-013",
+      "element": "limLow",
+      "className": "LimitLower",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "limLowPr",
+        "e",
+        "lim"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-014",
+      "element": "limUpp",
+      "className": "LimitUpper",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "limUppPr",
+        "e",
+        "lim"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-015",
+      "element": "m",
+      "className": "Matrix",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "mPr",
+        "mr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-016",
+      "element": "nary",
+      "className": "Nary",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "naryPr",
+        "sub",
+        "sup",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-017",
+      "element": "phant",
+      "className": "Phantom",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "phantPr",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "2026-10-13 limited differential/transparent-phantom spacing and explicit box wrapping implemented with native geometry/edit/save/restart. Literal and multi-character run semantics, complete combinations and actual Word remain pending.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json",
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-018",
+      "element": "rad",
+      "className": "Radical",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "radPr",
+        "deg",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-019",
+      "element": "sPre",
+      "className": "PreSubSuper",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "sPrePr",
+        "sub",
+        "sup",
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-020",
+      "element": "sSub",
+      "className": "Subscript",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "sSubPr",
+        "e",
+        "sub"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-021",
+      "element": "sSubSup",
+      "className": "SubSuperscript",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "sSubSupPr",
+        "e",
+        "sub",
+        "sup"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-022",
+      "element": "sSup",
+      "className": "Superscript",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "sSupPr",
+        "e",
+        "sup"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-023",
+      "element": "oMathPara",
+      "className": "Paragraph",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "oMathParaPr",
+        "oMath",
+        "r",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "w:r"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-024",
+      "element": "oMath",
+      "className": "OfficeMath",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMathPara",
+        "oMath",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-025",
+      "element": "mathPr",
+      "className": "MathProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [],
+      "children": [
+        "mathFont",
+        "brkBin",
+        "brkBinSub",
+        "smallFrac",
+        "dispDef",
+        "lMargin",
+        "rMargin",
+        "defJc",
+        "preSp",
+        "postSp",
+        "interSp",
+        "intraSp",
+        "wrapIndent",
+        "wrapRight",
+        "intLim",
+        "naryLim"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-026",
+      "element": "lit",
+      "className": "Literal",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "rPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Explicit semantic-consumer gap or incomplete distinction identified in inspected code; verify with a minimal runtime fixture.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-027",
+      "element": "nor",
+      "className": "NormalText",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "rPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-028",
+      "element": "aln",
+      "className": "Alignment",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "rPr",
+        "boxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Explicit semantic-consumer gap or incomplete distinction identified in inspected code; verify with a minimal runtime fixture.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-029",
+      "element": "opEmu",
+      "className": "OperatorEmulator",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "boxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-030",
+      "element": "noBreak",
+      "className": "NoBreak",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "boxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "2026-10-13 limited differential/transparent-phantom spacing and explicit box wrapping implemented with native geometry/edit/save/restart. Literal and multi-character run semantics, complete combinations and actual Word remain pending.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "id": "OMML-E-031",
+      "element": "diff",
+      "className": "Differential",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "boxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "2026-10-13 limited differential/transparent-phantom spacing and explicit box wrapping implemented with native geometry/edit/save/restart. Literal and multi-character run semantics, complete combinations and actual Word remain pending.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "id": "OMML-E-032",
+      "element": "hideTop",
+      "className": "HideTop",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-033",
+      "element": "hideBot",
+      "className": "HideBottom",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-034",
+      "element": "hideLeft",
+      "className": "HideLeft",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-035",
+      "element": "hideRight",
+      "className": "HideRight",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-036",
+      "element": "strikeH",
+      "className": "StrikeHorizontal",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-037",
+      "element": "strikeV",
+      "className": "StrikeVertical",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-038",
+      "element": "strikeBLTR",
+      "className": "StrikeBottomLeftToTopRight",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-039",
+      "element": "strikeTLBR",
+      "className": "StrikeTopLeftToBottomRight",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "borderBoxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-040",
+      "element": "grow",
+      "className": "GrowOperators",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "dPr",
+        "naryPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-041",
+      "element": "maxDist",
+      "className": "MaxDistribution",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "eqArrPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Explicit semantic-consumer gap or incomplete distinction identified in inspected code; verify with a minimal runtime fixture.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-042",
+      "element": "objDist",
+      "className": "ObjectDistribution",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "eqArrPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Explicit semantic-consumer gap or incomplete distinction identified in inspected code; verify with a minimal runtime fixture.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-043",
+      "element": "plcHide",
+      "className": "HidePlaceholder",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Implemented and tested in bounded Windows native workflows: physical minimum width, independent gap, empty-slot ink/source identity, generated MathML reimport and actual exports. Actual Word/independent EPUB reader certification remains pending; cSp missing val schema conflict remains M15.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-matrix-semantics-manifest.json",
+          "sha256": "00c39f42b4579f1bb9c7b0b48123c8fa258b4d26116fd828eb3dcff8edc96947",
+          "scope": "M03 limited Windows product semantics; full standard/Office/reader certification remains pending",
+          "recordedAt": "2026-10-13T01:13:24.967Z"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-044",
+      "element": "subHide",
+      "className": "HideSubArgument",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "naryPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-045",
+      "element": "supHide",
+      "className": "HideSuperArgument",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "naryPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-046",
+      "element": "show",
+      "className": "ShowPhantom",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "phantPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-047",
+      "element": "zeroWid",
+      "className": "ZeroWidth",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "phantPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-048",
+      "element": "zeroAsc",
+      "className": "ZeroAscent",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "phantPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-049",
+      "element": "zeroDesc",
+      "className": "ZeroDescent",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "phantPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-050",
+      "element": "transp",
+      "className": "Transparent",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "phantPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "2026-10-13 limited differential/transparent-phantom spacing and explicit box wrapping implemented with native geometry/edit/save/restart. Literal and multi-character run semantics, complete combinations and actual Word remain pending.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "id": "OMML-E-051",
+      "element": "degHide",
+      "className": "HideDegree",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "radPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-052",
+      "element": "alnScr",
+      "className": "AlignScripts",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "sSubSupPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-053",
+      "element": "smallFrac",
+      "className": "SmallFraction",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-054",
+      "element": "dispDef",
+      "className": "DisplayDefaults",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-055",
+      "element": "wrapRight",
+      "className": "WrapRight",
+      "abstract": false,
+      "baseClass": "OnOffType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-056",
+      "element": null,
+      "className": "OnOffType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BooleanValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-057",
+      "element": "brk",
+      "className": "Break",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "rPr",
+        "boxPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:alnAt",
+          "type": "IntegerValue",
+          "required": false,
+          "validators": [
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "1"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "255"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        },
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": false,
+          "validators": [
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "1"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "255"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-058",
+      "element": "rPr",
+      "className": "RunProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "r"
+      ],
+      "children": [
+        "lit",
+        "nor",
+        "scr",
+        "sty",
+        "brk",
+        "aln"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-059",
+      "element": "t",
+      "className": "Text",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafTextElement",
+      "parents": [
+        "r"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "xml:space",
+          "type": "EnumValue<DocumentFormat.OpenXml.SpaceProcessingModeValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-060",
+      "element": "chr",
+      "className": "AccentChar",
+      "abstract": false,
+      "baseClass": "CharType",
+      "parents": [
+        "accPr",
+        "groupChrPr",
+        "naryPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "1"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M02",
+        "M05",
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-061",
+      "element": "begChr",
+      "className": "BeginChar",
+      "abstract": false,
+      "baseClass": "CharType",
+      "parents": [
+        "dPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "1"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-062",
+      "element": "sepChr",
+      "className": "SeparatorChar",
+      "abstract": false,
+      "baseClass": "CharType",
+      "parents": [
+        "dPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "1"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-063",
+      "element": "endChr",
+      "className": "EndChar",
+      "abstract": false,
+      "baseClass": "CharType",
+      "parents": [
+        "dPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "1"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-064",
+      "element": null,
+      "className": "CharType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "1"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-065",
+      "element": "ctrlPr",
+      "className": "ControlProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "accPr",
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType",
+        "barPr",
+        "boxPr",
+        "borderBoxPr",
+        "dPr",
+        "eqArrPr",
+        "fPr",
+        "funcPr",
+        "groupChrPr",
+        "limLowPr",
+        "limUppPr",
+        "mPr",
+        "naryPr",
+        "phantPr",
+        "radPr",
+        "sPrePr",
+        "sSubPr",
+        "sSubSupPr",
+        "sSupPr"
+      ],
+      "children": [
+        "w:rPr",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-066",
+      "element": "accPr",
+      "className": "AccentProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "acc"
+      ],
+      "children": [
+        "chr",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-067",
+      "element": "e",
+      "className": "Base",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "mr"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-068",
+      "element": "num",
+      "className": "Numerator",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "f"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-069",
+      "element": "den",
+      "className": "Denominator",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "f"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-070",
+      "element": "fName",
+      "className": "FunctionName",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "func"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-071",
+      "element": "lim",
+      "className": "Limit",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "limLow",
+        "limUpp"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-072",
+      "element": "sub",
+      "className": "SubArgument",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "nary",
+        "sPre",
+        "sSub",
+        "sSubSup"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-073",
+      "element": "sup",
+      "className": "SuperArgument",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "nary",
+        "sPre",
+        "sSubSup",
+        "sSup"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-074",
+      "element": "deg",
+      "className": "Degree",
+      "abstract": false,
+      "baseClass": "OfficeMathArgumentType",
+      "parents": [
+        "rad"
+      ],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-075",
+      "element": null,
+      "className": "OfficeMathArgumentType",
+      "abstract": true,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [],
+      "children": [
+        "argPr",
+        "acc",
+        "bar",
+        "box",
+        "borderBox",
+        "d",
+        "eqArr",
+        "f",
+        "func",
+        "groupChr",
+        "limLow",
+        "limUpp",
+        "m",
+        "nary",
+        "phant",
+        "rad",
+        "sPre",
+        "sSub",
+        "sSubSup",
+        "sSup",
+        "r",
+        "w:customXml",
+        "w:fldSimple",
+        "w:hyperlink",
+        "w:sdt",
+        "w:proofErr",
+        "w:permStart",
+        "w:permEnd",
+        "w:bookmarkStart",
+        "w:bookmarkEnd",
+        "w:commentRangeStart",
+        "w:commentRangeEnd",
+        "w:moveFromRangeStart",
+        "w:moveFromRangeEnd",
+        "w:moveToRangeStart",
+        "w:moveToRangeEnd",
+        "w:customXmlInsRangeStart",
+        "w:customXmlInsRangeEnd",
+        "w:customXmlDelRangeStart",
+        "w:customXmlDelRangeEnd",
+        "w:customXmlMoveFromRangeStart",
+        "w:customXmlMoveFromRangeEnd",
+        "w:customXmlMoveToRangeStart",
+        "w:customXmlMoveToRangeEnd",
+        "w14:customXmlConflictInsRangeStart",
+        "w14:customXmlConflictInsRangeEnd",
+        "w14:customXmlConflictDelRangeStart",
+        "w14:customXmlConflictDelRangeEnd",
+        "w:ins",
+        "w:del",
+        "w:moveFrom",
+        "w:moveTo",
+        "w:contentPart",
+        "w14:conflictIns",
+        "w14:conflictDel",
+        "oMathPara",
+        "oMath",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-076",
+      "element": "pos",
+      "className": "Position",
+      "abstract": false,
+      "baseClass": "TopBottomType",
+      "parents": [
+        "barPr",
+        "groupChrPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.VerticalJustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-077",
+      "element": "vertJc",
+      "className": "VerticalJustification",
+      "abstract": false,
+      "baseClass": "TopBottomType",
+      "parents": [
+        "groupChrPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.VerticalJustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-078",
+      "element": null,
+      "className": "TopBottomType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.VerticalJustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-079",
+      "element": "barPr",
+      "className": "BarProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "bar"
+      ],
+      "children": [
+        "pos",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-080",
+      "element": "boxPr",
+      "className": "BoxProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "box"
+      ],
+      "children": [
+        "opEmu",
+        "noBreak",
+        "diff",
+        "brk",
+        "aln",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-081",
+      "element": "borderBoxPr",
+      "className": "BorderBoxProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "borderBox"
+      ],
+      "children": [
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-082",
+      "element": "shp",
+      "className": "Shape",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "dPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.ShapeDelimiterValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-083",
+      "element": "dPr",
+      "className": "DelimiterProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "d"
+      ],
+      "children": [
+        "begChr",
+        "sepChr",
+        "endChr",
+        "grow",
+        "shp",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-084",
+      "element": "baseJc",
+      "className": "BaseJustification",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "eqArrPr",
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.VerticalAlignmentValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-085",
+      "element": "rSpRule",
+      "className": "RowSpacingRule",
+      "abstract": false,
+      "baseClass": "SpacingRuleType",
+      "parents": [
+        "eqArrPr",
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "0"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "4"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-086",
+      "element": "cGpRule",
+      "className": "ColumnGapRule",
+      "abstract": false,
+      "baseClass": "SpacingRuleType",
+      "parents": [
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "0"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "4"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-087",
+      "element": null,
+      "className": "SpacingRuleType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "0"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "4"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-088",
+      "element": "rSp",
+      "className": "RowSpacing",
+      "abstract": false,
+      "baseClass": "UnsignedShortType",
+      "parents": [
+        "eqArrPr",
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt16Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-089",
+      "element": "cGp",
+      "className": "ColumnGap",
+      "abstract": false,
+      "baseClass": "UnsignedShortType",
+      "parents": [
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt16Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-090",
+      "element": null,
+      "className": "UnsignedShortType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt16Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-091",
+      "element": "eqArrPr",
+      "className": "EquationArrayProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "eqArr"
+      ],
+      "children": [
+        "baseJc",
+        "maxDist",
+        "objDist",
+        "rSpRule",
+        "rSp",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M04",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-092",
+      "element": "type",
+      "className": "FractionType",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "fPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.FractionTypeValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M01",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-093",
+      "element": "fPr",
+      "className": "FractionProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "f"
+      ],
+      "children": [
+        "type",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-094",
+      "element": "funcPr",
+      "className": "FunctionProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "func"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-095",
+      "element": "groupChrPr",
+      "className": "GroupCharProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "groupChr"
+      ],
+      "children": [
+        "chr",
+        "pos",
+        "vertJc",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-096",
+      "element": "limLowPr",
+      "className": "LimitLowerProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "limLow"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M09",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-097",
+      "element": "limUppPr",
+      "className": "LimitUpperProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "limUpp"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-098",
+      "element": "count",
+      "className": "MatrixColumnCount",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "mcPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "1"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "64"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-099",
+      "element": "mcJc",
+      "className": "MatrixColumnJustification",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "mcPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.HorizontalAlignmentValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-100",
+      "element": "mcPr",
+      "className": "MatrixColumnProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "mc"
+      ],
+      "children": [
+        "count",
+        "mcJc"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-101",
+      "element": "mc",
+      "className": "MatrixColumn",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "mcs"
+      ],
+      "children": [
+        "mcPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-102",
+      "element": "cSp",
+      "className": "ColumnSpacing",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Implemented and tested in bounded Windows native workflows: physical minimum width, independent gap, empty-slot ink/source identity, generated MathML reimport and actual exports. Actual Word/independent EPUB reader certification remains pending; cSp missing val schema conflict remains M15.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-matrix-semantics-manifest.json",
+          "sha256": "00c39f42b4579f1bb9c7b0b48123c8fa258b4d26116fd828eb3dcff8edc96947",
+          "scope": "M03 limited Windows product semantics; full standard/Office/reader certification remains pending",
+          "recordedAt": "2026-10-13T01:13:24.967Z"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-103",
+      "element": "lMargin",
+      "className": "LeftMargin",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-104",
+      "element": "rMargin",
+      "className": "RightMargin",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-105",
+      "element": "preSp",
+      "className": "PreSpacing",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-106",
+      "element": "postSp",
+      "className": "PostSpacing",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-107",
+      "element": "interSp",
+      "className": "InterSpacing",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-108",
+      "element": "intraSp",
+      "className": "IntraSpacing",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-109",
+      "element": "wrapIndent",
+      "className": "WrapIndent",
+      "abstract": false,
+      "baseClass": "TwipsMeasureType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-110",
+      "element": null,
+      "className": "TwipsMeasureType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "UInt32Value",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "31680"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-111",
+      "element": "mcs",
+      "className": "MatrixColumns",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "mPr"
+      ],
+      "children": [
+        "mc"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-112",
+      "element": "mPr",
+      "className": "MatrixProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "m"
+      ],
+      "children": [
+        "baseJc",
+        "plcHide",
+        "rSpRule",
+        "cGpRule",
+        "rSp",
+        "cSp",
+        "cGp",
+        "mcs",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-113",
+      "element": "mr",
+      "className": "MatrixRow",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "m"
+      ],
+      "children": [
+        "e"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M03",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-114",
+      "element": "limLoc",
+      "className": "LimitLocation",
+      "abstract": false,
+      "baseClass": "LimitLocationType",
+      "parents": [
+        "naryPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.LimitLocationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-115",
+      "element": "intLim",
+      "className": "IntegralLimitLocation",
+      "abstract": false,
+      "baseClass": "LimitLocationType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.LimitLocationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-116",
+      "element": "naryLim",
+      "className": "NaryLimitLocation",
+      "abstract": false,
+      "baseClass": "LimitLocationType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.LimitLocationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-117",
+      "element": null,
+      "className": "LimitLocationType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.LimitLocationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-118",
+      "element": "naryPr",
+      "className": "NaryProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "nary"
+      ],
+      "children": [
+        "chr",
+        "limLoc",
+        "grow",
+        "subHide",
+        "supHide",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M05",
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-119",
+      "element": "phantPr",
+      "className": "PhantomProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "phant"
+      ],
+      "children": [
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M06",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-120",
+      "element": "radPr",
+      "className": "RadicalProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "rad"
+      ],
+      "children": [
+        "degHide",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M02",
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "id": "OMML-E-121",
+      "element": "sPrePr",
+      "className": "PreSubSuperProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "sPre"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-122",
+      "element": "sSubPr",
+      "className": "SubscriptProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "sSub"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-123",
+      "element": "sSubSupPr",
+      "className": "SubSuperscriptProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "sSubSup"
+      ],
+      "children": [
+        "alnScr",
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-124",
+      "element": "sSupPr",
+      "className": "SuperscriptProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "sSup"
+      ],
+      "children": [
+        "ctrlPr"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M07",
+        "M08",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-125",
+      "element": "argSz",
+      "className": "ArgumentSize",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "argPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "IntegerValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MinInclusive",
+                  "Value": "-2"
+                },
+                {
+                  "Type": "Long",
+                  "Name": "MaxInclusive",
+                  "Value": "2"
+                }
+              ],
+              "Name": "NumberValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-126",
+      "element": "argPr",
+      "className": "ArgumentProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "e",
+        "num",
+        "den",
+        "fName",
+        "lim",
+        "sub",
+        "sup",
+        "deg",
+        "OfficeMathArgumentType"
+      ],
+      "children": [
+        "argSz"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-127",
+      "element": "jc",
+      "className": "Justification",
+      "abstract": false,
+      "baseClass": "OfficeMathJustificationType",
+      "parents": [
+        "oMathParaPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.JustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-128",
+      "element": "defJc",
+      "className": "DefaultJustification",
+      "abstract": false,
+      "baseClass": "OfficeMathJustificationType",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.JustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-129",
+      "element": null,
+      "className": "OfficeMathJustificationType",
+      "abstract": true,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.JustificationValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M15"
+      ],
+      "currentAudit": "Schema inheritance obligation; not an editable object.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S02",
+        "S03",
+        "S08"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-130",
+      "element": "mathFont",
+      "className": "MathFont",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "StringValue",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Long",
+                  "Name": "MaxLength",
+                  "Value": "31"
+                }
+              ],
+              "Name": "StringValidator",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M08",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-131",
+      "element": "brkBin",
+      "className": "BreakBinary",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BreakBinaryOperatorValues>",
+          "required": false,
+          "validators": []
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-132",
+      "element": "brkBinSub",
+      "className": "BreakBinarySubtraction",
+      "abstract": false,
+      "baseClass": "OpenXmlLeafElement",
+      "parents": [
+        "mathPr"
+      ],
+      "children": [],
+      "attributes": [
+        {
+          "name": "m:val",
+          "type": "EnumValue<DocumentFormat.OpenXml.Math.BreakBinarySubtractionValues>",
+          "required": true,
+          "validators": [
+            {
+              "Name": "RequiredValidator",
+              "Version": "Office2007"
+            },
+            {
+              "Arguments": [
+                {
+                  "Type": "Boolean",
+                  "Name": "IsRequired",
+                  "Value": "False"
+                }
+              ],
+              "Name": "RequiredValidator",
+              "Version": "Office2010",
+              "IsInitialVersion": true
+            }
+          ]
+        }
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-E-133",
+      "element": "oMathParaPr",
+      "className": "ParagraphProperties",
+      "abstract": false,
+      "baseClass": "OpenXmlCompositeElement",
+      "parents": [
+        "oMathPara"
+      ],
+      "children": [
+        "jc"
+      ],
+      "attributes": [],
+      "workItems": [
+        "M01",
+        "M02",
+        "M03",
+        "M04",
+        "M05",
+        "M06",
+        "M07",
+        "M08",
+        "M09",
+        "M11",
+        "M12",
+        "M15"
+      ],
+      "currentAudit": "Partial implementation or unverified combination; no claim of total absence.",
+      "finalCertification": "pending",
+      "requiredTests": [
+        "S01",
+        "S02",
+        "S03",
+        "S04",
+        "S05",
+        "S06",
+        "S07"
+      ],
+      "finalEvidence": []
+    }
+  ],
+  "enumValues": [
+    {
+      "id": "OMML-V-HorizontalAlignmentValues-01",
+      "enumeration": "HorizontalAlignmentValues",
+      "value": "left",
+      "name": "Left",
+      "applicableElements": [
+        "mcJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-HorizontalAlignmentValues-02",
+      "enumeration": "HorizontalAlignmentValues",
+      "value": "center",
+      "name": "Center",
+      "applicableElements": [
+        "mcJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-HorizontalAlignmentValues-03",
+      "enumeration": "HorizontalAlignmentValues",
+      "value": "right",
+      "name": "Right",
+      "applicableElements": [
+        "mcJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ShapeDelimiterValues-01",
+      "enumeration": "ShapeDelimiterValues",
+      "value": "centered",
+      "name": "Centered",
+      "applicableElements": [
+        "shp"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ShapeDelimiterValues-02",
+      "enumeration": "ShapeDelimiterValues",
+      "value": "match",
+      "name": "Match",
+      "applicableElements": [
+        "shp"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-FractionTypeValues-01",
+      "enumeration": "FractionTypeValues",
+      "value": "bar",
+      "name": "Bar",
+      "applicableElements": [
+        "type"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-FractionTypeValues-02",
+      "enumeration": "FractionTypeValues",
+      "value": "skw",
+      "name": "Skewed",
+      "applicableElements": [
+        "type"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-FractionTypeValues-03",
+      "enumeration": "FractionTypeValues",
+      "value": "lin",
+      "name": "Linear",
+      "applicableElements": [
+        "type"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-FractionTypeValues-04",
+      "enumeration": "FractionTypeValues",
+      "value": "noBar",
+      "name": "NoBar",
+      "applicableElements": [
+        "type"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-LimitLocationValues-01",
+      "enumeration": "LimitLocationValues",
+      "value": "undOvr",
+      "name": "UnderOver",
+      "applicableElements": [
+        "limLoc",
+        "intLim",
+        "naryLim",
+        "LimitLocationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-LimitLocationValues-02",
+      "enumeration": "LimitLocationValues",
+      "value": "subSup",
+      "name": "SubscriptSuperscript",
+      "applicableElements": [
+        "limLoc",
+        "intLim",
+        "naryLim",
+        "LimitLocationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalJustificationValues-01",
+      "enumeration": "VerticalJustificationValues",
+      "value": "top",
+      "name": "Top",
+      "applicableElements": [
+        "pos",
+        "vertJc",
+        "TopBottomType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalJustificationValues-02",
+      "enumeration": "VerticalJustificationValues",
+      "value": "bot",
+      "name": "Bottom",
+      "applicableElements": [
+        "pos",
+        "vertJc",
+        "TopBottomType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-01",
+      "enumeration": "ScriptValues",
+      "value": "roman",
+      "name": "Roman",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-02",
+      "enumeration": "ScriptValues",
+      "value": "script",
+      "name": "Script",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-03",
+      "enumeration": "ScriptValues",
+      "value": "fraktur",
+      "name": "Fraktur",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-04",
+      "enumeration": "ScriptValues",
+      "value": "double-struck",
+      "name": "DoubleStruck",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-05",
+      "enumeration": "ScriptValues",
+      "value": "sans-serif",
+      "name": "SansSerif",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-ScriptValues-06",
+      "enumeration": "ScriptValues",
+      "value": "monospace",
+      "name": "Monospace",
+      "applicableElements": [
+        "scr"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-StyleValues-01",
+      "enumeration": "StyleValues",
+      "value": "p",
+      "name": "Plain",
+      "applicableElements": [
+        "sty"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-StyleValues-02",
+      "enumeration": "StyleValues",
+      "value": "b",
+      "name": "Bold",
+      "applicableElements": [
+        "sty"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-StyleValues-03",
+      "enumeration": "StyleValues",
+      "value": "i",
+      "name": "Italic",
+      "applicableElements": [
+        "sty"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-StyleValues-04",
+      "enumeration": "StyleValues",
+      "value": "bi",
+      "name": "BoldItalic",
+      "applicableElements": [
+        "sty"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-JustificationValues-01",
+      "enumeration": "JustificationValues",
+      "value": "left",
+      "name": "Left",
+      "applicableElements": [
+        "jc",
+        "defJc",
+        "OfficeMathJustificationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-JustificationValues-02",
+      "enumeration": "JustificationValues",
+      "value": "right",
+      "name": "Right",
+      "applicableElements": [
+        "jc",
+        "defJc",
+        "OfficeMathJustificationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-JustificationValues-03",
+      "enumeration": "JustificationValues",
+      "value": "center",
+      "name": "Center",
+      "applicableElements": [
+        "jc",
+        "defJc",
+        "OfficeMathJustificationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-JustificationValues-04",
+      "enumeration": "JustificationValues",
+      "value": "centerGroup",
+      "name": "CenterGroup",
+      "applicableElements": [
+        "jc",
+        "defJc",
+        "OfficeMathJustificationType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinaryOperatorValues-01",
+      "enumeration": "BreakBinaryOperatorValues",
+      "value": "before",
+      "name": "Before",
+      "applicableElements": [
+        "brkBin"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinaryOperatorValues-02",
+      "enumeration": "BreakBinaryOperatorValues",
+      "value": "after",
+      "name": "After",
+      "applicableElements": [
+        "brkBin"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinaryOperatorValues-03",
+      "enumeration": "BreakBinaryOperatorValues",
+      "value": "repeat",
+      "name": "Repeat",
+      "applicableElements": [
+        "brkBin"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinarySubtractionValues-01",
+      "enumeration": "BreakBinarySubtractionValues",
+      "value": "--",
+      "name": "MinusMinus",
+      "applicableElements": [
+        "brkBinSub"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinarySubtractionValues-02",
+      "enumeration": "BreakBinarySubtractionValues",
+      "value": "-+",
+      "name": "MinusPlus",
+      "applicableElements": [
+        "brkBinSub"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BreakBinarySubtractionValues-03",
+      "enumeration": "BreakBinarySubtractionValues",
+      "value": "+-",
+      "name": "PlusMinus",
+      "applicableElements": [
+        "brkBinSub"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalAlignmentValues-01",
+      "enumeration": "VerticalAlignmentValues",
+      "value": "top",
+      "name": "Top",
+      "applicableElements": [
+        "baseJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalAlignmentValues-02",
+      "enumeration": "VerticalAlignmentValues",
+      "value": "center",
+      "name": "Center",
+      "applicableElements": [
+        "baseJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalAlignmentValues-03",
+      "enumeration": "VerticalAlignmentValues",
+      "value": "bottom",
+      "name": "Bottom",
+      "applicableElements": [
+        "baseJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-VerticalAlignmentValues-04",
+      "enumeration": "VerticalAlignmentValues",
+      "value": "bot",
+      "name": "Bot",
+      "applicableElements": [
+        "baseJc"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-01",
+      "enumeration": "BooleanValues",
+      "value": "true",
+      "name": "True",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-02",
+      "enumeration": "BooleanValues",
+      "value": "false",
+      "name": "False",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-03",
+      "enumeration": "BooleanValues",
+      "value": "on",
+      "name": "On",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-04",
+      "enumeration": "BooleanValues",
+      "value": "off",
+      "name": "Off",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-05",
+      "enumeration": "BooleanValues",
+      "value": "0",
+      "name": "Zero",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "id": "OMML-V-BooleanValues-06",
+      "enumeration": "BooleanValues",
+      "value": "1",
+      "name": "One",
+      "applicableElements": [
+        "lit",
+        "nor",
+        "aln",
+        "opEmu",
+        "noBreak",
+        "diff",
+        "hideTop",
+        "hideBot",
+        "hideLeft",
+        "hideRight",
+        "strikeH",
+        "strikeV",
+        "strikeBLTR",
+        "strikeTLBR",
+        "grow",
+        "maxDist",
+        "objDist",
+        "plcHide",
+        "subHide",
+        "supHide",
+        "show",
+        "zeroWid",
+        "zeroAsc",
+        "zeroDesc",
+        "transp",
+        "degHide",
+        "alnScr",
+        "smallFrac",
+        "dispDef",
+        "wrapRight",
+        "OnOffType"
+      ],
+      "workItems": [
+        "M07",
+        "M12",
+        "M15"
+      ],
+      "requiredTests": [
+        "S01",
+        "S03",
+        "S04",
+        "S06",
+        "S09"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    }
+  ],
+  "coreObjects": [
+    {
+      "element": "acc",
+      "workItems": [
+        "M02"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "element": "bar",
+      "workItems": [
+        "M02"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "element": "box",
+      "workItems": [
+        "M05"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "element": "borderBox",
+      "workItems": [
+        "M07",
+        "M09"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "d",
+      "workItems": [
+        "M07",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "eqArr",
+      "workItems": [
+        "M04"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "f",
+      "workItems": [
+        "M01"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "element": "func",
+      "workItems": [
+        "M05",
+        "M06",
+        "M08"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "sPre",
+      "workItems": [
+        "M08",
+        "M11",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "limLow",
+      "workItems": [
+        "M02",
+        "M07",
+        "M09"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "m",
+      "workItems": [
+        "M03",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-matrix-semantics-manifest.json",
+          "sha256": "00c39f42b4579f1bb9c7b0b48123c8fa258b4d26116fd828eb3dcff8edc96947",
+          "scope": "M03 limited Windows product semantics; full standard/Office/reader certification remains pending",
+          "recordedAt": "2026-10-13T01:13:24.967Z"
+        }
+      ]
+    },
+    {
+      "element": "nary",
+      "workItems": [
+        "M05",
+        "M07",
+        "M08"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "phant",
+      "workItems": [
+        "M06"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        "docs/evidence/capability-upgrade/2026-10-13/batch3-parallel-semantics-manifest.json"
+      ]
+    },
+    {
+      "element": "rad",
+      "workItems": [
+        "M02"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": [],
+      "incrementalEvidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-13/batch3-font-geometry-manifest.json",
+          "sha256": "260dc2314bc185b41272e108641485d56c4daab2a2989016b80896cc78976788",
+          "scope": "M01/M02限定字体几何、phantom组合；真实PDF继承字号重排及显式代码样式。最终同构建Rust2410/0/3历史忽略，3组21项Windows正式CSP原生、133数值病例、24实际PDF路径对照、4stdio MCP、8门槛；不认证全部Office/字体/出版/应用互操作/平台/长期或发布。",
+          "finalCertification": "pending"
+        }
+      ]
+    },
+    {
+      "element": "groupChr",
+      "workItems": [
+        "M02",
+        "M07",
+        "M11"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "sSub",
+      "workItems": [
+        "M08",
+        "M11",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "sSubSup",
+      "workItems": [
+        "M08",
+        "M11",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "sSup",
+      "workItems": [
+        "M08",
+        "M11",
+        "M12"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    },
+    {
+      "element": "limUpp",
+      "workItems": [
+        "M02",
+        "M07",
+        "M11"
+      ],
+      "requiredInteroperability": [
+        "I01",
+        "I02"
+      ],
+      "finalCertification": "pending",
+      "finalEvidence": []
+    }
+  ],
+  "updated": "2026-10-14",
+  "publicationIncrementalEvidence": [
+    {
+      "workItems": [
+        "P01",
+        "P07"
+      ],
+      "path": "docs/evidence/capability-upgrade/2026-10-14/batch3-publication-context-manifest.json",
+      "sha256": "111e5dc43d18309f67fe7f966a06abdc5afbda1f07e71020bcb4fa6a94bb069f",
+      "candidateSha256": "a231a2f545c002590454e47b8768f4ab0abc6573102265f576faf05ed54acf3c",
+      "scope": "共享出版元信息与引用上下文核心已实施；限定Windows五份单次完整原生流程、实际文件和所列字形/布局通过。完整CSL、全部出版参数、实际Word/独立阅读器、全平台和第三批整体验收保持未完成。",
+      "state": "implemented-limited-windows-verified",
+      "fullRequirementCertification": false,
+      "fullBatch3Certification": false,
+      "releaseAccepted": false,
+      "recordedAt": "2026-10-14T01:46:36.322Z"
+    }
+  ]
+}

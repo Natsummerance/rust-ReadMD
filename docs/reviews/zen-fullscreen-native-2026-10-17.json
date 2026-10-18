@@ -1,0 +1,66 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "name": "left click enters only Zen; Escape restores ordinary reading",
+      "passed": true
+    },
+    {
+      "name": "right click enters real monitor fullscreen with Zen",
+      "passed": true
+    },
+    {
+      "name": "left click restores chrome without leaving real fullscreen; right click exits both",
+      "passed": true
+    },
+    {
+      "name": "right click also exits Zen and fullscreen together while Zen remains enabled",
+      "passed": true
+    },
+    {
+      "name": "F11 toggles fullscreen and ignores repeat; Escape exits both",
+      "passed": true
+    },
+    {
+      "name": "Escape exits pure fullscreen without closing the editor or changing content",
+      "passed": true
+    },
+    {
+      "name": "fullscreen Escape preserves an open export dialog and original file",
+      "passed": true
+    }
+  ],
+  "binarySha256": "6b422e720c3d48b23174b9c5a40950c91a00f41eb6d4e1febb4f7646cfb6b881",
+  "bootSha256": "99f255a27e0c483d02ea4129c210c7f4d255803f9b6196097fcdb69487a93bfd",
+  "panelsSha256": "344537d8f89f5352dc1e4e9eb8a9e8ef87376f0884eb8d29c53bf6756390b8a7",
+  "nativeCsp": true,
+  "initialGeometry": {
+    "window": {
+      "left": 152,
+      "top": 152,
+      "right": 1914,
+      "bottom": 1395
+    },
+    "monitor": {
+      "left": 0,
+      "top": 0,
+      "right": 2560,
+      "bottom": 1440
+    }
+  },
+  "fullscreenGeometry": {
+    "window": {
+      "left": 0,
+      "top": 0,
+      "right": 2560,
+      "bottom": 1440
+    },
+    "monitor": {
+      "left": 0,
+      "top": 0,
+      "right": 2560,
+      "bottom": 1440
+    }
+  },
+  "hostStopped": true
+}

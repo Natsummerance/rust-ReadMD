@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "id": "ocr",
+  "version": "5.5.3-r1",
+  "platform": "windows-x64",
+  "files": [
+    {
+      "path": "bin/tesseract.exe",
+      "size": 4344320,
+      "sha256": "726356983765e23bd6efc977675c6ef303f07a8f0bee6393f8aa61f28cb484a5"
+    },
+    {
+      "path": "tessdata/eng.traineddata",
+      "size": 4113088,
+      "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+    },
+    {
+      "path": "tessdata/chi_sim.traineddata",
+      "size": 2469156,
+      "sha256": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730"
+    },
+    {
+      "path": "tessdata/chi_tra.traineddata",
+      "size": 2366642,
+      "sha256": "529c5b5797d64b126065cd55f2bb4c7fd7b15790798091b1ff259941a829330b"
+    },
+    {
+      "path": "licenses/TESSERACT-LICENSE",
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "licenses/LEPTONICA-LICENSE",
+      "size": 1521,
+      "sha256": "87829abb5bbb00b55a107365da89e9a33f86c4250169e5a1e5588505be7d5806"
+    },
+    {
+      "path": "licenses/MODELS-LICENSE",
+      "size": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "NOTICE",
+      "size": 313,
+      "sha256": "208b745b545fb01ec7a028930c7ce5523644902af10a6fb422e05cbd3e3ceb69"
+    }
+  ],
+  "review": {
+    "license": "Tesseract and models Apache-2.0; Leptonica BSD-2-Clause; static MSVC runtime",
+    "source": "https://github.com/tesseract-ocr/tesseract/tree/db0ec62f81b0737fbbe184d8fea40af5738f8eef",
+    "inputs": [
+      {
+        "id": "leptonica",
+        "file": "leptonica.tar.gz",
+        "url": "https://github.com/DanBloomberg/leptonica/releases/download/1.87.0/leptonica-1.87.0.tar.gz",
+        "expected": "c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7",
+        "sha256": "c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7",
+        "bytes": 14802808
+      },
+      {
+        "id": "tesseract",
+        "file": "tesseract.zip",
+        "url": "https://codeload.github.com/tesseract-ocr/tesseract/zip/db0ec62f81b0737fbbe184d8fea40af5738f8eef",
+        "commit": "db0ec62f81b0737fbbe184d8fea40af5738f8eef",
+        "sha256": "d2470cc33ee34deeae6fc47809d0b33a3623a4343d92ff317ac3b9903c507bad",
+        "bytes": 2533335
+      },
+      {
+        "id": "eng",
+        "file": "eng.traineddata",
+        "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/eng.traineddata",
+        "commit": "87416418657359cb625c412a48b6e1d6d41c29bd",
+        "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+        "bytes": 4113088
+      },
+      {
+        "id": "chi_sim",
+        "file": "chi_sim.traineddata",
+        "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/chi_sim.traineddata",
+        "commit": "87416418657359cb625c412a48b6e1d6d41c29bd",
+        "sha256": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730",
+        "bytes": 2469156
+      },
+      {
+        "id": "chi_tra",
+        "file": "chi_tra.traineddata",
+        "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/chi_tra.traineddata",
+        "commit": "87416418657359cb625c412a48b6e1d6d41c29bd",
+        "sha256": "529c5b5797d64b126065cd55f2bb4c7fd7b15790798091b1ff259941a829330b",
+        "bytes": 2366642
+      },
+      {
+        "id": "models-license",
+        "file": "models.LICENSE",
+        "url": "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/LICENSE",
+        "commit": "87416418657359cb625c412a48b6e1d6d41c29bd",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "bytes": 11358
+      }
+    ],
+    "build": "tools/build-ocr-runtime.mjs; all codec/network/archive/GUI/training/legacy features disabled; portable CPU dispatch",
+    "execution": "Rust decodes bounded input to local PNM; static worker reads only application-locked models; bounded output, deadline and cancellation",
+    "systemImports": [
+      "KERNEL32.dll"
+    ]
+  }
+}

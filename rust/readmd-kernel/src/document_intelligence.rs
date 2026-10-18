@@ -17,6 +17,10 @@ const MAX_FILES: usize = 5000;
 const MAX_SCAN_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 2000;
 
+#[path = "document_knowledge.rs"]
+mod knowledge;
+pub use knowledge::{resolve_knowledge_link, suggest_knowledge_links};
+
 pub fn revision(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -131,6 +135,8 @@ fn options() -> Options {
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_WIKILINKS
+        | Options::ENABLE_MATH
+        | Options::ENABLE_HEADING_ATTRIBUTES
         | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS
 }
 fn line_starts(text: &str) -> Vec<usize> {
@@ -148,43 +154,15 @@ enum AnchorStyle {
     Standard,
     Desktop,
 }
-fn heading_slug(title: &str, index: usize, style: AnchorStyle) -> String {
-    let filtered: String = title
-        .trim()
-        .to_lowercase()
-        .chars()
-        .filter(|c| {
-            c.is_whitespace()
-                || *c == '_'
-                || *c == '-'
-                || match style {
-                    AnchorStyle::Standard => c.is_alphanumeric(),
-                    AnchorStyle::Desktop => {
-                        c.is_ascii_alphanumeric() || ('\u{4e00}'..='\u{9fff}').contains(c)
-                    }
-                }
-        })
-        .collect();
-    match style {
-        AnchorStyle::Standard => filtered
-            .chars()
-            .map(|c| if c.is_whitespace() { '-' } else { c })
-            .collect(),
-        AnchorStyle::Desktop => {
-            let slug = filtered.split_whitespace().collect::<Vec<_>>().join("-");
-            if slug.is_empty() {
-                format!("toc-h-{index}")
-            } else {
-                slug
-            }
-        }
-    }
+fn heading_slug(title: &str, _index: usize, _style: AnchorStyle) -> String {
+    let slug = crate::md_ast::slugify(title);
+    if slug.is_empty() { "section".into() } else { slug }
 }
-fn heading_data(text: &str, style: AnchorStyle) -> Vec<Value> {
+fn heading_data(text: &str, _style: AnchorStyle) -> Vec<Value> {
     let starts = line_starts(text);
     let mut current: Option<(u8, usize, String, Option<String>)> = None;
     let mut headings = Vec::new();
-    let mut used: HashMap<String, usize> = HashMap::new();
+    let mut ids = crate::md_ast::HeadingIds::default();
     for (event, span) in Parser::new_ext(text, options()).into_offset_iter() {
         match event {
             Event::Start(Tag::Heading { level, id, .. }) => {
@@ -195,7 +173,7 @@ fn heading_data(text: &str, style: AnchorStyle) -> Vec<Value> {
                     id.map(|s| s.to_string()),
                 ))
             }
-            Event::Text(t) | Event::Code(t) => {
+            Event::Text(t) | Event::Code(t) | Event::InlineMath(t) | Event::DisplayMath(t) => {
                 if let Some(h) = current.as_mut() {
                     h.2.push_str(&t);
                 }
@@ -207,21 +185,7 @@ fn heading_data(text: &str, style: AnchorStyle) -> Vec<Value> {
             }
             Event::End(TagEnd::Heading(_)) => {
                 if let Some((level, offset, title, explicit)) = current.take() {
-                    let base =
-                        explicit.unwrap_or_else(|| heading_slug(&title, headings.len(), style));
-                    let count = used.entry(base.clone()).or_insert(0);
-                    let suffix = *count
-                        + if matches!(style, AnchorStyle::Desktop) {
-                            1
-                        } else {
-                            0
-                        };
-                    let id = if *count == 0 {
-                        base
-                    } else {
-                        format!("{base}-{suffix}")
-                    };
-                    *count += 1;
+                    let id = ids.allocate(&title, explicit.as_deref());
                     headings.push(json!({"level":level,"text":title,"id":id,"position":position(text,&starts,offset)}));
                     if headings.len() >= MAX_ITEMS {
                         break;
@@ -891,29 +855,26 @@ mod tests {
             .as_array()
             .unwrap()
             .is_empty());
-        assert_eq!(
-            analyze_for_reader(source, None, None).unwrap()["diagnostics"][0]["code"],
-            "missing_anchor"
-        );
         assert!(
-            analyze_for_reader(&source.replace("#alpha-1", "#alpha-2"), None, None).unwrap()
+            analyze_for_reader(source, None, None).unwrap()
                 ["diagnostics"]
                 .as_array()
                 .unwrap()
                 .is_empty()
         );
+        for inspect in [analyze, analyze_for_reader] {
+            assert_eq!(inspect(&source.replace("#alpha-1", "#alpha-2"), None, None).unwrap()
+                ["diagnostics"][0]["code"], "missing_anchor");
+        }
         let unicode = "# Café\n\n[valid](#café)\n";
         assert!(analyze(unicode, None, None).unwrap()["diagnostics"]
             .as_array()
             .unwrap()
             .is_empty());
-        assert!(
-            analyze_for_reader(&unicode.replace("(#café)", "(#caf)"), None, None).unwrap()
-                ["diagnostics"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        assert!(analyze_for_reader(unicode, None, None).unwrap()["diagnostics"]
+            .as_array().unwrap().is_empty());
+        assert_eq!(analyze_for_reader(&unicode.replace("(#café)", "(#caf)"), None, None)
+            .unwrap()["diagnostics"][0]["code"], "missing_anchor");
     }
     #[test]
     fn edits_require_revision_confirmation_and_keep_recovery_out_of_document_folder() {
@@ -1094,6 +1055,20 @@ mod tests {
         assert_eq!(report["diagnostics"][0]["code"], "missing_anchor");
         assert_eq!(report["stats"]["completed_tasks"], 1);
         assert_eq!(report["headings"][0]["position"]["line"], 1);
+    }
+
+    #[test]
+    fn heading_identities_match_all_exporters_and_desktop_navigation() {
+        let source = "---\ntitle: Heading fixture\n---\n# **Intro**\n\n# Intro\n\n# Intro-1\n\n# API {#API_V1}\n\n# API {#API-V1}\n\n# α &amp; β\n\nSection\n=======\n\n```md\n# Ignored\n```\n\n# !!!\n\n# a  b\n";
+        let ast = crate::md_ast::parse(source);
+        let expected: Vec<_> = ast.blocks.iter().filter_map(|b| match b {
+            crate::md_ast::Block::Heading { id, .. } => Some(id.clone()), _ => None,
+        }).collect();
+        assert_eq!(expected, ["intro", "intro-1", "intro-1-1", "API_V1", "API-V1", "α--β", "section", "section-1", "a--b"]);
+        for style in [AnchorStyle::Standard, AnchorStyle::Desktop] {
+            let rows = heading_data(source, style);
+            assert_eq!(rows.iter().map(|row| row["id"].as_str().unwrap()).collect::<Vec<_>>(), expected);
+        }
     }
     #[test]
     fn workspace_search_combines_phrases_paths_tags_and_exclusions() {

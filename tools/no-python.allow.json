@@ -1,5 +1,67 @@
 [
   {
+    "path": "ui-tests/math-literal-native.cjs",
+    "pattern": "inspect-publication-batch3\\.py",
+    "reason": "Development-only hash-bound inspection of actual formula PDF outlines and ink. The explicit QA interpreter is never shipped, loaded or invoked by ReadMD; production math and publication remain Rust and managed offline engines.",
+    "requirement": "R007"
+  },
+  {
+    "path": "ui-tests/publication-structure-continuation-native.cjs",
+    "pattern": "inspect-publication-batch3\\.py",
+    "reason": "A hash-bound reference to the independent development-only publication inspector in a scoped native QA continuation. The shipped application and capability runtimes do not execute Python.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-line-spacing-ui-native.cjs",
+    "pattern": "inspect-publication-line-spacing\\.py",
+    "reason": "Development-only independent PDF baseline inspection of actual UI-authored settings. The native product and its installed capability engines use no Python; the harness binds its separate QA interpreter and inspector by digest.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-publication-line-spacing.py",
+    "reason": "Independent development-only physical baseline and text inspection of native PDF outputs using two parsers. Never bundled, launched by ReadMD, or required by the application; production line spacing is Rust/managed Typst.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-publication-line-spacing.test.py",
+    "reason": "Positive and negative controls of the development-only PDF inspector, with owned synthetic files. Not an application dependency or shipping asset.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/math-space-native.cjs",
+    "pattern": "inspect-publication-batch3\\.py",
+    "reason": "Native QA binds the independent output inspector by SHA256. Only the QA harness invokes the explicitly selected verifier; the product uses Rust and never imports or launches Python.",
+    "requirement": "R007"
+  },
+  {
+    "path": "ui-tests/publication-pdf-typography-native.cjs",
+    "pattern": "inspect-publication-line-spacing\\.py",
+    "reason": "Native QA references and hash-binds the development-only independent baseline inspector. This file is not shipped or called by the product.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-structure-native.cjs",
+    "pattern": "(?:inspect-publication-batch3|publication-smallcaps-proof)\\.py",
+    "reason": "Independent development-only PDF glyph/embedded-outline checks and their frozen dependency identities. No Python application runtime or installed-system requirement is introduced.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-typography-native.cjs",
+    "pattern": "inspect-spacing\\.py",
+    "reason": "Owned temporary QA script independently checks actual DOCX ZIP integrity and native paragraph XML. It is never packaged or invoked by ReadMD and does not require Office.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-publication-batch3.py",
+    "reason": "Development-only independent inspection of actual DOCX, EPUB and PDF outputs (ZIP/XML, XMP, embedded fonts and raster pixels). Never shipped or invoked by ReadMD. Product publication remains Rust and managed offline engines; no Python or Office dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/generate-math-font-geometry-oracle.py",
+    "reason": "QA-only offline FontTools 4.63.0 extraction of pinned OpenType MATH constants, glyph ink bounds, accent attachments and constructions for independent M01/M02 numerical expectations. Never shipped or invoked by ReadMD; the product and native harness do not require Python.",
+    "requirement": "R007"
+  },
+  {
     "path": "rust/readmd-kernel/src/code_chunk_runner.rs",
     "pattern": "write_temp_script\\(\"\\.py\"",
     "reason": "The code-block runner executes the user's own ```python chunk with an interpreter already on PATH; ReadMD itself never needs Python.",
@@ -53,9 +115,165 @@
     "requirement": "2.23"
   },
   {
+    "path": "ui-tests/portable-ocr-native.cjs",
+    "pattern": "spawnSync\\('python',\\['-c',python,docs\\]",
+    "reason": "QA fixture generation only: Pillow draws owned scans and PyMuPDF assembles an image-only PDF. The native application is launched with only Windows system directories in PATH; production OCR uses the locked static capability worker, never Python.",
+    "requirement": "R075"
+  },
+  {
+    "path": "ui-tests/scientific-publication-checks.cjs",
+    "pattern": "spawnSync\\('python',\\['-c'",
+    "reason": "Independent QA inspection of actual PDF vectors, image counts and table-page geometry with PyMuPDF; this helper is not shipped or called by ReadMD. Production rendering uses Rust/Typst and browser SVG.",
+    "requirement": "R073"
+  },
+  {
+    "path": "ui-tests/typst-publication-native.cjs",
+    "pattern": "spawnSync\\('python',\\['-c'",
+    "reason": "Independent QA pixel inspection of a rendered PDF page with Pillow. This is a development validator, not an application runtime dependency.",
+    "requirement": "R073"
+  },
+  {
+    "path": "tools/test/inspect-publication-docx.py",
+    "reason": "Independent development-only ZIP/XML inspection of actual native DOCX exports. Not shipped or invoked by ReadMD; product conversion and output are Rust and do not require Python or Office.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-layout-native.cjs",
+    "pattern": "inspect-publication-docx\\.py",
+    "reason": "QA-only independent inspector for persisted native Word sections, fields and typography; never an application dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-local-native.cjs",
+    "pattern": "inspect-publication-docx\\.py",
+    "reason": "Independent QA-only ZIP/XML validation of local paragraph and run attributes in actual native Word output. This test helper is never shipped or called by ReadMD; runtime export remains Rust and needs no Office or Python.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-publication-pages.py",
+    "reason": "Independent QA of actual PDF pixels, original links, tagged structure and page/source geometry. Never shipped or invoked by ReadMD; production pagination uses Rust and the managed Typst worker.",
+    "requirement": "R069"
+  },
+  {
+    "path": "ui-tests/publication-pagination-native.cjs",
+    "pattern": "inspect-publication-pages\\.py",
+    "reason": "Development-only independent PDF inspection following real Windows page interactions. No Python application dependency.",
+    "requirement": "R069"
+  },
+  {
     "path": "scripts/windows/uninstall.bat",
     "pattern": "Applications\\\\readmd\\.py",
     "reason": "Removes the file-association key left by old Python-based installs.",
     "requirement": "2.23"
+  },
+  {
+    "path": "tools/fonts/prepare_static.py",
+    "reason": "Explicit offline font resource preparation only, never shipped or invoked by the app or normal builds. Locks real static weights for the Rust subsetter; no host fonts or Python runtime needed by ReadMD.",
+    "requirement": "R012"
+  },
+  {
+    "path": "tools/test/inspect-publication-fonts.py",
+    "reason": "Independent QA of actual PDF font embedding, static outlines, text extraction and raster rendering; not shipped or called by ReadMD.",
+    "requirement": "R012"
+  },
+  {
+    "path": "ui-tests/publication-fonts-native.cjs",
+    "pattern": "inspect-publication-fonts\\.py",
+    "reason": "QA-only independent inspection after real Windows production operations; never an application runtime dependency.",
+    "requirement": "R012"
+  },
+  {
+    "path": "tools/publish-capability-packs.mjs",
+    "pattern": "fonts/prepare_static\\.py",
+    "reason": "Archives the reviewed offline font preparation recipe as inert source in the owned capability repository; does not execute it or ship Python with the application.",
+    "requirement": "R012"
+  },
+  {
+    "path": "tools/compose-tex-publication.py",
+    "reason": "Explicit offline maintainer input preparation only; never shipped or called by ReadMD, normal builds or capability installers. Composes digest-pinned TeX resources without running upstream scripts; the runtime and sandbox remain Rust/native.",
+    "requirement": "R030"
+  },
+  {
+    "path": "tools/lib/tex_archives.py",
+    "reason": "Streaming XZ/TAR validation for the isolated maintainer preparation tool only, with fixed memory/output limits and exact declared file sets. No application Python dependency or product invocation is permitted.",
+    "requirement": "R030"
+  },
+  {
+    "path": "tools/test/tex_archives_test.py",
+    "reason": "Synthetic adversarial QA of maintainer archive input validation; never shipped, installed or invoked by ReadMD.",
+    "requirement": "R030"
+  },
+  {
+    "path": "tools/test/inspect-tex-publication.py",
+    "reason": "Independent development-only inspection of actual TeX PDFs, Unicode text, embedded fonts and rendered pages. Never shipped, installed or invoked by ReadMD; no application Python dependency.",
+    "requirement": "R030"
+  },
+  {
+    "path": "tools/test/record-batch3-font-geometry.mjs",
+    "pattern": "tools/test/generate-math-font-geometry-oracle\\.py",
+    "reason": "A literal source-file path in the evidence archiver's fixed QA manifest, copied as bytes and never executed. The independent FontTools generator is development-only; no application or native QA Python invocation is introduced.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/publication-batch3-checks.cjs",
+    "pattern": "inspect-publication-batch3\\.py",
+    "reason": "Development-only independent inspection of actual publication output and original PDF incremental revisions. Not shipped or called by ReadMD; runtime publication is Rust and managed locked offline engines, with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/publication-batch3-harness.cjs",
+    "pattern": "inspect-publication-batch3\\.py",
+    "reason": "Development-only independent inspection of actual publication output and original PDF incremental revisions. Not shipped or called by ReadMD; runtime publication is Rust and managed locked offline engines, with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/publication-engine-revision.py",
+    "reason": "Development-only independent inspection of actual publication output and original PDF incremental revisions. Not shipped or called by ReadMD; runtime publication is Rust and managed locked offline engines, with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-engines-native.cjs",
+    "pattern": "publication-(?:engine-revision|smallcaps-proof)\\.py",
+    "reason": "Development-only independent inspection of actual publication output and original PDF incremental revisions. Not shipped or called by ReadMD; runtime publication is Rust and managed locked offline engines, with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-engines-native.cjs",
+    "pattern": "^const result = spawnSync\\('python', args, \\{encoding: 'utf8', windowsHide: true, timeout: 90000, maxBuffer: 32 \\* 1024 \\* 1024\\}\\);$",
+    "reason": "The isolated native QA small-caps checker records the independent inspector's actual stdout, stderr and exit status before reading its JSON report. This bounded development-only call replaces parsing dependency stdout; it is never shipped or called by ReadMD and adds no application Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/publication-smallcaps-proof.py",
+    "reason": "QA-only comparison of actual exported PDF glyph outlines, baseline, point size and Unicode extraction against the exact locked engine fonts and their OpenType small-caps substitutions. Not shipped or called by ReadMD; never an application runtime dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/publication-smallcaps-proof-selfcheck.py",
+    "reason": "Development-only adversarial calibration of the small-caps PDF inspector using independently constructed positive and negative PDFs. Not product or native acceptance evidence, and never shipped or called by ReadMD.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-tracking-ui-native.cjs",
+    "pattern": "inspect-tracking-opc\\.py",
+    "reason": "Development-only independent ZIP CRC/XML inspection of actual DOCX tracking output, using root's hash-pinned QA interpreter and a source-hashed stdlib-only helper. Not shipped or invoked by ReadMD; the product export remains Rust with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/publication-projection-slot.test.cjs",
+    "pattern": "spawnSync\\('python',\\['-c',program,path\\.join\\(__dirname,'inspect-publication-batch3\\.py'\\)\\]",
+    "reason": "Development-only adversarial calibration of the existing publication artifact inspector: actual opaque slots must be detected, while public CSL layout classes and entry identifiers must not be false positives. One bounded read-only inspector import; not shipped or invoked by ReadMD and adds no application Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-publication-baseline.py",
+    "reason": "Development-only independent inspection of actual DOCX positions and emitted PDF glyph origins, font programs, ToUnicode, formula outlines and link regions. Uses the explicitly hash-pinned QA interpreter; never shipped, installed or called by ReadMD. Runtime publication remains Rust with no Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "ui-tests/publication-baseline-native.cjs",
+    "pattern": "inspect-publication-baseline\\.py",
+    "reason": "The isolated Windows QA invokes one bounded source-hashed independent artifact inspector using root's hash-pinned interpreter. The reference is confined to this development test and adds no application Python dependency.",
+    "requirement": "R028"
   }
 ]

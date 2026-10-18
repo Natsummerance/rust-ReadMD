@@ -1,9 +1,10 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
 
 test('editing search uses the current draft; replace all is undoable and never changes the original', async ({ page }) => {
-  await page.goto('/'); await page.waitForFunction(() => window.__readmdAppReady);
+  await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   const original = '# Search acceptance\n\nOriginal stays intact.\n';
   await page.evaluate(async original => {
     const uploaded = await uploadFile(new File([original], 'search-acceptance.md', { type: 'text/markdown' }));
@@ -34,7 +35,7 @@ test('editing search uses the current draft; replace all is undoable and never c
 
 test('search and replace fits the narrow window without wrapping the editing toolbar', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 680 });
-  await page.goto('/'); await page.waitForFunction(() => window.__readmdAppReady);
+  await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async () => { await newDocument(); if (!state.editing) await toggleEdit(); toggleSearch(); });
   for (const id of ['search-input','search-close','search-replace-input','search-replace-one','search-replace-all']) {
     const box = await page.locator('#' + id).boundingBox();
@@ -47,7 +48,7 @@ test('search and replace fits the narrow window without wrapping the editing too
 
 test('textarea fallback searches the draft and replaces literally with a single undo', async ({ page }) => {
   await page.route('**/codemirror.bundle.js*', route => route.fulfill({status:503,body:'Unavailable'}));
-  await page.goto('/'); await page.waitForFunction(() => window.__readmdAppReady);
+  await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async () => { await renderVirtual('clipboard', 'fallback-search.md', '', '# Original', []); await toggleEdit(); });
   await page.locator('#edit-area').fill('Needle one needle two [literal]');
   await page.locator('#btn-search').click(); await page.locator('#search-input').fill('needle');

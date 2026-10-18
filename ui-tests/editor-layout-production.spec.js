@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 for (const [width, height, lang] of [[1160,820,'zh-CN'],[1024,680,'en'],[1024,680,'de'],[1024,680,'fr'],[1024,680,'ja'],[1024,680,'ar']]) {
@@ -5,7 +6,7 @@ for (const [width, height, lang] of [[1160,820,'zh-CN'],[1024,680,'en'],[1024,68
     await page.setViewportSize({ width, height });
     await page.addInitScript(code => localStorage.setItem('readmd_language', code), lang);
     await page.goto('/');
-    await page.waitForFunction(() => window.__readmdAppReady && window.ReadMDRecovery);
+    await waitForPage(page, () => window.__readmdAppReady && window.ReadMDRecovery);
     await page.evaluate(async () => {
       await renderVirtual('clipboard', 'Layout-demo.md', '', '# Reading\n\nOne two three four five\n\n你好世界\n', []);
       state.pvLayout = 'none'; await toggleEdit();
@@ -43,7 +44,7 @@ for (const [width, height, lang] of [[1160,820,'zh-CN'],[1024,680,'en'],[1024,68
 
 test('one row adapts to window size and keeps original overflow commands usable', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'zh-CN'));
-  await page.goto('/'); await page.waitForFunction(() => window.__readmdAppReady);
+  await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async () => {
     await renderVirtual('clipboard','Toolbar-check.md','','# 标题\n\n内容',[]); await toggleEdit();
   });

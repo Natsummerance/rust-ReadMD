@@ -112,10 +112,15 @@ function openFileRename() {
 }
 
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   const existingTab = findTabByPath(path);
+  const refreshRevision = existingTab?.revision;
+  const refreshAllowed = () => !backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
+    && state.activeTabId === existingTab.id && existingTab.path === path && !state.editing && !existingTab.isDirty && existingTab.revision === refreshRevision);
+  if (!refreshAllowed()) return;
   const activeEditing = !!(existingTab && state.activeTabId === existingTab.id && state.editing);
   const activeDirty = activeEditing && hasUnsavedEditorChanges();
   if (existingTab && (existingTab.isDirty || activeDirty) && !discardConfirmed) {
@@ -145,6 +150,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     }
     const d = await r.json();
     if (!isDocumentLoadCurrent(loadEpoch)) return;
+    if (!refreshAllowed()) { setProgress(0); return; }
     const isBrowserCopy = force && browserCopy === null
       ? (existingTab ? existingTab.browserCopy === true : false)
       : browserCopy === true;
@@ -197,7 +203,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
         updateStatus();
       }
       if (!isDocumentLoadCurrent(loadEpoch)) return;
-      showToast(_t('toolbar.reload') + ': ' + d.name);
+      if (!backgroundRefresh) showToast(_t('toolbar.reload') + ': ' + d.name);
     } else {
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       const newTab = {
@@ -277,6 +283,9 @@ function setEditBtn(label) {
   const sp = el.querySelector('span.tb-label');
   if (sp) sp.textContent = label;
   else el.textContent = label;
+  el.setAttribute('aria-pressed', String(Boolean(state.editing)));
+  el.setAttribute('aria-label', label);
+  el.title = /Ctrl\+E|⌘/.test(label) ? label : `${label} (Ctrl+E)`;
 }
 
 function setFixes(fixes, stats) {
@@ -306,6 +315,8 @@ function documentMayCite(content) {
 }
 
 async function prepareDocCitations(filePath, content) {
+  window.ReadMDPublication?.clear();
+  if(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^bibliography\s*:/m.test(content)){currentDocCitations={};return;}
   if (!documentMayCite(content)) {
     currentDocCitations = {};
     return;
@@ -333,22 +344,30 @@ async function loadDocCitations(filePath) {
 
 function transformAcademicCallouts(src) {
   if (!src || !src.includes(':::')) return src;
-  const calloutMap = {
-    theorem: { name: 'Theorem', cls: 'academic-theorem' },
-    lemma: { name: 'Lemma', cls: 'academic-lemma' },
-    proof: { name: 'Proof', cls: 'academic-proof' },
-    definition: { name: 'Definition', cls: 'academic-definition' },
-    corollary: { name: 'Corollary', cls: 'academic-corollary' },
-    example: { name: 'Example', cls: 'academic-example' },
+  const fenceAt = (line, active) => {
+    const match=/^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if(!match)return active;
+    if(!active)return {char:match[1][0],length:match[1].length};
+    return match[1][0]===active.char&&match[1].length>=active.length&&!match[2].trim()?null:active;
   };
-
-  const re = /:::\s*(theorem|lemma|proof|definition|corollary|example)(?:\s+\[(.*?)\])?\s*\n([\s\S]*?)\n:::/gi;
-  return src.replace(re, (m, type, title, body) => {
-    const info = calloutMap[type.toLowerCase()] || { name: type, cls: 'academic-theorem' };
-    const titleHtml = title ? `<span class="academic-callout-title">${title}</span>` : '';
-    const qed = type.toLowerCase() === 'proof' ? ' <span class="proof-qed">■</span>' : '';
-    return `<div class="academic-callout ${info.cls}"><div class="academic-callout-header"><span class="academic-callout-tag">${info.name}</span>${titleHtml}</div><div class="academic-callout-body">${marked.parse(body.trim())}${qed}</div></div>`;
-  });
+  const lines=src.split('\n'),out=[];let fence=null;
+  for(let i=0;i<lines.length;i++){
+    const before=fence;fence=fenceAt(lines[i],fence);
+    const open=!before&&!fence&&/^ {0,3}:::[ \t]*(theorem|lemma|proof|definition|corollary|example)(?:[ \t]+\[(.*?)\])?[ \t]*$/i.exec(lines[i]);
+    if(!open){out.push(lines[i]);continue;}
+    let innerFence=null,end=i+1;
+    for(;end<lines.length;end++){
+      if(!innerFence&&/^ {0,3}:::[ \t]*$/.test(lines[end]))break;
+      innerFence=fenceAt(lines[end],innerFence);
+    }
+    if(end===lines.length){out.push(lines[i]);continue;}
+    const type=open[1].toLowerCase(),title=open[2],prot=protectMath(lines.slice(i+1,end).join('\n'));
+    const titleHtml=title?`<span class="academic-callout-title">${escapeHtml(title)}</span>`:'';
+    const qed=type==='proof'?' <span class="proof-qed">■</span>':'';
+    out.push(`<div class="academic-callout academic-${type}"><div class="academic-callout-header"><span class="academic-callout-tag">${escapeHtml(i18n.t('academic.'+type))}</span>${titleHtml}</div><div class="academic-callout-body">${restoreMath(marked.parse(prot.src),prot.saved)}${qed}</div></div>`);
+    i=end;
+  }
+  return out.join('\n');
 }
 
 /* Reader source pre-pass (footnote definitions); see reader/enhance.js. */
@@ -363,20 +382,8 @@ function readerPrepare(src) {
 function transformWikilinks(src) {
   if (!src || !src.includes('[[')) return src;
 
-  // 保护代码块与行内代码，避免代码中的 [[ 语法被误转化
-  const codeBlocks = [];
-  const protectedSrc = src
-    .replace(/```[\s\S]*?```/g, m => {
-      codeBlocks.push(m);
-      return `\x00WIKICODE${codeBlocks.length - 1}\x00`;
-    })
-    .replace(/`[^`\n]+`/g, m => {
-      codeBlocks.push(m);
-      return `\x00WIKICODE${codeBlocks.length - 1}\x00`;
-    });
-
-  // 匹配 [[target]] 或 [[target|alias]] 或 [[target#heading]] 或 [[target#heading|alias]]
-  const replaced = protectedSrc.replace(/\[\[([^\]\n|#]+)(?:#([^\]\n|]+))?(?:\|([^\]\n]+))?\]\]/g, (match, target, heading, alias) => {
+  const links = text => text.replace(/(?<!\\)\[\[([^\]\n|#]*)(?:#([^\]\n|]+))?(?:\|([^\]\n]+))?\]\]/g, (match, target, heading, alias) => {
+    if (!target.trim() && !heading) return match;
     const rawTarget = (target || '').trim();
     const cleanHeading = (heading || '').trim();
     const cleanAlias = (alias || '').trim();
@@ -387,18 +394,55 @@ function transformWikilinks(src) {
     return `<a class="wikilink" data-target="${safeTarget}" href="javascript:void(0)" title="${escapeHtml((window.i18n ? window.i18n.t('wikilink.jump', { target: fullTarget }) : '双链跳转: ' + fullTarget))}">${safeDisplay}</a>`;
   });
 
-  return replaced.replace(/\x00WIKICODE(\d+)\x00/g, (_, idx) => codeBlocks[Number(idx)] || '');
+  // Match complete backtick runs, including multi-line inline code. No
+  // sentinel strings can collide with the user's original document text.
+  const inline = text => {
+    const runs = Array.from(text.matchAll(/`+/g));
+    let out = '', cursor = 0;
+    for (let i = 0; i < runs.length; i++) {
+      const start = runs[i];
+      if (start.index && text[start.index - 1] === '\\') continue;
+      let end = i + 1;
+      while (end < runs.length && runs[end][0].length !== start[0].length) end++;
+      if (end === runs.length) continue;
+      const stop = runs[end].index + runs[end][0].length;
+      out += links(text.slice(cursor, start.index)) + text.slice(start.index, stop);
+      cursor = stop; i = end;
+    }
+    return out + links(text.slice(cursor));
+  };
+  let out = '', plain = '', fence = null;
+  const flush = () => { out += inline(plain); plain = ''; };
+  for (const line of src.match(/[^\n]*\n|[^\n]+$/g) || []) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) {
+      out += line;
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !line.slice(marker[0].length).trim()) fence = null;
+    } else if (marker) {
+      flush(); fence = marker[1]; out += line;
+    } else if (/^(?: {4}|\t)/.test(line)) {
+      flush(); out += line;
+    } else { plain += line; }
+  }
+  flush();
+  return out;
 }
 
 async function navigateWikilink(target, allHeadings) {
   if (!target) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const parts = target.split('#');
-  const docName = (parts[0] || '').trim();
-  const headingId = (parts[1] || '').trim();
+  const hash = target.indexOf('#');
+  const docName = (hash < 0 ? target : target.slice(0, hash)).trim();
+  const headingId = (hash < 0 ? '' : target.slice(hash + 1)).trim();
 
   // 如果仅为当前文档内小标题跳转，如 [[#heading]]
   if (!docName && headingId) {
+    const paged = state.pagination.allHeadings || [];
+    const pageHeading = paged.find(h => h.id === headingId || h.text.toLowerCase() === headingId.toLowerCase());
+    if (state.pagination.enabled && state.pagination.mode === 'paged' && pageHeading && pageHeading.pageIndex !== state.pagination.currentPage) {
+      renderPage(pageHeading.pageIndex, pageHeading.id);
+      return;
+    }
     let el = document.getElementById(headingId);
     if (!el) el = findMatchingHeading(headingId, headingId, allHeadings);
     if (el) {
@@ -413,23 +457,40 @@ async function navigateWikilink(target, allHeadings) {
     return;
   }
 
-  // 跨文档跳转：尝试在当前目录查找目标文档
-  const curDir = state.dir || (state.file ? state.file.substring(0, Math.max(state.file.lastIndexOf('/'), state.file.lastIndexOf('\\'))) : '');
-  const candidateNames = docName.endsWith('.md') ? [docName] : [docName + '.md', docName];
-  let targetPath = null;
-
-  for (const name of candidateNames) {
-    const candidate = curDir ? (curDir + (curDir.includes('\\') ? '\\' : '/') + name) : name;
-    targetPath = candidate;
-    break;
-  }
-
-  if (targetPath && typeof window.loadFile === 'function') {
-    window.loadFile(targetPath);
-  } else if (targetPath && hasPy && py.open_file) {
-    py.open_file(targetPath);
-  } else {
-    showToast((window.i18n ? window.i18n.t('toast.openingDoc', { name: docName }) : '正在打开文档：' + docName), 1500);
+  const tabId = state.activeTabId;
+  try {
+    const response = await apiFetch('/api/workspace/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, file_path: state.file || '', workspace_root: knowledgeWorkspaceRoot() }),
+    });
+    const resolved = await response.json();
+    if (state.activeTabId !== tabId) return;
+    if (!response.ok || !resolved.path) {
+      const code = resolved.error_code || resolved.error || '';
+      showToast(_t(code === 'ambiguous_link_target' ? 'wikilink.ambiguous' : code === 'workspace_scan_limit' ? 'wikilink.scanLimit' : 'wikilink.notFound', { target }), 3500);
+      return;
+    }
+    await loadFile(resolved.path);
+    const samePath = String(state.file).replace(/\\/g, '/').toLowerCase() === resolved.path.replace(/\\/g, '/').toLowerCase();
+    if (!samePath || !resolved.heading) return;
+    const h = resolved.heading;
+    const pageHeading = (state.pagination.allHeadings || []).find(row => row.id === h.id || row.text === h.text);
+    if (state.pagination.enabled && state.pagination.mode === 'paged' && pageHeading && pageHeading.pageIndex !== state.pagination.currentPage) {
+      renderPage(pageHeading.pageIndex, pageHeading.id);
+    } else {
+      const body = $('content');
+      const headings = Array.from((body || document).querySelectorAll('h1,h2,h3,h4,h5,h6'));
+      const element = findMatchingHeading(h.id, h.text, headings);
+      if (element) {
+        element.tabIndex = -1;
+        element.focus({ preventScroll: true });
+        element.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'start' });
+        element.classList.add('heading-target-highlight');
+        setTimeout(() => element.classList.remove('heading-target-highlight'), 1500);
+      }
+    }
+  } catch {
+    if (state.activeTabId === tabId) showToast(_t('wikilink.notFound', { target }), 3000);
   }
 }
 
@@ -727,6 +788,7 @@ function renderPage(pageIndex, targetHeadingId, preserveScroll) {
       const outline = outlineByLine.get(heading.dataset.sourceLine) || pageOutline[outlineCursor];
       if (outline) {
         heading.id = outline.id;
+        heading.dataset.readmdGlobalId = outline.id;
         outlineCursor += 1;
       }
     });
@@ -1239,6 +1301,17 @@ async function renderContent(content, name) {
   }
   if (!isReaderRenderCurrent(render)) return;
 
+  if(window.ReadMDPublication){
+    content=await ReadMDPublication.prepare(String(content||''),state.file||'');
+    if(!isReaderRenderCurrent(render))return;
+  }
+
+  // Footnote definitions must be protected before Markdown consumes them as
+  // ordinary link definitions. First-open cannot race the lazy reader module.
+  if (String(content || '').includes('[^') && !window.ReadMDReader) {
+    await loadReaderAssets();
+    if (!isReaderRenderCurrent(render)) return;
+  }
   const linesCount = (content || '').split('\n').length;
   const isUltraLong = linesCount > PAGINATION_THRESHOLD_LINES || (content || '').length > PAGINATION_THRESHOLD_BYTES;
 
@@ -1509,23 +1582,7 @@ function findMatchingHeading(targetAnchor, linkText, headings) {
 }
 
 function ensureHeadingIds(body) {
-  const headings = body.querySelectorAll('h1, h2, h3, h4, h5, h6');
-  const seen = {};
-  headings.forEach((h, i) => {
-    if (!h.id) {
-      let slug = h.textContent.trim().toLowerCase()
-        .replace(/[^\w\u4e00-\u9fff\s-]/g, '')
-        .replace(/\s+/g, '-');
-      if (!slug) slug = 'toc-h-' + i;
-      if (seen[slug]) {
-        seen[slug]++;
-        slug = slug + '-' + seen[slug];
-      } else {
-        seen[slug] = 1;
-      }
-      h.id = slug;
-    }
-  });
+  ReadMDHeadings.applyDom(body);
 }
 
 function processBibCitations(body) {
@@ -1738,6 +1795,7 @@ function readerEnhance(body) {
     clearTimeout(reveal);
     if (reader && body.isConnected) {
       reader.enhance(body);
+      window.ReadMDPublication?.bindCitations(body);
       fixLinks(body, 'a.rd-anchor, sup.rd-fnref a, a.rd-fnback');
       fixImages(body);
       buildToc();
@@ -1750,8 +1808,10 @@ function readerEnhance(body) {
 function postProcess(container) {
   const body = container || document.querySelector('#content .markdown-body') || $('content');
   if (!body) return;
+  if(window.ReadMDPublication)ReadMDPublication.applyLayout(body);
   ensureHeadingIds(body);
   readerEnhance(body);
+  window.ReadMDPublication?.bindCitations(body);
   fixLinks(body);
   fixImages(body);
   processBibCitations(body);
@@ -2232,20 +2292,26 @@ async function renderTikzjaxDiagram(code, previewEl) {
   }
 }
 
-async function renderLocalDiagram(engine, code, previewEl) {
+let diagramMermaidQueue=Promise.resolve();
+async function renderLocalDiagram(engine, code, previewEl, figureOptions = {}) {
   const normalized = String(engine || '').toLowerCase();
+  const scholarly=figureOptions.style==='research';
+  const figureFont=Math.max(5,Math.min(18,Number(figureOptions.fontSizePt)||7))*96/72;
   if (normalized === 'mermaid') {
+    const render=async()=>{
     const mermaid = await loadDiagramScript('/assets/vendor/diagrams/mermaid/mermaid.min.js', 'mermaid');
     const isDark = document.body?.dataset?.theme === 'dark';
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
-      theme: isDark ? 'dark' : 'default',
-      fontFamily: 'var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)',
+      htmlLabels: !scholarly && !figureOptions.export,
+      theme: scholarly ? 'base' : (isDark ? 'dark' : 'default'),
+      fontFamily: scholarly ? 'Arial' : 'var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)',
+      ...(scholarly?{themeVariables:{background:'#ffffff',primaryColor:'#ffffff',primaryTextColor:'#111111',primaryBorderColor:'#333333',lineColor:'#333333',secondaryColor:'#f5f5f5',tertiaryColor:'#ffffff',fontSize:figureFont+'px'}}:{}),
       flowchart: {
         useMaxWidth: true,
-        htmlLabels: true,
-        curve: 'basis'
+        htmlLabels: !scholarly && !figureOptions.export,
+        curve: scholarly ? 'linear' : 'basis'
       },
       sequence: {
         useMaxWidth: true
@@ -2257,6 +2323,8 @@ async function renderLocalDiagram(engine, code, previewEl) {
     const id = 'readmd-mermaid-' + Math.random().toString(36).slice(2);
     const rendered = await mermaid.render(id, code);
     return diagramOutputMarkup(rendered.svg || rendered);
+    };
+    const result=diagramMermaidQueue.then(render,render);diagramMermaidQueue=result.catch(()=>{});return result;
   }
   if (normalized === 'wavedrom') {
     await loadDiagramScript('/assets/vendor/diagrams/wavedrom/skins/default.js', 'WaveSkin');
@@ -2303,17 +2371,26 @@ async function renderLocalDiagram(engine, code, previewEl) {
     return diagramOutputMarkup(await instance.renderString(code, {
       engine: (normalized === 'viz' || normalized === 'graphviz') ? 'dot' : normalized,
       format: 'svg',
+      ...(scholarly?{graphAttributes:{bgcolor:'white',fontname:'Arial',fontsize:String(figureFont*72/96)},nodeAttributes:{fontname:'Arial',fontsize:String(figureFont*72/96),color:'#333333',fontcolor:'#111111',penwidth:'0.7'},edgeAttributes:{fontname:'Arial',fontsize:String(figureFont*72/96),color:'#333333',fontcolor:'#111111',penwidth:'0.7'}}:{}),
     }));
   }
   if (normalized === 'vega' || normalized === 'vega-lite') {
-    const vega = await loadDiagramScript('/assets/vendor/diagrams/vega/vega.min.js', 'vega');
-    const vegaLite = await loadDiagramScript('/assets/vendor/diagrams/vega-lite/vega-lite.min.js', 'vegaLite');
     let spec;
     try { spec = JSON.parse(String(code || '')); } catch (_) { throw new Error('diagram_invalid_input'); }
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
       throw new Error('diagram_invalid_input');
     }
-    const isDark = document.body?.dataset?.theme === 'dark';
+    // Rust owns publication parameters; the bundled browser engine executes
+    // them. Ordinary desktop authoring must not depend on a system Node install.
+    const publication=scholarly||spec.readmd?.style==='research';
+    if(publication){
+      const r=await apiFetch('/api/diagram/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'prepare_spec',engine:normalized,code,figures:figureOptions})});
+      const data=await r.json();if(!data.ok||!data.spec)throw new Error(data.error_code||'diagram_render_failed');spec=data.spec;
+    }
+    const vega = await loadDiagramScript('/assets/vendor/diagrams/vega/vega.min.js', 'vega');
+    await loadDiagramScript('/assets/vendor/diagrams/vega/vega-interpreter.min.js');
+    const vegaLite = await loadDiagramScript('/assets/vendor/diagrams/vega-lite/vega-lite.min.js', 'vegaLite');
+    const isDark = !publication && document.body?.dataset?.theme === 'dark';
     const darkConfig = isDark ? {
       background: 'transparent',
       axis: {
@@ -2334,12 +2411,14 @@ async function renderLocalDiagram(engine, code, previewEl) {
         color: '#e7e9ee',
         subtitleColor: '#9aa3b2'
       }
-    } : { background: 'transparent' };
+    } : publication ? {} : { background: 'transparent' };
     try {
       const compiled = normalized === 'vega-lite' && vegaLite ? vegaLite.compile(spec, { config: darkConfig }).spec : spec;
-      const view = new vega.View(vega.parse(compiled, darkConfig), { renderer: 'none' });
+      const loader=vega.loader();let denied=false;loader.load=()=>{denied=true;return Promise.reject(new Error('diagram_render_failed'));};
+      const view = new vega.View(vega.parse(compiled, darkConfig, {ast:true}), { renderer: 'none',loader,expr:vega.expressionInterpreter });
       await view.runAsync();
       const svg = await view.toSVG();
+      view.finalize();if(denied)throw new Error('diagram_render_failed');
       if (!svg || !svg.startsWith('<svg')) throw new Error('diagram_render_failed');
       return diagramOutputMarkup(svg);
     } catch (err) {
@@ -2354,6 +2433,8 @@ async function renderLocalDiagram(engine, code, previewEl) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('diagram_invalid_input');
     }
+    const requested=config.readmd||{};delete config.readmd;
+    const publication=scholarly||requested.style==='research';
     const isDark = document.body?.dataset?.theme === 'dark';
     const primaryBlue = isDark ? 'rgba(59, 130, 246, 0.75)' : 'rgba(37, 99, 235, 0.8)';
     const primaryBlueBorder = isDark ? '#60a5fa' : '#2563eb';
@@ -2402,6 +2483,19 @@ async function renderLocalDiagram(engine, code, previewEl) {
         }
       });
     }
+    if(publication){
+      const palette=['#0072b2','#d55e00','#009e73','#cc79a7','#e69f00','#56b4e9','#111111'];
+      const font={family:'Arial',size:figureFont};
+      config.options||={};config.options.animation=false;config.options.responsive=false;config.options.maintainAspectRatio=false;
+      config.options.color='#111111';
+      if(['bar','line','scatter','bubble'].includes(config.type)){config.options.scales||={};if(!Object.keys(config.options.scales).length)config.options.scales={x:{},y:{}};}
+      config.options.devicePixelRatio=Math.min(600/96,4096/(Math.max(45,Math.min(300,Number(figureOptions.widthMm||requested.widthMm)||89))*96/25.4));
+      config.options.font={...font,...config.options.font};config.options.plugins||={};
+      config.options.plugins.legend={position:'bottom',...config.options.plugins.legend,labels:{color:'#111111',font,...config.options.plugins.legend?.labels}};
+      for(const axis of Object.values(config.options.scales||{})){axis.grid={display:false,...axis.grid};axis.ticks={color:'#111111',font,...axis.ticks};axis.title={color:'#111111',font,...axis.title};}
+      const authoredDatasets=JSON.parse(code).data?.datasets||[];
+      config.data?.datasets?.forEach((ds,i)=>{const original=authoredDatasets[i]||{};if(original.backgroundColor==null)ds.backgroundColor=palette[i%palette.length];if(original.borderColor==null)ds.borderColor=palette[i%palette.length];if(ds.type==='line'||config.type==='line'){if(original.borderWidth==null)ds.borderWidth=1.25;if(original.borderDash==null)ds.borderDash=[[],[5,3],[2,2]][i%3];}});
+    }
     const canvas = document.createElement('canvas');
     canvas.className = 'diagram-chart-canvas';
     canvas.setAttribute('role', 'img');
@@ -2412,8 +2506,8 @@ async function renderLocalDiagram(engine, code, previewEl) {
       ? chartLabel : '');
     // A bounded canvas keeps malformed configs from forcing unbounded layout
     // growth while still allowing the card to size naturally in narrow panes.
-    canvas.width = 960;
-    canvas.height = 540;
+    canvas.width = publication ? Math.round(Math.max(45,Math.min(300,Number(figureOptions.widthMm||requested.widthMm)||89))*96/25.4) : 960;
+    canvas.height = publication ? Math.round(canvas.width*.65) : 540;
     previewEl.replaceChildren(canvas);
     const context = canvas.getContext('2d');
     if (!context) throw new Error('diagram_engine_unavailable');
@@ -2568,6 +2662,7 @@ function reloadAllDiagrams(container) {
 window.reloadAllDiagrams = reloadAllDiagrams;
 
 function toggleZenMode(force) {
+  if (typeof force === 'boolean' && document.body.classList.contains('zen-mode') === force) return;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const toolbar = document.getElementById('toolbar');
   const toolbarHeight = toolbar?.getBoundingClientRect().height || 0;
@@ -2577,6 +2672,7 @@ function toggleZenMode(force) {
     document.body.classList.toggle('zen-mode');
   }
   const isZen = document.body.classList.contains('zen-mode');
+  document.getElementById('btn-zen')?.setAttribute('aria-pressed', String(isZen));
   document.body.classList.toggle('zen-entering', isZen);
   if (toolbar) toolbar.classList.remove('zen-toolbar-revealed');
 
@@ -2606,95 +2702,138 @@ function toggleZenMode(force) {
 }
 window.toggleZenMode = toggleZenMode;
 
+// Focus chrome and window fullscreen are independent. Only a transition into
+// fullscreen enables Zen; subsequent host resize notifications must not undo
+// the user's left-click choice to show chrome while staying fullscreen.
+window.ReadMDViewMode = (() => {
+  const browserFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  const actualFullscreen = () => !!window.__readmdNativeFullscreen || browserFullscreen();
+  let reportedFullscreen = actualFullscreen(), target = null, work = null;
+  function sync(fullscreen) {
+    document.body.classList.toggle('window-fullscreen', fullscreen);
+    if (reportedFullscreen !== fullscreen) {
+      reportedFullscreen = fullscreen;
+      if (!fullscreen || target !== false) toggleZenMode(fullscreen);
+    }
+    const button = document.getElementById('presentation-fullscreen-btn');
+    if (button) {
+      button.classList.toggle('active', fullscreen);
+      button.textContent = i18n.t(fullscreen ? 'presentation.exitFullscreenLabel' : 'presentation.fullscreenLabel');
+    }
+  }
+  function syncNative(fullscreen) {
+    window.__readmdNativeFullscreen = !!fullscreen;
+    sync(actualFullscreen());
+  }
+  function toggleFullscreen(force, element) {
+    target = typeof force === 'boolean' ? force : !(target ?? actualFullscreen());
+    if (work) return work;
+    work = (async () => {
+      try {
+        while (target !== null) {
+          const wanted = target;
+          if (wanted !== actualFullscreen()) {
+            const bridge = window.pywebview?.api;
+            const native = bridge?.toggle_native_fullscreen ? await bridge.toggle_native_fullscreen(wanted) : null;
+            if (native?.supported) {
+              if (native.ok === false || native.fullscreen !== wanted) throw Error('native_fullscreen_failed');
+              syncNative(native.fullscreen);
+            } else {
+              const host = element || document.documentElement;
+              const action = wanted ? (host.requestFullscreen || host.webkitRequestFullscreen) : (document.exitFullscreen || document.webkitExitFullscreen);
+              if (!action) throw Error('fullscreen_unavailable');
+              await action.call(wanted ? host : document);
+              if (browserFullscreen() !== wanted) throw Error('fullscreen_failed');
+              sync(actualFullscreen());
+            }
+          }
+          // Right-click / F11 / Esc leaving fullscreen also leaves Zen, even
+          // when the user previously enabled Zen independently.
+          if (!wanted) toggleZenMode(false);
+          if (target === wanted) target = null;
+        }
+        return true;
+      } catch (_) {
+        target = null;
+        sync(actualFullscreen());
+        showToast(i18n.t('toast.fullscreenFailed'));
+        return false;
+      }
+    })();
+    work.finally(() => { work = null; });
+    return work;
+  }
+  for (const event of ['fullscreenchange', 'webkitfullscreenchange']) document.addEventListener(event, () => sync(actualFullscreen()));
+  // Capture before dialogs/editors: Esc must always be able to leave the
+  // window's fullscreen without dismissing the user's editor or modal.
+  window.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229 || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === 'F11') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (!event.repeat) {
+        const modal = document.getElementById('presentation-modal');
+        toggleFullscreen(undefined, modal && !modal.classList.contains('hidden') ? modal : undefined);
+      }
+    } else if (event.key === 'Escape' && (target === true || actualFullscreen())) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      toggleFullscreen(false);
+    }
+  }, true);
+  return { toggleFullscreen, syncNative, isFullscreen: () => target ?? actualFullscreen() };
+})();
+
 let presentationOpener = null;
 let presZenInitTimer = null;
 let presToolbarHideTimer = null;
 let presControlsHideTimer = null;
 let presZenActive = false;
+let presentationGeneration = 0;
+let presentationController = null;
+let presentationReadyTimer = null;
+
+function showPresentationFailure() {
+  clearTimeout(presentationReadyTimer);
+  const modal=$('presentation-modal'),loading=$('presentation-loading');
+  if(!modal||modal.classList.contains('hidden')||!loading)return;
+  modal.querySelector('.presentation-iframe')?.classList.add('presentation-pending');
+  loading.hidden=false;loading.replaceChildren();
+  const message=document.createElement('p');message.setAttribute('role','alert');message.textContent=i18n.t('toast.presentationFail').replace(/[：:\s]+$/,'');
+  const retry=document.createElement('button');retry.className='tb-btn';retry.type='button';retry.textContent=i18n.t('audit.retryLoad');retry.onclick=launchPresentationMode;
+  loading.append(message,retry);modal.setAttribute('aria-busy','false');
+}
 
 async function togglePresentationFullscreen(modal) {
-  const doc = document;
-  const nativeState = !!window.__readmdNativeFullscreen;
-  const isFull = nativeState || !!(doc.fullscreenElement || doc.webkitFullscreenElement || doc.mozFullScreenElement || doc.msFullscreenElement);
-  const btn = $('presentation-fullscreen-btn');
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-
-  // pywebview embeds the page in a native window where the browser Fullscreen
-  // API is unavailable. Prefer the host window in that environment and keep a
-  // local state bit so Esc/F11 can restore the previous window state.
-  if (window.pywebview?.api?.toggle_native_fullscreen) {
-    const native = await window.pywebview.api.toggle_native_fullscreen();
-    if (native && native.supported) {
-      window.__readmdNativeFullscreen = !isFull;
-      if (btn) {
-        btn.classList.toggle('active', !isFull);
-        btn.textContent = !isFull ? (_t('presentation.exitFullscreenLabel') || '退出全屏') : (_t('presentation.fullscreenLabel') || '全屏');
-      }
-      return;
-    }
-  }
-
-  if (!isFull) {
-    const target = modal || doc.documentElement;
-    const req = target.requestFullscreen || target.webkitRequestFullscreen || target.mozRequestFullScreen || target.msRequestFullscreen || doc.documentElement.requestFullscreen || doc.documentElement.webkitRequestFullscreen;
-    if (req) {
-      try {
-        await req.call(target);
-      } catch (e) {
-        try {
-          if (doc.documentElement.requestFullscreen) await doc.documentElement.requestFullscreen();
-        } catch (err) {}
-      }
-    }
-    if (btn) {
-      btn.classList.add('active');
-      btn.textContent = _t('presentation.exitFullscreenLabel') || '退出全屏';
-    }
-  } else {
-    const exit = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
-    if (exit) {
-      try {
-        await exit.call(doc);
-      } catch (e) {}
-    }
-    if (btn) {
-      btn.classList.remove('active');
-      btn.textContent = _t('presentation.fullscreenLabel') || '全屏';
-    }
-  }
+  return window.ReadMDViewMode.toggleFullscreen(undefined, modal);
 }
 window.togglePresentationFullscreen = togglePresentationFullscreen;
 
 window.closePresentationMode = function closePresentationMode() {
   const modal = document.getElementById('presentation-modal');
   if (!modal || modal.classList.contains('hidden')) return false;
+  presentationGeneration++;
+  clearTimeout(presentationReadyTimer);
+  presentationController?.abort();
 
   clearTimeout(presZenInitTimer);
   clearTimeout(presToolbarHideTimer);
   clearTimeout(presControlsHideTimer);
   presZenActive = false;
 
-  if (window.__readmdNativeFullscreen && window.pywebview?.api?.toggle_native_fullscreen) {
-    window.pywebview.api.toggle_native_fullscreen().catch(() => {});
-    window.__readmdNativeFullscreen = false;
-  }
-  if ((document.fullscreenElement || document.webkitFullscreenElement) && document.exitFullscreen) {
-    document.exitFullscreen().catch(() => {});
-  }
-  modal.classList.add('hidden');
+  if (window.ReadMDViewMode.isFullscreen()) window.ReadMDViewMode.toggleFullscreen(false);
+  window.ReadMDModal.close(modal);
   modal.classList.remove('pres-zen-active');
   const toolbar = modal.querySelector('#presentation-toolbar');
   if (toolbar) toolbar.classList.remove('pres-toolbar-revealed');
 
   const iframe = modal.querySelector('.presentation-iframe');
-  if (iframe) iframe.src = 'about:blank';
+  if (iframe) { iframe.removeAttribute('srcdoc'); iframe.src = 'about:blank'; }
   if (presentationOpener?.isConnected) presentationOpener.focus({ preventScroll: true });
   presentationOpener = null;
   return true;
 };
 
 async function launchPresentationMode() {
-  const content = rewritePresentationAssets(state.original || (cmView ? cmView.state.doc.toString() : ''));
+  const content = rewritePresentationAssets(state.editing ? getEditContent() : (getActiveTab()?.content || state.fixed || state.original || ''));
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!content) {
     showToast(_t('presentation.noDoc') || '当前没有可演示的文档内容');
@@ -2723,17 +2862,17 @@ async function launchPresentationMode() {
       <div class="presentation-toolbar" id="presentation-toolbar">
         <div class="presentation-tool-item">
           <select id="presentation-theme-select" class="presentation-select" title="演说主题" data-i18n-title="presentation.themeTitle">
-            <option value="black">Black</option>
-            <option value="white">White</option>
-            <option value="league">League</option>
-            <option value="beige">Beige</option>
-            <option value="night">Night</option>
-            <option value="serif">Serif</option>
-            <option value="simple">Simple</option>
-            <option value="solarized">Solarized</option>
-            <option value="blood">Blood</option>
-            <option value="moon">Moon</option>
-            <option value="sky">Sky</option>
+            <option value="black" data-i18n="presentation.themeBlack">${_t('presentation.themeBlack')}</option>
+            <option value="white" data-i18n="presentation.themeWhite">${_t('presentation.themeWhite')}</option>
+            <option value="league" data-i18n="presentation.themeLeague">${_t('presentation.themeLeague')}</option>
+            <option value="beige" data-i18n="presentation.themeBeige">${_t('presentation.themeBeige')}</option>
+            <option value="night" data-i18n="presentation.themeNight">${_t('presentation.themeNight')}</option>
+            <option value="serif" data-i18n="presentation.themeSerif">${_t('presentation.themeSerif')}</option>
+            <option value="simple" data-i18n="presentation.themeSimple">${_t('presentation.themeSimple')}</option>
+            <option value="solarized" data-i18n="presentation.themeSolarized">${_t('presentation.themeSolarized')}</option>
+            <option value="blood" data-i18n="presentation.themeBlood">${_t('presentation.themeBlood')}</option>
+            <option value="moon" data-i18n="presentation.themeMoon">${_t('presentation.themeMoon')}</option>
+            <option value="sky" data-i18n="presentation.themeSky">${_t('presentation.themeSky')}</option>
           </select>
         </div>
         <div class="presentation-tool-item">
@@ -2755,6 +2894,7 @@ async function launchPresentationMode() {
         <button type="button" class="presentation-btn" id="presentation-fullscreen-btn" title="${_t('presentation.fullscreenTitle')}">${_t('presentation.fullscreenLabel')}</button>
         <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
+      <div id="presentation-loading"></div>
       <iframe class="presentation-iframe" title="${_t('menu.presentation') || '演讲演示'}" src="about:blank"></iframe>
     `;
     document.body.appendChild(modal);
@@ -2824,6 +2964,21 @@ async function launchPresentationMode() {
     // 监听来自 iframe 的消息（包含鼠标移动和全屏快捷键）
     window.addEventListener('message', (event) => {
       if (!event.data || typeof event.data !== 'object') return;
+      if (event.source !== modal.querySelector('.presentation-iframe')?.contentWindow || modal.classList.contains('hidden')) return;
+      if (event.data.type === 'pres-exit-fullscreen' && window.ReadMDViewMode.isFullscreen()) {
+        window.ReadMDViewMode.toggleFullscreen(false);
+        return;
+      }
+      if (event.data.type === 'pres-ready') {
+        if (String(event.data.generation) !== String(presentationGeneration)) return;
+        clearTimeout(presentationReadyTimer);
+        $('presentation-loading').hidden = true;
+        modal.querySelector('.presentation-iframe').classList.remove('presentation-pending');
+        modal.setAttribute('aria-busy', 'false');
+        for (const control of modal.querySelectorAll('.presentation-toolbar button,.presentation-toolbar select')) control.inert = false;
+        $('presentation-theme-select')?.focus({ preventScroll: true });
+      }
+      if(event.data.type==='pres-failed'&&String(event.data.generation)===String(presentationGeneration))showPresentationFailure();
       if (event.data.type === 'pres-toggle-fullscreen') {
         togglePresentationFullscreen(modal);
       } else if (event.data.type === 'pres-mousemove') {
@@ -2890,7 +3045,16 @@ async function launchPresentationMode() {
     postToIframe({ type: 'set-zen-controls', showControls: false });
   }, 5000);
 
-  showToast(_t('toast.generatingPresentation') || '正在生成演示文稿...', 1000);
+  presentationController?.abort();
+  presentationController = new AbortController();
+  const generation = ++presentationGeneration;
+  clearTimeout(presentationReadyTimer);
+  window.ReadMDModal.open(modal); modal.setAttribute('aria-busy', 'true');
+  $('presentation-loading').hidden = false;
+  window.ReadMDTask.loading($('presentation-loading'));
+  modal.querySelector('.presentation-iframe').classList.add('presentation-pending');
+  for (const control of modal.querySelectorAll('.presentation-toolbar button,.presentation-toolbar select')) if (control.id !== 'presentation-close-btn') control.inert = true;
+  $('presentation-close-btn')?.focus({ preventScroll: true });
   try {
     let res;
     if (hasPy && py.export_presentation) {
@@ -2899,10 +3063,11 @@ async function launchPresentationMode() {
       const r = await apiFetch('/api/export/presentation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: content })
+        body: JSON.stringify({ content: content }), signal: presentationController.signal
       });
       res = await r.json();
     }
+    if (generation !== presentationGeneration || modal.classList.contains('hidden')) return;
     if (res && res.ok && res.html) {
       modal.classList.remove('hidden');
       const iframe = modal.querySelector('.presentation-iframe');
@@ -2910,13 +3075,15 @@ async function launchPresentationMode() {
         const sel = $('presentation-theme-select');
         if (sel && sel.value) postToIframe({ type: 'set-theme', theme: sel.value });
       }, { once: true });
-      iframe.srcdoc = res.html;
-      $('presentation-theme-select')?.focus({ preventScroll: true });
+      iframe.srcdoc = res.html.replace('</head>', `<meta name="readmd-presentation-request" content="${generation}"></head>`);
+      clearTimeout(presentationReadyTimer);
+      presentationReadyTimer=setTimeout(()=>{if(generation===presentationGeneration)showPresentationFailure();},30000);
     } else {
-      showToast((_t('toast.presentationFail') || '演示文稿生成失败：') + ((res && res.error) || '未知错误'));
+      throw new Error((res && res.error) || _t('toast.unknownError'));
     }
   } catch (e) {
-    showToast((_t('toast.presentationFail') || '演示文稿生成失败：') + e.message);
+    if (generation !== presentationGeneration || e.name === 'AbortError') return;
+    showPresentationFailure();
   }
 }
 window.launchPresentationMode = launchPresentationMode;
@@ -2958,17 +3125,18 @@ function fixLinks(body, selector = 'a') {
     const href = a.getAttribute('href') || '';
     if (href.startsWith('#')) {
       const targetId = href.slice(1);
-      a.addEventListener('click', e => {
+      a.addEventListener('click', async e => {
         e.preventDefault();
-        let el = document.getElementById(targetId);
-        if (!el) {
-          try {
-            const decoded = decodeURIComponent(targetId);
-            el = document.getElementById(decoded) || body.querySelector('[name="' + CSS.escape(decoded) + '"]');
-          } catch (ex) {}
+        let decoded=targetId;try{decoded=decodeURIComponent(targetId);}catch(_){ }
+        const preview=a.closest('#preview-pane');
+        let scope=preview||a.closest('.markdown-body')||a.closest('#content');
+        let el=scope?.querySelector('[id="'+CSS.escape(decoded)+'"], [name="'+CSS.escape(decoded)+'"]');
+        if(!el&&!preview&&state.pagination?.enabled&&state.pagination.mode==='paged'){
+          const heading=state.pagination.allHeadings.find(h=>h.id===decoded);
+          if(heading){renderPage(heading.pageIndex,null,false);scope=document.querySelector('#content .markdown-body')||$('content');el=scope?.querySelector('[id="'+CSS.escape(decoded)+'"]');}
         }
         if (!el) {
-          el = findMatchingHeading(targetId, a.textContent, allHeadings);
+          el = findMatchingHeading(decoded, a.textContent, preview?Array.from(preview.querySelectorAll('h1,h2,h3,h4,h5,h6')):allHeadings);
         }
         if (el) {
           el.tabIndex = -1;
@@ -3037,6 +3205,7 @@ function openPath(p) {
 
 async function renderVirtual(source, name, dir, content, fixes, extras) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();
@@ -3086,34 +3255,6 @@ async function renderVirtual(source, name, dir, content, fixes, extras) {
 }
 
 
-async function ensureModule(name, timeoutMs) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const t0 = Date.now();
-  const limit = timeoutMs || 60000;
-  if (!moduleLoadRequests[name]) {
-    moduleLoadRequests[name] = apiFetch('/api/modules/load', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
-    }).catch(() => null);
-  }
-  await moduleLoadRequests[name];
-  while (Date.now() - t0 < limit) {
-    try {
-      const r = await apiFetch('/api/modules');
-      const d = await r.json();
-      const st = d.modules && d.modules[name];
-      if (st === 'ready') return true;
-      if (st === 'error') {
-        delete moduleLoadRequests[name];
-        showToast(_t('toast.moduleLoadFail', { name }) || ('模块「' + name + '」加载失败，请重试'));
-        return false;
-      }
-    } catch (e) { /* ignore */ }
-    await new Promise(r => setTimeout(r, 800));
-  }
-  showToast(_t('toast.moduleTimeout') || '模块加载超时，请重试');
-  return false;
-}
-
 async function convertFile(path, onExists) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!(await ensureModule('convert'))) return;
@@ -3154,7 +3295,7 @@ async function convertFile(path, onExists) {
     if (choice === 'rename' || choice === 'overwrite') { await convertFile(path, choice); return; }
     if (choice === 'cancel') return;
   }
-  renderVirtual('convert', d.name, d.dir, d.content, d.fixes);
+  renderVirtual('convert', d.name, d.dir, d.content, d.fixes, { assets: d.assets, originPath: path });
 }
 
 function showConvertWarns(warns) {

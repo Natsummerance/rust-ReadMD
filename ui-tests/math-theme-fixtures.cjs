@@ -1,0 +1,23 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path');
+module.exports=async function writeMathThemeFixtures(docs){
+ const {zip}=await import('../tools/lib/zip.mjs'),m='http://schemas.openxmlformats.org/officeDocument/2006/math',w='http://schemas.openxmlformats.org/wordprocessingml/2006/main',a='http://schemas.openxmlformats.org/drawingml/2006/main';
+ const run=(t,pr='')=>`<m:r>${pr?'<w:rPr>'+pr+'</w:rPr>':''}<m:t>${t}</m:t></m:r>`;
+ const equation=`<m:oMathPara><m:oMath>${run('x')}${run('+')}<m:f><m:fPr><m:ctrlPr><w:rPr><w:sz w:val="48"/><w:color w:val="00FF00" w:themeColor="accent2" w:themeShade="BF"/></w:rPr></m:ctrlPr></m:fPr><m:num>${run('a','<w:color w:val="FE0001" w:themeColor="accent1" w:themeTint="99"/>')}</m:num><m:den>${run('b','<w:color w:val="000001" w:themeColor="text1"/>')}</m:den></m:f>${run('+')}${run('y','<w:color w:val="auto"/>')}${run('+')}${run('s','<w:color w:val="0000FF" w:themeColor="dark1"/>')}</m:oMath></m:oMathPara>`;
+ const document=`<w:document xmlns:w="${w}" xmlns:m="${m}"><w:body><w:p>${equation}</w:p></w:body></w:document>`;
+ const styles=`<w:styles xmlns:w="${w}"><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="32"/><w:color w:val="FF0000" w:themeColor="accent1"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>`;
+ const settings=`<w:settings xmlns:w="${w}"><w:clrSchemeMapping w:t1="accent2"/></w:settings>`;
+ const palette={dk1:'123456',lt1:'FFFFFF',dk2:'333333',lt2:'EEEEEE',accent1:'4F81BD',accent2:'C0504D',accent3:'ABCDEF',accent4:'114477',accent5:'224466',accent6:'557799',hlink:'0000FF',folHlink:'800080'};
+ const colors=Object.entries(palette).map(([name,color])=>`<q:${name}>${name==='dk1'?`<q:sysClr val="windowText" lastClr="${color}"/>`:`<q:srgbClr val="${color}"/>`}</q:${name}>`).join('');
+ const font=kind=>`<q:${kind}Font><q:latin typeface="STIX Two Math"/><q:ea typeface=""/><q:cs typeface=""/></q:${kind}Font>`;
+ const fill='<q:solidFill><q:schemeClr val="phClr"/></q:solidFill>',theme=`<q:theme xmlns:q="${a}" name="Owned test"><q:themeElements><q:clrScheme name="Owned palette">${colors}</q:clrScheme><q:fontScheme name="Owned fonts">${font('major')}${font('minor')}</q:fontScheme><q:fmtScheme name="Owned format"><q:fillStyleLst>${fill.repeat(3)}</q:fillStyleLst><q:lnStyleLst>${('<q:ln w="9525">'+fill+'</q:ln>').repeat(3)}</q:lnStyleLst><q:effectStyleLst>${'<q:effectStyle><q:effectLst/></q:effectStyle>'.repeat(3)}</q:effectStyleLst><q:bgFillStyleLst>${fill.repeat(3)}</q:bgFillStyleLst></q:fmtScheme></q:themeElements></q:theme>`;
+ for(const mode of ['Themed','Fallback','External','Missing','WrongNamespace']){
+  const themed=['Themed','WrongNamespace'].includes(mode),relTheme=mode==='Fallback'?'':`<Relationship Id="theme" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="${mode==='External'?'https://example.invalid/theme.xml':'/word/theme/palette.xml'}"${mode==='External'?' TargetMode="External"':''}/>`;
+  const entries=[{name:'word/document.xml',data:document},{name:'word/styles.xml',data:styles},{name:'word/config/settings.xml',data:settings},
+   {name:'word/_rels/document.xml.rels',data:`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="settings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="config/settings.xml"/>${relTheme}</Relationships>`},
+   {name:'_rels/.rels',data:'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="document" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'},
+   {name:'[Content_Types].xml',data:'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/config/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>'+ (themed?'<Override PartName="/word/theme/palette.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>':'')+'</Types>'}];
+  if(themed)entries.push({name:'word/theme/palette.xml',data:mode==='WrongNamespace'?theme.replace(a,'urn:unrelated'):theme});
+  fs.writeFileSync(path.join(docs,mode+'.docx'),zip(entries));
+ }
+};

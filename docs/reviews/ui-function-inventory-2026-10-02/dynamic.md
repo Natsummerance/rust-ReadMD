@@ -76,7 +76,7 @@
 
 | ID / 控件族 | 定位 | 全部动作与内容 | 出现条件 | 前后端 | 源码 |
 | --- | --- | --- | --- | --- | --- |
-| D029 / 公式分类/模板项目 | formula-cats / formula-items | 分类、搜索28模板、行内/块级、点项目插入TeX | 按当前数据/面板状态出现 | 前端；相关存盘由所属流程处理 | [assets/js/editor/editor.js:1090 · renderFormulaPicker](../../../assets/js/editor/editor.js) |
+| D029 / 公式分类、模板与渲染点选 | formula-cats / formula-list / formula-preview | 7 类、46 预设、2,432 字符、446 别名；可视缩略图、分页搜索、精确符号替换、确认/撤销 | 编辑态公式草稿 | 前端/Rust 共用目录；完整 OMML 属性往返尚待实现 | [公式编辑](../../../assets/js/editor/formula-studio.js) |
 | D030 / 表格矩阵单元 | table-grid | 悬停预览行列并高亮；点击生成Markdown，关闭回编辑器 | 按当前数据/面板状态出现 | 前端；相关存盘由所属流程处理 | [assets/js/editor/editor.js:1255 · openTableModal](../../../assets/js/editor/editor.js) |
 | D031 / 图片画布/裁剪柄 | img-canvas / crop handles | 选裁剪框、移动和缩放手柄，预览；比例/旋转/镜像/输出尺寸配合静态输入 | 按当前数据/面板状态出现 | /api/image/save 写受控PNG资源 | [assets/js/editor/image.js:1](../../../assets/js/editor/image.js) |
 

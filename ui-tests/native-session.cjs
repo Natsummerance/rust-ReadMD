@@ -29,28 +29,40 @@ async function startNative(root, data, chromium, port) {
   let launchError;
   child.on('error', error => { launchError = error; });
   let browser;
+  const connections=new Map();
   try {
     const deadline = Date.now() + 45000;
-    while (!browser && Date.now() < deadline) {
+    while (Date.now() < deadline) {
       if (launchError) throw launchError;
       if (child.exitCode !== null) throw Error('Native test app exited during startup');
       for (const candidate of debugPorts(data)) {
-        try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${candidate}`, { timeout: 1000 }); break; } catch {}
+        if(connections.has(candidate))continue;
+        try {
+          const connection=await chromium.connectOverCDP(`http://127.0.0.1:${candidate}`, { timeout: 1000 });
+          connections.set(candidate,connection);
+          connection.on('disconnected',()=>{if(connections.get(candidate)===connection)connections.delete(candidate);});
+        } catch {}
       }
-      if (!browser) await delay(150);
-    }
-    if (!browser) throw Error('Native debug port did not become ready');
-    let page;
-    while (Date.now() < deadline) {
-      page = browser.contexts().flatMap(context => context.pages()).find(p => p.url().startsWith(`http://127.0.0.1:${port}`));
-      if (page && await page.evaluate(() => Boolean(window.__readmdAppReady && window.pywebview?.api?.get_app_info)).catch(() => false)) {
-        return { server: { child }, browser, page };
+      // A restarted profile may briefly advertise the previous WebView's live
+      // CDP endpoint. Keep discovering; bind only to this launch's server origin.
+      for(const connection of connections.values()) {
+        const page=connection.contexts().flatMap(context=>context.pages()).find(p=>{try{return new URL(p.url()).origin===`http://127.0.0.1:${port}`;}catch{return false;}});
+        if(page&&await page.evaluate(()=>Boolean(window.__readmdAppReady&&window.pywebview?.api?.get_app_info)).catch(()=>false)) {
+          browser=connection;
+          await Promise.all([...connections.values()].filter(other=>other!==browser).map(other=>other.close().catch(()=>{})));
+          return {server:{child},browser,page};
+        }
       }
       await delay(100);
     }
-    throw Error('Native reader did not become ready');
+    const observed=[];
+    for(const [debugPort,connection]of connections)for(const candidate of connection.contexts().flatMap(context=>context.pages())) {
+      try {const url=new URL(candidate.url());observed.push({debugPort,origin:url.origin,path:url.pathname,ready:await candidate.evaluate(()=>Boolean(window.__readmdAppReady)).catch(()=>false)});}catch{}
+    }
+    // Omit query strings, page titles and document text from diagnostics.
+    throw Error('Native reader did not become ready: '+JSON.stringify({currentPorts:debugPorts(data),observed}));
   } catch (error) {
-    if (browser) await browser.close().catch(() => {});
+    await Promise.all([...connections.values()].map(connection=>connection.close().catch(()=>{})));
     if (child.exitCode === null) child.kill();
     throw error;
   }

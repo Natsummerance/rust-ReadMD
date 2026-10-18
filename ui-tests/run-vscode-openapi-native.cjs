@@ -1,0 +1,12 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
+const root=path.resolve(__dirname,'..'),out=fs.mkdtempSync(path.join(root,'.cache/capability-upgrade/vscode-openapi-'));
+if(!process.env.READMD_BIN||!process.env.READMD_VSCODE_BIN)throw Error('Set READMD_BIN and READMD_VSCODE_BIN to installed offline binaries');
+for(const name of ['materials','data','profile','extensions'])fs.mkdirSync(path.join(out,name));
+fs.mkdirSync(path.join(out,'profile','User'));fs.writeFileSync(path.join(out,'profile','User','settings.json'),JSON.stringify({'git.enabled':false,'chat.disableAIFeatures':true,'telemetry.telemetryLevel':'off','workbench.startupEditor':'none','workbench.secondarySideBar.defaultVisibility':'hidden','files.autoSave':'off'}));
+const env={...process.env,READMD_VSCODE_OPENAPI_AUDIT:out,READMD_VSCODE_DEBUG_PORT:'29317',READMD_DATA_DIR:path.join(out,'data'),READMD_ASSETS_DIR:path.join(root,'assets')};
+const args=['--new-window','--skip-welcome','--skip-release-notes','--disable-updates','--disable-workspace-trust','--locale=en-US','--remote-debugging-port='+env.READMD_VSCODE_DEBUG_PORT,'--user-data-dir='+path.join(out,'profile'),'--extensions-dir='+path.join(out,'extensions'),'--extensionDevelopmentPath='+path.join(root,'packages/vscode-extension'),'--extensionTestsPath='+path.join(root,'ui-tests/vscode-openapi-native.cjs'),path.join(out,'materials')];
+const fd=fs.openSync(path.join(out,'host.log'),'w'),child=spawn(process.env.READMD_VSCODE_BIN,args,{env,windowsHide:true,stdio:['ignore',fd,fd]});
+const driver=spawn(process.execPath,[path.join(root,'ui-tests/vscode-openapi-driver.cjs')],{env,windowsHide:true,stdio:['ignore',fd,fd]});
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{try{const deadline=Date.now()+120000;while(Date.now()<deadline){if(fs.existsSync(path.join(out,'report.json'))){const report=JSON.parse(fs.readFileSync(path.join(out,'report.json'),'utf8'));console.log(JSON.stringify({passed:report.passed,checks:report.checks.length,report:path.relative(root,path.join(out,'report.json')),message:report.message}));process.exitCode=report.passed?0:1;return;}await delay(200);}throw Error('Native OpenAPI Extension Host timed out');}catch(error){console.error(error.message);process.exitCode=1;}finally{driver.kill();child.kill();fs.closeSync(fd);}})();

@@ -35,6 +35,7 @@
     job.painted = stalled
       ? tr('task.stalled', null, 'Still working — this is taking longer than usual')
       : (job.label || tr('task.running', { seconds: secs }, `Working… ${secs} s`)).replace('{seconds}', String(secs));
+    if (job.cancelNotice) job.painted = job.cancelNotice;
     job.status.textContent = job.painted;
   }
 
@@ -60,17 +61,22 @@
   // Ask the kernel to cancel a task registered with `task_id` (or a batch job).
   async function requestCancel(id) {
     if (!id) return 'unknown';
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 10000);
     try {
       const fetcher = typeof apiFetch === 'function' ? apiFetch : fetch;
       const r = await fetcher('/api/task/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
+        signal: controller.signal,
       });
       const d = await r.json().catch(() => ({}));
-      return d.state || 'unknown';
+      return r.ok && d.ok !== false && ['cancelling', 'finished'].includes(d.state) ? d.state : 'unknown';
     } catch (e) {
       return 'unknown';
+    } finally {
+      clearTimeout(deadline);
     }
   }
 
@@ -88,10 +94,21 @@
     running.set(key, job);
     setBusy(triggers, true);
     const onCancel = async () => {
-      if (job.cancelled) return;
-      job.cancelled = true;
+      if (job.cancelled || job.cancelPending || running.get(key) !== job) return;
+      job.cancelPending = true;
       cancelBtn.disabled = true;
       const state = await requestCancel(opts.cancel.id);
+      // A late cancellation reply cannot change a completed/new task's UI.
+      if (running.get(key) !== job) return;
+      job.cancelPending = false;
+      job.cancelled = state === 'cancelling';
+      cancelBtn.disabled = state !== 'unknown';
+      job.cancelNotice = state === 'cancelling'
+        ? tr('task.cancelling', null, 'Cancelling…')
+        : state === 'finished'
+          ? tr('task.finishing', null, 'Finishing…')
+          : tr('task.cancelRetry', null, 'Cancellation was not confirmed. Try again.');
+      paint(key);
       if (opts.cancel.onState) opts.cancel.onState(state);
     };
     if (cancelBtn) {
@@ -128,7 +145,15 @@
     }
   }
 
-  const api = { run, isRunning: key => running.has(key), newTaskId, requestCancel, STALL_MS };
+  function loading(element, key = 'app.loading') {
+    if (!element) return;
+    const status = document.createElement('div'); status.className = 'readmd-loading'; status.setAttribute('role', 'status');
+    const spinner = document.createElement('span'); spinner.className = 'readmd-loading-spinner'; spinner.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span'); label.dataset.i18n = key; label.textContent = window.i18n.t(key);
+    status.append(spinner, label); element.replaceChildren(status); element.setAttribute('aria-busy', 'true');
+  }
+
+  const api = { run, loading, isRunning: key => running.has(key), newTaskId, requestCancel, STALL_MS };
   if (typeof window !== 'undefined') window.ReadMDTask = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

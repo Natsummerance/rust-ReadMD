@@ -1,3 +1,4 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 test.beforeEach(async ({ page }) => {
@@ -11,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 test('search Enter cycles matches without leaving the field', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual(
       'clipboard',
@@ -37,7 +38,7 @@ test('search Enter cycles matches without leaving the field', async ({ page }) =
 
 test('welcome Ctrl+P respects the document guard', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window.__readmdAppReady === true);
+  await waitForPage(page, () => window.__readmdAppReady === true);
   await page.keyboard.press('Control+P');
   await expect(page.locator('#export-modal')).toBeHidden();
   await expect(page.locator('#toast')).toContainText(/请先打开文档|Open a document/);
@@ -45,7 +46,7 @@ test('welcome Ctrl+P respects the document guard', async ({ page }) => {
 
 test('reading mode supports F11 Zen and Escape exit', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof renderVirtual === 'function');
+  await waitForPage(page, () => typeof renderVirtual === 'function');
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'zen.md', '', '# Reading\n\nFocus body.', []);
   });
@@ -57,7 +58,7 @@ test('reading mode supports F11 Zen and Escape exit', async ({ page }) => {
 
 test('continuous confirmation escapes back to paged reading', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => typeof togglePaginationMode === 'function');
+  await waitForPage(page, () => typeof togglePaginationMode === 'function');
   await page.evaluate(() => {
     Object.assign(state.pagination, {
       enabled: true,
@@ -71,5 +72,5 @@ test('continuous confirmation escapes back to paged reading', async ({ page }) =
   await expect(modal).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(modal).toBeHidden();
-  await page.waitForFunction(() => state.pagination.mode === 'paged');
+  await waitForPage(page, () => state.pagination.mode === 'paged');
 });

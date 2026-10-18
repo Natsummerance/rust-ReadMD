@@ -5,12 +5,22 @@ members = ["readmd-kernel", "xtask"]
 [workspace.package]
 version = "0.0.5"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 authors = ["Natsummerance"]
+
+# Same locked release, reviewed local patch for CSL citation context/affixes.
+[patch.crates-io]
+hayagriva = { path = "vendor/hayagriva" }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = "symbols"
 opt-level = "s"
+
+# Capability-pack checks hash every byte, including in native QA builds.
+# Keep SHA-2 representative of shipping builds without optimizing the app
+# itself or weakening any integrity/cancellation checks.
+[profile.dev.package.sha2]
+opt-level = 3

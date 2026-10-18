@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "manifests": [
+    {
+      "id": "fonts",
+      "platform": "universal",
+      "fingerprint": "210174504be06079c651b691b8ad0534339d7230e67d51ce31fa046a7ef1fc61"
+    },
+    {
+      "id": "pdfium",
+      "platform": "windows-x64",
+      "fingerprint": "1c5c818dedffdcbc00dd6ece7a642e4a63c824e8706cd96e8235a56475072e99"
+    },
+    {
+      "id": "typst",
+      "platform": "windows-x64",
+      "fingerprint": "a977e145770bed7f22ed1bef70074e230569d8fe50b5f6c3a9958224c2e1face"
+    },
+    {
+      "id": "ocr",
+      "platform": "windows-x64",
+      "fingerprint": "65182997bf438bb32926066d6fc402d7b4ffb22d3d8f11b175331ff90397f1e7"
+    }
+  ]
+}

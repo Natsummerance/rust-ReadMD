@@ -27,3 +27,5 @@
 - [GitHub 仓库](https://github.com/Natsummerance/rust-ReadMD): MIT 源码、发行包、校验清单和问题反馈。
 
 - [ReadMD 的 VS Code 与 MCP 集成](https://rust.readmd.asia/zh-cn/integrations/): 本地内核集成与 V0.0.5 新能力预览。
+
+- [V0.0.5 · AI 自动补全](https://rust.readmd.asia/zh-cn/ai-autocomplete/): 灰色候选在光标旁流式出现。Tab 接受眼前的文字，Esc 忽略；不满意，一次撤销回到原稿。

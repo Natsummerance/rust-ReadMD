@@ -676,6 +676,15 @@ static MANIFEST_MUTATIONS: Mutex<()> = Mutex::new(());
 /// Execute registered Rust extension profiles around the real converter.
 /// The core reader remains available when optional profiles are uninstalled.
 pub fn convert_document(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>) -> crate::convert::ConvertTriple {
+    let data_dir = sandbox.plugins_root.parent().unwrap_or(&sandbox.plugins_root);
+    let (mut result, assets, asset_error) = crate::document_assets::with_staging(data_dir, || convert_document_inner(sandbox, path, form_tables, language));
+    result.assets = assets;
+    // Never present a conversion with silently missing extracted images as success.
+    if let Some(error) = asset_error { result.text.clear(); result.error = Some(error); }
+    result
+}
+
+fn convert_document_inner(sandbox: &Sandbox, path: &str, form_tables: bool, language: Option<&str>) -> crate::convert::ConvertTriple {
     // Select and reserve under the same lock as uninstall. Otherwise a
     // profile could disappear between selection and registering its use.
     let selection_guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e|e.into_inner());

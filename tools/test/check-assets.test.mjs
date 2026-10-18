@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildManifest, diffManifest, promptViolations, stripRustTests } from '../check-assets.mjs';
+import { buildManifest, diffManifest, promptViolations, stripRustTests, checkMathComponents } from '../check-assets.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+test('offline math components reject corruption, missing scripts and path escapes',()=>{
+  assert.deepEqual(checkMathComponents(),[]);
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'readmd-math-resources-'));
+  try{
+    fs.writeFileSync(path.join(directory,'renderer.js'),'locked');
+    const entry={path:'renderer.js',bytes:6,sha256:crypto.createHash('sha256').update('locked').digest('hex')};
+    const lock={schema:1,version:'3.2.2',license:'Apache-2.0',commit:'a'.repeat(40),files:[entry]};
+    const write=()=>fs.writeFileSync(path.join(directory,'components.lock.json'),JSON.stringify(lock));write();assert.deepEqual(checkMathComponents(directory),[]);
+    fs.writeFileSync(path.join(directory,'renderer.js'),'changed');assert.ok(checkMathComponents(directory).some(p=>p.includes('hash mismatch')));
+    fs.unlinkSync(path.join(directory,'renderer.js'));assert.ok(checkMathComponents(directory).some(p=>p.includes('missing')));
+    lock.files[0]={...entry,path:'../outside.js'};write();assert.ok(checkMathComponents(directory).some(p=>p.includes('path')));
+  }finally{const checked=path.resolve(directory);assert.equal(path.dirname(checked),path.resolve(os.tmpdir()));assert.match(path.basename(checked),/^readmd-math-resources-/);fs.rmSync(checked,{recursive:true,force:true});}
+});
 
 test('manifest diff reports missing, added and changed files', () => {
   const actual = { files: [{ path: 'a', bytes: 1, sha256: 'x' }, { path: 'b', bytes: 2, sha256: 'y' }] };

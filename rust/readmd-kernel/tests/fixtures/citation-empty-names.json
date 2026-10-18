@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "independentEngineSha256": "2c659319b3b133c0204d60eba3e5daa566e1457e36b19cb6bfe4c8b1b4662650",
+  "localeSha256": "55555f07f931a4b53af2f7eda33284e0f2c4063a6d3f4d930fb1bff9d417770e",
+  "cases": [
+    {
+      "id": "missing",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/></names></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas"
+    },
+    {
+      "id": "present",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/></names></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas",
+          "editor": [
+            {
+              "given": "Mira",
+              "family": "Reed"
+            }
+          ]
+        }
+      ],
+      "expected": "Atlas, in Reed"
+    },
+    {
+      "id": "empty-substitute",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/><substitute><text variable=\"publisher\"/></substitute></names></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas"
+    },
+    {
+      "id": "literal-substitute",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/><substitute><text value=\"Anonymous\"/></substitute></names></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas"
+    },
+    {
+      "id": "variable-substitute",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/><substitute><text variable=\"publisher\"/></substitute></names></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas",
+          "publisher": "Orchid Press"
+        }
+      ],
+      "expected": "Atlas, in Orchid Press"
+    },
+    {
+      "id": "nested-empty",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><group><names variable=\"editor\"><name form=\"short\"/></names></group></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas"
+    },
+    {
+      "id": "nested-constant",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><names variable=\"editor\"><name form=\"short\"/></names><group><text value=\"literal\"/></group></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas, in literal"
+    },
+    {
+      "id": "term-only",
+      "csl": "<style xmlns=\"http://purl.org/net/xbiblio/csl\" version=\"1.0\" class=\"note\"><info><title>ReadMD original empty-name regression</title><id>https://readmd.test/empty-names</id></info><macro name=\"container\"><group delimiter=\" \"><text term=\"in\"/><text value=\"constant\"/></group></macro><citation><layout><group delimiter=\", \"><text variable=\"title\"/><text macro=\"container\"/></group></layout></citation><bibliography><layout><text variable=\"title\"/></layout></bibliography></style>",
+      "items": [
+        {
+          "id": "atlas",
+          "type": "chapter",
+          "title": "Atlas"
+        }
+      ],
+      "expected": "Atlas, in constant"
+    }
+  ]
+}

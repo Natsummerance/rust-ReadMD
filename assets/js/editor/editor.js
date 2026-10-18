@@ -39,7 +39,7 @@ function loadCodeMirror() {
    browser profile so they survive restarts without touching shared settings. */
 const EDITOR_PREFS_KEY = 'readmd-editor-prefs';
 const editorPrefs = (() => {
-  const base = { lineNumbers: false, focus: false, typewriter: false };
+  const base = { lineNumbers: false, focus: false, typewriter: false, aiCompletion: false };
   try { return Object.assign(base, JSON.parse(localStorage.getItem(EDITOR_PREFS_KEY) || '{}')); }
   catch (e) { return base; }
 })();
@@ -77,20 +77,26 @@ function createEditor(doc) {
       CM.bracketMatching(),
       CM.indentOnInput(),
       CM.history(),
+      CM.EditorState.transactionFilter.of(transaction => transaction.docChanged && !transaction.isUserEvent('collaboration.remote') && window.ReadMDCollaborationShare?.canEdit() === false ? [] : transaction),
       CM.markdown({ base: CM.markdownLanguage, codeLanguages: CM.languages }),
       // Markdown prose: pair brackets, double quotes, backticks and CJK brackets
       // (single quotes stay unpaired: they are apostrophes in prose).
       CM.markdownLanguage.data.of({ closeBrackets: { brackets: ['(', '[', '{', '"', '`', '（', '【', '「', '《', '“'] } }),
       CM.syntaxHighlighting(cmHighlightStyle()),
       cmMarkdownDecorations(),
+      cmMathMetadataDecorations(CM),
       C.focus.of(editorPrefs.focus ? cmFocusExtension() : []),
       C.typewriter.of(editorPrefs.typewriter ? cmTypewriterExtension() : []),
-      CM.autocompletion({ override: [cmMarkdownCompletions()], activateOnTyping: false, icons: false }),
+      CM.autocompletion({ override: [cmMarkdownCompletions()], activateOnTyping: false, interactionDelay: 0, icons: false }),
+      cmKnowledgeActivation(CM),
+      window.ReadMDCollaborationShare?.editorExtension(CM) || [],
       CM.closeBrackets(),
+      ReadMDInlineCompletion.extension(CM),
       CM.Prec.highest(CM.keymap.of(cmPriorityKeymap())),
       CM.keymap.of([
         { key: 'Alt-k', run: () => { openEditAiBar(); return true; } },
         { key: 'Ctrl-j', run: () => { openEditAiBar(); return true; } },
+        { key: 'Mod-Alt-Space', run: v => ReadMDInlineCompletion.request(v), preventDefault: true },
         { key: 'Mod-b', run: fmt('bold'), preventDefault: true },
         { key: 'Mod-i', run: fmt('italic'), preventDefault: true },
         { key: 'Mod-k', run: fmt('link'), preventDefault: true },
@@ -117,6 +123,7 @@ function createEditor(doc) {
       CM.Prec.highest(CM.EditorView.domEventHandlers({ paste: cmHandlePaste })),
       CM.EditorView.domEventHandlers({ mousedown: cmTaskMarkerClick }),
       CM.EditorView.updateListener.of(u => {
+        window.ReadMDCollaborationShare?.onEditorUpdate(u);
         if (u.docChanged) {
           const tab = getActiveTab(); if (tab) tab.editGeneration = (tab.editGeneration || 0) + 1;
           schedulePreview();
@@ -167,12 +174,14 @@ function cmHistoryCommand(key) {
 }
 
 function cmUndo() {
+  if (window.ReadMDCollaborationShare?.history(false)) return;
   const run = cmView && cmHistoryCommand('undo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('undo');
 }
 
 function cmRedo() {
+  if (window.ReadMDCollaborationShare?.history(true)) return;
   const run = cmView && cmHistoryCommand('redo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('redo');
@@ -551,6 +560,42 @@ function cmMarkdownDecorations() {
 }
 
 /* Click on a rendered task checkbox toggles [ ] / [x] (one undo step). */
+function cmMathMetadataDecorations(CM){
+  class Properties extends CM.WidgetType{
+    constructor(layout=false){super();this.layout=layout;}
+    eq(other){return this.layout===other.layout;}
+    toDOM(view){
+      const el=document.createElement('span');el.className='cm-math-metadata';el.dataset.i18n=this.layout?'publication.local.title':'formula.omml.mathPr';el.textContent=i18n.t(el.dataset.i18n);el.tabIndex=0;el.setAttribute('role','button');
+      const edit=async event=>{
+        event.preventDefault();const at=view.posAtDOM(el),source=view.state.doc.toString(),tab=getActiveTab();
+        if(this.layout){const range=ReadMDPublication.metadataRanges(source,view.state).find(r=>at>=r.from&&at<=r.to);if(!range)return;const next=range.inline?range.from:range.to+(/^\s*/.exec(source.slice(range.to))?.[0].length||0);view.dispatch({selection:{anchor:next}});ReadMDPublication.openStyle();return;}
+        const range=ReadMDFormula.ranges(source).find(r=>r.to<=at&&/^\s*$/.test(source.slice(r.to,at)));
+        if(!range)return;
+        if(state.pvLayout==='none')setPvLayout('right');
+        await renderPreview();await mathTypesetQueue;
+        if(cmView!==view||getActiveTab()!==tab||view.state.doc.toString()!==source)return;
+        for(const root of $('preview-pane').querySelectorAll('mjx-container')){
+          const target=ReadMDInlineMath.locate(root);
+          if(target?.from===range.from&&target.to===range.to){await ReadMDInlineMath.open(root);return;}
+        }
+      };
+      el.onmousedown=edit;el.onkeydown=event=>{if(event.key==='Enter'||event.key===' ')edit(event);};return el;
+    }
+    ignoreEvent(){return true;}
+  }
+  function comments(state){
+    const source=state.doc.toString();return [...ReadMDFormula.metadataRanges(source),...(window.ReadMDPublication?.metadataRanges(source,state)||[])].sort((a,b)=>a.from-b.from);
+  }
+  function build(state,ranges){
+    return CM.Decoration.set(ranges.map(range=>CM.Decoration.replace({widget:new Properties(range.layout)}).range(range.from,range.to)),true);
+  }
+  const field=CM.StateField.define({
+    create(state){const ranges=comments(state);return {ranges,decorations:build(state,ranges)};},
+    update(value,transaction){if(!transaction.docChanged&&!transaction.selection)return value;const ranges=transaction.docChanged?comments(transaction.state):value.ranges;return {ranges,decorations:build(transaction.state,ranges)};},
+    provide:field=>[CM.EditorView.decorations.from(field,value=>value.decorations),CM.EditorView.atomicRanges.of(view=>view.state.field(field).decorations)],
+  });return field;
+}
+
 function cmTaskMarkerClick(e, view) {
   const box = e.target && e.target.closest && e.target.closest('.cm-task-box');
   if (!box) return false;
@@ -627,7 +672,7 @@ function applyEditorViewClasses() {
     wrap.classList.toggle('is-focus-mode', !!editorPrefs.focus);
     wrap.classList.toggle('is-typewriter', !!editorPrefs.typewriter);
   }
-  const map = { lineNumbers: 'edit-view-lines', focus: 'edit-view-focus', typewriter: 'edit-view-typewriter' };
+  const map = { lineNumbers: 'edit-view-lines', focus: 'edit-view-focus', typewriter: 'edit-view-typewriter', aiCompletion: 'edit-view-ai-completion' };
   Object.entries(map).forEach(([k, id]) => {
     const el = $(id);
     if (el) el.setAttribute('aria-checked', editorPrefs[k] ? 'true' : 'false');
@@ -637,6 +682,7 @@ function applyEditorViewClasses() {
 function setEditorPref(key, value) {
   editorPrefs[key] = value === undefined ? !editorPrefs[key] : !!value;
   saveEditorPrefs();
+  if (key === 'aiCompletion') ReadMDInlineCompletion.reset();
   applyEditorViewClasses();
   if (!cmView || !cmCompartments) return;
   const effects = [];
@@ -688,7 +734,73 @@ function cmMarkdownCompletions() {
     item('- [ ] ' + (_t('editor.listTask') || ''), '- [ ] ${' + taskWord + '}', _t('editor.listTask') || '', 'markdown'),
     item('--- ' + (_t('editor.hr') || ''), '---', _t('editor.hr') || '', 'markdown'),
   ];
-  return context => {
+  return async context => {
+    const math=cmMathContext(context);
+    if(math){
+      const catalog=await ReadMDFormula.load();if(context.aborted)return null;
+      const structures=[['frac','frac(${a}, ${b})','fraction'],['sqrt','sqrt(${x})','squareRoot'],['root','root(${n}, ${x})','root'],['matrix','matrix([${a}, ${b}], [${c}, ${d}])','matrix'],['sum','sum(${x_i}, from: ${i = 1}, to: ${n})','sum'],['integral','integral(${x}, from: ${a}, to: ${b})','integral'],['subscript','subscript(${x}, ${i})','subscript'],['superscript','superscript(${x}, ${n})','superscript'],['subsup','subsup(${x}, ${i}, ${n})','scripts'],['equations','equations(${a = b}, ${c = d})','aligned'],['accent','accent(${x}, character: "̂")','accent'],['bar','bar(${x})','bar'],['border_box','border_box(${x})','boxed'],['delimiter','delimiter(${x}, open: "(", close: ")")','delimiters']].map(([label,text,key])=>item(label,text,_t('formula.template.'+key),'function'));
+      for(const [label,text,key] of [
+        ['product','product(${x_i}, from: ${i = 1}, to: ${n})','nary'],
+        ['nary','nary(${x}, from: ${a}, to: ${b}, character: "⋃")','nary'],
+        ['function','function(${sin}, ${x})','func'],
+        ['group_char','group_char(${x}, character: "⏞")','groupChr'],
+        ['lower_limit','lower_limit(${f}, ${x → 0})','limLow'],
+        ['upper_limit','upper_limit(${f}, ${n})','limUpp'],
+        ['phantom','phantom(${x})','phant'],
+        ['prescript','prescript(${i}, ${n}, ${x})','sPre'],
+        ['box','box(${x})','box'],
+        ['row','row(${a}, ${b})','e'],['empty','empty()','e'],
+      ]) structures.push(item(label,text,_t('formula.omml.'+key),'function'));
+      const symbols=[];const seen=new Set();
+      for(const symbol of catalog.symbols){for(const raw of [symbol.tex,...(symbol.aliases||[])]){const label=raw.replace(/^\\/,'');if(!/^[A-Za-z][A-Za-z0-9]*$/.test(label)||seen.has(label))continue;seen.add(label);symbols.push({label,detail:symbol.symbol,type:'constant',apply:symbol.symbol});}}
+      const options=[...structures,...symbols].filter(o=>o.label.toLowerCase().startsWith(math.query.toLowerCase())).slice(0,60);
+      return options.length?{from:math.from,options,filter:false}:null;
+    }
+    if (cmInCode(context.state, context.pos)) return null;
+    const semantic = cmKnowledgeContext(context);
+    if (semantic) {
+      const tabId = state.activeTabId;
+      const controller = new AbortController();
+      context.addEventListener('abort', () => controller.abort(), { onDocChange: true });
+      try {
+        let rows;
+        if(semantic.kind==='reference'){
+          const labels=await ReadMDPublication.labels(context.state.doc.toString(),state.file||'');
+          rows=labels.filter(row=>row.id.toLowerCase().startsWith(semantic.query.toLowerCase())).slice(0,40)
+            .map(row=>({label:row.id,detail:row.text+(row.caption?' — '+row.caption:''),type:'constant',insert:row.id}));
+        }else{
+        const response = await apiFetch('/api/workspace/suggest', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+          body: JSON.stringify({ workspace_root: knowledgeWorkspaceRoot(), file_path: state.file || '',
+            content: (semantic.query.includes('#') || semantic.kind === 'footnote' || semantic.kind === 'citation') ? context.state.doc.toString() : '',
+            kind: semantic.kind, query: semantic.query, limit: 40 }),
+        });
+        if (!response.ok || context.aborted || !state.editing || state.activeTabId !== tabId) return null;
+        const data = await response.json();
+        if (context.aborted || state.activeTabId !== tabId) return null;
+        rows=data.items||[];
+        }
+        if(context.aborted||!state.editing||state.activeTabId!==tabId)return null;
+        const options = rows.map(row => ({
+          label: row.label, detail: row.detail, type: row.type,
+          apply(view, completion, from, to) {
+            if (state.activeTabId !== tabId || view !== cmView || view.composing) return;
+            const next = view.state.doc.sliceString(to, to + semantic.close.length);
+            // Reuse parser-inserted or existing delimiters; never duplicate them.
+            let reused = 0;
+            for (let n = semantic.close.length; n > 0; n--) {
+              if (next.startsWith(semantic.close.slice(0, n)) || next.startsWith(semantic.close.slice(-n))) { reused = n; break; }
+            }
+            const insert = row.insert + semantic.close;
+            view.dispatch({ changes: { from, to: to + reused, insert }, selection: { anchor: from + insert.length }, userEvent: 'input.complete' });
+          },
+        }));
+        return options.length ? { from: semantic.from, options, filter: false } : null;
+      } catch { return null; }
+    }
+    // Plain typing stays quiet. The established Markdown snippets remain
+    // available on Ctrl+Space without competing with AI ghost text.
+    if (!context.explicit) return null;
     const before = context.matchBefore(/[\w#*_`\[!>|\$~:]{0,8}/);
     if (!before) return null;
     const w = before.text.toLowerCase();
@@ -755,6 +867,151 @@ function safeCodeFence(code) {
   return '`'.repeat(length);
 }
 
+function cmKnowledgeContext(context) {
+  const line = context.state.doc.lineAt(context.pos);
+  const before = context.state.doc.sliceString(line.from, context.pos);
+  let match;
+  if ((match = before.match(/(?<!\\):ref\[([\p{L}\p{N}_:.-]*)$/u))) {
+    return { kind: 'reference', query: match[1], from: context.pos - match[1].length, close: ']' };
+  }
+  if ((match = before.match(/(?<!!)(?<!\\)\[\[([^\]\n|]*)$/))) {
+    return { kind: 'wiki', query: match[1], from: context.pos - match[1].length, close: ']]' };
+  }
+  if ((match = before.match(/(!?)\[[^\]\n]*\]\(([^\s)\n]*)$/))) {
+    if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(match[2])) return null;
+    return { kind: match[1] ? 'image' : 'link', query: match[2], from: context.pos - match[2].length, close: ')' };
+  }
+  if ((match = before.match(/\[\^([^\]\s]*)$/))) {
+    return { kind: 'footnote', query: match[1], from: context.pos - match[1].length, close: ']' };
+  }
+  const braced = /@\{([^{}\r\n]{0,1024})$/.exec(before);
+  const citation = braced || /@([\p{L}\p{N}_][\p{L}\p{N}_:.#$%&\-+?<>~/]{0,1023}|)$/u.exec(before);
+  if (citation) {
+    const at = line.from + citation.index;
+    const marker = before[citation.index - 1] === '-' ? citation.index - 1 : citation.index;
+    const prefix = before.slice(0, marker);
+    if (/[\p{L}\p{N}_@/\\]$/u.test(prefix) || /(?:^|\s)(?:[a-z][a-z\d+.-]*:|\/\/)[^\s]*$/i.test(prefix)) return null;
+    if ((prefix.match(/\\+$/)?.[0].length || 0) % 2 || cmInCode(context.state, context.pos)) return null;
+    const CM = window.ReadMDCodeMirror;
+    if (CM?.syntaxTree) {
+      for (let node = CM.syntaxTree(context.state).resolveInner(context.pos, -1); node; node = node.parent) {
+        if (/^(Image|HTMLTag|InlineHTML|InlineMath|DisplayMath|MathBlock)$/.test(node.name)) return null;
+        // Lezer also calls an unresolved [@key] a Link. A destination or
+        // explicit reference label is required before treating it as one.
+        if (node.name === 'Link' && (node.getChild('URL') || node.getChild('LinkLabel') || /\]\s*[([]/.test(context.state.doc.sliceString(node.from, node.to)))) return null;
+        if (/^(URL|Autolink)$/.test(node.name) && (!braced || node.from <= at)) return null;
+      }
+    }
+    const source = context.state.doc.toString();
+    const front = /^\uFEFF?---[ \t]*\r?\n/.exec(source);
+    if (front) {
+      const end = /^(?:---|\.\.\.)[ \t]*\r?$/gm; end.lastIndex = front[0].length;
+      const closing = end.exec(source);
+      if (!closing || at < closing.index + closing[0].length) return null;
+    }
+    if (window.ReadMDFormula?.ranges(source).some(range => at >= range.bodyFrom && at <= range.bodyTo)) return null;
+    // Closed formulas use the shared scanner. This bounded prefix pass also
+    // keeps completion quiet while a formula's closing delimiter is unfinished.
+    const start = Math.max(0, at - 65536), scope = source.slice(start, at);
+    let math = '', dsl = 0, quoted = false, escaped = false;
+    for (let i = 0; i < scope.length; i++) {
+      const c = scope[i];
+      if (dsl) {
+        if (escaped) { escaped = false; continue; }
+        if (c === '\\') { escaped = true; continue; }
+        if (c === '"') { quoted = !quoted; continue; }
+        if (!quoted) { if (c === '[') dsl++; else if (c === ']') dsl--; }
+        continue;
+      }
+      if (math) {
+        if (scope.startsWith(math, i)) { i += math.length - 1; math = ''; }
+        else if (c === '\\') i++;
+        else if (c === '\n' && math === '$') math = '';
+        continue;
+      }
+      if (!':$\\'.includes(c) || cmInCode(context.state, start + i)) continue;
+      if (scope.startsWith(':math[', i)) { dsl = 1; i += 5; }
+      else if (scope.startsWith('\\(', i)) { math = '\\)'; i++; }
+      else if (scope.startsWith('\\[', i)) { math = '\\]'; i++; }
+      else if (c === '\\') i++;
+      else if (c === '$') {
+        if (scope[i + 1] === '$') { math = '$$'; i++; }
+        else if (!/^\d[\d,.]*(?:\s|$)/.test(scope.slice(i + 1))) math = '$';
+      }
+    }
+    if (math || dsl) return null;
+    const brackets = []; let code = '';
+    for (let i = 0; i < citation.index; i++) {
+      if (before[i] === '\\') { i++; continue; }
+      if (before[i] === '`') {
+        const run = /^`+/.exec(before.slice(i))[0];
+        if (!code) code = run; else if (code === run) code = '';
+        i += run.length - 1; continue;
+      }
+      if (code) continue;
+      if (before[i] === '[') brackets.push(i);
+      else if (before[i] === ']') brackets.pop();
+    }
+    const cluster = brackets.length > 0;
+    const open = brackets.at(-1);
+    if (cluster && before.slice(Math.max(0, open - 5), open) === ':cite' && !/^author-only\s+/.test(before.slice(open + 1, marker))) return null;
+    return { kind: 'citation', query: (braced ? '{' : '') + citation[1], from: context.pos - citation[1].length, close: (braced ? '}' : '') + (cluster ? ']' : '') };
+  }
+  return null;
+}
+
+function cmMathContext(context){
+  const CM=window.ReadMDCodeMirror,doc=context.state.doc,line=doc.lineAt(context.pos);
+  const before=doc.sliceString(Math.max(line.from,context.pos-65536),context.pos);
+  const word=/[A-Za-z][A-Za-z0-9_]*$/.exec(before);if(!word)return null;
+  let inMath=false;
+  for(let node=CM.syntaxTree(context.state).resolveInner(context.pos,-1);node;node=node.parent){
+    if(node.name==='FencedCode'){
+      const header=doc.lineAt(node.from);
+      if(!/^((?:(?: {0,3}>[ \t]?)+[ \t]*| {0,3})(?:(?:[-+*]|\d+[.)])[ \t]+)?)(?:`{3,}|~{3,})readmd-math v1\s*$/.test(header.text)||context.pos<=header.to)return null;
+      inMath=true;break;
+    }
+    if(node.name!=='CodeText'&&CM_CODE_NODE_RE.test(node.name))return null;
+  }
+  if(!inMath){
+    const start=before.lastIndexOf(':math[');if(start<0)return null;
+    let depth=1,quoted=false,escaped=false;
+    for(const c of before.slice(start+6)){if(escaped){escaped=false;continue;}if(c==='\\'){escaped=true;continue;}if(c==='"'){quoted=!quoted;continue;}if(!quoted){if(c==='[')depth++;if(c===']')depth--;}}
+    if(depth<=0||quoted)return null;
+  }
+  return {query:word[0],from:context.pos-word[0].length};
+}
+
+function cmAcceptMenuCompletion(view) {
+  const CM = window.ReadMDCodeMirror;
+  if (view.composing || CM.completionStatus(view.state) !== 'active') return false;
+  const accept = CM.completionKeymap.find(binding => binding.key === 'Enter');
+  return accept ? accept.run(view) : false;
+}
+
+function cmKnowledgeActivation(CM) {
+  // Starting CodeMirror completion for every keystroke briefly marks ordinary
+  // prose as "pending", which interrupts AI streaming and the slash menu.
+  // Activate only in a semantic link/reference context, after composition.
+  let timer;
+  const schedule = view => {
+    clearTimeout(timer);
+    const sel = view.state.selection.main;
+    const context={state:view.state,pos:sel.head};
+    if (view.composing || !sel.empty || !(cmMathContext(context)||(cmKnowledgeContext(context)&&!cmInCode(view.state,sel.head)))) return;
+    timer = setTimeout(() => {
+      if (view !== cmView || !state.editing || view.composing || !view.hasFocus || CM.completionStatus(view.state)) return;
+      const current = view.state.selection.main;
+      const context={state:view.state,pos:current.head};
+      if (current.empty && (cmMathContext(context)||(cmKnowledgeContext(context)&&!cmInCode(view.state,current.head)))) CM.startCompletion(view);
+    }, 140);
+  };
+  return [CM.ViewPlugin.fromClass(class {
+    update(update) { if (update.docChanged || update.selectionSet) schedule(update.view); }
+    destroy() { clearTimeout(timer); }
+  }), CM.EditorView.domEventHandlers({ compositionend(event, view) { schedule(view); } })];
+}
+
 function openCodeChunkModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -805,6 +1062,22 @@ const DIAGRAM_SAMPLES = {
   bitfield: '{\n  reg: [\n    {bits: 8, name: "IPO", type: 8},\n    {bits: 8, name: "Payload"},\n    {bits: 16, name: "CRC32", type: 2}\n  ]\n}'
 };
 
+let scientificFigureCatalogPromise;
+function scientificFigureCatalog() {
+  if(!scientificFigureCatalogPromise)scientificFigureCatalogPromise=fetch('/assets/data/scientific-figures.json').then(r=>{if(!r.ok)throw new Error('diagram_engine_load_failed');return r.json();}).catch(e=>{scientificFigureCatalogPromise=null;throw e;});
+  return scientificFigureCatalogPromise;
+}
+async function updateScientificFigureTemplates() {
+  const holder=$('diagram-research-options'),select=$('diagram-research-template');if(!holder||!select)return;
+  holder.hidden=$('diagram-type')?.value!=='vega-lite';if(holder.hidden)return;
+  try {
+    const catalog=await scientificFigureCatalog();
+    if($('diagram-type')?.value!=='vega-lite')return;
+    select.replaceChildren();const original=document.createElement('option');original.value='';original.textContent=i18n.t('export.figureOriginal');select.append(original);
+    catalog.templates.forEach(item=>{const option=document.createElement('option');option.value=item.id;option.textContent=i18n.t(item.label);select.append(option);});
+    select.onchange=()=>{const template=catalog.templates.find(t=>t.id===select.value);if(template){$('diagram-code').value=JSON.stringify(template.spec,null,2);$('diagram-code').focus();}};
+  } catch(e){showToast(i18n.t(diagramErrorKey(e.message)));}
+}
 function openDiagramModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -814,6 +1087,7 @@ function openDiagramModal() {
     codeArea.value = DIAGRAM_SAMPLES[typeSel.value] || DIAGRAM_SAMPLES.plantuml;
   }
   $('diagram-modal').classList.remove('hidden');
+  updateScientificFigureTemplates();
   setTimeout(() => { if (typeSel) typeSel.focus(); }, 50);
 }
 
@@ -986,8 +1260,10 @@ function presentationYaml(body) {
 }
 
 let frontmatterFormSnapshot = null;
+const bibliographyFields = { bibliography: 'fm-input-bibliography', csl: 'fm-input-csl', lang: 'fm-input-lang' };
 function openFrontmatterModal() {
   if (!state.editing) return;
+  if (window.ReadMDPublicationMetadata) return window.ReadMDPublicationMetadata.open();
   closeMdPopups();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const modal = $('frontmatter-modal');
@@ -1002,8 +1278,11 @@ function openFrontmatterModal() {
   const values = {
     title: fieldValue(parts.body, 'title', defTitle), author: fieldValue(parts.body, 'author', 'ReadMD User'),
     theme: fieldValue(presentation, 'theme', 'black', '  '), transition: fieldValue(presentation, 'transition', 'slide', '  '),
+    bibliography: fieldValue(parts.body,'bibliography',''), csl:fieldValue(parts.body,'csl','apa'),lang:fieldValue(parts.body,'lang',i18n.currentLang||'en-US'),
   };
+  const bibBlock=yamlFieldBlock(parts.body,'bibliography');if(bibBlock&&!bibBlock.raw){values.bibliography=JSON.stringify(bibBlock.lines.slice(bibBlock.start+1,bibBlock.end).map(s=>s.match(/^\s*-\s+(.+)$/)?.[1]).filter(Boolean).map(yamlScalar));}
   for (const key of ['title', 'author']) $('fm-input-' + key).value = values[key];
+  for(const [key,id] of Object.entries(bibliographyFields))$(id).value=values[key];
   for (const key of ['theme', 'transition']) {
     const select = $('fm-select-' + key);
     select.querySelectorAll('[data-custom]').forEach(option => option.remove());
@@ -1018,12 +1297,14 @@ function openFrontmatterModal() {
 }
 
 function closeFrontmatterModal() {
+  window.ReadMDPublicationMetadata?.cancel();
   const modal = $('frontmatter-modal');
   if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();
 }
 
 function insertFrontmatterFromModal() {
+  if (window.ReadMDPublicationMetadata) return window.ReadMDPublicationMetadata.submit();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const title = $('fm-input-title')?.value.trim() || '';
   const author = $('fm-input-author')?.value.trim() || '';
@@ -1036,6 +1317,14 @@ function insertFrontmatterFromModal() {
     const parts = frontmatterParts(currentDoc);
     let body = parts.body;
     const values = { title, author, theme, transition };
+    for(const [key,id] of Object.entries(bibliographyFields)){
+      const value=$(id).value.trim();
+      if(value!==frontmatterFormSnapshot?.values[key]){
+        let parsed=value;
+        if(key==='bibliography'&&value.startsWith('[')){try{parsed=JSON.parse(value);if(!Array.isArray(parsed)||parsed.some(v=>typeof v!=='string'))throw Error('array');}catch{showToast(_t('academic.prepareFailed'));return;}}
+        body=yamlPatchField(body,key,parsed);
+      }
+    }
     for (const key of ['title', 'author']) {
       if (!parts.end || values[key] !== frontmatterFormSnapshot?.values[key]) body = yamlPatchField(body, key, values[key]);
     }
@@ -1062,67 +1351,10 @@ function insertFrontmatterTemplate() {
   openFrontmatterModal();
 }
 
-const FORMULAS = [
-  ['常用','平方根','sqrt root','\\sqrt{x}'], ['常用','分式','fraction frac','\\frac{a}{b}'], ['常用','幂与下标','power subscript','x^{n}_{i}'], ['常用','二次公式','quadratic','x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}'],
-  ['希腊','阿尔法','alpha','\\alpha'], ['希腊','贝塔','beta','\\beta'], ['希腊','伽马','gamma','\\gamma'], ['希腊','派','pi','\\pi'], ['希腊','西塔','theta','\\theta'], ['希腊','欧米伽','omega','\\omega'],
-  ['运算','加减','plus minus','\\pm'], ['运算','乘号','times multiply','\\times'], ['运算','除号','divide','\\div'],
-  ['关系','小于等于','less equal','\\le'], ['关系','大于等于','greater equal','\\ge'], ['关系','不等于','not equal','\\ne'], ['关系','约等于','approx','\\approx'],
-  ['箭头','右箭头','right arrow','A\\rightarrow B'], ['箭头','双向箭头','leftright arrow','A\\leftrightarrow B'], ['箭头','推出','implies','A\\Rightarrow B'],
-  ['函数','正弦','sin','\\sin x'], ['函数','对数','log','\\log_{a}x'], ['函数','指数','exp','e^{x}'],
-  ['结构','求和','sum','\\sum_{i=1}^{n} x_i'], ['结构','积分','integral','\\int_{a}^{b} f(x)\\,dx'], ['结构','极限','limit','\\lim_{x\\to 0} f(x)'], ['结构','矩阵','matrix','\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}'], ['结构','分段函数','cases','f(x)=\\begin{cases}x,&x\\ge0\\\\-x,&x<0\\end{cases}'],
-];
-const FORMULA_CAT_NAMES = {
-  '常用': 'formula.catCommon',
-  '希腊': 'formula.catGreek',
-  '运算': 'formula.catCalc',
-  '关系': 'formula.catRel',
-  '箭头': 'formula.catArrows',
-  '函数': 'formula.catFuncs',
-  '结构': 'formula.catStruct'
-};
-
-const FORMULA_ITEM_KEYS = {
-  '平方根': 'formula.sqrt', '分式': 'formula.frac', '幂与下标': 'formula.powerSub', '二次公式': 'formula.quadratic',
-  '阿尔法': 'formula.alpha', '贝塔': 'formula.beta', '伽马': 'formula.gamma', '派': 'formula.pi', '西塔': 'formula.theta', '欧米伽': 'formula.omega',
-  '加减': 'formula.plusMinus', '乘号': 'formula.times', '除号': 'formula.divide',
-  '小于等于': 'formula.le', '大于等于': 'formula.ge', '不等于': 'formula.ne', '约等于': 'formula.approx',
-  '右箭头': 'formula.rightArrow', '双向箭头': 'formula.bothArrow', '推出': 'formula.implies',
-  '正弦': 'formula.sin', '对数': 'formula.log', '指数': 'formula.exp',
-  '求和': 'formula.sum', '积分': 'formula.integral', '极限': 'formula.limit', '矩阵': 'formula.matrix', '分段函数': 'formula.cases'
-};
-let formulaCategory = '常用';
-
-function openFormulaModal(mode) { if (!state.editing) return; closeMdPopups(); $('formula-mode').value = mode || 'inline'; $('formula-modal').classList.remove('hidden'); $('formula-search').value = ''; renderFormulaPicker(); setTimeout(() => $('formula-search').focus(), 0); }
-function closeFormulaModal() { window.ReadMDModal.close('formula-modal'); if (cmView) cmView.focus(); }
-function renderFormulaPicker() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const cats = [...new Set(FORMULAS.map(f => f[0]))]; const catBox = $('formula-cats'); catBox.innerHTML = '';
-  cats.forEach(c => {
-    const b = document.createElement('button');
-    const labelKey = FORMULA_CAT_NAMES[c] || c;
-    b.textContent = _t(labelKey) || c;
-    b.classList.toggle('active', c === formulaCategory);
-    b.addEventListener('click', () => { formulaCategory = c; renderFormulaPicker(); });
-    catBox.appendChild(b);
-  });
-  const q = $('formula-search').value.trim().toLowerCase(); const rows = FORMULAS.filter(f => (q ? (f.join(' ').toLowerCase().includes(q)) : f[0] === formulaCategory));
-  const list = $('formula-list'); list.innerHTML = '';
-  rows.forEach(f => {
-    const b = document.createElement('button');
-    b.className = 'formula-item';
-    b.innerHTML = '<span></span><small></small>';
-    const itemKey = FORMULA_ITEM_KEYS[f[1]];
-    b.querySelector('span').textContent = (itemKey ? _t(itemKey) : null) || f[1];
-    b.querySelector('small').textContent = f[3];
-    b.addEventListener('mouseenter', () => previewFormula(f[3]));
-    b.addEventListener('focus', () => previewFormula(f[3]));
-    b.addEventListener('click', () => insertFormula(f[3]));
-    list.appendChild(b);
-  });
-}
-
-function previewFormula(tex) { const p = $('formula-preview'); p.textContent = '$$' + tex + '$$'; renderMath(p); }
-function insertFormula(tex) { const mode = $('formula-mode').value; closeFormulaModal(); if (!cmView) return; const sel = cmView.state.selection.main; const selected = cmView.state.sliceDoc(sel.from, sel.to); const body = selected || tex; const insert = mode === 'block' ? '\n$$\n' + body + '\n$$\n' : '$' + body + '$'; cmView.dispatch({changes:{from:sel.from,to:sel.to,insert},selection:{anchor:sel.from+insert.length}}); cmView.focus(); }
+function openFormulaModal(mode) { return window.ReadMDFormula.open(mode); }
+function closeFormulaModal() { window.ReadMDFormula.close(); }
+function renderFormulaPicker() { window.ReadMDFormula.picker(); }
+function insertFormula(tex) { return window.ReadMDFormula.insert(tex); }
 
 /* ============================================================
    Editor Studio PRO: 表格设计器 & 统计（Zen 由 reader/render.js 统一管理）
@@ -1142,12 +1374,25 @@ function updateDocStatistics() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const T = window.ReadMDTransforms;
   const docText = typeof getEditContent === 'function' ? getEditContent() : (cmView ? cmView.state.doc.toString() : ($('edit-area') && $('edit-area').value || ''));
-  const stats = T && T.textStats ? T.textStats(docText) : { words: 0, chars: docText.length, minutes: 0 };
+  const hiddenMetadata=[...(window.ReadMDFormula?.metadataRanges(docText)||[]),...(window.ReadMDPublication?.metadataRanges(docText)||[])].sort((a,b)=>a.from-b.from);
+  let visibleText='',visibleAt=0;for(const hidden of hiddenMetadata){visibleText+=docText.slice(visibleAt,hidden.from);visibleAt=hidden.to;}visibleText+=docText.slice(visibleAt);
+  const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };
   const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
     const ranges = cmView.state.selection.ranges.filter(r => !r.empty);
-    if (ranges.length) selWords = T.textStats(ranges.map(r => cmView.state.sliceDoc(r.from, r.to)).join('\n')).words;
+    if (ranges.length) {
+      const metadata = hiddenMetadata;
+      const selected = ranges.map(range => {
+        let at = range.from, text = '';
+        for (const hidden of metadata) {
+          if (hidden.to <= at || hidden.from >= range.to) continue;
+          text += docText.slice(at, Math.max(at, hidden.from)); at = Math.min(range.to, hidden.to);
+        }
+        return text + docText.slice(at, range.to);
+      }).join('\n');
+      selWords = T.textStats(selected).words;
+    }
   }
   const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };
   statsEl.textContent = selWords
@@ -1183,6 +1428,8 @@ function handleSmartExcelPaste(e) {
   }
   if (imageFile) {
     e.preventDefault();
+    const pasteTab = getActiveTab(), pasteView = cmView, pasteContent = getEditContent();
+    const pasteTargetCurrent = () => getActiveTab() === pasteTab && cmView === pasteView && state.editing && getEditContent() === pasteContent;
     const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
     showToast(_t('toast.savingImage') || '正在保存剪贴板图片…', 1500);
     const reader = new FileReader();
@@ -1193,18 +1440,19 @@ function handleSmartExcelPaste(e) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            dir: state.dir || '',
+            stage: true,
             data: b64,
             format: 'png',
-            name: 'img_' + Date.now()
+            name: 'clipboard'
           })
         });
         const d = await resp.json();
-        if (d && d.ok) {
+        if (resp.ok && d && d.ok && pasteTargetCurrent()) {
           const insertRel = d.rel || d.relPath || d.path;
+          registerStagedImage(d.asset, pasteTab);
           cmInsertImage(insertRel);
           showToast(_t('toast.imgInsertedRel', { rel: insertRel }) || ('图片已插入（' + insertRel + '）'));
-        } else {
+        } else if (pasteTargetCurrent()) {
           showToast(apiMessage(d, 'toast.imgSaveFailed') || '图片保存失败');
         }
       } catch (err) {
@@ -1229,7 +1477,7 @@ function handleSmartExcelPaste(e) {
 
   // 表头
   const defaultCol = _t('editor.table') || '';
-  const headers = lines[0].map(c => c.trim() || defaultCol);
+  const headers = lines[0].map(c => c.trim().replace(/\|/g, '\\|') || defaultCol);
   while (headers.length < colCount) headers.push(defaultCol + (headers.length + 1));
   mdRows.push('| ' + headers.join(' | ') + ' |');
   mdRows.push('| ' + headers.map(() => '---').join(' | ') + ' |');
@@ -1246,7 +1494,8 @@ function handleSmartExcelPaste(e) {
     const sel = cmView.state.selection.main;
     cmView.dispatch({
       changes: { from: sel.from, to: sel.to, insert: tableMd },
-      selection: { anchor: sel.from + tableMd.length }
+      selection: { anchor: sel.from + tableMd.length },
+      userEvent: 'input.paste'
     });
     cmView.focus();
   } else if ($('edit-area')) {
@@ -1824,15 +2073,18 @@ function cmPriorityKeymap() {
     ? CM.insertNewlineContinueMarkupCommand({ nonTightLists: false })
     : null;
   return [
+    { key: 'Mod-z', run: () => window.ReadMDCollaborationShare?.history(false) || false },
+    { key: 'Mod-Shift-z', run: () => window.ReadMDCollaborationShare?.history(true) || false },
+    { key: 'Mod-y', run: () => window.ReadMDCollaborationShare?.history(true) || false },
     { key: 'ArrowDown', run: v => slashKey(v, 'down') },
     { key: 'ArrowUp', run: v => slashKey(v, 'up') },
     { key: 'ArrowLeft', run: v => slashKey(v, 'left') },
     { key: 'ArrowRight', run: v => slashKey(v, 'right') },
     { key: 'PageDown', run: v => slashKey(v, 'pagedown') },
     { key: 'PageUp', run: v => slashKey(v, 'pageup') },
-    { key: 'Escape', run: v => slashKey(v, 'escape'), stopPropagation: true },
-    { key: 'Enter', run: v => slashKey(v, 'enter') || cmTableEnter(v) || cmFenceEnter(v) || cmListExit(v) || (continueList ? continueList(v) : false) },
-    { key: 'Tab', run: v => slashKey(v, 'enter') || cmTableTab(v, 1) || cmListIndent(v, 1) },
+    { key: 'Escape', run: v => ReadMDInlineCompletion.dismiss(v) || slashKey(v, 'escape'), stopPropagation: true },
+    { key: 'Enter', run: v => slashKey(v, 'enter') || cmAcceptMenuCompletion(v) || cmTableEnter(v) || cmFenceEnter(v) || cmListExit(v) || (continueList ? continueList(v) : false) },
+    { key: 'Tab', run: v => slashKey(v, 'enter') || cmAcceptMenuCompletion(v) || ReadMDInlineCompletion.accept(v) || cmTableTab(v, 1) || cmListIndent(v, 1) },
     { key: 'Shift-Tab', run: v => cmTableTab(v, -1) || cmListIndent(v, -1) },
   ];
 }
@@ -2522,7 +2774,7 @@ function bindEditBarExtras() {
       trig.setAttribute('aria-expanded', show ? 'true' : 'false');
       if (show && e.detail === 0) { const first = menu.querySelector('button'); if (first) first.focus(); }
     });
-    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter']].forEach(([id, key]) => {
+    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter'], ['edit-view-ai-completion', 'aiCompletion']].forEach(([id, key]) => {
       const b = $(id);
       if (b) b.addEventListener('click', e => { e.stopPropagation(); setEditorPref(key); });
     });

@@ -22,7 +22,8 @@
 </head>
 <body>
 <header id="app-titlebar" class="app-titlebar">
-  <div id="window-drag-region" class="window-drag-region"><img class="titlebar-mark" src="/assets/icon-256.png" width="26" height="26" alt="" aria-hidden="true" draggable="false"><span id="window-title">ReadMD</span></div>
+  <button id="titlebar-home" class="titlebar-home" type="button" title="返回主页" aria-label="返回主页" data-i18n-title="toolbar.home" data-i18n-aria="toolbar.home"><img class="titlebar-mark" src="/assets/icon-256.png" width="26" height="26" alt="" aria-hidden="true" draggable="false"></button>
+  <div id="window-drag-region" class="window-drag-region"><span id="window-title">ReadMD</span></div>
   <nav id="titlebar-actions" class="titlebar-actions" aria-label="全局操作" data-i18n-aria="window.globalActions"></nav>
   <div id="window-controls" class="window-controls hidden">
     <button id="window-minimize" type="button" data-i18n-aria="window.minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
@@ -58,7 +59,6 @@
     <button id="btn-palette" class="tb-btn icon tb-palette" type="button" title="命令面板 (Ctrl+K)" aria-label="命令面板" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K" data-i18n-title="shell.toolbar.paletteTip" data-i18n-aria="editor.command">
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5L10 12l-4.5 4.5"/><path d="M12.5 16.5h6"/></svg>
       <span class="tb-palette-label" data-i18n="shell.toolbar.palette">命令</span>
-      <span class="tb-palette-keys" data-kbd="Mod+K" aria-hidden="true"></span>
     </button>
   </div>
   <div class="tb-group tb-right">
@@ -69,15 +69,13 @@
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
     </button>
     <button id="btn-theme" class="tb-btn icon" title="切换主题 (Ctrl+D)" aria-label="切换主题"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg></button>
-    <button id="btn-zen" class="tb-btn icon" title="禅模式 (F11 / Esc)" aria-label="禅模式" data-i18n-title="toolbar.zen" data-i18n-aria="toolbar.zen">
+    <button id="btn-zen" class="tb-btn icon" title="左键：禅模式 · 右键／F11：全屏 · Esc：退出" aria-label="禅模式" aria-pressed="false" data-i18n-title="toolbar.zenGesture" data-i18n-aria="toolbar.zen">
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
     </button>
-    <button id="btn-a" class="tb-btn" title="减小字号 (Ctrl+-)" aria-label="减小字号" data-i18n-title="toolbar.zoomOut" data-i18n-aria="toolbar.zoomOut">A&minus;</button>
-    <button id="btn-A" class="tb-btn" title="增大字号 (Ctrl+=)" aria-label="增大字号" data-i18n-title="toolbar.zoomIn" data-i18n-aria="toolbar.zoomIn">A+</button>
     <button id="btn-print" class="tb-btn icon" title="导出文档 (Ctrl+P)" aria-label="导出" data-i18n-title="toolbar.export" data-i18n-aria="toolbar.export">
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="4" y="8" width="16" height="8" rx="1"/><path d="M7 16h10v4H7z"/></svg>
     </button>
-    <button id="btn-edit" class="tb-btn" title="编辑当前 Markdown (Ctrl+E)" aria-label="编辑" data-i18n-title="toolbar.edit" data-i18n-aria="toolbar.edit" disabled>
+    <button id="btn-edit" class="tb-btn icon" title="编辑当前 Markdown (Ctrl+E)" aria-label="编辑" data-i18n-title="toolbar.edit" data-i18n-aria="toolbar.edit" disabled>
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>
       <span class="tb-label" data-i18n="toolbar.edit">编辑</span>
     </button>
@@ -95,6 +93,7 @@
           <button id="btn-convert" class="more-item" role="menuitem"><span data-i18n="menu.convert">万物转换</span><em data-i18n="menu.convertSub">格式转 MD</em></button>
           <button id="btn-web" class="more-item" role="menuitem"><span data-i18n="menu.web">网页提取</span><em data-i18n="menu.webSub">网页转 MD</em></button>
           <button id="btn-ocr" class="more-item" role="menuitem"><span data-i18n="menu.ocr">扫描识别</span><em data-i18n="menu.ocrSub">OCR 识别</em></button>
+          <button id="btn-pdf-edit" class="more-item" role="menuitem"><span data-i18n="pdf.title">编辑 PDF</span><em data-i18n="pdf.editOriginal">保留 PDF 格式</em></button>
           <button id="btn-clipboard-new" class="more-item" role="menuitem"><span data-i18n="menu.clipboard">剪贴新建</span><em data-i18n="menu.clipboardSub">剪贴板转 MD</em></button>
         </div>
       </div>
@@ -102,7 +101,7 @@
         <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpInteract">互动</span><span class="more-group-arrow">›</span></button>
         <div class="more-group-items">
           <button id="btn-backlinks-menu" class="more-item" disabled role="menuitem"><span data-i18n="graph.backlinks">反向链接</span><em data-i18n="graph.backlinksSub">双向关联</em></button>
-          <button id="btn-presentation-menu" class="more-item" disabled role="menuitem"><span data-i18n="menu.presentation">演讲演示</span><em data-i18n="menu.presentationSub">Reveal.js (F5)</em></button>
+          <button id="btn-presentation-menu" class="more-item" disabled role="menuitem"><span data-i18n="menu.presentation">演讲演示</span><em data-i18n="menu.presentationSub">全屏演示</em></button>
           <button id="btn-run-all-chunks" class="more-item hidden" disabled role="menuitem"><span data-i18n="menu.runCode">运行代码</span><em data-i18n="menu.runCodeSub">执行代码块</em></button>
           <button id="btn-style-custom" class="more-item" role="menuitem"><span data-i18n="menu.customStyle">样式定制</span><em data-i18n="menu.customStyleSub">CSS / Head 注入</em></button>
           <button id="btn-saveas" class="more-item" disabled role="menuitem"><span data-i18n="menu.saveAs">另存为</span><em data-i18n="menu.saveAsSub">.md 文件</em></button>
@@ -168,7 +167,7 @@
     </div>
     <span class="md-tool-sep" aria-hidden="true"></span>
     <div class="md-menu-wrap md-wide-only"><button class="md-tool-btn md-group" data-menu="md-text-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.text">文本</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
-      <div id="md-text-menu" class="md-menu hidden" role="menu"><button data-md="strike" role="menuitem"><span data-i18n="editor.strikethrough">删除线</span><kbd>Ctrl+Shift+X</kbd></button><button data-md="code" role="menuitem"><span data-i18n="editor.codeInline">行内代码</span><kbd>Ctrl+E</kbd></button><button data-md="math" role="menuitem"><span data-i18n="editor.mathInline">行内公式</span></button><button data-md="link" role="menuitem"><span data-i18n="editor.link">链接</span><kbd>Ctrl+K</kbd></button></div></div>
+      <div id="md-text-menu" class="md-menu hidden" role="menu"><button data-md="strike" role="menuitem"><span data-i18n="editor.strikethrough">删除线</span><kbd>Ctrl+Shift+X</kbd></button><button data-md="code" role="menuitem"><span data-i18n="editor.codeInline">行内代码</span><kbd>Ctrl+E</kbd></button><button data-md="math" role="menuitem"><span data-i18n="editor.mathInline">行内公式</span></button><button data-md="link" role="menuitem"><span data-i18n="editor.link">链接</span><kbd>Ctrl+K</kbd></button><button data-md="publication-style" role="menuitem"><span data-i18n="publication.local.title">局部排版</span></button></div></div>
     <div class="md-menu-wrap"><button class="md-tool-btn md-group" data-menu="md-structure-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.structure">结构</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
       <div id="md-structure-menu" class="md-menu hidden" role="menu"><button data-md="h1" role="menuitem"><span data-i18n="editor.h1">一级标题</span><kbd>Ctrl+1</kbd></button><button data-md="h2" role="menuitem"><span data-i18n="editor.h2">标题</span><kbd>Ctrl+2</kbd></button><button data-md="h3" role="menuitem"><span data-i18n="editor.h3">三级标题</span><kbd>Ctrl+3</kbd></button><button data-md="para" role="menuitem"><span data-i18n="editor.paragraph">正文</span><kbd>Ctrl+0</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="quote" role="menuitem"><span data-i18n="editor.quote">引用</span><kbd>Ctrl+Shift+.</kbd></button><button data-md="callout" role="menuitem"><span data-i18n="editor.callout">提示块</span></button><button data-md="list" role="menuitem"><span data-i18n="editor.ul">无序列表</span><kbd>Ctrl+Shift+8</kbd></button><button data-md="ordered" role="menuitem"><span data-i18n="editor.ol">有序列表</span><kbd>Ctrl+Shift+7</kbd></button><button data-md="task" role="menuitem"><span data-i18n="editor.taskList">任务列表</span><kbd>Ctrl+Shift+9</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="codeblock" role="menuitem"><span data-i18n="editor.codeBlock">代码块</span></button><button data-md="mathblock" role="menuitem"><span data-i18n="editor.mathBlock">公式块</span></button><button data-md="hr" role="menuitem"><span data-i18n="editor.hr">分隔线</span></button></div></div>
     <div class="md-menu-wrap"><button class="md-tool-btn md-group" data-menu="md-insert-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.insert">插入</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
@@ -202,6 +201,7 @@
         <button id="edit-view-focus" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.focusMode">专注模式</span></button>
         <button id="edit-view-typewriter" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.typewriterMode">打字机滚动</span></button>
         <button id="edit-view-lines" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.lineNumbers">行号</span></button>
+        <button id="edit-view-ai-completion" role="menuitemcheckbox" aria-checked="false" data-i18n-title="editor.aiCompletionPrivacy"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.aiCompletion">AI 自动补全 · Tab 接受</span></button>
       </div>
     </div>
     <button id="edit-undo" class="md-tool-btn icon" title="撤销 (Ctrl+Z)" aria-label="撤销" data-i18n-title="editor.undo" data-i18n-aria="editor.undo">
@@ -219,7 +219,8 @@
           <button class="pv-btn" data-pv="left" title="左侧预览" data-i18n-title="editor.previewLeft">←</button><span class="pv-center" data-i18n="editor.preview">预览</span><button class="pv-btn" data-pv="right" title="右侧预览" data-i18n-title="editor.previewRight">→</button>
           <span></span><button class="pv-btn" data-pv="bottom" title="下方预览" data-i18n-title="editor.previewBottom">↓</button><span></span>
         </div>
-        <label class="ai-sel pv-sync"><input id="pv-sync" type="checkbox"><span data-i18n="editor.previewSync"> 同步滚动</span></label>
+          <label class="ai-sel pv-sync"><input id="pv-sync" type="checkbox"><span data-i18n="editor.previewSync"> 同步滚动</span></label>
+          <label class="ai-sel pv-sync"><input id="pv-publication" type="checkbox"><span data-i18n="export.actualPreview">生成文档页面</span></label>
       </div>
     </div>
   </div>
@@ -477,7 +478,6 @@
           <textarea id="ai-prompt" class="composer-textarea" rows="2" placeholder="向 AI 提问，或选择快捷指令... (Enter 发送, Shift+Enter 换行)" aria-label="向 AI 提问" data-i18n-placeholder="ai.promptPlaceholder" data-i18n-aria="ai.promptPlaceholder" autocomplete="off"></textarea>
           <div class="composer-toolbar">
             <div class="composer-toolbar-left">
-              <label class="ai-sel checkbox-label" title="仅处理当前在编辑器或阅读器中选中的文本" data-i18n-title="ai.scopeSelectionTitle"><input id="ai-selection" type="checkbox"> <span data-i18n="ai.scopeSelection">选区</span></label>
               <label class="ai-sel checkbox-label" title="无痕模式：本次会话不保存到历史记录" data-i18n-title="ai.incognitoTitle"><input id="ai-incognito" type="checkbox"> <span data-i18n="ai.incognito">无痕</span></label>
               <span id="ai-usage">Token：—</span>
             </div>
@@ -701,6 +701,11 @@
         <details class="conn-advanced">
           <summary data-i18n="ai.advanced">高级参数</summary>
           <div class="conn-advanced-grid">
+            <div class="conn-field conn-field-wide">
+              <label for="ai-autocomplete-model" data-i18n="ai.autocompleteModel">自动补全模型</label>
+              <select id="ai-autocomplete-model" aria-describedby="ai-autocomplete-help" data-i18n-title="ai.autocompleteModel" title="自动补全模型"></select>
+              <small id="ai-autocomplete-help" data-i18n="ai.autocompleteModelHelp">仅在当前连接内优先选择响应快的模型，也可独立指定；不改变对话模型。</small>
+            </div>
             <div class="conn-field">
               <label for="ai-provider-name" data-i18n="ai.customProvider">配置名称</label>
               <input id="ai-provider-name" type="text" placeholder="我的 AI 连接" data-i18n-placeholder="ai.customNamePlaceholder" maxlength="60" autocomplete="off">
@@ -832,7 +837,22 @@
   </div>
 </div>
 
-<div id="formula-modal" class="hidden" role="dialog" aria-modal="true" aria-label="公式选择器" data-i18n-aria="formula.title"><div class="formula-box"><div class="export-head"><h3 data-i18n="formula.title">公式选择器</h3><button id="formula-close" class="tb-btn icon" aria-label="关闭" data-i18n-aria="toolbar.close">×</button></div><div class="formula-top"><input id="formula-search" type="search" placeholder="搜索名称或 TeX…" aria-label="搜索名称或 TeX" data-i18n-placeholder="formula.searchPlaceholder" data-i18n-aria="formula.searchPlaceholder"><select id="formula-mode" aria-label="行内公式"><option value="inline" data-i18n="formula.inline">行内公式</option><option value="block" data-i18n="formula.block">块级公式</option></select></div><div id="formula-cats" class="formula-cats"></div><div id="formula-list" class="formula-list"></div><div id="formula-preview" class="formula-preview" data-i18n="formula.previewPrompt">选择公式模板查看预览</div></div></div>
+<div id="formula-modal" class="hidden" role="dialog" aria-modal="true" aria-label="公式编辑" data-i18n-aria="formula.title">
+  <div class="formula-box">
+    <div class="export-head"><h3 data-i18n="formula.title">公式编辑</h3><button id="formula-close" class="tb-btn icon" aria-label="关闭" data-i18n-aria="toolbar.close">×</button></div>
+    <div class="formula-workspace">
+      <p class="formula-hint" data-i18n="formula.visualHint">点选预览中的符号修改，确认后一次写入文档。</p>
+      <div id="formula-preview" class="formula-preview" aria-label="公式预览" data-i18n-aria="formula.visualPreview"></div>
+      <div id="formula-token-row" class="formula-token-row" hidden><label for="formula-token" data-i18n="formula.selectedToken">已选符号</label><input id="formula-token" autocomplete="off" spellcheck="false"><button id="formula-token-replace" type="button" data-i18n="formula.replaceToken">替换</button></div>
+      <details id="formula-source-details"><summary data-i18n="formula.source">公式源码</summary><textarea id="formula-source" spellcheck="false" aria-label="公式源码" data-i18n-aria="formula.source" maxlength="16000"></textarea></details>
+      <div class="formula-top"><input id="formula-search" type="search" placeholder="搜索名称、TeX 或 U+ 编码…" aria-label="搜索符号" data-i18n-placeholder="formula.searchPlaceholder" data-i18n-aria="formula.searchPlaceholder"><select id="formula-mode" aria-label="行内公式"><option value="inline" data-i18n="formula.inline">行内公式</option><option value="block" data-i18n="formula.block">块级公式</option></select></div>
+      <div id="formula-cats" class="formula-cats" role="group" aria-label="符号分类" data-i18n-aria="formula.symbolCategories"></div>
+      <div id="formula-list" class="formula-list"></div>
+      <div class="formula-results"><span id="formula-count" role="status"></span><button id="formula-more" type="button" data-i18n="formula.more" hidden>更多符号</button></div>
+    </div>
+    <div class="formula-footer"><span id="formula-error" role="status" aria-live="polite"></span><button id="formula-apply" type="button" class="primary" data-i18n="formula.apply" disabled>确认公式</button></div>
+  </div>
+</div>
 
 <!-- Prompt 模板管理弹窗 -->
 <div id="tpl-modal" data-backdrop="static" class="hidden" role="dialog" aria-modal="true" aria-labelledby="tpl-title">
@@ -1347,7 +1367,9 @@
       <label class="plugin-search"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="plugin-search" type="search" data-i18n-placeholder="plugin.search" data-i18n-aria="plugin.search" placeholder="搜索插件与功能" autocomplete="off"></label>
       <button id="plugin-installed-filter" class="tb-btn" type="button" aria-pressed="false" data-i18n="plugin.installedOnly">已安装</button>
       <button id="plugin-refresh" class="tb-btn" type="button" data-i18n="plugin.refresh">刷新</button>
+      <button id="plugin-offline-pack" class="tb-btn" type="button" data-i18n="pdf.installPack">安装离线能力包</button>
     </div>
+    <div id="plugin-capability-pack" class="plugin-summary hidden" role="status" aria-live="polite"></div>
     <div id="plugin-summary" class="plugin-summary" role="status" aria-live="polite"></div>
     <div id="plugin-category-tabs" class="plugin-category-tabs" role="tablist" aria-label="插件能力分类" data-i18n-aria="plugin.categories">
       <button class="plugin-tab-pill active" data-category="all" data-i18n="plugin.filter.all">全部</button>
@@ -1483,6 +1505,7 @@
   <span id="status-mods"></span>
   <div id="editor-status-group">
     <span id="edit-doc-stats" aria-live="polite"></span>
+    <span id="status-ai-completion" role="status" aria-live="polite"></span>
     <span id="document-recovery-status" role="status" aria-live="polite"></span>
     <span class="edit-tip-keys" data-i18n="editor.shortcutsTip"></span>
   </div>
@@ -1605,6 +1628,10 @@
         </select>
       </div>
         <div class="modal-form-group form-gap-top">
+        <div id="diagram-research-options" class="modal-form-group" hidden>
+          <label for="diagram-research-template" data-i18n="diagram.researchTemplate">科研图表模板</label>
+          <select id="diagram-research-template" class="modal-select"></select>
+        </div>
         <label for="diagram-code" data-i18n="editor.diagramTemplate">图表代码模版：</label>
         <textarea id="diagram-code" class="modal-textarea"></textarea>
       </div>
@@ -1672,6 +1699,12 @@
         <input id="fm-input-author" type="text" class="modal-input" placeholder="ReadMD User">
       </div>
       <div class="panel-form-grid">
+        <details class="metadata-bibliography">
+          <summary data-i18n="reader.referencesHeading">参考文献</summary>
+          <div class="modal-form-group"><label for="fm-input-bibliography" data-i18n="academic.bibliography">文献文件（BibTeX / CSL JSON）</label><input id="fm-input-bibliography" class="modal-input" placeholder="references.bib" type="text"></div>
+          <div class="modal-form-group"><label for="fm-input-csl" data-i18n="academic.style">引用样式</label><input id="fm-input-csl" class="modal-input" type="text" list="fm-csl-styles"><datalist id="fm-csl-styles"><option value="apa">APA 7</option><option value="ieee">IEEE</option><option value="china-national-standard-gb-t-7714-2015-numeric">GB/T 7714—2015</option><option value="chicago-author-date">Chicago</option><option value="nature">Nature</option></datalist></div>
+          <div class="modal-form-group"><label for="fm-input-lang" data-i18n="academic.locale">文献语言</label><input id="fm-input-lang" class="modal-input" type="text" placeholder="zh-CN"></div>
+        </details>
         <div class="modal-form-group">
           <label for="fm-select-theme" data-i18n="editor.frontmatterTheme">Reveal.js 演示主题：</label>
           <select id="fm-select-theme" class="modal-select">
@@ -1708,5 +1741,6 @@
 </div>
 
 <script defer src="/assets/readmd.boot.js?v=0.0.5"></script>
+<script defer src="/assets/js/platform/harmony.js?v=0.0.5"></script>
 </body>
 </html>

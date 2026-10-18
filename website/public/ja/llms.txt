@@ -27,3 +27,5 @@
 - [GitHub リポジトリ](https://github.com/Natsummerance/rust-ReadMD): MIT ソースコード、リリースファイル、チェックサム、Issue。
 
 - [ReadMD の VS Code と MCP 連携](https://rust.readmd.asia/ja/integrations/): ローカルエンジンの連携と V0.0.5 の新機能。
+
+- [V0.0.5 · AI 自動補完](https://rust.readmd.asia/ja/ai-autocomplete/): カーソル横に候補が順次表示されます。Tab で見えている文字を確定、Esc で破棄。元に戻す操作で原稿を復元できます。

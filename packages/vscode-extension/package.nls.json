@@ -31,5 +31,8 @@
   "capabilities.untrusted": "Preview and editing are available. Native tools, AI, imports, code execution and MCP configuration require a trusted workspace.",
   "capabilities.virtual": "ReadMD uses a local Rust executable and local files.",
   "command.inspectDocument": "ReadMD: Inspect document links and headings",
-  "command.searchWorkspace": "ReadMD: Search local Markdown workspace"
+  "command.searchWorkspace": "ReadMD: Search local Markdown workspace",
+  "configuration.aiAutocomplete": "AI inline completion: send only cursor context to your saved ReadMD AI connection. Tab accepts; no automatic save. Trusted workspaces only.",
+  "configuration.aiAutocompleteModel": "Optional model ID for autocomplete only. Leave empty to use the saved ReadMD autocomplete policy (automatic speed-first by default). Does not change the chat model.",
+  "command.openApiDocument": "ReadMD: Generate / update API documentation"
 }

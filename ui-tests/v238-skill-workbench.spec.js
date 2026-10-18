@@ -1,8 +1,9 @@
+const {waitForPage}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 
 async function openWorkbench(page, templates) {
   await page.goto('/');
-  await page.waitForFunction(() => typeof openTplModal === 'function');
+  await waitForPage(page, () => typeof openTplModal === 'function');
   await page.evaluate(items => {
     state.ai.templates = items;
     state.ai.templateId = items[0] ? items[0].id : '';
