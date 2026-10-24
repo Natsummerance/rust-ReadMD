@@ -148,7 +148,8 @@ function apiMessage(d, fallbackKey) {
   const mathErrors = {
     math_invalid_source:'formula.invalid', math_invalid_property:'formula.invalid', math_invalid_xml:'formula.invalid',
     math_unsupported_version:'formula.unsupportedVersion', math_budget:'error.math_budget',
-    math_unsupported_extension:'error.math_unsupported_extension'
+    math_unsupported_extension:'error.math_unsupported_extension',
+    math_document_defaults_conflict:'error.math_document_defaults_conflict'
   };
   const mathKey = mathErrors[d.error_code || d.error];
   if (mathKey) return tr(mathKey) || tr(fallbackKey);

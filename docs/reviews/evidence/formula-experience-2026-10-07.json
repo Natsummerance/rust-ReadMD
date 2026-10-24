@@ -1,0 +1,302 @@
+{
+  "date": "2026-10-07T15:53:32.954Z",
+  "version": "0.0.5",
+  "versionChanged": false,
+  "published": false,
+  "scope": "Formula UX, shared offline symbols, precise source editing, standard coverage planning and eight production scenarios. This report is not certification of complete OMML or all product workflows.",
+  "environment": {
+    "platform": "Windows native WebView2 + Chromium desktop",
+    "cpu": "Intel Core i9-13900HX",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "isolatedProfile": true,
+    "syntheticDocuments": true,
+    "cspBypassedInNative": false
+  },
+  "rust": {
+    "passed": 2027,
+    "ignored": 3,
+    "failed": 0,
+    "command": "cargo test --offline --manifest-path rust/Cargo.toml --workspace",
+    "stress": "Nested math through 6,000 levels and fraction chains through 8,000 levels; existing bounded iterative parser checks."
+  },
+  "ui": {
+    "startTime": "2026-10-07T15:38:09.512Z",
+    "duration": 115557.502,
+    "expected": 53,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "retries": 0,
+    "files": [
+      "checkbox-consistency.spec.js",
+      "document-lifecycle.spec.js",
+      "editor-upgrade.spec.js",
+      "formula-studio.spec.js",
+      "reader-upgrade.spec.js",
+      "shell-polish.spec.js"
+    ]
+  },
+  "node": {
+    "passed": 5,
+    "failed": 0
+  },
+  "native": {
+    "nativeCsp": true,
+    "synthetic": true,
+    "scenarios": [
+      {
+        "name": "native-offline-reader-and-exact-preview-source",
+        "passed": true,
+        "ms": 951,
+        "offlineComponents": true,
+        "exactSource": true
+      },
+      {
+        "name": "native-symbol-pointer-edit-single-undo-and-source-protection",
+        "passed": true,
+        "ms": 734,
+        "pointer": true,
+        "undo": true,
+        "redo": true,
+        "explicitSave": true,
+        "noSiblingBackups": true
+      },
+      {
+        "name": "native-primary-languages-compact-light-and-dark",
+        "passed": true,
+        "ms": 2035,
+        "sizes": 2,
+        "languages": 4,
+        "themes": 2
+      },
+      {
+        "name": "native-docx-pdf-epub-export-and-no-source-rewrite",
+        "passed": true,
+        "ms": 873,
+        "exports": [
+          {
+            "format": "docx",
+            "bytes": 7151,
+            "warnings": []
+          },
+          {
+            "format": "pdf",
+            "bytes": 81975,
+            "warnings": []
+          },
+          {
+            "format": "epub",
+            "bytes": 4468,
+            "warnings": []
+          }
+        ],
+        "docxEditableMath": {
+          "oMath": 2,
+          "f": 1,
+          "nary": 1,
+          "acc": 1,
+          "sSup": 2
+        },
+        "pdfPages": 1,
+        "epubMath": true,
+        "sourceUnchanged": true
+      }
+    ],
+    "errors": [],
+    "passed": true
+  },
+  "catalog": {
+    "symbols": 2432,
+    "aliases": 446,
+    "templates": 46,
+    "unicodeVersion": "16.0",
+    "allAliasesVerified": true
+  },
+  "i18n": {
+    "locales": 46,
+    "keys": 2114,
+    "naturallyTranslatedPrimaryLanguages": [
+      "zh-CN",
+      "zh-TW",
+      "en",
+      "ja"
+    ],
+    "otherLocales": "Established fallback policy; key coverage does not certify native-language translation."
+  },
+  "standards": {
+    "elements": 133,
+    "enums": 12,
+    "coreObjects": 19,
+    "fullOfficeRoundTripCertified": false
+  },
+  "releaseBuild": {
+    "offline": true,
+    "sha256": "c413ec13cabaea18bf92bf5caa6ae0ae87a78804eab048c8b39291039890160c",
+    "bytes": 15152640
+  },
+  "capture": {
+    "passed": true,
+    "version": "0.0.5",
+    "uiSourceSha256": "86c1db5ecded31454e7a40fbf4f0a4d7f00a8251e36e737d459c79806138a66f",
+    "nativeWebView": true,
+    "syntheticMaterials": true,
+    "operationAccelerated": false,
+    "evidence": [
+      "原创统计研究笔记",
+      "渲染符号与源码精确映射",
+      "确认与单次撤销",
+      "纯软件画面，未加速"
+    ],
+    "clips": [
+      {
+        "id": "formula-visual",
+        "title": "点选公式符号，修订样本方差，一次撤销恢复",
+        "video": "formula-visual-4K.mp4",
+        "poster": "formula-visual.webp",
+        "captions": "formula-visual.vtt",
+        "duration": 11.033008,
+        "width": 3840,
+        "height": 2160,
+        "sha256": "dfad4598a016c3e26bbb4494a0c7ed5be696e7dfc28ef53e5fa85100cecac963",
+        "events": [
+          {
+            "name": "研究正文与方差草稿",
+            "seconds": 0.001
+          },
+          {
+            "name": "从渲染预览打开同一公式",
+            "seconds": 1.579
+          },
+          {
+            "name": "点选总体符号，替换为样本统计量",
+            "seconds": 3.623
+          },
+          {
+            "name": "修订分母，保留求和上限",
+            "seconds": 5.305
+          },
+          {
+            "name": "一次确认，正文和预览同步",
+            "seconds": 6.809
+          },
+          {
+            "name": "一次撤销整个公式改动",
+            "seconds": 8.458
+          },
+          {
+            "name": "重做恢复修订",
+            "seconds": 9.644
+          }
+        ]
+      }
+    ],
+    "privacy": {
+      "passed": true,
+      "clips": [
+        {
+          "id": "formula-visual",
+          "passed": true,
+          "frames": 45,
+          "findings": [],
+          "videoSha256": "dfad4598a016c3e26bbb4494a0c7ed5be696e7dfc28ef53e5fa85100cecac963",
+          "posterSha256": "90b8ade0207f20b61c2f91c8b160603675b5496ca9b453a617c8ba2679f62b33"
+        }
+      ]
+    }
+  },
+  "gates": [
+    "check-i18n",
+    "check-wiring",
+    "check-styles",
+    "check-assets --check",
+    "check-no-python",
+    "audit-ui-features",
+    "math-catalog --check",
+    "bundle-boot --check",
+    "website validation",
+    "git diff --check"
+  ],
+  "protectedUserScripts": {
+    "showcase/scripts/recipes.mjs": "bfe84f41d785b2797483795e9fae8cf99dab340f2e39e50530b57ac4e3e0b714",
+    "showcase/scripts/record.mjs": "1685f7a20e05625134982da48354ec490a8ad6cb234e15fbf18ead4e0fb4fa47"
+  },
+  "sources": [
+    {
+      "file": "assets/js/editor/formula-studio.js",
+      "sha256": "f294128f63d8edd820daa4489ef4a7fc874fbfba962102396886d1d3351669fa"
+    },
+    {
+      "file": "assets/js/reader/formula.js",
+      "sha256": "68ffe3996f78d744a7466a95c4313ae9ebfbb319b564154ee47af10ffe8b2b2a"
+    },
+    {
+      "file": "assets/js/editor/editor.js",
+      "sha256": "d06b0f6338bca076bbdd70d813f72a9ae1da89376a0fa5f7be1c54810753fa01"
+    },
+    {
+      "file": "assets/index.html",
+      "sha256": "0302ad67cf8553b861e17444f976f20f140f48c43ed7188352dc2eb20dec9b35"
+    },
+    {
+      "file": "assets/css/panels.css",
+      "sha256": "29cb0e2e8da3506bb6ec39f5bdf9f20d611fe5a635a725a7cf19e74a83b95807"
+    },
+    {
+      "file": "assets/readmd.boot.js",
+      "sha256": "316cd26ccca30ca36136ac52c30a76aa5c5dec12d59f1f41a30922ce31b9c0bd"
+    },
+    {
+      "file": "assets/math-catalog.json",
+      "sha256": "219494de76534f7a7c29e6b9ff453604d036fd25ef12f37bf4bce90bc052e979"
+    },
+    {
+      "file": "assets/vendor/mathjax/input/tex/extensions/html.js",
+      "sha256": "e3647c848f26ad228d07043f1e63c56a646da9d20a6c0f180a4067fa9e10facc"
+    },
+    {
+      "file": "assets/vendor/mathjax/ui/safe.js",
+      "sha256": "9fef48d868277a8bc1852f7ba796b33ead812d38916a7131b0a29ea48961a6a4"
+    },
+    {
+      "file": "rust/readmd-kernel/src/math_catalog.rs",
+      "sha256": "844ef0749cb1abf17c322523e4c2f255213dd4a94bfd5cbd8f89d8ba4a5c7221"
+    },
+    {
+      "file": "rust/readmd-kernel/src/latex2omml.rs",
+      "sha256": "a40d2571c35335b0e88a5e6e63d9266dee12a96bfcde4a77f43d56c92b794dc4"
+    },
+    {
+      "file": "rust/readmd-kernel/src/omml.rs",
+      "sha256": "990a6fbb2f34ce6396eeec900a9492e9034f1040b94ec6a2f1be79fd386efcce"
+    },
+    {
+      "file": "ui-tests/formula-studio.spec.js",
+      "sha256": "551acd0c6a31a27ada249729770fcce6954f666664f15d67da45c7e4d155f98c"
+    },
+    {
+      "file": "ui-tests/formula-native.cjs",
+      "sha256": "d3256e3c054aa926dc6de7e81bb0532b27a28cceef44e8e7d4d9993b11d70edb"
+    },
+    {
+      "file": "tools/build-math-catalog.mjs",
+      "sha256": "2b487bb8a1d48d6411334803f68457c1e3f83084f85458dd532f746fd923855d"
+    },
+    {
+      "file": "tools/audit-office-math.mjs",
+      "sha256": "a7ae9e86a3b58dd86dcd8d0947522ec115fc434308feca0483dba7ed5ca5df77"
+    }
+  ],
+  "limitations": [
+    "No full OMML object/property/unknown-extension round-trip certification in Word.",
+    "Preview double-click opens the matching equation draft; direct floating structural cursors, Tab slots and matrix row/column actions remain planned.",
+    "No macOS/Linux/HarmonyOS device certification in this run.",
+    "No real-time collaboration, in-place PDF modification, exact media segments or tablet canvas claimed as implemented.",
+    "The native DOCX/PDF/EPUB assertions inspect actual output structures/content; they do not certify every page geometry or arbitrary font glyph."
+  ],
+  "cleanup": {
+    "completed": false,
+    "reason": "Automatic approval rejected the temporary-profile/test-binary deletion command: blocked by policy. No alternate deletion was attempted.",
+    "retainedScope": ".cache/math-ux native/probe/UI test profiles and redundant UI test executable",
+    "buildCacheRetainedForOfflineReuse": true
+  }
+}

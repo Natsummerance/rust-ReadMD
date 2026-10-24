@@ -278,6 +278,7 @@ fn mathml_space_pdf_quote_list_and_note_paths_use_their_rendered_sizes() {
         &options,
         "",
         &no_image,
+        None,
     );
     check_flow_errors(&note_flows[0]).unwrap();
     let xml = source("1600em", "x");

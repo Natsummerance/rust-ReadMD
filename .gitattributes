@@ -15,3 +15,6 @@ assets/fonts/** -text
 assets/licenses/** -text
 assets/runtimes/** -text
 rust/readmd-kernel/src/fixtures/** -text
+# Native PDF fixtures contain byte offsets and must survive Windows checkout.
+rust/readmd-kernel/tests/fixtures/** -text
+rust/readmd-kernel/tests/fixtures/*.pdf binary

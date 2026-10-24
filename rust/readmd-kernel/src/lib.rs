@@ -18,9 +18,19 @@ pub mod academic;
 #[cfg(test)]mod academic_empty_names_tests;
 pub mod publication;
 pub mod publication_rich;
+pub mod publication_docx_citations;
 pub mod publication_sections;
 #[cfg(test)]mod publication_structure_export_tests;
 pub mod publication_metadata;
+pub mod publication_profile;
+#[cfg(test)]mod publication_profile_api_tests;
+pub mod publication_note_policies;
+mod rust_pdf_notes;
+pub mod publication_inline_text;
+pub mod publication_inline_view;
+pub mod publication_text_runs;
+#[cfg(test)]mod publication_inline_api_tests;
+#[cfg(test)]mod publication_caption_author_guard_tests;
 pub mod publication_navigation;
 pub mod publication_metadata_formats;
 pub mod publication_pdf_metadata;
@@ -38,6 +48,7 @@ pub mod collaboration_host;
 pub mod capabilities;
 pub mod document_intelligence;
 pub mod convert;
+pub(crate) mod conversion_errors;
 pub mod convert_ext;
 pub mod crypto;
 pub mod diagrams;
@@ -51,6 +62,14 @@ pub mod math_extension;
 pub mod math_migration;
 pub mod math_formats;
 mod math_word;
+mod math_word_projection;
+pub(crate) mod math_defaults;
+mod math_document_defaults;
+mod math_render_json;
+#[cfg(test)]
+mod math_document_defaults_export_tests;
+mod math_source_context;
+mod math_context;
 mod math_theme;
 mod math_font_theme;
 pub mod unicode_math;
@@ -88,6 +107,7 @@ pub mod math_spacing;
 /// OpenType MATH layout → vector glyph paths for PDF formulas.
 pub mod math_layout;
 mod html_math;
+mod html_footnotes;
 /// AST-based EPUB chapter (XHTML) writer.
 pub mod epub_writer;
 /// In-process Win32 `IFileDialog` pickers (no PowerShell spawn).
@@ -181,6 +201,7 @@ pub mod cancel;
 pub mod latex_compile;
 pub mod typst_compile;
 pub mod publication_fonts;
+mod publication_budget;
 pub mod typst_writer;
 pub mod publication_layout;
 pub mod publication_blocks;
@@ -913,6 +934,7 @@ pub struct App {
     /// Ephemeral completion cache, observed latency and pooled HTTP transport.
     pub completion: ai_completion::Runtime,
     pub collaboration: collaboration_host::Runtime,
+    pub(crate) math_context: math_context::Runtime,
 }
 
 /// Mirrors `readmd.py`'s `_CONTROL` dictionary: every entry is a queue that a
@@ -1041,6 +1063,7 @@ impl App {
             modules: Mutex::new(modules::Registry::fresh()),
             completion: ai_completion::Runtime::default(),
             collaboration: collaboration_host::Runtime::default(),
+            math_context: math_context::Runtime::default(),
             paths,
         };
         capability_delivery::cleanup_uploads(&app.paths.data_dir);

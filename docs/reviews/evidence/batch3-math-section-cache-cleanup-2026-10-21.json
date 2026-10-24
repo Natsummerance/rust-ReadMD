@@ -1,0 +1,23 @@
+{
+  "recordedAt": "2026-10-20T23:26:11.674Z",
+  "removed": [
+    {
+      "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-math-section-20261021\\root\\candidate-31-readmd.exe.gz",
+      "bytes": 25377586,
+      "sha256": "8a2ab8e8b6cbb37344f5c0457c025de65c56b3dcffeb9893150123ff96edaa57",
+      "verifiedArchive": "docs/evidence/capability-upgrade/2026-10-21/batch3-docx-settings-scoped/binaries/candidate-31-readmd.exe.gz"
+    },
+    {
+      "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-math-section-20261021\\root\\candidate-32-readmd.exe.gz",
+      "bytes": 26623663,
+      "sha256": "429ab82743cb30e5100e84ffe7165446f64deb494017df11750c66ec6d40a786",
+      "verifiedArchive": "docs/evidence/capability-upgrade/2026-10-21/batch3-math-section-scoped/binaries/candidate-32-readmd.exe.gz"
+    }
+  ],
+  "freedBytes": 52001249,
+  "kept": {
+    "build": "Shared locked/offline Cargo output is retained for the next implementation increment; incremental compilation remains disabled.",
+    "sources": "Frozen source snapshots and first-failure evidence remain available.",
+    "profiles": "No shared managed engine/profile or unknown user directory was touched."
+  }
+}

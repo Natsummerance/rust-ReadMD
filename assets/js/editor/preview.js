@@ -99,7 +99,7 @@ function updatePvLabel(layout = state.pvLayout || 'none') {
   }
 }
 
-function applyPvLayout() {
+function applyPvLayout({ persist = true, updatePanels = true } = {}) {
   const layout = state.pvLayout || 'none';
   const mc = $('main-col');
 
@@ -110,15 +110,15 @@ function applyPvLayout() {
   if (state.editing && layout !== 'none') {
     // 预览界面和AI对话界面不能同时出现：若开启预览，自动收起 AI 对话面板
     const aiPanel = $('ai-panel');
-    if (aiPanel && !aiPanel.classList.contains('hidden')) {
+    if (updatePanels && aiPanel && !aiPanel.classList.contains('hidden')) {
       aiPanel.classList.add('hidden');
     }
     mc.classList.add('pv-' + layout);
     const bounds = mc.getBoundingClientRect();
     const horizontal = layout === 'left' || layout === 'right';
-    // Decide on window width: main-col width is circular here (it shrinks when the
-    // preview pane is already flexed), while the specs pin the boundary at 720/760.
-    const constrained = horizontal ? window.innerWidth < 740 : bounds.height < 520;
+    // A sidebar can leave too little room even on a wide window. Keep both
+    // source and preview usable, retaining the user's split for a wider host.
+    const constrained = horizontal ? window.innerWidth < 740 || bounds.width < 680 : bounds.height < 520;
     mc.classList.toggle('pv-auto-hidden', constrained);
     pw.classList.toggle('hidden', constrained);
     $('pv-splitter').classList.toggle('hidden', constrained);
@@ -132,7 +132,8 @@ function applyPvLayout() {
     $('pv-splitter').classList.add('hidden');
   }
   // AI 写入时临时收起预览（_pvLayoutBeforeAi），不能覆盖用户记住的布局。
-  if (!state._pvLayoutBeforeAi) saveSettings();
+  if (persist && !state._pvLayoutBeforeAi) saveSettings();
+  measureEditorLayout();
 }
 
 /* 每个文档记住上次的光标与滚动位置，再次进入编辑时恢复。 */
@@ -143,9 +144,25 @@ function editMemoryKey() {
 
 function rememberEditPosition() {
   const key = editMemoryKey();
-  if (!key || !cmView) return;
+  if (!cmView) return;
+  // Public geometry reads flush a pending resize. Capture all position data
+  // after that flush, rather than mixing an old snapshot with a new height map.
+  // A caller inside a CodeMirror update cannot read layout; retain its prior
+  // position instead of caching inconsistent geometry in that exceptional case.
+  try { cmView.lineBlockAtHeight(0); } catch (_) { return; }
+  // CodeMirror's snapshot restores a document anchor after its new viewport
+  // has been measured, including wrapped lines and resized split panes.
+  const tab = getActiveTab();
+  if (tab && typeof cmView.scrollSnapshot === 'function') tab.editorScrollSnapshot = cmView.scrollSnapshot();
+  if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify({ a: cmView.state.selection.main.head, t: cmView.scrollDOM.scrollTop }));
+    const top = cmView.scrollDOM.scrollTop;
+    let block = cmView.lineBlockAtHeight(top + 8);
+    const first = cmView.viewportLineBlocks[0];
+    if (first && block.from < cmView.viewport.from && first.top - top <= 200) block = first;
+    localStorage.setItem(key, JSON.stringify({ a: cmView.state.selection.main.head,
+      selection: cmView.state.selection.toJSON(), t: top, l: cmView.scrollDOM.scrollLeft,
+      anchor: { from: block.from, offset: block.top - top } }));
   } catch (e) { /* storage full or disabled */ }
 }
 
@@ -157,14 +174,40 @@ async function newDocument() {
 }
 
 function restoreEditPosition() {
+  // A reused EditorState already contains every oriented selection and its
+  // native scroll snapshot. The persistent caret fallback must not collapse it.
+  if (cmReusedState) { measureEditorLayout(); return; }
   const key = editMemoryKey();
   if (!key || !cmView) return;
+  const view = cmView, tabId = state.activeTabId;
   try {
     const m = JSON.parse(localStorage.getItem(key) || 'null');
     if (!m) return;
-    const anchor = Math.max(0, Math.min(Number(m.a) || 0, cmView.state.doc.length));
-    cmView.dispatch({ selection: { anchor } });
-    requestAnimationFrame(() => { if (cmView) cmView.scrollDOM.scrollTop = Number(m.t) || 0; });
+    const anchor = Math.max(0, Math.min(Number(m.a) || 0, view.state.doc.length));
+    const sourceAnchor = Number.isInteger(m.anchor?.from) && m.anchor.from >= 0 && m.anchor.from <= view.state.doc.length && Number.isFinite(m.anchor.offset)
+      ? m.anchor : null;
+    let selection = { anchor };
+    try {
+      const saved = window.ReadMDCodeMirror.EditorSelection.fromJSON(m.selection);
+      if (saved.ranges.every(range => range.from >= 0 && range.to <= view.state.doc.length)) selection = saved;
+    } catch (_) { /* Older profiles stored only a caret. */ }
+    view.dispatch({ selection, effects: sourceAnchor
+      ? window.ReadMDCodeMirror.EditorView.scrollIntoView(sourceAnchor.from, { y: 'start', yMargin: 0 }) : [] });
+    // This is a saved-position restore, scheduled on CodeMirror's measured
+    // viewport. Capture the view/tab so rapid document switches cannot apply
+    // an old callback to a newly mounted editor.
+    const current = () => view === cmView && state.activeTabId === tabId && state.editing;
+    view.requestMeasure({ key: restoreEditPosition, read: () => {
+      if (!current()) return null;
+      // The source anchor is stable when a newly created view refines its
+      // wrapped-line height estimates. Older profiles retain the pixel fallback.
+      return Math.max(0, sourceAnchor ? view.lineBlockAt(sourceAnchor.from).top - sourceAnchor.offset : Number(m.t) || 0);
+    }, write: top => {
+      if (!current() || top === null) return;
+      view.scrollDOM.scrollTop = top;
+      view.scrollDOM.scrollLeft = Math.max(0, Number(m.l) || 0);
+      view.requestMeasure();
+    } });
   } catch (e) { /* ignore corrupt entry */ }
 }
 
@@ -175,15 +218,23 @@ function applyPvSplit() {
   const raw = Number(state[key]);
   const pct = Math.max(25, Math.min(70, Number.isFinite(raw) ? raw : (horizontal ? 50 : 46)));
   state[key] = pct;
-  pw.style.flexBasis = pct + '%';
   const splitter = $('pv-splitter');
+  let effective = pct;
+  if (horizontal) {
+    const available = Math.max(0, $('main-col').clientWidth - (splitter?.getBoundingClientRect().width || 0));
+    const minimum = Math.min(320, available / 2);
+    const width = Math.max(minimum, Math.min(available - minimum, available * pct / 100));
+    pw.style.flexBasis = width + 'px';
+    if (available) effective = width / available * 100;
+  } else pw.style.flexBasis = pct + '%';
   if (splitter) {
     splitter.setAttribute('aria-valuemin', '25');
     splitter.setAttribute('aria-valuemax', '70');
-    splitter.setAttribute('aria-valuenow', String(Math.round(pct)));
-    splitter.setAttribute('aria-valuetext', `${Math.round(pct)}%`);
+    splitter.setAttribute('aria-valuenow', String(Math.round(effective)));
+    splitter.setAttribute('aria-valuetext', `${Math.round(effective)}%`);
     splitter.setAttribute('aria-orientation', horizontal ? 'vertical' : 'horizontal');
   }
+  measureEditorLayout();
 }
 
 function bindPvSplitter() {
@@ -202,7 +253,19 @@ function bindPvSplitter() {
   bar.addEventListener('pointermove', e => { if (bar.hasPointerCapture(e.pointerId)) update(e); });
   bar.addEventListener('pointerup', e => { if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId); saveSettings(); });
   bar.addEventListener('keydown', e => { if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const delta = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 2 : -2; if (state.pvLayout === 'left' || state.pvLayout === 'right') state.pvSplitX = Math.max(25, Math.min(70, state.pvSplitX + delta)); else state.pvSplitY = Math.max(25, Math.min(70, state.pvSplitY + delta)); applyPvSplit(); saveSettings(); });
-  window.addEventListener('resize', () => requestAnimationFrame(() => setPvLayout(state.pvLayout)));
+  window.addEventListener('resize', () => requestAnimationFrame(() => {
+    updatePvLabel();
+    applyPvLayout({ persist: false, updatePanels: false });
+  }));
+  if (typeof ResizeObserver === 'function') {
+    let width = -1, height = -1;
+    new ResizeObserver(entries => {
+      const bounds = entries[0].contentRect;
+      if (bounds.width === width && bounds.height === height) return;
+      width = bounds.width; height = bounds.height;
+      if (state.editing) applyPvLayout({ persist: false, updatePanels: false });
+    }).observe(mc);
+  }
 }
 
 /* Which pane the user is driving: scroll events from the other pane are
@@ -210,6 +273,14 @@ function bindPvSplitter() {
 let pvScrollDriver = null;
 let pvScrollDriverTimer = null;
 let pvSyncFrame = 0;
+function cancelPvScrollSync() {
+  if (pvSyncFrame) cancelAnimationFrame(pvSyncFrame);
+  pvSyncFrame = 0;
+  if (pvScrollDriverTimer) clearTimeout(pvScrollDriverTimer);
+  pvScrollDriverTimer = null;
+  pvScrollDriver = null;
+  isSyncingFromEditor = isSyncingFromPreview = false;
+}
 function pvClaimScroll(who) {
   pvScrollDriver = who;
   if (pvScrollDriverTimer) clearTimeout(pvScrollDriverTimer);
@@ -296,6 +367,15 @@ async function renderPreview() {
 
   let html;
   try {
+  // READMD_MATH_CONTEXT_BEGIN
+    if(window.ReadMDMathContext){
+      const mathDoc=view?.state.doc;
+      const mathCurrent=()=>renderEpoch===pvRenderEpoch&&state.editing&&state.pvLayout!=='none'&&cmView===view&&state.activeTabId===tab&&view?.state.doc===mathDoc;
+      try{src=await ReadMDMathContext.prepareSource(source,src,{scope:pane,current:mathCurrent});}
+      catch(error){if(!mathCurrent()||error.name==='AbortError')return;src=ReadMDMathContext.errorMarkup(source,error);}
+      if(!current())return;
+    }
+  // READMD_MATH_CONTEXT_END
     let transformed = window.readerPrepare ? readerPrepare(src) : src;
     if (window.transformWikilinks) transformed = transformWikilinks(transformed);
     if (window.transformAcademicCallouts) transformed = transformAcademicCallouts(transformed);
@@ -313,6 +393,15 @@ async function renderPreview() {
   pvLastRenderAt = Date.now();
   const safe = window.sanitizeRenderedHtml ? window.sanitizeRenderedHtml(html) : html;
   const fresh = pvPatchPane(pane, safe);
+  // :only-child ignores surrounding text nodes. Mark true standalone image
+  // paragraphs explicitly so an inline symbol cannot widen ordinary prose.
+  for (const block of fresh) {
+    if (block.tagName !== 'P') continue;
+    const children = [...block.childNodes].filter(node => node.nodeType !== 3 || node.textContent.trim());
+    const media = children.length === 1 ? children[0] : null;
+    const image = media?.nodeName === 'IMG' || media?.nodeName === 'A' && media.children.length === 1 && media.firstElementChild.nodeName === 'IMG' && !media.textContent.trim();
+    block.classList.toggle('pv-figure', Boolean(image));
+  }
   if(window.ReadMDReader)ReadMDReader.enhanceFootnotes(pane);
   if(window.ReadMDPublication)ReadMDPublication.applyLayout(pane);
   // Cache only a committed render. A second request for the same source must
@@ -380,10 +469,13 @@ function pvAnchors(wrap, pane) {
 
 function pvSyncFromEditor() {
   if(state.pvPublication)return;
-  if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'preview') return;
+  if (!state.editing || !state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'preview') return;
   if (pvSyncFrame) return;
-  pvSyncFrame = requestAnimationFrame(() => {
+  const view = cmView, tabId = state.activeTabId, layout = state.pvLayout;
+  const frame = requestAnimationFrame(() => {
+    if (pvSyncFrame !== frame) return;
     pvSyncFrame = 0;
+    if (!state.editing || cmView !== view || state.activeTabId !== tabId || state.pvLayout !== layout || !state.pvSync || state.pvPublication) return;
     pvClaimScroll('editor');
     const dst = $('preview-wrap');
     const pane = $('preview-pane');
@@ -411,14 +503,18 @@ function pvSyncFromEditor() {
     }
     dst.scrollTop = Math.max(0, Math.min(maxDst, y - 12));
   });
+  pvSyncFrame = frame;
 }
 
 function pvSyncFromPreview() {
   if(state.pvPublication)return;
-  if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'editor') return;
+  if (!state.editing || !state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'editor') return;
   if (pvSyncFrame) return;
-  pvSyncFrame = requestAnimationFrame(() => {
+  const view = cmView, tabId = state.activeTabId, layout = state.pvLayout;
+  const frame = requestAnimationFrame(() => {
+    if (pvSyncFrame !== frame) return;
     pvSyncFrame = 0;
+    if (!state.editing || cmView !== view || state.activeTabId !== tabId || state.pvLayout !== layout || !state.pvSync || state.pvPublication) return;
     pvClaimScroll('preview');
     const src = $('preview-wrap');
     const pane = $('preview-pane');
@@ -451,6 +547,7 @@ function pvSyncFromPreview() {
       scroller.scrollTop = Math.max(0, Math.min(maxDst, target));
     } catch (e) { /* ignore */ }
   });
+  pvSyncFrame = frame;
 }
 
 function alignEditorAndPreview() {
@@ -496,6 +593,9 @@ async function toggleEdit() {
   if (window.ReadMDCodeMirror) {
     $('edit-area').classList.add('hidden');
     $('edit-wrap').classList.remove('hidden');
+    // Establish the final split geometry before constructing CodeMirror's
+    // virtual viewport. It must not first measure the reader's full width.
+    applyPvUi();
     // 旧版或损坏的 CodeMirror 包会让 createEditor 抛错：退回 textarea，避免卡在空白编辑页。
     try { createEditor(editorContent); cmMounted = !!cmView; } catch (e) {
       console.error(e);
@@ -518,6 +618,7 @@ async function toggleEdit() {
   applyPvUi();
   syncSearchMode();
   if(window.ReadMDInlineMath)await ReadMDInlineMath.restore();
+  if (epoch === editorOpenEpoch && state.activeTabId === tabId) measureEditorLayout();
 }
 
 async function confirmExitEdit() {
@@ -552,6 +653,7 @@ function exitEdit() {
   if (typeof switchEditAiToChatPanel === 'function') switchEditAiToChatPanel();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (pvTimer) { clearTimeout(pvTimer); pvTimer = null; }
+  cancelPvScrollSync();
   if (pvEditorEl) {
     pvEditorEl.removeEventListener('scroll', pvSyncFromEditor);
     pvEditorEl = null;

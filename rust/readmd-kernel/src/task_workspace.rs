@@ -15,6 +15,9 @@ mod registry;
 
 const PROTOCOL: &str = "worker-tasks-v1";
 const MAX_RECORD: u64 = 4 * 1024 * 1024;
+// Existing journals may already reach MAX_RECORD. Reserve bounded extra room
+// only for the final exact-identity intent, so their cleanup cannot dead-end.
+const MAX_RECOVERY_RECORD: u64 = MAX_RECORD + 1024;
 const MAX_ENTRIES: usize = 16_384;
 fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "Invalid task ownership record")
@@ -65,7 +68,17 @@ enum Event {
     NativeResource {
         resource: NativeResource,
     },
+    Retiring {
+        value: Retirement,
+    },
     Finished,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct Retirement {
+    directory: Identity,
+    journal: Identity,
+    lease: Identity,
 }
 /// OS resources are recorded only after the creating API reports success.
 /// Names are bound to this task; arbitrary profiles/device names are invalid.
@@ -91,7 +104,10 @@ impl NativeResource {
                     && target.starts_with(&[92, 63, 63, 92])
                     && target.len() > 4
                     && target.len() <= 32_767
-                    && !target.contains(&0) => Ok(()),
+                    && !target.contains(&0) =>
+            {
+                Ok(())
+            }
             _ => Err(invalid()),
         }
     }
@@ -109,9 +125,13 @@ struct Record {
     refs: BTreeSet<String>,
     revision: u64,
     finished: bool,
+    retiring: Option<Retirement>,
 }
 impl Record {
     fn validate(&self, event: &Event) -> io::Result<()> {
+        if self.retiring.is_some() {
+            return Err(invalid());
+        }
         match event {
             Event::Header { .. } => return Err(invalid()),
             Event::Created {
@@ -147,10 +167,16 @@ impl Record {
                     return Err(invalid());
                 }
                 resource.validate(&self.header.id)?;
-                if self.resources.get(resource.name()).is_some_and(|old| old != resource) {
+                if self
+                    .resources
+                    .get(resource.name())
+                    .is_some_and(|old| old != resource)
+                {
                     return Err(invalid());
                 }
             }
+            Event::Retiring { .. } if !self.refs.is_empty() => return Err(invalid()),
+            Event::Retiring { .. } => (),
             Event::Finished => (),
         }
         Ok(())
@@ -201,6 +227,7 @@ impl Record {
             Event::NativeResource { resource } => {
                 self.resources.insert(resource.name().into(), resource);
             }
+            Event::Retiring { value } => self.retiring = Some(value),
             Event::Finished => self.finished = true,
         }
         Ok(())
@@ -316,31 +343,61 @@ fn owner(path: &Path, create: bool) -> io::Result<File> {
 fn append(file: &mut File, event: &Event) -> io::Result<()> {
     let mut bytes = serde_json::to_vec(event)?;
     bytes.push(b'\n');
-    if file.metadata()?.len().saturating_add(bytes.len() as u64) > MAX_RECORD {
+    let maximum = if matches!(event, Event::Retiring { .. }) {
+        MAX_RECOVERY_RECORD
+    } else {
+        MAX_RECORD
+    };
+    if file.metadata()?.len().saturating_add(bytes.len() as u64) > maximum {
         return Err(invalid());
     }
     file.write_all(&bytes)?;
     file.sync_data()
 }
-fn load(path: &Path) -> io::Result<Record> {
+fn open_journal(path: &Path, writable: bool, deleting_links: bool) -> io::Result<File> {
     let mut options = OpenOptions::new();
-    options.read(true);
+    options.read(true).write(writable);
     registry::nofollow(&mut options);
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(1).custom_flags(0x00200000);
+        options
+            .share_mode(1 | if deleting_links { 4 } else { 0 })
+            .custom_flags(0x00200000);
     }
-    load_file(options.open(path)?)
+    #[cfg(not(windows))]
+    let _ = deleting_links;
+    options.open(path)
+}
+fn load(path: &Path) -> io::Result<Record> {
+    load_file(open_journal(path, false, false)?)
+}
+fn prepare_append(journal: &mut File) -> io::Result<()> {
+    journal.seek(SeekFrom::Start(0))?;
+    let mut bytes = Vec::new();
+    Read::by_ref(journal)
+        .take(MAX_RECOVERY_RECORD + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_RECOVERY_RECORD {
+        return Err(invalid());
+    }
+    let complete = bytes
+        .iter()
+        .rposition(|c| *c == b'\n')
+        .ok_or_else(invalid)?
+        + 1;
+    journal.set_len(complete as u64)?;
+    journal.seek(SeekFrom::End(0))?;
+    Ok(())
 }
 fn load_file(file: File) -> io::Result<Record> {
     identity_file(&file, &Kind::File)?;
-    if file.metadata()?.len() > MAX_RECORD {
+    if file.metadata()?.len() > MAX_RECOVERY_RECORD {
         return Err(invalid());
     }
     let mut bytes = Vec::new();
-    file.take(MAX_RECORD + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_RECORD {
+    file.take(MAX_RECOVERY_RECORD + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_RECOVERY_RECORD {
         return Err(invalid());
     }
     let end = bytes
@@ -350,15 +407,20 @@ fn load_file(file: File) -> io::Result<Record> {
         .ok_or_else(invalid)?;
     // An interrupted final append is not an instruction. Preserve all paths
     // it may have mentioned; only the completed prefix can identify files.
+    let mut consumed = 0u64;
     let mut events = bytes[..end]
-        .split(|c| *c == b'\n')
-        .filter(|s| !s.is_empty());
-    let Event::Header { value: header } =
-        serde_json::from_slice(events.next().ok_or_else(invalid)?)?
-    else {
+        .split_inclusive(|c| *c == b'\n')
+        .map(|line| {
+            consumed += line.len() as u64;
+            (consumed, line)
+        })
+        .filter(|(_, line)| *line != b"\n");
+    let (header_end, header_line) = events.next().ok_or_else(invalid)?;
+    let Event::Header { value: header } = serde_json::from_slice(header_line)? else {
         return Err(invalid());
     };
-    if header.schema != 1
+    if header_end > MAX_RECORD
+        || header.schema != 1
         || !valid_uuid(&header.id)
         || header.profile.len() != 64
         || !header
@@ -379,9 +441,20 @@ fn load_file(file: File) -> io::Result<Record> {
         refs: BTreeSet::new(),
         revision: 0,
         finished: false,
+        retiring: None,
     };
-    for line in events {
-        record.apply(serde_json::from_slice(line)?)?;
+    for (line_end, line) in events {
+        let event = serde_json::from_slice(line)?;
+        if matches!(event, Event::Retiring { .. }) {
+            // Only this single terminal event may use the extra space. Even a
+            // syntactically valid ordinary event cannot cross the old limit.
+            if line_end - line.len() as u64 > MAX_RECORD || line_end != end as u64 {
+                return Err(invalid());
+            }
+        } else if line_end > MAX_RECORD {
+            return Err(invalid());
+        }
+        record.apply(event)?;
     }
     Ok(record)
 }
@@ -568,6 +641,7 @@ impl Workspace {
                         refs: BTreeSet::new(),
                         revision: 0,
                         finished: false,
+                        retiring: None,
                     },
                     journal: Some(journal),
                 }),
@@ -591,7 +665,10 @@ impl Workspace {
         self.inner.owner.as_ref().unwrap()
     }
     pub(crate) fn register_native_resource(&self, resource: NativeResource) -> io::Result<()> {
-        self.inner.state.lock().unwrap_or_else(|e| e.into_inner())
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .commit(Event::NativeResource { resource })
     }
     pub fn scope<T>(&self, action: impl FnOnce() -> T) -> T {
@@ -766,15 +843,7 @@ pub fn release(data: &Path, id: &str, expected_revision: u64, reference: &str) -
     let _lease = owner(&dir.join("owner.lock"), false)?;
     // Validate and modify the same opened file. Holding the parent alone does
     // not prevent a leaf from being replaced between two path-based opens.
-    let mut options = OpenOptions::new();
-    options.read(true).write(true);
-    registry::nofollow(&mut options);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(1).custom_flags(0x00200000);
-    }
-    let mut journal = options.open(dir.join("record.jsonl"))?;
+    let mut journal = open_journal(&dir.join("record.jsonl"), true, false)?;
     let record = load_file(journal.try_clone()?)?;
     if record.header.id != id
         || record.header.profile != profile(data)?
@@ -784,18 +853,7 @@ pub fn release(data: &Path, id: &str, expected_revision: u64, reference: &str) -
         return Err(invalid());
     }
     let revision = expected_revision.checked_add(1).ok_or_else(invalid)?;
-    journal.seek(SeekFrom::Start(0))?;
-    let mut bytes = Vec::new();
-    Read::by_ref(&mut journal)
-        .take(MAX_RECORD + 1)
-        .read_to_end(&mut bytes)?;
-    let complete = bytes
-        .iter()
-        .rposition(|c| *c == b'\n')
-        .ok_or_else(invalid)?
-        + 1;
-    journal.set_len(complete as u64)?;
-    journal.seek(SeekFrom::End(0))?;
+    prepare_append(&mut journal)?;
     let event = Event::Reference {
         revision,
         name: reference.into(),
@@ -822,44 +880,24 @@ enum Outcome {
     Retained,
     Preserved,
 }
-fn recover_one(data: &Path, journal_dir: &Path) -> io::Result<Outcome> {
-    let _journal_parents = absolute_parents(journal_dir)?;
-    plain(journal_dir, true)?;
-    let journal_dir_id = identity_path(journal_dir, Kind::Directory)?;
-    let lease = match owner(&journal_dir.join("owner.lock"), false) {
-        Ok(file) => file,
-        Err(e) if e.raw_os_error() == Some(32) || e.kind() == io::ErrorKind::WouldBlock => {
-            return Ok(Outcome::Running)
-        }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            // Cleanup removes the lease marker first. A crash between the two
-            // leaf deletions leaves a validated journal that can be resumed.
-            let record = load(&journal_dir.join("record.jsonl"))?;
-            if record.header.profile != profile(data)?
-                || journal_dir.file_name().and_then(|n| n.to_str()) != Some(&record.header.id)
-            {
-                return Err(invalid());
-            }
-            owner(&journal_dir.join("owner.lock"), true)?
-        }
-        Err(e) => return Err(e),
-    };
-    let record = load(&journal_dir.join("record.jsonl"))?;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RetirementStage {
+    IntentSynced,
+    WitnessLinked,
+    LeaseRemoved,
+    JournalRemoved,
+    DirectoryRemoved,
+}
+fn witness_path(root: &Path, id: &str) -> PathBuf {
+    root.join(format!("retiring-{id}.jsonl"))
+}
+fn record_matches(data: &Path, id: &str, record: &Record) -> io::Result<()> {
     if record.header.profile != profile(data)?
-        || journal_dir.file_name().and_then(|n| n.to_str()) != Some(&record.header.id)
-    {
-        return Err(invalid());
-    }
-    if !record.refs.is_empty() {
-        return Ok(Outcome::Retained);
-    }
-    #[cfg(not(windows))]
-    if !record.finished {
-        return Ok(Outcome::Retained);
-    } // owner-crash containment not certified there
-    let root = &record.header.root;
-    if root.file_name().and_then(|n| n.to_str()) != Some(&record.header.id)
-        || root
+        || record.header.id != id
+        || record.header.root.file_name().and_then(|n| n.to_str()) != Some(id)
+        || record
+            .header
+            .root
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
@@ -867,12 +905,122 @@ fn recover_one(data: &Path, journal_dir: &Path) -> io::Result<Outcome> {
     {
         return Err(invalid());
     }
+    Ok(())
+}
+fn recover_one(data: &Path, journal_dir: &Path) -> io::Result<Outcome> {
+    let root = journal_dir.parent().ok_or_else(invalid)?;
+    // Drop cleanup participates in the same gate as background recovery. The
+    // task lease cannot serialize the interval after its own marker is removed.
+    let _gate = registry::gate(root, "recovery.lock")?;
+    recover_one_at(data, journal_dir, &mut |_, _, _| Ok(()))
+}
+fn recover_one_at(
+    data: &Path,
+    journal_dir: &Path,
+    checkpoint: &mut impl FnMut(RetirementStage, &Path, &Path) -> io::Result<()>,
+) -> io::Result<Outcome> {
+    let _journal_parents = absolute_parents(journal_dir)?;
+    let root = journal_dir.parent().ok_or_else(invalid)?;
+    let id = journal_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|id| valid_uuid(id))
+        .ok_or_else(invalid)?;
+    let witness = witness_path(root, id);
+    if !journal_dir.try_exists()? {
+        return retire_witness(data, root, id, checkpoint);
+    }
+    plain(journal_dir, true)?;
+    let journal_directory = open_parent(journal_dir)?;
+    let journal_dir_id = identity_file(&journal_directory, &Kind::Directory)?;
+    let lease = match owner(&journal_dir.join("owner.lock"), false) {
+        Ok(file) => Some(file),
+        Err(e) if e.raw_os_error() == Some(32) || e.kind() == io::ErrorKind::WouldBlock => {
+            return Ok(Outcome::Running)
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e),
+    };
+    // Retain the validated handle until the external WAL link is published;
+    // a replaced path must never become a newly adopted journal identity.
+    let mut journal = match open_journal(&journal_dir.join("record.jsonl"), true, false) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            drop(lease);
+            drop(journal_directory);
+            return retire_witness(data, root, id, checkpoint);
+        }
+        Err(e) => return Err(e),
+    };
+    let mut record = load_file(journal.try_clone()?)?;
+    record_matches(data, id, &record)?;
+    if !record.refs.is_empty() {
+        return Ok(Outcome::Retained);
+    }
+    #[cfg(not(windows))]
+    if !record.finished {
+        return Ok(Outcome::Retained);
+    } // owner-crash containment not certified there
+    if let Some(retiring) = &record.retiring {
+        if retiring.directory != journal_dir_id
+            || retiring.journal != identity_file(&journal, &Kind::File)?
+            || lease.as_ref().is_some_and(|lease| {
+                identity_file(lease, &Kind::File).ok().as_ref() != Some(&retiring.lease)
+            })
+        {
+            return Ok(Outcome::Preserved);
+        }
+    } else {
+        let lease = match lease {
+            Some(file) => file,
+            None => owner(&journal_dir.join("owner.lock"), true)?,
+        };
+        if !reclaim_work(&record)? {
+            return Ok(Outcome::Preserved);
+        }
+        let event = Event::Retiring {
+            value: Retirement {
+                directory: journal_dir_id,
+                journal: identity_file(&journal, &Kind::File)?,
+                lease: identity_file(&lease, &Kind::File)?,
+            },
+        };
+        record.validate(&event)?;
+        prepare_append(&mut journal)?;
+        append(&mut journal, &event)?;
+        record.apply(event)?;
+        checkpoint(RetirementStage::IntentSynced, journal_dir, &witness)?;
+        // Keep the lease until linking is complete, including ordinary errors.
+        return publish_retirement(
+            data,
+            root,
+            id,
+            journal_directory,
+            journal,
+            Some(lease),
+            &record,
+            checkpoint,
+        );
+    }
+    publish_retirement(
+        data,
+        root,
+        id,
+        journal_directory,
+        journal,
+        lease,
+        &record,
+        checkpoint,
+    )
+}
+fn reclaim_work(record: &Record) -> io::Result<bool> {
+    let root = &record.header.root;
     // The exclusive task lease also covers inherited worker handles. Recover
     // known OS resources even if work-file cleanup must preserve unknown files.
     // Older readers reject the new event rather than silently discarding it.
     for resource in record.resources.values() {
         if !crate::worker_sandbox::recover_native_resource(resource)? {
-            return Ok(Outcome::Preserved);
+            return Ok(false);
         }
     }
     let _work_parents = absolute_parents(root)?;
@@ -881,7 +1029,7 @@ fn recover_one(data: &Path, journal_dir: &Path) -> io::Result<Outcome> {
             if identity_path(root, Kind::Directory)? != record.header.identity
                 || root.canonicalize()? != *root
             {
-                return Ok(Outcome::Preserved);
+                return Ok(false);
             }
             let mut entries: Vec<_> = record.entries.iter().collect();
             entries.sort_by(|(a, x), (b, y)| {
@@ -906,37 +1054,120 @@ fn recover_one(data: &Path, journal_dir: &Path) -> io::Result<Outcome> {
                 &Kind::Directory,
                 None,
             )? {
-                return Ok(Outcome::Preserved);
+                return Ok(false);
             }
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => (),
         Err(e) => return Err(e),
     }
-    let journal_id = identity_path(&journal_dir.join("record.jsonl"), Kind::File)?;
-    let lease_id = identity_file(&lease, &Kind::File)?;
+    Ok(true)
+}
+fn publish_retirement(
+    data: &Path,
+    root: &Path,
+    id: &str,
+    directory: File,
+    journal: File,
+    lease: Option<File>,
+    record: &Record,
+    checkpoint: &mut impl FnMut(RetirementStage, &Path, &Path) -> io::Result<()>,
+) -> io::Result<Outcome> {
+    let retiring = record.retiring.as_ref().ok_or_else(invalid)?;
+    let journal_dir = root.join(id);
+    let witness = witness_path(root, id);
+    match fs::hard_link(journal_dir.join("record.jsonl"), &witness) {
+        Ok(()) => (),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
+        // No copy/delete fallback on filesystems without atomic hard links.
+        Err(e) => return Err(e),
+    }
+    if identity_path(&witness, Kind::File)? != retiring.journal {
+        return Ok(Outcome::Preserved);
+    }
+    journal.sync_all()?;
+    checkpoint(RetirementStage::WitnessLinked, &journal_dir, &witness)?;
     drop(lease);
+    drop(journal);
+    drop(directory);
+    retire_witness(data, root, id, checkpoint)
+}
+fn retire_witness(
+    data: &Path,
+    root: &Path,
+    id: &str,
+    checkpoint: &mut impl FnMut(RetirementStage, &Path, &Path) -> io::Result<()>,
+) -> io::Result<Outcome> {
+    let journal_dir = root.join(id);
+    let witness = witness_path(root, id);
+    // DELETE sharing permits removal of the original link while this validated
+    // WAL handle prevents concurrent content writes. The external link remains
+    // until the exact journal directory has gone.
+    let witness_file = open_journal(&witness, false, true)?;
+    let record = load_file(witness_file.try_clone()?)?;
+    record_matches(data, id, &record)?;
+    let retiring = record.retiring.as_ref().ok_or_else(invalid)?;
+    if identity_file(&witness_file, &Kind::File)? != retiring.journal {
+        return Ok(Outcome::Preserved);
+    }
+    match fs::symlink_metadata(&journal_dir) {
+        Ok(_) => {
+            if plain(&journal_dir, true).is_err() {
+                return Ok(Outcome::Preserved);
+            }
+            let directory = open_parent(&journal_dir)?;
+            if identity_file(&directory, &Kind::Directory)? != retiring.directory {
+                return Ok(Outcome::Preserved);
+            }
+            // Unknown journal leaves retain both WAL links. Their later removal
+            // permits a fresh recovery pass without inventing new ownership.
+            for entry in fs::read_dir(&journal_dir)? {
+                let name = entry?.file_name();
+                if name != "owner.lock" && name != "record.jsonl" {
+                    return Ok(Outcome::Preserved);
+                }
+            }
+            if !remove_identified(
+                &journal_dir.join("owner.lock"),
+                std::slice::from_ref(&retiring.lease),
+                &Kind::File,
+                None,
+            )? {
+                return Ok(Outcome::Preserved);
+            }
+            checkpoint(RetirementStage::LeaseRemoved, &journal_dir, &witness)?;
+            if !remove_identified(
+                &journal_dir.join("record.jsonl"),
+                std::slice::from_ref(&retiring.journal),
+                &Kind::File,
+                None,
+            )? {
+                return Ok(Outcome::Preserved);
+            }
+            checkpoint(RetirementStage::JournalRemoved, &journal_dir, &witness)?;
+            drop(directory);
+            if !remove_identified(
+                &journal_dir,
+                std::slice::from_ref(&retiring.directory),
+                &Kind::Directory,
+                None,
+            )? {
+                return Ok(Outcome::Preserved);
+            }
+            checkpoint(RetirementStage::DirectoryRemoved, &journal_dir, &witness)?;
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (),
+        Err(e) => return Err(e),
+    }
+    drop(witness_file);
     if !remove_identified(
-        &journal_dir.join("owner.lock"),
-        &[lease_id],
+        &witness,
+        std::slice::from_ref(&retiring.journal),
         &Kind::File,
         None,
     )? {
         return Ok(Outcome::Preserved);
     }
-    if !remove_identified(
-        &journal_dir.join("record.jsonl"),
-        &[journal_id],
-        &Kind::File,
-        None,
-    )? {
-        return Ok(Outcome::Preserved);
-    }
-    // Leaf-only; a user-created extra journal file is retained.
-    if remove_identified(journal_dir, &[journal_dir_id], &Kind::Directory, None)? {
-        Ok(Outcome::Removed)
-    } else {
-        Ok(Outcome::Preserved)
-    }
+    Ok(Outcome::Removed)
 }
 // Hold every absolute ancestor without delete-sharing. A concurrently replaced
 // parent cannot redirect a later path-based open into somebody else's files.
@@ -996,7 +1227,10 @@ fn hold_parents(root: &Path, name: &str, record: &Record) -> io::Result<Option<V
 fn open_parent(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     OpenOptions::new()
-        .access_mode(0x80)
+        // An attributes-only handle does not enforce rename exclusion. Real
+        // read access makes denied DELETE sharing pin this exact directory;
+        // WRITE sharing still permits the child moves used during cleanup.
+        .read(true)
         .share_mode(3)
         .custom_flags(0x02000000 | 0x00200000)
         .open(path)
@@ -1028,7 +1262,7 @@ pub fn recover(data: &Path, maximum: usize) -> io::Result<RecoveryReport> {
     }
     for name in names.into_iter().take(maximum.min(registry::MAX_TASKS)) {
         report.visited += 1;
-        match recover_one(data, &root.join(&name)) {
+        match recover_one_at(data, &root.join(&name), &mut |_, _, _| Ok(())) {
             Ok(Outcome::Removed) => report.removed += 1,
             Ok(Outcome::Running) => report.running += 1,
             Ok(Outcome::Retained) => report.retained += 1,
@@ -1174,6 +1408,363 @@ fn remove_identified(
 mod tests {
     use super::*;
     #[test]
+    fn ancestor_guards_pin_exact_directories_and_release_without_losing_unknown_files() {
+        let fixture = tempfile::tempdir().unwrap();
+        let data = fixture.path().join("profile");
+        fs::create_dir(&data).unwrap();
+        let work = Workspace::create(&data, "test-ancestor-rename").unwrap();
+        let id = work.id();
+        let root = work.path().to_owned();
+        let nested = root.join("nested");
+        let owned = nested.join("owned.txt");
+        work.scope(|| {
+            create_dir(&nested).unwrap();
+            write(&owned, b"Owned cleanup input").unwrap();
+        });
+        let unknown = nested.join("unknown.txt");
+        fs::write(&unknown, b"Preserve unknown bytes and identity").unwrap();
+        let unknown_identity = identity_path(&unknown, Kind::File).unwrap();
+        let revision = work.pin("ancestor-rename-fixture").unwrap();
+        // Close all ordinary task handles before testing: an owner.lock or
+        // journal handle must not accidentally supply the rename protection.
+        drop(work);
+        let journals = journal_root(&data, false).unwrap();
+        let journal = journals.join(&id);
+        let record = load(&journal.join("record.jsonl")).unwrap();
+        let journal_guards = absolute_parents(&journal.join("record.jsonl")).unwrap();
+        let work_ancestors = absolute_parents(&root).unwrap();
+        let work_guards = hold_parents(&root, "nested/owned.txt", &record)
+            .unwrap()
+            .unwrap();
+        let paths = [
+            root.parent().unwrap().to_owned(),
+            root.clone(),
+            nested.clone(),
+            data.clone(),
+            journals.clone(),
+            journal.clone(),
+        ];
+        for path in &paths {
+            let moved = path.with_extension("guard-moved");
+            assert!(!moved.exists());
+            let result = fs::rename(path, &moved);
+            if result.is_ok() {
+                // Restore this explicitly owned fixture before reporting a
+                // failed protection check, preserving the original identity.
+                fs::rename(&moved, path).unwrap();
+            }
+            assert!(result.is_err(), "A pinned ancestor was renamed: {path:?}");
+        }
+        // Pinning a parent must allow moving its known children. Recovery and
+        // atomic task output rely on these ordinary within-directory moves.
+        let moved_file = nested.join("owned-moved.txt");
+        fs::rename(&owned, &moved_file).unwrap();
+        fs::rename(&moved_file, &owned).unwrap();
+        drop((journal_guards, work_ancestors, work_guards));
+        for path in &paths {
+            let identity = identity_path(path, Kind::Directory).unwrap();
+            let moved = path.with_extension("guard-moved");
+            fs::rename(path, &moved).unwrap();
+            let preserved = identity_path(&moved, Kind::Directory);
+            fs::rename(&moved, path).unwrap();
+            assert_eq!(preserved.unwrap(), identity);
+            assert_eq!(identity_path(path, Kind::Directory).unwrap(), identity);
+        }
+        assert_eq!(
+            identity_path(&unknown, Kind::File).unwrap(),
+            unknown_identity
+        );
+        assert_eq!(
+            fs::read(&unknown).unwrap(),
+            b"Preserve unknown bytes and identity"
+        );
+        release(&data, &id, revision, "ancestor-rename-fixture").unwrap();
+        assert_eq!(recover(&data, 128).unwrap().preserved, 1);
+        assert!(!owned.exists());
+        assert_eq!(
+            identity_path(&unknown, Kind::File).unwrap(),
+            unknown_identity
+        );
+        assert_eq!(
+            fs::read(&unknown).unwrap(),
+            b"Preserve unknown bytes and identity"
+        );
+        fs::remove_file(unknown).unwrap();
+        assert_eq!(recover(&data, 128).unwrap().removed, 1);
+        assert!(!root.exists());
+        assert!(!journal.exists());
+    }
+    #[test]
+    fn retirement_child() {
+        let Some(data) = std::env::var_os("READMD_TASK_RETIREMENT_CHILD") else {
+            return;
+        };
+        let target = std::env::var("READMD_TASK_RETIREMENT_STAGE").unwrap();
+        assert!([
+            "IntentSynced",
+            "WitnessLinked",
+            "LeaseRemoved",
+            "JournalRemoved",
+            "DirectoryRemoved"
+        ]
+        .contains(&target.as_str()));
+        let data = Path::new(&data);
+        let work = Workspace::create(data, "test-retirement-crash").unwrap();
+        let id = work.id();
+        let root = work.path().to_owned();
+        work.scope(|| write(&root.join("owned.txt"), b"Owned crash fixture").unwrap());
+        let revision = work.pin("retirement-fixture").unwrap();
+        drop(work);
+        release(data, &id, revision, "retirement-fixture").unwrap();
+        let journals = journal_root(data, false).unwrap();
+        let _gate = registry::gate(&journals, "recovery.lock").unwrap();
+        let result = recover_one_at(data, &journals.join(&id), &mut |stage, journal, witness| {
+            if format!("{stage:?}") == target {
+                println!(
+                    "RETIREMENT_READY {}",
+                    serde_json::json!({
+                        "stage":target,"id":id,"root":root,"journal":journal,"witness":witness
+                    })
+                );
+                io::stdout().flush().unwrap();
+                // The external harness kills this owned CLI process. EOF is a
+                // fixture failure, never a successful substitute for the crash.
+                let mut line = String::new();
+                io::stdin().read_line(&mut line).unwrap();
+                panic!("Retirement crash fixture resumed without termination");
+            }
+            Ok(())
+        })
+        .unwrap();
+        panic!(
+            "Retirement stage was not observed: {target}: {}",
+            result == Outcome::Removed
+        );
+    }
+    #[test]
+    fn retirement_recover_child() {
+        let Some(data) = std::env::var_os("READMD_TASK_RETIREMENT_RECOVER") else {
+            return;
+        };
+        let data = Path::new(&data);
+        let journals = journal_root(data, false).unwrap();
+        let before = registry::candidates(&journals).unwrap();
+        let reserved_before =
+            registry::reserved(&journals, &before, &profile(data).unwrap()).unwrap();
+        let report = recover(data, 128).unwrap();
+        let after = registry::candidates(&journals).unwrap();
+        println!(
+            "RETIREMENT_RECOVERED {}",
+            serde_json::json!({
+                "before":before,"reservedBefore":reserved_before,"report":report,"after":after
+            })
+        );
+        io::stdout().flush().unwrap();
+    }
+    #[test]
+    fn unknown_journal_leaf_retains_wals_and_a_single_reservation() {
+        let data = tempfile::tempdir().unwrap();
+        let work = Workspace::create(data.path(), "test-retirement-unknown").unwrap();
+        let id = work.id();
+        let root = work.path().to_owned();
+        let journals = journal_root(data.path(), false).unwrap();
+        let journal = journals.join(&id);
+        let unknown = journal.join("unknown.txt");
+        fs::write(&unknown, b"Preserve the unknown journal leaf").unwrap();
+        work.scope(|| write(&root.join("owned.txt"), b"Owned").unwrap());
+        drop(work);
+        assert!(!root.exists());
+        let witness = witness_path(&journals, &id);
+        assert!(load(&journal.join("record.jsonl"))
+            .unwrap()
+            .retiring
+            .is_some());
+        assert!(load(&witness).unwrap().retiring.is_some());
+        assert_eq!(
+            identity_path(&witness, Kind::File).unwrap(),
+            identity_path(&journal.join("record.jsonl"), Kind::File).unwrap()
+        );
+        let names = registry::candidates(&journals).unwrap();
+        assert_eq!(names, vec![id.clone()]);
+        assert_eq!(
+            registry::reserved(&journals, &names, &profile(data.path()).unwrap()).unwrap(),
+            registry::default_budget()
+        );
+        assert_eq!(recover(data.path(), 128).unwrap().preserved, 1);
+        assert_eq!(
+            fs::read(&unknown).unwrap(),
+            b"Preserve the unknown journal leaf"
+        );
+        fs::remove_file(unknown).unwrap();
+        assert_eq!(recover(data.path(), 128).unwrap().removed, 1);
+        assert!(!journal.exists());
+        assert!(!witness.exists());
+    }
+    #[test]
+    fn retirement_never_replaces_a_foreign_witness() {
+        let data = tempfile::tempdir().unwrap();
+        let work = Workspace::create(data.path(), "test-retirement-foreign").unwrap();
+        let id = work.id();
+        let journals = journal_root(data.path(), false).unwrap();
+        let witness = witness_path(&journals, &id);
+        fs::write(&witness, b"Foreign metadata must remain unchanged").unwrap();
+        drop(work);
+        assert_eq!(
+            fs::read(&witness).unwrap(),
+            b"Foreign metadata must remain unchanged"
+        );
+        assert!(load(&journals.join(&id).join("record.jsonl"))
+            .unwrap()
+            .retiring
+            .is_some());
+        assert_eq!(recover(data.path(), 128).unwrap().preserved, 1);
+        fs::remove_file(witness).unwrap();
+        assert_eq!(recover(data.path(), 128).unwrap().removed, 1);
+    }
+    #[test]
+    fn retirement_trims_an_incomplete_last_event_before_its_commit() {
+        let data = tempfile::tempdir().unwrap();
+        let work = Workspace::create(data.path(), "test-retirement-tail").unwrap();
+        let id = work.id();
+        let root = work.path().to_owned();
+        work.scope(|| write(&root.join("owned.txt"), b"Owned").unwrap());
+        let revision = work.pin("retirement-tail").unwrap();
+        drop(work);
+        release(data.path(), &id, revision, "retirement-tail").unwrap();
+        let journal = journal_root(data.path(), false)
+            .unwrap()
+            .join(&id)
+            .join("record.jsonl");
+        OpenOptions::new()
+            .append(true)
+            .open(&journal)
+            .unwrap()
+            .write_all(b"{\"type\":\"Retiring\",\"value\":")
+            .unwrap();
+        assert_eq!(recover(data.path(), 128).unwrap().removed, 1);
+        assert!(!root.exists());
+        assert!(!journal.exists());
+    }
+    #[test]
+    fn retirement_has_bounded_room_after_a_full_legacy_journal() {
+        let data = tempfile::tempdir().unwrap();
+        let work = Workspace::create(data.path(), "test-retirement-full-journal").unwrap();
+        let id = work.id();
+        let revision = work.pin("retirement-full-journal").unwrap();
+        drop(work);
+        release(data.path(), &id, revision, "retirement-full-journal").unwrap();
+        let journals = journal_root(data.path(), false).unwrap();
+        let journal = journals.join(&id).join("record.jsonl");
+        let mut file = OpenOptions::new().append(true).open(&journal).unwrap();
+        let padding = vec![b'\n'; (MAX_RECORD - file.metadata().unwrap().len()) as usize];
+        file.write_all(&padding).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        let _gate = registry::gate(&journals, "recovery.lock").unwrap();
+        let mut observed = false;
+        let outcome = recover_one_at(data.path(), &journals.join(&id), &mut |stage, _, _| {
+            if stage == RetirementStage::IntentSynced {
+                let bytes = fs::metadata(&journal)?.len();
+                assert!(bytes > MAX_RECORD && bytes <= MAX_RECOVERY_RECORD);
+                observed = true;
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert!(observed);
+        assert!(outcome == Outcome::Removed);
+        assert!(!journal.exists());
+    }
+    #[test]
+    fn retirement_reserve_rejects_ordinary_events_and_terminal_wal_appends() {
+        let data = tempfile::tempdir().unwrap();
+        let work = Workspace::create(data.path(), "test-retirement-terminal").unwrap();
+        let id = work.id();
+        let revision = work.pin("retirement-terminal").unwrap();
+        drop(work);
+        release(data.path(), &id, revision, "retirement-terminal").unwrap();
+        let journals = journal_root(data.path(), false).unwrap();
+        let journal = journals.join(&id).join("record.jsonl");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(&journal)
+            .unwrap();
+        file.write_all(&vec![
+            b'\n';
+            (MAX_RECORD - file.metadata().unwrap().len()) as usize
+        ])
+        .unwrap();
+        let mut ordinary = serde_json::to_vec(&Event::Finished).unwrap();
+        ordinary.push(b'\n');
+        file.write_all(&ordinary).unwrap();
+        drop(file);
+        assert!(
+            load(&journal).is_err(),
+            "Ordinary event used retirement-only space"
+        );
+        OpenOptions::new()
+            .write(true)
+            .open(&journal)
+            .unwrap()
+            .set_len(MAX_RECORD)
+            .unwrap();
+        let gate = registry::gate(&journals, "recovery.lock").unwrap();
+        assert!(
+            recover_one_at(data.path(), &journals.join(&id), &mut |stage, _, _| {
+                if stage == RetirementStage::IntentSynced {
+                    return Err(io::Error::other("Stop at the durable terminal intent"));
+                }
+                Ok(())
+            })
+            .is_err()
+        );
+        drop(gate);
+        let record = load(&journal).unwrap();
+        let completed = fs::metadata(&journal).unwrap().len();
+        for event in [
+            Event::Created {
+                path: "late.txt".into(),
+                identity: record.header.identity.clone(),
+                kind: Kind::File,
+                target: None,
+            },
+            Event::Reference {
+                revision: record.revision + 1,
+                name: "late-release".into(),
+                present: false,
+            },
+            Event::Finished,
+            Event::Retiring {
+                value: record.retiring.clone().unwrap(),
+            },
+        ] {
+            assert!(record.validate(&event).is_err());
+            let mut bytes = serde_json::to_vec(&event).unwrap();
+            bytes.push(b'\n');
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&journal)
+                .unwrap();
+            file.write_all(&bytes).unwrap();
+            drop(file);
+            assert!(
+                load(&journal).is_err(),
+                "An event followed the terminal retirement intent"
+            );
+            OpenOptions::new()
+                .write(true)
+                .open(&journal)
+                .unwrap()
+                .set_len(completed)
+                .unwrap();
+            assert!(load(&journal).is_ok());
+        }
+        assert_eq!(recover(data.path(), 128).unwrap().removed, 1);
+        assert!(!journal.exists());
+    }
+    #[test]
     fn native_resource_records_bind_names_targets_and_ownership_to_one_task() {
         let data = tempfile::tempdir().unwrap();
         let task = Workspace::create(data.path(), "latex-sandbox").unwrap();
@@ -1184,23 +1775,31 @@ mod tests {
         task.register_native_resource(resource.clone()).unwrap();
         task.register_native_resource(resource.clone()).unwrap();
         let mut foreign = resource.clone();
-        let NativeResource::DosDevice { target, .. } = &mut foreign else { unreachable!() };
+        let NativeResource::DosDevice { target, .. } = &mut foreign else {
+            unreachable!()
+        };
         target.push(0);
         assert!(task.register_native_resource(foreign).is_err());
-        let foreign = NativeResource::AppContainer { name: "ReadMD.Worker.somebody-else.profile".into() };
+        let foreign = NativeResource::AppContainer {
+            name: "ReadMD.Worker.somebody-else.profile".into(),
+        };
         assert!(task.register_native_resource(foreign).is_err());
         {
             let state = task.inner.state.lock().unwrap();
             assert_eq!(state.record.resources.len(), 1);
             assert_eq!(state.record.resources.values().next(), Some(&resource));
         }
-        let event = Event::NativeResource { resource: resource.clone() };
+        let event = Event::NativeResource {
+            resource: resource.clone(),
+        };
         let decoded: Event = serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();
         assert!(matches!(decoded, Event::NativeResource { resource: value } if value == resource));
         let ordinary = Workspace::create(data.path(), "ocr-recognize").unwrap();
-        assert!(ordinary.register_native_resource(NativeResource::AppContainer {
-            name: format!("ReadMD.Worker.{}.profile", ordinary.id()),
-        }).is_err());
+        assert!(ordinary
+            .register_native_resource(NativeResource::AppContainer {
+                name: format!("ReadMD.Worker.{}.profile", ordinary.id()),
+            })
+            .is_err());
     }
     #[test]
     fn creation_errors_roll_back_only_captured_identities() {
@@ -1504,7 +2103,10 @@ mod tests {
             child.stop().unwrap();
             // Stopping must confirm the root process itself, not just the
             // job's accounting counter, before any recovery attempt.
-            assert!(child.try_wait().unwrap().is_some(), "{stage:?}: worker still alive");
+            assert!(
+                child.try_wait().unwrap().is_some(),
+                "{stage:?}: worker still alive"
+            );
             drop(child);
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
             let after = loop {

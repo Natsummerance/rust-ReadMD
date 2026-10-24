@@ -37,6 +37,11 @@ def font_key(name):
 
 
 def names(font):
+    # An embedded PDF subset may omit the optional naming metadata. Keep the
+    # absence explicit: CID/resource binding and real outlines still provide
+    # physical evidence; never invent a requested family name here.
+    if "name" not in font:
+        return []
     return sorted({record.toUnicode() for record in font["name"].names if record.nameID in (1, 2, 4, 6, 16, 17)})
 
 

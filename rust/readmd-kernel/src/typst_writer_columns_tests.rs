@@ -5,10 +5,10 @@ use serde_json::json;
 
 fn style()->Value{crate::export_styles::sanitize(&json!({"frontMatter":{"mode":"none"},"cover":{"enabled":false},"toc":{"enabled":false},"typography":{"font":"Arial","size":11,"lineHeight":2,"spacing":3}}))}
 fn paragraph(value:&str)->Block{Block::Paragraph(vec![Inline::Text(value.into())])}
-fn heading(value:&str)->Block{Block::Heading{level:1,id:value.into(),inlines:vec![Inline::Text(value.into())]}}
-fn writer<'a>(style:&'a Value,base:&'a str,dir:&'a Path,blocks:&[Block],nonce:Option<&'a str>)->Writer<'a>{
+fn heading(value:&str)->Block{Block::Heading{level:1,id:value.into(),inlines:vec![Inline::Text(value.into())],numbering:None}}
+pub(super) fn writer<'a>(style:&'a Value,base:&'a str,dir:&'a Path,blocks:&[Block],nonce:Option<&'a str>)->Writer<'a>{
     let mut notes=HashMap::new();collect_notes(blocks,&mut notes);
-    Writer{style,base,dir,notes,seen_notes:HashSet::new(),end_notes:Vec::new(),end_ids:HashMap::new(),end_refs:HashMap::new(),note_depth:0,images:HashMap::new(),resources:0,bytes:0,warnings:Vec::new(),local:None,mapping_nonce:nonce,ordinary_body:true,local_line:None,local_id:None,paragraph_index:0,inline_object_bounds:None,geometry:None,front_blocks:HashSet::new()}
+    Writer{style,base,dir,notes,seen_notes:HashSet::new(),end_notes:Vec::new(),end_ids:HashMap::new(),end_refs:HashMap::new(),note_numbers:HashMap::new(),section_ids:HashSet::new(),note_depth:0,images:HashMap::new(),resources:0,bytes:0,warnings:Vec::new(),local:None,mapping_nonce:nonce,ordinary_body:true,local_line:None,local_id:None,paragraph_index:0,inline_object_bounds:None,geometry:None,front_blocks:HashSet::new(),author:None,author_base:ResolvedTextStyle::base(11.,11.),local_pair:None,baseline:None,local_baseline:None,source_id:None,baseline_links:Vec::new(),baseline_protected:Vec::new()}
 }
 fn section_source(count:u8,body:&str)->String{format!("<!-- readmd-section:v1 {{\"id\":\"main\",\"page\":{{\"columns\":{count}}}}} -->\n\n{body}\n\n<!-- readmd-section:v1 {{\"id\":\"full\",\"break\":\"continuous\",\"page\":{{\"columns\":1}}}} -->\n\nFull width tail.\n")}
 fn call<'a>(source:&'a str,id:&str)->&'a str{
@@ -102,7 +102,7 @@ fn mapped_section_identity_and_every_source_link_survive_the_helper_array(){
     let dir=tempfile::tempdir().unwrap();let raw=section_source(2,"# Mapped\n\nFirst original paragraph.\n\nSecond original paragraph.");let instrumented=crate::publication_pagination::instrument(&raw).unwrap();let doc=crate::md_ast::parse(&instrumented.content);
     let source=render_mapped(&doc,&style(),"",dir.path(),"Mapped",&instrumented.nonce).unwrap().text;
     for node in &instrumented.nodes{let uri=string(&format!("{}{}",crate::publication_pagination::prefix(&instrumented.nonce),node.id));assert_eq!(source.matches(&format!("link({uri})[")).count(),1,"Source node {} was lost or painted more than once",node.id);}
-    for id in ["main","full"]{assert_eq!(source.matches(&format!("#label({})",string(&anchor(&format!("readmd-section-{id}"))))).count(),1);}
+    for id in ["main","full"]{assert_eq!(source.matches(&format!("#label({})",string(&private_anchor("section",id)))).count(),1);}
     assert_eq!(source.matches("#metadata((index:").count(),2);assert!(!source.contains("readmd:page-source"));assert!(!source.contains("readmd-section:v1"));
 }
 

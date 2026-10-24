@@ -73,6 +73,8 @@ pub struct Node {
     /// Many fragments share one immutable original run; do not clone a long
     /// text/property subtree for every alignment marker.
     pub(crate) equation_origin: Option<std::sync::Arc<Node>>,
+    /// Associated Word paragraph cascade. Output-only, never author XML/DSL.
+    pub(crate) word_paragraph: Option<std::sync::Arc<crate::math_word::WordParagraphContext>>,
 }
 
 impl Node {
@@ -176,12 +178,15 @@ pub struct MathParagraphStyle {
     pub left: f64,
     pub right: f64,
     pub explicit_margins: bool,
+    /// A Word paragraph frame does not use Office Math's margin fallback.
+    pub(crate) word_margins: bool,
 }
 impl MathParagraphStyle {
     /// Office ignores the left margin when both exceed the available width;
     /// an oversized right margin falls back to one inch (1440 twips).
     pub fn margins(self,width:Option<f64>)->(f64,f64){
         let(mut left,mut right)=(self.left,self.right);
+        if self.word_margins { return (left,right); }
         if let Some(width)=width{if right>width{right=72.0;}if left+right>width{left=0.0;}}
         (left,right)
     }
@@ -189,14 +194,86 @@ impl MathParagraphStyle {
 pub fn math_paragraph_style(root: &Node, paragraph: Option<&Node>) -> MathParagraphStyle {
     let pr=root.child("mathPr");
     let enabled=pr.and_then(|n|n.child("dispDef")).map(|n|on_off(n.attr("val"),true)).unwrap_or(true);
-    let points=|key| if enabled { pr.and_then(|n|n.child(key)).and_then(|n|n.attr("val"))
-        .and_then(|v|v.parse::<u16>().ok()).filter(|v|*v<=31680).map_or(0.0,|v|f64::from(v)/20.0) } else {0.0};
+    // dispDef controls the five paragraph-override settings, not the standard
+    // pre/post/inter/intra spacing properties (MS-OE376 2.1.1820).
+    let points=|key| pr.and_then(|n|n.child(key)).and_then(|n|n.attr("val"))
+        .and_then(crate::math_defaults::bounded_twips).map_or(0.0,|v|f64::from(v)/20.0);
     let local=paragraph.and_then(|n|n.child("oMathParaPr")).and_then(|n|n.child("jc"));
     let alignment=local.or_else(||if enabled {pr.and_then(|n|n.child("defJc"))}else{None});
-    let margin=|key|if enabled{pr.and_then(|n|n.child(key)).map_or(0.0,|n|n.attr("val").and_then(|v|v.parse::<u16>().ok()).filter(|v|*v<=31680).map_or(72.0,|v|f64::from(v)/20.0))}else{0.0};
-    MathParagraphStyle {alignment:alignment.map(|n|MathJustification::parse(n.attr("val").unwrap_or("centerGroup"))).unwrap_or_default(),
+    let margin=|key|if enabled{pr.and_then(|n|n.child(key)).map_or(0.0,|n|n.attr("val").and_then(crate::math_defaults::bounded_twips).map_or(72.0,|v|f64::from(v)/20.0))}else{0.0};
+    let mut style=MathParagraphStyle {alignment:alignment.map(|n|MathJustification::parse(n.attr("val").unwrap_or("centerGroup"))).unwrap_or_default(),
         explicit_alignment:alignment.is_some(),before:points("preSp"),after:points("postSp"),inter:points("interSp"),intra:points("intraSp"),
-        left:margin("lMargin"),right:margin("rMargin"),explicit_margins:enabled&&pr.is_some_and(|n|n.child("lMargin").is_some()||n.child("rMargin").is_some())}
+        left:margin("lMargin"),right:margin("rMargin"),explicit_margins:enabled&&pr.is_some_and(|n|n.child("lMargin").is_some()||n.child("rMargin").is_some()),word_margins:false};
+    // This is a projection, not a capability probe. Product consumers call
+    // validate_display_context before formatting or opening any resources.
+    if let Ok(Some(word))=word_display_paragraph(root,paragraph) {
+        if let Some(value)=word.alignment {style.alignment=word_justification(value.value);style.explicit_alignment=true;}
+        style.left=word.left.as_ref().map_or(0.,|value|value.value.points());
+        style.right=word.right.as_ref().map_or(0.,|value|value.value.points());
+        // An explicit Word jc also needs the real constrained paragraph box,
+        // even when neither physical indent axis was declared. The zero
+        // offsets belong only to this output frame; native/source axes stay
+        // Missing. An authored local math jc may shadow Word alignment, but
+        // it must still be positioned inside that same paragraph frame.
+        style.word_margins=word.left.is_some()||word.right.is_some()
+            ||root.word_paragraph.as_ref().is_some_and(|context|context.effective.alignment.is_some());
+        style.explicit_margins=style.word_margins;
+    }
+    style
+}
+
+fn word_justification(value:crate::math_word::WordParagraphJustification)->MathJustification {
+    use crate::math_word::WordParagraphJustification as W;
+    match value {W::Left=>MathJustification::Left,W::Right=>MathJustification::Right,W::Center=>MathJustification::Center,_=>unreachable!("validated finite Word justification")}
+}
+
+pub(crate) fn word_display_paragraph(root:&Node,paragraph:Option<&Node>)
+    ->Result<Option<crate::math_word::WordFiniteParagraph>,&'static str>
+{
+    let enabled=root.child("mathPr").and_then(|pr|pr.child("dispDef"))
+        .map(|node|on_off(node.attr("val"),true)).unwrap_or(true);
+    let Some(context)=root.word_paragraph.as_ref() else{return Ok(None);};
+    if !context.host_display_supported(){return Err("math_unsupported_extension");}
+    if enabled {return Ok(None);}
+    let local=paragraph.and_then(|node|node.child("oMathParaPr")).and_then(|pr|pr.child("jc")).is_some();
+    context.finite_display(local).map(Some).map_err(|_|"math_unsupported_extension")
+}
+
+/// Pure capability/geometry preflight. Parsing and saving may retain valid
+/// unsupported Word properties; no renderer is allowed to silently ignore them.
+pub(crate) fn validate_display_context(root:&Node,display:bool,width:Option<f64>)->Result<(),&'static str>{
+    if !display {
+        fn has_paragraph(node:&Node)->bool {
+            (node.is_math()&&node.name=="oMathPara")||node.children.iter().any(has_paragraph)
+        }
+        // An inline carrier cannot erase a display paragraph by rendering it
+        // as a row. This is the existing DOCX carrier rule for every consumer.
+        return if has_paragraph(root){Err("math_invalid_source")}else{Ok(())};
+    }
+    let check=|paragraph:Option<&Node>|->Result<(),&'static str>{
+        if let Some(word)=word_display_paragraph(root,paragraph)? {
+            if let Some(width)=width {word.inner_width(width).map_err(|_|"math_unsupported_extension")?;}
+        }
+        let disabled=root.child("mathPr").and_then(|pr|pr.child("dispDef")).is_some_and(|node|!on_off(node.attr("val"),true));
+        let local=paragraph.and_then(|node|node.child("oMathParaPr")).and_then(|pr|pr.child("jc")).is_some();
+        let word_alignment=root.word_paragraph.as_ref().is_some_and(|context|context.effective.alignment.is_some());
+        let count=paragraph.unwrap_or(root).children.iter().filter(|node|node.is_math()&&node.name=="oMath").count();
+        // The legacy centerGroup basis and Word's unaligned paragraph are not
+        // interchangeable for unequal multiple equations. Require an authored
+        // alignment until native round-trip semantics have been established.
+        if disabled&&!local&&!word_alignment&&count>1{return Err("math_unsupported_extension");}
+        Ok(())
+    };
+    for paragraph in display_scopes(root){check(paragraph)?;}
+    Ok(())
+}
+
+/// Explicit paragraphs and adjacent bare display fragments share the same
+/// associated Word context, but only actual oMathPara has a local math jc.
+pub(crate) fn display_scopes(root:&Node)->Vec<Option<&Node>>{
+    let mut scopes=root.children.iter().filter(|node|node.is_math()&&node.name=="oMathPara").map(Some).collect::<Vec<_>>();
+    if scopes.is_empty()||root.children.iter().any(|node|node.is_math()&&!node.is_props()&&node.name!="oMathPara"){scopes.push(None);}
+    scopes
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -218,7 +295,7 @@ pub fn math_wrap_style(root: &Node) -> MathWrapStyle {
     MathWrapStyle {
         binary:match value("brkBin"){Some("after")=>MathBinaryBreak::After,Some("repeat")=>MathBinaryBreak::Repeat,_=>MathBinaryBreak::Before},
         subtraction:match value("brkBinSub"){Some("-+")=>"-+",Some("+-")=>"+-",_=>"--"},
-        indent:if enabled{value("wrapIndent").and_then(|v|v.parse::<u16>().ok()).filter(|v|*v<=31680).map_or(72.0,|v|f64::from(v)/20.0)}else{0.0},
+        indent:if enabled{value("wrapIndent").and_then(crate::math_defaults::bounded_twips).map_or(72.0,|v|f64::from(v)/20.0)}else{0.0},
         right:enabled&&pr.and_then(|n|n.child("wrapRight")).is_some_and(|n|on_off(n.attr("val"),true)),
     }
 }
@@ -367,8 +444,11 @@ pub fn parse(xml: &str) -> Result<Node, String> {
     }
     let mut source=crate::math_document::parse_xml(xml).map_err(str::to_string)?;
     crate::math_spacing::validate_tree(&source).map_err(str::to_string)?;
+    let paragraph=crate::math_word::word_paragraph_context(&source).map_err(str::to_string)?;
+    let associated=source.children().any(|node|node.namespace==crate::math_document::WORD_NS&&matches!(node.local(),"styles"|"pPr"));
     crate::math_word::materialize(&mut source).map_err(str::to_string)?;
     let mut root = convert(&source);
+    if associated {root.word_paragraph=Some(std::sync::Arc::new(paragraph));}
     let defaults = root.child("mathPr").map(|pr| MathDefaults {
         integral_limits: pr.child("intLim").map(|p| p.attr("val").unwrap_or("subSup") == "undOvr"),
         nary_limits: pr.child("naryLim").map(|p| p.attr("val").unwrap_or("undOvr") == "undOvr"),
@@ -383,22 +463,103 @@ pub fn parse(xml: &str) -> Result<Node, String> {
 }
 
 /// Word has one mathPr in settings.xml. Keep the originating settings separate
-/// from paragraph content and fix each operator's effective placement locally,
-/// so merging equations from different documents cannot change their limits.
+/// from paragraph content and fix effective operator/paragraph placement
+/// locally. The export-only projection never changes the author's DSL/XML.
 pub(crate) fn docx_math_fragment(xml: &str, display: bool)
     -> Result<(String, Option<crate::math_document::XmlNode>), String>
 {
+    let source = crate::math_document::parse_xml(xml).map_err(str::to_string)?;
+    docx_math_fragment_tree(source, display)
+}
+
+/// Reuse the merger's already bounded parse rather than parsing every full
+/// formula again merely to obtain its declaration state and output copy.
+pub(crate) fn docx_math_fragment_tree(source: crate::math_document::XmlNode, display: bool)
+    -> Result<(String, Option<crate::math_document::XmlNode>), String>
+{
+    let projected=docx_math_projection_tree(source,display)?;
+    Ok((projected.content,projected.settings))
+}
+
+#[derive(Debug,Clone,PartialEq,Default)]
+pub(crate) struct DocxMathParagraph {
+    pub alignment:Option<String>,
+    pub left:Option<String>,
+    pub right:Option<String>,
+}
+pub(crate) struct DocxMathProjection {
+    pub content:String,
+    pub settings:Option<crate::math_document::XmlNode>,
+    pub paragraph:Option<DocxMathParagraph>,
+    pub paragraph_source:Option<crate::math_word::NativeParagraphSource>,
+}
+pub(crate) fn native_word_paragraph(root:&Node)->Result<Option<DocxMathParagraph>,&'static str>{
+    let Some(context)=root.word_paragraph.as_ref() else{return Ok(None);};
+    // Word's stored paragraph axes remain meaningful when math defaults
+    // temporarily override their paint. Never drop them merely because they
+    // are inactive. Native jc supports every validated Word enumeration;
+    // physical indents remain in this unit's finite, proven consumer domain.
+    context.finite_display(true).map_err(|_|"math_unsupported_extension")?;
+    Ok(Some(DocxMathParagraph {
+        alignment:context.effective.alignment.as_ref().map(|value|value.value.as_str().to_string()),
+        left:context.effective.indent.get("left").map(|value|value.value.raw().to_string()),
+        right:context.effective.indent.get("right").map(|value|value.value.raw().to_string()),
+    }))
+}
+pub(crate) fn docx_math_projection_tree(mut source:crate::math_document::XmlNode,display:bool)
+    ->Result<DocxMathProjection,String>
+{
     use crate::math_document::{XmlNode, XmlPart, MATH_NS};
-    let mut source = crate::math_document::parse_xml(xml).map_err(str::to_string)?;
     crate::math_spacing::native_office(&source).map_err(str::to_string)?;
+    // Parse the context-bearing source before materialize removes its pPr and
+    // style catalogue. The typed view, source and native pPr stay separate.
+    let mut view=parse(&source.xml())?;
+    if view.word_paragraph.is_some(){
+        // Attribute serialization is not the source of native measure words:
+        // literal tabs/LFs would normalize on the rendering view's reparse.
+        // Keep the original, equally validated cascade for lexical export.
+        view.word_paragraph=Some(std::sync::Arc::new(crate::math_word::word_paragraph_context(&source).map_err(str::to_string)?));
+    }
+    validate_display_context(&view,display,None).map_err(str::to_string)?;
+    let paragraph=if display {native_word_paragraph(&view).map_err(str::to_string)?}else{None};
+    let paragraph_source=if display {
+        crate::math_word::capture_native_paragraph(&source).map_err(str::to_string)?
+    }else{None};
     crate::math_word::materialize(&mut source).map_err(str::to_string)?;
-    let view = parse(&source.xml())?;
     fn element(name: &str) -> XmlNode {
         XmlNode { id: String::new(), name: format!("m:{name}"), namespace: MATH_NS.into(),
             attributes: [("xmlns:m".into(), MATH_NS.into())].into(),
             attribute_namespaces: Default::default(), content: vec![] }
     }
-    fn resolve(source: &mut XmlNode, view: &Node, display: bool) {
+    fn paragraph_alignment(source: &mut XmlNode, alignment: MathJustification) {
+        let index = source.content.iter().position(|part|
+            matches!(part, XmlPart::Element(node) if node.namespace == MATH_NS && node.local() == "oMathParaPr"))
+            .unwrap_or_else(|| {
+                source.content.insert(0, XmlPart::Element(element("oMathParaPr")));
+                0
+            });
+        let XmlPart::Element(properties) = &mut source.content[index] else { unreachable!() };
+        if let Some(jc) = properties.content.iter_mut().find_map(|part| match part {
+            XmlPart::Element(node) if node.namespace == MATH_NS && node.local() == "jc" => Some(node),
+            _ => None,
+        }) {
+            // An explicitly empty local jc means centerGroup. Materialize the
+            // required native value in this copy, retaining source omission.
+            if !jc.attributes.keys().any(|key| key.rsplit(':').next() == Some("val")
+                && jc.attribute_namespaces.get(key).is_none_or(|uri| uri.is_empty() || uri == MATH_NS))
+            {
+                jc.attributes.insert("m:val".into(), alignment.as_str().into());
+                jc.attribute_namespaces.insert("m:val".into(), MATH_NS.into());
+                jc.attributes.insert("xmlns:m".into(), MATH_NS.into());
+            }
+            return;
+        }
+        let mut jc = element("jc");
+        jc.attributes.insert("m:val".into(), alignment.as_str().into());
+        jc.attribute_namespaces.insert("m:val".into(), MATH_NS.into());
+        properties.content.insert(0, XmlPart::Element(jc));
+    }
+    fn resolve(source: &mut XmlNode, view: &Node, root: &Node, display: bool) {
         // Script/argument styles agree with the shared vector and MathML model.
         let parent = view.name.as_str();
         for (child, child_view) in source.content.iter_mut().filter_map(|p|
@@ -412,7 +573,13 @@ pub(crate) fn docx_math_fragment(xml: &str, display: bool)
                 "m" | "eqArr" => true,
                 _ => false,
             };
-            resolve(child, child_view, display && !reduced);
+            resolve(child, child_view, root, display && !reduced);
+        }
+        let display_defaults = root.child("mathPr").and_then(|pr| pr.child("dispDef"))
+            .map(|node| on_off(node.attr("val"), true)).unwrap_or(true);
+        let local_jc = view.child("oMathParaPr").and_then(|properties| properties.child("jc")).is_some();
+        if view.is_math() && parent == "oMathPara" && display && (display_defaults || local_jc) {
+            paragraph_alignment(source, math_paragraph_style(root, Some(view)).alignment);
         }
         if !view.is_math() || parent != "nary" || view.child("naryPr").and_then(|p| p.child("limLoc")).is_some() { return; }
         let mut location = element("limLoc");
@@ -428,19 +595,45 @@ pub(crate) fn docx_math_fragment(xml: &str, display: bool)
             source.content.insert(0, XmlPart::Element(pr));
         }
     }
-    resolve(&mut source, &view, display);
+    resolve(&mut source, &view, &view, display);
     let mut settings = source.children().find(|n| n.namespace == MATH_NS && n.local() == "mathPr").cloned();
     // Keep missing values in the author's DSL; materialize only in DOCX so
     // its settings obey the pinned schema and retain Office's effective value.
     if let Some(pr)=&mut settings{for part in &mut pr.content{if let XmlPart::Element(n)=part{
         if n.namespace!=MATH_NS{continue;}
-        if let Some(value)=crate::math_document::office_implicit_value(n.local(),"m:val"){
+        if let Some(value)=crate::math_defaults::native_implicit_value(n.local()){
             let present=n.attributes.keys().any(|k|k.rsplit(':').next()==Some("val")&&n.attribute_namespaces.get(k).is_none_or(|uri|uri.is_empty()||uri==MATH_NS));
             if !present{n.attributes.insert("m:val".into(),value.into());n.attribute_namespaces.insert("m:val".into(),MATH_NS.into());n.attributes.insert("xmlns:m".into(),MATH_NS.into());}
         }
     }}}
     source.content.retain(|p| !matches!(p, XmlPart::Element(n) if n.namespace == MATH_NS && n.local() == "mathPr"));
-    Ok((source.xml(), settings))
+    if display {
+        // A top-level row(mathPr, oMath, ...) fragment is a display paragraph
+        // even though its authoring wrapper is the transparent #root. Group
+        // consecutive equations without flattening existing paragraph groups.
+        fn flush(target: &mut Vec<XmlPart>, pending: &mut Vec<XmlPart>, alignment: Option<MathJustification>) {
+            if pending.is_empty() { return; }
+            let mut paragraph = element("oMathPara");
+            paragraph.content = std::mem::take(pending);
+            if let Some(alignment) = alignment { paragraph_alignment(&mut paragraph, alignment); }
+            target.push(XmlPart::Element(paragraph));
+        }
+        let enabled = view.child("mathPr").and_then(|properties| properties.child("dispDef"))
+            .map(|node| on_off(node.attr("val"), true)).unwrap_or(true);
+        let alignment = enabled.then(||math_paragraph_style(&view,None).alignment);
+        let mut content = Vec::new();
+        let mut pending = Vec::new();
+        for part in std::mem::take(&mut source.content) {
+            let equation = matches!(&part, XmlPart::Element(node) if node.namespace == MATH_NS && node.local() == "oMath");
+            let invisible = matches!(&part, XmlPart::Comment(_) | XmlPart::Instruction(_))
+                || matches!(&part, XmlPart::Text(text) if text.trim().is_empty());
+            if equation || (!pending.is_empty() && invisible) { pending.push(part); }
+            else { flush(&mut content, &mut pending, alignment); content.push(part); }
+        }
+        flush(&mut content, &mut pending, alignment);
+        source.content = content;
+    }
+    Ok(DocxMathProjection{content:source.xml(),settings,paragraph,paragraph_source})
 }
 
 /// Parse LaTeX through the shared converter; `Err` when the OMML is unusable.
@@ -792,6 +985,7 @@ pub fn to_mathml_constrained(
     {
         return Err("math_invalid_property");
     }
+    validate_display_context(root,display,width)?;
     let output = to_mathml_with_context(root, display, alt, size, None);
     let mut result = MathmlProjection { output, profile: None, warnings: mathml_warnings(root) };
     let Some(width) = width.filter(|_| display) else { return Ok(result); };
@@ -907,6 +1101,13 @@ pub(crate) fn to_mathml_with_context(root:&Node,display:bool,_alt:&str,size:f64,
         if display { "block" } else { "inline" },
         body
     )
+}
+
+pub(crate) fn to_mathml_checked_with_context(root:&Node,display:bool,alt:&str,size:f64,automatic_color:Option<[u8;3]>)
+    ->Result<String,&'static str>
+{
+    validate_display_context(root,display,None)?;
+    Ok(to_mathml_with_context(root,display,alt,size,automatic_color))
 }
 
 /// Bounded linear mathematical fallback, not a speech/navigation engine.
@@ -1815,7 +2016,7 @@ mod tests {
         for (display_defaults,enabled) in [("",true),("<q:dispDef/>",true),(r#"<q:dispDef q:val="0"/>"#,false)]{
             let root=parse(&format!(r#"<q:mathPr xmlns:q="{ns}">{display_defaults}<q:defJc q:val="left"/><q:preSp q:val="120"/><q:postSp q:val="240"/><q:interSp q:val="360"/><q:intraSp q:val="480"/></q:mathPr><q:oMathPara xmlns:q="{ns}"><q:oMathParaPr><q:jc q:val="right"/></q:oMathParaPr><q:oMath><q:r><q:t>x</q:t></q:r></q:oMath></q:oMathPara>"#)).unwrap();
             let global=math_paragraph_style(&root,None);
-            assert_eq!((global.before,global.after,global.inter,global.intra),if enabled{(6.,12.,18.,24.)}else{(0.,0.,0.,0.)});
+            assert_eq!((global.before,global.after,global.inter,global.intra),(6.,12.,18.,24.));
             assert_eq!(global.alignment,if enabled{MathJustification::Left}else{MathJustification::CenterGroup});
             let local=math_paragraph_style(&root,root.child("oMathPara"));assert_eq!(local.alignment,MathJustification::Right);assert!(local.explicit_alignment);
             assert!(to_mathml(&root,true,"").contains("text-align:right"));
@@ -1894,7 +2095,8 @@ mod tests {
                         let (word, settings) = docx_math_fragment(&xml, display).unwrap();
                         assert!(!word.contains("mathPr")); assert!(settings.unwrap().xml().contains(key));
                         let standalone = parse(&word).unwrap();
-                        assert_eq!(nary_limits(standalone.child("oMath").unwrap().child("nary").unwrap(), display), effective);
+                        let paragraph = standalone.child("oMathPara").unwrap_or(&standalone);
+                        assert_eq!(nary_limits(paragraph.child("oMath").unwrap().child("nary").unwrap(), display), effective);
                     }
                     // Resolving display/export must not normalize the source.
                     assert!(crate::math_document::parse_xml(&xml).unwrap().xml().contains(&local_property));

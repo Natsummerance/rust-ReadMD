@@ -779,6 +779,7 @@ function renderPage(pageIndex, targetHeadingId, preserveScroll) {
   const finalHtml = restoreMath(html, prot.saved);
   el.innerHTML = '<article class="markdown-body rd-article">' + sanitizeRenderedHtml(finalHtml) + '</article>';
 
+  if(window.ReadMDPublication?.preparePagedHeadings)targetHeadingId=ReadMDPublication.preparePagedHeadings(buildToc,targetHeadingId,pageIndex);
   if (state.pagination.allHeadings?.length) {
     const pageOutline = state.pagination.allHeadings.filter(heading => heading.pageIndex === pageIndex);
     const pageHeadings = el.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
@@ -955,10 +956,27 @@ function parseMarkdownWithSourceMap(content, options = {}) {
 
     // 2. 自定义渲染器注入 data-source-line 属性并正确解析 inline/nested 元素
     renderer.heading = function(token) {
-      const text = (token && token.tokens && this.parser) ? this.parser.parseInline(token.tokens) : (token ? (token.text || '') : (arguments[0] || ''));
+      const identity = token && typeof ReadMDHeadings !== 'undefined' ? ReadMDHeadings.heading(token) : null;
+      const inline = identity ? identity.tokens : token && token.tokens;
+      const text = (inline && this.parser) ? this.parser.parseInline(inline) : (token ? (token.text || '') : (arguments[0] || ''));
       const level = (token && token.depth) ? token.depth : (arguments[1] || 1);
       const lineAttr = (token && token.sourceLine) ? ` data-source-line="${token.sourceLine}"` : '';
-      return `<h${level}${lineAttr}>${text}</h${level}>\n`;
+      // Preserve source identities before rendering can consume Markdown
+      // punctuation in an explicit ID or alter an image's plain alt text.
+      const identityAttr = identity ? ` data-readmd-heading-text="${escapeHtml(identity.text)}"` + (identity.id ? ` data-readmd-explicit-id="${escapeHtml(identity.id)}"` : '') : '';
+      return `<h${level}${lineAttr}${identityAttr}>${text}</h${level}>\n`;
+    };
+
+    renderer.link = function(token) {
+      const html = marked.Renderer.prototype.link.call(this, token);
+      // A plain fragment label can deliberately encode literal TeX-looking
+      // characters (as generated TOCs do). Preserve that intent after the HTML
+      // parser decodes the references, using MathJax's existing ignore class.
+      // Ordinary math labels retain their normal typesetting behavior.
+      const literalMath = token.href?.startsWith('#') &&
+        /&#(?:0*(?:36|92)|[xX]0*(?:24|5[cC]));/.test(token.text || '') &&
+        token.tokens?.every(part => part.type === 'text' || part.type === 'escape');
+      return literalMath ? html.replace(/^<a\b/, '<a class="mathjax_ignore"') : html;
     };
 
     renderer.paragraph = function(token) {
@@ -1291,6 +1309,7 @@ window.renderSafeMarkdown = renderSafeMarkdown;
 async function renderContent(content, name) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const render = beginReaderRender();
+  const mathRawSource=String(content||''),mathTab=state.activeTabId,mathFile=state.file,mathEditing=state.editing;
   const saved = state.scrollPos[normalizePath(name || state.file || '')] || 0;
 
   // 预处理 @import
@@ -1304,6 +1323,13 @@ async function renderContent(content, name) {
   if(window.ReadMDPublication){
     content=await ReadMDPublication.prepare(String(content||''),state.file||'');
     if(!isReaderRenderCurrent(render))return;
+  }
+
+  if(window.ReadMDMathContext&&!(state.is_code||name&&!MD_RE.test(name)&&typeof TEXT_CODE_RE!=='undefined'&&TEXT_CODE_RE.test(name))){
+    const current=()=>isReaderRenderCurrent(render)&&state.activeTabId===mathTab&&state.file===mathFile&&state.editing===mathEditing;
+    try{content=await ReadMDMathContext.prepareSource(mathRawSource,String(content||''),{scope:'content',current});}
+    catch(error){if(!current()||error.name==='AbortError')return;content=ReadMDMathContext.errorMarkup(mathRawSource,error);}
+    if(!current())return;
   }
 
   // Footnote definitions must be protected before Markdown consumes them as

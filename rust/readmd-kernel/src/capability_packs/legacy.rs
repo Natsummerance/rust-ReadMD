@@ -75,6 +75,11 @@ fn migrate_with(
     if !needed(data, selected)? {
         return Ok(());
     }
+    // Automatic first-use/status migration expands the same payload as an
+    // explicit install and must share its profile-wide space admission.
+    check()?;
+    let _space_admission = crate::capability_process::install_admission(data)?;
+    check()?;
     let base = data.canonicalize().map_err(|_| error())?;
     let mut origin = base.clone();
     for part in ["capabilities", selected.id, selected.version] {
@@ -100,6 +105,9 @@ fn migrate_with(
         total.clamp(1, crate::capability_archive::MAX_DOWNLOAD),
     )?;
     let parent = managed_parent(data, selected, true)?;
+    let space_result = space::check(&parent, lock);
+    check()?;
+    space_result?;
     let stage = staging::Stage::create(&parent, lock)?;
     #[cfg(windows)]
     if selected.id == "latex" {
@@ -307,6 +315,23 @@ mod tests {
             .exists());
         drop(budget);
         migrate_fixture(data.path(), selected, &lock).unwrap();
+    }
+    #[test]
+    fn migration_respects_install_space_admission_before_creating_payload() {
+        let data = tempfile::tempdir().unwrap();
+        let (selected, lock, origin) = fixture(data.path());
+        let sentinel = origin.join("unknown-note.txt");
+        fs::write(&sentinel, b"Never alter legacy files").unwrap();
+        let admission = crate::capability_process::install_admission(data.path()).unwrap();
+        assert_eq!(migrate_fixture(data.path(), selected, &lock).unwrap_err().code, "capability_install_busy");
+        assert!(!root_for(data.path(), selected).exists());
+        validate(&origin, &lock).unwrap();
+        assert_eq!(fs::read(&sentinel).unwrap(), b"Never alter legacy files");
+        drop(admission);
+        migrate_fixture(data.path(), selected, &lock).unwrap();
+        validate(&root_for(data.path(), selected).join(selected.version), &lock).unwrap();
+        validate(&origin, &lock).unwrap();
+        assert_eq!(fs::read(sentinel).unwrap(), b"Never alter legacy files");
     }
     #[test]
     fn migration_does_not_overwrite_an_existing_private_destination() {

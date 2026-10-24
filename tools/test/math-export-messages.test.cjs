@@ -20,7 +20,8 @@ test('export and preview expose actionable math failures in every shipped locale
     const {message,strings}=api(locale);
     for(const [code,key] of [
       ['math_budget','error.math_budget'],['math_unsupported_extension','error.math_unsupported_extension'],
-      ['math_invalid_xml','formula.invalid'],['math_unsupported_version','formula.unsupportedVersion']
+      ['math_invalid_xml','formula.invalid'],['math_unsupported_version','formula.unsupportedVersion'],
+      ['math_document_defaults_conflict','error.math_document_defaults_conflict']
     ]){
       assert(typeof strings[key]==='string'&&strings[key].length>0,`${locale}: missing ${key}`);
       for(const envelope of [{ok:false,error_code:code,details:'owned test diagnostic'},{ok:false,error:code}]){
@@ -41,4 +42,33 @@ test('the error mapping uses exact codes and keeps unrelated service errors',()=
   }
   assert.match(message({error_code:'math_budget'}),/size or complexity/i);
   assert.match(message({error_code:'math_unsupported_extension'}),/original source is preserved/i);
+});
+
+test('native paragraph inheritance loss uses the typed warning in every shipped locale',()=>{
+  const begin=state.indexOf('function warnMessages('),finish=state.indexOf('function setProgress(',begin);
+  assert(begin>=0&&finish>begin);const warningSource=state.slice(begin,finish),code='math_paragraph_style_materialized';
+  for(const locale of locales){
+    const {strings}=api(locale),key='warn.'+code;
+    assert(typeof strings[key]==='string'&&strings[key].length>0,`${locale}: missing ${key}`);
+    const context=vm.createContext({window:{i18n:{t:key=>strings[key]??key}}});vm.runInContext(warningSource,context);
+    assert.deepEqual(Array.from(context.warnMessages({warn_items:[{code,params:{},text:code}]})),[strings[key]],locale);
+    assert.deepEqual(Array.from(context.warnMessages({warn_items:[{code:code+'_lookalike',params:{},text:'owned fallback'}]})),['owned fallback'],locale);
+  }
+});
+
+test('native equation character inheritance warnings have explicit native translations and exact lookup',()=>{
+  const begin=state.indexOf('function warnMessages('),finish=state.indexOf('function setProgress(',begin);
+  assert(begin>=0&&finish>begin);const warningSource=state.slice(begin,finish),code='math_run_style_materialized',key='warn.'+code;
+  const spec=JSON.parse(fs.readFileSync(path.join(__dirname,'i18n-math-native-runs.json'),'utf8'))[key];
+  assert.deepEqual(Object.keys(spec).sort(),locales.map(file=>file.replace(/\.json$/,'')).sort(),'No locale may be supplied by the i18n insertion fallback');
+  for(const locale of locales){
+    const {strings}=api(locale),language=locale.replace(/\.json$/,'');
+    assert.equal(strings[key],spec[language],`${locale}: explicit translation changed or missing`);
+    if(language!=='en')assert.notEqual(strings[key],spec.en,`${locale}: English placeholder`);
+    const context=vm.createContext({window:{i18n:{t:key=>strings[key]??key}}});vm.runInContext(warningSource,context);
+    assert.deepEqual(Array.from(context.warnMessages({warn_items:[{code,params:{},text:code}]})),[strings[key]],locale);
+    for(const invalid of [code+'_lookalike',code+'/private.docx',code+': source']){
+      assert.deepEqual(Array.from(context.warnMessages({warn_items:[{code:invalid,params:{},text:'owned fallback'}]})),['owned fallback'],locale);
+    }
+  }
 });

@@ -1,6 +1,73 @@
-param([Parameter(Mandatory=$true)][string]$Workspace)
+param([string]$Workspace, [switch]$PreflightOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+function Test-WordComPreflightSnapshot($Snapshot) {
+    $record = [ordered]@{ accepted = $false; mode = 'read-only-com-preflight'; processArchitectureBits = $Snapshot.processArchitectureBits; registrationScope = 'ClassesRoot/effective-current-process-view'; progId = 'Word.Application'; activated = $false; failure = 'WORD_COM_REGISTRATION_UNVERIFIED'; effectiveChain = @($Snapshot.entries) }
+    if ($Snapshot.readError -or @($Snapshot.entries).Count -eq 0) { return [pscustomobject]$record }
+    if (-not $Snapshot.chainComplete) { $record.failure = 'WORD_COM_REDIRECT_UNVERIFIED'; return [pscustomobject]$record }
+    foreach ($entry in $Snapshot.entries) {
+        if (-not $entry.clsidRegistered -or -not $entry.localServerRegistered) { return [pscustomobject]$record }
+        if ($entry.serverExecutableName -ine 'WINWORD.EXE' -or -not $entry.serverExecutableExists -or $entry.treatAsRegistered -or $entry.inprocServerRegistered) {
+            $record.failure = 'WORD_COM_TARGET_MISMATCH'
+            return [pscustomobject]$record
+        }
+    }
+    $record.accepted = $true
+    $record.failure = $null
+    return [pscustomobject]$record
+}
+function Get-WordComPreflight {
+    $snapshot = [ordered]@{ processArchitectureBits = [IntPtr]::Size * 8; entries = @(); chainComplete = $false; readError = $false }
+    $classes = $null
+    try {
+        $classes = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::ClassesRoot, [Microsoft.Win32.RegistryView]::Default)
+        $progId = 'Word.Application'
+        $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        for ($index = 0; $index -lt 4; $index++) {
+            if (-not $visited.Add($progId)) { break }
+            $entry = [ordered]@{ progId = $progId; clsidRegistered = $false; localServerRegistered = $false; curVer = $null }
+            $key = $classes.OpenSubKey("$progId\CLSID", $false)
+            $clsid = $null
+            if ($key) { try { $clsid = [string]$key.GetValue('') } finally { $key.Dispose() } }
+            if ($clsid -and $clsid -match '^\{[0-9A-Fa-f-]{36}\}$') {
+                $entry.clsidRegistered = $true
+                $server = $classes.OpenSubKey("CLSID\$clsid\LocalServer32", $false)
+                $command = $null
+                if ($server) { try { $command = [Environment]::ExpandEnvironmentVariables([string]$server.GetValue('')) } finally { $server.Dispose() } }
+                $entry.localServerRegistered = [bool]$command
+                $target = $null
+                if ($command -match '^\s*"([^"]+\.exe)"') { $target = $Matches[1] }
+                elseif ($command -match '^\s*(.+?\.exe)(?=\s|$)') { $target = $Matches[1] }
+                $treatAs = $classes.OpenSubKey("CLSID\$clsid\TreatAs", $false)
+                $inproc = $classes.OpenSubKey("CLSID\$clsid\InprocServer32", $false)
+                $entry.treatAsRegistered = [bool]$treatAs
+                $entry.inprocServerKeyPresent = [bool]$inproc
+                $entry.inprocServerRegistered = [bool]($inproc -and [string]$inproc.GetValue(''))
+                if ($treatAs) { $treatAs.Dispose() }
+                if ($inproc) { $inproc.Dispose() }
+                $entry.serverExecutableName = $(if ($target) { [IO.Path]::GetFileName($target) } else { $null })
+                $entry.serverExecutableExists = [bool]($target -and [IO.File]::Exists($target))
+            }
+            $curVer = $classes.OpenSubKey("$progId\CurVer", $false)
+            $next = $null
+            if ($curVer) { try { $next = [string]$curVer.GetValue('') } finally { $curVer.Dispose() } }
+            $entry.curVer = $(if ($next -and $next -match '^[A-Za-z0-9_.-]{1,128}$') { $next } elseif ($next) { '[invalid-progid]' } else { $null })
+            $snapshot.entries += [pscustomobject]$entry
+            if (-not $next) { $snapshot.chainComplete = $true; break }
+            if ($entry.curVer -eq '[invalid-progid]') { break }
+            $progId = $next
+        }
+    } catch { $snapshot.readError = $true }
+    finally { if ($classes) { $classes.Dispose() } }
+    return Test-WordComPreflightSnapshot ([pscustomobject]$snapshot)
+}
+if ($PreflightOnly) {
+    $preflight = Get-WordComPreflight
+    $preflight | ConvertTo-Json -Depth 5 -Compress
+    if (-not $preflight.accepted) { exit 2 }
+    exit 0
+}
+if (-not $Workspace) { throw 'INTEROP_OWNED_WORKSPACE_REQUIRED' }
 $root = [IO.Path]::GetFullPath($Workspace)
 if (-not (Test-Path -LiteralPath (Join-Path $root 'interop-owner.json') -PathType Leaf)) { throw 'INTEROP_OWNED_WORKSPACE_REQUIRED' }
 $inputFile = Join-Path $root 'source.docx'
@@ -9,6 +76,7 @@ $ownerFile = Join-Path $root 'word-owner.json'
 $started = [DateTime]::UtcNow
 $word = $null
 $ownsWord = $false
+$preflight = $null
 $script:interopStage = 'preflight'
 $result = [ordered]@{ passed = $false; acceptance = 'unverified'; stage = $script:interopStage; checks = @() }
 function Write-JsonFile([string]$Destination, $Value) {
@@ -26,6 +94,9 @@ function Snapshot-Document($Document) {
 try {
     if (@(Get-Process | Where-Object { $_.ProcessName -eq 'WINWORD' }).Count) { throw 'WORD_USER_INSTANCE_PRESERVED' }
     if (-not (Test-Path -LiteralPath $inputFile -PathType Leaf)) { throw 'WORD_FIXTURE_REQUIRED' }
+    Set-Stage 'com-preflight'
+    $preflight = Get-WordComPreflight
+    if (-not $preflight.accepted) { throw $preflight.failure }
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -99,6 +170,7 @@ public static class ReadMdInteropWindow {
     }
     if ($word) { try { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($word) } catch { } }
     $result.recordedAt = [DateTime]::UtcNow.ToString('o')
+    if ($preflight) { $result.comPreflight = $preflight }
     Write-JsonFile $resultFile $result
 }
 if (-not $result.passed) { exit 2 }

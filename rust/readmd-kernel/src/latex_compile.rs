@@ -27,9 +27,10 @@ fn preflight(timeout: Duration) -> Result<(crate::capability_process::LocalWorke
     if timeout.is_zero() {
         return Err("latex_timeout".into());
     }
+    crate::publication_budget::check()?;
     Ok((
         crate::capability_process::LocalWorker::acquire("latex", &ACTIVE).map_err(|e|e.code)?,
-        Instant::now() + timeout.min(Duration::from_secs(120)),
+        crate::publication_budget::deadline(timeout.min(Duration::from_secs(120))),
     ))
 }
 const CODES: &[&str] = &[
@@ -52,6 +53,57 @@ pub fn error_body(error: &str) -> Value {
         return serde_json::json!({"ok":false,"error_code":"preview_expired"});
     }
     let (code, details) = error.split_once(": ").unwrap_or((error, ""));
+    if code==crate::api_codes::AUTHOR_INLINE_TEXT_UNSUPPORTED && details.len()<=2048
+        && serde_json::from_str::<serde_json::Map<String,Value>>(details).is_ok() {
+        #[derive(serde::Deserialize,serde::Serialize)]
+        #[serde(deny_unknown_fields,rename_all="camelCase")]
+        struct TexUnsupported { consumer:String, reason:String, coordinate_space:String, from:usize, to:usize }
+        // The map gate rejects sequence-shaped structs; decode the original
+        // bytes again so duplicate keys are still rejected by the typed model.
+        if let Ok(value)=serde_json::from_str::<TexUnsupported>(details){
+            if value.consumer=="tex" && value.reason=="rtl" && value.coordinate_space=="textUtf8Bytes"
+                && value.from<value.to && value.to<=crate::document_transaction::MAX_DOCUMENT_BYTES {
+                return serde_json::json!({"ok":false,"error_code":code,"details":value});
+            }
+        }
+    }
+    if code==crate::api_codes::AUTHOR_INLINE_TEXT_PDF_SHAPING_UNSUPPORTED&&details.len()<=2048
+        && serde_json::from_str::<serde_json::Map<String,Value>>(details).is_ok() {
+        #[derive(serde::Deserialize,serde::Serialize)]
+        #[serde(deny_unknown_fields,rename_all="camelCase")]
+        struct Shaping { consumer:String, coordinate_space:String, from:usize, to:usize }
+        if let Ok(value)=serde_json::from_str::<Shaping>(details){
+            if value.consumer=="rustPdf"&&value.coordinate_space=="textUtf8Bytes"&&value.from<value.to&&value.to<=crate::document_transaction::MAX_DOCUMENT_BYTES{
+                return serde_json::json!({"ok":false,"error_code":code,"details":value});
+            }
+        }
+    }
+    if code==crate::api_codes::MATH_DOCUMENT_DEFAULTS_CONFLICT && details.len()<=2048
+        && serde_json::from_str::<serde_json::Map<String,Value>>(details).is_ok() {
+        #[derive(serde::Deserialize,serde::Serialize)]
+        #[serde(deny_unknown_fields,rename_all="camelCase")]
+        struct Conflict { property:String, first_formula:u64, formula:u64 }
+        if let Ok(value)=serde_json::from_str::<Conflict>(details) {
+            if matches!(value.property.as_str(),"mathFont"|"brkBin"|"brkBinSub"|"smallFrac"|"dispDef"|"lMargin"|"rMargin"|"defJc"|"preSp"|"postSp"|"interSp"|"intraSp"|"wrapIndent"|"wrapRight"|"intLim"|"naryLim")
+                &&value.first_formula>0 && value.first_formula<value.formula && value.formula<=1_000_000 {
+                return serde_json::json!({"ok":false,"error_code":code,"details":value});
+            }
+        }
+    }
+    if code==crate::api_codes::PUBLICATION_NOTE_LAYOUT && details.len()<=4096 {
+        if let Ok(value)=serde_json::from_str::<Value>(details){
+            if let Some(object)=value.as_object(){
+                const FIELDS:&[&str]=&["coordinateSpace","noteIndex","definitionPage","referencePage"];
+                if object.len()==FIELDS.len() && object.keys().all(|key|FIELDS.contains(&key.as_str()))
+                    &&value["coordinateSpace"]=="pdfFootnoteStartPage"
+                    &&value["noteIndex"].as_u64().is_some_and(|n|(1..=32768).contains(&n))
+                    &&["definitionPage","referencePage"].iter().all(|key|value[*key].as_u64().is_some_and(|n|(1..=100000).contains(&n)))
+                    &&value["definitionPage"]!=value["referencePage"] {
+                    return serde_json::json!({"ok":false,"error_code":code,"details":value});
+                }
+            }
+        }
+    }
     if code==crate::api_codes::PDF_MISSING_GLYPH&&details.len()<=4096 {
         if let Ok(value)=serde_json::from_str::<Value>(details){
             if let Some(object)=value.as_object(){
@@ -62,6 +114,28 @@ pub fn error_body(error: &str) -> Value {
                     &&["page","item","span","from","to"].iter().all(|key|value[*key].as_u64().is_some())
                     &&value["from"].as_u64()<value["to"].as_u64()
                     &&["x","y"].iter().all(|key|value[*key].as_f64().is_some_and(f64::is_finite)) {
+                    return serde_json::json!({"ok":false,"error_code":code,"details":value});
+                }
+            }
+        }
+    }
+    if code==crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY && details.len()<=4096 {
+        const FIELDS:&[&str]=&["coordinateSpace","blockId","page","pageObject","reason","ink","otherBlockId"];
+        #[derive(serde::Deserialize,serde::Serialize)]
+        #[serde(deny_unknown_fields,rename_all="camelCase")]
+        struct BaselineInk { coordinate_space:String, block_id:Option<String>, page:u32, page_object:u32,
+            reason:String, ink:[f64;4], other_block_id:Option<String> }
+        // Decode the original bytes twice: the object gate requires all
+        // fields, while the typed struct rejects duplicate keys and arrays.
+        let object=serde_json::from_str::<serde_json::Map<String,Value>>(details).ok();
+        if object.as_ref().is_some_and(|v|v.len()==FIELDS.len()&&v.keys().all(|key|FIELDS.contains(&key.as_str()))) {
+            if let Ok(value)=serde_json::from_str::<BaselineInk>(details) {
+                let identity=|id:&Option<String>|id.as_ref().is_none_or(|id|!id.is_empty()&&id.len()<=1024&&!id.chars().any(char::is_control));
+                if value.coordinate_space=="pdfBaselineInk"&&(1..=100000).contains(&value.page)&&value.page_object>0
+                    &&matches!(value.reason.as_str(),"clipped-ink"|"paper-edge"|"ink-collision")
+                    &&identity(&value.block_id)&&identity(&value.other_block_id)
+                    &&value.ink.iter().all(|n|n.is_finite()&&n.abs()<=1e9)
+                    &&value.ink[0]<=value.ink[2]&&value.ink[1]<=value.ink[3] {
                     return serde_json::json!({"ok":false,"error_code":code,"details":value});
                 }
             }
@@ -96,6 +170,10 @@ pub fn error_body(error: &str) -> Value {
         serde_json::json!({"ok":false,"error":error})
     }
 }
+
+#[cfg(test)]
+#[path = "publication_baseline_error_tests.rs"]
+mod baseline_error_tests;
 
 #[cfg(windows)]
 enum Process {
@@ -293,7 +371,8 @@ fn compile_managed_with_geometry(
     if crate::speech::cancelled() { return Err("cancelled".into()); }
     if timeout.is_zero() { return Err("latex_timeout".into()); }
     if ACTIVE.load(std::sync::atomic::Ordering::Acquire) >= 2 { return Err("latex_busy".into()); }
-    let deadline = Instant::now() + timeout.min(Duration::from_secs(120));
+    let deadline = crate::publication_budget::deadline(timeout.min(Duration::from_secs(120)));
+    let budget=crate::publication_budget::capture();budget.check()?;
     let capacity=crate::capability_process::check_worker_capacity(data,"latex");
     if crate::speech::cancelled() { return Err("cancelled".into()); }
     if Instant::now()>=deadline { return Err("latex_timeout".into()); }
@@ -305,12 +384,12 @@ fn compile_managed_with_geometry(
     // Reserve after acquiring the resource guard but before hashing. A task
     // waiting for installation must not consume the slots its probe needs.
     let (runtime, _slot) = crate::capability_packs::lease_reserved(data, assets, "latex", &|| {
+        budget.api()?;
         if crate::speech::cancelled() { Err(crate::ApiError::new(422, "cancelled")) }
         else if Instant::now() >= deadline { Err(crate::ApiError::new(422, "latex_timeout")) }
         else { Ok(()) }
-    }, || crate::capability_process::reserve_worker(data,"latex",&ACTIVE)).map_err(|e| match e.code.as_str() {
-        "cancelled" | "latex_timeout" | "latex_busy" => e.code,
-        _ => "latex_engine_unavailable".to_string(),
+    }, || crate::capability_process::reserve_worker(data,"latex",&ACTIVE)).map_err(|e| {
+        if budget.interrupted(&e.code)||e.code=="latex_busy"{e.code}else{"latex_engine_unavailable".to_string()}
     })?;
     log::debug!(target:"readmd::tex", "managed lease validated");
     #[cfg(windows)]
@@ -757,14 +836,17 @@ pub fn export_pdf(
 pub fn export_pdf_with_data(
     content: &str, base: &str, target: &str, options: &Value, name: &str, data: &Path, assets: &Path,
 ) -> Result<ExportResult, String> {
-    let resolved=crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
-    export_pdf_with_lines(content,base,target,options,name,data,assets,resolved.line_context())
+    let resolved=crate::publication_profile::resolve_for_format("pdf",content,options).map_err(|e|e.code)?;
+    export_pdf_with_lines(content,base,target,resolved.values(),name,data,assets,resolved.line_context())
 }
 
 pub(crate) fn export_pdf_with_lines(
     content:&str,base:&str,target:&str,options:&Value,name:&str,data:&Path,assets:&Path,
     lines:crate::publication_typography::LineContext,
 ) -> Result<ExportResult,String> {
+    let profile=crate::publication_profile::resolve_for_format("pdf",content,options).map_err(|e|e.code)?;
+    let options=profile.values();
+    crate::publication_profile::preflight("pdf",content,options).map_err(|e|e.code)?;
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::Tex, content, options).map_err(str::to_string)?;
     validate_options(options)?;
     let engine = options
@@ -801,6 +883,7 @@ pub(crate) fn export_pdf_with_lines(
     if crate::speech::cancelled() {
         return Err("cancelled".into());
     }
+    crate::publication_budget::check()?;
     crate::content::write_bytes_atomic(Path::new(target), &bytes)
         .map_err(|_| "latex_save_failed")?;
     Ok(ExportResult {
@@ -819,6 +902,49 @@ mod math_export_error_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shaping_details_require_an_object_and_preserve_the_existing_range_contract(){
+        let code=crate::api_codes::AUTHOR_INLINE_TEXT_PDF_SHAPING_UNSUPPORTED;
+        let valid=serde_json::json!({"consumer":"rustPdf","coordinateSpace":"textUtf8Bytes","from":0,"to":8});
+        assert_eq!(super::error_body(&format!("{code}: {valid}")),serde_json::json!({"ok":false,"error_code":code,"details":valid}));
+        let mut maximum=valid.clone();maximum["to"]=serde_json::json!(crate::document_transaction::MAX_DOCUMENT_BYTES);
+        assert_eq!(super::error_body(&format!("{code}: {maximum}"))["details"],maximum);
+        let mut invalid=vec!["[\"rustPdf\",\"textUtf8Bytes\",0,8]".into(),"[]".into(),"null".into(),"{\"consumer\":\"rustPdf\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":0,\"from\":0,\"to\":8}".into(),format!("{valid}{}"," ".repeat(2049))];
+        for (key,value) in [("from",serde_json::json!(-1)),("from",serde_json::json!(0.5)),("from",serde_json::json!("0")),("from",serde_json::json!(false)),("from",serde_json::json!(8)),("to",serde_json::json!(crate::document_transaction::MAX_DOCUMENT_BYTES+1))]{let mut raw=valid.clone();raw[key]=value;invalid.push(raw.to_string());}
+        for text in invalid{assert_eq!(super::error_body(&format!("{code}: {text}")),serde_json::json!({"ok":false,"error_code":code,"details":text}));}
+    }
+    #[test]
+    fn math_conflict_sequence_details_stay_untrusted_but_bounded_objects_remain_typed(){
+        let code=crate::api_codes::MATH_DOCUMENT_DEFAULTS_CONFLICT;
+        let valid=serde_json::json!({"property":"smallFrac","firstFormula":999999,"formula":1000000});
+        assert_eq!(super::error_body(&format!("{code}: {valid}")),serde_json::json!({"ok":false,"error_code":code,"details":valid}));
+        for text in ["[\"smallFrac\",1,2]".to_string(),"[]".into(),"null".into(),format!("{valid}{}"," ".repeat(2049))]{
+            assert_eq!(super::error_body(&format!("{code}: {text}")),serde_json::json!({"ok":false,"error_code":code,"details":text}));
+        }
+    }
+    #[test]
+    fn tex_author_diagnostics_require_a_bounded_exact_object_and_utf8_byte_range(){
+        let code=crate::api_codes::AUTHOR_INLINE_TEXT_UNSUPPORTED;
+        let valid=serde_json::json!({"consumer":"tex","reason":"rtl","coordinateSpace":"textUtf8Bytes","from":0,"to":14});
+        assert_eq!(super::error_body(&format!("{code}: {valid}")),serde_json::json!({"ok":false,"error_code":code,"details":valid}));
+        let mut boundary=valid.clone();boundary["to"]=serde_json::json!(crate::document_transaction::MAX_DOCUMENT_BYTES);
+        assert_eq!(super::error_body(&format!("{code}: {boundary}"))["details"],boundary);
+        let mut invalid=Vec::new();
+        for (key,value) in [("consumer",serde_json::json!("typst")),("reason",serde_json::json!("other")),("coordinateSpace",serde_json::json!("sourceUtf16")),("from",serde_json::json!(-1)),("from",serde_json::json!(0.5)),("from",serde_json::json!("0")),("from",serde_json::json!(false)),("from",serde_json::json!(14)),("from",serde_json::json!(15)),("to",serde_json::json!(0)),("to",serde_json::json!(crate::document_transaction::MAX_DOCUMENT_BYTES+1)),("unexpected",serde_json::json!(true))]{let mut value_=valid.clone();value_[key]=value;invalid.push(value_.to_string());}
+        for key in ["consumer","reason","coordinateSpace","from","to"]{let mut value=valid.clone();value.as_object_mut().unwrap().remove(key);invalid.push(value.to_string());}
+        invalid.extend(["[\"tex\",\"rtl\",\"textUtf8Bytes\",0,14]".into(),"[]".into(),"null".into(),"not-json".into(),format!("{valid} trailing"),"{\"consumer\":\"tex\",\"consumer\":\"tex\",\"reason\":\"rtl\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":0,\"to\":14}".into(),format!("{}{}",valid," ".repeat(2049))]);
+        for text in invalid {let result=super::error_body(&format!("{code}: {text}"));assert_eq!(result["error_code"],code,"{text}");assert_eq!(result["details"],text,"Malformed details must remain untrusted text");}
+        assert_eq!(super::error_body(&format!("{code}:{valid}"))["error"],format!("{code}:{valid}"));
+    }
+    #[test]
+    fn note_layout_error_preserves_typed_pages_but_never_promotes_invalid_details(){
+        let valid=serde_json::json!({"coordinateSpace":"pdfFootnoteStartPage","noteIndex":31,"definitionPage":2,"referencePage":3});
+        let result=super::error_body(&format!("publication_note_layout: {valid}"));
+        assert_eq!(result["error_code"],"publication_note_layout");assert_eq!(result["details"],valid);
+        let mut invalid=Vec::new();
+        for (key,value) in [("noteIndex",serde_json::json!(0)),("noteIndex",serde_json::json!(32769)),("definitionPage",serde_json::json!(-1)),("referencePage",serde_json::json!("3")),("referencePage",serde_json::json!(100001)),("referencePage",serde_json::json!(2)),("coordinateSpace",serde_json::json!("other")),("unexpected",serde_json::json!(true))]{let mut v=valid.clone();v[key]=value;invalid.push(v);}
+        for value in invalid {let result=super::error_body(&format!("publication_note_layout: {value}"));assert_eq!(result["error_code"],"publication_note_layout");assert!(result["details"].is_string());}
+    }
     use super::*;
     #[test]
     fn formula_export_errors_have_localizable_envelopes_without_reclassifying_plain_errors() {

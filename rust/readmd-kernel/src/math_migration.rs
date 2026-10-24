@@ -96,7 +96,7 @@ pub fn plan(source: &str) -> Result<Migration, &'static str> {
     // The carrier is occurrence-bound. Duplicate IDs are ambiguous even when
     // two author expressions happen to be byte-for-byte equal.
     let mut carriers=Vec::new();let mut identities=std::collections::BTreeMap::<String,usize>::new();
-    for range in crate::math_dsl::markdown_ranges(source){
+    for range in crate::math_dsl::markdown_ranges(source)?{
         if let Some((comment_from,to,comment))=crate::math_extension::adjacent(source,range.to){
             if let Ok(payload)=crate::math_extension::decode(comment){*identities.entry(payload.id.clone()).or_default()+=1;}
             carriers.push((range,comment_from,to,comment));

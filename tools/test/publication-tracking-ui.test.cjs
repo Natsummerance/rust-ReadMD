@@ -65,8 +65,8 @@ for(const value of ['-72.01','72.01','NaN','0x10','1,5','Infinity','-'])test('in
 test('malformed persisted baseline shift is rejected rather than coerced',()=>{
   for(const value of ['2',false,{},[]]){const e=environment(),h=e.context.window.ReadMDPublication.baseline,c=h.mount(e.host,{style:{baselineShiftPt:value},getFormat:()=> 'docx'});assert.equal(c.validate(),false);}
 });
-test('baseline format gating distinguishes Rust PDF from other PDF engines and clears stale previews',async()=>{
-  for(const [format,engine]of [['html',undefined],['epub',undefined],['tex',undefined],['pdf','typst'],['pdf','xelatex']]){
+test('baseline format gating admits verified physical PDF engines and clears unsupported stale previews',async()=>{
+  for(const [format,engine]of [['html',undefined],['epub',undefined],['tex',undefined],['pdf','xelatex'],['pdf','pdflatex']]){
     const e=environment(),h=e.context.window.ReadMDPublication.baseline;e.context.state.export.fmt=format;e.context.state.export.options.pdf={engine};e.context.state.export.options.typography.baselineShiftPt=0;
     h.mount(e.host,{style:{baselineShiftPt:0},getFormat:()=>({format,engine})});e.context.cancelNativeExportPreview=()=>{};
     e.context.currentExportContent=()=>{throw Error('Unsupported baseline must fail before content preparation');};e.ids.get('export-preview-mini-content').textContent='stale';
@@ -75,7 +75,19 @@ test('baseline format gating distinguishes Rust PDF from other PDF engines and c
     delete e.context.state.export.options.typography.baselineShiftPt;assert.equal(e.context.expFieldApplicable({type:'baseline'},[],format),false);
   }
   const e=environment(),h=e.context.window.ReadMDPublication.baseline;
-  for(const [format,engine]of [['docx',undefined],['pdf',undefined],['pdf','rust']])assert.equal(h.issue({typography:{baselineShiftPt:1}},format,engine),'');
+  for(const [format,engine]of [['docx',undefined],['pdf',undefined],['pdf','rust'],['pdf','typst']])assert.equal(h.issue({typography:{baselineShiftPt:1}},format,engine),'');
+});
+
+test('Typst baseline control is available before configuration, keeps exact signed points and clears to inheritance',()=>{
+  const e=environment(),helper=e.context.window.ReadMDPublication.baseline;
+  e.context.state.export.fmt='pdf';e.context.state.export.options.pdf={engine:'typst'};
+  assert.equal(e.context.expFieldApplicable({type:'baseline'},[],'pdf'),true);
+  const control=helper.mount(e.host,{getFormat:()=>({format:'pdf',engine:e.context.state.export.options.pdf.engine})});
+  assert(!Object.hasOwn(e.context.collectExportOptions().typography,'baselineShiftPt'));
+  for(const value of [3,-2.5,3.25,0]){control.input.value=String(value);control.input.emit('input');assert.equal(control.validate(),true);assert.equal(helper.issue(e.context.collectExportOptions(),'pdf','typst'),'');assert.equal(e.context.collectExportOptions().typography.baselineShiftPt,value);}
+  e.context.state.export.options.typography.baselineShiftPt=3.25;
+  control.input.value='';control.input.emit('input');assert(!Object.hasOwn(e.context.collectExportOptions().typography,'baselineShiftPt'));
+  assert.equal(e.context.expFieldApplicable({type:'baseline'},[],'pdf'),true);
 });
 test('a shared baseline preset remains savable without claiming the active output supports it',async()=>{
   const e=environment(),h=e.context.window.ReadMDPublication.baseline,calls=[];e.context.state.export.fmt='epub';e.context.state.export.options.typography.baselineShiftPt=-.125;

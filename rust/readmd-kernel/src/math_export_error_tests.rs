@@ -41,6 +41,25 @@ fn math_export_error_exact_codes_and_details_do_not_classify_raw_messages() {
 }
 
 #[test]
+fn math_default_conflicts_keep_only_bounded_known_structured_details() {
+    let code=crate::api_codes::MATH_DOCUMENT_DEFAULTS_CONFLICT;
+    let details=json!({"property":"smallFrac","firstFormula":1,"formula":2});
+    assert_eq!(super::error_body(&format!("{code}: {details}")),json!({"ok":false,"error_code":code,"details":details}));
+    for bad in [
+        json!({"property":"private/path","firstFormula":1,"formula":2}),
+        json!({"property":"smallFrac","firstFormula":0,"formula":2}),
+        json!({"property":"smallFrac","firstFormula":2,"formula":2}),
+        json!({"property":"smallFrac","firstFormula":3,"formula":2}),
+        json!({"property":"smallFrac","firstFormula":1,"formula":1_000_001}),
+        json!({"property":"smallFrac","firstFormula":"1","formula":2}),
+        json!({"property":"smallFrac","firstFormula":1,"formula":2,"extra":"private"}),
+    ] { assert!(super::error_body(&format!("{code}: {bad}"))["details"].is_string()); }
+    let duplicate=r#"{"property":"smallFrac","firstFormula":1,"formula":2,"property":"dispDef"}"#;
+    assert!(super::error_body(&format!("{code}: {duplicate}"))["details"].is_string());
+    assert_eq!(super::error_body(&format!("prefix {code}: {details}")),json!({"ok":false,"error":format!("prefix {code}: {details}")}));
+}
+
+#[test]
 fn math_export_error_http_and_pdf_preview_keep_budget_and_protect_owned_target() {
     let root = tempfile::tempdir().unwrap();
     let app = app(root.path());

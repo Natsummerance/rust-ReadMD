@@ -6,6 +6,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap};
 
+#[derive(Clone)]
 pub struct Instrumented {
     pub content: String,
     pub nonce: String,
@@ -25,6 +26,10 @@ pub struct PageMap {
     pub hits: Vec<Hit>,
     pub pages: Vec<[f64; 2]>,
 }
+#[path = "publication_pagination_baseline.rs"]
+mod baseline;
+pub use baseline::{BaselineLinkRequest, BaselineProtectedRequest, extract_and_clean_with_baseline,
+    extract_and_clean_with_baseline_and_paint};
 pub fn prefix(nonce: &str) -> String {
     format!("readmd-internal:publication/{nonce}/")
 }
@@ -230,6 +235,7 @@ pub fn extract_and_clean(bytes: &[u8], input: Instrumented) -> Result<(Vec<u8>, 
                 .and_then(|v| dictionary(&doc, v));
             let uri = action
                 .and_then(|d| d.get(b"URI").ok())
+                .and_then(|v| resolved(&doc, v))
                 .and_then(|v| v.as_str().ok())
                 .and_then(|v| std::str::from_utf8(v).ok());
             if let Some(target) = uri.and_then(|v| v.strip_prefix(&prefix)) {
@@ -246,6 +252,11 @@ pub fn extract_and_clean(bytes: &[u8], input: Instrumented) -> Result<(Vec<u8>, 
                 if let Ok(id) = value.as_reference() {
                     removed.insert(id);
                     annotation_targets.insert(id, target.to_string());
+                } else if a.get(b"A").ok().is_some_and(|v| matches!(v,Object::Reference(_)))
+                    || action.and_then(|d|d.get(b"URI").ok()).is_some_and(|v|matches!(v,Object::Reference(_))) {
+                    // A direct annotation has no independent owning object;
+                    // do not infer exclusivity from a containing page ID.
+                    return Err("typst_invalid_output".into());
                 }
                 if let Ok(n) = a.get(b"StructParent").and_then(Object::as_i64) {
                     parents.insert(n);
@@ -256,6 +267,7 @@ pub fn extract_and_clean(bytes: &[u8], input: Instrumented) -> Result<(Vec<u8>, 
         }
         page_annotations.push((id, keep));
     }
+    let private_actions = baseline::exclusive_temporary_actions(&doc, &removed)?;
     // A real hyperlink overrides the outer temporary URI over its own glyphs.
     // Recover those rectangles through the PDF's actual tagged parent chain,
     // keeping the original action intact rather than guessing from text.
@@ -397,7 +409,7 @@ pub fn extract_and_clean(bytes: &[u8], input: Instrumented) -> Result<(Vec<u8>, 
                 .map(|_| *id)
         })
         .collect::<Vec<_>>();
-    for id in removed.into_iter().chain(objrs) {
+    for id in removed.into_iter().chain(objrs).chain(private_actions) {
         doc.objects.remove(&id);
     }
     let mut output = Vec::new();

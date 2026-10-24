@@ -1,0 +1,857 @@
+{
+  "date": "2026-10-07",
+  "version": "0.0.5",
+  "status": "local-candidate-not-published",
+  "dirtyWorkingTree": true,
+  "credentialsLogged": false,
+  "dailyConfigUnchanged": true,
+  "syntheticMaterialsOnly": true,
+  "research": {
+    "documentFeatureComparison": {
+      "products": 28,
+      "editorComponents": 4
+    },
+    "furtherDocumentAndSelectedSourceReview": [
+      "Obsidian",
+      "Typora",
+      "VS Code Markdown",
+      "MarkText",
+      "Joplin",
+      "Zettlr",
+      "SiYuan",
+      "Continue",
+      "Tabby"
+    ],
+    "allProductBenefitsImplemented": false,
+    "allProductsInstalled": false,
+    "newDependencies": false
+  },
+  "policy": {
+    "sameProviderOnly": true,
+    "fixedModelSilentFallback": false,
+    "automaticModelAttempts": 2,
+    "provenUsefulModelsBeforeUnverifiedAliases": true,
+    "coldCatalogBudgetSeconds": 2,
+    "automaticNewModelTransportSeconds": 8,
+    "fixedOrCurrentTransportSeconds": 20,
+    "clientDeadlineSeconds": 35,
+    "serverCancelAtSafePoints": true,
+    "nearbyContextCharacters": [
+      3000,
+      750
+    ],
+    "maxGenerationTokens": 128,
+    "serverCache": {
+      "entries": 32,
+      "seconds": 60
+    },
+    "desktopCache": {
+      "entries": 24,
+      "seconds": 60
+    },
+    "typingEffectOnlyReceivedText": true,
+    "typingEffectBudgetMs": 120,
+    "TabAcceptsVisibleTextOnly": true,
+    "noFileWrites": true
+  },
+  "initialFailures": {
+    "firstAttempt": [
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "Chinese research",
+        "passed": false,
+        "elapsedMs": 15191,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "cached": false,
+        "failure": "provider-or-completion-failed"
+      },
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "English writing",
+        "passed": false,
+        "elapsedMs": 3880,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "cached": false,
+        "failure": "provider-or-completion-failed"
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "Chinese research",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": false,
+        "elapsedMs": 12154,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "cached": false,
+        "failure": "provider-or-completion-failed"
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "English writing",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 8900,
+        "firstSuggestionMs": 8899,
+        "streaming": true,
+        "frames": 1,
+        "cached": false
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3496,
+        "firstSuggestionMs": 2845,
+        "streaming": true,
+        "frames": 14,
+        "cached": false
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "English writing",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3603,
+        "firstSuggestionMs": 2785,
+        "streaming": true,
+        "frames": 15,
+        "cached": false
+      }
+    ],
+    "secondAttempt": [
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 6225,
+        "firstSuggestionMs": 5383,
+        "streaming": true,
+        "frames": 3,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false
+      },
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "English writing",
+        "passed": false,
+        "elapsedMs": 10795,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "attemptedModels": [
+          "gemini-2.5-flash",
+          "gemini-3-flash"
+        ],
+        "cached": false,
+        "failure": "provider-or-completion-failed",
+        "errorCode": "ai_completion_empty"
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "Chinese research",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 9151,
+        "firstSuggestionMs": 9150,
+        "streaming": true,
+        "frames": 1,
+        "attemptedModels": [
+          "gemini-3.8-flash-tiered"
+        ],
+        "cached": false
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "English writing",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 6987,
+        "firstSuggestionMs": 6986,
+        "streaming": true,
+        "frames": 1,
+        "attemptedModels": [
+          "gemini-3.8-flash-tiered"
+        ],
+        "cached": false
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 115,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": true
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "English writing",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3409,
+        "firstSuggestionMs": 2652,
+        "streaming": true,
+        "frames": 17,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false
+      }
+    ],
+    "failuresRetained": true
+  },
+  "finalDebugComparison": {
+    "cases": [
+      {
+        "build": "baseline",
+        "mode": "same-model baseline",
+        "sample": "Chinese research",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 13056,
+        "firstSuggestionMs": null,
+        "streaming": false,
+        "frames": 0,
+        "cached": false,
+        "completion": "依赖客观、可验证的数据，而非个人直觉或预设。同时，要主动寻找反面证据，确保推导过程的严谨与透明。"
+      },
+      {
+        "build": "baseline",
+        "mode": "same-model baseline",
+        "sample": "English writing",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 12808,
+        "firstSuggestionMs": null,
+        "streaming": false,
+        "frames": 0,
+        "cached": false,
+        "completion": "gather empirical data, isolate confounding variables, and evaluate the observed outcomes against our predictions."
+      },
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3942,
+        "firstSuggestionMs": 3447,
+        "streaming": true,
+        "frames": 9,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false,
+        "completion": "尽量让数据说话，而非让结论先行。"
+      },
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "English writing",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3183,
+        "firstSuggestionMs": 2624,
+        "streaming": true,
+        "frames": 6,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false,
+        "completion": "gather relevant data first, then check whether the data supports or contradicts the claim."
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "Chinese research",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 14357,
+        "firstSuggestionMs": 14356,
+        "streaming": true,
+        "frames": 1,
+        "attemptedModels": [
+          "gemini-3.8-flash-tiered"
+        ],
+        "cached": false,
+        "completion": "依赖客观数据与可复现的事实。"
+      },
+      {
+        "build": "candidate",
+        "mode": "same-model optimized",
+        "sample": "English writing",
+        "model": "gemini-3.8-flash-tiered",
+        "passed": true,
+        "elapsedMs": 10224,
+        "firstSuggestionMs": 10151,
+        "streaming": true,
+        "frames": 2,
+        "attemptedModels": [
+          "gemini-3.8-flash-tiered"
+        ],
+        "cached": false,
+        "completion": "formulate a clear hypothesis and collect empirical observations."
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 120,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": true,
+        "completion": "尽量让数据说话，而非让结论先行。"
+      },
+      {
+        "build": "candidate",
+        "mode": "fixed fast model",
+        "sample": "English writing",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 118,
+        "firstSuggestionMs": null,
+        "streaming": true,
+        "frames": 0,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": true,
+        "completion": "gather relevant data first, then check whether the data supports or contradicts the claim."
+      }
+    ],
+    "cache": {
+      "passed": true,
+      "elapsedMs": 118,
+      "model": "claude-sonnet-4-6"
+    },
+    "baselineReused": true,
+    "passed": true
+  },
+  "releaseReal": {
+    "cases": [
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "Chinese research",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 4141,
+        "firstSuggestionMs": 3444,
+        "streaming": true,
+        "frames": 6,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false,
+        "completion": "尽量收集客观、可重复验证的数据，而非仅凭直觉下判断。"
+      },
+      {
+        "build": "candidate",
+        "mode": "automatic",
+        "sample": "English writing",
+        "model": "claude-sonnet-4-6",
+        "passed": true,
+        "elapsedMs": 3999,
+        "firstSuggestionMs": 3796,
+        "streaming": true,
+        "frames": 5,
+        "attemptedModels": [
+          "claude-sonnet-4-6"
+        ],
+        "cached": false,
+        "completion": "gather observations first, then check whether the data supports or contradicts the hypothesis."
+      }
+    ],
+    "cache": {
+      "passed": true,
+      "elapsedMs": 51,
+      "model": "claude-sonnet-4-6"
+    },
+    "passed": true
+  },
+  "verification": {
+    "rust": {
+      "libraryPassed": 1888,
+      "binaryPassed": 116,
+      "xtaskPassed": 12,
+      "ignored": 3
+    },
+    "desktopTestsPassed": 11,
+    "vscodeTestsPassed": 50,
+    "i18n": {
+      "locales": 46,
+      "keys": 2062,
+      "authoredNewTranslations": [
+        "zh-CN",
+        "zh-TW",
+        "en",
+        "ja"
+      ],
+      "otherNewTranslations": "English fallback"
+    },
+    "website": {
+      "passed": true,
+      "cases": [
+        {
+          "prefix": "",
+          "scheme": "light",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "",
+          "scheme": "dark",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "zh-cn/",
+          "scheme": "light",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "zh-cn/",
+          "scheme": "dark",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "zh-tw/",
+          "scheme": "light",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "zh-tw/",
+          "scheme": "dark",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "ja/",
+          "scheme": "light",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        },
+        {
+          "prefix": "ja/",
+          "scheme": "dark",
+          "width": 3840,
+          "height": 2160,
+          "duration": 9.6,
+          "mobileOverflow": false
+        }
+      ],
+      "errors": []
+    },
+    "seo": {
+      "canonicalPages": 53,
+      "atomFeed": true,
+      "sitemap": true
+    },
+    "builds": "offline debug and release",
+    "existingAiRegressionPassed": 7,
+    "existingAiRegressionBuild": "release",
+    "gates": {
+      "i18n": true,
+      "styles": true,
+      "wiring": true,
+      "assets": true,
+      "noPythonRuntime": true,
+      "bundledBoot": true,
+      "diffCheck": true
+    },
+    "mediaCopiesIdentical": true
+  },
+  "media": {
+    "application": {
+      "version": "0.0.5",
+      "realProvider": true,
+      "automaticModel": true,
+      "syntheticMaterials": true,
+      "fullReadMDWindow": true,
+      "dimensions": [
+        3840,
+        2160
+      ],
+      "waitAccelerated": false,
+      "events": [
+        {
+          "phase": "原稿",
+          "time": 0
+        },
+        {
+          "phase": "请求真实 AI",
+          "time": 0.756
+        },
+        {
+          "phase": "首段流式灰字",
+          "time": 5.285
+        },
+        {
+          "phase": "候选完成",
+          "time": 6.544
+        },
+        {
+          "phase": "Tab 接受",
+          "time": 7.551
+        },
+        {
+          "phase": "一次撤销",
+          "time": 8.661
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "type": "text/event-stream; charset=utf-8"
+        }
+      ],
+      "credentialsLogged": false,
+      "modelStatus": "自动补全 · claude-sonnet-4-6",
+      "stages": [
+        {
+          "at": 8219.600000023842,
+          "characters": 1,
+          "streaming": true
+        },
+        {
+          "at": 8242.800000011921,
+          "characters": 2,
+          "streaming": true
+        },
+        {
+          "at": 8264.700000017881,
+          "characters": 3,
+          "streaming": true
+        },
+        {
+          "at": 8315.200000017881,
+          "characters": 4,
+          "streaming": true
+        },
+        {
+          "at": 8341.600000023842,
+          "characters": 5,
+          "streaming": true
+        },
+        {
+          "at": 8361.90000000596,
+          "characters": 6,
+          "streaming": true
+        },
+        {
+          "at": 8414.700000017881,
+          "characters": 7,
+          "streaming": true
+        },
+        {
+          "at": 8458.200000017881,
+          "characters": 8,
+          "streaming": true
+        },
+        {
+          "at": 8511.90000000596,
+          "characters": 9,
+          "streaming": true
+        },
+        {
+          "at": 8533.700000017881,
+          "characters": 10,
+          "streaming": true
+        },
+        {
+          "at": 8564.700000017881,
+          "characters": 11,
+          "streaming": true
+        },
+        {
+          "at": 8587.300000011921,
+          "characters": 12,
+          "streaming": true
+        },
+        {
+          "at": 8608.700000017881,
+          "characters": 13,
+          "streaming": true
+        },
+        {
+          "at": 8616.600000023842,
+          "characters": 14,
+          "streaming": true
+        },
+        {
+          "at": 8637.90000000596,
+          "characters": 15,
+          "streaming": true
+        },
+        {
+          "at": 8660,
+          "characters": 16,
+          "streaming": true
+        },
+        {
+          "at": 8669.90000000596,
+          "characters": 17,
+          "streaming": true
+        },
+        {
+          "at": 8692.40000000596,
+          "characters": 18,
+          "streaming": true
+        },
+        {
+          "at": 8722.100000023842,
+          "characters": 19,
+          "streaming": true
+        },
+        {
+          "at": 8743,
+          "characters": 20,
+          "streaming": true
+        },
+        {
+          "at": 8767.100000023842,
+          "characters": 21,
+          "streaming": true
+        },
+        {
+          "at": 8788.800000011921,
+          "characters": 22,
+          "streaming": true
+        },
+        {
+          "at": 8820.300000011921,
+          "characters": 23,
+          "streaming": true
+        },
+        {
+          "at": 8841.90000000596,
+          "characters": 24,
+          "streaming": true
+        },
+        {
+          "at": 8862.800000011921,
+          "characters": 25,
+          "streaming": true
+        },
+        {
+          "at": 8872.40000000596,
+          "characters": 26,
+          "streaming": true
+        },
+        {
+          "at": 8917.5,
+          "characters": 27,
+          "streaming": true
+        },
+        {
+          "at": 8950.800000011921,
+          "characters": 27,
+          "streaming": true
+        },
+        {
+          "at": 8965.90000000596,
+          "characters": 28,
+          "streaming": true
+        },
+        {
+          "at": 8987.800000011921,
+          "characters": 29,
+          "streaming": true
+        },
+        {
+          "at": 9030.700000017881,
+          "characters": 30,
+          "streaming": true
+        },
+        {
+          "at": 9070.800000011921,
+          "characters": 31,
+          "streaming": true
+        },
+        {
+          "at": 9092,
+          "characters": 32,
+          "streaming": true
+        },
+        {
+          "at": 9114,
+          "characters": 33,
+          "streaming": true
+        },
+        {
+          "at": 9123.800000011921,
+          "characters": 34,
+          "streaming": true
+        },
+        {
+          "at": 9145.100000023842,
+          "characters": 35,
+          "streaming": true
+        },
+        {
+          "at": 9166.100000023842,
+          "characters": 36,
+          "streaming": true
+        },
+        {
+          "at": 9179.90000000596,
+          "characters": 37,
+          "streaming": true
+        },
+        {
+          "at": 9201.100000023842,
+          "characters": 38,
+          "streaming": true
+        },
+        {
+          "at": 9222.300000011921,
+          "characters": 39,
+          "streaming": true
+        },
+        {
+          "at": 9223.5,
+          "characters": 40,
+          "streaming": true
+        },
+        {
+          "at": 9245.200000017881,
+          "characters": 41,
+          "streaming": true
+        },
+        {
+          "at": 9266.700000017881,
+          "characters": 42,
+          "streaming": true
+        },
+        {
+          "at": 9271.800000011921,
+          "characters": 43,
+          "streaming": true
+        },
+        {
+          "at": 9292.800000011921,
+          "characters": 44,
+          "streaming": true
+        },
+        {
+          "at": 9302.5,
+          "characters": 45,
+          "streaming": true
+        },
+        {
+          "at": 9303.700000017881,
+          "characters": 46,
+          "streaming": false
+        }
+      ],
+      "originalConfigUnchanged": true,
+      "duration": 9.6,
+      "frameCount": 288,
+      "video": "ai-streaming-4K.mp4",
+      "firstGhostMs": 4529,
+      "sha256": "556af0eba070662d2cbf4a932b0318d1d39298a3b002ec451374e675fd0deb29",
+      "passed": true
+    },
+    "applicationPrivacy": {
+      "passed": true,
+      "frames": 39,
+      "findings": []
+    },
+    "website": {
+      "passed": true,
+      "dimensions": [
+        3840,
+        2160
+      ],
+      "actualWebsite": true,
+      "syntheticOnly": true,
+      "privatePathsVisible": false,
+      "duration": 12.333008,
+      "sha256": "f6fc951ec841df9db9a763bfe9dd1dbbd559478e80c51c2b962cd318c95921c1"
+    },
+    "websitePrivacy": {
+      "passed": true,
+      "frames": 50,
+      "findings": []
+    },
+    "oldPromoSha256": "aaeca03d10e89fba43af62f99cd8596e428a5776e3b9df7a6a944c6f8d018997",
+    "oldPromoUnchanged": true,
+    "originalRawFramesRemovedIndividually": true,
+    "notCommitted": true
+  },
+  "protectedUserFiles": {
+    "showcase/scripts/recipes.mjs": "bfe84f41d785b2797483795e9fae8cf99dab340f2e39e50530b57ac4e3e0b714",
+    "showcase/scripts/record.mjs": "1685f7a20e05625134982da48354ec490a8ad6cb234e15fbf18ead4e0fb4fa47"
+  },
+  "sourceHashes": {
+    "rust/readmd-kernel/src/ai_completion.rs": "d0622f8637289af00143a60cafa3aeca2c9806bddf4d6c17238dfd4029842c42",
+    "rust/readmd-kernel/src/ai.rs": "4c042f76973ad3f5ace731229920dcc6a927db6c20ad60de9879e52a5c59521e",
+    "rust/readmd-kernel/src/ai_providers.rs": "4ee169b5413f26d68401cbb5eb83d335db068be92b19e2a4f271f825c2b2a3b5",
+    "rust/readmd-kernel/src/server.rs": "2886413856114d7dc5df35b2c3518ac0a6c41965ed0099def4b9cd2d78ee9725",
+    "assets/js/features/ai-inline.js": "6e600876f04017a7a92a755f7606f196dc215d08198a6e7bedf2f759ef7586c2",
+    "assets/js/features/ai.js": "f2e4ee2caa3f28bbb269a3fd3fad8f2c4a76d69aba6aa17ed0717943b1962a3f",
+    "assets/css/panels.css": "c186e20b3a7aef3bbdb924f8c8aed4bc94318c11cc15aa944bd792cb8db89660",
+    "assets/readmd.boot.js": "0d88184148c9d2e1c9900e23f82b0f772f141511388374df8a3002b705fe125e",
+    "packages/vscode-extension/src/completion.ts": "b4255f9949ed89c0530e5bc4b8d687f8e1d1ea155b986b4fb50355fc177f705a",
+    "website/tools/build-ai-pages.mjs": "8c699d005b652661d3ffa17f28e72413082fd78eff07214ab6b4faad26036b74"
+  },
+  "releaseBinarySha256": "8b9326f9803b85dfc28bd524c9b64c5056891f67eede423b19448dddc8563334",
+  "limitations": [
+    "Small latency samples, not a speed or model quality guarantee.",
+    "Same Gemini Chinese request was slower in the final comparison.",
+    "Gateway may buffer streams; visual reveal never invents unseen content.",
+    "Third-party generation cannot be forcibly interrupted.",
+    "VS Code native completion item is not desktop SSE rendering.",
+    "OHOS SDK/device and other native platforms still need acceptance.",
+    "Previously rejected cleanup paths are retained; no deletion workaround."
+  ]
+}

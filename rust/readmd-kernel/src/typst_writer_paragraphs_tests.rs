@@ -37,7 +37,7 @@ fn typst_line_spacing_rejects_explicit_local_container_and_nonparagraph_stories(
     for block in [Block::Quote(vec![styled(paragraph("Q"))]),
         Block::List{ordered:false,start:1,items:vec![crate::md_ast::ListItem{task:None,blocks:vec![styled(paragraph("L"))]}]},
         Block::FootnoteDef{label:"n".into(),blocks:vec![styled(paragraph("N"))]},
-        styled(Block::Heading{level:1,id:"h".into(),inlines:vec![Inline::Text("Heading".into())]}),
+        styled(Block::Heading{level:1,id:"h".into(),inlines:vec![Inline::Text("Heading".into())],numbering:None}),
         styled(Block::Math("x".into()))] {
         let doc=Document{blocks:vec![block],..Default::default()};
         assert_eq!(typography::validate_typst_document(&doc,&json!({})),Err(typography::UNSUPPORTED));
@@ -71,7 +71,7 @@ fn typst_no_typed_spacing_keeps_original_native_paragraph_and_keeplines_source()
 fn typst_global_body_mode_does_not_change_metadata_heading_containers_or_csl() {
     use crate::publication_rich::{RichBibliography,RichBibliographyItem,RichNode};
     let bib=RichBibliography{title:"References".into(),items:vec![RichBibliographyItem{key:"a".into(),first_field:vec![],rich:vec![RichNode::text("Bibliography own spacing.")]}],hanging_indent:false,line_spacing:3,entry_spacing:2,source_span:None};
-    let mut doc=Document{blocks:vec![Block::Heading{level:1,id:"h".into(),inlines:vec![Inline::Text("Heading".into())]},
+    let mut doc=Document{blocks:vec![Block::Heading{level:1,id:"h".into(),inlines:vec![Inline::Text("Heading".into())],numbering:None},
         paragraph("Typed body."),Block::Quote(vec![paragraph("Quote own story.")]),
         Block::List{ordered:false,start:1,items:vec![crate::md_ast::ListItem{task:None,blocks:vec![paragraph("List own story.")]}]},
         Block::Bibliography(bib)],..Default::default()};
@@ -125,7 +125,7 @@ fn typst_math_inside_unmeasured_vertical_or_decoration_transform_is_explicitly_u
 
 fn context() -> GeometryContext {
     GeometryContext{marker:"readmd-p04-0123456789abcdef0123456789abcdef:".into(),
-        paragraphs:vec![paragraphs::ParagraphRequest{index:3,id:Some("p3".into()),requested:18.}]}
+        paragraphs:vec![paragraphs::ParagraphRequest{index:3,id:Some("p3".into()),requested:18.}],note_count:0}
 }
 fn details() -> Value {json!({"coordinateSpace":"pdfParagraphLine","blockIndex":3,"blockId":"p3","line":1,"mode":"exact","requestedPt":18,"requiredPt":25.192,"availableWidthPt":493.22,"availableHeightPt":728.5})}
 fn diagnostic(context: &GeometryContext, source: &Path, value: Value) -> String {
@@ -173,7 +173,7 @@ fn typst_geometry_native_relative_stderr_is_bound_to_the_actual_worker_directory
     let dir=tempfile::tempdir().unwrap();let source=dir.path().join("document.typ");
     let actual=include_str!("../tests/fixtures/typst-paragraph-native-relative.stderr");
     let context=GeometryContext{marker:"readmd-p04-b3909ca834e240cba3334428f25cdfe6:".into(),
-        paragraphs:vec![paragraphs::ParagraphRequest{index:1,id:None,requested:18.}]};
+        paragraphs:vec![paragraphs::ParagraphRequest{index:1,id:None,requested:18.}],note_count:0};
     let error=context.diagnostic(actual,&source,dir.path()).unwrap();
     let response=crate::latex_compile::error_body(&error);
     assert_eq!(response["error_code"],"publication_layout_geometry");

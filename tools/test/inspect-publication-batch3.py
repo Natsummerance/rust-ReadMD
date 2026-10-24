@@ -207,7 +207,7 @@ def attach_outline_ink(document, page, evidence, cache, proof, include_visible=T
     """Bind each actual trace glyph to its actual embedded font outline."""
     import importlib.util
     helper_file = Path(__file__).with_name("publication-smallcaps-proof.py")
-    expected = "667fa0a83b29ce38b0ec2d432441ccd8a149b60e24d1d6d4045772b43b815ff9"
+    expected = "e4dc26067ecbae5341731bea2a6d3d5591c544281480aba41a4972526f64ef80"
     assert sha(helper_file.read_bytes()) == expected, "Reviewed outline/CID helper changed"
     if "module" not in cache:
         spec = importlib.util.spec_from_file_location("readmd_qa_outline_binding", helper_file)

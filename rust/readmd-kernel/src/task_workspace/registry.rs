@@ -65,11 +65,23 @@ pub(super) fn candidates(root: &Path) -> io::Result<Vec<String>> {
             return Err(busy());
         }
         let item = item?;
-        if let Some(name) = item.file_name().to_str().filter(|name| valid_uuid(name)) {
-            names.push(name.to_owned());
+        let name = item.file_name();
+        if let Some(name) = name.to_str() {
+            if valid_uuid(name) {
+                names.push(name.to_owned());
+            } else if let Some(id) = name
+                .strip_prefix("retiring-")
+                .and_then(|name| name.strip_suffix(".jsonl"))
+                .filter(|id| valid_uuid(id))
+            {
+                // Scheduling only: recovery must validate the complete WAL and
+                // exact identities before this path grants any deletion rights.
+                names.push(id.to_owned());
+            }
         }
     }
     names.sort_unstable();
+    names.dedup();
     Ok(names)
 }
 
@@ -274,6 +286,27 @@ impl Cursor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retirement_links_schedule_one_task_and_reserve_only_once() {
+        let root = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        fs::create_dir(root.path().join(&id)).unwrap();
+        let witness = witness_path(root.path(), &id);
+        fs::write(&witness, b"Unknown scheduling metadata is not ownership").unwrap();
+        fs::write(root.path().join("retiring-foreign.jsonl"), b"Keep").unwrap();
+        let names = candidates(root.path()).unwrap();
+        assert_eq!(names, vec![id.clone()]);
+        assert_eq!(
+            reserved(root.path(), &names, "profile").unwrap(),
+            default_budget()
+        );
+        fs::remove_dir(root.path().join(&id)).unwrap();
+        assert_eq!(candidates(root.path()).unwrap(), vec![id]);
+        assert_eq!(
+            fs::read(witness).unwrap(),
+            b"Unknown scheduling metadata is not ownership"
+        );
+    }
     #[test]
     fn declarations_and_free_space_fail_closed() {
         assert!(fits(

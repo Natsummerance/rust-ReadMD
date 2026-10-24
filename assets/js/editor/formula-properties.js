@@ -5,15 +5,43 @@ window.ReadMDMathProperties=(()=>{
   const isMath=n=>!n.namespace||n.namespace==='http://schemas.openxmlformats.org/officeDocument/2006/math';
   const isSpacing=n=>n.namespace==='http://www.w3.org/1998/Math/MathML'&&local(n)==='mspace';
   function flatten(n){return[n,...n.content.filter(p=>p.type==='element').flatMap(p=>flatten(p.value))];}
+  const wordNS='http://schemas.openxmlformats.org/wordprocessingml/2006/main',mathNS='http://schemas.openxmlformats.org/officeDocument/2006/math';
+  const wordLabels={b:'editor.bold',i:'editor.italic',sz:'toolbar.fontSize',color:'export.codeColor'};
+  const wordLabel=kind=>tr(wordLabels[kind])+(kind==='sz'?' (½ pt)':kind==='color'?' (RRGGBB)':'');
+  const elements=n=>(n?.content||[]).filter(p=>p.type==='element').map(p=>p.value);
+  const wordValue=(n,name)=>Object.entries(n.attributes).find(([key])=>local({name:key})===name&&n.attribute_namespaces?.[key]===wordNS)?.[1];
+  function wordRunSources(root,nodes){
+    const ids=new Map(),sources=new Map();for(const n of nodes)ids.set(n.id,(ids.get(n.id)||0)+1);
+    function visit(n,path){
+      path=[...path,n];
+      if(n.namespace===wordNS&&Object.hasOwn(wordLabels,local(n))&&typeof n.id==='string'&&n.id&&ids.get(n.id)===1){
+        const pr=path.at(-2),owner=path.at(-3),parents=path.slice(0,-2);
+        const leaf=Object.keys(n.attributes).every(key=>key==='xmlns'||key.startsWith('xmlns:')||local({name:key})==='val'&&n.attribute_namespaces?.[key]===wordNS)
+          &&Object.keys(n.attributes).filter(key=>local({name:key})==='val'&&n.attribute_namespaces?.[key]===wordNS).length<=1
+          &&n.content.every(p=>p.type!=='element'&&(p.type!=='text'||!p.value.trim()));
+        const rpr=pr?.namespace===wordNS&&local(pr)==='rPr'&&Object.keys(pr.attributes).every(key=>key==='xmlns'||key.startsWith('xmlns:'))
+          &&elements(owner).filter(c=>c.namespace===wordNS&&local(c)==='rPr').length===1
+          &&elements(pr).filter(c=>c.namespace===wordNS&&local(c)===local(n)).length===1;
+        const style=path.length===5&&root.name==='#root'&&path[1].namespace===wordNS&&local(path[1])==='styles'
+          &&owner?.namespace===wordNS&&local(owner)==='style'&&['paragraph','character'].includes(wordValue(owner,'type'))&&!!wordValue(owner,'styleId');
+        const direct=parents.length>=3&&root.name==='#root'&&owner?.namespace===mathNS&&['r','ctrlPr'].includes(local(owner))
+          &&parents.slice(1).every(c=>c.namespace===mathNS)&&parents.some(c=>c.namespace===mathNS&&local(c)==='oMath')
+          &&parents.slice(2).every((c,i)=>schema.elements.find(e=>e.element===local(parents[i+1]))?.children?.includes(local(c)));
+        if(leaf&&rpr&&(style||direct)&&path.every(c=>typeof c.id==='string'&&c.id&&ids.get(c.id)===1))sources.set(n.id,{kind:style?'style':'direct',styleId:style?wordValue(owner,'styleId'):null});
+      }
+      for(const child of elements(n))visit(child,path);
+    }
+    visit(root,[]);return sources;
+  }
   async function mount(d,activate,change){
     const details=document.createElement('details');details.className='formula-properties';
     const summary=document.createElement('summary');summary.textContent=tr('ai.advanced');details.append(summary);d.host.append(details);
     let selection;const matrixColumns=new Map(),matrixPositions=new Map();
     async function refresh(restoreFocus){
       if(!d.rich)return;
-      const nodes=flatten(d.rich.root),core=new Set(schema.coreObjects.map(n=>n.element));
+      const nodes=flatten(d.rich.root),core=new Set(schema.coreObjects.map(n=>n.element)),wordSources=wordRunSources(d.rich.root,nodes);
       const argumentsAndParagraphs=new Set(['e','num','den','deg','sub','sup','lim','fName','oMathPara']);
-      const items=nodes.filter(n=>isSpacing(n)||isMath(n)&&(core.has(local(n))||local(n)==='r'||argumentsAndParagraphs.has(local(n))));
+      const items=nodes.filter(n=>wordSources.has(n.id)||isSpacing(n)||isMath(n)&&(core.has(local(n))||local(n)==='r'||argumentsAndParagraphs.has(local(n))));
       const oldBody=details.querySelector('.formula-property-body'),openGroups=new Set(Array.from(oldBody?.querySelectorAll('[data-math-container][open]')||[],g=>g.dataset.mathContainer));
       const scroll=oldBody?.querySelector('.formula-property-fields')?.scrollTop||0;
       const focused=restoreFocus||(oldBody?.contains(document.activeElement)?document.activeElement.dataset.mathFocus:null);
@@ -21,7 +49,7 @@ window.ReadMDMathProperties=(()=>{
       const select=document.createElement('select');select.setAttribute('aria-label',tr('formula.category.structures'));
       select.dataset.mathFocus='structure';
       const counts=new Map();
-      for(const n of items){const o=document.createElement('option'),kind=local(n),index=(counts.get(kind)||0)+1;counts.set(kind,index);o.value=n.id;o.textContent=tr(isSpacing(n)?'formula.mathml.mspace':'formula.omml.'+kind)+' '+index;o.title=kind+' · '+n.id;select.append(o);}
+      for(const n of items){const o=document.createElement('option'),kind=local(n),index=(counts.get(kind)||0)+1,word=wordSources.get(n.id);counts.set(kind,index);o.value=n.id;o.textContent=(word?wordLabel(kind):tr(isSpacing(n)?'formula.mathml.mspace':'formula.omml.'+kind))+(word?' · '+tr('formula.wordRun.'+word.kind):'')+' '+index;o.title=kind+' · '+(word?.styleId?word.styleId+' · ':'')+n.id;select.append(o);}
       if(items.some(n=>n.id===selection))select.value=selection;
       else select.value=(items.find(n=>core.has(local(n)))||items.find(isSpacing)||items.find(n=>local(n)==='r')||items[0])?.id||'';
       selection=select.value;
@@ -31,6 +59,25 @@ window.ReadMDMathProperties=(()=>{
       function button(text,operation){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>patch(operation).catch(()=>{d.message.textContent=tr('formula.invalid');});return b;}
       function fields(){
         fieldsBox.replaceChildren();const n=items.find(n=>n.id===select.value);if(!n)return;
+        const word=wordSources.get(n.id);
+        if(word){
+          // Edit only the author's existing Word leaf. Effective cascade values
+          // and rendered glyph owners never supply an attribute or source ID.
+          const kind=local(n),value=wordValue(n,'val'),boolean=kind==='b'||kind==='i';
+          const row=document.createElement('label'),label=document.createElement('span'),input=document.createElement('input');
+          row.dataset.mathWordRun=kind;label.textContent=wordLabel(kind);input.type='text';input.autocomplete='off';input.spellcheck=false;input.maxLength=4096;
+          input.setAttribute('aria-label',tr('formula.wordRun.'+word.kind)+' · '+wordLabel(kind));input.dataset.mathFocus='word.'+n.id+'.val';input.value=value??'';
+          input.onchange=()=>{
+            if(input.value===(value??'')&&!input.hasAttribute('aria-invalid'))return;
+            if(!boolean&&input.value===''){input.setAttribute('aria-invalid','true');d.valid=false;d.apply.disabled=true;d.message.textContent=apiMessage({error_code:'math_invalid_property'},'formula.invalid');return;}
+            return patch({operation:'set_attribute',node_id:n.id,name:'w:val',value:input.value===''?null:input.value}).catch(error=>{
+              input.setAttribute('aria-invalid','true');d.message.textContent=apiMessage({error_code:error.message},'formula.invalid');
+            });
+          };
+          row.append(label,input);fieldsBox.append(row);
+          if(boolean){const hint=document.createElement('small');hint.textContent=tr('formula.wordRun.'+word.kind+'Toggle');hint.dataset.mathWordHint=word.kind;fieldsBox.append(hint);}
+          return;
+        }
         if(isSpacing(n)){
           // Keep lexical units/whitespace and explicit zero intact. The same
           // bounded source-owned SetAttribute API validates every edit; this

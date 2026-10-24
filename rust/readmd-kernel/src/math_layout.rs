@@ -19,6 +19,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use ttf_parser::{GlyphId, OutlineBuilder};
 
+#[cfg(test)]
+#[path="math_layout_word_paragraph_tests.rs"]
+mod word_paragraph_tests;
+
 /// Positions and sizes below are in em units of the formula's base size
 /// (1.0 = font size) until [`Formula::draw`] scales them to points.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1175,7 +1179,7 @@ impl<'f> Ctx<'f> {
         let mut boxes=Vec::new();
         for n in root.children.iter().filter(|n|!n.is_props()){
             if n.is_math()&&n.name=="oMathPara"{boxes.push(self.display_paragraph(root,n,st));}
-            else{let(left,right)=style.margins(self.available_width);let width=self.available_width.map(|v|((v-left-right)/self.base_points).max(0.0));let mut b=self.display_equation(n,st,width,omml::math_wrap_style(root),style.alignment);b.h+=style.before/self.base_points;b.d+=style.after/self.base_points;boxes.push(b);}
+            else{boxes.push(self.display_paragraph(root,n,st));}
         }
         stack_math_boxes(boxes,style.alignment,style.intra/self.base_points)
     }
@@ -2184,6 +2188,7 @@ fn layout_source_using_fonts(latex: &str, xml: Option<&str>, display: bool, size
     let generated = if xml.is_none() { crate::math_spacing::latex_spacing_xml(latex,display).ok()? } else { None };
     let xml = xml.or(generated.as_deref());
     let root = match xml {Some(xml)=>omml::parse(xml).ok()?,None=>omml::from_latex(latex,display).ok()?};
+    omml::validate_display_context(&root,display,if display{width}else{None}).ok()?;
     let f = selected.or_else(|| fonts_for(&root,crate::publication_fonts::needs_cjk(xml.unwrap_or(latex))))?;
     let mut ctx = Ctx::new(&f,size);
     ctx.available_width=if display{width}else{None};
@@ -3017,7 +3022,8 @@ mod tests {
             assert!((spaced.height-group.height-6.).abs()<1e-8);
             assert!((spaced.depth-group.depth-12.-18.).abs()<1e-8);
             assert!((glyphs(&group)[6].1-glyphs(&spaced)[6].1-18.).abs()<1e-8);
-            let disabled=render(r#"<m:dispDef m:val="0"/><m:preSp m:val="120"/><m:postSp m:val="240"/><m:interSp m:val="360"/>"#,"centerGroup");assert_eq!(disabled.items,group.items);
+            let disabled=render(r#"<m:dispDef m:val="0"/><m:preSp m:val="120"/><m:postSp m:val="240"/><m:interSp m:val="360"/>"#,"centerGroup");
+            assert_eq!(disabled.items,spaced.items);assert_eq!(disabled.height,spaced.height);assert_eq!(disabled.depth,spaced.depth);
         }
         let paragraphs=format!("<m:oMathPara>{}</m:oMathPara><m:oMathPara>{}</m:oMathPara>",equation("a"),equation("b"));
         let normal=layout_source("",Some(&paragraphs),true,12.).unwrap();

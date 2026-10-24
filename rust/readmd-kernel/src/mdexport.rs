@@ -1108,11 +1108,23 @@ pub fn export_html(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
+    let resolved = crate::publication_profile::resolve_for_format("html",content,options).map_err(|e|e.code)?;
+    let options = resolved.values();
+    crate::publication_profile::preflight("html",content,options).map_err(|e|e.code)?;
+    crate::math_word_projection::validate_source(content,"html")?;
     crate::publication_typography::validate_export("html", content, options).map_err(str::to_string)?;
     crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
     crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
     let mut warns: Vec<String> = Vec::new();
-    if crate::publication_blocks::has_overrides(content){warns.push("publication_local_style_unsupported".into());}
+    if crate::publication_blocks::has_overrides(content){
+        let unsupported=crate::publication_blocks::analyze(content)?.nodes.iter().any(|node|{
+            let caption_author=node.kind=="caption"&&crate::publication_blocks::author_style(&node.style).is_ok_and(|author|!author.is_empty());
+            let consumed=caption_author&&node.style.as_object().is_some_and(|style|style.keys().all(|key|matches!(key.as_str(),"id"|"text")))
+                &&node.style["text"].as_object().is_some_and(|text|text.keys().all(|key|matches!(key.as_str(),"author"|"size")));
+            !consumed&&node.style.as_object().is_some_and(|style|style.keys().any(|key|key!="id"))
+        });
+        if unsupported{warns.push("publication_local_style_unsupported".into());}
+    }
     // `__init__.py:131` runs before `html_render.render`, so image warnings
     // precede the asset warnings.
     let style=crate::export_styles::sanitize(options);
@@ -1127,6 +1139,9 @@ pub fn export_html(
     let publication=crate::publication::prepare_with_options(content,base_dir,&publication_options).map_err(|e|e.code.to_string())?;
     warns.extend(publication.warnings);
     let reader_content=publication.projection.reader_content(content).map_err(|e|e.code.to_string())?;
+    let reader_content=crate::cross_references::project(&reader_content).content;
+    let author_text=crate::publication_inline_view::project(&reader_content,options)?;
+    let reader_content=&author_text.content;
     let reader_content=section_flow_source(&reader_content,&style)?;
     if crate::publication_sections::has_sections(&crate::md_ast::parse(content)){warns.push("publication_layout_paged_unsupported".into());}
     let math=crate::html_math::lower_dsl(crate::md_ast::source_without_front_matter(&reader_content),style["typography"]["size"].as_f64().unwrap_or(12.0))?;
@@ -1137,6 +1152,7 @@ pub fn export_html(
     };
     let html_markdown=if front.is_empty(){math.markdown.to_string()}else{format!("{front}\n\n{}",math.markdown)};
     let embedded_md = embed_images_for_html(&html_markdown, base_dir, &mut warns);
+    let footnotes = crate::html_footnotes::render(&embedded_md)?;
 
     let marked_js = read_asset_file(assets_dir, "marked.min.js");
     let mathjax_js = read_asset_file(assets_dir, "mathjax/tex-svg.js");
@@ -1151,6 +1167,7 @@ pub fn export_html(
     let mut css = build_export_css(&display_options);
     if options["htmlTheme"].as_str()==Some("dark") {css.push_str("\n:not(pre) > code { color:#ff99b0; }");}
     if math.formulas>0{css.push('\n');css.push_str(crate::html_math::CSS);}
+    if footnotes.is_some(){css.push('\n');css.push_str(crate::html_footnotes::CSS);}
     // `plugin_runtime.highlighted_blocks` / `.keywords` are optional-plugin
     // bridges: `run_plugin('pygments', ..., default={})` and
     // `run_plugin('jieba', ..., default='')` return their default whenever the
@@ -1181,6 +1198,23 @@ pub fn export_html(
         .replace("__MARKED__", &marked_js)
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
+    if let Some(footnotes)=footnotes{
+        // The original source stays available for offline copy/recovery. Only
+        // real typed notes select this pre-rendered path; plain HTML retains
+        // the legacy marked template and its exact bytes.
+        let rendered=format!("<script type=\"application/json\" id=\"readmd-footnote-html\">{}</script>\n",json_dump_escaped(&footnotes));
+        html=html.replacen("<script type=\"application/json\" id=\"md-source\">",&format!("{rendered}<script type=\"application/json\" id=\"md-source\">"),1);
+        html=html.replacen("try { html = marked.parse(md, { gfm: true, breaks: true }); }","try { html = JSON.parse(document.getElementById('readmd-footnote-html').textContent); }",1);
+    }
+    if !author_text.runs.is_empty(){
+        let runtime=include_str!("../../../assets/js/reader/author-text.js");
+        let model=serde_json::to_string(&author_text).map_err(|_|crate::publication_inline_text::INVALID)?.replace('<',"\\u003c");
+        // Notes and body share one DOM before author styles are authorized.
+        // Applying before MathJax also gives formula metrics their final CSS.
+        let hook="\n  var root = document.getElementById('content');\n";
+        let script=format!("{hook}{runtime}\nwindow.ReadMDAuthorText.apply(root,{model});\n");
+        html=html.replacen(hook,&script,1);
+    }
     if metadata.declared{
         let tags=format!("<meta name=\"author\" content=\"{}\"><meta name=\"keywords\" content=\"{}\"><meta name=\"readmd-publication\" content=\"{}\">",esc_attr(&metadata.author_text()),esc_attr(&metadata.keywords.join("; ")),esc_attr(&serde_json::to_string(&metadata).map_err(|_|"publication_metadata_type")?));
         html=html.replacen("</head>",&format!("{tags}\n</head>"),1);
@@ -1412,14 +1446,15 @@ pub(crate) fn export_tex_with_resources(
 pub(crate) fn export_tex_with_geometry(
     content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str,
 ) -> Result<(ExportResult, bool, Option<crate::latex_writer::ParagraphGeometry>), String> {
-    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
-    export_tex_with_geometry_and_lines(content,base_dir,out_path,options,source_name,resolved.line_context())
+    let resolved = crate::publication_profile::resolve_for_format("tex",content,options).map_err(|e|e.code)?;
+    export_tex_with_geometry_and_lines(content,base_dir,out_path,resolved.values(),source_name,resolved.line_context())
 }
 
 pub(crate) fn export_tex_with_geometry_and_lines(
     content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,
     lines:crate::publication_typography::LineContext,
 ) -> Result<(ExportResult,bool,Option<crate::latex_writer::ParagraphGeometry>),String> {
+    crate::math_word_projection::validate_source(content,"tex")?;
     crate::publication_typography::validate_export("tex", content, options).map_err(str::to_string)?;
     crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
     crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
@@ -1783,6 +1818,11 @@ pub(crate) fn epub_build_entries(
         Value::String(s) => s.clone(),
         _ => return Err(EPI_TYPE_ERROR.to_string()),
     };
+    if !options.is_null()&&!options.is_object(){return Err(EPI_TYPE_ERROR.to_string());}
+    let profile = crate::publication_profile::resolve_for_format("epub",&markdown,options).map_err(|e|e.code)?;
+    let options = profile.values();
+    crate::publication_profile::preflight("epub",&markdown,options).map_err(|e|e.code)?;
+    crate::math_word_projection::validate_source(&markdown,"epub")?;
     crate::epub_writer::validate_numeric_request(options).map_err(str::to_string)?;
     let mut navigation_request=crate::publication_navigation::preflight_export("epub",&markdown,options).map_err(|e|e.code.to_string())?;
     crate::publication_typography::validate_export("epub", &markdown, options).map_err(str::to_string)?;
@@ -1870,6 +1910,7 @@ pub(crate) fn epub_build_entries(
 
     // Local images are packaged once each as `OEBPS/images/img_N.ext`.
     let mut warns: Vec<String> = publication.warnings;
+    warns.extend(crate::cross_references::format_warnings(&markdown,"epub"));
     if let Some(warning)=crate::publication_navigation::localize(&mut navigation_request,&book_lang){warns.push(warning.into());}
     if crate::publication_sections::has_sections(&source_doc){warns.push("publication_layout_paged_unsupported".into());}
     warns.extend(crate::publication_metadata_formats::warnings(&metadata));
@@ -2186,6 +2227,13 @@ pub(crate) fn epub_build_entries(
         let compress = href.ends_with(".svg");
         entries.push(ZipEntry { path: format!("OEBPS/{href}"), data, compress });
     }
+    // This builder also serves the dedicated MCP and legacy byte endpoints,
+    // which do not pass through the common export warning collector.
+    // Append capability losses after existing warnings and retain the first
+    // occurrence of each complete message, including its exact parameters.
+    warns.extend(crate::publication_layout::warnings("epub",&opts));
+    let mut seen_warnings=std::collections::HashSet::new();
+    warns.retain(|warning|seen_warnings.insert(warning.clone()));
     Ok((entries, warns))
 }
 
@@ -2329,6 +2377,10 @@ pub fn export_epub(
     options: &Value,
     source_name: &str,
 ) -> Result<ExportResult, String> {
+    let resolved = crate::publication_profile::resolve_for_format("epub",content,options).map_err(|e|e.code)?;
+    let options = resolved.values();
+    crate::publication_profile::preflight("epub",content,options).map_err(|e|e.code)?;
+    crate::math_word_projection::validate_source(content,"epub")?;
     crate::publication_typography::validate_export("epub", content, options).map_err(str::to_string)?;
     let title = options
         .pointer("/epub/title")
@@ -2414,10 +2466,13 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 /// DOCX export built on the shared AST ([`crate::md_ast`]) and
 /// [`crate::docx_writer`], applying the sanitized export style.
 pub fn export_docx(content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str) -> Result<ExportResult, String> {
-    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    let resolved = crate::publication_profile::resolve(content,options).map_err(|e|e.code)?;
     export_docx_with_lines(content, base_dir, out_path, resolved.values(), source_name, resolved.line_context())
 }
 fn export_docx_with_lines(content: &str, base_dir: &str, out_path: &str, options: &Value, source_name: &str, lines: crate::publication_typography::LineContext) -> Result<ExportResult, String> {
+    crate::publication_profile::preflight("docx",content,options).map_err(|e|e.code)?;
+    let math_style=crate::export_styles::sanitize(options);
+    crate::math_word_projection::validate_source_with_style(content,"docx",&math_style)?;
     crate::publication_typography::validate_export("docx", content, options).map_err(str::to_string)?;
     crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
     crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
@@ -2444,10 +2499,12 @@ fn export_docx_with_lines(content: &str, base_dir: &str, out_path: &str, options
             Resolved::Inline { mime, data } => Some((inline_image_extension(&mime).to_string(), data)),
         }
     };
-    let pkg = crate::docx_writer::build_with_lines(&doc, options, source_name, &images, lines);
+    let mut pkg = crate::docx_writer::build_with_lines(&doc, options, source_name, &images, lines);
     if pkg.parts.is_empty(){return Err(pkg.warns.first().cloned().unwrap_or_else(||"publication_metadata_type".into()));}
+    crate::convert::docx_numbering_import::attach_source_info(&mut pkg.parts,content)?;
     if pkg.warns.iter().any(|s| s == crate::api_codes::DOCX_NESTED_FOOTNOTE) { return Err(crate::api_codes::DOCX_NESTED_FOOTNOTE.into()); }
     if pkg.warns.iter().any(|s|s=="publication_local_style_invalid"){return Err("publication_local_style_invalid".into());}
+    crate::publication_docx_citations::attach_context(&mut pkg.parts,content,base_dir,options)?;
     let entries: Vec<ZipEntry> = pkg
         .parts
         .into_iter()
@@ -2703,7 +2760,7 @@ pub fn export_pdf(
     source_name: &str,
     assets_dir: &Path,
 ) -> Result<ExportResult, String> {
-    let resolved=crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    let resolved=crate::publication_profile::resolve_for_format("pdf",content,options).map_err(|e|e.code)?;
     export_pdf_with_lines(content,base_dir,out_path,resolved.values(),source_name,assets_dir,resolved.line_context())
 }
 
@@ -2711,6 +2768,8 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
 {
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::RustPdf,content,options).map_err(str::to_string)?;
+    crate::pdf_render::validate_caption_author_source(content,options)?;
+    crate::math_word_projection::validate_source_at_width(content,"rust",Some(crate::pdf_render::DocGeometry::from_style(&crate::export_styles::sanitize(options)).avail))?;
     crate::publication_blocks::validate_source(content).map_err(str::to_string)?;
     crate::publication_blocks::validate_geometry(content,&crate::export_styles::sanitize(options)).map_err(str::to_string)?;
     // No HTML/MathJax intermediary. Resolve an otherwise empty cover title
@@ -2734,7 +2793,9 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     crate::publication_sections::resolve(&doc,&style).map_err(str::to_string)?;
     if crate::publication_sections::has_sections(&doc){return Err("publication_sections_require_paged_engine".into());}
     let baseline_used=crate::publication_typography::baseline::used(content,options).map_err(str::to_string)?;
-    let blocks = if crate::publication_typography::validate_input(content,options).map_err(str::to_string)? || baseline_used {
+    let notes=crate::rust_pdf_notes::Projection::analyze(&doc,&style)?;
+    let blocks = if let Some(notes)=notes.as_ref(){crate::md_ast::to_rust_note_render_json(&doc.blocks,notes,front_count,&style)?}
+    else if crate::publication_typography::validate_input(content,options).map_err(str::to_string)? || baseline_used {
         if baseline_used && front_count>0 {
             // Generated metadata paragraphs own their typography. Project the
             // actual AST prefix separately; AST count is not a flat-JSON count.
@@ -2759,56 +2820,28 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     let resolver = PdfImageResolver::new(base_dir, &tmpdir);
     let resolve = |src: &str| -> Option<String> { resolver.resolve_src(src) };
 
-    // `fd, output_tmp = tempfile.mkstemp(prefix='.<name>.readmd-',
-    // suffix=EXTS['pdf'], dir=output_dir)` then `os.replace(output_tmp,
-    // out_path)`: the caller's file is only replaced once a complete, non-empty
-    // PDF exists, and a failed render leaves whatever was there untouched.
-    let out = Path::new(out_path);
-    let out_dir = match out.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
-        _ => PathBuf::from("."),
-    };
-    let out_name = out.file_name().and_then(|s| s.to_str()).unwrap_or("document.pdf");
-    let stage_path = out_dir
-        .join(format!(".{}.readmd-{}.pdf", out_name, pdf_random_tail()))
-        .to_string_lossy()
-        .to_string();
-
     // `stage = 'formula'` warnings, ahead of the render exactly as in CPython,
     // where `formula.prepare(blocks, style, warns)` runs before `pdf_render`.
     let mut warns = pdf_math_fallback_warns(&blocks);
     warns.extend(citation_warnings);
     warns.extend(crate::publication_metadata_formats::warnings(&metadata));
-    if let Err(e) =
-        crate::pdf_render::render_with_lines(&blocks, &stage_path, &style, &tmpdir, &resolve, &mut warns, lines)
-    {
-        let _ = fs::remove_file(&stage_path);
-        let _ = fs::remove_dir_all(&tmpdir_path);
-        // `PdfError` derives `Debug` only — there is no `Display` impl — so the
-        // CPython exception text has to come out of the `message` field.
-        return Err(e.message);
-    }
-
-    // `if not os.path.isfile(output_tmp) or os.path.getsize(output_tmp) <= 0:
-    //     raise RuntimeError('导出器未生成有效文件')`
-    if fs::metadata(&stage_path).map(|m| m.len()).unwrap_or(0) == 0 {
-        let _ = fs::remove_file(&stage_path);
-        let _ = fs::remove_dir_all(&tmpdir_path);
-        return Err("导出器未生成有效文件".to_string());
-    }
-
-    if metadata.declared {
-        let updated=fs::read(&stage_path).map_err(|_|"publication_metadata_pdf".to_string())
-            .and_then(|bytes|crate::publication_metadata_formats::pdf_metadata(&bytes,&metadata))
-            .and_then(|bytes|crate::content::write_bytes_atomic(Path::new(&stage_path),&bytes).map_err(|_|"publication_metadata_pdf".to_string()));
-        if let Err(error)=updated{let _=fs::remove_file(&stage_path);let _=fs::remove_dir_all(&tmpdir_path);return Err(error);}
-    }
-    if let Err(e) = fs::rename(&stage_path, out_path) {
-        let _ = fs::remove_file(&stage_path);
-        let _ = fs::remove_dir_all(&tmpdir_path);
-        return Err(format!("Failed to finalize PDF: {}", e));
-    }
+    // Render and attach metadata before the only publication. The shared
+    // atomic writer also records fresh file identities when the caller owns a
+    // task workspace; a plain stage-file rename would leave an unknown file.
+    let published = (|| -> Result<(), String> {
+        let mut bytes = crate::pdf_render::render_bytes_with_lines(
+            &blocks, &style, &tmpdir, &resolve, &mut warns, lines,
+        ).map_err(|error| error.message)?;
+        if bytes.is_empty() { return Err("导出器未生成有效文件".into()); }
+        if metadata.declared {
+            bytes = crate::publication_metadata_formats::pdf_metadata(&bytes, &metadata)?;
+        }
+        if crate::speech::cancelled() { return Err("cancelled".into()); }
+        crate::content::write_bytes_atomic(Path::new(out_path), &bytes)
+            .map_err(|error| format!("Failed to finalize PDF: {error}"))
+    })();
     let _ = fs::remove_dir_all(&tmpdir_path);
+    published?;
 
     // The renderer's own warnings (font substitution, unembeddable image) keep
     // their order; the resolver's are appended after them because `render`
@@ -2949,14 +2982,30 @@ pub(crate) fn section_flow_source(source:&str,style:&Value)->Result<String,Strin
     Ok(output)
 }
 pub fn export_document_with_data(format:&str,content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
-    let resolved = crate::publication_typography::ResolvedOptions::from_request(options).map_err(str::to_string)?;
+    let resolved = crate::publication_profile::resolve(content,options).map_err(|e|e.code)?;
     export_document_with_resolved_options(format, content, base_dir, out_path, &resolved, source_name, assets_dir, data_dir)
 }
+/// The built-in PDF's caption text capability is checked without resolving
+/// images, opening fonts, staging files or acquiring an engine lease. Dynamic
+/// shaping diagnostics keep their original bounded details across all APIs.
+pub(crate) fn validate_caption_author_export(format:&str,content:&str,options:&Value)->Result<(),String>{
+    if format.eq_ignore_ascii_case("pdf")&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust")){
+        crate::pdf_render::validate_caption_author_source(content,options)?;
+    }
+    Ok(())
+}
 pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    crate::publication_budget::run(format,resolved.values(),||export_within_budget(format,content,base_dir,out_path,resolved,source_name,assets_dir,data_dir))
+}
+fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    let effective = crate::publication_profile::for_format(format,content,resolved.clone()).map_err(|e|e.code)?;
+    let resolved = &effective;
     let options = resolved.values();
     let fmt = format.to_lowercase();
+    crate::publication_profile::preflight(&fmt,content,options).map_err(|e|e.code)?;
     crate::publication_navigation::preflight_export(&fmt,content,options).map_err(|e|e.code.to_string())?;
     crate::publication_typography::validate_export(&fmt, content, options).map_err(str::to_string)?;
+    validate_caption_author_export(&fmt,content,options)?;
     // Reject a saturated managed engine before hashing fonts, resolving
     // resources or transforming a long document. The engine still reserves
     // its real slot later, so this cheap check cannot overcommit a race.
@@ -2967,14 +3016,19 @@ pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,bas
         };
         if let Some(id)=managed{crate::capability_process::check_worker_capacity(data_dir,id).map_err(|e|e.code)?;}
     }
+    let math_target=if fmt=="pdf"{options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust")}else{&fmt};
+    let math_style=crate::export_styles::sanitize(options);
+    crate::math_word_projection::validate_source_with_style(content,math_target,&math_style)?;
     let managed_pdf=fmt=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust"|"typst"));
-    let _fonts=if managed_pdf||matches!(fmt.as_str(),"epub"|"html"){Some(crate::publication_fonts::scope(data_dir,assets_dir))}else{None};
+    let budget=crate::publication_budget::capture();let checked=||budget.api();
+    let _fonts=if managed_pdf||matches!(fmt.as_str(),"epub"|"html"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
     if managed_pdf{crate::publication_fonts::require_cjk(&format!("{content}{}",options))?;}
     let (prepared,warnings)=prepare_export_source(&fmt,content,base_dir,options)?;
+    budget.check()?;
     let content=prepared.as_str();
     let mut result=match fmt.as_str() {
         "html" => export_html(content, base_dir, out_path, options, source_name, assets_dir),
-        "tex" | "latex" => export_tex_with_geometry_and_lines(content,base_dir,out_path,options,source_name,resolved.line_context()).map(|v|v.0),
+        "tex" | "latex" => export_tex_with_geometry_and_lines(content,base_dir,out_path,resolved.values(),source_name,resolved.line_context()).map(|v|v.0),
         "epub" => export_epub(content, base_dir, out_path, options, source_name),
         "docx" => export_docx_with_lines(content, base_dir, out_path, options, source_name, resolved.line_context()),
         "pdf" if options.pointer("/pdf/engine").and_then(Value::as_str)==Some("typst") => crate::typst_compile::export_pdf(content,base_dir,out_path,options,source_name,data_dir,assets_dir),
@@ -2983,7 +3037,14 @@ pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,bas
         _ => Err(format!("Unsupported export format: {}", fmt)),
     }?;
     result.warns.get_or_insert_with(Vec::new).extend(warnings);
+    result.warns.get_or_insert_with(Vec::new).extend(crate::cross_references::format_warnings(content,&fmt));
     result.warns.get_or_insert_with(Vec::new).extend(crate::publication_layout::warnings(&fmt,options));
+    // The writer and shared capability resolver may diagnose the same exact
+    // fallback. Preserve order and distinct parameters without repeated UI rows.
+    if let Some(warnings)=&mut result.warns {
+        let mut seen=std::collections::HashSet::new();
+        warnings.retain(|warning|seen.insert(warning.clone()));
+    }
     Ok(result)
 }
 
@@ -2994,6 +3055,7 @@ pub(crate) fn image_resource_revision(source:&str,base:&str)->Option<String>{
     let mut resolver=HtmlImageResolver::new(base);let mut digest=Sha256::new();let mut seen=std::collections::BTreeSet::new();
     let mut budget=128*1024*1024u64;let mut buffer=[0u8;32768];
     for event in pulldown_cmark::Parser::new_ext(source,pulldown_cmark::Options::all()){
+        if crate::publication_budget::check().is_err(){return None;}
         let pulldown_cmark::Event::Start(pulldown_cmark::Tag::Image{dest_url,..})=event else{continue};
         if !seen.insert(dest_url.to_string()){continue;}if seen.len()>4096{return None;}
         digest.update((dest_url.len() as u64).to_le_bytes());digest.update(dest_url.as_bytes());
@@ -3001,7 +3063,7 @@ pub(crate) fn image_resource_revision(source:&str,base:&str)->Option<String>{
             let mut file=fs::File::open(file).ok()?;let before=file.metadata().ok()?;let size=before.len();
             if size>budget{return None;}budget-=size;digest.update(size.to_le_bytes());
             let mut read=0u64;
-            loop{let count=file.read(&mut buffer).ok()?;if count==0{break;}read+=count as u64;if read>size{return None;}digest.update(&buffer[..count]);}
+            loop{if crate::publication_budget::check().is_err(){return None;}let count=file.read(&mut buffer).ok()?;if count==0{break;}read+=count as u64;if read>size{return None;}digest.update(&buffer[..count]);}
             let after=file.metadata().ok()?;
             if read!=size||after.len()!=size||before.modified().ok()!=after.modified().ok(){return None;}
         }else{digest.update(b"inline-remote-or-missing");}
@@ -5644,9 +5706,8 @@ mod tests {
         );
         assert!(text.trim_end().ends_with("%%EOF"), "trailer must be complete");
 
-        // Output/temp-file semantics: the `.readmd-XXXXXXXX.pdf` staging file is
-        // renamed into place, so nothing is left beside the deliverable, and no
-        // intermediate `.html` is written at all (the browser lane needed one).
+        // Publication leaves only the final deliverable beside the caller's
+        // output, with no intermediate HTML or atomic-write temporary file.
         let leftovers: Vec<String> = std::fs::read_dir(dir.path())
             .unwrap()
             .filter_map(|e| e.ok().and_then(|e| e.file_name().to_str().map(|s| s.to_string())))
@@ -5661,6 +5722,7 @@ mod tests {
         // comment lines (which discuss the deleted lane on purpose) are skipped
         // and only real statements are held to it.
         let src = include_str!("mdexport.rs");
+        let production = src.split("#[cfg(test)]").next().unwrap();
         for (idx, line) in src.lines().enumerate() {
             let t = line.trim_start();
             if t.starts_with("//") {
@@ -5676,7 +5738,7 @@ mod tests {
         }
         // The positive half: the PDF endpoint really does hand off to `pdf_render`.
         assert!(
-            src.contains("crate::pdf_render::render("),
+            production.contains("crate::pdf_render::render_bytes_with_lines("),
             "export_pdf must route through the native renderer"
         );
     }
@@ -5703,6 +5765,27 @@ mod tests {
         let bytes = fs::read(&out).unwrap();
         assert_eq!(&bytes[0..5], b"%PDF-");
         assert!(!bytes.starts_with(b"pre-existing"));
+    }
+
+    #[test]
+    fn native_pdf_cancelled_and_failed_renders_preserve_the_previous_pdf() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("Protected.pdf");
+        export_pdf("# Original\n\nRetain this real PDF.\n", "", output.to_str().unwrap(),
+            &serde_json::json!({}), "Original", directory.path()).unwrap();
+        let original = fs::read(&output).unwrap();
+        assert!(lopdf::Document::load_mem(&original).is_ok());
+        let cancelled = crate::speech::with_cancel(std::sync::Arc::new(|| true), || {
+            export_pdf("# Cancelled\n\nNew formula $x^2$.\n", "", output.to_str().unwrap(),
+                &serde_json::json!({}), "Cancelled", directory.path())
+        });
+        assert_eq!(cancelled.unwrap_err(), "cancelled");
+        assert_eq!(fs::read(&output).unwrap(), original);
+        let rejected = export_pdf("# Invalid\n\nMissing glyph \u{10ffff}.\n", "", output.to_str().unwrap(),
+            &serde_json::json!({}), "Invalid", directory.path()).unwrap_err();
+        assert!(rejected.starts_with("pdf_missing_glyph:"), "{rejected}");
+        assert_eq!(fs::read(&output).unwrap(), original);
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]
@@ -6448,11 +6531,16 @@ mod tests {
         }
         let doc = got.iter().find(|e| e.0 == "word/document.xml").expect("document.xml");
         let xml = inflate(&doc.5);
-        assert_eq!(xml.matches("<m:oMathPara").count(), 1, "one display formula: {xml}");
-        assert!(
-            xml.contains(&crate::latex2omml::latex_to_omml("x = y", true)),
-            "display latex must be strip()ed like parser.py:232: {xml}"
-        );
+        fn math_nodes<'a>(node:&'a crate::omml::Node,name:&str,found:&mut Vec<&'a crate::omml::Node>){
+            if node.is_math()&&node.name==name{found.push(node);}
+            for child in &node.children{math_nodes(child,name,found);}
+        }
+        let native=crate::omml::parse(&xml).unwrap();let mut displays=Vec::new();math_nodes(&native,"oMathPara",&mut displays);
+        assert_eq!(displays.len(),1,"one actual display object, excluding its oMathParaPr: {xml}");
+        let display=displays[0];let mut glyphs=Vec::new();math_nodes(display,"t",&mut glyphs);
+        assert_eq!(glyphs.iter().map(|node|node.text.as_str()).collect::<String>(),"x=y","display latex must be trimmed and preserve its actual glyphs");
+        assert_eq!(display.child("oMathParaPr").and_then(|node|node.child("jc")).and_then(|node|node.attr("val")),Some("centerGroup"));
+        let mut formulas=Vec::new();math_nodes(&native,"oMath",&mut formulas);assert_eq!(formulas.len(),3,"two inline objects and one display object: {xml}");
         assert_eq!(
             xml.matches(&crate::latex2omml::latex_to_omml("a+b", false)).count(),
             1,

@@ -15,6 +15,105 @@ fn layers(value: &Value) -> Result<Vec<&Value>, PdfError> {
     Ok(values)
 }
 
+/// Check only the text the author-aware caption route will consume. This is
+/// deliberately separate from inline_markup_ctx: that routine registers
+/// fonts and can resolve images or lay out formulas before finding a later
+/// unsupported text leaf. The same itemizer/error runs are safe to use here.
+fn caption_author_text(block:&Value,ordinary:bool,options:&Value,visited:&mut usize)->Result<(),PdfError>{
+    let attributes=layers(block.get("publicationStyle").unwrap_or(&Value::Null))?;
+    let has_author=attributes.iter().try_fold(false,|present,attributes|
+        crate::publication_blocks::author_style(attributes).map(|author|present||!author.is_empty()).map_err(invalid))?;
+    if !has_author{return Ok(());}
+    if block["type"]!="caption"{return Err(invalid(crate::publication_inline_text::INVALID));}
+    if !ordinary{return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}
+    // style() is a pure layer resolver. Its actual effective pair is also
+    // the title's block-base reset target, including legacy text.size/flags.
+    let caption=style(block,0,PStyle::base("Helvetica",11.,17.6),options,&mut Vec::new())?;
+    let base=caption.author_text.expect("nonempty caption author establishes a pair");
+    #[derive(Clone,Copy)]
+    struct Cascade{author:crate::publication_inline_text::ResolvedTextStyle,base:crate::publication_inline_text::ResolvedTextStyle,depth:u16}
+    enum Pending<'a>{Nodes(&'a Value,Cascade),Node(&'a Value,Cascade),Normalized(&'a Value,Cascade)}
+    let code_size=(plain_float(dig(options,&["code","size"]),9.5)-0.5).max(6.);
+    let context=|cascade:Cascade,code:bool|InlineCtx{
+        face:if code{FaceStyle::Mono}else{FaceStyle::Regular},color:Rgb::rgb(0.,0.,0.),href:None,size:cascade.author.size,
+        base_face:Face::Helvetica,text_style:TextStyle{author:Some(cascade.author),author_base:Some(cascade.base),author_depth:cascade.depth,..TextStyle::default()}
+    };
+    let mut pending=vec![Pending::Nodes(&block["text"],Cascade{author:base,base,depth:0})];
+    while let Some(task)=pending.pop(){
+        if crate::speech::cancelled(){return Err(invalid("cancelled"));}
+        let(node,cascade)=match task{
+            Pending::Nodes(value,cascade)=>{
+                match value{
+                    Value::Array(values)=>{
+                        if values.len().saturating_add(pending.len())>crate::publication_inline_text::MAX_NODES.saturating_sub(*visited){return Err(invalid(crate::publication_inline_text::BUDGET));}
+                        pending.extend(values.iter().rev().map(|value|Pending::Node(value,cascade)));
+                    },
+                    Value::Null=>(),other=>pending.push(Pending::Node(other,cascade)),
+                }
+                continue;
+            },
+            Pending::Normalized(value,cascade)=>{
+                if value.is_array(){pending.push(Pending::Nodes(value,cascade));continue;}
+                // Use the renderer's exact scalar/null normalization. Objects
+                // here become visible JSON text, rather than trusted nodes.
+                let normalized=normalize_inline(value);
+                for node in normalized.as_array().expect("normalization is an array"){
+                    *visited+=1;if *visited>crate::publication_inline_text::MAX_NODES{return Err(invalid(crate::publication_inline_text::BUDGET));}
+                    check_run_errors(&author_text_runs(&json_text(&node["v"]),&context(cascade,false),false,code_size))?;
+                }
+                continue;
+            },
+            Pending::Node(node,cascade)=>(node,cascade),
+        };
+        *visited+=1;if *visited>crate::publication_inline_text::MAX_NODES{return Err(invalid(crate::publication_inline_text::BUDGET));}
+        match node.get("t").and_then(Value::as_str).unwrap_or(""){
+            "text"|"code"=>{
+                let code=node["t"]=="code";
+                check_run_errors(&author_text_runs(&json_text(node.get("v").unwrap_or(&Value::Null)),&context(cascade,code),code,code_size))?;
+            },
+            "author-styled"=>{
+                if usize::from(cascade.depth)>=crate::publication_inline_text::MAX_DEPTH{return Err(invalid(crate::publication_inline_text::BUDGET));}
+                let author=crate::publication_inline_text::AuthorTextStyle::from_value(node.get("text").unwrap_or(&Value::Null)).map_err(invalid)?;
+                let effective=author.resolve(&cascade.author,&cascade.base);
+                if [effective.size,effective.size_cs].iter().any(|size|!size.is_finite()||*size<=0.||*size>crate::publication_text_runs::MAX_RENDER_PT){return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}
+                pending.push(Pending::Normalized(node.get("v").unwrap_or(&Value::Null),Cascade{author:effective,depth:cascade.depth+1,..cascade}));
+            },
+            "bold"|"italic"|"strike"|"styled"|"display"=>pending.push(Pending::Normalized(node.get("v").unwrap_or(&Value::Null),cascade)),
+            "link"=>pending.push(Pending::Normalized(node.get("text").unwrap_or(&Value::Null),cascade)),
+            "br"=>{
+                let ctx=context(cascade,false);
+                check_run_errors(&[author_atom_run(Run{content:RunContent::Break{hard:true},face:ctx.face,size:ctx.size,color:ctx.color,href:None,text_style:ctx.text_style})])?;
+            },
+            "math"=>return Err(invalid(crate::publication_inline_text::UNSUPPORTED)),
+            // Image alt/src are metadata until an actual resolver succeeds.
+            // Predicting a fallback here would fetch a resource or reject
+            // text that the real renderer may never display. Unknown nodes
+            // likewise retain the renderer's ignored-node behavior.
+            _=>(),
+        }
+    }
+    Ok(())
+}
+
+/// Source preflight uses this same pure caption pass before publication/asset
+/// preparation. The direct JSON renderer invokes it within validate() below.
+pub(super) fn validate_caption_author(blocks:&Value,options:&Value)->Result<(),PdfError>{
+    let mut visited=0;let mut pending=vec![(blocks,true)];
+    while let Some((block,parent_ordinary))=pending.pop(){
+        if crate::speech::cancelled(){return Err(invalid("cancelled"));}
+        let container=matches!(block.get("type").and_then(Value::as_str),Some("quote"|"list"|"table"|"code"|"footnote"|"bibliography"));
+        let ordinary=parent_ordinary&&block.get("publicationContext").and_then(Value::as_str).is_none_or(|value|value=="body");
+        match block{
+            Value::Array(values)=>pending.extend(values.iter().rev().map(|value|(value,parent_ordinary))),
+            Value::Object(values)=>{
+                caption_author_text(block,ordinary,options,&mut visited)?;
+                pending.extend(values.iter().rev().filter(|(key,_)|key.as_str()!="publicationStyle").map(|(_,value)|(value,ordinary&&!container)));
+            },_=>(),
+        }
+    }
+    Ok(())
+}
+
 /// Direct JSON callers do not get to bypass the same scope/capability checks
 /// used by Markdown export. Context is an internal projection hint, never a
 /// validation exemption: an unsupported story is still rejected.
@@ -23,6 +122,7 @@ pub(super) fn validate(blocks: &Value, style: &Value) -> Result<(), PdfError> {
     typography::global_line_spacing(style).map_err(invalid)?;
     if typography::tracking::global(style).map_err(invalid)?.is_some() { return Err(invalid(typography::tracking::UNSUPPORTED)); }
     let mut declarations = 0usize;
+    let mut author_text_nodes=0;
     let mut pending=vec![(blocks,true)];
     while let Some((block,parent_ordinary))=pending.pop() {
         if crate::speech::cancelled() { return Err(invalid("cancelled")); }
@@ -39,6 +139,24 @@ pub(super) fn validate(blocks: &Value, style: &Value) -> Result<(), PdfError> {
             return Err(invalid(typography::INVALID));
         }
         for attributes in layers(block.get("publicationStyle").unwrap_or(&Value::Null))? {
+            let author=crate::publication_blocks::author_style(attributes).map_err(invalid)?;
+            if !author.is_empty() {
+                declarations+=1;if declarations>crate::publication_blocks::MAX_NODES{return Err(invalid(crate::publication_inline_text::BUDGET));}
+                if block["type"]!="caption" {return Err(invalid(crate::publication_inline_text::INVALID));}
+                if !ordinary||author.rtl==Some(true) {return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}
+                for axis in [author.size,author.size_cs]{if let crate::publication_inline_text::CascadeSize::Points(points)=axis{
+                    if points.to_pt()>crate::publication_text_runs::MAX_RENDER_PT{return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}
+                }}
+                let mut values=vec![&block["text"]];let mut count=0;
+                while let Some(value)=values.pop(){
+                    count+=1;if count>crate::publication_inline_text::MAX_NODES{return Err(invalid(crate::publication_inline_text::BUDGET));}
+                    if crate::speech::cancelled(){return Err(invalid("cancelled"));}
+                    match value{
+                        Value::Object(map)=>{if map.get("t").is_some_and(|v|v=="math"){return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}values.extend(map.values());},
+                        Value::Array(children)=>values.extend(children),_=>(),
+                    }
+                }
+            }
             if typography::tracking::local(&attributes["text"]).map_err(invalid)?.is_some() {
                 return Err(invalid(typography::tracking::UNSUPPORTED));
             }
@@ -63,6 +181,7 @@ pub(super) fn validate(blocks: &Value, style: &Value) -> Result<(), PdfError> {
                     text.len()==1&&text[0]["t"]=="image") {return Err(invalid(typography::UNSUPPORTED));}
             }
         }
+        caption_author_text(block,ordinary,style,&mut author_text_nodes)?;
     }
     Ok(())
 }
@@ -96,7 +215,15 @@ pub(super) fn style(block: &Value, index: usize, mut st: PStyle, options: &Value
     st.baseline_shift = if body { typography::baseline::global(options).map_err(invalid)? } else { None };
     if st.line_spacing.is_none() && st.baseline_shift.is_none() && block.get("publicationStyle").is_none() { return Ok(st); }
     st.publication_block = Some((index + 1, block.get("id").and_then(Value::as_str).map(str::to_owned)));
-    for attributes in layers(block.get("publicationStyle").unwrap_or(&Value::Null))? {
+    let attributes=layers(block.get("publicationStyle").unwrap_or(&Value::Null))?;
+    let has_author=attributes.iter().try_fold(false,|present,attributes|crate::publication_blocks::author_style(attributes).map(|author|present||!author.is_empty()).map_err(invalid))?;
+    if has_author {
+        // Keep legacy captions unchanged. Only the new author vocabulary uses
+        // the common structural caption base; each axis then resolves alone.
+        st.leading *= 10./st.size;st.size=10.;
+        st.author_text=Some(crate::publication_inline_text::ResolvedTextStyle::base(10.,10.));
+    }
+    for attributes in attributes {
         if let Some(id) = attributes.get("id").and_then(Value::as_str) {
             st.publication_block = Some((index + 1, Some(id.to_owned())));
         }
@@ -104,6 +231,17 @@ pub(super) fn style(block: &Value, index: usize, mut st: PStyle, options: &Value
         let paragraph = &attributes["paragraph"];
         st.baseline_shift = typography::baseline::resolve(st.baseline_shift, text, true).map_err(invalid)?;
         if let Some(size) = text["size"].as_f64() { st.leading *= size/st.size; st.size = size; }
+        if has_author {
+            let mut base=st.author_text.unwrap();
+            if let Some(size)=text["size"].as_f64(){
+                base.size=size;base.size_cs=size;
+                base.size_origin=crate::publication_inline_text::SizeOrigin::Inherited;
+                base.size_cs_origin=crate::publication_inline_text::SizeOrigin::Inherited;
+            }
+            let effective=crate::publication_blocks::author_style(attributes).map_err(invalid)?.resolve(&base,&base);
+            if effective.rtl==Some(true)||[effective.size,effective.size_cs].iter().any(|size|!size.is_finite()||*size<=0.||*size>crate::publication_text_runs::MAX_RENDER_PT){return Err(invalid(crate::publication_inline_text::UNSUPPORTED));}
+            st.leading *= effective.size/st.size;st.size=effective.size;st.author_text=Some(effective);
+        }
         if let Some(color) = text["color"].as_str().and_then(hex_parse) { st.color = color; }
         let bold = text["bold"].as_bool().unwrap_or(matches!(st.face, FaceStyle::Bold | FaceStyle::BoldItalic));
         let italic = text["italic"].as_bool().unwrap_or(matches!(st.face, FaceStyle::Italic | FaceStyle::BoldItalic));
@@ -141,6 +279,7 @@ pub(super) fn inline(nodes: &Value, options: &Value, tmpdir: &str,
 {
     let context = InlineCtx { face: st.face, color: st.color, href: None, size: st.size,
         base_face: face_for_logical(&st.font_name), text_style: TextStyle {
+            author:st.author_text,author_base:st.author_text,
             baseline_shift_pt: st.baseline_shift.map(|value| value.requested_pt()).unwrap_or(0.), ..TextStyle::default() } };
     inline_markup_ctx(nodes, options, tmpdir, resolve, &context)
 }

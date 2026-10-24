@@ -20,6 +20,7 @@ mod staging;
 mod legacy;
 mod history;
 mod paths;
+mod space;
 static INSTALL: Mutex<()> = Mutex::new(());
 // Resource scopes enter under the same lock as install/repair/uninstall, then
 // publish their busy lease before releasing it. A file-path lease must not
@@ -160,9 +161,14 @@ pub(crate) fn resource_lock(assets: &Path, id: &str) -> ApiResult<Value> {
 /// deliberately not a readiness check: execution still takes a validated
 /// lease, and missing/uninstalled runtimes must invalidate cached previews.
 pub(crate) fn runtime_revision(data: &Path, assets: &Path, id: &str) -> ApiResult<String> {
+    runtime_revision_checked(data,assets,id,&||Ok(()))
+}
+pub(crate) fn runtime_revision_checked(data:&Path,assets:&Path,id:&str,check:&(dyn Fn()->ApiResult<()>+Sync))->ApiResult<String>{
+    check()?;
     let selected = spec(id)?;
     let expected = lock_for(assets, selected)?;
-    prepare_legacy_access(data, assets, selected, &expected, &|| Ok(()))?;
+    prepare_legacy_access(data, assets, selected, &expected, check)?;
+    check()?;
     let _process=crate::capability_process::try_acquire(data,id,crate::capability_process::Mode::Shared)?
         .ok_or_else(||ApiError::new(409,busy_error(id)))?;
     if transactions_blocking(&root_for(data, selected), assets, selected, &expected)? { return Err(ApiError::new(409,"capability_install_busy")); }
@@ -177,6 +183,7 @@ pub(crate) fn runtime_revision(data: &Path, assets: &Path, id: &str) -> ApiResul
     if !metadata.is_file() || metadata.file_type().is_symlink() || Some(metadata.len()) != first["size"].as_u64() {
         return Err(error());
     }
+    check()?;
     Ok(hash(&serde_json::to_vec(&expected).map_err(|_| error())?))
 }
 fn checked_files(lock: &Value) -> ApiResult<&Vec<Value>> {
@@ -602,13 +609,13 @@ pub fn installed(app: &App) -> bool {
         .is_ok()
 }
 pub(crate) fn typst_engine(data: &Path, assets: &Path) -> Result<(PathBuf, String), String> {
-    let s = spec("typst").map_err(|_| "typst_engine_unavailable")?;
-    let expected = lock_for(assets, s).map_err(|_| "typst_engine_unavailable")?;
-    prepare_legacy_access(data,assets,s,&expected,&||Ok(())).map_err(|_|"typst_engine_unavailable")?;
-    let _process=crate::capability_process::try_acquire(data,"typst",crate::capability_process::Mode::Shared)
-        .ok().flatten().ok_or("typst_engine_unavailable")?;
-    let dir = root_for(data, s).join(s.version);
-    validate(&dir, &expected).map_err(|_| "typst_engine_unavailable")?;
+    typst_engine_checked(data,assets,&||Ok(())).map_err(|_|"typst_engine_unavailable".into())
+}
+pub(crate) fn typst_engine_checked(data:&Path,assets:&Path,check:&(dyn Fn()->ApiResult<()>+Sync))->ApiResult<(PathBuf,String)>{
+    check()?;
+    let s=spec("typst")?;
+    let expected=lock_for(assets,s)?;
+    let lease=lease_checked(data,assets,"typst",check)?;
     let name = if cfg!(windows) {
         "bin/typst.exe"
     } else {
@@ -618,8 +625,9 @@ pub(crate) fn typst_engine(data: &Path, assets: &Path) -> Result<(PathBuf, Strin
         .as_array()
         .and_then(|files| files.iter().find(|f| f["path"] == name))
         .and_then(|file| file["sha256"].as_str())
-        .ok_or("typst_engine_unavailable")?;
-    Ok((dir.join(name), fingerprint.into()))
+        .ok_or_else(error)?;
+    check()?;
+    Ok((lease.directory.join(name),fingerprint.into()))
 }
 pub(crate) fn ocr_engine(data: &Path, assets: &Path) -> Result<(PathBuf, PathBuf), String> {
     let selected = spec("ocr").map_err(|_| "ocr_no_engine")?;
@@ -1078,7 +1086,17 @@ fn operate(
         return Err(error());
     }
     let pack = pack.ok_or_else(error)?;
+    hooks.check()?;
+    // Hold profile-wide admission across extraction/probe/commit. Different
+    // capability writers in another process must not both spend the same
+    // observed free bytes. Resource readers keep their independent leases.
+    let _space_admission = crate::capability_process::install_admission(&app.paths.data_dir)?;
+    hooks.check()?;
     managed_parent(&app.paths.data_dir, selected, true)?;
+    let space_result = space::check(&pack_root, &expected);
+    // Cancellation wins even when it arrives during the native quota query.
+    hooks.check()?;
+    let installation_space = space_result?;
     (hooks.phase)("extracting");
     let staging = match pack {
         Input::Stream { mut reader, header } => {
@@ -1233,18 +1251,59 @@ fn operate(
         let cleanup = staging.cleanup();
         set_pdf(true);
         return ok_json(json!({"ok":true,"id":selected.id,"installed":true,"unchanged":true,
-            "unknown_files_preserved":cleanup.unknown,"cleanup_pending":cleanup.cleanup_pending}));
+            "unknown_files_preserved":cleanup.unknown,"cleanup_pending":cleanup.cleanup_pending,"installation_space":installation_space}));
     }
     let committed = replacement::commit(&staging.path(), &target, &expected)?;
     let cleanup = staging.cleanup();
     set_pdf(true);
     ok_json(json!({"ok":true,"id":selected.id,"installed":true,"repaired":committed.repaired,
-        "unknown_files_preserved":committed.unknown || cleanup.unknown,"cleanup_pending":committed.cleanup_pending || cleanup.cleanup_pending}))
+        "unknown_files_preserved":committed.unknown || cleanup.unknown,"cleanup_pending":committed.cleanup_pending || cleanup.cleanup_pending,"installation_space":installation_space}))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Explicit real-pack CLI fixture. Ordinary unit-test counts do not claim
+    /// this installation flow: the maintainer supplies owned paths and runs it.
+    #[test]
+    fn installation_space_offline_lifecycle_child() {
+        let Some(data) = std::env::var_os("READMD_SPACE_INSTALL_DATA") else { return; };
+        let data=PathBuf::from(data);
+        let assets=PathBuf::from(std::env::var_os("READMD_SPACE_INSTALL_ASSETS").expect("assets"));
+        let pack=PathBuf::from(std::env::var_os("READMD_SPACE_INSTALL_PACK").expect("offline pack"));
+        let workspace=data.join("documents");fs::create_dir_all(&workspace).unwrap();
+        let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&data,&workspace,&assets)).unwrap());
+        let sentinel=workspace.join("untouched.md");fs::write(&sentinel,b"Owned sentinel remains unchanged").unwrap();
+        let admission=crate::capability_process::install_admission(&data).unwrap();
+        let failure=install_file(&app,&pack,"fonts",&InstallHooks::direct()).err().unwrap();
+        assert_eq!(failure.code,"capability_install_busy");drop(admission);
+        let decode=|response:Response| {assert_eq!(response.status,200);serde_json::from_slice::<Value>(&response.body).unwrap()};
+        let installed=decode(install_file(&app,&pack,"fonts",&InstallHooks::direct()).unwrap());
+        assert_eq!(installed["installed"],true);
+        #[cfg(windows)] {
+            assert!(installed["installation_space"]["additional_bytes"].as_u64().unwrap()>installed["installation_space"]["expanded_bytes"].as_u64().unwrap());
+            assert!(installed["installation_space"]["allocation_unit"].as_u64().unwrap()>0);
+        }
+        let repeated=decode(install_file(&app,&pack,"fonts",&InstallHooks::direct()).unwrap());
+        assert_eq!(repeated["unchanged"],true);
+        let selected=spec("fonts").unwrap();let expected=lock_for(&assets,selected).unwrap();
+        let target=root_for(&data,selected).join(selected.version);
+        let font=checked_files(&expected).unwrap().iter().find_map(|entry|entry["path"].as_str().filter(|name|name.ends_with(".ttf"))).unwrap();
+        fs::write(target.join(font),b"Owned damaged font fixture").unwrap();
+        let cancel=||false;let phase=|_:&str|{};let progress=|_:crate::capability_archive::Progress|{};
+        let committing=||Err(ApiError::new(422,"cancelled"));
+        let hooks=InstallHooks{cancelled:&cancel,phase:&phase,progress:&progress,committing:&committing};
+        let cancelled=install_file(&app,&pack,"fonts",&hooks).err().unwrap();
+        assert_eq!(cancelled.code,"cancelled");
+        assert_eq!(fs::read(target.join(font)).unwrap(),b"Owned damaged font fixture");
+        drop(crate::capability_process::install_admission(&data).unwrap());
+        let repaired=decode(install_file(&app,&pack,"fonts",&InstallHooks::direct()).unwrap());
+        validate(&target,&expected).unwrap();probe("fonts",&target,&data).unwrap();
+        assert_eq!(fs::read(&sentinel).unwrap(),b"Owned sentinel remains unchanged");
+        let result=json!({"passed":true,"busyRejectedBeforePayload":true,"installed":installed,"repeatUnchanged":repeated["unchanged"],"cancelPreservedDamagedOriginal":true,"admissionReleasedAfterCancel":true,"repaired":repaired,"sentinelUnchanged":true,"realLowDiskOrHardQuotaCertified":false});
+        fs::write(data.join("install-space-result.json"),serde_json::to_vec_pretty(&result).unwrap()).unwrap();
+        println!("INSTALL_SPACE_RESULT {}",result);
+    }
     pub(super) fn fixture(dir: &Path) -> Value {
         let mut files = Vec::new();
         for name in ["bin/engine", "data/model", "NOTICE"] {
@@ -1506,6 +1565,46 @@ mod tests {
         assert_eq!(cancelled.unwrap_err().code,"cancelled","Collecting paths must inherit cancellation before any file hashing");
         let cancelled:ApiResult<_>=crate::speech::with_cancel(Arc::new(||true),||validate_directories(&parents,&canonical,validation_lanes(300),&||Ok(())));
         assert_eq!(cancelled.unwrap_err().code,"cancelled","Directory phases must not mask cancellation with a later path error");
+    }
+    #[test]
+    fn managed_tex_integrity_phase_timing() {
+        use std::{io::Write,time::{Duration,Instant}};
+        // Ordinary unit runs do not read a large external runtime. An explicit
+        // filtered invocation supplies all three paths; its JSON, rather than
+        // the ordinary test count, is the timing evidence.
+        let Some(root)=std::env::var_os("READMD_TEX_TIMING_ROOT") else { return; };
+        let started=Instant::now();
+        let root=PathBuf::from(root);
+        let lock_path=PathBuf::from(std::env::var_os("READMD_TEX_TIMING_LOCK").expect("READMD_TEX_TIMING_LOCK"));
+        let report=PathBuf::from(std::env::var_os("READMD_TEX_TIMING_REPORT").expect("READMD_TEX_TIMING_REPORT"));
+        let lock_bytes=fs::read(lock_path).unwrap();
+        let lock:Value=serde_json::from_slice(&lock_bytes).unwrap();
+        let boundaries=Mutex::new(Vec::new());
+        // This invokes exactly the production validator once. In particular,
+        // there is no readiness probe or preliminary runtime hash pass.
+        let result=validate_checked_phases(&root,&lock,&|| {
+            if started.elapsed()>=Duration::from_secs(120) { Err(ApiError::new(422,"latex_timeout")) }
+            else { Ok(()) }
+        },&|phase| {
+            boundaries.lock().unwrap().push(json!({"phase":format!("{phase:?}"),"elapsedMs":started.elapsed().as_millis()}));
+            Ok(())
+        });
+        let value=json!({
+            "schemaVersion":1,"scope":"one production integrity validation; no compiler execution",
+            "processCold":true,"osCacheState":"uncontrolled","coldPerformanceCertified":false,
+            "readyProbeBeforeTiming":false,"runtimeModified":false,"deadlineMs":120000,
+            "files":lock["files"].as_array().unwrap().len(),
+            "bytes":lock["files"].as_array().unwrap().iter().map(|file|file["size"].as_u64().unwrap()).sum::<u64>(),
+            "manifestSha256":hash(&lock_bytes),"lanes":validation_lanes(lock["files"].as_array().unwrap().len()),
+            "elapsedMs":started.elapsed().as_millis(),"boundaries":boundaries.into_inner().unwrap(),
+            "ok":result.is_ok(),"errorCode":result.as_ref().err().map(|failure|failure.code.as_str())
+        });
+        // An existing observation is never overwritten, including failures.
+        let mut output=fs::OpenOptions::new().write(true).create_new(true).open(report).unwrap();
+        output.write_all(&serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+        output.write_all(b"\n").unwrap();
+        println!("{value}");
+        result.unwrap();
     }
     #[test]
     fn single_lane_validation_still_rechecks_ancestors_after_complete_hashes() {

@@ -689,7 +689,8 @@ function apiMessage(d, fallbackKey) {
   const mathErrors = {
     math_invalid_source:'formula.invalid', math_invalid_property:'formula.invalid', math_invalid_xml:'formula.invalid',
     math_unsupported_version:'formula.unsupportedVersion', math_budget:'error.math_budget',
-    math_unsupported_extension:'error.math_unsupported_extension'
+    math_unsupported_extension:'error.math_unsupported_extension',
+    math_document_defaults_conflict:'error.math_document_defaults_conflict'
   };
   const mathKey = mathErrors[d.error_code || d.error];
   if (mathKey) return tr(mathKey) || tr(fallbackKey);
@@ -1323,7 +1324,10 @@ function applySettings() {
   }
   document.body.dataset.theme = theme;
   document.body.style.setProperty('--fs', (state.fontSize / 100).toFixed(2));
-  document.body.style.setProperty('--line-width', state.lineWidth + 'px');
+  const lineWidth = Math.max(320, Math.min(1800, Number.isFinite(state.lineWidth) ? state.lineWidth : 860));
+  document.body.style.setProperty('--line-width', lineWidth + 'px');
+  // Preserve a supplied measure when wide screens adapt the default workspace.
+  document.body.dataset.customLineWidth = String(lineWidth !== 860);
   document.body.style.setProperty('--ai-panel-width', state.aiPanelWidth + 'px');
   updateThemeButton();
   if (typeof syncWindowPreferences === 'function') syncWindowPreferences();
@@ -3504,12 +3508,124 @@ function looksLikeInlineMath(body) {
   return /[\\^_{}]/.test(body) || (/[A-Za-z\u0391-\u03C9]/.test(body) && (!/\s/.test(body) || /[=+*/<>-]/.test(body))) || /^[\d\s.()+*/=<>-]+$/.test(body) && /[+*/=<>]/.test(body);
 }
 
+// Handles identify an immutable author source, never a client supplied mathPr.
+// Prepared/paginated text carries only server-verified nonce/ordinal slots.
+window.ReadMDMathContext=(()=>{
+  const records=new Map(),scopes=new Map(),tickets=new Map();
+  const MAX_BYTES=64*1024*1024,MAX_RECORDS=8;
+  let retained=0;
+  const abort=()=>new DOMException('Superseded formula context','AbortError');
+  const errorMessage=error=>error.message==='transaction_conflict'?i18n.t('formula.stale'):apiMessage({error_code:error.message},'formula.invalid');
+  function errorMarkup(raw,error){
+    // Keep the author source readable without re-entering any math scanner.
+    // Compressed native carriers are hidden; the document itself is untouched.
+    const readable=String(raw||'').replace(/<!--readmd:math:[\s\S]*?(?:-->|$)/g,'');
+    const literal=escapeHtml(readable).replace(/\$/g,'&#36;').replace(/\\/g,'&#92;').replace(/`/g,'&#96;');
+    return'<p class="ai-err" data-readmd-math-context-error="true">'+escapeHtml(errorMessage(error))+'</p><pre class="tex2jax_ignore"><code>'+literal+'</code></pre>';
+  }
+  const alive=r=>records.get(r.nonce)===r&&scopes.get(r.scope)===r&&r.current();
+  const selector=(r,o)=>({id:r.context.id,revision:r.context.revision,fingerprint:r.context.fingerprint,from:o.from,to:o.to});
+  function key(site){const{record:r,occurrence:o}=site;return JSON.stringify([r.context.id,r.context.revision,r.context.fingerprint,o.from,o.to,o.source_revision,o.source,o.dialect,o.display,o.metadata]);}
+  function discard(r){if(records.get(r.nonce)!==r)return;clearTimeout(r.timer);records.delete(r.nonce);retained-=r.charge;if(scopes.get(r.scope)===r)scopes.delete(r.scope);}
+  function reserve(r){
+    if(r.charge>MAX_BYTES)throw Error('math_budget');
+    for(const old of [...records.values()])if(!alive(old))discard(old);
+    while(records.size>=MAX_RECORDS||retained+r.charge>MAX_BYTES){const old=records.values().next().value;if(!old)throw Error('math_budget');discard(old);}
+    records.set(r.nonce,r);retained+=r.charge;scopes.set(r.scope,r);
+  }
+  async function revision(source){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(source));return Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');}
+  function validate(value,raw,expected){
+    const c=value.context;
+    if(!c||typeof c.id!=='string'||!c.id||c.id.length>128||typeof c.nonce!=='string'||!/^[a-f0-9-]{36}$/.test(c.nonce)||c.revision!==expected||typeof c.fingerprint!=='string'||!c.fingerprint||c.fingerprint.length>128||typeof c.active!=='boolean'||!Number.isSafeInteger(c.ttl_ms)||c.ttl_ms<1000||c.ttl_ms>300000||!Array.isArray(c.occurrences)||c.occurrences.length>4096||typeof value.view_content!=='string')throw Error('math_invalid_source');
+    let end=0;
+    for(const[o,v]of c.occurrences.entries()){
+      if(v.ordinal!==o||!Number.isSafeInteger(v.from)||!Number.isSafeInteger(v.to)||v.from<end||v.from>=v.to||v.to>raw.length||!Number.isSafeInteger(v.body_from)||!Number.isSafeInteger(v.body_to)||v.body_from<v.from||v.body_from>v.body_to||v.body_to>v.to||typeof v.source!=='string'||typeof v.source_revision!=='string'||!['latex','dsl'].includes(v.dialect)||typeof v.display!=='boolean'||typeof v.patchable!=='boolean'||v.metadata!==null&&typeof v.metadata!=='string')throw Error('math_invalid_source');
+      end=v.to;
+    }
+    return c;
+  }
+  async function register(raw,view,current){
+    const expected=await revision(raw);if(!current())throw abort();
+    const response=await apiFetch('/api/math/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:raw,expected_revision:expected,view_content:view})});
+    const value=await response.json();if(!current())throw abort();
+    if(!response.ok||!value.ok)throw Error(value.error_code||'math_invalid_source');
+    const context=validate(value,raw,expected);return{context,view:value.view_content};
+  }
+  function invalidate(r){
+    dslMathCache.clear();
+    for(const element of document.querySelectorAll('.readmd-model-math'))if(element.dataset.readmdContextSlot?.startsWith(r.nonce+':')){delete element.dataset.readmdReady;delete element.dataset.readmdReadyKey;}
+  }
+  function schedule(r){
+    clearTimeout(r.timer);
+    r.timer=setTimeout(()=>{if(!alive(r))return;renew(r,true).then(()=>{if(alive(r))renderDslMath(typeof r.scope==='object'?r.scope:document.getElementById(r.scope));}).catch(error=>{
+      if(!alive(r)||error.name==='AbortError')return;
+      // Retry is explicit after a network/validation failure; a failed renewal
+      // never silently switches this document to standalone rendering.
+      for(const element of document.querySelectorAll('.readmd-model-math'))if(element.dataset.readmdContextSlot?.startsWith(r.nonce+':')){
+        const note=document.createElement('span');note.textContent=errorMessage(error);element.replaceChildren(note);element.dataset.readmdReady='error';
+        const retry=document.createElement('button');retry.type='button';retry.textContent=i18n.t('audit.retryLoad');retry.onclick=()=>{retry.disabled=true;renew(r,true).then(()=>renderDslMath(element)).catch(next=>{if(alive(r)&&next.name!=='AbortError'){note.textContent=errorMessage(next);retry.disabled=false;}});};element.append(retry);
+      }
+    });},Math.max(1,r.expires-Date.now()));
+  }
+  async function renew(r,force=false){
+    if(!alive(r))throw abort();if(!force&&Date.now()<r.expires)return r;
+    if(r.pending)return r.pending;
+    r.pending=(async()=>{
+      const next=await register(r.raw,r.view,()=>alive(r));
+      if(JSON.stringify(next.context.occurrences)!==JSON.stringify(r.context.occurrences)||next.context.fingerprint!==r.context.fingerprint||next.context.active!==r.context.active)throw Error('transaction_conflict');
+      r.context=next.context;r.expires=Date.now()+Math.max(1,next.context.ttl_ms-1000);invalidate(r);schedule(r);return r;
+    })();
+    try{return await r.pending;}finally{r.pending=null;}
+  }
+  async function prepareSource(raw,view,options={}){
+    raw=String(raw||'');view=String(view||'');const current=options.current||(()=>true),scope=options.scope||'content';
+    if(!tickets.has(scope)&&tickets.size>=MAX_RECORDS)tickets.delete(tickets.keys().next().value);
+    const ticket={};tickets.set(scope,ticket);const live=()=>tickets.get(scope)===ticket&&current();
+    const old=scopes.get(scope);if(old)discard(old);
+    // Ordinary documents cannot provide Word math defaults. Keep their
+    // established MathJax/source-only path and avoid a full-body API upload.
+    if(!/readmd-math|<!--readmd:math:/.test(raw)){if(!live())throw abort();return view;}
+    const result=await register(raw,view,live);if(!live())throw abort();
+    if(!result.context.active)return view;
+    const charge=2*(raw.length+view.length+result.view.length+JSON.stringify(result.context.occurrences).length);
+    const r={nonce:result.context.nonce,context:result.context,raw,view,scope,current:live,charge,expires:Date.now()+Math.max(1,result.context.ttl_ms-1000),pending:null,timer:null};
+    reserve(r);schedule(r);return result.view;
+  }
+  function slot(element){
+    const owner=element?.matches?.('.readmd-model-math')?element:element?.closest?.('.readmd-model-math');if(!owner)return null;
+    const match=/^([a-f0-9-]{36}):(\d+)$/.exec(owner.dataset.readmdContextSlot||'');if(!match)return null;
+    const r=records.get(match[1]),o=r?.context.occurrences[Number(match[2])];if(!r||!o||!alive(r)||o.ordinal!==Number(match[2]))return null;
+    return{record:r,occurrence:o,owner};
+  }
+  function tokenHtml(nonce,ordinal){
+    const r=records.get(nonce),o=r?.context.occurrences[ordinal];
+    if(!r||!o||!alive(r))return'<span class="tex2jax_ignore">'+escapeHtml(i18n.t('formula.stale'))+'</span>';
+    const tag=o.display?'div':'span';return'<'+tag+' class="readmd-model-math tex2jax_ignore" data-readmd-context-slot="'+nonce+':'+ordinal+'" data-readmd-mode="'+(o.display?'block':'inline')+'" data-readmd-math-renderer="pending"></'+tag+'>';
+  }
+  function locate(element,raw){
+    const site=slot(element);if(!site||site.record.raw!==raw||!site.occurrence.patchable)return null;
+    const o=site.occurrence;return{from:o.from,to:o.to,bodyFrom:o.body_from,bodyTo:o.body_to,tex:o.source,dialect:o.dialect,mode:o.display?'block':'inline',open:raw.slice(o.from,o.body_from),close:raw.slice(o.body_to,o.to),contextSite:site};
+  }
+  async function ensure(site){if(!site||!alive(site.record))throw abort();await renew(site.record);if(!alive(site.record))throw abort();return selector(site.record,site.occurrence);}
+  function current(site,expected){return !!site&&alive(site.record)&&(!expected||key(site)===expected);}
+  return{prepareSource,slot,tokenHtml,locate,ensure,current,key,errorMarkup,renew:site=>renew(site.record,true)};
+})();
+
+function mathFormulaSource(owner){const site=window.ReadMDMathContext.slot(owner);return site?site.occurrence.source:owner.dataset.readmdContextSlot?null:decodeURIComponent(owner.dataset.readmdDsl||'');}
+function mathFormulaIdentity(owner){
+  const site=window.ReadMDMathContext.slot(owner);
+  if(owner.dataset.readmdContextSlot&&!site)return null;
+  return site?window.ReadMDMathContext.key(site):JSON.stringify(['standalone',mathFormulaSource(owner),owner.dataset.readmdExtension||'']);
+}
+const mathCompileResults=new WeakMap();
+
 function protectMath(src) {
   const saved = [];
   const save = m => {
     saved.push(m);
     return '\x01M' + (saved.length - 1) + '\x01';
   };
+  src=src.replace(/<!--readmd:math-slot:v1:([a-f0-9-]{36}):(\d+)-->/g,(_,nonce,ordinal)=>save(ReadMDMathContext.tokenHtml(nonce,Number(ordinal))));
   const looksMath = looksLikeInlineMath;
 
   const envNames = 'cases|align\\*?|aligned|matrix|pmatrix|bmatrix|vmatrix|Vmatrix|equation\\*?|gather\\*?|array|split|smallmatrix';
@@ -3590,7 +3706,7 @@ for(const type of ['readmd:capability-installed','readmd:capability-removed'])wi
   mathFontEpoch++;dslMathCache.clear();
   window.ReadMDMathMetadata?.invalidateFonts();
   for(const id of ['content','preview-pane']){const root=document.getElementById(id);if(!root)continue;
-    root.querySelectorAll('.readmd-dsl-math:not([data-readmd-unsupported])').forEach(e=>delete e.dataset.readmdReady);
+    root.querySelectorAll('.readmd-dsl-math:not([data-readmd-unsupported]),.readmd-model-math').forEach(e=>delete e.dataset.readmdReady);
     renderDslMath(root);
   }
 });
@@ -3618,7 +3734,7 @@ function observeMathLayout(body){
     const key=JSON.stringify(mathLayoutMetrics(root,true));if(key===entry.key)return;entry.key=key;
     clearTimeout(entry.timer);entry.timer=setTimeout(()=>{
       if(!root.isConnected)return;
-      root.querySelectorAll('.readmd-dsl-math[data-readmd-ready]:not([data-readmd-unsupported])').forEach(e=>delete e.dataset.readmdReady);
+      root.querySelectorAll('.readmd-dsl-math[data-readmd-ready]:not([data-readmd-unsupported]),.readmd-model-math[data-readmd-ready]').forEach(e=>delete e.dataset.readmdReady);
       renderDslMath(root);window.ReadMDMathMetadata?.schedule();
     },80);
   };
@@ -3630,39 +3746,43 @@ function observeMathLayout(body){
   if(root!==document.body)entry.settingsObserver.observe(root,{attributes:true,attributeFilter:['style','class']});
   mathLayoutRoots.set(root,entry);
 }
-async function compileDslMath(text, display, owner) {
-  const metrics=mathLayoutMetrics(owner,display);
-  const fontEpoch=mathFontEpoch;
-  const metadata=owner.dataset.readmdExtension?decodeURIComponent(owner.dataset.readmdExtension):undefined;
-  const key = fontEpoch+'\0'+(display ? 'b' : 'i') + '\0' + JSON.stringify(metrics) + '\0' + text+'\0'+(metadata||'');
-  if (dslMathCache.has(key)) return dslMathCache.get(key);
-  const previous = dslMathRequests.get(key);
-  if (previous) { previous.owners.add(owner);return previous.promise; }
-  const entry = {owners:new Set([owner]),promise:null};
-  dslMathRequests.set(key, entry);
-  entry.promise = (async () => {
-    if (dslMathWorkers >= 4) await new Promise(resolve => dslMathWaiters.push(resolve));
-    else dslMathWorkers++;
-    try {
-      // A long document may be replaced while its jobs wait for a worker.
-      // Skip those jobs before sending, but retain a shared request if another
-      // current occurrence still needs it. Never cache or report stale errors.
-      if (![...entry.owners].some(element => element?.isConnected && decodeURIComponent(element.dataset.readmdDsl) === text)) {
-        throw new DOMException('Superseded formula render', 'AbortError');
-      }
-      const response = await apiFetch('/api/math/parse', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source:text,dialect:'dsl',metadata,display,...metrics}) });
-      const value = await response.json();
-      if (!response.ok || !value.ok) throw Error('invalid');
-      if(fontEpoch!==mathFontEpoch)throw new DOMException('Superseded formula fonts','AbortError');
-      if (dslMathCache.size >= 32) dslMathCache.delete(dslMathCache.keys().next().value);
-      dslMathCache.set(key, value);
-      return value;
-    } finally {
-      const next = dslMathWaiters.shift();
-      if (next) next(); else dslMathWorkers--;
+async function compileDslMath(text, display, owner, retriedContext=false) {
+  const contextSite=window.ReadMDMathContext.slot(owner);
+  if(owner.dataset.readmdContextSlot&&!contextSite)throw new DOMException('Superseded formula context','AbortError');
+  const document_context=contextSite?await ReadMDMathContext.ensure(contextSite):undefined;
+  const identity=mathFormulaIdentity(owner),metrics=mathLayoutMetrics(owner,display),fontEpoch=mathFontEpoch;
+  const dialect=contextSite?contextSite.occurrence.dialect:'dsl';
+  const metadata=contextSite?(contextSite.occurrence.metadata||undefined):owner.dataset.readmdExtension?decodeURIComponent(owner.dataset.readmdExtension):undefined;
+  if(!identity||mathFormulaSource(owner)!==text||contextSite&&contextSite.occurrence.display!==display)throw new DOMException('Superseded formula render','AbortError');
+  const layoutKey=JSON.stringify(metrics),key=fontEpoch+'\0'+(display?'b':'i')+'\0'+layoutKey+'\0'+identity;
+  const valid=element=>element?.isConnected&&mathFormulaSource(element)===text&&mathFormulaIdentity(element)===identity&&fontEpoch===mathFontEpoch&&JSON.stringify(mathLayoutMetrics(element,display))===layoutKey;
+  if(dslMathCache.has(key)&&valid(owner))return dslMathCache.get(key);
+  let entry=dslMathRequests.get(key);
+  if(entry)entry.owners.add(owner);
+  else{
+    entry={owners:new Set([owner]),promise:null};dslMathRequests.set(key,entry);
+    entry.promise=(async()=>{
+      if(dslMathWorkers>=4)await new Promise(resolve=>dslMathWaiters.push(resolve));else dslMathWorkers++;
+      try{
+        if(![...entry.owners].some(valid))throw new DOMException('Superseded formula render','AbortError');
+        const response=await apiFetch('/api/math/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:text,dialect,metadata,display,document_context,...metrics})});
+        const value=await response.json();
+        if(![...entry.owners].some(valid))throw new DOMException('Superseded formula render','AbortError');
+        if(!response.ok||!value.ok)throw Error(value.error_code||'math_invalid_source');
+        if(document_context&&(!value.document_context||Object.keys(value.document_context).length!==5||Object.keys(document_context).some(k=>value.document_context[k]!==document_context[k])))throw Error('transaction_conflict');
+        mathCompileResults.set(value,{identity,layoutKey,fontEpoch});
+        if(dslMathCache.size>=32)dslMathCache.delete(dslMathCache.keys().next().value);
+        dslMathCache.set(key,value);return value;
+      }finally{const next=dslMathWaiters.shift();if(next)next();else dslMathWorkers--;}
+    })();
+  }
+  try{return await entry.promise;}
+  catch(error){
+    if(!retriedContext&&contextSite&&error.message==='transaction_conflict'&&window.ReadMDMathContext.current(contextSite)){
+      await ReadMDMathContext.renew(contextSite);return compileDslMath(text,display,owner,true);
     }
-  })();
-  try { return await entry.promise; } finally { dslMathRequests.delete(key); }
+    throw error;
+  }finally{if(dslMathRequests.get(key)===entry)dslMathRequests.delete(key);}
 }
 // Layout diagnostics are view state, never author text or HTML fragments.
 const mathLayoutDiagnosticCodes=new Set([
@@ -3690,6 +3810,7 @@ function mathLayoutDiagnosticMessage(issue){
 function applyMathDocumentWarnings(node,value){
   const fonts=Array.isArray(value.font_warnings)?value.font_warnings:[];
   const layout=Array.isArray(value.layout_diagnostics)?value.layout_diagnostics:[];
+  const sourceOnly=value.preview_supported===false;
   const extension=value.extension_preservation?.editable===false;
   const metadataStatus=value.metadata_status;
   const previous=mathDocumentWarningState.get(node);
@@ -3703,11 +3824,16 @@ function applyMathDocumentWarnings(node,value){
     }
     entry.title.remove();
   }
-  const state={font_warnings:fonts,layout_diagnostics:layout,extension_preservation:value.extension_preservation,metadata_status:metadataStatus,baseTitle,owners:[]};
+  const state={font_warnings:fonts,layout_diagnostics:layout,preview_supported:value.preview_supported,mathml_warns:value.mathml_warns,extension_preservation:value.extension_preservation,metadata_status:metadataStatus,baseTitle,owners:[]};
   mathDocumentWarningState.set(node,state);
-  if(!fonts.length&&!layout.length&&!extension&&!['stale','invalid'].includes(metadataStatus)){delete node.dataset.readmdMathWarnings;node.title=baseTitle;return;}
+  if(!fonts.length&&!layout.length&&!sourceOnly&&!extension&&!['stale','invalid'].includes(metadataStatus)){delete node.dataset.readmdMathWarnings;node.title=baseTitle;return;}
   node.dataset.readmdMathWarnings='true';
   const messages=fonts.map(w=>i18n.t('warn.'+(w.code==='glyph_missing'?'math_glyph_missing':w.code),w));
+  if(sourceOnly){
+    const message=apiMessage({error_code:'math_unsupported_extension'},'formula.invalid');messages.push(message);
+    const unavailable=node.querySelector('[data-readmd-math-unavailable]');if(unavailable)unavailable.textContent=message;
+    const source=node.querySelector('[data-readmd-math-source-entry]');if(source)source.textContent=i18n.t('formula.source');
+  }
   if(extension)messages.push(i18n.t('formula.extensionPreserved'));
   if(metadataStatus==='stale'||metadataStatus==='invalid')messages.push(i18n.t('formula.metadata'+(metadataStatus==='stale'?'Stale':'Invalid')));
   const owners=layout.length?new Map([...node.querySelectorAll('[data-math-node]')].map(el=>[el.id,el])):new Map();
@@ -3742,6 +3868,17 @@ window.addEventListener('readmd:language-changed',()=>{
   requestAnimationFrame(refresh);
 });
 async function renderMathDocument(value,display){
+  if(value.preview_supported===false){
+    const wrapper=document.createElement('span');wrapper.className='readmd-math-render';wrapper.dataset.readmdMathRenderer='source';wrapper.dataset.readmdPreviewSupported='false';wrapper.setAttribute('role','note');
+    const message=document.createElement('span');message.dataset.readmdMathUnavailable='true';wrapper.append(message);
+    if(value.document?.dialect==='dsl'&&typeof value.document.source==='string'){
+      const source=document.createElement('code');source.textContent=value.document.source;source.hidden=true;
+      const button=document.createElement('button');button.type='button';button.dataset.readmdMathSourceEntry='true';button.setAttribute('aria-expanded','false');
+      button.onclick=()=>{source.hidden=!source.hidden;button.setAttribute('aria-expanded',String(!source.hidden));};
+      wrapper.append(button,source);
+    }
+    applyMathDocumentWarnings(wrapper,value);return wrapper;
+  }
   if(value.vector_preview){
     const parsed=new DOMParser().parseFromString(value.vector_preview,'image/svg+xml');
     if(parsed.querySelector('parsererror')||parsed.documentElement.localName!=='svg')throw Error('invalid');
@@ -3766,50 +3903,50 @@ async function renderMathDocument(value,display){
   node.dataset.readmdMathRenderer='mathjax';return node;
 }
 async function renderDslMath(body) {
+  if(!body)return;
   observeMathLayout(body);
-  // Unsupported source versions are diagnostics, not compilable DSL. Font or
-  // layout invalidation must never reinterpret their payload as version 1.
-  const pending='.readmd-dsl-math:not([data-readmd-ready]):not([data-readmd-unsupported])';
+  // Version diagnostics and source-context slots never become legacy DSL.
+  const pending='.readmd-dsl-math:not([data-readmd-ready]):not([data-readmd-unsupported]),.readmd-model-math:not([data-readmd-ready])';
   const elements=[...(body.matches?.(pending)?[body]:[]),...body.querySelectorAll(pending)];
-  const root = body.closest('#preview-pane, #content') || body;
-  let lazy = dslMathObservers.get(root);
-  if (lazy) for (const target of lazy.targets) if (!target.isConnected || !root.contains(target)) {
-    lazy.observer.unobserve(target);lazy.targets.delete(target);
-  }
-  if (elements.length > 60 && window.IntersectionObserver) {
-    if (!lazy) {
-      lazy = { targets:new Set(), observer:null };
-      lazy.observer = new IntersectionObserver(entries => {
-        for (const entry of entries) if (entry.isIntersecting) {
-          lazy.observer.unobserve(entry.target);lazy.targets.delete(entry.target);renderDslMath(entry.target);
-        }
-      }, { root, rootMargin:'350px 0px', threshold:0.01 });
-      dslMathObservers.set(root, lazy);
+  const root=body.closest('#preview-pane, #content')||body;
+  let lazy=dslMathObservers.get(root);
+  if(lazy)for(const target of lazy.targets)if(!target.isConnected||!root.contains(target)){lazy.observer.unobserve(target);lazy.targets.delete(target);}
+  if(elements.length>60&&window.IntersectionObserver){
+    if(!lazy){
+      lazy={targets:new Set(),observer:null};
+      lazy.observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){lazy.observer.unobserve(entry.target);lazy.targets.delete(entry.target);renderDslMath(entry.target);}},{root,rootMargin:'350px 0px',threshold:0.01});
+      dslMathObservers.set(root,lazy);
     }
-    elements.slice(15).forEach(element => { lazy.targets.add(element);lazy.observer.observe(element); });
-    elements.length = 15;
+    elements.slice(15).forEach(element=>{lazy.targets.add(element);lazy.observer.observe(element);});elements.length=15;
   }
   for(const element of elements){
     if(!element.isConnected||element.dataset.readmdBusy)continue;
     element.dataset.readmdBusy='true';element.setAttribute('aria-busy','true');
-    let text='',retry=false;const fontEpoch=mathFontEpoch;
+    let text='',retry=false,identity=null;const fontEpoch=mathFontEpoch;
     try{
-      text=decodeURIComponent(element.dataset.readmdDsl);const display=element.dataset.readmdMode==='block';
-      const layoutKey=JSON.stringify(mathLayoutMetrics(element,display));
+      text=mathFormulaSource(element);identity=mathFormulaIdentity(element);
+      if(text===null||!identity)throw new DOMException('Superseded formula context','AbortError');
+      const display=element.dataset.readmdMode==='block',layoutKey=JSON.stringify(mathLayoutMetrics(element,display));
       const value=await compileDslMath(text,display,element);
-      if (!element.isConnected) continue;
-      const rendered=await renderMathDocument(value,display);
-      // Incremental preview may retain this formula while another paragraph
-      // changes. Its own immutable source, rather than the whole document
-      // revision, decides whether this read-only rendering is still current.
+      const proof=mathCompileResults.get(value)||{identity,layoutKey,fontEpoch};
       if(!element.isConnected)continue;
-      if(fontEpoch!==mathFontEpoch){retry=true;continue;}
-      if(text!==decodeURIComponent(element.dataset.readmdDsl)){retry=true;continue;}
-      if(layoutKey!==JSON.stringify(mathLayoutMetrics(element,display))){retry=true;continue;}
-      if(rendered.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('invalid');
-      element.replaceChildren(rendered);element.dataset.readmdReady='true';element.dataset.readmdLayout=layoutKey;
-    }catch(error){if(fontEpoch!==mathFontEpoch)retry=true;else if(error.name!=='AbortError'&&element.isConnected){element.textContent=text;element.title=i18n.t('formula.invalid');element.dataset.readmdReady='error';}}
-    finally{delete element.dataset.readmdBusy;element.removeAttribute('aria-busy');if(element.isConnected&&(retry||text!==decodeURIComponent(element.dataset.readmdDsl)))requestAnimationFrame(()=>renderDslMath(element));}
+      const rendered=await renderMathDocument(value,display);
+      // A shared job is publishable only for the same immutable document,
+      // revision, defaults fingerprint, exact range, metadata and metrics.
+      if(!element.isConnected)continue;
+      if(proof.fontEpoch!==mathFontEpoch||proof.identity!==mathFormulaIdentity(element)||text!==mathFormulaSource(element)||proof.layoutKey!==JSON.stringify(mathLayoutMetrics(element,display))){retry=!!mathFormulaIdentity(element);continue;}
+      if(rendered.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('math_invalid_source');
+      element.replaceChildren(rendered);element.dataset.readmdReady=value.preview_supported===false?'source':'true';element.dataset.readmdLayout=layoutKey;
+      element.dataset.readmdReadyKey=JSON.stringify([proof.identity,proof.fontEpoch,proof.layoutKey]);
+      if(value.preview_supported===false)element.dataset.readmdPreviewSupported='false';else delete element.dataset.readmdPreviewSupported;
+    }catch(error){
+      const now=mathFormulaIdentity(element);
+      if(fontEpoch!==mathFontEpoch||now&&identity&&now!==identity)retry=true;
+      else if(error.name!=='AbortError'&&element.isConnected&&now===identity){
+        element.textContent=element.dataset.readmdContextSlot?apiMessage({error_code:error.message},'formula.invalid'):text;
+        element.title=apiMessage({error_code:error.message},'formula.invalid');element.dataset.readmdReady='error';delete element.dataset.readmdReadyKey;delete element.dataset.readmdPreviewSupported;
+      }
+    }finally{delete element.dataset.readmdBusy;element.removeAttribute('aria-busy');if(element.isConnected&&mathFormulaIdentity(element)&&(retry||text!==mathFormulaSource(element)))requestAnimationFrame(()=>renderDslMath(element));}
   }
 }
 function queueMathOperation(operation) {
@@ -3853,7 +3990,7 @@ function renderedMathItemsWithin(pane) {
 function renderMath(body) {
   if (!body) return;
   const html = body.innerHTML;
-  if (!body.matches?.('.readmd-dsl-math')&&!/readmd-dsl-math|\$\$|\\\(|\\\[|\$[^$\n]+\$|\\begin\{/.test(html)) return;
+  if (!body.matches?.('.readmd-dsl-math,.readmd-model-math')&&!/readmd-dsl-math|readmd-model-math|\$\$|\\\(|\\\[|\$[^$\n]+\$|\\begin\{/.test(html)) return;
 
   function doTypeset() {
     if (!window.MathJax || !MathJax.typesetPromise) return;
@@ -4122,7 +4259,11 @@ document.addEventListener('DOMContentLoaded', () => {
 'use strict';
 /* Content identities shared by reader, paged outlines, preview and TOC insertion.
    Keep allocation consistent with md_ast::HeadingIds; never change the source. */
-window.ReadMDHeadings=(()=>{
+(function(root,factory){
+  if(typeof module!=='undefined'&&module.exports){
+    module.exports=factory(require('../../vendor/marked.min.js'),null,require('../../vendor/html5-character-references.json'));
+  }else root.ReadMDHeadings=factory(root.marked,root.document);
+})(typeof window!=='undefined'?window:null,(marked,document,entities)=>{
   function slug(text){
     let value='';
     for(const char of String(text).trim()){
@@ -4149,27 +4290,69 @@ window.ReadMDHeadings=(()=>{
     return {text:title,id:match[1],suffix:text.slice(title.length)};
   }
   let decoder;
+  // HTML numeric references use the Windows-1252 replacements in this range.
+  // The Node path uses the same HTML5 names as a browser textarea, including
+  // legacy names without semicolons; no DOM shim or runtime dependency needed.
+  const numericReplacements={128:8364,130:8218,131:402,132:8222,133:8230,134:8224,135:8225,136:710,137:8240,138:352,139:8249,140:338,142:381,145:8216,146:8217,147:8220,148:8221,149:8226,150:8211,151:8212,152:732,153:8482,154:353,155:8250,156:339,158:382,159:376};
+  function decodeWithoutDom(text){
+    return text.replace(/\r\n?/g,'\n').replace(/&(#(?:[xX][\da-fA-F]+|\d+);?|[A-Za-z][\dA-Za-z]{0,31};?)/g,(reference,name)=>{
+      if(name[0]==='#'){
+        const hex=/^#[xX]/.test(name);
+        let cp=parseInt(name.slice(hex?2:1),hex?16:10);
+        if(!cp||cp>0x10ffff||cp>=0xd800&&cp<=0xdfff)cp=0xfffd;
+        return String.fromCodePoint(numericReplacements[cp]||cp);
+      }
+      for(let end=name.length;end>0;end--){
+        const key=name.slice(0,end);
+        if(Object.prototype.hasOwnProperty.call(entities,key))return entities[key]+name.slice(end);
+      }
+      return reference;
+    });
+  }
   function decode(text){
     text=String(text);
     // Most headings contain plain text. Avoid creating and parsing a DOM node
     // for every token in a book's complete outline.
     if(!/[&\r]/.test(text))return text;
+    // Marked escapes an ampersand unless it starts a complete reference.
+    // Protect the same literals before HTML decoding (e.g. bare "&copy").
+    text=text.replace(/&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g,'&amp;');
+    if(!document)return decodeWithoutDom(text);
     decoder||=document.createElement('textarea');
-    decoder.innerHTML=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');return decoder.value;
+    // textContent preserves numeric CR references exactly as heading DOM text;
+    // textarea.value would silently normalize them to LF.
+    decoder.innerHTML=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');return decoder.textContent;
   }
   function inlineText(tokens){return (tokens||[]).map(token=>{
     if(token.type==='html')return '';
     if(token.type==='br')return ' ';
-    if(token.type==='codespan'||token.type==='image')return token.text||'';
+    if(token.type==='codespan'||token.type==='escape')return token.text||'';
     if(token.tokens)return inlineText(token.tokens);
     return decode(token.text||'');
   }).join('');}
+  function heading(token){
+    const attrs=attributes(token.text||'');
+    let tokens=token.tokens||marked.Lexer.lexInline(token.text||'');
+    if(attrs.id){
+      // Retain already-resolved reference links and inline formatting in the
+      // title. Re-lexing the whole title would lose the document definitions.
+      const title=[];let remaining=attrs.text.length;
+      for(const part of tokens){
+        if(remaining<=0)break;
+        const raw=part.raw||'';
+        if(raw.length<=remaining){title.push(part);remaining-=raw.length;}
+        else {title.push(...marked.Lexer.lexInline(raw.slice(0,remaining)));break;}
+      }
+      tokens=title;
+    }
+    return {id:attrs.id,text:inlineText(tokens),tokens};
+  }
   function fromMarkdown(source,allocate=createIds()){
     const rows=[];
     function walk(tokens,start=1){let line=start;for(const token of tokens){
       if(token.type==='heading'){
-        const attrs=attributes(token.text||''),plain=inlineText(attrs.id?marked.Lexer.lexInline(attrs.text):(token.tokens||marked.Lexer.lexInline(attrs.text)));
-        rows.push({id:allocate(plain,attrs.id),text:plain,level:token.depth,sourceLine:line});
+        const info=heading(token);
+        rows.push({id:allocate(info.text,info.id),text:info.text,level:token.depth,sourceLine:line});
       }else if(token.type==='blockquote')walk(token.tokens||[],line);
       else if(token.type==='list')for(const item of token.items||[])walk(item.tokens||[],line);
       line+=(token.raw?.match(/\n/g)||[]).length;
@@ -4195,8 +4378,8 @@ window.ReadMDHeadings=(()=>{
       if(!explicit)heading.dataset.readmdAutoId='true';
     }
   }
-  return {slug,createIds,attributes,fromMarkdown,applyDom};
-})();
+  return {slug,createIds,attributes,heading,fromMarkdown,applyDom};
+});
 
 ;
 'use strict';
@@ -5194,6 +5377,71 @@ function toggleSide(tab) {
 
 ;
 'use strict';
+// Only a source-bound Rust projection can restore a numeric author font size.
+// The Markdown sanitizer remains unchanged; arbitrary style strings are never
+// interpreted. The same implementation runs in standalone HTML exports.
+window.ReadMDAuthorText = (() => {
+  const bindings = new WeakMap();
+  const point = value => typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 4096;
+  const blockSelector = 'p,h1,h2,h3,h4,h5,h6,td,th,li,figcaption,caption';
+  function restore(node) {
+    const saved = bindings.get(node); if (!saved) return;
+    if (saved.value) node.style.setProperty('font-size', saved.value, saved.priority);
+    else node.style.removeProperty('font-size');
+    if (saved.code) {
+      if (saved.codeValue) saved.code.style.setProperty('font-size', saved.codeValue, saved.codePriority);
+      else saved.code.style.removeProperty('font-size');
+    }
+    delete node.dataset.readmdAuthorActive; bindings.delete(node);
+  }
+  function apply(container, model) {
+    if (!container?.querySelectorAll) return;
+    const valid = model && /^[a-f0-9]{32}$/.test(model.nonce || '') && Array.isArray(model.runs) && model.runs.length <= 32768;
+    const rules = new Map();
+    if (valid) for (const run of model.runs) {
+      if (!run || typeof run.key !== 'string' || !run.key.startsWith(model.nonce + '-') ||
+          !/^[a-f0-9]{32}-(?:0|[1-9]\d*)$/.test(run.key) ||
+          !(run.size === null || point(run.size)) || !(run.base === null || point(run.base)) ||
+          typeof run.complex !== 'boolean' || typeof run.blockBase !== 'boolean' || rules.has(run.key)) continue;
+      rules.set(run.key, run);
+    }
+    const nodes = [...container.querySelectorAll('[data-readmd-author-run],[data-readmd-author-active]')];
+    const bases=new Map();
+    const counts = new Map();
+    for (const node of nodes) counts.set(node.dataset.readmdAuthorRun, (counts.get(node.dataset.readmdAuthorRun) || 0) + 1);
+    for (const node of nodes) {
+      const run = rules.get(node.dataset.readmdAuthorRun);
+      if (!run || counts.get(node.dataset.readmdAuthorRun) !== 1 || node.tagName !== 'SPAN') { restore(node); continue; }
+      let value;
+      if (run.size !== null) value = run.size + 'pt';
+      else if (run.base !== null) value = run.base + 'pt';
+      else if (run.blockBase) {
+        const block = node.closest(blockSelector);
+        // A nested caller may own just a text fragment. It cannot read styles
+        // from a parent document outside its supplied rendering surface.
+        if (!block || !container.contains(block)) { restore(node); continue; }
+        if(!bases.has(block))bases.set(block,Number.parseFloat(getComputedStyle(block).fontSize));
+        const px = bases.get(block);
+        if (!Number.isFinite(px) || px <= 0 || px > 4096 * 96 / 72) { restore(node); continue; }
+        value = px + 'px';
+      }
+      if (value === undefined) { restore(node); continue; }
+      if (!bindings.has(node)) {
+        const code=node.children.length===1&&node.firstElementChild?.tagName==='CODE'?node.firstElementChild:null;
+        bindings.set(node, { value: node.style.getPropertyValue('font-size'), priority: node.style.getPropertyPriority('font-size'),
+          code,codeValue:code?.style.getPropertyValue('font-size'),codePriority:code?.style.getPropertyPriority('font-size') });
+      }
+      node.style.setProperty('font-size', value); node.dataset.readmdAuthorActive = '';
+      // The code element was produced by Rust, not the original HTML. Explicit
+      // run sizes must not be shrunk by the reader's generic inline-code rule.
+      if (node.children.length === 1 && node.firstElementChild?.tagName === 'CODE') node.firstElementChild.style.setProperty('font-size', 'inherit');
+    }
+  }
+  return { apply };
+})();
+
+;
+'use strict';
 // One read-only CSL projection is used by reader and editor preview. The editor
 // always retains the original citation keys and author-controlled metadata.
 window.ReadMDPublication=(()=>{
@@ -5201,8 +5449,11 @@ window.ReadMDPublication=(()=>{
   const layouts=[],projections=[];
   const citationBindings=new WeakMap(),citationContainers=new WeakSet();
   const bibliographyMeasurements=new Map();
+  const authorSurfaces=new Map();
   const trackingBindings=new WeakMap();
   const baselineBindings=new WeakMap();
+  const headingNumberBindings=new WeakMap();
+  const pagedHeadingBindings=new WeakMap();
   const untrackedSelector='code,pre,.readmd-citation,.rd-fnref,mjx-container,.readmd-dsl-math,[data-readmd-math-renderer],math';
   const untrackedProperty='--readmd-untracked-letter-spacing';
   const scheduleMeasurement=callback=>typeof requestIdleCallback==='function'?requestIdleCallback(callback,{timeout:200}):requestAnimationFrame(()=>callback({timeRemaining:()=>4}));
@@ -5227,10 +5478,12 @@ window.ReadMDPublication=(()=>{
     if(!r.ok||!data.ok){const error=new Error('publication');error.response=data;throw error;}return data;
   }
   function projectionRecord(source,data,request){
-    return {source,epoch:request.epoch,generation:request.generation,owner:request.owner,source_citations:data.source_citations||[],projection:data.projection||null,revision:data.projection?.revision||data.revision||''};
+    return {source,epoch:request.epoch,generation:request.generation,owner:request.owner,source_citations:data.source_citations||[],projection:data.projection||null,revision:data.projection?.revision||data.revision||'',numbering:data.source_numbering||null};
   }
   async function prepare(source,file=''){
-    if(!/:label\[|:ref\[|readmd-math|<!-- readmd:layout |<!-- readmd-section:/.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^bibliography\s*:/m.test(source))return source;
+    const front=/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source)?.[1]||'';
+    const hasProfile=/(?:^|[\s{,])(?:readmd|"readmd"|'readmd')\s*:/.test(front);
+    if(!hasProfile&&!/:label\[|:ref\[|readmd-math|data-readmd-text|<!-- readmd:layout |<!-- readmd-section:|<!-- readmd-numbering:|<!--readmd-numbering-import:|<!--readmd:citation-(?:resources|import):/i.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^(?:bibliography|citation-resources)\s*:/m.test(source))return source;
     const base=String(file||'').replace(/[\\/][^\\/]*$/,'');
     const owner=origin(),navigationSource=readerOriginal(source,owner);
     if(cached?.source===source&&cached.base===base&&cached.navigationSource===navigationSource&&cached.epoch===epoch&&Date.now()-cached.time<2000){cached.owner=owner;return cached.content;}
@@ -5243,7 +5496,7 @@ window.ReadMDPublication=(()=>{
         const [data,navigationData]=await Promise.all([preparedDocument(source,base),navigationSource===null?null:preparedDocument(navigationSource,base)]);
         const content=typeof data.reader_content==='string'?data.reader_content:data.content;
         if(typeof content!=='string')throw new Error('publication');
-        const record={...projectionRecord(source,data,request),base,content,time:Date.now(),navigationSource,navigation:null,diagnostics:data.diagnostics||[],labels:data.source_labels||[],layout:data.layout||{}};
+        const record={...projectionRecord(source,data,request),base,content,time:Date.now(),navigationSource,navigation:null,diagnostics:data.diagnostics||[],labels:data.source_labels||[],layout:data.layout||{},authorText:data.author_text||null};
         if(navigationData){const original=projectionRecord(navigationSource,navigationData,request);if(sameCitations(record,original))record.navigation=original;}
         if(request.generation===cacheGeneration){
           projections.push(record);if(projections.length>4)projections.shift();
@@ -5251,7 +5504,7 @@ window.ReadMDPublication=(()=>{
         }
         if(request.epoch===epoch){
           cached=record;
-          const warns=(data.warnings||[]).map(text=>{const at=text.indexOf(': '),code=at<0?text:text.slice(0,at),key=at<0?'':text.slice(at+2),label=i18n.t('warn.'+code,{key});return label==='warn.'+code?i18n.t('academic.prepareFailed'):label;});
+          const warns=(data.warnings||[]).map(text=>{const at=text.indexOf(': '),code=at<0?text:text.slice(0,at),key=at<0?'':text.slice(at+2),label=i18n.t('warn.'+code,{key});if(label!=='warn.'+code)return label;const error=i18n.t('error.'+code,{key});return error==='error.'+code?i18n.t('academic.prepareFailed'):error;});
           if(warns.length&&currentOrigin(request.owner,source))showToast(warns.join('\n'),6000);
         }
         return content;
@@ -5316,7 +5569,81 @@ window.ReadMDPublication=(()=>{
       if(activeLayout?.[key]?.['--readmd-baseline-shift']===value)applyBaseline(target,key,value);
     }
   }
+  function currentNumberingRecord(){
+    const source=currentSource();
+    return [cached,...[...projections].reverse()].find(record=>record?.numbering&&record.generation===cacheGeneration&&currentOrigin(record.owner,source)&&record.source===source)||null;
+  }
+  function projectedHeadingNumbers(record){
+    if(record.numberingIds)return record.numberingIds;
+    const mapping=new Map(),plan=record.numbering?.headings;
+    if(!Array.isArray(plan)||typeof marked==='undefined'||typeof ReadMDHeadings==='undefined')return mapping;
+    // Reader pages carry globally allocated identities from the projected
+    // Markdown. Match those real top-level rows to the authoritative source
+    // plan, so a page never restarts its heading counter at one.
+    const source=record.content.replace(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/,front=>'\n'.repeat((front.match(/\n/g)||[]).length));
+    const lines=new Set();let line=1;
+    for(const token of marked.lexer(source,{gfm:true})){if(token.type==='heading')lines.add(line);line+=(token.raw?.match(/\n/g)||[]).length;}
+    const rows=ReadMDHeadings.fromMarkdown(record.content).filter(row=>lines.has(row.sourceLine));
+    if(rows.length===plan.length&&rows.every((row,index)=>row.level===plan[index].level))for(let index=0;index<rows.length;index++)mapping.set(rows[index].id,plan[index]);
+    record.numberingIds=mapping;return mapping;
+  }
+  function syncPagedHeadingIds(record,targetId=null,pageIndex=state.pagination?.currentPage){
+    if(state.pagination?.rawContent!==record.content)return targetId;
+    const mapping=projectedHeadingNumbers(record),changes=new Map(),rows=state.pagination.allHeadings||[];
+    for(const row of rows){
+      let binding=pagedHeadingBindings.get(row);
+      if(!binding||binding.content!==record.content){binding={content:record.content,projectedId:row.id};pagedHeadingBindings.set(row,binding);}
+      const entry=mapping.get(binding.projectedId);
+      if(entry&&row.level===entry.level&&row.id!==entry.id){changes.set(row.id,entry.id);row.id=entry.id;}
+    }
+    // buildToc may already have materialized the active page's links. Lazy
+    // groups retain these same row objects and use the resolved IDs later.
+    if(changes.size)for(const link of document.getElementById('toc-list')?.querySelectorAll('[data-heading-id]')||[]){
+      const id=changes.get(link.dataset.headingId);if(id){link.dataset.headingId=id;link.setAttribute('href','#'+id);}
+    }
+    if(rows.some(row=>row.pageIndex===pageIndex&&row.id===targetId))return targetId;
+    return changes.get(targetId)||targetId;
+  }
+  function preparePagedHeadings(buildOutline,targetId,pageIndex){
+    const record=currentNumberingRecord();
+    if(!record||state.pagination?.rawContent!==record.content)return targetId;
+    // The first page has no global IDs yet. Build its existing outline before
+    // binding DOM headings, then resolve both outline and links in one pass.
+    buildOutline();return syncPagedHeadingIds(record,targetId,pageIndex);
+  }
+  function applyHeadingNumbering(container){
+    if(container?.isConnected===false)return;
+    const headings=[...container.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+    for(const heading of headings){
+      const previous=headingNumberBindings.get(heading);if(!previous)continue;
+      previous.span?.remove();
+      if(previous.global===undefined)delete heading.dataset.readmdGlobalId;else heading.dataset.readmdGlobalId=previous.global;
+      headingNumberBindings.delete(heading);
+    }
+    const record=currentNumberingRecord(),plan=record?.numbering?.headings;if(!Array.isArray(plan))return;
+    const real=headings.filter(heading=>!heading.closest?.('blockquote,li,pre,code,figcaption,.rd-footnotes,.readmd-bibliography,[data-readmd-footnote],[role="doc-endnotes"]'));
+    const complete=real.length===plan.length&&real.every((heading,index)=>Number(heading.tagName.slice(1))===plan[index].level);
+    const mapped=projectedHeadingNumbers(record),bySourceId=new Map(plan.map(entry=>[entry.id,entry]));
+    syncPagedHeadingIds(record);
+    const pageIds=new Set(state.pagination?.rawContent===record.content?(state.pagination.allHeadings||[]).filter(row=>pagedHeadingBindings.get(row)?.content===record.content).map(row=>row.id):[]);
+    for(let index=0;index<real.length;index++){
+      const heading=real[index],known=heading.dataset.readmdGlobalId||heading.id||heading.dataset.readmdExplicitId;
+      const entry=complete?plan[index]:pageIds.has(known)?bySourceId.get(known):mapped.get(known)||bySourceId.get(known);
+      if(!entry||Number(heading.tagName.slice(1))!==entry.level||typeof entry.id!=='string')continue;
+      if(heading.dataset.readmdHeadingText===undefined){
+        const authorTitle=[...heading.childNodes||[]].filter(node=>!(node.nodeType===1&&node.classList?.contains('rd-anchor'))).map(node=>node.textContent).join('');
+        heading.dataset.readmdHeadingText=typeof ReadMDHeadings==='undefined'?authorTitle:ReadMDHeadings.attributes(authorTitle).text;
+      }
+      const global=heading.dataset.readmdGlobalId;heading.dataset.readmdGlobalId=entry.id;
+      let span=null;
+      if(entry.numbering&&typeof entry.numbering.text==='string'&&[' ','\t',''].includes(entry.numbering.suffix)){
+        span=(heading.ownerDocument||document).createElement('span');span.className='readmd-heading-number';span.dataset.readmdHeadingNumber='';span.textContent=entry.numbering.text+entry.numbering.suffix;heading.prepend(span);
+      }
+      headingNumberBindings.set(heading,{global,span});
+    }
+  }
   function applyLayout(container){
+    applyHeadingNumbering(container);
     const activeLayout=currentLayout();
     // A sparse source edit can remove just the marker while retaining its
     // unchanged paragraph DOM. Restore that paragraph's exact prior CSS.
@@ -5344,6 +5671,9 @@ window.ReadMDPublication=(()=>{
         for(const [index,node]of nodes.entries())node.style.marginBottom=(index<nodes.length-1?entry*line:0)+'em';
       }
     }
+    const authorRecord=[cached,...[...projections].reverse()].find(record=>record?.generation===cacheGeneration&&sameDocument(record.owner)&&record.source===currentSource());
+    window.ReadMDAuthorText?.apply(container,authorRecord?.authorText||null);
+    if(authorRecord?.authorText?.runs?.length)authorSurfaces.set(container,authorRecord);else authorSurfaces.delete(container);
     measureBibliographies(container);
     bindCitations(container);
   }
@@ -5633,18 +5963,18 @@ window.ReadMDPublication=(()=>{
     return{issue,inheritGlobal,mount,validateExport,collectExport,refreshExport};
   }
   const trackingControls=physicalTextControls({key:'trackingPt',labelKey:'export.trackingPt',marker:'tracking',min:-5,max:20,supported:format=>format==='docx',unsupported:'error.publication_tracking_unsupported'});
-  const baselineControls=physicalTextControls({key:'baselineShiftPt',labelKey:'export.baselineShiftPt',marker:'baseline',min:-72,max:72,supported:(format,engine)=>format==='docx'||format==='pdf'&&(!engine||engine==='rust'),unsupported:'error.publication_baseline_unsupported'});
+  const baselineControls=physicalTextControls({key:'baselineShiftPt',labelKey:'export.baselineShiftPt',marker:'baseline',min:-72,max:72,supported:(format,engine)=>format==='docx'||format==='pdf'&&(!engine||['rust','typst'].includes(engine)),unsupported:'error.publication_baseline_unsupported'});
 
   async function blocks(body,signal){
     const response=await apiFetch('/api/publication/blocks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
     const value=await response.json();if(!response.ok||!value.ok){const error=new Error('publication');error.response=value;throw error;}return value;
   }
   function closeStyle(){
-    const session=styleSession;styleSession=null;session?.controller.abort();if(session?.modal){ReadMDModal.close(session.modal);session.modal.remove();if(window.cmView===session.view&&state.activeTabId===session.tab&&state.editing)session.view.focus();}
+    const session=styleSession;styleSession=null;session?.numbering?.destroy();session?.inlineText?.destroy();session?.controller.abort();if(session?.modal){ReadMDModal.close(session.modal);session.modal.remove();if(editorView()===session.view&&state.activeTabId===session.tab&&state.editing)session.view.focus();}
   }
-  const current=s=>styleSession===s&&state.editing&&window.cmView===s.view&&state.activeTabId===s.tab&&s.view.state.doc.toString()===s.source;
+  const current=s=>styleSession===s&&state.editing&&editorView()===s.view&&state.activeTabId===s.tab&&s.view.state.doc.toString()===s.source;
   async function openStyle(target=null){
-    closeStyle();const view=window.cmView;if(!state.editing||!view)return;
+    closeStyle();const view=editorView();if(!state.editing||!view)return;
     const session={view,source:view.state.doc.toString(),tab:state.activeTabId,controller:new AbortController(),modal:null};styleSession=session;
     const t=(key)=>i18n.t(key);
     try{
@@ -5682,6 +6012,8 @@ window.ReadMDPublication=(()=>{
       if(node.kind==='paragraph')field('text','trackingPt','export.trackingPt','number',-5,20,extra);
       if(['paragraph','heading','caption'].includes(node.kind))field('text','baselineShiftPt','export.baselineShiftPt','number',-72,72,extra);
       const lineSpacing=node.kind==='math'?null:lineSpacingControls.mount(extra,{scope:'local',style:node.style.paragraph||{},t});
+      session.numbering=window.ReadMDPublicationNumbering?.mount(extra,{source:session.source,getSource:()=>session.view.state.doc.toString(),isCurrent:()=>current(session),view:session.view,signal:session.controller.signal,onApplied:closeStyle});
+      session.inlineText=window.ReadMDPublicationInlineText?.mount(extra,{source:session.source,isCurrent:()=>current(session),view:session.view,signal:session.controller.signal,onApplied:closeStyle,t});
       const error=document.createElement('p');error.className='publication-style-error';error.role='alert';box.append(error);
       const actions=document.createElement('div');actions.className='publication-style-actions';box.append(actions);
       const reset=document.createElement('button');reset.type='button';reset.dataset.localAction='reset';reset.className='tb-btn';reset.textContent=t('publication.local.reset');actions.append(reset);
@@ -5694,7 +6026,7 @@ window.ReadMDPublication=(()=>{
           const result=await blocks({action:'apply',content:session.source,base_revision:model.revision,id:node.id,patch},session.controller.signal);
           if(!current(session)){error.textContent=t('error.publication_local_style_target');return;}
           if(result.result.changed)session.view.dispatch({changes:result.transaction.edits,userEvent:'input.publication'});
-          closeStyle();if(window.cmView===session.view&&state.activeTabId===session.tab)session.view.focus();
+          closeStyle();if(editorView()===session.view&&state.activeTabId===session.tab)session.view.focus();
         }catch(e){if(styleSession===session)error.textContent=apiMessage(e.response,'error.publication_local_style_invalid');}
         finally{reset.disabled=apply.disabled=false;}
       }
@@ -5743,33 +6075,48 @@ window.ReadMDPublication=(()=>{
     finally{clearTimeout(timeout);session.pageLoading=false;if(paged===session&&session.current())showPaged(session);}
   }
   async function renderPaged(pane,{view,tab,current}){
-    const source=view.state.doc.toString(),baseDir=state.dir||'',suggestedName=state.sourceName||'document',options=JSON.parse(JSON.stringify(state.export?.options||{}));options.pdf={...(options.pdf||{}),engine:'typst'};
-    const signature=JSON.stringify([source,baseDir,suggestedName,options]);
+    const sourceDocument=view.state.doc,source=sourceDocument.toString(),baseDir=state.dir||'',suggestedName=state.sourceName||'document',fallback=JSON.parse(JSON.stringify(state.export?.options||{}));fallback.pdf={...(fallback.pdf||{}),engine:'typst'};
+    const signature=JSON.stringify([source,baseDir,suggestedName,fallback]);
     pane.classList.add('publication-paged');
-    if(paged?.signature===signature&&paged.view===view&&paged.tab===tab){paged.current=current;return;}
-    stopPaged();const session={pane,source,signature,view,tab,current,controller:new AbortController(),task:crypto.randomUUID(),images:new Map(),page:1,pageLoading:false};paged=session;
+    if(paged?.signature===signature&&paged.view===view&&paged.document===sourceDocument&&paged.tab===tab&&sameDocument(paged.owner)){paged.current=current;return;}
+    stopPaged();const session={pane,source,signature,view,document:sourceDocument,owner:origin(),tab,current,controller:new AbortController(),task:crypto.randomUUID(),images:new Map(),page:1,pageLoading:false};paged=session;
+    const valid=()=>paged===session&&!session.controller.signal.aborted&&session.current()&&view.state.doc===sourceDocument&&sameDocument(session.owner)&&editorView()===view;
     window.ReadMDTask.loading(pane,'export.previewGenerating');
     try{
-      const prepared=await prepareExportFigures(source,options,session.controller.signal);if(paged!==session||!session.current())return;
+      if(!valid())return;
+      const profileResponse=await apiFetch('/api/publication/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:source}),signal:session.controller.signal}),profile=await profileResponse.json();
+      if(!valid())return;
+      if(!profileResponse.ok||profile.ok!==true||profile.diagnostics?.length)throw Object.assign(Error('publication'),{response:profile.error_code?profile:{ok:false,error_code:profile.diagnostics?.[0]?.code||'publication_metadata_type',...profile.diagnostics?.[0]}});
+      if(!window.ReadMDPublicationProfile)throw Object.assign(Error('publication'),{response:{ok:false,error_code:'publication_metadata_type'}});
+      const options=window.ReadMDPublicationProfile.create(profile.options,fallback).request(fallback);
+      const prepared=await prepareExportFigures(source,options,session.controller.signal);if(!valid())return;
       const response=await apiFetch('/api/export/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:'pdf',content:source,baseDir,suggestedName,options:prepared,task_id:session.task}),signal:session.controller.signal}),data=await response.json();
-      if(paged!==session||!session.current())return;
+      if(!valid())return;
       if(response.ok&&data.ok&&data.sourceMap&&!data.firstPage){
         if(await ReadMDCapabilities.ensure('pdfium')){
-          if(paged!==session||!session.current())return;
+          if(!valid())return;
           const rendered=await apiFetch('/api/export/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:data.key,page:1}),signal:session.controller.signal}),page=await rendered.json();
-          if(paged!==session||!session.current())return;
+          if(!valid())return;
           if(rendered.ok&&page.ok)data.firstPage=page.png;
         }
       }
       if(!response.ok||!data.ok||!data.sourceMap||!data.firstPage)throw Object.assign(Error('publication'),{response:data});
       session.task='';session.data=data;session.images.set(1,data.firstPage);showPaged(session);
     }catch(error){
-      if(paged!==session||!session.current()||session.controller.signal.aborted)return;
+      if(!valid())return;
       pane.setAttribute('aria-busy','false');pane.replaceChildren();const message=document.createElement('p');message.role='alert';message.textContent=apiMessage(error.response,'export.previewFailed');pane.append(message);
       const retry=document.createElement('button');retry.type='button';retry.className='tb-btn';retry.textContent=i18n.t('plugin.retry');retry.onclick=()=>{stopPaged();renderPaged(pane,{view,tab,current:session.current});};pane.append(retry);
     }
   }
-  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,applyLayout,refreshBaseline,refreshLayout:()=>{for(const record of bibliographyMeasurements.values())record.refresh?.();},bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;++cacheGeneration;++citationNavigation;for(const record of bibliographyMeasurements.values())record.stop();cached=null;pending=null;projections.length=0;rangeCache=null;stopPaged();}};
+  function refreshLayout(){
+    for(const record of bibliographyMeasurements.values())record.refresh?.();
+    for(const [container,record]of authorSurfaces){
+      const current=container.isConnected!==false&&record.generation===cacheGeneration&&sameDocument(record.owner)&&record.source===currentSource();
+      window.ReadMDAuthorText?.apply(container,current?record.authorText:null);
+      if(!current)authorSurfaces.delete(container);
+    }
+  }
+  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,preparePagedHeadings,applyLayout,refreshBaseline,refreshLayout,bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;++cacheGeneration;++citationNavigation;for(const record of bibliographyMeasurements.values())record.stop();for(const container of authorSurfaces.keys())window.ReadMDAuthorText?.apply(container,null);authorSurfaces.clear();cached=null;pending=null;projections.length=0;rangeCache=null;stopPaged();}};
 })();
 
 ;
@@ -6554,6 +6901,7 @@ function renderPage(pageIndex, targetHeadingId, preserveScroll) {
   const finalHtml = restoreMath(html, prot.saved);
   el.innerHTML = '<article class="markdown-body rd-article">' + sanitizeRenderedHtml(finalHtml) + '</article>';
 
+  if(window.ReadMDPublication?.preparePagedHeadings)targetHeadingId=ReadMDPublication.preparePagedHeadings(buildToc,targetHeadingId,pageIndex);
   if (state.pagination.allHeadings?.length) {
     const pageOutline = state.pagination.allHeadings.filter(heading => heading.pageIndex === pageIndex);
     const pageHeadings = el.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
@@ -6730,10 +7078,27 @@ function parseMarkdownWithSourceMap(content, options = {}) {
 
     // 2. 自定义渲染器注入 data-source-line 属性并正确解析 inline/nested 元素
     renderer.heading = function(token) {
-      const text = (token && token.tokens && this.parser) ? this.parser.parseInline(token.tokens) : (token ? (token.text || '') : (arguments[0] || ''));
+      const identity = token && typeof ReadMDHeadings !== 'undefined' ? ReadMDHeadings.heading(token) : null;
+      const inline = identity ? identity.tokens : token && token.tokens;
+      const text = (inline && this.parser) ? this.parser.parseInline(inline) : (token ? (token.text || '') : (arguments[0] || ''));
       const level = (token && token.depth) ? token.depth : (arguments[1] || 1);
       const lineAttr = (token && token.sourceLine) ? ` data-source-line="${token.sourceLine}"` : '';
-      return `<h${level}${lineAttr}>${text}</h${level}>\n`;
+      // Preserve source identities before rendering can consume Markdown
+      // punctuation in an explicit ID or alter an image's plain alt text.
+      const identityAttr = identity ? ` data-readmd-heading-text="${escapeHtml(identity.text)}"` + (identity.id ? ` data-readmd-explicit-id="${escapeHtml(identity.id)}"` : '') : '';
+      return `<h${level}${lineAttr}${identityAttr}>${text}</h${level}>\n`;
+    };
+
+    renderer.link = function(token) {
+      const html = marked.Renderer.prototype.link.call(this, token);
+      // A plain fragment label can deliberately encode literal TeX-looking
+      // characters (as generated TOCs do). Preserve that intent after the HTML
+      // parser decodes the references, using MathJax's existing ignore class.
+      // Ordinary math labels retain their normal typesetting behavior.
+      const literalMath = token.href?.startsWith('#') &&
+        /&#(?:0*(?:36|92)|[xX]0*(?:24|5[cC]));/.test(token.text || '') &&
+        token.tokens?.every(part => part.type === 'text' || part.type === 'escape');
+      return literalMath ? html.replace(/^<a\b/, '<a class="mathjax_ignore"') : html;
     };
 
     renderer.paragraph = function(token) {
@@ -7066,6 +7431,7 @@ window.renderSafeMarkdown = renderSafeMarkdown;
 async function renderContent(content, name) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const render = beginReaderRender();
+  const mathRawSource=String(content||''),mathTab=state.activeTabId,mathFile=state.file,mathEditing=state.editing;
   const saved = state.scrollPos[normalizePath(name || state.file || '')] || 0;
 
   // 预处理 @import
@@ -7079,6 +7445,13 @@ async function renderContent(content, name) {
   if(window.ReadMDPublication){
     content=await ReadMDPublication.prepare(String(content||''),state.file||'');
     if(!isReaderRenderCurrent(render))return;
+  }
+
+  if(window.ReadMDMathContext&&!(state.is_code||name&&!MD_RE.test(name)&&typeof TEXT_CODE_RE!=='undefined'&&TEXT_CODE_RE.test(name))){
+    const current=()=>isReaderRenderCurrent(render)&&state.activeTabId===mathTab&&state.file===mathFile&&state.editing===mathEditing;
+    try{content=await ReadMDMathContext.prepareSource(mathRawSource,String(content||''),{scope:'content',current});}
+    catch(error){if(!current()||error.name==='AbortError')return;content=ReadMDMathContext.errorMarkup(mathRawSource,error);}
+    if(!current())return;
   }
 
   // Footnote definitions must be protected before Markdown consumes them as
@@ -9211,7 +9584,7 @@ function updatePvLabel(layout = state.pvLayout || 'none') {
   }
 }
 
-function applyPvLayout() {
+function applyPvLayout({ persist = true, updatePanels = true } = {}) {
   const layout = state.pvLayout || 'none';
   const mc = $('main-col');
 
@@ -9222,15 +9595,15 @@ function applyPvLayout() {
   if (state.editing && layout !== 'none') {
     // 预览界面和AI对话界面不能同时出现：若开启预览，自动收起 AI 对话面板
     const aiPanel = $('ai-panel');
-    if (aiPanel && !aiPanel.classList.contains('hidden')) {
+    if (updatePanels && aiPanel && !aiPanel.classList.contains('hidden')) {
       aiPanel.classList.add('hidden');
     }
     mc.classList.add('pv-' + layout);
     const bounds = mc.getBoundingClientRect();
     const horizontal = layout === 'left' || layout === 'right';
-    // Decide on window width: main-col width is circular here (it shrinks when the
-    // preview pane is already flexed), while the specs pin the boundary at 720/760.
-    const constrained = horizontal ? window.innerWidth < 740 : bounds.height < 520;
+    // A sidebar can leave too little room even on a wide window. Keep both
+    // source and preview usable, retaining the user's split for a wider host.
+    const constrained = horizontal ? window.innerWidth < 740 || bounds.width < 680 : bounds.height < 520;
     mc.classList.toggle('pv-auto-hidden', constrained);
     pw.classList.toggle('hidden', constrained);
     $('pv-splitter').classList.toggle('hidden', constrained);
@@ -9244,7 +9617,8 @@ function applyPvLayout() {
     $('pv-splitter').classList.add('hidden');
   }
   // AI 写入时临时收起预览（_pvLayoutBeforeAi），不能覆盖用户记住的布局。
-  if (!state._pvLayoutBeforeAi) saveSettings();
+  if (persist && !state._pvLayoutBeforeAi) saveSettings();
+  measureEditorLayout();
 }
 
 /* 每个文档记住上次的光标与滚动位置，再次进入编辑时恢复。 */
@@ -9255,9 +9629,25 @@ function editMemoryKey() {
 
 function rememberEditPosition() {
   const key = editMemoryKey();
-  if (!key || !cmView) return;
+  if (!cmView) return;
+  // Public geometry reads flush a pending resize. Capture all position data
+  // after that flush, rather than mixing an old snapshot with a new height map.
+  // A caller inside a CodeMirror update cannot read layout; retain its prior
+  // position instead of caching inconsistent geometry in that exceptional case.
+  try { cmView.lineBlockAtHeight(0); } catch (_) { return; }
+  // CodeMirror's snapshot restores a document anchor after its new viewport
+  // has been measured, including wrapped lines and resized split panes.
+  const tab = getActiveTab();
+  if (tab && typeof cmView.scrollSnapshot === 'function') tab.editorScrollSnapshot = cmView.scrollSnapshot();
+  if (!key) return;
   try {
-    localStorage.setItem(key, JSON.stringify({ a: cmView.state.selection.main.head, t: cmView.scrollDOM.scrollTop }));
+    const top = cmView.scrollDOM.scrollTop;
+    let block = cmView.lineBlockAtHeight(top + 8);
+    const first = cmView.viewportLineBlocks[0];
+    if (first && block.from < cmView.viewport.from && first.top - top <= 200) block = first;
+    localStorage.setItem(key, JSON.stringify({ a: cmView.state.selection.main.head,
+      selection: cmView.state.selection.toJSON(), t: top, l: cmView.scrollDOM.scrollLeft,
+      anchor: { from: block.from, offset: block.top - top } }));
   } catch (e) { /* storage full or disabled */ }
 }
 
@@ -9269,14 +9659,40 @@ async function newDocument() {
 }
 
 function restoreEditPosition() {
+  // A reused EditorState already contains every oriented selection and its
+  // native scroll snapshot. The persistent caret fallback must not collapse it.
+  if (cmReusedState) { measureEditorLayout(); return; }
   const key = editMemoryKey();
   if (!key || !cmView) return;
+  const view = cmView, tabId = state.activeTabId;
   try {
     const m = JSON.parse(localStorage.getItem(key) || 'null');
     if (!m) return;
-    const anchor = Math.max(0, Math.min(Number(m.a) || 0, cmView.state.doc.length));
-    cmView.dispatch({ selection: { anchor } });
-    requestAnimationFrame(() => { if (cmView) cmView.scrollDOM.scrollTop = Number(m.t) || 0; });
+    const anchor = Math.max(0, Math.min(Number(m.a) || 0, view.state.doc.length));
+    const sourceAnchor = Number.isInteger(m.anchor?.from) && m.anchor.from >= 0 && m.anchor.from <= view.state.doc.length && Number.isFinite(m.anchor.offset)
+      ? m.anchor : null;
+    let selection = { anchor };
+    try {
+      const saved = window.ReadMDCodeMirror.EditorSelection.fromJSON(m.selection);
+      if (saved.ranges.every(range => range.from >= 0 && range.to <= view.state.doc.length)) selection = saved;
+    } catch (_) { /* Older profiles stored only a caret. */ }
+    view.dispatch({ selection, effects: sourceAnchor
+      ? window.ReadMDCodeMirror.EditorView.scrollIntoView(sourceAnchor.from, { y: 'start', yMargin: 0 }) : [] });
+    // This is a saved-position restore, scheduled on CodeMirror's measured
+    // viewport. Capture the view/tab so rapid document switches cannot apply
+    // an old callback to a newly mounted editor.
+    const current = () => view === cmView && state.activeTabId === tabId && state.editing;
+    view.requestMeasure({ key: restoreEditPosition, read: () => {
+      if (!current()) return null;
+      // The source anchor is stable when a newly created view refines its
+      // wrapped-line height estimates. Older profiles retain the pixel fallback.
+      return Math.max(0, sourceAnchor ? view.lineBlockAt(sourceAnchor.from).top - sourceAnchor.offset : Number(m.t) || 0);
+    }, write: top => {
+      if (!current() || top === null) return;
+      view.scrollDOM.scrollTop = top;
+      view.scrollDOM.scrollLeft = Math.max(0, Number(m.l) || 0);
+      view.requestMeasure();
+    } });
   } catch (e) { /* ignore corrupt entry */ }
 }
 
@@ -9287,15 +9703,23 @@ function applyPvSplit() {
   const raw = Number(state[key]);
   const pct = Math.max(25, Math.min(70, Number.isFinite(raw) ? raw : (horizontal ? 50 : 46)));
   state[key] = pct;
-  pw.style.flexBasis = pct + '%';
   const splitter = $('pv-splitter');
+  let effective = pct;
+  if (horizontal) {
+    const available = Math.max(0, $('main-col').clientWidth - (splitter?.getBoundingClientRect().width || 0));
+    const minimum = Math.min(320, available / 2);
+    const width = Math.max(minimum, Math.min(available - minimum, available * pct / 100));
+    pw.style.flexBasis = width + 'px';
+    if (available) effective = width / available * 100;
+  } else pw.style.flexBasis = pct + '%';
   if (splitter) {
     splitter.setAttribute('aria-valuemin', '25');
     splitter.setAttribute('aria-valuemax', '70');
-    splitter.setAttribute('aria-valuenow', String(Math.round(pct)));
-    splitter.setAttribute('aria-valuetext', `${Math.round(pct)}%`);
+    splitter.setAttribute('aria-valuenow', String(Math.round(effective)));
+    splitter.setAttribute('aria-valuetext', `${Math.round(effective)}%`);
     splitter.setAttribute('aria-orientation', horizontal ? 'vertical' : 'horizontal');
   }
+  measureEditorLayout();
 }
 
 function bindPvSplitter() {
@@ -9314,7 +9738,19 @@ function bindPvSplitter() {
   bar.addEventListener('pointermove', e => { if (bar.hasPointerCapture(e.pointerId)) update(e); });
   bar.addEventListener('pointerup', e => { if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId); saveSettings(); });
   bar.addEventListener('keydown', e => { if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) return; e.preventDefault(); const delta = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 2 : -2; if (state.pvLayout === 'left' || state.pvLayout === 'right') state.pvSplitX = Math.max(25, Math.min(70, state.pvSplitX + delta)); else state.pvSplitY = Math.max(25, Math.min(70, state.pvSplitY + delta)); applyPvSplit(); saveSettings(); });
-  window.addEventListener('resize', () => requestAnimationFrame(() => setPvLayout(state.pvLayout)));
+  window.addEventListener('resize', () => requestAnimationFrame(() => {
+    updatePvLabel();
+    applyPvLayout({ persist: false, updatePanels: false });
+  }));
+  if (typeof ResizeObserver === 'function') {
+    let width = -1, height = -1;
+    new ResizeObserver(entries => {
+      const bounds = entries[0].contentRect;
+      if (bounds.width === width && bounds.height === height) return;
+      width = bounds.width; height = bounds.height;
+      if (state.editing) applyPvLayout({ persist: false, updatePanels: false });
+    }).observe(mc);
+  }
 }
 
 /* Which pane the user is driving: scroll events from the other pane are
@@ -9322,6 +9758,14 @@ function bindPvSplitter() {
 let pvScrollDriver = null;
 let pvScrollDriverTimer = null;
 let pvSyncFrame = 0;
+function cancelPvScrollSync() {
+  if (pvSyncFrame) cancelAnimationFrame(pvSyncFrame);
+  pvSyncFrame = 0;
+  if (pvScrollDriverTimer) clearTimeout(pvScrollDriverTimer);
+  pvScrollDriverTimer = null;
+  pvScrollDriver = null;
+  isSyncingFromEditor = isSyncingFromPreview = false;
+}
 function pvClaimScroll(who) {
   pvScrollDriver = who;
   if (pvScrollDriverTimer) clearTimeout(pvScrollDriverTimer);
@@ -9408,6 +9852,15 @@ async function renderPreview() {
 
   let html;
   try {
+  // READMD_MATH_CONTEXT_BEGIN
+    if(window.ReadMDMathContext){
+      const mathDoc=view?.state.doc;
+      const mathCurrent=()=>renderEpoch===pvRenderEpoch&&state.editing&&state.pvLayout!=='none'&&cmView===view&&state.activeTabId===tab&&view?.state.doc===mathDoc;
+      try{src=await ReadMDMathContext.prepareSource(source,src,{scope:pane,current:mathCurrent});}
+      catch(error){if(!mathCurrent()||error.name==='AbortError')return;src=ReadMDMathContext.errorMarkup(source,error);}
+      if(!current())return;
+    }
+  // READMD_MATH_CONTEXT_END
     let transformed = window.readerPrepare ? readerPrepare(src) : src;
     if (window.transformWikilinks) transformed = transformWikilinks(transformed);
     if (window.transformAcademicCallouts) transformed = transformAcademicCallouts(transformed);
@@ -9425,6 +9878,15 @@ async function renderPreview() {
   pvLastRenderAt = Date.now();
   const safe = window.sanitizeRenderedHtml ? window.sanitizeRenderedHtml(html) : html;
   const fresh = pvPatchPane(pane, safe);
+  // :only-child ignores surrounding text nodes. Mark true standalone image
+  // paragraphs explicitly so an inline symbol cannot widen ordinary prose.
+  for (const block of fresh) {
+    if (block.tagName !== 'P') continue;
+    const children = [...block.childNodes].filter(node => node.nodeType !== 3 || node.textContent.trim());
+    const media = children.length === 1 ? children[0] : null;
+    const image = media?.nodeName === 'IMG' || media?.nodeName === 'A' && media.children.length === 1 && media.firstElementChild.nodeName === 'IMG' && !media.textContent.trim();
+    block.classList.toggle('pv-figure', Boolean(image));
+  }
   if(window.ReadMDReader)ReadMDReader.enhanceFootnotes(pane);
   if(window.ReadMDPublication)ReadMDPublication.applyLayout(pane);
   // Cache only a committed render. A second request for the same source must
@@ -9492,10 +9954,13 @@ function pvAnchors(wrap, pane) {
 
 function pvSyncFromEditor() {
   if(state.pvPublication)return;
-  if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'preview') return;
+  if (!state.editing || !state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'preview') return;
   if (pvSyncFrame) return;
-  pvSyncFrame = requestAnimationFrame(() => {
+  const view = cmView, tabId = state.activeTabId, layout = state.pvLayout;
+  const frame = requestAnimationFrame(() => {
+    if (pvSyncFrame !== frame) return;
     pvSyncFrame = 0;
+    if (!state.editing || cmView !== view || state.activeTabId !== tabId || state.pvLayout !== layout || !state.pvSync || state.pvPublication) return;
     pvClaimScroll('editor');
     const dst = $('preview-wrap');
     const pane = $('preview-pane');
@@ -9523,14 +9988,18 @@ function pvSyncFromEditor() {
     }
     dst.scrollTop = Math.max(0, Math.min(maxDst, y - 12));
   });
+  pvSyncFrame = frame;
 }
 
 function pvSyncFromPreview() {
   if(state.pvPublication)return;
-  if (!state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'editor') return;
+  if (!state.editing || !state.pvSync || state.pvLayout === 'none' || pvScrollDriver === 'editor') return;
   if (pvSyncFrame) return;
-  pvSyncFrame = requestAnimationFrame(() => {
+  const view = cmView, tabId = state.activeTabId, layout = state.pvLayout;
+  const frame = requestAnimationFrame(() => {
+    if (pvSyncFrame !== frame) return;
     pvSyncFrame = 0;
+    if (!state.editing || cmView !== view || state.activeTabId !== tabId || state.pvLayout !== layout || !state.pvSync || state.pvPublication) return;
     pvClaimScroll('preview');
     const src = $('preview-wrap');
     const pane = $('preview-pane');
@@ -9563,6 +10032,7 @@ function pvSyncFromPreview() {
       scroller.scrollTop = Math.max(0, Math.min(maxDst, target));
     } catch (e) { /* ignore */ }
   });
+  pvSyncFrame = frame;
 }
 
 function alignEditorAndPreview() {
@@ -9608,6 +10078,9 @@ async function toggleEdit() {
   if (window.ReadMDCodeMirror) {
     $('edit-area').classList.add('hidden');
     $('edit-wrap').classList.remove('hidden');
+    // Establish the final split geometry before constructing CodeMirror's
+    // virtual viewport. It must not first measure the reader's full width.
+    applyPvUi();
     // 旧版或损坏的 CodeMirror 包会让 createEditor 抛错：退回 textarea，避免卡在空白编辑页。
     try { createEditor(editorContent); cmMounted = !!cmView; } catch (e) {
       console.error(e);
@@ -9630,6 +10103,7 @@ async function toggleEdit() {
   applyPvUi();
   syncSearchMode();
   if(window.ReadMDInlineMath)await ReadMDInlineMath.restore();
+  if (epoch === editorOpenEpoch && state.activeTabId === tabId) measureEditorLayout();
 }
 
 async function confirmExitEdit() {
@@ -9664,6 +10138,7 @@ function exitEdit() {
   if (typeof switchEditAiToChatPanel === 'function') switchEditAiToChatPanel();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (pvTimer) { clearTimeout(pvTimer); pvTimer = null; }
+  cancelPvScrollSync();
   if (pvEditorEl) {
     pvEditorEl.removeEventListener('scroll', pvSyncFromEditor);
     pvEditorEl = null;
@@ -10827,42 +11302,38 @@ async function exportAndInsertImgOnce() {
     return { changes: { from, to: doc.length, insert }, selection: { anchor: next.length, head: next.length }, id };
   }
 
+  let nodeHeadings;
+  function headingIdentity() {
+    if (root && root.ReadMDHeadings) return root.ReadMDHeadings;
+    if (typeof module !== 'undefined' && module.exports) return nodeHeadings ||= require('../reader/heading-identity.js');
+    throw new Error('ReadMDHeadings must be loaded before TOC transforms');
+  }
+
   function headingSlug(text, seen) {
-    let slug = Array.from(text.trim()).map(c=>/[\p{L}\p{N}_-]/u.test(c)?c.toLowerCase():/\p{White_Space}/u.test(c)?'-':'').join('');
-    if (!slug) slug = 'section';
+    let slug = headingIdentity().slug(text);
     const base=slug;let count=1;while(Object.prototype.hasOwnProperty.call(seen,slug))slug=base+'-'+count++;seen[slug]=1;
     return slug;
   }
 
-  /* A Markdown list linking every ATX heading (fenced code is skipped). */
+  /* Serialize the reader's heading identities in both Node and the browser.
+     Escape all Markdown punctuation in a plain title, including ampersands
+     from code spans, so reparsing a label cannot change its visible text. */
   function tocMarkdown(doc) {
-    if(typeof window!=='undefined'&&window.ReadMDHeadings){
-      const headings=ReadMDHeadings.fromMarkdown(doc);if(!headings.length)return '';
-      const min=Math.min(...headings.map(h=>h.level));
-      return headings.map(h=>'  '.repeat(h.level-min)+'- ['+h.text.replace(/([\\[\]])/g,'\\$1')+'](#'+encodeURIComponent(h.id)+')').join('\n');
-    }
-    const heads = [];
-    let fence = null;
-    for (const raw of String(doc).split('\n')) {
-      const f = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
-      if (f) {
-        if (!fence) fence = f[1][0].repeat(f[1].length);
-        else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-        continue;
-      }
-      if (fence) continue;
-      const m = /^\s{0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$/.exec(raw);
-      if (!m) continue;
-      const text = m[2]
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/[*_`~]/g, '')
-        .trim();
-      if (text) heads.push({ level: m[1].length, text });
-    }
+    const heads = headingIdentity().fromMarkdown(doc);
     if (!heads.length) return '';
     const min = Math.min(...heads.map(h => h.level));
-    const seen = {};
-    return heads.map(h => '  '.repeat(h.level - min) + '- [' + h.text.replace(/([[\]])/g, '\\$1') + '](#' + headingSlug(h.text, seen) + ')').join('\n');
+    // Math protection precedes Markdown parsing in the reader. Backslash
+    // escapes such as \[text\] and \(text\) would be saved as TeX and then
+    // restored after Markdown, exposing the escape characters to the reader.
+    // Character references remain portable Markdown and carry literal intent
+    // through both that pre-pass and the later MathJax scan.
+    const literalDelimiters = new Set('\\$()[]');
+    const label = text => text.replace(/[!-/:-@\[-`{-~]/g,
+      c => literalDelimiters.has(c) ? '&#' + c.charCodeAt(0) + ';' : '\\' + c);
+    // encodeURIComponent leaves parentheses unescaped; those delimit a
+    // Markdown destination and can otherwise truncate an explicit ID.
+    const fragment = id => encodeURIComponent(id).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    return heads.map(h => '  '.repeat(h.level - min) + '- [' + label(h.text) + '](#' + fragment(h.id) + ')').join('\n');
   }
 
   /* ---------------- 模糊匹配（斜杠菜单） ---------------- */
@@ -11387,6 +11858,470 @@ async function exportAndInsertImgOnce() {
 
 ;
 'use strict';
+/* Shared source-owned numbering controls. Hosts supply the existing editor;
+   this component never opens a new panel, writes files or stores export styles. */
+(() => {
+  const FORMATS = Object.freeze([
+    ['decimal', '1, 2, 3'], ['lowerRoman', 'i, ii, iii'], ['upperRoman', 'I, II, III'],
+    ['lowerLetter', 'a, b, c'], ['upperLetter', 'A, B, C']
+  ]);
+  const KINDS = Object.freeze(['equation', 'figure', 'table']);
+  const KEYS = Object.freeze(['title', 'hint', 'levels', 'level', 'format', 'start', 'restartAfter', 'never',
+    'separator', 'suffix', 'space', 'tab', 'legacy', 'document', 'chapter', 'chapterLevel', 'customPrefix',
+    'prefix', 'labelSeparator', 'captionSeparator', 'apply', 'clear', 'loading', 'requiresEditor',
+    'customLevelText', 'levelText', 'customLevelSuffix', 'levelSuffix', 'legalNumbering', 'sequence']);
+  const mounts = new Set();
+  let serial = 0;
+  const clone = value => value == null ? null : JSON.parse(JSON.stringify(value));
+  const error = code => Object.assign(new Error(code), {code});
+  const invalid = () => { throw error('publication_numbering_invalid'); };
+  const bounded = (value, limit) => typeof value === 'string' && [...value].length <= limit && !/[\u0000-\u001F\u007F-\u009F]/u.test(value);
+  const integer = (value, min, max) => {
+    if (!/^\d+$/u.test(String(value))) return invalid();
+    const number = Number(value); if (!Number.isSafeInteger(number) || number < min || number > max) return invalid();
+    return number;
+  };
+  const format = value => FORMATS.some(([name]) => name === value) ? value : invalid();
+  function validateConfig(config) {
+    if (config == null) return null;
+    if (!config || typeof config !== 'object' || Array.isArray(config) || Object.keys(config).some(key => !['headings', 'captions'].includes(key))) return invalid();
+    const headings = config.headings;
+    if (headings != null) {
+      if (!Array.isArray(headings.levels) || headings.levels.length < 1 || headings.levels.length > 6 || !bounded(headings.separator ?? '.', 16) || (headings.separator ?? '.').includes('%') || !['space', 'tab', 'nothing'].includes(headings.suffix ?? 'space')) return invalid();
+      headings.levels.forEach((rule, index) => { format(rule.format ?? 'decimal'); integer(rule.start ?? 1, 0, 10000); if (rule.restartAfter != null) integer(rule.restartAfter, 0, index);
+        if (rule.text != null && !bounded(rule.text, 256) || rule.suffix != null && !['space', 'tab', 'nothing'].includes(rule.suffix) || rule.isLegal != null && typeof rule.isLegal !== 'boolean') return invalid(); });
+    }
+    const captions = config.captions ?? {};
+    if (!captions || typeof captions !== 'object' || Array.isArray(captions) || Object.keys(captions).some(kind => !KINDS.includes(kind)) || !headings && !Object.keys(captions).length) return invalid();
+    for (const rule of Object.values(captions)) {
+      if (!rule || !['document', 'chapter'].includes(rule.scope ?? 'document')) return invalid();
+      format(rule.format ?? 'decimal'); integer(rule.start ?? 1, 0, 10000);
+      const chapterLevel = integer(rule.chapterLevel ?? 1, 1, 6);
+      if (rule.scope === 'chapter' && (!headings || headings.levels.length < chapterLevel)) return invalid();
+      if (!bounded(rule.separator ?? '.', 16) || !bounded(rule.labelSeparator ?? ' ', 16) || !bounded(rule.captionSeparator ?? ' — ', 32) || rule.prefix != null && !bounded(rule.prefix, 128)) return invalid();
+      if (rule.sequence != null && (typeof rule.sequence !== 'string' || rule.sequence.length > 40 || !/^\p{Alphabetic}[\p{Alphabetic}\p{Number}_]*$/u.test(rule.sequence))) return invalid();
+    }
+    return config;
+  }
+  function createDraft(config) {
+    validateConfig(config);
+    const heading = config?.headings;
+    const levels = Array.from({length: 6}, (_, index) => {
+      const rule = heading?.levels[index] || {};
+      return {format: rule.format ?? 'decimal', start: String(rule.start ?? 1), restartAfter: String(rule.restartAfter ?? index),
+        customText: rule.text != null, text: rule.text ?? Array.from({length: index + 1}, (_, at) => '%' + (at + 1)).join(heading?.separator ?? '.'),
+        customSuffix: rule.suffix != null, suffix: rule.suffix ?? heading?.suffix ?? 'space', isLegal: rule.isLegal ?? false};
+    });
+    const captions = Object.fromEntries(KINDS.map(kind => {
+      const rule = config?.captions?.[kind];
+      return [kind, {scope: rule?.scope ?? (rule ? 'document' : ''), chapterLevel: String(rule?.chapterLevel ?? 1),
+        format: rule?.format ?? 'decimal', start: String(rule?.start ?? 1), customPrefix: rule?.prefix != null,
+        prefix: rule?.prefix ?? '', separator: rule?.separator ?? '.', labelSeparator: rule?.labelSeparator ?? ' ', captionSeparator: rule?.captionSeparator ?? ' — ', sequence: rule?.sequence ?? ''}];
+    }));
+    return {initial: clone(config), touched: false, changed: [], depth: String(heading?.levels.length ?? 0),
+      separator: heading?.separator ?? '.', suffix: heading?.suffix ?? 'space', levels, captions};
+  }
+  function configFromDraft(draft) {
+    if (!draft.touched) return clone(validateConfig(draft.initial));
+    const depth = integer(draft.depth, 0, 6), config = {captions: {}};
+    if (depth) config.headings = {levels: draft.levels.slice(0, depth).map((rule, index) => {
+      const result = {format: format(rule.format), start: integer(rule.start, 0, 10000), restartAfter: integer(rule.restartAfter, 0, index)};
+      if (rule.customText) result.text = rule.text;
+      if (rule.customSuffix) result.suffix = rule.suffix;
+      if (rule.isLegal || Object.hasOwn(draft.initial?.headings?.levels?.[index] ?? {}, 'isLegal')) result.isLegal = rule.isLegal;
+      return result;
+    }), separator: draft.separator, suffix: draft.suffix};
+    for (const kind of KINDS) {
+      const rule = draft.captions[kind]; if (!rule.scope) continue;
+      config.captions[kind] = {scope: rule.scope, chapterLevel: integer(rule.chapterLevel, 1, 6), format: format(rule.format),
+        start: integer(rule.start, 0, 10000), separator: rule.separator, labelSeparator: rule.labelSeparator, captionSeparator: rule.captionSeparator};
+      if (rule.customPrefix) config.captions[kind].prefix = rule.prefix;
+      if (rule.sequence !== '') config.captions[kind].sequence = rule.sequence;
+    }
+    if (!depth && !Object.keys(config.captions).length) return null;
+    if (draft.initial && Array.isArray(draft.changed)) {
+      // Editing one control does not turn every inherited/default field into
+      // an explicit source choice or erase an imported null/override.
+      const old = draft.initial, touched = new Set(draft.changed), result = clone(old);
+      const copy = (target, candidate, key) => { if (Object.hasOwn(candidate, key)) target[key] = clone(candidate[key]); else delete target[key]; };
+      if (!depth) { if (touched.has('depth')) result.headings = null; }
+      else if (!old.headings) result.headings = config.headings;
+      else {
+        result.headings.levels = Array.from({length: depth}, (_, index) => {
+          const previous = old.headings.levels[index], candidate = config.headings.levels[index];
+          if (!previous) return candidate;
+          const rule = clone(previous), prefix = 'levels.' + index + '.';
+          for (const key of ['format', 'start', 'restartAfter', 'isLegal']) if (touched.has(prefix + key)) copy(rule, candidate, key);
+          if (touched.has(prefix + 'text') || touched.has(prefix + 'customText')) copy(rule, candidate, 'text');
+          if (touched.has(prefix + 'suffix') || touched.has(prefix + 'customSuffix')) copy(rule, candidate, 'suffix');
+          return rule;
+        });
+        for (const key of ['separator', 'suffix']) if (touched.has(key)) result.headings[key] = config.headings[key];
+      }
+      for (const kind of KINDS) {
+        const previous = old.captions?.[kind], candidate = config.captions[kind], prefix = 'captions.' + kind + '.';
+        if (!candidate) { if (result.captions) delete result.captions[kind]; continue; }
+        result.captions ??= {};
+        if (!previous) { result.captions[kind] = candidate; continue; }
+        const rule = clone(previous);
+        for (const key of ['scope', 'chapterLevel', 'format', 'start', 'separator', 'labelSeparator', 'captionSeparator', 'sequence']) if (touched.has(prefix + key)) copy(rule, candidate, key);
+        if (touched.has(prefix + 'prefix') || touched.has(prefix + 'customPrefix')) copy(rule, candidate, 'prefix');
+        result.captions[kind] = rule;
+      }
+      return validateConfig(result);
+    }
+    return validateConfig(config);
+  }
+  function editorChanges(source, data, revision) {
+    const transaction = data?.transaction, result = data?.result;
+    if (!transaction || transaction.base_revision !== revision || !Array.isArray(transaction.edits) || transaction.edits.length > 1 || !result || typeof result.content !== 'string' || typeof result.revision !== 'string' || typeof result.changed !== 'boolean') throw error('transaction_conflict');
+    const converter = window.ReadMDPublicationMetadata?.toEditorChanges;
+    if (typeof converter !== 'function') throw error('transaction_invalid_range');
+    // The shared converter rejects split CRLF/surrogates and invalid ranges.
+    const changes = converter(source, transaction.edits);
+    let content = '', at = 0;
+    for (const edit of transaction.edits) { content += source.slice(at, edit.from) + edit.insert; at = edit.to; }
+    content += source.slice(at);
+    if (content !== result.content || result.changed !== (content !== source)) throw error('transaction_invalid_range');
+    return changes;
+  }
+  function mount(host, options = {}) {
+    for (const old of [...mounts]) if (!old.root.isConnected) old.destroy();
+    const translate = (key, params) => (options.t || window.i18n.t.bind(window.i18n))(key, params);
+    const nt = (key, params) => translate('publication.numbering.' + key, params);
+    const root = document.createElement('details'); root.className = 'metadata-bibliography publication-numbering'; root.dataset.publicationNumbering = ''; root.style.gridColumn = '1 / -1';
+    const labels = [], controls = new Map();
+    const label = (node, key, params) => { labels.push({node, key, params}); node.textContent = translate(key, params); return node; };
+    const numberLabel = (node, key, params) => label(node, 'publication.numbering.' + key, params);
+    const summary = numberLabel(document.createElement('summary'), 'title'); root.append(summary);
+    const body = document.createElement('div'); root.append(body); host.append(root);
+    const abort = new AbortController();
+    const session = {root, alive: true, loaded: false, busy: false, committing: false, draft: null, revision: '', source: options.source ?? options.getSource?.() ?? '', controls};
+    const getSource = () => options.getSource ? options.getSource() : session.source;
+    const current = () => session.alive && !options.signal?.aborted && options.isCurrent?.() !== false && getSource() === session.source;
+    const message = document.createElement('p'); message.className = 'publication-style-error'; message.setAttribute('role', 'alert');
+    let applyButton, clearButton, content;
+    function showError(problem) {
+      const code = problem?.data?.error_code || problem?.code || problem?.message;
+      message.dataset.errorCode = code || 'publication_numbering_invalid';
+      message.textContent = code === 'numbering_editor_required' ? nt('requiresEditor') : translate(['transaction_conflict', 'transaction_invalid_range'].includes(code) ? 'error.publication_local_style_target' : /^publication_numbering_(invalid|budget|hierarchy|chapter_missing)$/u.test(code || '') ? 'error.' + code : 'error.publication_numbering_invalid');
+      root.open = true; if (!message.isConnected) body.append(message);
+    }
+    function sync() {
+      const draft = session.draft; if (!draft) return;
+      const depth = Number(draft.depth);
+      for (const [path, input] of controls) {
+        const pieces = path.split('.');
+        input.disabled = session.busy || pieces[0] === 'levels' && Number(pieces[1]) >= depth || ['separator', 'suffix'].includes(path) && !depth;
+        if (pieces[0] === 'levels' && (pieces[2] === 'text' && !draft.levels[pieces[1]].customText || pieces[2] === 'suffix' && !draft.levels[pieces[1]].customSuffix)) input.disabled = true;
+        if (pieces[0] === 'captions') {
+          const rule = draft.captions[pieces[1]], field = pieces[2];
+          input.disabled = session.busy || field !== 'scope' && !rule.scope || field === 'chapterLevel' && rule.scope !== 'chapter' || field === 'prefix' && !rule.customPrefix;
+        }
+      }
+      if (applyButton) applyButton.disabled = session.busy;
+      if (clearButton) clearButton.disabled = session.busy || session.draft.initial == null;
+    }
+    const valueAt = path => path.split('.').reduce((value, key) => value[key], session.draft);
+    function update(path, value) {
+      const pieces = path.split('.'); let owner = session.draft;
+      for (const key of pieces.slice(0, -1)) owner = owner[key];
+      owner[pieces.at(-1)] = value; session.draft.touched = true; session.draft.changed.push(path); message.textContent = ''; sync();
+    }
+    function field(parent, path, key, choices = null, settings = {}) {
+      const wrapper = document.createElement('label'), caption = settings.key ? label(document.createElement('span'), settings.key, settings.params) : numberLabel(document.createElement('span'), key, settings.params);
+      const input = document.createElement(choices ? 'select' : 'input'); input.id = 'publication-numbering-' + (++serial); caption.id = input.id + '-label'; input.setAttribute('aria-labelledby', caption.id); input.dataset.numberingField = path;
+      if (choices) {
+        for (const choice of choices) {
+          const option = document.createElement('option'); option.value = String(choice.value);
+          if (choice.key) label(option, choice.key, choice.params); else option.textContent = choice.text;
+          input.append(option);
+        }
+      } else {
+        input.type = settings.checkbox ? 'checkbox' : settings.number ? 'number' : 'text';
+        if (settings.number) { input.min = settings.min ?? '1'; input.max = settings.max ?? '10000'; input.step = '1'; }
+        else if (!settings.checkbox) input.maxLength = settings.maxLength || 512;
+      }
+      if (settings.checkbox) input.checked = Boolean(valueAt(path)); else input.value = String(valueAt(path));
+      input.addEventListener(choices || settings.checkbox ? 'change' : 'input', () => update(path, settings.checkbox ? input.checked : input.value));
+      if (settings.checkbox) { wrapper.className = 'exp-check'; input.style.width = 'auto'; wrapper.style.flexDirection = 'row'; }
+      wrapper.append(caption, input); parent.append(wrapper); controls.set(path, input); return input;
+    }
+    const formatChoices = FORMATS.map(([value, text]) => ({value, text}));
+    const levelChoices = () => Array.from({length: 6}, (_, index) => ({value: index + 1, key: 'publication.numbering.level', params: {level: index + 1}}));
+    function group(parent) { const grid = document.createElement('div'); grid.className = 'publication-style-fields'; parent.append(grid); return grid; }
+    function render(config) {
+      body.replaceChildren(); controls.clear(); labels.splice(1); session.draft = createDraft(config);
+      const hint = numberLabel(document.createElement('p'), 'hint'); hint.className = 'exp-note'; body.append(hint);
+      content = document.createElement('div'); body.append(content);
+      const heading = group(content);
+      field(heading, 'depth', 'levels', [{value: 0, key: 'app.disabled'}, ...Array.from({length: 6}, (_, index) => ({value: index + 1, text: String(index + 1)}))]);
+      field(heading, 'separator', 'separator');
+      field(heading, 'suffix', 'suffix', [{value: 'space', key: 'publication.numbering.space'}, {value: 'tab', key: 'publication.numbering.tab'}, {value: 'nothing', text: '∅'}]);
+      for (let index = 0; index < 6; index++) {
+        const section = document.createElement('details'); section.className = 'metadata-bibliography'; section.dataset.numberingLevel = String(index + 1);
+        section.append(numberLabel(document.createElement('summary'), 'level', {level: index + 1})); const grid = group(section);
+        field(grid, 'levels.' + index + '.format', 'format', formatChoices);
+        field(grid, 'levels.' + index + '.start', 'start', null, {number: true, min: '0'});
+        field(grid, 'levels.' + index + '.restartAfter', 'restartAfter', [{value: 0, key: 'publication.numbering.never'}, ...levelChoices().slice(0, index)]);
+        field(grid, 'levels.' + index + '.customText', 'customLevelText', null, {checkbox: true});
+        field(grid, 'levels.' + index + '.text', 'levelText', null, {maxLength: 512});
+        field(grid, 'levels.' + index + '.customSuffix', 'customLevelSuffix', null, {checkbox: true});
+        field(grid, 'levels.' + index + '.suffix', 'levelSuffix', [{value: 'space', key: 'publication.numbering.space'}, {value: 'tab', key: 'publication.numbering.tab'}, {value: 'nothing', text: '∅'}]);
+        field(grid, 'levels.' + index + '.isLegal', 'legalNumbering', null, {checkbox: true});
+        content.append(section);
+      }
+      for (const kind of KINDS) {
+        const section = document.createElement('details'); section.className = 'metadata-bibliography'; section.dataset.numberingKind = kind;
+        section.append(label(document.createElement('summary'), 'academic.' + kind)); const grid = group(section), path = 'captions.' + kind + '.';
+        field(grid, path + 'scope', 'title', [{value: '', key: 'publication.numbering.legacy'}, {value: 'document', key: 'publication.numbering.document'}, {value: 'chapter', key: 'publication.numbering.chapter'}], {key: 'academic.' + kind});
+        field(grid, path + 'chapterLevel', 'chapterLevel', levelChoices());
+        field(grid, path + 'format', 'format', formatChoices); field(grid, path + 'start', 'start', null, {number: true, min: '0'});
+        field(grid, path + 'customPrefix', 'customPrefix', null, {checkbox: true}); field(grid, path + 'prefix', 'prefix');
+        field(grid, path + 'labelSeparator', 'labelSeparator'); field(grid, path + 'separator', 'separator'); field(grid, path + 'captionSeparator', 'captionSeparator');
+        field(grid, path + 'sequence', 'sequence', null, {maxLength: 40});
+        content.append(section);
+      }
+      const actions = document.createElement('div'); actions.className = 'publication-style-actions';
+      applyButton = numberLabel(document.createElement('button'), 'apply'); applyButton.type = 'button'; applyButton.className = 'tb-btn accent'; applyButton.dataset.numberingAction = 'apply'; applyButton.addEventListener('click', () => commit(false));
+      clearButton = numberLabel(document.createElement('button'), 'clear'); clearButton.type = 'button'; clearButton.className = 'tb-btn'; clearButton.dataset.numberingAction = 'clear'; clearButton.addEventListener('click', () => commit(true));
+      actions.append(clearButton, applyButton); body.append(message, actions); message.textContent = ''; sync();
+    }
+    async function request(body) {
+      const response = await apiFetch('/api/publication/numbering', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), signal: abort.signal});
+      const data = await response.json(); if (!response.ok || data.ok !== true) throw Object.assign(error(data.error_code || 'publication_numbering_invalid'), {data}); return data;
+    }
+    async function load() {
+      if (session.loaded) return true; if (session.loading) return session.loading;
+      if (!current()) { showError(error('transaction_conflict')); return false; }
+      const loading = numberLabel(document.createElement('p'), 'loading'); loading.setAttribute('role', 'status'); body.replaceChildren(loading);
+      session.loading = (async () => {
+        try {
+          const data = await request({action: 'get', content: session.source}); if (!current()) throw error('transaction_conflict');
+          if (typeof data.revision !== 'string' || !Object.hasOwn(data, 'config')) throw error('publication_numbering_invalid');
+          session.revision = data.revision; render(data.config); session.loaded = true; return true;
+        } catch (problem) { if (session.alive && !options.signal?.aborted) showError(problem); return false; }
+        finally { session.loading = null; }
+      })(); return session.loading;
+    }
+    async function commit(clear = false) {
+      if (session.committing || !session.alive) return false;
+      session.committing = true;
+      try {
+        if (!await load()) return false;
+        const config = clear ? null : configFromDraft(session.draft);
+        if (!current()) throw error('transaction_conflict');
+        session.busy = true; sync();
+        const binding = options.ensureEditor ? await options.ensureEditor() : options.view ? {view: options.view} : null;
+        if (!binding?.view || binding.source != null && binding.source !== session.source) throw error('numbering_editor_required');
+        const view = binding.view, cmSource = session.source.replace(/\r\n?/g, '\n');
+        const editorCurrent = () => current() && binding.current?.() !== false && view.state.doc.toString() === cmSource;
+        if (!editorCurrent()) throw error('transaction_conflict');
+        const data = await request({action: 'apply', content: session.source, base_revision: session.revision, config});
+        if (!editorCurrent()) throw error('transaction_conflict');
+        const changes = editorChanges(session.source, data, session.revision);
+        if (data.result.changed) {
+          const CM = window.ReadMDCodeMirror;
+          view.dispatch({changes, ...(CM?.Transaction ? {annotations: CM.Transaction.userEvent.of('input.publication.numbering')} : {})});
+        }
+        session.source = data.result.content; session.revision = data.result.revision;
+        if (Object.hasOwn(data, 'config')) render(data.config); else render(config);
+        options.onApplied?.(data); return true;
+      } catch (problem) { if (session.alive && !options.signal?.aborted) showError(problem); return false; }
+      finally { session.committing = false; session.busy = false; sync(); }
+    }
+    const controller = {root, controls, load, apply: () => commit(false), clear: () => commit(true),
+      read: () => configFromDraft(session.draft), destroy() { if (!session.alive) return; session.alive = false; abort.abort(); mounts.delete(controller); },
+      refreshLabels() { for (const item of labels) item.node.textContent = translate(item.key, item.params); if (message.textContent) showError(error(message.dataset.errorCode)); }};
+    root.addEventListener('toggle', () => { if (root.open) load(); });
+    options.signal?.addEventListener('abort', () => controller.destroy(), {once: true}); mounts.add(controller); return controller;
+  }
+  window.addEventListener('readmd:language-changed', () => { for (const controller of [...mounts]) { if (controller.root.isConnected) controller.refreshLabels(); else controller.destroy(); } });
+  window.ReadMDPublicationNumbering = Object.freeze({mount, createDraft, configFromDraft, validateConfig, editorChanges, keys: KEYS});
+})();
+
+;
+/* Document inheritance stays out of Last and user presets. One session owns
+   sparse explicit edits; only requests receive the effective source values. */
+(() => {
+  'use strict';
+  const clone = value => JSON.parse(JSON.stringify(value || {}));
+  const common = ['size','sizeCs','lineHeight','lineSpacing','numberFormat','numberPattern','start','restart','placement','separator','continuationSeparator','continuationNotice','longNote'];
+  const object = value => value && typeof value === 'object' && !Array.isArray(value);
+  const get = (value, key) => key.split('.').reduce((node, k) => node != null && Object.hasOwn(node,k) ? node[k] : undefined, value);
+  function overlay(base, over) {
+    const result = clone(base);
+    for (const [key, value] of Object.entries(over || {})) {
+      if (value == null) continue;
+      const next = object(value) && Object.hasOwn(result,key) && object(result[key]) ? overlay(result[key], value) : cloneScalar(value);
+      Object.defineProperty(result,key,{value:next,enumerable:true,writable:true,configurable:true});
+    }
+    return result;
+  }
+  const cloneScalar = value => JSON.parse(JSON.stringify(value));
+  function patchPolicy(base, over) {
+    const out = overlay(base, over);
+    if (over?.lineSpacing != null) {out.lineSpacing = cloneScalar(over.lineSpacing); delete out.lineHeight;}
+    else if (over?.lineHeight != null) delete out.lineSpacing;
+    return out;
+  }
+  function mergeNotes(...layers) {
+    let result = {}, kinds = {};
+    const expanded = layers.some(layer => object(layer?.kinds));
+    for (const layer of layers) {
+      if (!object(layer)) continue;
+      const flat = Object.fromEntries(common.filter(key => layer[key] != null).map(key => [key, layer[key]]));
+      result = patchPolicy(result, layer);
+      if (expanded) for (const kind of ['footnote','endnote']) {
+        kinds[kind] = patchPolicy(patchPolicy(kinds[kind] || {}, flat), layer.kinds?.[kind]);
+      }
+    }
+    if (expanded) result.kinds = Object.fromEntries(Object.entries(kinds).filter(([, value]) => Object.keys(value).length));
+    return result;
+  }
+  function create(sourceOptions, rememberedOptions) {
+    const source = clone(sourceOptions?.footnotes);
+    let fallback = clone(rememberedOptions?.footnotes);
+    let explicit = {}, selectedKind;
+    const effective = () => mergeNotes(fallback, source, explicit);
+    const remembered = () => mergeNotes(fallback, explicit);
+    const preferredKind = notes => Object.hasOwn(notes.kinds || {},'footnote') ? 'footnote'
+      : Object.hasOwn(notes.kinds || {},'endnote') || notes.position === 'document' ? 'endnote' : 'footnote';
+    selectedKind = preferredKind(effective());
+    const policy = notes => patchPolicy(Object.fromEntries(common.filter(key => notes[key] != null).map(key => [key, notes[key]])), notes.kinds?.[selectedKind]);
+    return Object.freeze({
+      hasSource: Object.keys(source).length > 0,
+      get hasKinds() {return !!object(effective().kinds);},
+      hasBindings: Object.keys(source.kindByLabel || {}).length > 0,
+      effective, remembered,
+      kind: () => selectedKind,
+      selectKind(kind) {if (!['footnote','endnote'].includes(kind)) throw Error('publication_note_policy_invalid'); selectedKind = kind;},
+      selectPreset(options) {
+        fallback = {}; explicit = clone(options?.footnotes);
+        const notes = effective();
+        if (!Object.hasOwn(notes.kinds || {},selectedKind)) selectedKind = preferredKind(notes);
+      },
+      controlKey(key) {
+        const name = key.slice('footnotes.'.length);
+        return object(effective().kinds) && common.includes(name) ? `footnotes.kinds.${selectedKind}.${name}` : key;
+      },
+      display(key) {
+        const notes = effective(), name = key.slice('footnotes.'.length);
+        return common.includes(name) && object(notes.kinds) ? get(policy(notes), name) : get(notes, name);
+      },
+      change(key, value) {
+        const path = this.controlKey(key).split('.').slice(1); let current = explicit;
+        for (const name of path.slice(0,-1)) {if (!object(current[name])) current[name] = {}; current = current[name];}
+        const name = path.at(-1); current[name] = cloneScalar(value);
+        if (name === 'lineHeight') delete current.lineSpacing;
+        if (name === 'lineSpacing') delete current.lineHeight;
+      },
+      collect(options) {
+        const result = clone(options), notes = remembered(); delete result.footnotes;
+        if (Object.keys(notes).length) result.footnotes = notes;
+        return result;
+      },
+      request(options) {
+        const result = clone(options), notes = effective(); delete result.footnotes;
+        if (Object.keys(notes).length) result.footnotes = notes;
+        return result;
+      },
+    });
+  }
+  window.ReadMDPublicationProfile = Object.freeze({create, mergeNotes});
+})();
+
+;
+'use strict';
+// An optional section in the existing local-format dialog, not another toolbar.
+window.ReadMDPublicationInlineText = (() => {
+  const failures = ['author_inline_text_invalid','author_inline_text_unsupported','author_inline_text_target','author_inline_text_budget','transaction_conflict','transaction_invalid_range'];
+  function mount(parent, options) {
+    const { source, view, signal, isCurrent, onApplied, t } = options;
+    const selection = view.state.selection.main;
+    const details = document.createElement('details'), summary = document.createElement('summary');
+    summary.textContent = t('pdf.selectedText'); details.append(summary); parent.append(details);
+    const content = document.createElement('div'); content.className = 'publication-style-fields'; details.append(content);
+    const error = document.createElement('p'); error.className = 'publication-style-error'; error.role = 'alert'; details.append(error);
+    let loaded = false, disposed = false, target = null, revision = '', busy = false;
+    const controls = [], dirty = new Set();
+    const live = () => !disposed && !signal?.aborted && isCurrent();
+    function showFailure(data) {
+      const code = failures.includes(data?.error_code) ? data.error_code : 'author_inline_text_invalid';
+      error.textContent = t('error.' + (code.startsWith('transaction_') ? 'author_inline_text_target' : code));
+    }
+    async function request(body) {
+      const response = await apiFetch('/api/publication/inline-text', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) throw Object.assign(new Error('inline-text'), { data });
+      return data;
+    }
+    const actions = document.createElement('div'); actions.className = 'publication-style-actions'; details.append(actions);
+    const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'tb-btn'; reset.textContent = t('publication.local.reset'); reset.disabled = true; actions.append(reset);
+    const apply = document.createElement('button'); apply.type = 'button'; apply.className = 'tb-btn'; apply.textContent = t('publication.local.apply'); apply.disabled = true; actions.append(apply);
+    function state() { reset.disabled = apply.disabled = busy || !target || !live(); }
+    function axis(key, label, value) {
+      const wrapper = document.createElement('label'), caption = document.createElement('span'); caption.textContent = t(label); wrapper.append(caption);
+      const mode = document.createElement('select'); mode.dataset.inlineAxis = key;
+      for (const [code,labelKey] of [['','pm.inherit'],['points','export.fontSize'],['base','publication.inline.blockBase']]) {
+        const option = document.createElement('option'); option.value = code; option.textContent = t(labelKey); mode.append(option);
+      }
+      const input = document.createElement('input'); input.type = 'number'; input.min = '0.5'; input.max = '4096'; input.step = '0.5'; input.setAttribute('aria-label', t(label)); input.dataset.inlinePoints = key;
+      mode.value = value === 'base' ? 'base' : typeof value === 'number' ? 'points' : '';
+      input.value = String(typeof value === 'number' ? value : 12); input.disabled = mode.value !== 'points';
+      mode.onchange = () => { input.disabled = mode.value !== 'points'; dirty.add(key); };
+      input.oninput = () => dirty.add(key);
+      wrapper.append(mode,input); content.append(wrapper); controls.push({key,mode,input});
+    }
+    async function commit(action, patch) {
+      if (busy) return;
+      if (!live() || !target) { showFailure({error_code:'author_inline_text_target'}); return; }
+      busy = true; error.textContent = ''; state();
+      try {
+        const data = await request({action,content:source,base_revision:revision,from:target.from,to:target.to,
+          ...(action === 'clear' ? {fields:['size','sizeCs','cs','rtl']} : {patch})});
+        if (!live()) { showFailure({error_code:'author_inline_text_target'}); return; }
+        if (!data.result || !data.transaction || !Array.isArray(data.transaction.edits)) throw new Error('inline-text-result');
+        if (data.result.changed) view.dispatch({changes:data.transaction.edits,userEvent:'input.publication'});
+        onApplied();
+      } catch (failure) { if (!signal?.aborted && !disposed) showFailure(failure.data); }
+      finally { busy = false; state(); }
+    }
+    apply.onclick = () => {
+      const patch = {};
+      for (const {key,mode,input} of controls) if (dirty.has(key)) {
+        if (mode.value === 'points' && !input.reportValidity()) return;
+        patch[key] = mode.value === 'base' ? 'base' : mode.value === 'points' ? Number(input.value) : null;
+      }
+      if (Object.keys(patch).length) commit('apply', patch);
+    };
+    reset.onclick = () => commit('clear');
+    details.ontoggle = async () => {
+      if (!details.open || loaded || disposed) return; loaded = true;
+      content.textContent=t('common.loading');content.setAttribute('aria-busy','true');
+      try {
+        const data = await request({action:'get',content:source});
+        content.textContent='';
+        if (!live()) { showFailure({error_code:'author_inline_text_target'}); return; }
+        revision = data.revision;
+        const spans = (data.nodes || []).filter(node => node.kind === 'span' && node.contentFrom <= selection.from && selection.to <= node.contentTo)
+          .sort((a,b) => a.to-a.from-(b.to-b.from));
+        const owner = spans[0];
+        target = selection.from !== selection.to ? {from:selection.from,to:selection.to} : owner ? {from:owner.contentFrom,to:owner.contentTo} : null;
+        if (!target || typeof revision !== 'string') { showFailure({error_code:'author_inline_text_target'}); return; }
+        axis('size','export.fontSize',owner?.style?.size);
+        axis('sizeCs','publication.inline.complexSize',owner?.style?.sizeCs);
+        state();
+      } catch (failure) { loaded=false;content.textContent='';if (!signal?.aborted && !disposed) showFailure(failure.data); }
+      finally{content.setAttribute('aria-busy','false');}
+    };
+    return {destroy(){disposed = true;details.remove();}};
+  }
+  return { mount };
+})();
+
+;
+'use strict';
 /* ============================================================
    ReadMD Editor - CodeMirror 6 & Command Palette
    ============================================================ */
@@ -11437,6 +12372,35 @@ function saveEditorPrefs() {
 
 let cmCompartments = null;
 let cmPointerDown = false;
+let cmReusedState = false;
+let cmLayoutCleanup = null;
+
+// A host can become visible or change its flex allocation without a window
+// resize (sidebars, split preview, native restore). Ask CodeMirror to measure
+// that allocation; do not replace its state or move its scroll/caret to repaint.
+function measureEditorLayout(view = cmView) {
+  if (!view || view !== cmView || !view.dom.isConnected || document.hidden) return;
+  const bounds = view.dom.getBoundingClientRect();
+  if (bounds.width > 0 && bounds.height > 0) view.requestMeasure();
+}
+
+function observeEditorLayout(view) {
+  const measure = () => measureEditorLayout(view);
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+  if (observer) observer.observe($('edit-wrap'));
+  document.addEventListener('visibilitychange', measure);
+  window.addEventListener('pageshow', measure);
+  window.addEventListener('focus', measure);
+  document.fonts?.addEventListener('loadingdone', measure);
+  cmLayoutCleanup = () => {
+    observer?.disconnect();
+    document.removeEventListener('visibilitychange', measure);
+    window.removeEventListener('pageshow', measure);
+    window.removeEventListener('focus', measure);
+    document.fonts?.removeEventListener('loadingdone', measure);
+  };
+  measure();
+}
 
 function createEditor(doc) {
   destroyEditor();
@@ -11445,6 +12409,7 @@ function createEditor(doc) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const tab = getActiveTab();
   const reusable = tab?.editorState?.doc.toString() === doc.replace(/\r\n?/g, '\n');
+  cmReusedState = reusable;
   const C = cmCompartments = (reusable && tab.editorCompartments) || {
     theme: new CM.Compartment(), gutter: new CM.Compartment(),
     focus: new CM.Compartment(), typewriter: new CM.Compartment(),
@@ -11527,7 +12492,8 @@ function createEditor(doc) {
       }),
     ],
   });
-  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm') });
+  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm'),
+    scrollTo: reusable ? tab.editorScrollSnapshot : undefined });
   if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
     C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
@@ -11541,6 +12507,7 @@ function createEditor(doc) {
   }, { passive: true });
   updateDocStatistics();
   cmView.focus();
+  observeEditorLayout(cmView);
   return true;
 
 }
@@ -11764,6 +12731,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
   if (cmView) {
@@ -11775,6 +12743,7 @@ function destroyEditor() {
   if (c) c.innerHTML = '';
   cmThemeCompartment = null;
   cmCompartments = null;
+  cmReusedState = false;
 }
 
 
@@ -14352,6 +15321,7 @@ window.ReadMDFormula = (() => {
     if (!draft) return;
     const current = draft, epoch = ++renderEpoch, target = byId('formula-preview');
     current.tokens = current.dialect==='dsl'?[]:tokens(current.tex); current.selected = null;
+    current.valid=false;current.previewSupported=undefined;
     byId('formula-source').value = current.tex;
     byId('formula-token-row').hidden = true;
     byId('formula-apply').disabled = true;
@@ -14361,6 +15331,21 @@ window.ReadMDFormula = (() => {
     }
     target.textContent = tr('formula.loading');
     try {
+      if(!current.tex.trim()){target.replaceChildren();renderTemplatePreviews();return;}
+      let data;
+      if(current.dialect==='dsl'){
+        const response=await apiFetch('/api/math/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:current.tex,dialect:'dsl',display:byId('formula-mode').value==='block'})});
+        data=await response.json();if(!response.ok||!data.ok)throw Error('invalid');
+        if(draft!==current||epoch!==renderEpoch)return;
+        current.previewSupported=data.preview_supported;
+        if(data.preview_supported===false){
+          const unavailable=await renderMathDocument(data,byId('formula-mode').value==='block');
+          if(draft!==current||epoch!==renderEpoch)return;
+          target.replaceChildren(unavailable);current.tokens=[];current.valid=true;byId('formula-apply').disabled=false;
+          byId('formula-error').textContent=apiMessage({error_code:'math_unsupported_extension'},'formula.invalid');
+          byId('formula-source-details').open=true;return;
+        }
+      }
       // Use the existing offline MathJax loader, then render from source rather
       // than HTML. A stale promise never changes another draft or a closed modal.
       if (!window.MathJax?.tex2svgPromise) { target.textContent = '$$x$$'; renderMath(target); }
@@ -14369,14 +15354,10 @@ window.ReadMDFormula = (() => {
       while (!window.MathJax?.tex2svgPromise && Date.now() < deadline) await new Promise(r => setTimeout(r, 40));
       if (draft !== current || epoch !== renderEpoch) return;
       if (!window.MathJax?.tex2svgPromise) throw Error('renderer unavailable');
-      if(!current.tex.trim()){target.replaceChildren();renderTemplatePreviews();return;}
       const prefix = 'rd-formula-token-' + epoch + '-' + Math.random().toString(36).slice(2, 10) + '-';
       current.prefix = prefix;
       let node;
       if(current.dialect==='dsl'){
-        const response=await apiFetch('/api/math/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:current.tex,dialect:'dsl',display:byId('formula-mode').value==='block'})});
-        const data=await response.json();if(!response.ok||!data.ok)throw Error('invalid');
-        if(draft!==current||epoch!==renderEpoch)return;
         current.tokens=data.document.nodes.filter(n=>['r','num','den','e','deg','sub','sup','lim','fName'].includes(n.kind)).sort((a,b)=>a.from-b.from||a.to-b.to).filter((n,i,all)=>!all.slice(0,i).some(p=>p.from===n.from&&p.to===n.to));
         node=await queueMathOperation(()=>MathJax.mathml2svgPromise(data.preview,{display:byId('formula-mode').value==='block'}));
         current.tokens.forEach((token,index)=>{const el=node.querySelector('[id="rd-formula-token-omml-'+token.id.replaceAll('.','-')+'"]');if(el)el.id=prefix+index;});
@@ -14491,15 +15472,19 @@ window.ReadMDFormula = (() => {
       } catch (_) { /* Keep the localized label and source spelling available. */ }
     }
   }
-  async function open(mode, range) {
+  async function open(mode, range, initial) {
     if (!state.editing || !cmView) return;
     closeMdPopups();
     const view = cmView, doc = view.state.doc.toString(), sel = view.state.selection.main;
     const found = range || ranges(doc).find(r => sel.from >= r.from && sel.to <= r.to
       && (sel.from !== sel.to || sel.from < r.to));
+    if(initial&&(!found||initial.view!==view||initial.tab!==getActiveTab()?.id||initial.doc!==doc
+      ||initial.from!==found.from||initial.to!==found.to||!Number.isInteger(initial.from)||!Number.isInteger(initial.to)
+      ||initial.from<0||initial.to<initial.from||initial.to>doc.length||doc.slice(initial.from,initial.to)!==initial.original
+      ||initial.dialect!=='dsl'||typeof initial.source!=='string'))return false;
     const selected = doc.slice(sel.from, sel.to);
     draft = { view, tab: getActiveTab()?.id, doc, from: found?.from ?? sel.from, to: found?.to ?? sel.to,
-      tex: found ? found.tex : selected, range: found, dialect:found?.dialect||(!found&&!selected.includes('\\')?'dsl':'latex'),tokens: [], selected: null, valid: false };
+      tex: initial?initial.source:found ? found.tex : selected, range: found, dialect:initial?.dialect||found?.dialect||(!found&&!selected.includes('\\')?'dsl':'latex'),tokens: [], selected: null, valid: false };
     renderEpoch++;
     byId('formula-preview').textContent = tr('formula.loading');
     byId('formula-token-row').hidden = true;
@@ -14514,7 +15499,8 @@ window.ReadMDFormula = (() => {
     try { await load(); if (draft !== current) return; picker(); }
     catch (_) { if (draft === current) byId('formula-error').textContent = tr('formula.catalogError'); return; }
     if (draft !== current) return;
-    await renderDraft(); byId('formula-search').focus();
+    await renderDraft(); if(draft!==current)return;
+    byId(current.previewSupported===false?'formula-source':'formula-search').focus();return true;
   }
   function close() { draft = null; renderEpoch++; window.ReadMDModal.close('formula-modal'); if (cmView) cmView.focus(); }
   async function pasteExternalFormula(event) {
@@ -14526,7 +15512,7 @@ window.ReadMDFormula = (() => {
     const input = text.trim();
     const dialect = /^<(?:[A-Za-z_][\w.-]*:)?math(?:\s|>)/.test(input) ? 'mathml'
       : /^\\(?:[dt]?frac|binom|sqrt|begin|text|math(?:bf|rm|it|cal|sf|bb)|operatorname)\s*\{/.test(input) && draft.dialect === 'dsl' ? 'latex'
-      : /[■√∑∏∫∬∭∮⁄∕¦▒〖〗]|\\(?:[bBpPvV]?matrix|eqarray|rect|overbar|underbar|overbrace|underbrace)\b|\\sqrt\s*\(|\)\s*\\(?:vec|hat|bar|dot|ddot|tilde)\b/.test(input) ? 'unicodemath' : null;
+      : /[■√∑∏∫∬∭∮⁄∕¦▒〖〗\u2061]|\\(?:funcapply|[bBpPvV]?matrix|eqarray|rect|overbar|underbar|overbrace|underbrace)\b|\\sqrt\s*\(|\)\s*\\(?:vec|hat|bar|dot|ddot|tilde)\b/.test(input) ? 'unicodemath' : null;
     if (!dialect) return;
     event.preventDefault();
     const current = draft, epoch = ++renderEpoch;
@@ -14611,6 +15597,15 @@ window.ReadMDInlineMath = (() => {
     return persistence;
   }
   const tr = (key, args) => i18n.t(key, args);
+  const contextDisplaySource=value=>String(value).replace(/\r\n?/g,'\n');
+  const contextInputChanged=d=>d.input.value!==(d.contextInputBaseline??contextDisplaySource(d.tex));
+  function contextAuthorSource(d,value){
+    const o=d.range.contextSite.occurrence,body=d.doc.slice(o.body_from,o.body_to);
+    // Only a real edit chooses an EOL convention. A no-op keeps every original
+    // byte, including mixed EOLs and whitespace outside the displayed source.
+    const eol=/\r\n|\r|\n/.exec(body)?.[0]||/\r\n|\r|\n/.exec(d.doc)?.[0]||'\n';
+    return contextDisplaySource(value).replace(/\n/g,eol);
+  }
   function spanInput(d,s){
     if(s.kind==='text')return s.raw;
     if(!d.rich)return d.tex.slice(s.from,s.to);
@@ -14625,7 +15620,7 @@ window.ReadMDInlineMath = (() => {
     if(!d||d.closed||d.applied)return persistence;
     clearTimeout(d.persistTimer);
     const s=d.spans[d.selected],input=d.input.value;
-    const changed=d.tex!==d.range.tex||d.richDirty||(s&&input!==spanInput(d,s));
+    const changed=d.tex!==d.range.tex||d.richDirty||(s&&input!==spanInput(d,s))||(d.contextOrdinary&&contextInputChanged(d));
     if(!changed)return persistence;
     const payload={schema:1,from:d.range.from,to:d.range.to,original:d.doc.slice(d.range.from,d.range.to),dialect:d.range.dialect||'latex',
       tex:d.tex,model_source:d.rich?.source||'',model_dialect:d.rich?.dialect||'',model_metadata:d.rich?.extensionMetadata||'',model_identity:d.rich?.identity||'',rich_dirty:!!d.richDirty,
@@ -14668,12 +15663,40 @@ window.ReadMDInlineMath = (() => {
     const r = await apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
     const data = await r.json();
     if (!r.ok || !data.ok) throw Error(data.error_code || 'math_invalid_source');
+    if(body.document_context){
+      const c=data.document_context;
+      if(!c||Object.keys(c).length!==5||!['id','revision','fingerprint'].every(k=>typeof c[k]==='string'&&c[k])||!['from','to'].every(k=>Number.isSafeInteger(c[k])&&c[k]>=0)||c.from>=c.to)throw Error('transaction_conflict');
+    }
     const doc=data.document;
-    if(doc){doc.preview=data.preview;doc.vectorPreview=data.vector_preview;doc.projection=data.latex;doc.projections=data.projections;doc.visualDsl=data.visual_dsl;doc.fontWarnings=data.font_warnings;doc.layoutDiagnostics=data.layout_diagnostics;doc.metadataStatus=data.metadata_status;doc.identity=data.identity;doc.extensionMetadata=data.metadata;doc.extensionPreservation=data.extension_preservation;}
+    if(doc){doc.preview=data.preview;doc.previewSupported=data.preview_supported;doc.mathmlWarns=data.mathml_warns;doc.vectorPreview=data.vector_preview;doc.projection=data.latex;doc.projections=data.projections;doc.visualDsl=data.visual_dsl;doc.fontWarnings=data.font_warnings;doc.layoutDiagnostics=data.layout_diagnostics;doc.metadataStatus=data.metadata_status;doc.identity=data.identity;doc.extensionMetadata=data.metadata;doc.extensionPreservation=data.extension_preservation;doc.documentContext=data.document_context;}
     return doc || data;
+  }
+  async function contextExpressionModel(d,text,signal,live){
+    const site=d.range.contextSite,original=site?.occurrence,inventory=site?.record.context.occurrences;
+    if(!d.contextOrdinary||!original||site.record.raw!==d.doc||!original.patchable||original.dialect!=='latex'||original.metadata||!text.trim())throw Error('transaction_conflict');
+    const candidate=d.doc.slice(0,original.body_from)+text+d.doc.slice(original.body_to);
+    const candidateRevision=await revision(candidate);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    const registered=await request('/api/math/context',{content:candidate,expected_revision:candidateRevision},signal);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    const context=registered.context,delta=text.length-(original.body_to-original.body_from);
+    if(!context||context.revision!==candidateRevision||typeof context.id!=='string'||typeof context.fingerprint!=='string'||!Array.isArray(context.occurrences)||context.occurrences.length!==inventory.length)throw Error('transaction_conflict');
+    for(const [index,before]of inventory.entries()){
+      const after=context.occurrences[index],selected=index===original.ordinal,shift=index>original.ordinal?delta:0;
+      if(!after||after.ordinal!==index||after.dialect!==before.dialect||after.display!==before.display||after.metadata!==before.metadata||after.patchable!==before.patchable
+        ||after.from!==before.from+shift||after.to!==before.to+(selected?delta:shift)||after.body_from!==before.body_from+shift||after.body_to!==(selected?before.body_from+text.length:before.body_to+shift)
+        ||typeof after.source!=='string'||!selected&&(after.source!==before.source||after.source_revision!==before.source_revision))throw Error('transaction_conflict');
+    }
+    const occurrence=context.occurrences[original.ordinal],document_context={id:context.id,revision:context.revision,fingerprint:context.fingerprint,from:occurrence.from,to:occurrence.to};
+    // Markdown decides the semantic source (including its newline rules).
+    // The registered full-source revision and exact body span prove its owner.
+    const sourceRevision=await revision(occurrence.source);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    if(occurrence.source_revision!==sourceRevision)throw Error('transaction_conflict');
+    const model=await request('/api/math/parse',{source:occurrence.source,dialect:'latex',display:original.display,document_context},signal);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    if(model.source!==occurrence.source||model.dialect!=='latex'||model.revision!==sourceRevision||Object.keys(document_context).some(k=>model.documentContext?.[k]!==document_context[k]))throw Error('transaction_conflict');
+    return model;
   }
   function locate(container) {
     const pane = document.getElementById('preview-pane');
+    if(container.closest('.readmd-model-math'))return cmView?window.ReadMDMathContext?.locate(container,cmView.state.doc.toString()):null;
     const dsl=container.closest('.readmd-dsl-math');
     if(dsl&&cmView){
       const index=Array.from(pane.querySelectorAll('.readmd-dsl-math:not([data-readmd-unsupported])')).indexOf(dsl);
@@ -14785,6 +15808,7 @@ window.ReadMDInlineMath = (() => {
   }
   async function richPatch(d,patch){
     if(!current(d)||!d.rich)return;
+    if(d.contextOrdinary)throw Error('math_unsupported_extension');
     if(d.patching)throw Error('math_busy');
     d.patching=true;
     const base=d.rich;
@@ -14792,9 +15816,10 @@ window.ReadMDInlineMath = (() => {
     d.host.querySelectorAll('.formula-properties input,.formula-properties select,.formula-properties button').forEach(el=>el.disabled=true);
     const before=snapshot(d);
     try{
-      const result=await request('/api/math/patch',{source:d.rich.source,dialect:d.rich.dialect,expected_revision:d.rich.revision,metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,display:d.range.mode==='block',patch});
+      if(d.range.contextSite&&!d.rich.documentContext)throw Error('transaction_conflict');
+      const result=await request('/api/math/patch',{source:d.rich.source,dialect:d.rich.dialect,expected_revision:d.rich.revision,metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,display:d.range.mode==='block',document_context:d.rich.documentContext,patch});
       if(!current(d)||d.rich!==base)return;
-      d.undo.push(before);d.redo.length=0;d.rich=result;d.richDirty=true;d.tex=d.range.dialect==='dsl'?result.source:result.projection;
+      d.undo.push(before);d.redo.length=0;d.rich=result;d.richDirty=true;d.tex=d.range.dialect==='dsl'||d.contextOrdinary?result.source:result.projection;
       await render(d,d.selected??0);
     }finally{
       d.patching=false;
@@ -14802,11 +15827,48 @@ window.ReadMDInlineMath = (() => {
       scheduleDraft(d);
     }
   }
+  async function openSource(d){
+    if(!current(d)||d.sourceOpening)return;
+    d.sourceOpening=true;
+    try{
+      // The existing studio does not edit opaque carriers. Retain this draft
+      // rather than hand it a partial source that could discard extensions.
+      const base=d.rich;if(!base||base.extensionMetadata)throw Error('math_unsupported_extension');
+      if(d.range.contextSite)throw Error('math_unsupported_extension');
+      let source=base.source;
+      if(base.dialect!=='dsl'){
+        const result=await request('/api/math/serialize',{source:base.source,dialect:base.dialect,target:'dsl',display:d.range.mode==='block',id:base.identity||d.identity,document_context:base.documentContext});
+        if(result.metadata)throw Error('math_unsupported_extension');source=result.output;
+      }
+      if(!current(d)||d.rich!==base)return;
+      if(!await persist(d))return;
+      if(!current(d)||d.rich!==base)return;
+      const initial={source,dialect:'dsl',view:d.view,tab:d.tab,doc:d.doc,from:d.range.from,to:d.range.to,original:d.doc.slice(d.range.from,d.range.to)};
+      cancel(false);await ReadMDFormula.open(d.range.mode,d.range,initial);
+    }catch(error){if(current(d))d.message.textContent=apiMessage({error_code:error.message},'formula.invalid');}
+    finally{d.sourceOpening=false;}
+  }
   async function renderRich(d,serial,selectAfter){
-    const node=await renderMathDocument({preview:d.rich.preview,vector_preview:d.rich.vectorPreview,font_warnings:d.rich.fontWarnings,layout_diagnostics:d.rich.layoutDiagnostics,extension_preservation:d.rich.extensionPreservation,metadata_status:d.rich.metadataStatus},d.range.mode==='block');
-    if(!current(d)||serial!==epoch)return;
+    const base=d.rich;
+    const node=await renderMathDocument({preview:d.rich.preview,preview_supported:d.rich.previewSupported,mathml_warns:d.rich.mathmlWarns,document:d.rich,vector_preview:d.rich.vectorPreview,font_warnings:d.rich.fontWarnings,layout_diagnostics:d.rich.layoutDiagnostics,extension_preservation:d.rich.extensionPreservation,metadata_status:d.rich.metadataStatus},d.range.mode==='block');
+    if(!current(d)||serial!==epoch||base!==d.rich)return;
     if(node.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('invalid');
-    d.canvas.replaceChildren(node);const svg=node.querySelector('svg');if(svg){svg.removeAttribute('aria-hidden');svg.setAttribute('role','group');svg.setAttribute('aria-label',tr('formula.visualPreview'));}
+    if(d.contextOrdinary){
+      d.canvas.replaceChildren(node);d.spans=[];d.selected=null;d.input.hidden=false;d.input.disabled=false;d.input.value=d.tex;d.contextInputBaseline=d.input.value;d.input.setAttribute('aria-label',tr('formula.source'));
+      d.valid=true;d.apply.disabled=false;return;
+    }
+    d.canvas.replaceChildren(node);d.input.hidden=d.rich.previewSupported===false;
+    if(d.rich.previewSupported===false){
+      d.spans=[];d.selected=null;d.input.value='';d.input.disabled=true;
+      d.message.textContent=apiMessage({error_code:'math_unsupported_extension'},'formula.invalid');
+      if(!d.rich.extensionMetadata){
+        let source=node.querySelector('[data-readmd-math-source-entry]');
+        if(!source){source=document.createElement('button');source.type='button';source.dataset.readmdMathSourceEntry='true';source.textContent=tr('formula.source');node.append(source);}
+        source.removeAttribute('aria-expanded');source.setAttribute('aria-haspopup','dialog');source.onclick=()=>openSource(d);
+      }
+      d.valid=true;d.apply.disabled=false;return;
+    }
+    const svg=node.querySelector('svg');if(svg){svg.removeAttribute('aria-hidden');svg.setAttribute('role','group');svg.setAttribute('aria-label',tr('formula.visualPreview'));}
     node.querySelectorAll('mjx-assistive-mml,.readmd-math-accessible').forEach(el=>el.setAttribute('aria-hidden','true'));
     // Source regions share SVG coordinates, but their DOM hierarchy must
     // reflect containment. A numerator's characters are its descendants, not
@@ -14868,6 +15930,7 @@ window.ReadMDInlineMath = (() => {
       const model = await request('/api/math/parse', { source: d.tex, dialect: 'latex', display: d.range.mode === 'block' }, d.abort.signal);
       if (!current(d) || serial !== epoch) return;
       d.model = model;
+      if(model.previewSupported===false){d.rich=model;await renderRich(d,serial,selectAfter);return;}
       const slots = model.nodes.flatMap(n => n.slots.filter(s => s.role !== 'name').map(s => ({ ...s, node: n.id, tex: d.tex.slice(s.from, s.to) })));
       const leaves = ReadMDFormula.tokens(d.tex).map(s => ({ ...s, role: null }));
       // Exact coincident spans prefer the structural slot. Crossing annotations
@@ -14900,7 +15963,9 @@ window.ReadMDInlineMath = (() => {
     } catch (e) { if (current(d) && serial === epoch && e.name !== 'AbortError') error(d,'formula.invalid'); }
   }
   async function replace(next = false) {
-    const d = draft; if (!d || d.composing || d.selected === null) return;
+    const d = draft; if (!d || d.composing) return;
+    if(d.contextOrdinary){d.pending=replaceContextExpression(d);await d.pending;return;}
+    if(d.selected===null)return;
     if (d.replacing || d.input.disabled) {
       try{await(d.replacing||d.pending);}catch(_){if(current(d))error(d,'formula.invalid');}
       return;
@@ -14966,9 +16031,24 @@ window.ReadMDInlineMath = (() => {
       }
     } else if (next) select((index+1)%d.spans.length);
   }
+  async function replaceContextExpression(d){
+    if(!contextInputChanged(d)){await render(d);return;}
+    const displayed=d.input.value,text=contextAuthorSource(d,displayed),base=d.rich,serial=++epoch;
+    d.abort?.abort();d.abort=new AbortController();d.valid=false;d.apply.disabled=true;d.input.disabled=false;
+    const live=()=>current(d)&&epoch===serial&&d.rich===base&&d.input.value===displayed;
+    try{
+      const model=await contextExpressionModel(d,text,d.abort.signal,live);if(!live())return;
+      const node=await renderMathDocument({preview:model.preview,preview_supported:model.previewSupported,mathml_warns:model.mathmlWarns,document:model,vector_preview:model.vectorPreview,font_warnings:model.fontWarnings,layout_diagnostics:model.layoutDiagnostics,extension_preservation:model.extensionPreservation,metadata_status:model.metadataStatus},d.range.mode==='block');
+      if(!live())return;if(node.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('math_invalid_source');
+      if(text!==d.tex){d.undo.push(snapshot(d));d.redo.length=0;d.richDirty=true;}
+      d.rich=model;d.tex=text;d.contextInputBaseline=displayed;d.canvas.replaceChildren(node);d.spans=[];d.selected=null;d.message.textContent='';d.valid=true;d.apply.disabled=false;
+    }catch(e){if(live()&&e.name!=='AbortError'){d.message.textContent=apiMessage({error_code:e.message},'formula.invalid');d.valid=false;d.apply.disabled=true;d.input.disabled=false;}}
+    finally{if(current(d)&&epoch===serial)scheduleDraft(d);}
+  }
   async function history(redo) {
     const d = draft; if (!d) return;
     if(d.patching||d.committing)return;
+    if(d.contextOrdinary){d.abort?.abort();epoch++;}
     const source = redo ? d.redo : d.undo, target = redo ? d.undo : d.redo;
     if (!source.length) return;
     target.push(snapshot(d));const previous=source.pop();d.tex=previous.tex;d.rich=previous.rich;d.richDirty=previous.richDirty;await render(d,0);await d.properties?.refresh();
@@ -14987,7 +16067,10 @@ window.ReadMDInlineMath = (() => {
     await replace();
     if (!current(d) || !d.valid || d.composing) return false;
     let insert = d.range.open + d.tex + d.range.close,to=d.range.to;
-    if(d.range.dialect==='dsl'){
+    if(d.contextOrdinary){
+      if(d.rich.dialect!=='latex'||!d.rich.documentContext){error(d,'formula.stale');return false;}
+      insert=d.richDirty?d.range.open+d.tex+d.range.close:d.doc.slice(d.range.from,d.range.to);
+    }else if(d.range.dialect==='dsl'){
       insert=ReadMDFormula.write(d.range,d.rich.source);
       if(d.rich.extensionMetadata){
         // Replace this occurrence's body and carrier in one editor change.
@@ -14999,7 +16082,7 @@ window.ReadMDInlineMath = (() => {
       d.apply.disabled=true;d.input.disabled=true;
       d.host.querySelectorAll('.formula-properties input,.formula-properties select,.formula-properties button').forEach(el=>el.disabled=true);
       try{
-        const body={source:d.rich.source,dialect:d.rich.dialect,display:d.range.mode==='block',metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity};
+        const body={source:d.rich.source,dialect:d.rich.dialect,display:d.range.mode==='block',metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,document_context:d.rich.documentContext};
         try{
           const result=await request('/api/math/serialize',{...body,target:'dsl'});
           if(!current(d))return false;
@@ -15032,23 +16115,27 @@ window.ReadMDInlineMath = (() => {
     return true;
   }
   async function open(container, recovered = null, character = null) {
-    if(!container.closest('.readmd-dsl-math'))container=container.closest('mjx-container')||container;
-    if (!state.editing || !cmView || !window.MathJax?.tex2svgPromise) return;
+    const model=container.closest('.readmd-model-math');
+    if(model)container=model;
+    else if(!container.closest('.readmd-dsl-math'))container=container.closest('mjx-container')||container;
+    if (!state.editing || !cmView || !window.MathJax?.tex2svgPromise&&container.dataset.readmdPreviewSupported!=='false') return;
     if (draft && !await leave()) return;
     if (!container.isConnected) return;
     const range = locate(container); if (!range) return;
     cancel(false);
+    const contextOrdinary=!!range.contextSite&&range.dialect==='latex'&&!range.contextSite.occurrence.metadata;
     const host = document.createElement(range.mode === 'block' ? 'div' : 'span'); host.className = 'formula-inline'; host.contentEditable = 'false'; host.setAttribute('role','group'); host.setAttribute('aria-label',tr('formula.visualPreview'));
     const canvas = document.createElement('span'); canvas.className='formula-inline-canvas';
     const controls = document.createElement('span'); controls.className='formula-inline-controls';
-    const input = document.createElement('input'); input.type='text'; input.autocomplete='off'; input.spellcheck=false; input.className='formula-inline-input'; input.disabled=true;
+    const input = document.createElement(contextOrdinary?'textarea':'input');if(contextOrdinary){input.rows=3;input.wrap='off';}else input.type='text';input.autocomplete='off'; input.spellcheck=false; input.className='formula-inline-input'; input.disabled=true;
     const apply = document.createElement('button'); apply.type='button'; apply.textContent=tr('formula.apply'); apply.disabled=true;
     const close = document.createElement('button'); close.type='button'; close.textContent=tr('common.cancel');
     const message = document.createElement('span'); message.className='formula-inline-message'; message.setAttribute('role','status');
     controls.append(input,apply,close); host.append(canvas,controls,message);
     const doc=cmView.state.doc.toString(),metadata=/^\s*(<!--readmd:math:v(?:1:[A-Za-z0-9+/=]+|2:[A-Za-z0-9_-]+:[A-Za-z0-9+/=]+)-->)/.exec(doc.slice(range.to));
     const tabRef=getActiveTab();
-    const d = { range, original:container,host,canvas,input,apply,message,view:cmView,tab:tabRef?.id,tabRef,doc,tex:range.tex,spans:[],selected:null,undo:[],redo:[],valid:false,composing:false,richDirty:false,identity:'eq-'+crypto.randomUUID(),metadata:metadata?.[0] };
+    const d = { range, original:container,host,canvas,input,apply,message,view:cmView,tab:tabRef?.id,tabRef,doc,tex:range.tex,spans:[],selected:null,undo:[],redo:[],valid:false,composing:false,richDirty:false,contextOrdinary,identity:'eq-'+crypto.randomUUID(),metadata:metadata?.[0] };
+    if(d.contextOrdinary){input.id='readmd-inline-source-'+d.identity;input.setAttribute('aria-label',tr('formula.source'));const label=document.createElement('label');label.htmlFor=input.id;label.textContent=tr('formula.source');controls.prepend(label);}
     container.replaceWith(host); draft=d;
     host.addEventListener('focusout', e => {
       // Internal slot/property navigation is still the same local draft.
@@ -15077,8 +16164,8 @@ window.ReadMDInlineMath = (() => {
       if(e.isComposing || d.composing) return;
       if(e.key==='Escape') { e.preventDefault();e.stopPropagation();cancel(); }
       else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z') { e.preventDefault();e.stopPropagation();await history(e.shiftKey); }
-      else if(e.key==='Tab' && e.target===input) { e.preventDefault(); await replace(); if(current(d)&&d.spans.length)select((d.selected+(e.shiftKey?-1:1)+d.spans.length)%d.spans.length); }
-      else if(e.key==='Enter' && e.target===input) { e.preventDefault();e.stopPropagation();if(e.ctrlKey||e.metaKey)await commit();else await replace(); }
+      else if(e.key==='Tab' && e.target===input&&!d.contextOrdinary) { e.preventDefault(); await replace(); if(current(d)&&d.spans.length)select((d.selected+(e.shiftKey?-1:1)+d.spans.length)%d.spans.length); }
+      else if(e.key==='Enter' && e.target===input) { if(d.contextOrdinary&&!e.ctrlKey&&!e.metaKey)return;e.preventDefault();e.stopPropagation();if(e.ctrlKey||e.metaKey)await commit();else await replace(); }
     });
     apply.onclick=commit;close.onclick=()=>cancel();
     d.watch=setInterval(()=>{ if(!current(d))cancel(false); },200);
@@ -15090,8 +16177,17 @@ window.ReadMDInlineMath = (() => {
     }
     if(recovered){
       d.tex=recovered.tex;d.richDirty=recovered.rich_dirty;
+      if(range.contextSite){error(d,'formula.stale');return;}
       if(recovered.model_source){try{d.rich=await request('/api/math/parse',{source:recovered.model_source,dialect:recovered.model_dialect,metadata:recovered.model_metadata||undefined,id:recovered.model_identity||undefined,display:range.mode==='block'});}
         catch(_){if(current(d))error(d,'formula.invalid');return;}}
+    }
+    if(!d.rich&&range.contextSite){
+      try{
+        const site=range.contextSite,document_context=await ReadMDMathContext.ensure(site),o=site.occurrence;
+        if(!current(d))return;
+        d.rich=await request('/api/math/parse',{source:o.source,dialect:o.dialect,metadata:o.metadata||undefined,display:o.display,document_context});
+        if(!current(d))return;
+      }catch(e){if(current(d))error(d,'formula.invalid');return;}
     }
     if(!d.rich&&range.dialect==='dsl'){
       try{d.rich=await request('/api/math/parse',{source:range.tex,dialect:'dsl',metadata:metadata?.[1],display:range.mode==='block'});
@@ -15112,9 +16208,9 @@ window.ReadMDInlineMath = (() => {
     if(recovered&&current(d)){
       const index=d.spans.findIndex(s=>recovered.selected.node?s.node===recovered.selected.node&&(recovered.selected.kind!=='text'||s.kind==='text'&&s.textFrom===recovered.selected.text_from&&s.textTo===recovered.selected.text_to):s.from===recovered.selected.from&&s.to===recovered.selected.to);
       if(index>=0){select(index);input.value=recovered.input;input.setSelectionRange(recovered.input_from||0,recovered.input_to||0);await replace();}
-      if(current(d)&&d.valid)d.message.textContent=tr('storage.draftKept');
+      if(current(d)&&d.valid)d.message.textContent=(d.rich?.previewSupported===false?apiMessage({error_code:'math_unsupported_extension'},'formula.invalid')+'\n':'')+tr('storage.draftKept');
     }
-    if(current(d))d.properties=await ReadMDMathProperties.mount(d,()=>activateRich(d),p=>{
+    if(current(d)&&!d.contextOrdinary)d.properties=await ReadMDMathProperties.mount(d,()=>activateRich(d),p=>{
       d.pending=richPatch(d,p);return d.pending;
     });
   }
@@ -15191,15 +16287,43 @@ window.ReadMDMathProperties=(()=>{
   const isMath=n=>!n.namespace||n.namespace==='http://schemas.openxmlformats.org/officeDocument/2006/math';
   const isSpacing=n=>n.namespace==='http://www.w3.org/1998/Math/MathML'&&local(n)==='mspace';
   function flatten(n){return[n,...n.content.filter(p=>p.type==='element').flatMap(p=>flatten(p.value))];}
+  const wordNS='http://schemas.openxmlformats.org/wordprocessingml/2006/main',mathNS='http://schemas.openxmlformats.org/officeDocument/2006/math';
+  const wordLabels={b:'editor.bold',i:'editor.italic',sz:'toolbar.fontSize',color:'export.codeColor'};
+  const wordLabel=kind=>tr(wordLabels[kind])+(kind==='sz'?' (½ pt)':kind==='color'?' (RRGGBB)':'');
+  const elements=n=>(n?.content||[]).filter(p=>p.type==='element').map(p=>p.value);
+  const wordValue=(n,name)=>Object.entries(n.attributes).find(([key])=>local({name:key})===name&&n.attribute_namespaces?.[key]===wordNS)?.[1];
+  function wordRunSources(root,nodes){
+    const ids=new Map(),sources=new Map();for(const n of nodes)ids.set(n.id,(ids.get(n.id)||0)+1);
+    function visit(n,path){
+      path=[...path,n];
+      if(n.namespace===wordNS&&Object.hasOwn(wordLabels,local(n))&&typeof n.id==='string'&&n.id&&ids.get(n.id)===1){
+        const pr=path.at(-2),owner=path.at(-3),parents=path.slice(0,-2);
+        const leaf=Object.keys(n.attributes).every(key=>key==='xmlns'||key.startsWith('xmlns:')||local({name:key})==='val'&&n.attribute_namespaces?.[key]===wordNS)
+          &&Object.keys(n.attributes).filter(key=>local({name:key})==='val'&&n.attribute_namespaces?.[key]===wordNS).length<=1
+          &&n.content.every(p=>p.type!=='element'&&(p.type!=='text'||!p.value.trim()));
+        const rpr=pr?.namespace===wordNS&&local(pr)==='rPr'&&Object.keys(pr.attributes).every(key=>key==='xmlns'||key.startsWith('xmlns:'))
+          &&elements(owner).filter(c=>c.namespace===wordNS&&local(c)==='rPr').length===1
+          &&elements(pr).filter(c=>c.namespace===wordNS&&local(c)===local(n)).length===1;
+        const style=path.length===5&&root.name==='#root'&&path[1].namespace===wordNS&&local(path[1])==='styles'
+          &&owner?.namespace===wordNS&&local(owner)==='style'&&['paragraph','character'].includes(wordValue(owner,'type'))&&!!wordValue(owner,'styleId');
+        const direct=parents.length>=3&&root.name==='#root'&&owner?.namespace===mathNS&&['r','ctrlPr'].includes(local(owner))
+          &&parents.slice(1).every(c=>c.namespace===mathNS)&&parents.some(c=>c.namespace===mathNS&&local(c)==='oMath')
+          &&parents.slice(2).every((c,i)=>schema.elements.find(e=>e.element===local(parents[i+1]))?.children?.includes(local(c)));
+        if(leaf&&rpr&&(style||direct)&&path.every(c=>typeof c.id==='string'&&c.id&&ids.get(c.id)===1))sources.set(n.id,{kind:style?'style':'direct',styleId:style?wordValue(owner,'styleId'):null});
+      }
+      for(const child of elements(n))visit(child,path);
+    }
+    visit(root,[]);return sources;
+  }
   async function mount(d,activate,change){
     const details=document.createElement('details');details.className='formula-properties';
     const summary=document.createElement('summary');summary.textContent=tr('ai.advanced');details.append(summary);d.host.append(details);
     let selection;const matrixColumns=new Map(),matrixPositions=new Map();
     async function refresh(restoreFocus){
       if(!d.rich)return;
-      const nodes=flatten(d.rich.root),core=new Set(schema.coreObjects.map(n=>n.element));
+      const nodes=flatten(d.rich.root),core=new Set(schema.coreObjects.map(n=>n.element)),wordSources=wordRunSources(d.rich.root,nodes);
       const argumentsAndParagraphs=new Set(['e','num','den','deg','sub','sup','lim','fName','oMathPara']);
-      const items=nodes.filter(n=>isSpacing(n)||isMath(n)&&(core.has(local(n))||local(n)==='r'||argumentsAndParagraphs.has(local(n))));
+      const items=nodes.filter(n=>wordSources.has(n.id)||isSpacing(n)||isMath(n)&&(core.has(local(n))||local(n)==='r'||argumentsAndParagraphs.has(local(n))));
       const oldBody=details.querySelector('.formula-property-body'),openGroups=new Set(Array.from(oldBody?.querySelectorAll('[data-math-container][open]')||[],g=>g.dataset.mathContainer));
       const scroll=oldBody?.querySelector('.formula-property-fields')?.scrollTop||0;
       const focused=restoreFocus||(oldBody?.contains(document.activeElement)?document.activeElement.dataset.mathFocus:null);
@@ -15207,7 +16331,7 @@ window.ReadMDMathProperties=(()=>{
       const select=document.createElement('select');select.setAttribute('aria-label',tr('formula.category.structures'));
       select.dataset.mathFocus='structure';
       const counts=new Map();
-      for(const n of items){const o=document.createElement('option'),kind=local(n),index=(counts.get(kind)||0)+1;counts.set(kind,index);o.value=n.id;o.textContent=tr(isSpacing(n)?'formula.mathml.mspace':'formula.omml.'+kind)+' '+index;o.title=kind+' · '+n.id;select.append(o);}
+      for(const n of items){const o=document.createElement('option'),kind=local(n),index=(counts.get(kind)||0)+1,word=wordSources.get(n.id);counts.set(kind,index);o.value=n.id;o.textContent=(word?wordLabel(kind):tr(isSpacing(n)?'formula.mathml.mspace':'formula.omml.'+kind))+(word?' · '+tr('formula.wordRun.'+word.kind):'')+' '+index;o.title=kind+' · '+(word?.styleId?word.styleId+' · ':'')+n.id;select.append(o);}
       if(items.some(n=>n.id===selection))select.value=selection;
       else select.value=(items.find(n=>core.has(local(n)))||items.find(isSpacing)||items.find(n=>local(n)==='r')||items[0])?.id||'';
       selection=select.value;
@@ -15217,6 +16341,25 @@ window.ReadMDMathProperties=(()=>{
       function button(text,operation){const b=document.createElement('button');b.type='button';b.textContent=text;b.onclick=()=>patch(operation).catch(()=>{d.message.textContent=tr('formula.invalid');});return b;}
       function fields(){
         fieldsBox.replaceChildren();const n=items.find(n=>n.id===select.value);if(!n)return;
+        const word=wordSources.get(n.id);
+        if(word){
+          // Edit only the author's existing Word leaf. Effective cascade values
+          // and rendered glyph owners never supply an attribute or source ID.
+          const kind=local(n),value=wordValue(n,'val'),boolean=kind==='b'||kind==='i';
+          const row=document.createElement('label'),label=document.createElement('span'),input=document.createElement('input');
+          row.dataset.mathWordRun=kind;label.textContent=wordLabel(kind);input.type='text';input.autocomplete='off';input.spellcheck=false;input.maxLength=4096;
+          input.setAttribute('aria-label',tr('formula.wordRun.'+word.kind)+' · '+wordLabel(kind));input.dataset.mathFocus='word.'+n.id+'.val';input.value=value??'';
+          input.onchange=()=>{
+            if(input.value===(value??'')&&!input.hasAttribute('aria-invalid'))return;
+            if(!boolean&&input.value===''){input.setAttribute('aria-invalid','true');d.valid=false;d.apply.disabled=true;d.message.textContent=apiMessage({error_code:'math_invalid_property'},'formula.invalid');return;}
+            return patch({operation:'set_attribute',node_id:n.id,name:'w:val',value:input.value===''?null:input.value}).catch(error=>{
+              input.setAttribute('aria-invalid','true');d.message.textContent=apiMessage({error_code:error.message},'formula.invalid');
+            });
+          };
+          row.append(label,input);fieldsBox.append(row);
+          if(boolean){const hint=document.createElement('small');hint.textContent=tr('formula.wordRun.'+word.kind+'Toggle');hint.dataset.mathWordHint=word.kind;fieldsBox.append(hint);}
+          return;
+        }
         if(isSpacing(n)){
           // Keep lexical units/whitespace and explicit zero intact. The same
           // bounded source-owned SetAttribute API validates every edit; this
@@ -19570,6 +20713,28 @@ function batchT(k, p) {
   return window.i18n ? window.i18n.t(k, p) : k;
 }
 
+function batchFailureMessage(item) {
+  const message = apiMessage(item, 'error.conversion_failed');
+  const details = item?.error_details;
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return message;
+  const code = item.error_code;
+  const keys = Object.keys(details).sort().join(',');
+  if (['docx_note_settings_invalid', 'docx_note_settings_unsupported', 'author_inline_text_invalid', 'author_inline_text_unsupported', 'author_inline_text_budget'].includes(code)
+      && keys === 'detail,part,path') {
+    const bounded = (value, bytes) => typeof value === 'string' && value.length > 0
+      && value.length <= bytes && !/[\u0000-\u001f\u007f-\u009f]/u.test(value)
+      && new TextEncoder().encode(value).length <= bytes;
+    if (bounded(details.part, 512) && bounded(details.path, 2048) && bounded(details.detail, 2048)) {
+      return [message, details.part, details.path, details.detail].join('\n');
+    }
+  } else if (['docx_numbering_invalid', 'docx_numbering_unrepresentable'].includes(code)
+      && keys === 'reason' && typeof details.reason === 'string'
+      && /^[a-z0-9_]{1,128}$/.test(details.reason)) {
+    return message + '\n' + details.reason;
+  }
+  return message;
+}
+
 function openBatchModal() {
   if (isBatchRunning()) {
     $('convert-modal')?.classList.remove('hidden');
@@ -19640,7 +20805,11 @@ function setBatchRow(row, status, title) {
   // A completed result must never regress to an older progress snapshot.
   if (row.dataset.done) return;
   row.className = 'batch-item ' + status;
-  if (title) row.title = title;
+  if (title) {
+    row.title = title;
+    row.setAttribute('aria-description', title);
+    if (status === 'error') row.tabIndex = 0;
+  }
   if (row.dataset.out) {
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
@@ -19829,7 +20998,7 @@ function renderBatchProgress(d) {
     const status = it.status || 'queued';
     if (status !== 'queued') {
       if ((status === 'ok' || status === 'skipped') && it.out) row.dataset.out = it.out;
-      setBatchRow(row, status, it.error || '');
+      setBatchRow(row, status, status === 'error' ? batchFailureMessage(it) : it.error || '');
       countBatchRow(row, status);
     }
   });
@@ -22554,6 +23723,7 @@ const EXPORT_FONTS = ['MicrosoftYaHei', 'SimHei', 'SimSun', 'KaiTi', 'DengXian',
 const EXPORT_MONO = ['Consolas', 'Courier New', 'SimHei'];
 const EXPORT_ALIGNS = ['left', 'center', 'right', 'justify'];
 const EXPORT_PAGES = ['A3', 'A4', 'A5', 'B5', 'Letter', 'Legal', 'Custom'];
+let exportNumberingControl = null;
 
 function getExportPresetNames() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -22660,6 +23830,11 @@ function getExportSections() {
       { k: 'footnotes.lineHeight', label: _t('export.footnoteLineHeight'), type:'number', min:1, max:3, step:.1, fmts:['pdf','docx','epub'], engines:['typst'], default:1 },
       { k: 'footnotes.numberFormat', label: _t('export.footnoteNumberFormat'), type:'select', opts:[['decimal','1, 2, 3'],['lowerRoman','i, ii, iii'],['upperRoman','I, II, III'],['lowerLetter','a, b, c'],['upperLetter','A, B, C']], fmts:['pdf','docx','epub'], engines:['typst'], default:'decimal' },
       { k: 'footnotes.start', label: _t('export.noteStart'), type:'number', min:1, max:9999, step:1, fmts:['pdf','docx','epub'], engines:['typst'], default:1 },
+      { k: 'footnotes.restart', label: _t('export.noteRestart'), type:'select', opts:[['continuous',_t('export.noteRestartContinuous')],['section',_t('export.noteRestartSection')],['page',_t('export.noteRestartPage')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'continuous' },
+      { k: 'footnotes.separator', label: _t('export.noteSeparator'), type:'select', opts:[['line',_t('export.noteSeparatorLine')],['none',_t('export.noteSeparatorNone')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'line' },
+      { k: 'footnotes.continuationSeparator', label: _t('export.noteContinuationSeparator'), type:'select', opts:[['line',_t('export.noteSeparatorLine')],['none',_t('export.noteSeparatorNone')]], fmts:['docx'], default:'line' },
+      { k: 'footnotes.continuationNotice', label: _t('export.noteContinuationNotice'), type:'text', fmts:['docx'], default:'', maxLength:120 },
+      { k: 'footnotes.longNote', label: _t('export.noteLongNote'), type:'select', opts:[['split',_t('export.noteLongNoteSplit')],['keepParagraphs',_t('export.noteLongNoteKeepParagraphs')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'split' },
     ]},
     { title: _t('export.secHeadings') || '', fmts: ['pdf', 'docx', 'html', 'epub'], headingRows: true },
     { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
@@ -22743,16 +23918,20 @@ function getExportSections() {
 
 
 function expGet(obj, path) {
-  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  return path.split('.').reduce((o, k) => (o == null || !Object.hasOwn(o,k) ? undefined : o[k]), obj);
 }
 function expSet(obj, path, val) {
   const ks = path.split('.');
+  // This setter also receives AI-proposed dotted paths. Fixed UI options have
+  // no prototype segments; never walk inherited objects from such a path.
+  if(ks.some(k=>['__proto__','prototype','constructor'].includes(k)))return false;
   let o = obj;
   for (let i = 0; i < ks.length - 1; i++) {
-    if (typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
+    if (!Object.hasOwn(o,ks[i]) || typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
     o = o[ks[i]];
   }
   o[ks[ks.length - 1]] = val;
+  return true;
 }
 const EXPORT_EPUB_NUMERIC = {
   'epub.fontSize': { min: 6, max: 72, inherit: 'typography.size', fallback: 11, unit: 'pt' },
@@ -22792,9 +23971,9 @@ function expDeepMerge(base, over) {
   if (!over || typeof over !== 'object') return out;
   Object.keys(over).forEach(k => {
     const v = over[k];
-    if (v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object') {
-      out[k] = expDeepMerge(out[k], v);
-    } else if (v !== undefined) out[k] = JSON.parse(JSON.stringify(v));
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.hasOwn(out,k) && out[k] && typeof out[k] === 'object') {
+      Object.defineProperty(out,k,{value:expDeepMerge(out[k],v),enumerable:true,writable:true,configurable:true});
+    } else if (v !== undefined) Object.defineProperty(out,k,{value:JSON.parse(JSON.stringify(v)),enumerable:true,writable:true,configurable:true});
   });
   const merged=window.ReadMDPublication?.lineSpacing.inheritGlobal(base,over,out)||out;
   const physical=window.ReadMDPublication?.tracking.inheritGlobal(base,over,merged)||merged;
@@ -22832,6 +24011,30 @@ async function loadExportPresets() {
 }
 
 let exportOpenEpoch = 0;
+let exportProfileContext = null;
+async function prepareExportProfile(epoch) {
+  exportProfileContext = null;
+  if (!window.ReadMDPublicationProfile || window.READMD_ENGINE !== 'rust') return true;
+  const content = currentExportContent();
+  const tab=typeof getActiveTab==='function'?getActiveTab():null,id=state.activeTabId,file=state.file,name=state.sourceName;
+  const same=()=>state.activeTabId===id&&state.file===file&&state.sourceName===name&&(typeof getActiveTab!=='function'||getActiveTab()===tab);
+  try {
+    const response = await apiFetch('/api/publication/profile', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    const data = await response.json();
+    if (epoch !== exportOpenEpoch || !same() || currentExportContent() !== content) return false;
+    if (!response.ok || data.ok === false || data.diagnostics?.length) throw Error(data.error_code || data.diagnostics?.[0]?.code || 'publication_metadata_type');
+    exportProfileContext = {content,isCurrent:same,session:window.ReadMDPublicationProfile.create(data.options,state.export.options)};
+    return true;
+  } catch (error) {
+    if (epoch === exportOpenEpoch) showToast(i18n.t('error.' + (error.message || 'publication_metadata_type')));
+    return false;
+  }
+}
+// A modal's controls share one snapshot. Do not serialize a million-word CM
+// document separately for every field; verify at request/preview boundaries.
+function exportProfileSession() {return exportProfileContext?.session || null;}
+function exportProfileIsCurrent(content) {return !exportProfileContext || exportProfileContext.isCurrent() && exportProfileContext.content===content;}
+function effectiveExportOptions(options) {return exportProfileSession()?.request(options) || options;}
 async function openExportModal() {
   const epoch = ++exportOpenEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -22844,14 +24047,29 @@ async function openExportModal() {
     const ok = await loadExportPresets();
     if (ok) state.export.ready = true;
     if (epoch !== exportOpenEpoch || state.mode === 'welcome') return;
-    if (ok) renderExportModal();
+    if (ok) {if(await prepareExportProfile(epoch))renderExportModal();}
     else showToast(_t('toast.exportModuleLoadFail') || '');
     return;
   }
-  renderExportModal();
+  if(await prepareExportProfile(epoch))renderExportModal();
 }
 
-function closeExportModal() { exportOpenEpoch++; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+
+function mountExportNumbering(host) {
+  if(!window.ReadMDPublicationNumbering)return null;
+  const source=currentExportContent(),tab=state.activeTabId,file=state.file,name=state.sourceName,documentTab=typeof getActiveTab==='function'?getActiveTab():null;
+  const same=()=>state.activeTabId===tab&&state.file===file&&state.sourceName===name&&(typeof getActiveTab!=='function'||getActiveTab()===documentTab)&&host.isConnected!==false;
+  const view=()=>typeof cmView==='undefined'?null:cmView;
+  return window.ReadMDPublicationNumbering.mount(host,{source,getSource:currentExportContent,isCurrent:same,
+    ensureEditor:async()=>{
+      if(!same()||currentExportContent()!==source)return null;
+      if(!state.editing&&typeof toggleEdit==='function')await toggleEdit();
+      const editor=view();if(!same()||!state.editing||!editor)return null;
+      return {view:editor,source:currentExportContent(),current:()=>same()&&state.editing&&view()===editor};
+    },
+    onApplied:()=>{closeExportModal();view()?.focus();}});
+}
 
 function currentExportContent() {
   if (state.editing) {
@@ -23721,11 +24939,17 @@ function htmlExportFigureContent(content,options) {
 function updateExportLivePreview() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
-  const opts = collectExportOptions();
+  const opts = effectiveExportOptions(collectExportOptions());
   // TeX source export supports typed spacing; its browser-only mock page is
   // not a TeX renderer. Do not present that approximation as a verified layout.
   const spacing=window.ReadMDPublication?.lineSpacing,tracking=window.ReadMDPublication?.tracking,baseline=window.ReadMDPublication?.baseline,spacingError=spacing?.validateExport($('export-opts'))===false||tracking?.validateExport($('export-opts'))===false||baseline?.validateExport($('export-opts'))===false?'error.publication_local_style_invalid':spacing?.issue(opts,fmt==='tex'?'html':fmt,opts.pdf?.engine)||tracking?.issue(opts,fmt)||baseline?.issue(opts,fmt,opts.pdf?.engine)||(fmt==='epub'&&(!validateEpubNumericControls()?'error.epub_invalid_options':expEpubNumericIssue(opts)));
   if(spacingError){cancelNativeExportPreview();const message=_t(spacingError);for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=message;target.setAttribute('aria-busy','false');}}const wrapper=$('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');if(wrapper){wrapper.textContent=message;wrapper.setAttribute('aria-busy','false');}return;}
+  let content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){
+    cancelNativeExportPreview();
+    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('error.transaction_conflict');target.setAttribute('aria-busy','false');}}
+    return;
+  }
   if(state.editing&&state.pvPublication)schedulePreview();
   const badge = $('export-preview-badge');
   const sel = $('exp-preset');
@@ -23734,7 +24958,6 @@ function updateExportLivePreview() {
   if (badge) badge.textContent = fmtLabel + ' · ' + presetName;
   renderExportPresetCards();
 
-  let content = currentExportContent();
   const docTitle = currentExportName();
   if (window.READMD_ENGINE === 'rust' && (fmt === 'pdf' || fmt === 'docx' || fmt === 'epub')) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
@@ -23863,11 +25086,12 @@ function updateExportLivePreview() {
 
 function expFieldApplicable(f, secFmts, fmt) {
   if(f.type==='tracking')return fmt==='docx'||state.export.options?.typography?.trackingPt!=null;
-  if(f.type==='baseline')return fmt==='docx'||fmt==='pdf'&&(!state.export.options?.pdf?.engine||state.export.options.pdf.engine==='rust')||state.export.options?.typography?.baselineShiftPt!=null;
+  if(f.type==='baseline')return fmt==='docx'||fmt==='pdf'&&(!state.export.options?.pdf?.engine||['rust','typst'].includes(state.export.options.pdf.engine))||state.export.options?.typography?.baselineShiftPt!=null;
   if(f.type==='lineSpacing')return ['pdf','docx','html'].includes(fmt)||['epub','tex','presentation'].includes(fmt)&&state.export.options?.typography?.lineSpacing!=null;
   if(['tex','presentation'].includes(fmt)&&/^(?:typography|footnotes)\./.test(f.k))return false;
   if(fmt==='pdf'&&f.engines&&!f.engines.includes(state.export.options?.pdf?.engine||'rust'))return false;
-  if(f.k==='footnotes.title'&&state.export.options?.footnotes?.position!=='document')return false;
+  if(f.k==='footnotes.position'&&exportProfileSession()?.hasBindings)return false;
+  if(f.k==='footnotes.title'&&effectiveExportOptions(state.export.options||{}).footnotes?.position!=='document')return false;
   if((f.k==='toc.depth'||f.k==='toc.leader')&&fmt!=='epub'&&!state.export.options?.toc?.enabled)return false;
   const fmts = f.fmts || secFmts || ['pdf', 'docx', 'html'];
   return fmts.indexOf(fmt) >= 0;
@@ -23877,6 +25101,7 @@ function renderExportSections(preserveSections = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
   const host = $('export-opts');
+  exportNumberingControl?.destroy();exportNumberingControl=null;
   const sectionState = preserveSections ? new Map([...host.querySelectorAll('.exp-sec')].map(section => [section.dataset.section, section.classList.contains('open')])) : null;
   const focusedKey = preserveSections && host.contains(document.activeElement) ? document.activeElement.dataset.k : null;
   const texPdf=fmt==='pdf'&&['xelatex','pdflatex'].includes(state.export.options?.pdf?.engine);
@@ -23939,7 +25164,17 @@ function renderExportSections(preserveSections = false) {
           extra.append(group);body.append(extra);
         }
       }
+      exportNumberingControl=mountExportNumbering(body);
     } else {
+      const profile = exportProfileSession();
+      if (profile?.hasKinds && fields.some(f => f.k?.startsWith('footnotes.'))) {
+        const row = document.createElement('label'); row.className = 'exp-field full';
+        const select = document.createElement('select'); select.className='modal-select';select.dataset.profileKind='';
+        select.setAttribute('aria-label',_t('export.notePlacement'));
+        for (const [kind,key] of [['footnote','export.noteFootnotes'],['endnote','export.noteEndnotes']]) select.add(new Option(_t(key),kind));
+        select.value=profile.kind();select.onchange=()=>{profile.selectKind(select.value);renderExportSections(true);};
+        row.append(select);body.append(row);
+      }
       fields.forEach(f => {
         if (!expFieldApplicable(f, secFmts, fmt)) return;
         body.appendChild(expFieldEl(f));
@@ -23954,9 +25189,15 @@ function renderExportSections(preserveSections = false) {
 
   // 绑定配置项实时变动事件
   host.querySelectorAll('input, select').forEach(el => {
-    if (el.closest('#publication-metadata-export')||el.closest('[data-line-spacing-control]')) return;
+    if (el.dataset.profileKind!==undefined) return;
+    if (el.closest('#publication-metadata-export')||el.closest('[data-line-spacing-control]')||el.closest('[data-publication-numbering]')) return;
     const onValChange = () => {
       if (EXPORT_EPUB_NUMERIC[el.dataset.k]) delete el.dataset.epubNumericInvalid;
+      if (el.dataset.k?.startsWith('footnotes.')) {
+        const profile = exportProfileSession();
+        const value = el.type==='checkbox'?el.checked:el.type==='number'?(el.value.trim()===''?null:Number(el.value)):el.value;
+        if (profile) profile.change(el.dataset.k,value);
+      }
       state.export.options = collectExportOptions();
       if(el.dataset.k==='cover.enabled'||el.dataset.k==='page.differentOddEven')applyExportOptionsToDom();
       const sel = $('exp-preset');
@@ -24012,6 +25253,10 @@ function expFieldEl(f) {
   }
   box.innerHTML = inner;
   if (f.default !== undefined) box.querySelector('[data-k]')?.setAttribute('data-default', JSON.stringify(f.default));
+  if(f.maxLength!==undefined)box.querySelector('input')?.setAttribute('maxlength',String(f.maxLength));
+  if(f.k==='footnotes.restart'&&(state.export.fmt==='epub'||state.export.fmt==='pdf'&&state.export.options?.footnotes?.position==='document')){
+    const page=box.querySelector('option[value="page"]');if(page)page.disabled=true;
+  }
   if (f.type === 'asset') {
     const input=box.querySelector('input');input.title=i18n.t('slash.imageDesc');
     const row=document.createElement('div');row.className='exp-asset';input.replaceWith(row);row.append(input);
@@ -24034,7 +25279,19 @@ function applyExportOptionsToDom() {
   const opts = state.export.options || {};
   document.querySelectorAll('#export-opts [data-k]').forEach(el => {
     if(el.dataset.k==='page.differentFirstPage')el.dataset.default=JSON.stringify(!!opts.cover?.enabled);
-    const v = expGet(opts, el.dataset.k) ?? (el.dataset.default !== undefined ? JSON.parse(el.dataset.default) : {'figures.style':'original','figures.widthMm':89,'figures.fontSizePt':7}[el.dataset.k]);
+    const profile = el.dataset.k.startsWith('footnotes.') && exportProfileSession();
+    const v = (profile ? profile.display(el.dataset.k) : expGet(opts, el.dataset.k)) ?? (el.dataset.default !== undefined ? JSON.parse(el.dataset.default) : {'figures.style':'original','figures.widthMm':89,'figures.fontSizePt':7}[el.dataset.k]);
+    if (profile) {el.title=i18n.t('pm.inherit');el.dataset.profileNote='';}
+    if (profile && el.dataset.k==='footnotes.lineHeight') {
+      const spacing=profile.display('footnotes.lineSpacing');
+      el.placeholder='';
+      if(spacing){
+        const key={exact:'export.lineSpacingExact',atLeast:'export.lineSpacingAtLeast',multiple:'export.lineSpacingMultiple'}[spacing.mode];
+        const description=i18n.t(key)+' · '+(spacing.mode==='multiple'?spacing.multiple:spacing.pt+' pt');
+        el.value='';el.placeholder=description;el.title=i18n.t('pm.inherit')+' · '+description;
+        return;
+      }
+    }
     const numeric = EXPORT_EPUB_NUMERIC[el.dataset.k];
     if (numeric) {
       // An empty field stays sparse; the placeholder explains its effective
@@ -24048,6 +25305,13 @@ function applyExportOptionsToDom() {
       return;
     }
     if (v === undefined || v === null) return;
+    // A native value outside the convenience slider/list remains visible and
+    // untouched. Merely opening/collecting this control must not clamp it.
+    if (profile && el.type==='number' && typeof v==='number') {
+      if (el.min!=='' && v<Number(el.min)) el.min=String(v);
+      if (el.max!=='' && v>Number(el.max)) el.max=String(v);
+    }
+    if (profile && el.tagName==='SELECT' && typeof v==='string' && !Array.from(el.options).some(o=>o.value===v)) el.add(new Option(v,v));
     // Preserve an explicit stored tag even when it is outside the short list.
     if (el.dataset.k === 'epub.language' && typeof v === 'string' && v && !Array.from(el.options).some(o => o.value === v)) el.add(new Option(v, v));
     if (el.type === 'checkbox') el.checked = !!v;
@@ -24067,6 +25331,7 @@ function collectExportOptions() {
   // Fields absent from the current format still belong to the selected preset.
   const opts = expDeepMerge(state.export.defaults, state.export.options);
   document.querySelectorAll('#export-opts [data-k]').forEach(el => {
+    if (el.dataset.profileNote!==undefined && exportProfileSession()) return;
     let v;
     if (EXPORT_EPUB_NUMERIC[el.dataset.k]) {
       if (el.dataset.epubNumericInvalid !== undefined) v = JSON.parse(el.dataset.epubNumericInvalid);
@@ -24105,7 +25370,8 @@ function collectExportOptions() {
   window.ReadMDPublication?.lineSpacing.collectExport(opts,$('export-opts'));
   window.ReadMDPublication?.tracking.collectExport(opts,$('export-opts'));
   window.ReadMDPublication?.baseline.collectExport(opts,$('export-opts'));
-  return window.ReadMDPublicationMetadata?.collectExport(opts) || opts;
+  const raw = window.ReadMDPublicationMetadata?.collectExport(opts) || opts;
+  return exportProfileSession()?.collect(raw) || raw;
 }
 
 // AI providers sometimes return a flat dotted object while the exporter uses
@@ -24173,6 +25439,7 @@ function renderExportPresetSelect() {
     const v = sel.value;
     state.export.selectedPreset = v;
     if (v !== '__custom__') {
+      exportProfileSession()?.selectPreset(v==='__default__'?{}:(state.export.presets[v]||state.export.custom[v]||{}));
       state.export.options = exportPresetOptions(v);
       renderExportSections();
     }
@@ -24251,10 +25518,12 @@ async function runExportOnce(taskId) {
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
   const fmt = state.export.fmt;
-  let options = collectExportOptions();
+  const rememberedOptions = collectExportOptions();
+  let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
   const spacingError=window.ReadMDPublication?.lineSpacing.issue(options,fmt,options.pdf?.engine)||window.ReadMDPublication?.tracking.issue(options,fmt)||window.ReadMDPublication?.baseline.issue(options,fmt,options.pdf?.engine);if(spacingError){showToast(i18n.t(spacingError));return false;}
   const content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){showToast(i18n.t('error.transaction_conflict'));return false;}
   const baseDir = state.dir || '';
   const suggestedName = currentExportName();
   const preset = ($('exp-preset') || {}).value || '__custom__';
@@ -24352,7 +25621,7 @@ async function runExportOnce(taskId) {
   res.className = 'export-result ok';
   const warnList = warnMessages(r);
   if(options.figures?.rendered){options={...options,figures:{...options.figures}};delete options.figures.rendered;}
-  state.export.last = { fmt, options, preset };
+  state.export.last = { fmt, options:rememberedOptions, preset };
   try {
     if (hasPy && py.save_export_presets && !(await py.save_export_presets({ last: state.export.last }))) throw new Error('preset_save_failed');
   } catch (_) { warnList.push(_t('export.lastPresetSaveFailed')); }
@@ -24407,7 +25676,10 @@ function renderExportWarns(list, payload = null) {
   const ul = document.createElement('ul');
   counts.forEach((n, w) => {
     const li = document.createElement('li');
-    const key='warn.'+w, localized=_t(key), message=localized&&localized!==key?localized:w;
+    const coded=String(w).match(/^([a-z][a-z0-9_]*)(?::\s*(.*))?$/su),code=coded?.[1]||w;
+    const key='warn.'+code, localized=_t(key), errorKey='error.'+code, errorLocalized=localized&&localized!==key?'':_t(errorKey);
+    const translated=localized&&localized!==key?localized:errorLocalized&&errorLocalized!==errorKey?errorLocalized:'';
+    const message=translated?translated+(coded?.[2]?' · '+coded[2]:''):w;
     li.textContent = n > 1 ? message + ' ×' + n : message;
     ul.appendChild(li);
   });

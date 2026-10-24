@@ -1648,6 +1648,10 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 /* CSL output uses constant classes because reader sanitization strips styles. */
 .readmd-csl-italic { font-style: italic; }
 .readmd-csl-oblique { font-style: oblique; }
+.readmd-heading-number { white-space:pre; unicode-bidi:isolate; }
+.publication-numbering { min-width:0; }
+.publication-numbering .publication-style-actions { flex-wrap:wrap; }
+.publication-numbering .publication-style-actions button { min-height:44px; max-width:100%; white-space:normal; }
 .readmd-csl-smallcaps { font-variant: small-caps; }
 .readmd-csl-bold { font-weight: 700; }
 .readmd-csl-light { font-weight: 300; }
@@ -1688,3 +1692,61 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
    The baseline is captured before setting the parent; future MathJax/DSL
    results inherit it too. Explicit inline letter-spacing retains precedence. */
 :is(#content,#preview-pane) [data-readmd-tracking] :is(code,pre,.readmd-citation,.rd-fnref,mjx-container,.readmd-dsl-math,[data-readmd-math-renderer],math){letter-spacing:var(--readmd-untracked-letter-spacing,normal)}
+
+/* CodeMirror owns the source scroll viewport. Its flex host must be allowed
+   to shrink when a sidebar or split pane changes the available CSS width. */
+#edit-wrap #edit-cm { min-width:0; overflow:hidden; }
+
+/* The reduced-motion fallback sets a tiny transition duration globally.
+   CodeMirror must measure new spacer/font geometry in the same frame, so
+   limit transitions to the existing focus-line opacity effect. */
+#edit-wrap .cm-editor,
+#edit-wrap .cm-scroller,
+#edit-wrap .cm-scroller * { transition-property:none; }
+#edit-wrap .cm-content .cm-line { transition-property:opacity; }
+
+/* Let structured material use a wide screen while retaining the selected
+   reading measure for prose. This changes the screen workspace only; actual
+   publication pages and print/export surfaces keep their physical layout. */
+@media screen {
+  #main-col #preview-pane:not(.publication-paged) {
+    --preview-prose-measure:calc(var(--line-width) - 2 * var(--space-8));
+    max-width:1600px;
+  }
+  body[data-reading-width="narrow"] #main-col #preview-pane:not(.publication-paged) {
+    --preview-prose-measure:min(60ch, calc(var(--line-width) - 2 * var(--space-8)));
+    max-width:min(var(--line-width), calc(60ch + 2 * var(--space-8)));
+  }
+  #main-col #preview-pane:not(.publication-paged) > :is(h1,h2,h3,h4,h5,h6,p,ul,ol,dl,blockquote,details,hr,.rd-footnotes,.readmd-bibliography) {
+    max-width:var(--preview-prose-measure);
+    margin-inline:0;
+  }
+  #main-col #preview-pane:not(.publication-paged) > p.pv-figure {
+    max-width:none;
+  }
+  body[data-custom-line-width="true"]:not([data-reading-width="narrow"]) #main-col #preview-pane:not(.publication-paged) {
+    max-width:var(--line-width);
+  }
+  body[data-custom-line-width="true"] #content .markdown-body.rd-article {
+    max-width:var(--line-width);
+  }
+  body[data-custom-line-width="true"][data-reading-width="narrow"] #content .markdown-body.rd-article {
+    max-width:min(var(--line-width), calc(var(--rd-measure) + 2 * var(--rd-pad)));
+  }
+}
+@media screen and (min-width:1024px) {
+  body:not([data-reading-width="narrow"]):not([data-custom-line-width="true"]) #content .markdown-body.rd-article:has(> :is(.rd-table-wrap,.rd-code,table,pre,.diagram-card,.code-chunk-card,figure)) {
+    max-width:clamp(calc(var(--rd-measure) + var(--rd-pad) * 2), calc(100% - 960px), 1320px);
+  }
+  body[data-reading-width="wide"]:not([data-custom-line-width="true"]) #content .markdown-body.rd-article:has(> :is(.rd-table-wrap,.rd-code,table,pre,.diagram-card,.code-chunk-card,figure)) {
+    max-width:clamp(calc(var(--rd-measure) + var(--rd-pad) * 2), calc(100% - 960px), 1600px);
+  }
+  body:not([data-reading-width="narrow"]) #content .markdown-body.rd-article:has(> :is(.rd-table-wrap,.rd-code,table,pre,.diagram-card,.code-chunk-card,figure)) > :is(h1,h2,h3,h4,h5,h6,p,ul,ol,dl,blockquote,details,hr,.rd-doc-meta,.rd-callout,.rd-footnotes,.readmd-bibliography) {
+    max-width:var(--rd-measure);
+    margin-inline:0;
+  }
+}
+/* READMD_CONTEXT_SOURCE_BEGIN */
+.formula-inline-controls textarea.formula-inline-input{flex:1 1 240px;min-width:120px;max-width:100%;min-height:44px;resize:vertical;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;color:inherit;font:inherit;line-height:1.5;padding:4px 8px}
+.formula-inline-controls textarea.formula-inline-input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* READMD_CONTEXT_SOURCE_END */

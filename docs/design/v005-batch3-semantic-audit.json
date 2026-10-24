@@ -7816,7 +7816,7 @@
       "finalEvidence": []
     }
   ],
-  "updated": "2026-10-14",
+  "updated": "2026-10-24",
   "publicationIncrementalEvidence": [
     {
       "workItems": [
@@ -7832,6 +7832,21 @@
       "fullBatch3Certification": false,
       "releaseAccepted": false,
       "recordedAt": "2026-10-14T01:46:36.322Z"
+    },
+    {
+      "workItems": [
+        "P06",
+        "P07"
+      ],
+      "path": "docs/evidence/capability-upgrade/2026-10-24/batch3-rust-note-numbering-scoped/manifest.json",
+      "sha256": "46e0c0630e9d9d7e11b6c40d6ba64620eafdcb5d1a7fb1efb9c0f5136d1a6ab8",
+      "candidate": "candidate-90",
+      "scope": "Finite Rust PDF first-use continuous display numbering, actual per-reference GoTo/backlinks and two native generations; same-binary authored citation regression. Page-bottom/section/page policies, full CSL, all OMML and application interoperability remain open.",
+      "state": "implemented-limited-windows-cli-verified",
+      "fullRequirementCertification": false,
+      "fullBatch3Certification": false,
+      "releaseAccepted": false,
+      "recordedAt": "2026-10-24T12:13:56.414Z"
     }
   ]
 }

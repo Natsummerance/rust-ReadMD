@@ -1,0 +1,337 @@
+{
+  "date": "2026-10-07T09:45:54.74Z",
+  "version": "0.0.5",
+  "status": "unpublished-local-candidate",
+  "baseCommit": "7a310dbea119738cbc948ba6431dfa83c2c775a5",
+  "workingTreeChangesTested": true,
+  "rust": {
+    "library": 1882,
+    "main": 116,
+    "xtask": 12,
+    "ignored": 3,
+    "focusedCompletion": 7,
+    "focusedMcp": 9,
+    "mobileFfi": 1
+  },
+  "ui": {
+    "passed": 6,
+    "localeCount": 46,
+    "localeKeys": 2057
+  },
+  "nativeCompletion": {
+    "passed": true,
+    "checks": [
+      "real-model-discovery",
+      "real-context-completion",
+      "native-input-state",
+      "native-request-trigger",
+      "native-ghost-tab-undo",
+      "completion-does-not-store-context"
+    ]
+  },
+  "vscode": {
+    "passed": true,
+    "unitTests": 49,
+    "requests": [
+      {
+        "elapsedMs": 10843,
+        "characters": 54
+      }
+    ],
+    "environment": {
+      "trusted": true,
+      "enabled": true,
+      "language": "markdown"
+    }
+  },
+  "ai": {
+    "all19SkillsHaveSuccessfulRealResponses": true,
+    "singleModelPassed": false,
+    "geminiTimeouts": [
+      {
+        "skill": "readmd-summary",
+        "timeoutMs": 65025
+      },
+      {
+        "skill": "readmd-outline",
+        "timeoutMs": 65012
+      },
+      {
+        "skill": "readmd-export-style",
+        "timeoutMs": 65009
+      }
+    ],
+    "results": [
+      {
+        "skill": "readmd-ask",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 12009,
+        "ok": true
+      },
+      {
+        "skill": "readmd-summary",
+        "model": "claude-sonnet-4-6",
+        "elapsedMs": 4947,
+        "ok": true
+      },
+      {
+        "skill": "readmd-outline",
+        "model": "claude-sonnet-4-6",
+        "elapsedMs": 4271,
+        "ok": true
+      },
+      {
+        "skill": "readmd-polish",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 14176,
+        "ok": true
+      },
+      {
+        "skill": "readmd-translate",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 12178,
+        "ok": true
+      },
+      {
+        "skill": "readmd-quick-read",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 20923,
+        "ok": true
+      },
+      {
+        "skill": "readmd-code-analysis",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 27270,
+        "ok": true
+      },
+      {
+        "skill": "readmd-code-review",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 17800,
+        "ok": true
+      },
+      {
+        "skill": "readmd-code-to-doc",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 24313,
+        "ok": true
+      },
+      {
+        "skill": "readmd-continue",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 35066,
+        "ok": true
+      },
+      {
+        "skill": "readmd-export-style",
+        "model": "claude-sonnet-4-6",
+        "elapsedMs": 6755,
+        "ok": true
+      },
+      {
+        "skill": "readmd-format-fix",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 11636,
+        "ok": true
+      },
+      {
+        "skill": "readmd-humanizer",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 14436,
+        "ok": true
+      },
+      {
+        "skill": "readmd-localization",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 44052,
+        "ok": true
+      },
+      {
+        "skill": "readmd-proofread",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 30281,
+        "ok": true
+      },
+      {
+        "skill": "readmd-skill-creator",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 32710,
+        "ok": true
+      },
+      {
+        "skill": "readmd-style-custom",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 10923,
+        "ok": true
+      },
+      {
+        "skill": "readmd-todo",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 13718,
+        "ok": true
+      },
+      {
+        "skill": "readmd-weekly",
+        "model": "gemini-3.8-flash-tiered",
+        "elapsedMs": 22460,
+        "ok": true
+      }
+    ],
+    "revisedCreatorModel": "claude-sonnet-4-6",
+    "skillLifecycle": {
+      "passed": true,
+      "generatedDisabled": true,
+      "rawPublishRejected": true,
+      "changedDraftRejected": true,
+      "evaluatedPublished": true,
+      "actualGeneratedSkillExecuted": true,
+      "exportMatches": true,
+      "disabledAndRemoved": true
+    }
+  },
+  "website": {
+    "aiLocaleThemeCases": 8,
+    "motionCases": 43,
+    "canonicalPages": 53,
+    "pageErrors": []
+  },
+  "media": {
+    "passed": true,
+    "film": "ReadMD-V0.0.5-promo-4K-final.mp4",
+    "sha256": "aaeca03d10e89fba43af62f99cd8596e428a5776e3b9df7a6a944c6f8d018997",
+    "dimensions": [
+      3840,
+      2160
+    ],
+    "duration": 154.5,
+    "decodedFrames": 4635,
+    "reframedRange": [
+      76,
+      125
+    ],
+    "reencodedRange": [
+      76,
+      127
+    ],
+    "completeEstablishingWindows": 7,
+    "explicitExtensionEnvironment": true,
+    "retainedVideoPacketsIdentical": 3105,
+    "allAudioPacketsIdentical": true,
+    "originalV004ShotsEffectsAndZoomRetained": true,
+    "samples": [
+      {
+        "time": 77,
+        "psnr": 41.28941397975833
+      },
+      {
+        "time": 79.8,
+        "psnr": 41.42185460970026
+      },
+      {
+        "time": 83,
+        "psnr": 41.37865648372739
+      },
+      {
+        "time": 86,
+        "psnr": 42.184694768159886
+      },
+      {
+        "time": 88.6,
+        "psnr": 41.85603982010835
+      },
+      {
+        "time": 90.7,
+        "psnr": 40.85283990963123
+      },
+      {
+        "time": 93.3,
+        "psnr": 40.46198861121613
+      },
+      {
+        "time": 95,
+        "psnr": 41.75186867212549
+      },
+      {
+        "time": 98,
+        "psnr": 41.17566692492301
+      },
+      {
+        "time": 101,
+        "psnr": 41.287380254123946
+      },
+      {
+        "time": 104.5,
+        "psnr": 41.14518526644633
+      },
+      {
+        "time": 107,
+        "psnr": 41.077228148947086
+      },
+      {
+        "time": 110,
+        "psnr": 40.320611677824076
+      },
+      {
+        "time": 113.7,
+        "psnr": 40.840272314281904
+      },
+      {
+        "time": 116,
+        "psnr": 40.77038023567021
+      },
+      {
+        "time": 118.8,
+        "psnr": 41.132969527148205
+      },
+      {
+        "time": 121,
+        "psnr": 40.602495355536334
+      },
+      {
+        "time": 124,
+        "psnr": 40.65319149445677
+      }
+    ],
+    "playerPassed": true,
+    "chapterButtons": 12,
+    "privacyApplication": {
+      "passed": true,
+      "frames": 30,
+      "findings": []
+    },
+    "privacyWebsite": {
+      "passed": true,
+      "frames": 40,
+      "findings": []
+    },
+    "sourcePreservation": {
+      "passed": true,
+      "originalSourceFiles": 47,
+      "preservedUserScripts": 2
+    }
+  },
+  "boundaries": [
+    "HarmonyOS SDK, ArkTS/N-API compilation and device acceptance pending",
+    "macOS and domestic Linux native acceptance pending",
+    "Gemini summary/outline/export-style repeatedly exceeded the test deadline; alternate model succeeded",
+    "No universal bug-free or all-products-equivalence claim"
+  ],
+  "sourceHashes": {
+    "rust/readmd-kernel/src/ai_completion.rs": "78aa79f1c8fe0accc6fac278055bd2615eec821d8be5e8350b4aa85201ef6118",
+    "rust/readmd-kernel/src/server.rs": "08ebcc65af1cb59927cb2da97c0984ab54f8c7a4708ecf50c0c49cbdf91add99",
+    "rust/readmd-kernel/src/mcp.rs": "7c95986ed6257c72a0146175ffe7b40b7db57ffa97bff2b2da908efbdca5026c",
+    "rust/readmd-kernel/src/mobile_ffi.rs": "e1cbd031c5e46bcad4ee8fb2f1a3e49bcfa9d8e37d54c0b339843cac5d070cbc",
+    "assets/js/features/ai-inline.js": "fbc103a142b1acfba11b1ab687d0a0d6326df9dc4061eea6ef95d36ca74c6c1a",
+    "assets/js/features/ai.js": "eae2895d33ce83223f2b6afe4d216cac6a2bc56dee26e45ee74ac97d43f0ed9b",
+    "assets/js/editor/editor.js": "7f273aeb5ddbcb39ad919d9e991e363a38993817e69d8237c33ef8760e60b9ae",
+    "assets/readmd.boot.js": "4a1959cfd7098dbbae022c8da4fd1420df36508f0b5fdf57896244a390c32a5c",
+    "assets/skills/readmd-skill-creator/SKILL.md": "0b25c9fc630cd95c271f7aa7f3e519fe2ba2453d09c1243f6e566c5022b24414",
+    "packages/vscode-extension/src/completion.ts": "4c7b3c0bb61993d851b8bf6c6120bc5872433db65967293c41d9a753806096d0"
+  },
+  "cleanup": {
+    "status": "blocked-by-automatic-approval",
+    "bytesRemoved": 0,
+    "retried": false,
+    "receipt": "showcase/updates/v0.0.5/checks/cleanup-ai-2026-10-07.json"
+  }
+}

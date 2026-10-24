@@ -3,6 +3,14 @@
 use serde_json::{json, Value};
 pub const NUMBER_FORMATS: &[&str] = &["decimal", "lowerRoman", "upperRoman", "lowerLetter", "upperLetter"];
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteRestart { Continuous, Section, Page }
+impl NoteRestart {
+    pub fn word_value(self) -> &'static str { match self {
+        Self::Continuous => "continuous", Self::Section => "eachSect", Self::Page => "eachPage",
+    }}
+}
+
 pub const TOC_LEADERS: &[&str] = &["dot", "hyphen", "underscore", "none"];
 /// Shared bounded depth. Direct writer APIs may receive unsanitized profiles.
 pub fn toc_depth(style: &Value) -> u8 {
@@ -14,6 +22,9 @@ pub fn toc_leader(style: &Value) -> &str {
 }
 
 pub fn sanitize_optional(style: &mut Value) {
+    // New native policies have already passed strict validation at service
+    // boundaries. Keep legal note values intact instead of applying UI bounds.
+    let exact_notes=style.get("footnotes").is_some_and(|value|crate::publication_note_policies::parse_footnotes(value).is_ok());
     for (section,key,default,min,max,integral) in [
         ("page","columns",1.,1.,3.,true),("page","columnGap",8.,1.,30.,false),("page","gutter",0.,0.,40.,false),
         ("header","distance",10.,0.,50.,false),("footer","distance",10.,0.,50.,false),
@@ -22,6 +33,7 @@ pub fn sanitize_optional(style: &mut Value) {
         ("footnotes","start",1.,1.,9999.,true),
         ("toc","depth",3.,1.,6.,true),
     ] { if let Some(value)=style.get_mut(section).and_then(|s|s.get_mut(key)) {
+        if section=="footnotes"&&exact_notes{continue;}
         let n=value.as_f64().filter(|n|n.is_finite()).unwrap_or(default).clamp(min,max);
         *value=if integral{json!(n.round() as u32)}else{json!(n)};
     }}
@@ -37,6 +49,7 @@ pub fn sanitize_optional(style: &mut Value) {
     }}
     for section in ["footer","footnotes"] {
         if let Some(value)=style.get_mut(section).and_then(|s|s.get_mut("numberFormat")) {
+            if section=="footnotes"&&exact_notes{continue;}
             if !value.as_str().is_some_and(|s|NUMBER_FORMATS.contains(&s)){*value=json!("decimal");}
         }
     }
@@ -47,7 +60,20 @@ pub fn sanitize_optional(style: &mut Value) {
         if !matches!(value.as_str(),Some("page"|"document")){*value=json!("page");}
     }
     if let Some(value)=style.get_mut("footnotes").and_then(|s|s.get_mut("title")) {
-        *value=json!(value.as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(120).collect::<String>());
+        if !exact_notes{*value=json!(value.as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(120).collect::<String>());}
+    }
+    for (key,allowed,default) in [
+        ("restart", &["continuous","section","page"][..], "continuous"),
+        ("separator", &["line","none"][..], "line"),
+        ("continuationSeparator", &["line","none"][..], "line"),
+        ("longNote", &["split","keepParagraphs"][..], "split"),
+    ] {
+        if let Some(value)=style.get_mut("footnotes").and_then(|s|s.get_mut(key)) {
+            if !value.as_str().is_some_and(|v|allowed.contains(&v)){*value=json!(default);}
+        }
+    }
+    if let Some(value)=style.get_mut("footnotes").and_then(|s|s.get_mut("continuationNotice")) {
+        if !exact_notes{*value=json!(value.as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(120).collect::<String>());}
     }
     if let Some(headings)=style.get_mut("headings").and_then(Value::as_object_mut) {
         for (_,heading) in headings {for key in ["keepNext","keepLines"] {
@@ -62,6 +88,8 @@ pub struct Layout {
     pub header_distance:f64,pub footer_distance:f64,pub header_size:f64,pub footer_size:f64,pub footer_align:String,
     pub page_format:String,pub page_start:u32,pub page_total:bool,pub hide_first:bool,pub different_odd_even:bool,
     pub widow_control:bool,pub keep_lines:bool,pub note_size:f64,pub note_line_height:f64,pub note_format:String,pub note_start:u32,
+    pub note_restart:NoteRestart,pub note_separator:bool,pub note_continuation_separator:bool,
+    pub note_continuation_notice:String,pub note_keep_paragraphs:bool,
 }
 impl Layout {
     /// Direct writer APIs also accept unsanitized options.
@@ -80,6 +108,10 @@ impl Layout {
             widow_control:b("typography","widowControl",true),keep_lines:b("typography","keepLines",false),
             note_size:n("footnotes","size",9.,6.,24.),note_line_height:n("footnotes","lineHeight",1.,1.,3.),note_format:format("footnotes"),
             note_start:n("footnotes","start",1.,1.,9999.).round() as u32,
+            note_restart:match style["footnotes"]["restart"].as_str(){Some("section")=>NoteRestart::Section,Some("page")=>NoteRestart::Page,_=>NoteRestart::Continuous},
+            note_separator:style["footnotes"]["separator"]!="none",note_continuation_separator:style["footnotes"]["continuationSeparator"]!="none",
+            note_continuation_notice:style["footnotes"]["continuationNotice"].as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(120).collect(),
+            note_keep_paragraphs:style["footnotes"]["longNote"]=="keepParagraphs",
         }
     }
     pub fn column_width(&self,style:&Value)->f64 {
@@ -106,6 +138,50 @@ impl Layout {
 pub fn note_index(style:&Value,ordinal:usize)->usize {
     ordinal.max(1).saturating_add(Layout::from_style(style).note_start as usize-1)
 }
+/// Flow-output labels follow a definition's first reference, independently of
+/// chapter splitting and link IDs. A section is a source SectionStart, never a
+/// guessed heading or physical page. Repeated references retain their label.
+/// Page restart is deliberately continuous here: callers must report that a
+/// reflow output has no stable physical pages instead of substituting chapters.
+pub fn note_numbers(doc:&crate::md_ast::Document,style:&Value)->std::collections::HashMap<String,usize> {
+    use crate::md_ast::{Block,Inline};
+    use std::collections::HashMap;
+    fn definitions(blocks:&[Block],defs:&mut HashMap<String,Vec<Block>>) {
+        for block in blocks {match block.unstyled(){
+            Block::FootnoteDef{label,blocks}=>{defs.entry(label.clone()).or_insert_with(||blocks.clone());},
+            Block::Quote(blocks)=>definitions(blocks,defs),
+            Block::List{items,..}=>for item in items{definitions(&item.blocks,defs)},_=>(),
+        }}
+    }
+    struct Plan { numbers:HashMap<String,usize>,counts:HashMap<usize,usize>,order:Vec<(String,usize)>,section:usize,section_restart:bool,start:usize }
+    impl Plan {
+        fn reference(&mut self,label:&str,defs:&HashMap<String,Vec<Block>>,section:usize) {
+            if self.numbers.contains_key(label)||!defs.contains_key(label){return;}
+            let counter=self.counts.entry(if self.section_restart{section}else{0}).or_default();*counter+=1;
+            self.numbers.insert(label.into(),self.start.saturating_add(*counter-1));self.order.push((label.into(),section));
+        }
+        fn blocks(&mut self,blocks:&[Block],defs:&HashMap<String,Vec<Block>>,in_note:bool) {
+            for block in blocks {match block.unstyled(){
+                Block::FootnoteDef{..}=>(),
+                Block::SectionStart(_) if !in_note=>self.section+=1,
+                Block::Quote(blocks)=>self.blocks(blocks,defs,in_note),
+                Block::List{items,..}=>for item in items{self.blocks(&item.blocks,defs,in_note)},
+                _=>{let section=self.section;crate::md_ast::walk_inlines(std::slice::from_ref(block),&mut |value|{
+                    if let Inline::FootnoteRef(label)=value{self.reference(label,defs,section);}
+                });},
+            }}
+        }
+    }
+    let layout=Layout::from_style(style);let mut defs=HashMap::new();definitions(&doc.blocks,&mut defs);
+    let mut plan=Plan{numbers:HashMap::new(),counts:HashMap::new(),order:Vec::new(),section:0,section_restart:layout.note_restart==NoteRestart::Section,start:layout.note_start as usize};
+    plan.blocks(&doc.blocks,&defs,false);
+    // EPUB permits note-to-note references. Resolve those after main-story
+    // references, in the same bounded first-use order as its note writer.
+    let mut at=0;while at<plan.order.len(){let(label,section)=plan.order[at].clone();at+=1;
+        plan.section=section;if let Some(blocks)=defs.get(&label){plan.blocks(blocks,&defs,true);}
+    }
+    plan.numbers
+}
 pub fn typst_number(format:&str)->&'static str {match format {
     "lowerRoman"=>"i","upperRoman"=>"I","lowerLetter"=>"a","upperLetter"=>"A",_=>"1",
 }}
@@ -113,11 +189,12 @@ pub fn notes_at_end(style:&Value)->bool {style["footnotes"]["position"].as_str()
 pub fn note_title(style:&Value)->String {
     style["footnotes"]["title"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or("Notes").chars().filter(|c|!c.is_control()).take(120).collect()
 }
-/// Literal labels for flow outputs. Word uses its native numbering fields.
+/// Literal labels for flow outputs. Match Word's native upper/lowerLetter
+/// and ALPHABETIC fields: Z, AA, BB, ..., ZZ, AAA (repeated letters).
 pub fn note_number(format:&str,index:usize)->String {
     let mut value=index.max(1);
     let result=match format {
-        "lowerLetter"|"upperLetter"=>{let mut chars=Vec::new();while value>0{value-=1;chars.push((b'A'+(value%26) as u8) as char);value/=26;}chars.into_iter().rev().collect::<String>()},
+        "lowerLetter"|"upperLetter"=>{let ordinal=value-1;char::from(b'A'+(ordinal%26) as u8).to_string().repeat(ordinal/26+1)},
         "lowerRoman"|"upperRoman"=>{let mut text=String::new();for (n,s)in [(1000,"M"),(900,"CM"),(500,"D"),(400,"CD"),(100,"C"),(90,"XC"),(50,"L"),(40,"XL"),(10,"X"),(9,"IX"),(5,"V"),(4,"IV"),(1,"I")]{while value>=n{text.push_str(s);value-=n;}}text},
         _=>value.to_string(),
     };
@@ -140,10 +217,11 @@ pub fn paragraph_flow_css(style:&Value)->String {
 }
 /// Also covers presets supplied through MCP, outside the visible controls.
 pub fn warnings(format:&str,options:&Value)->Vec<String> {
-    if format=="docx"||format=="pdf"&&options.pointer("/pdf/engine").and_then(Value::as_str)==Some("typst"){return Vec::new();}
+    let mut out=note_warnings(format,options);
+    if format=="docx"||format=="pdf"&&options.pointer("/pdf/engine").and_then(Value::as_str)==Some("typst"){return out;}
     let paged=["page.columns","page.columnGap","page.gutter","page.mirrorMargins","page.differentFirstPage","page.differentOddEven","header.distance","header.size","footer.distance","footer.size","footer.align","footer.numberFormat","footer.start","footer.showTotal"];
     let paragraph=["typography.widowControl","typography.keepLines"];
-    let notes=["footnotes.size","footnotes.lineHeight","footnotes.numberFormat","footnotes.position","footnotes.start"];
+    let notes=["footnotes.size","footnotes.lineHeight","footnotes.numberFormat","footnotes.position","footnotes.start","footnotes.separator","footnotes.longNote"];
     let differs=|keys:&[&str]|keys.iter().any(|key| {
         let pointer=format!("/{}",key.replace('.',"/"));let Some(value)=options.pointer(&pointer)else{return false;};
         let fallback=match *key {
@@ -151,13 +229,15 @@ pub fn warnings(format:&str,options:&Value)->Vec<String> {
             "header.distance"|"footer.distance"=>json!(10),"header.size"|"footer.size"|"footnotes.size"=>json!(9),
             "footnotes.lineHeight"=>json!(1),"footer.align"=>json!("center"),"footer.numberFormat"|"footnotes.numberFormat"=>json!("decimal"),
             "footnotes.position"=>json!("page"),
+            "footnotes.separator"=>json!("line"),"footnotes.longNote"=>json!("split"),
             "typography.widowControl"=>json!(true),_=>json!(false),
         };if value.is_number()&&fallback.is_number(){value.as_f64()!=fallback.as_f64()}else{value!=&fallback}
     });
-    let mut out=Vec::new();
     if differs(&paged){out.push("publication_layout_paged_unsupported".into());}
+    let native_toc_depth=matches!(format,"epub"|"tex"|"latex")
+        ||format=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),Some("xelatex"|"pdflatex"));
     let toc_changed = options["toc"]["enabled"].as_bool().unwrap_or(false)
-        && format!="epub" && (toc_depth(options)!=3 || toc_leader(options)!="dot")
+        && format!="epub" && (!native_toc_depth&&toc_depth(options)!=3 || toc_leader(options)!="dot")
         || format=="epub" && toc_leader(options)!="dot";
     if toc_changed && !out.iter().any(|s|s=="publication_layout_paged_unsupported") {
         out.push("publication_layout_paged_unsupported".into());
@@ -167,6 +247,27 @@ pub fn warnings(format:&str,options:&Value)->Vec<String> {
     if !matches!(format,"html"|"epub")&&options["headings"].as_object().is_some_and(|h|h.values().any(|v|v["keepNext"]==false||v["keepLines"]==false)){out.push("publication_layout_heading_unsupported".into());}
     out
 }
+
+/// Capability diagnostics are emitted even for otherwise native paged engines.
+/// In particular, EPUB page restart must never become chapter restart, and
+/// Typst's single separator cannot promise a distinct continuation story.
+pub fn note_warnings(format:&str,options:&Value)->Vec<String> {
+    if format=="docx"{return Vec::new();}
+    let layout=Layout::from_style(options);let typst=format=="pdf"&&options["pdf"]["engine"]=="typst";
+    let mut out=Vec::new();
+    if layout.note_restart==NoteRestart::Page&&(!typst||notes_at_end(options)) {out.push("publication_note_page_restart_unsupported".into());}
+    if layout.note_restart==NoteRestart::Section&&!typst&&format!="epub" {out.push("publication_note_section_restart_unsupported".into());}
+    let continuation=if typst&&!notes_at_end(options) {
+        !layout.note_continuation_notice.is_empty()
+            ||options["footnotes"].get("continuationSeparator").is_some()&&layout.note_continuation_separator!=layout.note_separator
+    }else{options["footnotes"].get("continuationSeparator").is_some()||!layout.note_continuation_notice.is_empty()};
+    if continuation{out.push("publication_note_continuation_unsupported".into());}
+    out
+}
+
+#[cfg(test)]
+#[path = "publication_notes_tests.rs"]
+mod notes_tests;
 
 #[cfg(test)]mod tests {
     use super::*;
@@ -183,6 +284,15 @@ pub fn warnings(format:&str,options:&Value)->Vec<String> {
         assert!(warnings("pdf",&custom).contains(&"publication_layout_paged_unsupported".into()));
         assert!(warnings("epub",&json!({"toc":{"depth":6}})).is_empty());
         assert!(warnings("epub",&custom).contains(&"publication_layout_paged_unsupported".into()));
+        for (format,engine) in [("tex","rust"),("latex","rust"),("pdf","xelatex"),("pdf","pdflatex")] {
+            let depth=json!({"toc":{"enabled":true,"depth":6},"pdf":{"engine":engine}});
+            assert!(!warnings(format,&depth).contains(&"publication_layout_paged_unsupported".into()),"{format}/{engine}");
+            let leader=json!({"toc":{"enabled":true,"depth":6,"leader":"hyphen"},"pdf":{"engine":engine}});
+            assert!(warnings(format,&leader).contains(&"publication_layout_paged_unsupported".into()),"{format}/{engine}");
+        }
+        for format in ["html","pdf"] {
+            assert!(warnings(format,&json!({"toc":{"enabled":true,"depth":6},"pdf":{"engine":"rust"}})).contains(&"publication_layout_paged_unsupported".into()));
+        }
     }
     #[test]fn paragraph_flow_policy_preserves_omission_and_both_explicit_switches(){
         assert!(paragraph_flow_css(&crate::export_styles::sanitize(&json!({}))).is_empty());
@@ -230,7 +340,8 @@ pub fn warnings(format:&str,options:&Value)->Vec<String> {
         let invalid=crate::export_styles::sanitize(&json!({"footnotes":{"position":"chapter","title":false}}));assert!(!notes_at_end(&invalid));assert_eq!(note_title(&invalid),"Notes");
     }
     #[test]fn flow_note_numbering_handles_alphabet_boundaries_and_roman_subtraction(){
-        for (n,alpha,roman)in [(1,"a","i"),(26,"z","xxvi"),(27,"aa","xxvii"),(49,"aw","xlix"),(99,"cu","xcix"),(999,"alk","cmxcix")]{assert_eq!(note_number("lowerLetter",n),alpha);assert_eq!(note_number("lowerRoman",n),roman);}
+        for (n,alpha,roman)in [(1,"a","i"),(26,"z","xxvi"),(27,"aa","xxvii"),(28,"bb","xxviii"),(49,"ww","xlix"),(52,"zz","lii"),(53,"aaa","liii"),(99,"uuuu","xcix")]{assert_eq!(note_number("lowerLetter",n),alpha);assert_eq!(note_number("upperLetter",n),alpha.to_uppercase());assert_eq!(note_number("lowerRoman",n),roman);}
+        assert_eq!(note_number("lowerLetter",999),"k".repeat(39));
         assert_eq!(note_number("upperLetter",27),"AA");assert_eq!(note_number("upperRoman",49),"XLIX");assert_eq!(note_number("decimal",27),"27");
     }
     #[test]fn optional_values_preserve_legacy_identity_and_bound_untrusted_input(){

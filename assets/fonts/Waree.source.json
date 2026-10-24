@@ -1,0 +1,48 @@
+{
+  "family": "Waree",
+  "face": "Regular",
+  "version": "Version 001.003",
+  "upstream": {
+    "project": "fonts-tlwg",
+    "version": "0.7.4",
+    "texLiveRevision": "79529",
+    "inputLock": {
+      "path": "tools/tex-publication-inputs.lock.json",
+      "sha256": "7421209d317f37caef07e82aa143ca886cae0c3dde801048132f0268bf9b2455"
+    },
+    "runArchive": {
+      "url": "https://ctan.math.illinois.edu/systems/texlive/tlnet/archive/fonts-tlwg.tar.xz",
+      "bytes": 5049712,
+      "sha512": "c8586fad30d340f19e013b542fb924e5346ed608bac655e2313e1172a10547455b17ec43982fcd20adc7e1b01cd1895ec80801c5a4e278cfc30fe2e6b21745fb"
+    },
+    "sourceArchive": {
+      "url": "https://ctan.math.illinois.edu/systems/texlive/tlnet/archive/fonts-tlwg.source.tar.xz",
+      "bytes": 7621580,
+      "sha512": "ec6288a1892e15e5a112a70130cb1c39426dc49da80e4ff29e8c0ab88c8a3b547be7cfe0395506ad41f3b7b4fb463c0f784c1eb7c4f2c801c77ae434bd8a795d"
+    },
+    "documentationArchive": {
+      "url": "https://ctan.math.illinois.edu/systems/texlive/tlnet/archive/fonts-tlwg.doc.tar.xz",
+      "bytes": 11156,
+      "sha512": "083d3db57520397171dea5cc855ecd3858cb96fac10407d7fca3453d8bef25214c95a01cf87fd9cae4900eae26910741fcca3162b602259a064c4a2f4f97f34d"
+    },
+    "originalFontPath": "RELOC/fonts/opentype/public/fonts-tlwg/Waree.otf",
+    "originalSourcePath": "RELOC/source/fonts/fonts-tlwg/tlwg/Waree.sfd"
+  },
+  "font": {
+    "path": "assets/fonts/Waree-Regular.otf",
+    "bytes": 57596,
+    "sha256": "749185833758edba65c050b18314cef9c44adecb18ec52ebe3d095e25cf23956",
+    "unmodified": true,
+    "internalFamily": "Waree",
+    "internalSubfamily": "Regular"
+  },
+  "license": {
+    "path": "assets/fonts/Waree.LICENSE.txt",
+    "bytes": 2445,
+    "sha256": "1c1ac0c03c687a37dd0d21ce66da9cfd4d05bb7de94f750783e8e514a4266700",
+    "source": "Complete license text carried by the original font nameID13, including copyright/trademark notices, Bitstream Vera permission and TLWG public-domain changes",
+    "review": "Permission explicitly allows reproduction, distribution and software bundling with the complete notices. Original font bytes and internal family are retained. No other weight/style is adopted; the TeX runtime QA-only review is not used as redistribution approval."
+  },
+  "purpose": "Small controlled Thai Regular glyph fallback visible to the managed Typst worker without system fonts or a TeX runtime dependency. Cmap and OpenType table coverage do not certify actual shaping; real output verification remains required.",
+  "reviewed": "2026-10-21"
+}

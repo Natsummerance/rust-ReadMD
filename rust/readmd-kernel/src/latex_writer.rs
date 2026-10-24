@@ -7,10 +7,14 @@
 //! pdfLaTeX for pure-ASCII documents thanks to the `iftex` guard.
 
 use crate::md_ast::{inline_plain, Align, Block, Document, Inline};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 #[path = "latex_writer_paragraphs.rs"]
 mod paragraphs;
 pub(crate) use paragraphs::GeometryContext as ParagraphGeometry;
+
+#[cfg(test)]
+#[path="latex_writer_author_inline_tests.rs"]
+mod author_inline_tests;
 
 /// Document-level knobs, read from the export panel's `tex`/`meta` options.
 #[derive(Debug, Clone)]
@@ -229,13 +233,15 @@ fn escape_url(s: &str) -> String {
 }
 
 /// A `\label` key: ASCII-safe, deterministic, identical for heading and link.
+// Dots delimit escaped scalars and are themselves escaped. This preserves
+// existing plain ASCII keys while keeping α/u3b1 and "."/u2e distinct.
 pub fn label_key(slug: &str) -> String {
     let mut out = String::from("sec:");
     for c in slug.chars() {
         if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
             out.push(c);
         } else {
-            out.push_str(&format!("u{:x}", c as u32));
+            out.push_str(&format!(".{:x}.", c as u32));
         }
     }
     out
@@ -276,12 +282,162 @@ struct Writer<'a> {
     fn_stack: Vec<String>,
     bib_engine: String,
     chapter_headings: bool,
+    heading_numbering: bool,
+    toc_numbers: TocNumbers,
     publication_style: Option<serde_json::Value>,
     core_text_fallback: bool,
     core_text_used: bool,
     /// Emergency ASCII breaks are allowed only inside recursive CSL columns.
     csl_columns_text: bool,
     paragraphs: paragraphs::State,
+    author: Option<crate::publication_inline_text::ResolvedTextStyle>,
+    author_base: crate::publication_inline_text::ResolvedTextStyle,
+    local_pair: Option<crate::publication_inline_text::ResolvedTextStyle>,
+}
+
+type TocNumbers = BTreeMap<&'static str, BTreeSet<String>>;
+
+fn has_heading_numbering(blocks:&[Block])->bool{
+    blocks.iter().any(|block|match block.unstyled(){
+        Block::Heading{numbering:Some(_),..}=>true,
+        Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>has_heading_numbering(blocks),
+        Block::List{items,..}=>items.iter().any(|item|has_heading_numbering(&item.blocks)),_=>false,
+    })
+}
+
+// Native article/report classes stop at subparagraph (level 5). Shared H6
+// uses one further named level; its reader and bookmark metadata must exist
+// before the first tableofcontents consumes a previous pass's .toc file.
+const SIXTH_TOC_LEVEL:&str=r#"
+\makeatletter
+\providecommand{\l@readmdsubparagraph}{\@dottedtocline{6}{10em}{5em}}
+\providecommand{\toclevel@readmdsubparagraph}{6}
+\makeatother
+"#;
+
+// Measure in the original TOC reader, after it has selected its real font,
+// size and series. One discarded row computes a cached maximum per kind;
+// visible rows keep the native indent, leaders, page box and depth checks.
+const MEASURED_TOC_NUMBERS:&str=r#"
+\makeatletter
+\newbox\readmdtocrowbox
+\newbox\readmdtocnumberbox
+\newdimen\readmdtocnumberwidth
+\newcommand{\readmdtocmeasure}[1]{%
+  \setbox\readmdtocnumberbox=\hbox{#1\hskip\fontdimen2\font}%
+  \ifdim\wd\readmdtocnumberbox>\readmdtocnumberwidth
+    \readmdtocnumberwidth=\wd\readmdtocnumberbox
+  \fi
+}
+\newcommand{\readmdtocentry}[3]{%
+  \begingroup
+  \ifcsname readmdtocwidth@#1\endcsname\else
+    \setbox\readmdtocrowbox=\vbox{%
+      \def\numberline##1{%
+        \readmdtocnumberwidth=\@tempdima
+        \csname readmdtoclabels@#1\endcsname
+        \expandafter\xdef\csname readmdtocwidth@#1\endcsname{\the\readmdtocnumberwidth}%
+      }%
+      \csname readmdtocoriginal@#1\endcsname{\numberline{}}{}%
+    }%
+  \fi
+  \ifcsname readmdtocwidth@#1\endcsname
+    \let\readmdtocsetlength\setlength
+    \def\setlength##1##2{%
+      \ifx##1\@tempdima
+        \readmdtocsetlength{##1}{\csname readmdtocwidth@#1\endcsname}%
+      \else\readmdtocsetlength{##1}{##2}\fi
+    }%
+    \let\readmdtocdottedline\@dottedtocline
+    \def\@dottedtocline##1##2##3{%
+      \readmdtocdottedline{##1}{##2}{\csname readmdtocwidth@#1\endcsname}%
+    }%
+  \fi
+  \csname readmdtocoriginal@#1\endcsname{#2}{#3}%
+  \endgroup
+}
+\newcommand{\readmdtocsetup}[2]{%
+  \expandafter\def\csname readmdtoclabels@#1\endcsname{#2}%
+  \expandafter\let\expandafter\readmdtocoriginal\csname l@#1\endcsname
+  \expandafter\let\csname readmdtocoriginal@#1\endcsname\readmdtocoriginal
+  \expandafter\def\csname l@#1\endcsname##1##2{\readmdtocentry{#1}{##1}{##2}}%
+}
+\makeatother
+"#;
+
+fn measured_toc_settings(numbers:&TocNumbers,fallback:bool,used:&mut bool)->String{
+    let mut out=String::new();
+    for(kind,labels)in numbers{
+        out.push_str(&format!("\\readmdtocsetup{{{kind}}}{{"));
+        for label in labels{
+            out.push_str(&format!("\\readmdtocmeasure{{{}}}",escape_visible_text(label,fallback,used)));
+        }
+        out.push_str("}\n");
+    }
+    out
+}
+
+/// Independent native counters avoid class-dependent automatic prefixes.
+/// Expandable repeated-letter formatters match Word's native numbering after
+/// Z (AA, BB, ..., ZZ, AAA) without TeX's built-in 26-letter counter limit.
+const ALPHABET_NUMBER_MACROS:&str=r#"
+\ExplSyntaxOn
+\cs_new:Npn \readmdalph #1 { \int_compare:nNnT {#1} > {0} { \prg_replicate:nn { \int_div_truncate:nn {#1-1} {26} + 1 } { \int_to_alph:n { \int_mod:nn {#1-1} {26} + 1 } } } }
+\cs_new:Npn \readmdAlph #1 { \int_compare:nNnT {#1} > {0} { \prg_replicate:nn { \int_div_truncate:nn {#1-1} {26} + 1 } { \int_to_Alph:n { \int_mod:nn {#1-1} {26} + 1 } } } }
+\ExplSyntaxOff
+"#;
+const HEADING_COUNTER_MACROS:&str=r#"
+\newcounter{readmdhanchor}
+\newcounter{readmdh1}
+\newcounter{readmdh2}
+\newcounter{readmdh3}
+\newcounter{readmdh4}
+\newcounter{readmdh5}
+\newcounter{readmdh6}
+\makeatletter
+\expandafter\def\csname theHreadmdh1\endcsname{\arabic{readmdhanchor}}
+\expandafter\def\csname theHreadmdh2\endcsname{\arabic{readmdhanchor}}
+\expandafter\def\csname theHreadmdh3\endcsname{\arabic{readmdhanchor}}
+\expandafter\def\csname theHreadmdh4\endcsname{\arabic{readmdhanchor}}
+\expandafter\def\csname theHreadmdh5\endcsname{\arabic{readmdhanchor}}
+\expandafter\def\csname theHreadmdh6\endcsname{\arabic{readmdhanchor}}
+\newcommand{\readmdnumberedheadingmark}[2]{%
+  \stepcounter{readmdhanchor}%
+  \refstepcounter{readmdh#1}%
+  \def\@currentlabelname{#2}%
+  \xdef\readmdheadinghref{\@currentHref}%
+}
+\newcommand{\readmdnumberedheadingtoc}[3]{%
+  \begingroup
+  \let\@currentHref\readmdheadinghref
+  \addcontentsline{toc}{#1}{\protect\numberline{\csname thereadmdh#2\endcsname}#3}%
+  \endgroup
+}
+\makeatother
+"#;
+
+fn heading_counter_settings(level:u8,numbering:&crate::cross_references::HeadingNumbering,literal:&mut dyn FnMut(&str)->String)->Result<String,&'static str>{
+    let depth=level as usize;
+    if !(1..=6).contains(&depth)||numbering.numbers.len()!=depth||numbering.rules.len()<depth
+        ||numbering.numbers.iter().any(|number|*number>crate::cross_references::MAX_NUMBER)
+        ||![" ","\t",""].contains(&numbering.suffix.as_str()){return Err("publication_numbering_invalid");}
+    let mut out=String::new();
+    for(index,number)in numbering.numbers.iter().enumerate(){
+        let before=if index+1==depth{*number as i64-1}else{*number as i64};
+        out.push_str(&format!("\\setcounter{{readmdh{}}}{{{before}}}\n",index+1));
+    }
+    let mut format=String::new();
+    for part in crate::cross_references::heading_text_parts(&numbering.rules[depth-1].text,depth){
+        let index=match part{crate::cross_references::HeadingTextPart::Literal(text)=>{format.push_str(&literal(text));continue;},crate::cross_references::HeadingTextPart::Counter(index)=>index};
+        let counter=format!("readmdh{}",index+1);
+        let number_format=if numbering.rules[depth-1].is_legal{"decimal"}else{numbering.rules[index].format.as_str()};
+        format.push_str(&match number_format{
+            "decimal"=>format!("\\arabic{{{counter}}}"),"lowerRoman"=>format!("\\roman{{{counter}}}"),
+            "upperRoman"=>format!("\\Roman{{{counter}}}"),"lowerLetter"=>format!("\\readmdalph{{\\value{{{counter}}}}}"),
+            "upperLetter"=>format!("\\readmdAlph{{\\value{{{counter}}}}}"),_=>return Err("publication_numbering_invalid"),
+        });
+    }
+    out.push_str(&format!("\\expandafter\\def\\csname thereadmdh{level}\\endcsname{{{format}}}\n"));Ok(out)
 }
 
 fn local_termes_font(attributes: &serde_json::Value) -> bool {
@@ -316,10 +472,12 @@ pub(crate) fn has_unsupported_local_styles_with_spacing(doc:&Document, style:Opt
                 if crate::publication_blocks::validate_style(attributes).is_err() { return true; }
                 let body = ordinary && matches!(block.unstyled(),Block::Paragraph(_));
                 let mode = t::resolve_line_spacing(inherited.or(if body{global}else{None}),&attributes["paragraph"],body).ok().flatten();
+                let caption_author=matches!(block.unstyled(),Block::Caption{..})&&crate::publication_blocks::author_style(attributes).is_ok_and(|author|!author.is_empty());
                 let unsupported = attributes.as_object().is_some_and(|root|root.iter().any(|(section,value)|match section.as_str(){
                     "id"=>false,
                     "text"=>value.as_object().is_some_and(|text|text.iter().any(|(key,value)|
-                        !(key=="font"&&value.as_str()==Some("TeX Gyre Termes") || key=="size"&&body&&mode.is_some()))),
+                        !(key=="font"&&value.as_str()==Some("TeX Gyre Termes") || key=="size"&&(body&&mode.is_some()||caption_author)
+                            || key=="author"&&matches!(block.unstyled(),Block::Caption{..})&&crate::publication_blocks::author_style(attributes).is_ok()))),
                     "paragraph"=>value.as_object().is_some_and(|p|p.keys().any(|key|
                         !(body&&mode.is_some()&&matches!(key.as_str(),"lineSpacing"|"lineHeight")))),
                     _=>true,
@@ -381,7 +539,11 @@ pub(crate) fn render_document_with_resources(doc: &Document, opts: &LatexOptions
 
 /// Preflight precedes image/bibliography resource staging in actual exporters.
 pub(crate) fn validate_paragraphs(doc:&Document, opts:&LatexOptions)->Result<(),String> {
-    let mut checked = opts.publication_style.clone().unwrap_or_else(||serde_json::json!({}));
+    crate::math_word_projection::validate_document(doc,"tex")?;
+    crate::publication_blocks::validate_author_render_document(doc).map_err(str::to_string)?;
+    let original=opts.publication_style.clone().unwrap_or_else(||serde_json::json!({}));
+    crate::publication_note_policies::validate_default_section_numbering(doc,&original).map_err(|error|error.to_string())?;
+    let mut checked=crate::publication_note_policies::project_legacy(doc,&original).map_err(|error|error.to_string())?;
     crate::publication_typography::tracking::validate_document(doc, &checked, false)?;
     crate::publication_typography::baseline::validate_document(doc, &checked, crate::publication_typography::baseline::Consumer::Unsupported)?;
     checked["tex"] = serde_json::json!({"bibEngine":opts.bib_engine,"renderBibliography":!opts.bib_engine.is_empty()});
@@ -399,13 +561,20 @@ pub(crate) fn validate_paragraphs(doc:&Document, opts:&LatexOptions)->Result<(),
 pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions, images: ImageMap)
     -> Result<(String, bool, Option<ParagraphGeometry>), String>
 {
+    let mut projected_opts=opts.clone();let original=opts.publication_style.clone().unwrap_or_else(||serde_json::json!({}));
+    crate::publication_note_policies::validate_default_section_numbering(doc,&original).map_err(|error|error.to_string())?;
+    let projected=crate::publication_note_policies::project_legacy(doc,&original).map_err(|error|error.to_string())?;
+    if projected!=original{if let Some(notes)=projected.get("footnotes"){for section in &mut projected_opts.publication_sections{section.style["footnotes"]=notes.clone();}}}
+    if opts.publication_style.is_some()||projected!=original{projected_opts.publication_style=Some(projected);}
+    let opts=&projected_opts;
     validate_paragraphs(doc,opts)?;
     let fallback = opts.core_text_font.is_some();
-    let (body, mut core_text_used, mut paragraph_state) = if opts.publication_sections.is_empty(){
+    let (body, mut core_text_used, mut paragraph_state, toc_numbers) = if opts.publication_sections.is_empty(){
         render_body_with_bibliography(doc, images, &opts.bib_engine,
             matches!(opts.doc_class.as_str(), "report" | "book" | "ctexrep" | "ctexbook"), fallback, opts.publication_style.as_ref(), opts.publication_front_block_count)
     }else{render_section_body(doc,opts,images,fallback)};
     if let Some(error) = paragraph_state.error.take() { return Err(error); }
+    let toc_number_settings=measured_toc_settings(&toc_numbers,fallback,&mut core_text_used);
     let legacy_title = opts.publication_style.is_none() && !opts.title.trim().is_empty();
     let cover = opts.publication_style.as_ref().filter(|style|style["cover"]["enabled"].as_bool()==Some(true));
     // Hidden metadata remains literal metadata, not a visible glyph/resource
@@ -583,6 +752,13 @@ pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions,
         s.push_str(paragraphs::MACROS);
         s.push_str(&format!("\\def\\readmdpmarker{{{}}}\n", geometry.marker_for_source()));
     }
+    let numbered_headings=has_heading_numbering(&doc.blocks);
+    let alphabetic_pages=opts.publication_style.as_ref().is_some_and(|style|matches!(crate::publication_layout::Layout::from_style(style).page_format.as_str(),"lowerLetter"|"upperLetter"))
+        ||opts.publication_sections.iter().any(|section|matches!(crate::publication_layout::Layout::from_style(&section.style).page_format.as_str(),"lowerLetter"|"upperLetter"));
+    if numbered_headings||alphabetic_pages{s.push_str(ALPHABET_NUMBER_MACROS);}
+    if numbered_headings{s.push_str(HEADING_COUNTER_MACROS);}
+    if numbered_headings||opts.publication_style.is_some(){s.push_str(SIXTH_TOC_LEVEL);}
+    if numbered_headings{s.push_str(MEASURED_TOC_NUMBERS);s.push_str(&toc_number_settings);}
     s.push_str(&format!("\\title{{{title}}}\n"));
     s.push_str(&format!("\\author{{{author}}}\n"));
     match &date {
@@ -595,6 +771,12 @@ pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions,
     }
     s.push_str(&cover_source);
     if opts.toc {
+        // Shared H1..H6 always use section=1..readmdsubparagraph=6, including
+        // book/report. A legacy chapter lane instead uses levels 0..5; when
+        // no shared profile is present its existing class defaults stay intact.
+        if let Some(style)=&opts.publication_style{
+            s.push_str(&format!("\\setcounter{{tocdepth}}{{{}}}\n",crate::publication_layout::toc_depth(style)));
+        }
         s.push_str("\\tableofcontents\n\\newpage\n");
     }
     if opts.publication_sections.is_empty(){
@@ -620,15 +802,26 @@ pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions,
 
 /// Render only the body (no preamble).
 pub fn render_body(doc: &Document, images: ImageMap) -> String {
-    render_body_with_bibliography(doc, images, "biblatex", false, false, None, 0).0
+    if let Err(code)=crate::math_word_projection::validate_document(doc,"tex"){return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported formula paragraph properties}}\n",escape_text(&code));}
+    if let Err(error)=crate::publication_blocks::validate_author_render_document(doc){return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported publication author text}}\n",escape_text(error));}
+    let original=serde_json::json!({});
+    let projected=crate::publication_note_policies::validate_default_section_numbering(doc,&original)
+        .and_then(|_|crate::publication_note_policies::project_legacy(doc,&original));
+    let projected=match projected{Ok(style)=>style,Err(error)=>return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported publication note policy}}\n",escape_text(&error.to_string()))};
+    let (body,_,_,toc_numbers)=render_body_with_bibliography(doc,images,"biblatex",false,false,if projected!=original{Some(&projected)}else{None},0);
+    if has_heading_numbering(&doc.blocks){
+        let mut unused=false;
+        let settings=measured_toc_settings(&toc_numbers,false,&mut unused);
+        format!("{ALPHABET_NUMBER_MACROS}{HEADING_COUNTER_MACROS}{SIXTH_TOC_LEVEL}{MEASURED_TOC_NUMBERS}{settings}{body}")
+    }else{body}
 }
 
-fn render_body_with_bibliography(doc: &Document, images: ImageMap, bib_engine: &str, chapter_headings: bool, core_text_fallback: bool, publication_style: Option<&serde_json::Value>, front_count: usize) -> (String, bool, paragraphs::State) {
+fn render_body_with_bibliography(doc: &Document, images: ImageMap, bib_engine: &str, chapter_headings: bool, core_text_fallback: bool, publication_style: Option<&serde_json::Value>, front_count: usize) -> (String, bool, paragraphs::State, TocNumbers) {
     let mut footnotes = HashMap::new();
     collect_footnotes(&doc.blocks, &mut footnotes);
-    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new(), bib_engine: bib_engine.into(), chapter_headings, publication_style: publication_style.cloned(), core_text_fallback, core_text_used: false, csl_columns_text: false, paragraphs: paragraphs::State::new(doc, front_count) };
+    let mut w = Writer { out: String::new(), images, footnotes, fn_stack: Vec::new(), bib_engine: bib_engine.into(), chapter_headings, heading_numbering:has_heading_numbering(&doc.blocks),toc_numbers:TocNumbers::new(),publication_style: publication_style.cloned(), core_text_fallback, core_text_used: false, csl_columns_text: false, paragraphs: paragraphs::State::new(doc, front_count),author:None,author_base:crate::publication_inline_text::ResolvedTextStyle::base(11.,11.),local_pair:None };
     w.blocks(&doc.blocks, 0);
-    (w.out, w.core_text_used, w.paragraphs)
+    (w.out, w.core_text_used, w.paragraphs, w.toc_numbers)
 }
 
 fn shared_text_settings(style:&serde_json::Value,legacy_line_height:f64)->String{
@@ -637,7 +830,7 @@ fn shared_text_settings(style:&serde_json::Value,legacy_line_height:f64)->String
     let body=&style["typography"];let size=number(&body["size"],11.);let line=number(&body["lineHeight"],legacy_line_height);
     let alignment=match body["align"].as_str(){Some("center")=>"\\centering",Some("right")=>"\\raggedleft",Some("justify")=>"\\leftskip=0pt\\rightskip=0pt\\parfillskip=0pt plus1fil",_=>"\\raggedright"};
     let widow=if body["widowControl"].as_bool().unwrap_or(true){10000}else{0};
-    let mut out=format!("% Shared publication typography, independent of class defaults.\n\\linespread{{1}}{alignment}\n\\fontsize{{{size}}}{{{}}}\\selectfont\\color[HTML]{{{}}}\n\\setlength{{\\parindent}}{{{}mm}}\\setlength{{\\parskip}}{{{}pt}}\n\\clubpenalty={widow}\\widowpenalty={widow}\\interlinepenalty={}\\relax\n\\setcounter{{secnumdepth}}{{-1}}\n\\makeatletter\n\\providecommand{{\\l@readmdsubparagraph}}{{\\@dottedtocline{{6}}{{10em}}{{5em}}}}\n\\providecommand{{\\toclevel@readmdsubparagraph}}{{6}}\n\\def\\readmdheadingfree{{\\global\\@nobreakfalse\\everypar{{}}\\penalty0 }}\n",size*line,color(&body["color"]),number(&body["firstLineIndent"],0.),number(&body["spacing"],6.),if body["keepLines"].as_bool().unwrap_or(false){10000}else{0});
+    let mut out=format!("% Shared publication typography, independent of class defaults.\n\\linespread{{1}}{alignment}\n\\fontsize{{{size}}}{{{}}}\\selectfont\\color[HTML]{{{}}}\n\\setlength{{\\parindent}}{{{}mm}}\\setlength{{\\parskip}}{{{}pt}}\n\\clubpenalty={widow}\\widowpenalty={widow}\\interlinepenalty={}\\relax\n\\setcounter{{secnumdepth}}{{-1}}\n\\makeatletter\n\\def\\readmdheadingfree{{\\global\\@nobreakfalse\\everypar{{}}\\penalty0 }}\n",size*line,color(&body["color"]),number(&body["firstLineIndent"],0.),number(&body["spacing"],6.),if body["keepLines"].as_bool().unwrap_or(false){10000}else{0});
     for (index,name) in ["section","subsection","subsubsection","paragraph","subparagraph","readmdsubparagraph"].iter().enumerate(){
         let level=index+1;let h=&style["headings"][format!("h{level}")];let size=number(&h["size"],14.);
         let alignment=match h["align"].as_str(){Some("center")=>"\\centering",Some("right")=>"\\raggedleft",_=>"\\raggedright"};
@@ -657,12 +850,12 @@ fn shared_text_settings(style:&serde_json::Value,legacy_line_height:f64)->String
     out.push_str("\\makeatother\n");out
 }
 
-fn render_section_body(doc:&Document,opts:&LatexOptions,images:ImageMap,fallback:bool)->(String,bool,paragraphs::State){
+fn render_section_body(doc:&Document,opts:&LatexOptions,images:ImageMap,fallback:bool)->(String,bool,paragraphs::State,TocNumbers){
     let mut footnotes=HashMap::new();collect_footnotes(&doc.blocks,&mut footnotes);
-    let mut w=Writer{out:String::new(),images,footnotes,fn_stack:Vec::new(),bib_engine:opts.bib_engine.clone(),chapter_headings:matches!(opts.doc_class.as_str(),"report"|"book"|"ctexrep"|"ctexbook"),publication_style:opts.publication_style.clone(),core_text_fallback:fallback,core_text_used:false,csl_columns_text:false,paragraphs:paragraphs::State::new(doc,opts.publication_front_block_count)};
+    let mut w=Writer{out:String::new(),images,footnotes,fn_stack:Vec::new(),bib_engine:opts.bib_engine.clone(),chapter_headings:matches!(opts.doc_class.as_str(),"report"|"book"|"ctexrep"|"ctexbook"),heading_numbering:has_heading_numbering(&doc.blocks),toc_numbers:TocNumbers::new(),publication_style:opts.publication_style.clone(),core_text_fallback:fallback,core_text_used:false,csl_columns_text:false,paragraphs:paragraphs::State::new(doc,opts.publication_front_block_count),author:None,author_base:crate::publication_inline_text::ResolvedTextStyle::base(11.,11.),local_pair:None};
     for (index,section) in opts.publication_sections.iter().enumerate(){
         let Some(blocks)=doc.blocks.get(section.block_range.clone())else{
-            w.out.push_str("\\PackageError{ReadMD}{publication_section_invalid}{Invalid section range}\n");return(w.out,w.core_text_used,w.paragraphs);
+            w.out.push_str("\\PackageError{ReadMD}{publication_section_invalid}{Invalid section range}\n");return(w.out,w.core_text_used,w.paragraphs,w.toc_numbers);
         };
         if index>0{match section.break_kind{
             crate::publication_sections::SectionBreak::Continuous=>w.out.push_str("\\par\n"),
@@ -688,8 +881,8 @@ fn render_section_body(doc:&Document,opts:&LatexOptions,images:ImageMap,fallback
         // only afterwards, so a colour whatsit cannot create an undeclared
         // leading page (or an extra page after a real section boundary).
         if opts.publication_style.is_some(){w.publication_style=Some(style.clone());w.out.push_str(&shared_text_settings(style,opts.publication_legacy_line_height));}
-        let format=match layout.page_format.as_str(){"lowerRoman"=>"roman","upperRoman"=>"Roman","lowerLetter"=>"alph","upperLetter"=>"Alph",_=>"arabic"};
-        w.out.push_str(&format!("\\renewcommand{{\\thepage}}{{\\{format}{{page}}}}\n"));
+        let page_number=match layout.page_format.as_str(){"lowerLetter"=>"\\readmdalph{\\value{page}}","upperLetter"=>"\\readmdAlph{\\value{page}}","lowerRoman"=>"\\roman{page}","upperRoman"=>"\\Roman{page}",_=>"\\arabic{page}"};
+        w.out.push_str(&format!("\\renewcommand{{\\thepage}}{{{page_number}}}\n"));
         if let Some(start)=section.page_start{w.out.push_str(&format!("\\setcounter{{page}}{{{start}}}\n"));}
         let position=|value:&str|match value{"left"=>"L","right"=>"R",_=>"C"};
         let mut running=String::from("\\fancyhf{}\\renewcommand{\\headrulewidth}{0pt}\\renewcommand{\\footrulewidth}{0pt}\\setlength{\\headwidth}{\\textwidth}\n");
@@ -723,7 +916,7 @@ fn render_section_body(doc:&Document,opts:&LatexOptions,images:ImageMap,fallback
         w.blocks(blocks,0);
         if layout.columns>1{w.out.push_str("\\end{multicols}\n");}
     }
-    (w.out,w.core_text_used,w.paragraphs)
+    (w.out,w.core_text_used,w.paragraphs,w.toc_numbers)
 }
 
 fn collect_footnotes(blocks: &[Block], into: &mut HashMap<String, Vec<Block>>) {
@@ -797,6 +990,32 @@ impl<'a> Writer<'a> {
         escape_visible_text(text, self.core_text_fallback, &mut self.core_text_used)
     }
     fn inline_text(&mut self, text: &str) -> String {
+        if self.author.is_some(){return self.author_text(text,false);}
+        self.inline_text_legacy(text)
+    }
+    fn author_text(&mut self,text:&str,code:bool)->String{
+        let Some(style)=self.author else{return if code{self.text(text).replace(' ',"\\ ")}else{self.inline_text_legacy(text)};};
+        if [style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.){self.paragraphs.fail(crate::publication_inline_text::UNSUPPORTED);return String::new();}
+        let segments=match crate::publication_text_runs::split(text,&style){Ok(segments)=>segments,Err(error)=>{self.paragraphs.fail(error);return String::new();}};
+        let mut out=String::new();for segment in segments{
+            // This preamble does not install a bidi engine. A scoped size is
+            // not evidence that native RTL order has been implemented.
+            if segment.rtl{self.paragraphs.fail(format!("{}: {{\"consumer\":\"tex\",\"reason\":\"rtl\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":{},\"to\":{}}}",crate::publication_inline_text::UNSUPPORTED,segment.from,segment.to));return String::new();}
+            let Some(part)=text.get(segment.from..segment.to)else{self.paragraphs.fail(crate::publication_inline_text::INVALID);return String::new();};
+            let body=if code{self.text(part).replace(' ',"\\ ")}else{self.inline_text_legacy(part)};
+            // Terminate the control word before the author's own text.
+            // A delimiter space would swallow a whitespace-only leaf (or
+            // leading space) at a link, size-axis or nested-span boundary.
+            // An empty group emits no glyph, glue or extra source space.
+            out.push_str(&format!("{{\\fontsize{{{}bp}}{{\\baselineskip}}\\selectfont{{}}{body}}}",segment.size));
+        }out
+    }
+    fn author_atom(&mut self,visible:bool)->bool{
+        if visible&&self.author.is_some_and(|style|style.rtl==Some(true)){
+            self.paragraphs.fail(crate::publication_inline_text::UNSUPPORTED);false
+        }else{true}
+    }
+    fn inline_text_legacy(&mut self, text: &str) -> String {
         if !self.csl_columns_text || !self.bib_engine.is_empty() {
             return citation_text(text, &self.bib_engine, self.core_text_fallback, &mut self.core_text_used);
         }
@@ -843,9 +1062,36 @@ impl<'a> Writer<'a> {
     }
 
     fn block(&mut self, b: &Block, list_depth: usize) {
+        self.block_with_author(b,list_depth,None);
+    }
+    fn block_with_author(&mut self,b:&Block,list_depth:usize,caption_author:Option<crate::publication_inline_text::ResolvedTextStyle>){
+        let author=self.author.take();let base=self.author_base;
+        self.author_base=self.text_pair(b);
+        self.author=caption_author;
+        if !matches!(b,Block::Styled{..})&&crate::publication_inline_text::has_author_styles(std::slice::from_ref(b)){self.author=Some(self.author.unwrap_or(self.author_base));}
+        self.block_inner(b,list_depth);
+        self.author=author;self.author_base=base;
+    }
+    fn text_pair(&self,block:&Block)->crate::publication_inline_text::ResolvedTextStyle{
+        use crate::publication_inline_text::ResolvedTextStyle;
+        if let Some(pair)=self.local_pair{return pair;}
+        let style=self.publication_style.as_ref();let body=style.and_then(|s|s["typography"]["size"].as_f64()).unwrap_or(11.);
+        if let Some(label)=self.fn_stack.last(){let default=style.map(|s|crate::publication_layout::Layout::from_style(s).note_size).unwrap_or(9.);let policy=style.and_then(|s|crate::publication_note_policies::parse_layer(s).ok()).map(|p|p.paragraph_policy(p.kind_for_label(label))).unwrap_or_default();let size=policy.size.unwrap_or(default);return ResolvedTextStyle::base(size,policy.size_cs.unwrap_or(size));}
+        let size=match block.unstyled(){Block::Heading{level,..}=>style.and_then(|s|s["headings"][format!("h{level}")]["size"].as_f64()).unwrap_or(body),Block::Table{..}=>style.and_then(|s|s["table"]["cellSize"].as_f64()).unwrap_or(10.),Block::Caption{..}=>10.,_=>body};ResolvedTextStyle::base(size,size)
+    }
+    fn block_inner(&mut self, b: &Block, list_depth: usize) {
         match b {
             Block::SectionStart(_)=>(),
             Block::Styled { attributes, block } => {
+                let old_pair=self.local_pair;let base=self.text_pair(block);self.local_pair=Some(if let Some(size)=attributes.pointer("/text/size").and_then(serde_json::Value::as_f64){crate::publication_inline_text::ResolvedTextStyle::base(size,size)}else{base});
+                if matches!(block.unstyled(),Block::Caption{..}){
+                    match crate::publication_blocks::author_style(attributes){
+                        // Keep independent caption axes as the reset target
+                        // while all visible leaves use physical bp metrics.
+                        Ok(author)if !author.is_empty()=>{let base=self.local_pair.unwrap();let caption=author.resolve(&base,&base);self.local_pair=Some(caption);self.author=Some(caption);},
+                        Ok(_)=>(),Err(error)=>{self.paragraphs.fail(error);return;},
+                    }
+                }
                 let previous = (self.paragraphs.line, self.paragraphs.size, self.paragraphs.id.clone());
                 if self.paragraphs.ordinary && matches!(block.unstyled(),Block::Paragraph(_)) {
                     let global = self.publication_style.as_ref()
@@ -866,18 +1112,24 @@ impl<'a> Writer<'a> {
                 if local_termes_font(attributes) {
                     self.para_break();
                     self.out.push_str("\\begingroup\\readmdtermesblockfont\n");
-                    self.block(block, list_depth);
+                    self.block_with_author(block,list_depth,if matches!(block.unstyled(),Block::Caption{..}){self.author}else{None});
                     // Paragraph metrics must be evaluated before the local
                     // family is restored, including the final list/quote line.
                     self.out.push_str("\\par\\endgroup\n\n");
                 } else {
-                    self.block(block, list_depth);
+                    self.block_with_author(block,list_depth,if matches!(block.unstyled(),Block::Caption{..}){self.author}else{None});
                 }
                 (self.paragraphs.line, self.paragraphs.size, self.paragraphs.id) = previous;
+                self.local_pair=old_pair;
             }
-            Block::Heading { level, id, inlines } => {
+            Block::Heading { level, id, inlines, numbering } => {
                 self.para_break();
                 let heading_style = self.publication_style.as_ref().map(|style| style["headings"][format!("h{level}")].clone());
+                let toc_kind=match (*level,heading_style.is_none()&&self.chapter_headings){
+                    (1,true)=>"chapter",(2,true)|(1,false)=>"section",(3,true)|(2,false)=>"subsection",
+                    (4,true)|(3,false)=>"subsubsection",(5,true)|(4,false)=>"paragraph",
+                    (6,true)|(5,false)=>"subparagraph",_=>"readmdsubparagraph",
+                };
                 let cmd = if heading_style.is_some() {
                     // A Markdown heading is an unnumbered block in the shared
                     // profile, including book/report classes. A native chapter
@@ -902,7 +1154,23 @@ impl<'a> Writer<'a> {
                 let plain_text = inline_plain(inlines);
                 let plain = self.text(&plain_text);
                 let pdf_plain = escape_text(&plain_text);
-                if plain == text {
+                if let Some(numbering)=numbering{
+                    self.toc_numbers.entry(toc_kind).or_default().insert(numbering.text.clone());
+                    let settings=match heading_counter_settings(*level,numbering,&mut |literal|self.text(literal)){
+                        Ok(settings)=>settings,Err(error)=>{self.paragraphs.fail(error);return;},
+                    };
+                    self.out.push_str(&settings);
+                    let suffix=match numbering.suffix.as_str(){" "=>"\\ ","\t"=>"\\hspace{2em}",_=>""};
+                    let pdf_numbered=escape_text(&format!("{}{}",numbering.full_text(),plain_text));
+                    // Stepping inside the starred title occurs after a book
+                    // class's chapter page break. The label therefore records
+                    // this native counter and its unique actual destination.
+                    self.out.push_str(&format!("{cmd}*{{\\texorpdfstring{{\\readmdnumberedheadingmark{{{level}}}{{{plain}}}\\label{{{}}}\\csname thereadmdh{level}\\endcsname{{}}{suffix}{text}}}{{{pdf_numbered}}}}}\n\\readmdnumberedheadingtoc{{{toc_kind}}}{{{level}}}{{{plain}}}\n",label_key(id)));
+                } else if self.heading_numbering {
+                    // Explicitly unconfigured levels stay unnumbered even
+                    // when the standalone document class enables secnumdepth.
+                    self.out.push_str(&format!("{cmd}*{{\\texorpdfstring{{{text}}}{{{pdf_plain}}}}}\\label{{{}}}\n\\addcontentsline{{toc}}{{{toc_kind}}}{{{plain}}}\n",label_key(id)));
+                } else if plain == text {
                     self.out.push_str(&format!("{cmd}{{{text}}}\\label{{{}}}\n", label_key(id)));
                 } else {
                     self.out.push_str(&format!(
@@ -994,7 +1262,7 @@ impl<'a> Writer<'a> {
             Block::Caption { label, inlines } => {
                 self.para_break();
                 let rest = self.inlines(inlines);
-                let text = self.text(&label.text());
+                let text = if self.author.is_some(){self.author_text(&label.text(),false)}else{self.text(&label.text())};
                 self.out.push_str(&format!("\\phantomsection\\label{{{}}}\n\\begin{{center}}{}{}\\end{{center}}\n\n", label_key(&label.id), text, rest));
             }
             Block::Table { aligns, header, rows } => {
@@ -1145,10 +1413,16 @@ impl<'a> Writer<'a> {
     }
 
     fn footnote_paragraph(&mut self, block: &Block) -> Option<String> {
+        let previous=self.author_base;self.author_base=self.text_pair(block);
+        let body=self.footnote_paragraph_inner(block);self.author_base=previous;body
+    }
+    fn footnote_paragraph_inner(&mut self, block: &Block) -> Option<String> {
         match block {
             Block::Paragraph(inlines) => Some(self.inlines(inlines).trim().to_string()),
             Block::Styled { attributes, block } => {
-                let body = self.footnote_paragraph(block)?;
+                let old_pair=self.local_pair;let old_base=self.author_base;let old_author=self.author;
+                let base=self.text_pair(block);self.local_pair=Some(if let Some(size)=attributes.pointer("/text/size").and_then(serde_json::Value::as_f64){crate::publication_inline_text::ResolvedTextStyle::base(size,size)}else{base});self.author_base=self.local_pair.unwrap();if old_author.is_some(){self.author=Some(self.author_base);}
+                let body=self.footnote_paragraph(block);self.local_pair=old_pair;self.author_base=old_base;self.author=old_author;let body=body?;
                 if local_termes_font(attributes) {
                     Some(format!("\\begingroup\\readmdtermesblockfont {body}\\par\\endgroup"))
                 } else {
@@ -1177,7 +1451,7 @@ impl<'a> Writer<'a> {
             Inline::Text(t) => s.push_str(&self.inline_text(t)),
             Inline::Code(t) => {
                 s.push_str("\\texttt{");
-                s.push_str(&self.text(t).replace(' ', "\\ "));
+                s.push_str(&self.author_text(t,true));
                 s.push('}');
             }
             Inline::Strong(c) => {
@@ -1202,21 +1476,33 @@ impl<'a> Writer<'a> {
                 match format.vertical_align { RichVerticalAlign::Baseline=>(),RichVerticalAlign::Sup=>body=format!("\\textsuperscript{{{body}}}"),RichVerticalAlign::Sub=>body=format!("\\textsubscript{{{body}}}") }
                 s.push_str(&body);
             }
+            Inline::AuthorStyled{style,children}=>{
+                let previous=self.author;self.author=Some(style.resolve(&previous.unwrap_or(self.author_base),&self.author_base));
+                if self.author.is_some_and(|style|[style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.)){self.paragraphs.fail(crate::publication_inline_text::UNSUPPORTED);}else{s.push_str(&self.inlines(children));}self.author=previous;
+            },
             Inline::Display { display, children } => {
                 let body=self.inlines(children);
                 match display { crate::publication_rich::RichDisplay::Block=>s.push_str(&format!("\\par {body}\\par ")),crate::publication_rich::RichDisplay::Indent=>s.push_str(&format!("\\par\\begingroup\\leftskip=4em {body}\\par\\endgroup ")),_=>s.push_str(&body) }
             }
             Inline::Citation { source, children } => {
                 if self.bib_engine.is_empty() { s.push_str(&self.inlines(children)); }
-                else { s.push_str(&native_citation(source,&self.bib_engine,self.core_text_fallback,&mut self.core_text_used)); }
+                else {
+                    let command=native_citation(source,&self.bib_engine,self.core_text_fallback,&mut self.core_text_used);
+                    if let Some(author)=self.author{if author.size!=author.size_cs||author.rtl==Some(true){self.paragraphs.fail(crate::publication_inline_text::UNSUPPORTED);}else{s.push_str(&format!("{{\\fontsize{{{}bp}}{{\\baselineskip}}\\selectfont {command}}}",author.size));}}else{s.push_str(&command);}
+                }
             }
             Inline::Link { href, children, .. } => {
                 let t = self.inlines(children);
                 if let Some(anchor) = href.strip_prefix('#') {
                     let slug = percent_encoding::percent_decode_str(anchor).decode_utf8_lossy();
                     s.push_str(&format!("\\hyperref[{}]{{{t}}}", label_key(&slug)));
-                } else if self.csl_columns_text {
+                } else if self.csl_columns_text || t.contains("\\fontsize{") {
                     s.push_str(&format!("\\href{{{}}}{{{t}}}", escape_url(href)));
+                } else if t.is_empty()&&self.author.is_some(){
+                    // An empty label displays the URL itself. That visible
+                    // fallback must use the effective author style too.
+                    let visible=self.author_text(href,false);
+                    s.push_str(&format!("\\href{{{}}}{{{visible}}}",escape_url(href)));
                 } else if t.is_empty() || inline_plain(children) == *href {
                     if self.core_text_fallback && crate::publication_fonts::needs_core_text_fallback(href) {
                         let visible = self.text(href);
@@ -1228,24 +1514,35 @@ impl<'a> Writer<'a> {
                     s.push_str(&format!("\\href{{{}}}{{{t}}}", escape_url(href)));
                 }
             }
-            Inline::Image { src, alt, .. } => match (self.images)(src) {
-                Some(path) => s.push_str(&format!("\\includegraphics[height=1.2em]{{{path}}}")),
-                None => s.push_str(&format!("\\textit{{[{}]}}", self.text(if alt.is_empty() { src } else { alt }))),
+            Inline::Image { src, alt, .. } => {
+                if !self.author_atom(true){return;}
+                match (self.images)(src) {
+                    Some(path) => s.push_str(&format!("\\includegraphics[height=1.2em]{{{path}}}")),
+                    None => {
+                        let fallback=if alt.is_empty(){src}else{alt};
+                        let visible=if self.author.is_some(){self.author_text(fallback,false)}else{self.text(fallback)};
+                        s.push_str(&format!("\\textit{{[{visible}]}}"));
+                    },
+                }
             },
             Inline::Math(m) | Inline::OfficeMath {latex:m,..} => {
+                if !self.author_atom(!m.trim().is_empty()){return;}
                 s.push_str("\\(");
                 s.push_str(m.trim());
                 s.push_str("\\)");
             }
-            Inline::SoftBreak => s.push('\n'),
-            Inline::HardBreak => s.push_str("\\\\\n"),
+            Inline::SoftBreak => {if self.author_atom(true){s.push('\n');}},
+            Inline::HardBreak => {if self.author_atom(true){s.push_str("\\\\\n");}},
             Inline::FootnoteRef(label) => {
                 if self.fn_stack.contains(label) {
                     return;
                 }
+                if !self.author_atom(true){return;}
                 match self.footnotes.get(label).cloned() {
                     Some(blocks) => {
                         self.fn_stack.push(label.clone());
+                        let author=self.author.take();let base=self.author_base;let local=self.local_pair.take();self.author_base=self.text_pair(&Block::Paragraph(Vec::new()));self.local_pair=Some(self.author_base);
+                        if crate::publication_inline_text::has_author_styles(&blocks){self.author=Some(self.author_base);}
                         let mut parts = Vec::new();
                         for b in &blocks {
                             if let Some(body) = self.footnote_paragraph(b) {
@@ -1253,6 +1550,7 @@ impl<'a> Writer<'a> {
                             }
                         }
                         self.fn_stack.pop();
+                        self.author=author;self.author_base=base;self.local_pair=local;
                         s.push_str(&format!("\\footnote{{{}}}", parts.join(" \\par ")));
                     }
                     None => s.push_str(&format!("\\textsuperscript{{[{}]}}", self.text(label))),
@@ -1301,7 +1599,7 @@ fn native_citation(source:&crate::publication_rich::SourceCitation,engine:&str,f
     use crate::academic::CiteMode;
     fn affix(rich:&Option<Vec<crate::publication_rich::RichNode>>,plain:&Option<String>,fallback:bool,used:&mut bool)->String{
         if let Some(nodes)=rich {
-            let (text,rich_used,_)=render_body_with_bibliography(&Document{blocks:vec![Block::Paragraph(crate::md_ast::rich_inlines(nodes))],..Default::default()},&|_|None,"biblatex",false,fallback,None,0);
+            let (text,rich_used,_,_)=render_body_with_bibliography(&Document{blocks:vec![Block::Paragraph(crate::md_ast::rich_inlines(nodes))],..Default::default()},&|_|None,"biblatex",false,fallback,None,0);
             *used |= rich_used;
             text.trim().to_string()
         }else{escape_visible_text(plain.as_deref().unwrap_or(""),fallback,used)}
@@ -1355,6 +1653,10 @@ fn trim_trailing_blank(s: &mut String) {
 #[cfg(test)]
 #[path = "latex_publication_profile_tests.rs"]
 mod publication_profile_tests;
+
+#[cfg(test)]
+#[path = "latex_heading_numbering_tests.rs"]
+mod heading_numbering_tests;
 
 #[cfg(test)]
 mod tests {

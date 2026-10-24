@@ -304,12 +304,19 @@ fn note_prose_parts(children: &ElemChildren, cites: &[Cite], delimiter: &str) ->
     }
     Ok((inline,note))
 }
-fn within_authored_note(mut children: ElemChildren, cites: &[Cite]) -> ElemChildren {
+fn layout_owns_note_parentheses(layout: &hayagriva::citationberg::Layout) -> bool {
+    layout.prefix.as_deref() == Some("(") && layout.suffix.as_deref() == Some(")")
+}
+fn within_authored_note(mut children: ElemChildren, cites: &[Cite], owns_parentheses: bool) -> ElemChildren {
+    // The CSL layout already owns these affixes. Do not infer this from a
+    // title's text, partial affixes, or the processor's flattened output.
     fn bracket(children: &mut ElemChildren) {
         children.0.insert(0,ElemChild::Text(Formatted{text:"(".into(),formatting:Default::default()}));
         children.0.push(ElemChild::Text(Formatted{text:")".into(),formatting:Default::default()}));
     }
-    if cites.iter().all(|cite|matches!(cite.mode,CiteMode::Normal|CiteMode::SuppressAuthor)) { bracket(&mut children); }
+    if cites.iter().all(|cite|matches!(cite.mode,CiteMode::Normal|CiteMode::SuppressAuthor)) {
+        if !owns_parentheses { bracket(&mut children); }
+    }
     else {
         fn entries(children: &mut ElemChildren, cites: &[Cite]) {
             for child in &mut children.0 { if let ElemChild::Elem(elem)=child {
@@ -438,6 +445,48 @@ fn load_style(name: &str, csl: Option<&str>) -> ApiResult<(Style, Option<hayagri
 pub fn is_note_style(name: &str, csl: Option<&str>) -> ApiResult<bool> {
     let (Style::Independent(style), _) = load_style(name, csl)? else { return Err(invalid("academic_style_parent_required")); };
     Ok(style.settings.class == hayagriva::citationberg::StyleClass::Note)
+}
+/// A finite generated-to-authored note admission. Ordinary authored-note
+/// processing still adds its existing default brackets to other layouts.
+/// Generated-note capitalization can change a leading localized term, so a
+/// reachable term/label/date or unresolved macro does not prove equivalence.
+pub(crate) fn authored_note_recovery_equivalent(name: &str, csl: Option<&str>) -> ApiResult<bool> {
+    use hayagriva::citationberg::{LayoutRenderingElement as Element, NamesChild, TextTarget};
+    let (Style::Independent(style), _) = load_style(name, csl)? else { return Err(invalid("academic_style_parent_required")); };
+    if style.settings.class != hayagriva::citationberg::StyleClass::Note || !layout_owns_note_parentheses(&style.citation.layout) { return Ok(false); }
+    fn supported(elements: &[Element], macros: &[hayagriva::citationberg::CslMacro], trail: &mut Vec<String>, depth: usize, work: &mut usize) -> bool {
+        if depth > 64 { return false; }
+        elements.iter().all(|element| {
+            *work += 1;
+            if *work > 10000 { return false; }
+            match element {
+                Element::Text(text) => match &text.target {
+                    TextTarget::Variable { .. } | TextTarget::Value { .. } => true,
+                    TextTarget::Term { .. } => false,
+                    TextTarget::Macro { name } => {
+                        if trail.contains(name) { return false; }
+                        let mut found = macros.iter().filter(|item| item.name == *name);
+                        let Some(item) = found.next() else { return false; };
+                        if found.next().is_some() { return false; }
+                        trail.push(name.clone());
+                        let result = supported(&item.children, macros, trail, depth + 1, work);
+                        trail.pop(); result
+                    },
+                },
+                Element::Number(_) => true,
+                Element::Names(names) => names.children.iter().all(|child| match child {
+                    NamesChild::Name(_) => true,
+                    NamesChild::Substitute(substitute) => supported(&substitute.children, macros, trail, depth + 1, work),
+                    NamesChild::EtAl(_) | NamesChild::Label(_) => false,
+                }),
+                Element::Group(group) => supported(&group.children, macros, trail, depth + 1, work),
+                Element::Choose(choose) => choose.branches().all(|branch| supported(&branch.children, macros, trail, depth + 1, work))
+                    && choose.otherwise.as_ref().is_none_or(|branch| supported(&branch.children, macros, trail, depth + 1, work)),
+                Element::Date(_) | Element::Label(_) => false,
+            }
+        })
+    }
+    Ok(supported(&style.citation.layout.elements, &style.macros, &mut Vec::new(), 0, &mut 0))
 }
 pub struct ReferenceSummary { pub key: String, pub title: String }
 fn csl_json_library(data: &str) -> ApiResult<(Vec<hayagriva::citationberg::json::Item>, Vec<Value>)> {
@@ -644,7 +693,7 @@ pub fn citations(request: &Request) -> ApiResult<Value> {
             }
             if style.settings.class==hayagriva::citationberg::StyleClass::Note
                 && request.contexts.get(index).is_some_and(|context|context.in_note){
-                item.citation=within_authored_note(item.citation,&request.clusters[index]);
+                item.citation=within_authored_note(item.citation,&request.clusters[index],layout_owns_note_parentheses(&style.citation.layout));
             }
             if intext.is_some() {
                 // An explicit but unprintable author layout is an error, not
@@ -941,6 +990,74 @@ mod tests {
             assert_eq!(output["citations"][index]["text"],expected);
             let tree:Vec<RichNode>=serde_json::from_value(output["citations"][index]["rich"].clone()).unwrap();assert_eq!(publication_rich::plain(&tree),expected);
         }
+    }
+    #[test]
+    fn authored_note_brackets_are_owned_by_exact_csl_layout_affixes_not_rendered_text() {
+        for (affixes, expected, eligible) in [
+            ("", "(Lovelace | Analytical Engines)", false),
+            (r#" prefix="(" suffix=")""#, "(Lovelace | Analytical Engines)", true),
+            (r#" prefix="(""#, "((Lovelace | Analytical Engines)", false),
+            (r#" suffix=")""#, "(Lovelace | Analytical Engines))", false),
+            (r#" prefix="[" suffix="]""#, "([Lovelace | Analytical Engines])", false),
+            (r#" prefix=" (" suffix=")""#, "( (Lovelace | Analytical Engines))", false),
+        ] {
+            let mut req=request("csl-json",PROBE_ENTRIES);
+            req.csl=Some(probe_style("note", &format!(r#"<citation><layout{affixes}><group delimiter=" | "><names variable="author"><name form="short"/></names><text variable="title"/></group></layout></citation>"#)));
+            req.clusters=vec![vec![Cite::new("a")]];
+            req.contexts=vec![CiteContext{note_number:Some(1),in_note:true,note_label:Some("actual".into())}];
+            assert_eq!(authored_note_recovery_equivalent(&req.style,req.csl.as_deref()).unwrap(),eligible);
+            assert_eq!(citations(&req).unwrap()["citations"][0]["text"],expected);
+        }
+        let mut req=request("csl-json",r#"[{"id":"a","type":"book","title":"(Authored title)"}]"#);
+        req.csl=Some(probe_style("note",r#"<citation><layout><text variable="title"/></layout></citation>"#));
+        req.clusters=vec![vec![Cite::new("a")]];
+        req.contexts=vec![CiteContext{note_number:Some(1),in_note:true,note_label:Some("actual".into())}];
+        assert_eq!(citations(&req).unwrap()["citations"][0]["text"],"((Authored title))","author text cannot substitute for actual CSL affix ownership");
+        assert!(!authored_note_recovery_equivalent(&req.style,req.csl.as_deref()).unwrap());
+    }
+    #[test]
+    fn authored_note_missing_doi_keeps_exact_layout_parentheses_supplied_by_bibliography_driver() {
+        let mut req=request("csl-json",r#"[{"id":"a","type":"book","title":"A book with no DOI"}]"#);
+        req.csl=Some(probe_style("note",r#"<citation><layout prefix="(" suffix=")"><text variable="DOI"/></layout></citation>"#));
+        req.clusters=vec![vec![Cite::new("a")]];
+        req.contexts=vec![CiteContext{note_number:Some(1),in_note:false,note_label:None}];
+        // The real BibliographyDriver API supplies the parsed layout's
+        // affixes even when DOI is absent. Its standalone_citation helper has
+        // a different empty-content rule and is not the API path under test.
+        // This control has no DOCX/generated-note source carrier.
+        let driver_affixed=citations(&req).unwrap();
+        assert_eq!(driver_affixed["citations"][0]["text"],"()");
+        assert_eq!(driver_affixed["citations"][0]["complete"],true);
+        let tree:Vec<RichNode>=serde_json::from_value(driver_affixed["citations"][0]["rich"].clone()).unwrap();
+        assert_eq!(publication_rich::plain(&tree),"()");
+        req.contexts[0].in_note=true;
+        req.contexts[0].note_label=Some("actual-authored-note".into());
+        let authored=citations(&req).unwrap();
+        assert_eq!(authored["citations"][0]["text"],"()","an actual authored note retains the driver-owned layout affixes without adding a duplicate pair");
+        let tree:Vec<RichNode>=serde_json::from_value(authored["citations"][0]["rich"].clone()).unwrap();
+        assert_eq!(publication_rich::plain(&tree),"()");
+    }
+    #[test]
+    fn generated_note_recovery_rejects_reachable_case_changing_terms_and_preserves_old_authored_term_rules() {
+        for inner in [
+            r#"<text term="ibid"/>"#,
+            r#"<choose><if position="ibid"><text term="ibid"/></if><else><text variable="title"/></else></choose>"#,
+            r#"<label variable="locator"/>"#,
+        ] {
+            let csl=probe_style("note",&format!(r#"<citation><layout prefix="(" suffix=")">{inner}</layout></citation>"#));
+            assert!(!authored_note_recovery_equivalent("",Some(&csl)).unwrap());
+        }
+        let csl=probe_style("note",r#"<macro name="lead"><text term="ibid"/></macro><citation><layout prefix="(" suffix=")"><text macro="lead"/></layout></citation>"#);
+        assert!(!authored_note_recovery_equivalent("",Some(&csl)).unwrap());
+        let csl=probe_style("note",r#"<macro name="unused"><text term="ibid"/></macro><citation><layout prefix="(" suffix=")"><text variable="title"/></layout></citation>"#);
+        assert!(authored_note_recovery_equivalent("",Some(&csl)).unwrap(),"unused bibliography/macro terms are not a citation context dependency");
+        let mut req=request("csl-json",PROBE_ENTRIES);
+        req.csl=Some(probe_style("note",r#"<citation><layout><text term="ibid"/></layout></citation>"#));
+        req.clusters=vec![vec![Cite::new("a")]];
+        req.contexts=vec![CiteContext{note_number:Some(1),in_note:true,note_label:Some("actual".into())}];
+        assert_eq!(citations(&req).unwrap()["citations"][0]["text"],"(ibid.)");
+        req.contexts[0].in_note=false;
+        assert_eq!(citations(&req).unwrap()["citations"][0]["text"],"Ibid.");
     }
     #[test]
     fn csl_json_numeric_ids_and_unknown_extensions_share_the_bounded_parser() {

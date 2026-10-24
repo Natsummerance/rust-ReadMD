@@ -10,8 +10,9 @@
 
 use crate::md_ast::{inline_plain, Align, Block, Document, Inline};
 use crate::publication_rich::{RichBibliography, RichBibliographyItem, RichLayoutNode, RichNode};
+use crate::publication_note_policies::{self as note_policy, NoteKind, NotePolicies, NotePolicyPatch, NoteSeparator, LongNote};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Image loader: markdown `src` → `(extension, bytes)`, or `None` when the
 /// image cannot be embedded (the loader records its own warning).
@@ -24,6 +25,16 @@ pub struct DocxPackage {
 }
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+#[cfg(test)]
+#[path="docx_math_style_isolation_tests.rs"]
+mod math_style_isolation_tests;
+#[cfg(test)]
+#[path="docx_math_native_styles_tests.rs"]
+mod math_native_styles_tests;
+#[cfg(test)]
+#[path="docx_math_native_runs_tests.rs"]
+mod math_native_runs_tests;
 const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const REL_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 
@@ -348,6 +359,22 @@ fn is_cjk(c: char) -> bool {
 
 // ------------------------------------------------------------------ writer
 
+#[derive(Clone,Copy)]
+pub(crate) enum AuthorTextContext{Body,Heading(u8),Caption,Table,Code}
+/// Match the native styles below, including Caption's independent CS
+/// inheritance. This is also the import guard's expected semantic field base.
+pub(crate) fn author_text_base(style:&Value,context:AuthorTextContext)->(u32,u32){
+    let hp=|size:f64|(size*2.).round().max(1.).min(i32::MAX as f64)as u32;
+    let body=hp(num(style,&["typography","size"],11.));
+    match context{
+        AuthorTextContext::Caption=>(18,body),
+        AuthorTextContext::Heading(level)=>{let level=level.clamp(1,6);let key=format!("h{level}");let size=hp(num(style,&["headings",&key,"size"],[20.,16.,14.,12.,11.,10.5][usize::from(level)-1]));(size,size)},
+        AuthorTextContext::Table=>{let size=hp(num(style,&["table","cellSize"],10.));(size,size)},
+        AuthorTextContext::Code=>{let size=hp(num(style,&["code","size"],9.5));(size,size)},
+        AuthorTextContext::Body=>(body,body),
+    }
+}
+
 #[derive(Clone, Default)]
 struct Fmt {
     bold: bool,
@@ -357,6 +384,12 @@ struct Fmt {
     link: bool,
     color: Option<String>,
     size_hp: Option<i64>,
+    author_size_hp: Option<u32>,
+    author_size_cs_hp: Option<u32>,
+    block_base_hp: Option<(u32,u32)>,
+    author_token: Option<String>,
+    cs: Option<bool>,
+    rtl: Option<bool>,
     tracking_twips: Option<i32>,
     baseline_half_points: Option<i32>,
     rich: Option<crate::publication_rich::RichFormat>,
@@ -371,6 +404,9 @@ struct Rel {
 
 struct Ctx<'a> {
     style: &'a Value,
+    author_token: String,
+    author_block_base: Option<(u32,u32)>,
+    author_local_base: Option<(u32,u32)>,
     line_context: crate::publication_typography::LineContext,
     body_tracking_twips: Option<i32>,
     body_baseline_half_points: Option<i32>,
@@ -382,6 +418,7 @@ struct Ctx<'a> {
     media: Vec<(String, Vec<u8>)>,
     image_cache: HashMap<String, Option<(String, u32, u32, Option<String>, Option<f64>)>>,
     bullet_num: u32,
+    heading_num: Option<u32>,
     nums: Vec<(u32, u32, u64)>, // (numId, abstractId, start)
     next_num: u32,
     bookmark_id: u32,
@@ -389,37 +426,133 @@ struct Ctx<'a> {
     publication_section_ids: HashSet<String>,
     drawing_id: u32,
     footnote_defs: HashMap<String, Vec<Block>>,
-    footnotes: Vec<(u32, String)>, // (id, xml of paragraphs)
+    footnotes: Vec<(NoteKind,u32, String)>, // story identity, id, paragraph XML
     footnote_ids: HashMap<String, u32>,
-    footnote_rels: HashSet<String>,
+    footnote_rels: HashMap<NoteKind,HashSet<String>>,
+    note_policies: NotePolicies,
+    note_counts: [u32;2],
     fn_stack: Vec<String>,
     warns: Vec<String>,
-    math_settings: Option<crate::math_document::XmlNode>,
-    math_defaults_signature: Option<Value>,
+    math_defaults: crate::math_defaults::DocxDefaultsMerge,
+    math_paragraph_registry: crate::math_word::NativeParagraphRegistry,
+    has_math_paragraph_style:bool,
+    math_failure: Option<String>,
     text_w_emu: i64,
     text_h_emu: i64,
     bibliography_control_id: u32,
     bibliography_failure: Option<BibliographyFailure>,
+    citation_bindings: crate::publication_docx_citations::Bindings,
+    citation_depth: usize,
 }
 
 impl<'a> Ctx<'a> {
+    fn generated_citation_source(&self, label: &str) -> Option<crate::publication_rich::SourceCitation> {
+        if !label.starts_with("readmd-citation-") { return None; }
+        let definitions = self.footnote_defs.get(label)?;
+        let [Block::Paragraph(values)] = definitions.as_slice() else { return None; };
+        let [Inline::Citation { source, .. }] = values.as_slice() else { return None; };
+        (!source.context.in_note).then(||source.clone())
+    }
+    fn citation_control(&mut self, source: &crate::publication_rich::SourceCitation, rendered: &str, generated_label: Option<&str>) -> String {
+        let generated = generated_label.is_some() || self.fn_stack.last().is_some_and(|label|self.generated_citation_source(label).is_some());
+        let label = generated_label.or_else(||self.fn_stack.last().map(String::as_str));
+        let end=label.map(|label|self.note_policies.kind_for_label(label).is_end()).unwrap_or(crate::publication_layout::notes_at_end(self.style));
+        let part=match self.active_note_kind(){Some(NoteKind::Endnote)=>"word/endnotes.xml",Some(NoteKind::Footnote)=>"word/footnotes.xml",None=>"word/document.xml"};
+        let note = label.and_then(|label|self.footnote_ids.get(label)).map(|id|(end,*id as i32));
+        match self.citation_bindings.citation(source, rendered, part, generated, note) {
+            Ok(xml) => xml,
+            Err(code) => { self.bibliography_failure = Some(BibliographyFailure {code,path:"citations".into()}); rendered.into() },
+        }
+    }
+    fn active_note_kind(&self)->Option<NoteKind>{self.fn_stack.last().map(|label|self.note_policies.kind_for_label(label))}
+    fn apply_local_layout(&self,fragment:&str,attributes:&Value,block:&Block,inherit_body:bool)->Result<String,&'static str>{
+        let mut resolved=crate::publication_blocks::Resolved::for_context_with_lines(self.style,attributes,block,!self.fn_stack.is_empty(),self.line_context);
+        if let Some(kind)=self.active_note_kind(){
+            let policy=self.note_policies.paragraph_policy(kind);
+            if attributes["text"].get("size").is_none(){if let Some(size)=policy.size{resolved.size=size;}}
+            if attributes["paragraph"].get("lineHeight").is_none(){if let Some(crate::publication_typography::LineSpacing::Multiple(value))=policy.line_spacing{resolved.line_height=value;}}
+            if attributes["paragraph"].get("keepLines").is_none(){if let Some(value)=policy.long_note{resolved.keep_lines=value==LongNote::KeepParagraphs;}}
+            crate::docx_local_style::preserve_author_axes(fragment,&self.author_token,|fragment|crate::docx_local_style::note_local(fragment,&resolved,attributes,self.style,&policy))
+        }else{crate::docx_local_style::preserve_author_axes(fragment,&self.author_token,|fragment|crate::docx_local_style::apply(fragment,&resolved,attributes,self.style,inherit_body))}
+    }
     fn office_math(&mut self, xml: &str, display: bool) -> String {
-        match crate::omml::docx_math_fragment(xml, display) {
-            Ok((content, settings)) => {
-                // Limits can be represented per operator. Other document-wide
-                // settings cannot always be reconciled across source documents.
-                let signature = settings.as_ref().map(|pr| pr.children()
-                    .filter(|n| n.namespace != crate::math_document::MATH_NS || !matches!(n.local(), "intLim" | "naryLim"))
-                    .map(crate::math_document::xml_semantics).collect::<Vec<_>>()).unwrap_or_default();
-                let signature = serde_json::json!(signature);
-                if self.math_defaults_signature.as_ref().is_some_and(|first| first != &signature) && !self.warns.iter().any(|w| w == "math_document_defaults_conflict") {
-                    self.warns.push("math_document_defaults_conflict".into());
+        if self.math_failure.is_some() { return String::new(); }
+        match self.math_defaults.accept(xml, display) {
+            Ok(content) => content,
+            Err(error) => { self.math_failure = Some(error.message()); String::new() }
+        }
+    }
+    fn office_math_paragraph(&mut self,xml:&str,sc:&Scope)->(String,String){
+        if self.math_failure.is_some(){return (String::new(),String::new());}
+        match self.math_defaults.accept_native_projected(xml,true){
+            Ok((mut content,paragraph,source))=>{
+                // A local host may subsequently rewrite pPr. Keep those old
+                // paths separate from the source-owned body style registry.
+                let native_body_host=!sc.in_quote && sc.list_depth==0 && !sc.nested_math_host && self.fn_stack.is_empty();
+                if native_body_host {
+                    if let Some(source)=source.as_ref() {
+                        match self.math_paragraph_registry.resolve(source) {
+                            Ok(crate::math_word::NativeParagraphResolution::Native(native))=>{
+                                let projected=match self.math_paragraph_registry.project_runs(source,&content,Some(&native.selected_style_id)){
+                                    Ok(projected)=>projected,
+                                    Err(code)=>{self.math_failure=Some(code.into());return (String::new(),String::new());},
+                                };
+                                if projected.materialized_runs>0 {
+                                    let code=crate::api_codes::WARN_MATH_RUN_STYLE_MATERIALIZED;
+                                    if !self.warns.iter().any(|warning|warning==code){self.warns.push(code.into());}
+                                }
+                                self.has_math_paragraph_style=true;
+                                return (projected.ppr_xml.unwrap_or(native.ppr_xml),projected.content);
+                            },
+                            Ok(crate::math_word::NativeParagraphResolution::Materialized(_))=>{
+                                let code=crate::api_codes::WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED;
+                                if !self.warns.iter().any(|warning|warning==code) {
+                                    self.warns.push(code.into());
+                                }
+                            },
+                            Ok(crate::math_word::NativeParagraphResolution::NotApplicable)=>(),
+                            Err(code)=>{self.math_failure=Some(code.into());return (String::new(),String::new());},
+                        }
+                    }
                 }
-                self.math_defaults_signature.get_or_insert(signature);
-                if self.math_settings.is_none() { self.math_settings = settings; }
-                content
-            }
-            Err(code) => { self.warns.push(code); String::new() }
+                if let Some(source)=source.as_ref(){
+                    // The template host is known only in the body lane.
+                    // Quotes, lists, notes and nested hosts may rewrite pPr;
+                    // they retain materialized values and a precise warning.
+                    let host=native_body_host.then_some("ReadMDMath");
+                    match self.math_paragraph_registry.project_runs(source,&content,host){
+                        Ok(projected)=>{
+                            if projected.materialized_runs>0{
+                                let code=crate::api_codes::WARN_MATH_RUN_STYLE_MATERIALIZED;
+                                if !self.warns.iter().any(|warning|warning==code){self.warns.push(code.into());}
+                            }
+                            if let Some(ppr)=projected.ppr_xml{
+                                self.has_math_paragraph_style=true;
+                                return (ppr,projected.content);
+                            }
+                            content=projected.content;
+                        },
+                        Err(code)=>{self.math_failure=Some(code.into());return (String::new(),String::new());},
+                    }
+                }
+                let mut ppr=self.scope_ppr(sc);
+                if !sc.in_quote&&sc.list_depth==0 {self.has_math_paragraph_style=true;ppr="<w:pStyle w:val=\"ReadMDMath\"/>".into();}
+                let alignment=paragraph.as_ref().and_then(|value|value.alignment.as_deref()).unwrap_or("center").to_string();
+                if let Some(value)=paragraph {
+                    if value.left.is_some()||value.right.is_some(){
+                        // Scope contributes only these two generated fields;
+                        // replace its indent, never append a duplicate w:ind.
+                        ppr=if sc.in_quote{"<w:pStyle w:val=\"Quote\"/>".into()}else if sc.list_depth==0{"<w:pStyle w:val=\"ReadMDMath\"/>".into()}else{String::new()};
+                        ppr.push_str("<w:ind");
+                        if let Some(left)=value.left{ppr.push_str(&format!(" w:left=\"{}\"",xml_escape(&left).replace('\t',"&#9;").replace('\r',"&#13;").replace('\n',"&#10;")));}
+                        if let Some(right)=value.right{ppr.push_str(&format!(" w:right=\"{}\"",xml_escape(&right).replace('\t',"&#9;").replace('\r',"&#13;").replace('\n',"&#10;")));}
+                        ppr.push_str("/>");
+                    }
+                }
+                ppr.push_str(&format!("<w:jc w:val=\"{alignment}\"/>"));
+                (ppr,content)
+            },
+            Err(error)=>{self.math_failure=Some(error.message());(String::new(),String::new())},
         }
     }
 
@@ -431,7 +564,7 @@ impl<'a> Ctx<'a> {
             self.rels.push(Rel { id: id.clone(), kind, target, external });
             id
         };
-        if !self.fn_stack.is_empty() { self.footnote_rels.insert(id.clone()); }
+        if let Some(kind)=self.active_note_kind(){self.footnote_rels.entry(kind).or_default().insert(id.clone());}
         id
     }
 }
@@ -473,9 +606,8 @@ fn run_xml(t: &str, f: &Fmt) -> String {
     }
     if let Some(value) = f.tracking_twips { rpr.push_str(&format!("<w:spacing w:val=\"{value}\"/>")); }
     if let Some(value) = f.baseline_half_points { rpr.push_str(&format!("<w:position w:val=\"{value}\"/>")); }
-    if let Some(sz) = f.size_hp {
-        rpr.push_str(&format!("<w:sz w:val=\"{sz}\"/><w:szCs w:val=\"{sz}\"/>"));
-    }
+    if let Some(sz) = f.author_size_hp.map(i64::from).or(f.size_hp) { rpr.push_str(&format!("<w:sz w:val=\"{sz}\"/>")); }
+    if let Some(sz) = f.author_size_cs_hp.map(i64::from).or(f.size_hp) { rpr.push_str(&format!("<w:szCs w:val=\"{sz}\"/>")); }
     if f.tracking_twips.is_some() || f.baseline_half_points.is_some() {
         if let Some(format) = &f.rich {
             use crate::publication_rich::*;
@@ -483,7 +615,10 @@ fn run_xml(t: &str, f: &Fmt) -> String {
             match format.vertical_align { RichVerticalAlign::Baseline => {}, RichVerticalAlign::Sup => rpr.push_str("<w:vertAlign w:val=\"superscript\"/>"), RichVerticalAlign::Sub => rpr.push_str("<w:vertAlign w:val=\"subscript\"/>") }
         }
     }
-    let mut out = String::from("<w:r>");
+    if let Some(value)=f.rtl{rpr.push_str(&format!("<w:rtl w:val=\"{}\"/>",u8::from(value)));}
+    if let Some(value)=f.cs{rpr.push_str(&format!("<w:cs w:val=\"{}\"/>",u8::from(value)));}
+    let axes=u8::from(f.author_size_hp.is_some())|u8::from(f.author_size_cs_hp.is_some())<<1|u8::from(f.cs.is_some())<<2|u8::from(f.rtl.is_some())<<3;
+    let mut out = if let Some(token)=f.author_token.as_ref().filter(|_|axes!=0){format!("<w:r {}=\"{token}:{axes}\">",crate::docx_local_style::AUTHOR_AXES_ATTRIBUTE)}else{String::from("<w:r>")};
     if !rpr.is_empty() {
         out.push_str("<w:rPr>");
         out.push_str(&rpr);
@@ -511,13 +646,23 @@ fn run_xml(t: &str, f: &Fmt) -> String {
     out.push_str("</w:r>");
     out
 }
+fn note_callout(kind:&str,reference:&str,id:u32,f:&Fmt)->String{
+    let mut rpr=format!("<w:rStyle w:val=\"{reference}\"/>");
+    if let Some(value)=f.author_size_hp{rpr.push_str(&format!("<w:sz w:val=\"{value}\"/>"));}
+    if let Some(value)=f.author_size_cs_hp{rpr.push_str(&format!("<w:szCs w:val=\"{value}\"/>"));}
+    if let Some(value)=f.rtl{rpr.push_str(&format!("<w:rtl w:val=\"{}\"/>",u8::from(value)));}
+    if let Some(value)=f.cs{rpr.push_str(&format!("<w:cs w:val=\"{}\"/>",u8::from(value)));}
+    let axes=u8::from(f.author_size_hp.is_some())|u8::from(f.author_size_cs_hp.is_some())<<1|u8::from(f.cs.is_some())<<2|u8::from(f.rtl.is_some())<<3;
+    let marker=f.author_token.as_ref().filter(|_|axes!=0).map(|token|format!(" {}=\"{token}:{axes}\"",crate::docx_local_style::AUTHOR_AXES_ATTRIBUTE)).unwrap_or_default();
+    format!("<w:r{marker}><w:rPr>{rpr}</w:rPr><w:{kind}Reference w:id=\"{id}\"/></w:r>")
+}
 
 fn first_char(v: &[Inline]) -> Option<char> {
     for i in v {
         match i {
             Inline::Text(t) | Inline::Code(t) => return t.chars().next(),
             Inline::Strong(c) | Inline::Emph(c) | Inline::Strike(c)
-                | Inline::Styled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => {
+                | Inline::Styled { children: c, .. } | Inline::AuthorStyled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => {
                 if let Some(ch) = first_char(c) {
                     return Some(ch);
                 }
@@ -534,7 +679,7 @@ fn last_char(v: &[Inline]) -> Option<char> {
         match i {
             Inline::Text(t) | Inline::Code(t) => return t.chars().last(),
             Inline::Strong(c) | Inline::Emph(c) | Inline::Strike(c)
-                | Inline::Styled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => {
+                | Inline::Styled { children: c, .. } | Inline::AuthorStyled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => {
                 if let Some(ch) = last_char(c) {
                     return Some(ch);
                 }
@@ -548,6 +693,7 @@ fn last_char(v: &[Inline]) -> Option<char> {
 
 impl<'a> Ctx<'a> {
     fn inlines(&mut self, v: &[Inline], f: &Fmt) -> String {
+        if f.block_base_hp.is_none(){let mut inherited=f.clone();inherited.block_base_hp=Some(self.author_block_base.unwrap_or_else(||self.native_text_base(None)));return self.inlines(v,&inherited);}
         let mut out = String::new();
         for (idx, i) in v.iter().enumerate() {
             match i {
@@ -581,15 +727,27 @@ impl<'a> Ctx<'a> {
                     g.rich = Some(format.clone());
                     out.push_str(&self.inlines(children, &g));
                 }
+                Inline::AuthorStyled {style,children}=>{
+                    use crate::publication_inline_text::CascadeSize;
+                    let mut g=f.clone();let base=f.block_base_hp.expect("resolved block base");
+                    match style.size{CascadeSize::Inherit=>(),CascadeSize::Points(value)=>g.author_size_hp=Some(value.half_points()),CascadeSize::BlockBase=>g.author_size_hp=Some(base.0)}
+                    match style.size_cs{CascadeSize::Inherit=>(),CascadeSize::Points(value)=>g.author_size_cs_hp=Some(value.half_points()),CascadeSize::BlockBase=>g.author_size_cs_hp=Some(base.1)}
+                    g.cs=style.cs.or(g.cs);g.rtl=style.rtl.or(g.rtl);g.author_token=Some(self.author_token.clone());
+                    out.push_str(&self.inlines(children,&g));
+                }
                 Inline::Display { display, children } => {
                     let block = matches!(display, crate::publication_rich::RichDisplay::Block | crate::publication_rich::RichDisplay::Indent);
                     if block && !out.is_empty() { out.push_str("<w:r><w:br/></w:r>"); }
                     out.push_str(&self.inlines(children, f));
                     if block { out.push_str("<w:r><w:br/></w:r>"); }
                 }
-                Inline::Citation { children, .. } => {
+                Inline::Citation { source, children } => {
                     let mut citation = f.clone(); citation.tracking_twips = None; citation.baseline_half_points = None;
-                    out.push_str(&self.inlines(children, &citation));
+                    self.citation_depth += 1;
+                    let rendered = self.inlines(children, &citation);
+                    self.citation_depth -= 1;
+                    let generated = children.iter().find_map(|child|match child { Inline::FootnoteRef(label) if self.generated_citation_source(label).as_ref()==Some(source) => Some(label.as_str()), _=>None });
+                    out.push_str(&self.citation_control(source,&rendered,generated));
                 },
                 Inline::Link { href, children, .. } => {
                     let mut g = f.clone();
@@ -622,12 +780,13 @@ impl<'a> Ctx<'a> {
                     }
                 },
                 Inline::Math(m) => {
+                    if f.author_size_hp.is_some()||f.author_size_cs_hp.is_some()||f.cs.is_some()||f.rtl.is_some(){self.bibliography_failure=Some(BibliographyFailure{code:"author_inline_text_unsupported".into(),path:"inline.math".into()});continue;}
                     let m = m.trim();
                     if !m.is_empty() {
                         out.push_str(&self.office_math(&crate::latex2omml::latex_to_omml(m, false), false));
                     }
                 }
-                Inline::OfficeMath {omml,..} => out.push_str(&self.office_math(omml, false)),
+                Inline::OfficeMath {omml,..} => {if f.author_size_hp.is_some()||f.author_size_cs_hp.is_some()||f.cs.is_some()||f.rtl.is_some(){self.bibliography_failure=Some(BibliographyFailure{code:"author_inline_text_unsupported".into(),path:"inline.officeMath".into()});continue;}out.push_str(&self.office_math(omml, false));},
                 Inline::SoftBreak => {
                     // Between two CJK characters a source line break is not a space.
                     let prev = last_char(&v[..idx]);
@@ -637,8 +796,13 @@ impl<'a> Ctx<'a> {
                         out.push_str(&run_xml(" ", f));
                     }
                 }
-                Inline::HardBreak => out.push_str("<w:r><w:br/></w:r>"),
-                Inline::FootnoteRef(label) => out.push_str(&self.footnote_ref(label, f)),
+                Inline::HardBreak => out.push_str(&run_xml("\n",f)),
+                Inline::FootnoteRef(label) => {
+                    let source = if self.citation_depth == 0 { self.generated_citation_source(label) } else { None };
+                    let rendered = self.footnote_ref(label, f);
+                    if let Some(source) = source { out.push_str(&self.citation_control(&source,&rendered,Some(label))); }
+                    else { out.push_str(&rendered); }
+                },
                 Inline::Html(_) => {}
             }
         }
@@ -646,7 +810,8 @@ impl<'a> Ctx<'a> {
     }
 
     fn footnote_ref(&mut self, label: &str, f: &Fmt) -> String {
-        let (kind,reference)=if crate::publication_layout::notes_at_end(self.style){("endnote","EndnoteReference")}else{("footnote","FootnoteReference")};
+        let story=self.note_policies.kind_for_label(label);
+        let(kind,reference)=if story.is_end(){("endnote","EndnoteReference")}else{("footnote","FootnoteReference")};
         let Some(def) = self.footnote_defs.get(label).cloned() else {
             return run_xml(&format!("[{label}]"), f);
         };
@@ -660,10 +825,11 @@ impl<'a> Ctx<'a> {
             return run_xml(&format!("[{label}]"), f);
         }
         if let Some(id) = self.footnote_ids.get(label) {
-            return format!("<w:r><w:rPr><w:rStyle w:val=\"{reference}\"/></w:rPr><w:{kind}Reference w:id=\"{id}\"/></w:r>");
+            return note_callout(kind,reference,*id,f);
         }
         // Identity follows the first reference in the main document.
-        let id = self.footnote_ids.len() as u32 + 1;
+        let ordinal=&mut self.note_counts[usize::from(story.is_end())];
+        let Some(id)=ordinal.checked_add(1)else{self.warns.push(note_policy::INVALID.into());return run_xml(&format!("[{label}]"),f)};*ordinal=id;
         self.footnote_ids.insert(label.to_string(), id);
         self.fn_stack.push(label.to_string());
         // One structural writer for both stories: lists, tables, quotes, math
@@ -672,16 +838,20 @@ impl<'a> Ctx<'a> {
         // buffer is isolated from the main document.
         let main_body = std::mem::take(&mut self.body);
         let saved_baseline = self.local_baseline_half_points.take();
+        let saved_author_base=self.author_local_base.take();
+        let saved_author_block=self.author_block_base.take();
         self.blocks(&def, &Scope::default());
+        self.author_local_base=saved_author_base;self.author_block_base=saved_author_block;
         self.local_baseline_half_points = saved_baseline;
         let fragment = std::mem::replace(&mut self.body, main_body);
-        let xml = match crate::docx_local_style::footnote(&fragment, self.style) {
+        let policy=self.note_policies.paragraph_policy(story);
+        let xml = match crate::docx_local_style::footnote_with_policy(&fragment,story,&policy).and_then(|xml| note_paragraph_flow_policy(&xml,&policy)) {
             Ok(xml) => xml,
             Err(code) => { self.warns.push(code.into()); fragment }
         };
         self.fn_stack.pop();
-        self.footnotes.push((id, xml));
-        format!("<w:r><w:rPr><w:rStyle w:val=\"{reference}\"/></w:rPr><w:{kind}Reference w:id=\"{id}\"/></w:r>")
+        self.footnotes.push((story,id,xml));
+        note_callout(kind,reference,id,f)
     }
 
     /// `<w:drawing>` for an image, or `None` if it cannot be embedded.
@@ -716,9 +886,9 @@ impl<'a> Ctx<'a> {
         if let Some(width)=print_width { cx=(width*36000.).round()as i64;cy=(cx as f64*ph as f64/pw as f64).round()as i64; }
         // An image first used in the body can arrive from the cache without a
         // rel() call. Its references still belong to the footnote part too.
-        if !self.fn_stack.is_empty() {
-            self.footnote_rels.insert(rid.clone());
-            if let Some(id) = &svg_rid { self.footnote_rels.insert(id.clone()); }
+        if let Some(kind)=self.active_note_kind(){
+            let relationships=self.footnote_rels.entry(kind).or_default();relationships.insert(rid.clone());
+            if let Some(id)=&svg_rid{relationships.insert(id.clone());}
         }
         let svg_extension=svg_rid.map(|id|format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"{id}\"/></a:ext></a:extLst>")).unwrap_or_default();
         let max_w = (self.text_w_emu as f64 * num(self.style, &["images", "widthPct"], 92.0) / 100.0) as i64;
@@ -734,7 +904,7 @@ impl<'a> Ctx<'a> {
         }
         self.drawing_id += 1;
         let id = self.drawing_id;
-        let descr = xml_escape(alt);
+        let descr = xml_escape(alt).replace('\t', "&#9;").replace('\r', "&#13;").replace('\n', "&#10;");
         Some(format!(
             concat!(
                 "<w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">",
@@ -765,9 +935,19 @@ struct Scope {
     /// List nesting depth (indent level for continuation paragraphs).
     list_depth: usize,
     in_quote: bool,
+    // Local paragraph post-processing has its own precedence. Such hosts do
+    // not register a source chain as if it were an untouched body paragraph.
+    nested_math_host: bool,
 }
 
 impl<'a> Ctx<'a> {
+    fn native_text_base(&self,block:Option<&Block>)->(u32,u32){
+        if let Some(base)=self.author_local_base{return base;}
+        let hp=|size:f64|(size*2.).round().max(1.).min(i32::MAX as f64)as u32;
+        if let Some(kind)=self.active_note_kind(){let policy=self.note_policies.paragraph_policy(kind);return(hp(policy.size.unwrap_or(9.)),hp(policy.size_cs.or(policy.size).unwrap_or(9.)));}
+        let context=match block.map(Block::unstyled){Some(Block::Heading{level,..})=>AuthorTextContext::Heading(*level),Some(Block::Caption{..})=>AuthorTextContext::Caption,Some(Block::Table{..})=>AuthorTextContext::Table,_=>AuthorTextContext::Body};
+        author_text_base(self.style,context)
+    }
     fn para(&mut self, ppr: &str, content: &str) {
         self.body.push_str("<w:p>");
         if !ppr.is_empty() {
@@ -951,27 +1131,51 @@ impl<'a> Ctx<'a> {
     }
 
     fn blocks(&mut self, blocks: &[Block], sc: &Scope) {
-        for b in blocks {
-            if self.bibliography_failure.is_some() { break; }
+        for (index, b) in blocks.iter().enumerate() {
+            if self.bibliography_failure.is_some() || self.math_failure.is_some() { break; }
             let saved_tracking = self.body_tracking_twips;
             let saved_baseline = self.body_baseline_half_points;
             let front = self.tracking_front_blocks_remaining > 0 && self.fn_stack.is_empty() && !sc.in_quote && sc.list_depth == 0;
             if front { self.tracking_front_blocks_remaining -= 1; self.body_tracking_twips = None; self.body_baseline_half_points = None; }
-            self.block(b, sc);
+            let figure_caption = matches!(blocks.get(index + 1).map(Block::unstyled), Some(Block::Caption { label, .. }) if label.kind == "figure");
+            self.block(b, sc, figure_caption);
             if front { self.body_tracking_twips = saved_tracking; self.body_baseline_half_points = saved_baseline; }
         }
     }
 
-    fn block(&mut self, b: &Block, sc: &Scope) {
+    fn block(&mut self, b: &Block, sc: &Scope, figure_caption: bool) {
+        let saved=self.author_block_base;self.author_block_base=Some(self.native_text_base(Some(b)));self.block_inner(b,sc,figure_caption);self.author_block_base=saved;
+    }
+    fn block_inner(&mut self, b: &Block, sc: &Scope, figure_caption: bool) {
         match b {
             Block::Styled { attributes,block } => {
                 let start=self.body.len();
                 let saved_tracking = self.body_tracking_twips;
                 let saved_baseline = self.local_baseline_half_points;
+                let saved_author_base=self.author_local_base;
+                if let Some(size)=attributes["text"]["size"].as_f64(){let hp=(size*2.).round()as u32;self.author_local_base=Some((hp,hp));}
+                // A caption's author layer is its own block base. Resolve it
+                // before writing nested spans, so an inline `base` reset cannot
+                // accidentally target the document template or a prior size.
+                match crate::publication_blocks::author_style(attributes) {
+                    Ok(author) if !author.is_empty() => {
+                        let pair=self.author_local_base.unwrap_or_else(||self.native_text_base(Some(block)));
+                        let base=crate::publication_inline_text::ResolvedTextStyle::base(pair.0 as f64/2.,pair.1 as f64/2.);
+                        let effective=author.resolve(&base,&base);
+                        self.author_local_base=Some(((effective.size*2.).round()as u32,(effective.size_cs*2.).round()as u32));
+                    },
+                    Ok(_)=>(),
+                    Err(code)=>{
+                        self.author_local_base=saved_author_base;
+                        self.bibliography_failure=Some(BibliographyFailure{code:code.into(),path:"text.author".into()});
+                        return;
+                    },
+                }
                 match crate::publication_typography::baseline::local(&attributes["text"]) {
                     Ok(Some(value)) => self.local_baseline_half_points = Some(value.docx_half_points()),
                     Ok(None) => (),
                     Err(code) => {
+                        self.author_local_base=saved_author_base;
                         self.bibliography_failure = Some(BibliographyFailure { code: code.into(), path: "text.baselineShiftPt".into() });
                         return;
                     },
@@ -980,13 +1184,16 @@ impl<'a> Ctx<'a> {
                     Ok(Some(value)) => self.body_tracking_twips = Some(value.docx_twips()),
                     Ok(None) => (),
                     Err(code) => {
+                        self.author_local_base=saved_author_base;
                         self.bibliography_failure = Some(BibliographyFailure { code: code.into(), path: "text.trackingPt".into() });
                         return;
                     },
                 }
                 // Every nested/early return completes this recursive call first.
                 // Restore the parent value before any fallible post-processing.
-                self.block(block,sc);
+                let mut child_scope=sc.clone();child_scope.nested_math_host=true;
+                self.block(block,&child_scope,figure_caption);
+                self.author_local_base=saved_author_base;
                 self.body_tracking_twips = saved_tracking;
                 self.local_baseline_half_points = saved_baseline;
                 let fragment=self.body.split_off(start);
@@ -994,10 +1201,9 @@ impl<'a> Ctx<'a> {
                 // CSL and OMML stay distinct. Never patch their XML by font.
                 let mut post_attributes = attributes.clone();
                 if let Some(text) = post_attributes.get_mut("text").and_then(Value::as_object_mut) { text.remove("trackingPt"); text.remove("baselineShiftPt"); }
-                let style=crate::publication_blocks::Resolved::for_context_with_lines(self.style,attributes,block,!self.fn_stack.is_empty(),self.line_context);
-                match crate::docx_local_style::apply(&fragment,&style,&post_attributes,self.style,matches!(block.unstyled(),Block::Paragraph(_)) && self.fn_stack.is_empty() && !sc.in_quote && sc.list_depth == 0){Ok(xml)=>self.body.push_str(&xml),Err(code)=>{self.warns.push(code.into());self.body.push_str(&fragment);}}
+                match self.apply_local_layout(&fragment,&post_attributes,block,matches!(block.unstyled(),Block::Paragraph(_))&&self.fn_stack.is_empty()&&!sc.in_quote&&sc.list_depth==0){Ok(xml)=>self.body.push_str(&xml),Err(code)=>{if code.starts_with("author_inline_text_"){self.bibliography_failure=Some(BibliographyFailure{code:code.into(),path:"inline.localLayout".into()});}self.warns.push(code.into());self.body.push_str(&fragment);}}
             }
-            Block::Heading { level, id, inlines } => {
+            Block::Heading { level, id, inlines, numbering } => {
                 let lvl = (*level).clamp(1, 6);
                 self.bookmark_id += 1;
                 let bid = self.bookmark_id;
@@ -1006,7 +1212,10 @@ impl<'a> Ctx<'a> {
                     "<w:bookmarkStart w:id=\"{bid}\" w:name=\"{}\"/>{runs}<w:bookmarkEnd w:id=\"{bid}\"/>",
                     bookmark_name(id)
                 );
-                self.para(&format!("<w:pStyle w:val=\"Heading{lvl}\"/>"), &content);
+                let nested=self.heading_num.is_some()&&(!self.fn_stack.is_empty()||sc.in_quote||sc.list_depth>0);
+                let numbered=numbering.as_ref().and(self.heading_num).map(|num|format!("<w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{num}\"/></w:numPr>",lvl-1)).unwrap_or_default();
+                let paragraph_style=if nested{format!("ReadMDExampleHeading{lvl}")}else{format!("Heading{lvl}")};
+                self.para(&format!("<w:pStyle w:val=\"{paragraph_style}\"/>{numbered}"), &content);
             }
             Block::Paragraph(inl) => {
                 if let [Inline::Image { src, alt, .. }] = inl.as_slice() {
@@ -1014,7 +1223,9 @@ impl<'a> Ctx<'a> {
                         let mut ppr = self.scope_ppr(sc);
                         ppr.push_str("<w:jc w:val=\"center\"/>");
                         self.para(&ppr, &d);
-                        if !alt.trim().is_empty() {
+                        // A real adjacent figure caption already supplies the visual
+                        // title. Keep the image's native accessibility description.
+                        if !figure_caption && !alt.trim().is_empty() {
                             let cap = run_xml(alt.trim(), &Fmt::default());
                             self.para("<w:pStyle w:val=\"Caption\"/>", &cap);
                         }
@@ -1033,10 +1244,10 @@ impl<'a> Ctx<'a> {
                 self.bookmark_id += 1;
                 let bid = self.bookmark_id;
                 let fmt = Fmt { baseline_half_points: self.local_baseline_half_points, ..Fmt::default() };
-                let prefix = run_xml(&format!("{} ", label.prefix), &fmt);
-                let number = run_xml(&label.number.to_string(), &fmt);
+                let prefix = run_xml(&format!("{}{}", label.prefix, label.numbering.as_ref().map_or(" ",|n|n.label_separator.as_str())), &fmt);
+                let number = caption_number_xml(label,&|value|run_xml(value,&fmt));
                 let rest = self.inlines(inlines, &fmt);
-                let runs = format!("<w:bookmarkStart w:id=\"{bid}\" w:name=\"{}\"/>{prefix}<w:fldSimple w:instr=\" SEQ {} \\* ARABIC \" w:dirty=\"true\">{number}</w:fldSimple><w:bookmarkEnd w:id=\"{bid}\"/>{rest}", bookmark_name(&label.id), label.sequence());
+                let runs = format!("<w:bookmarkStart w:id=\"{bid}\" w:name=\"{}\"/>{prefix}{number}<w:bookmarkEnd w:id=\"{bid}\"/>{rest}", bookmark_name(&label.id));
                 self.para("<w:pStyle w:val=\"Caption\"/><w:jc w:val=\"center\"/><w:keepNext w:val=\"0\"/>", &runs);
             }
             Block::List { ordered, start, items } => self.list(*ordered, *start, items, sc),
@@ -1065,12 +1276,10 @@ impl<'a> Ctx<'a> {
                 if m.is_empty() {
                     return;
                 }
-                let omml = self.office_math(&crate::latex2omml::latex_to_omml(m, true), true);
-                let mut ppr = self.scope_ppr(sc);
-                ppr.push_str("<w:jc w:val=\"center\"/>");
+                let (ppr,omml)=self.office_math_paragraph(&crate::latex2omml::latex_to_omml(m,true),sc);
                 self.para(&ppr, &omml);
             }
-            Block::OfficeMath {omml,..} => {let mut ppr=self.scope_ppr(sc);ppr.push_str("<w:jc w:val=\"center\"/>");let xml=self.office_math(omml,true);self.para(&ppr,&xml);},
+            Block::OfficeMath {omml,..} => {let(ppr,xml)=self.office_math_paragraph(omml,sc);self.para(&ppr,&xml);},
             Block::Table { aligns, header, rows } => self.table(aligns, header, rows),
             Block::Hr => {
                 let c = color(self.style, &["hr", "color"], "#d8dce2");
@@ -1081,7 +1290,15 @@ impl<'a> Ctx<'a> {
             }
             Block::PageBreak => self.para("", "<w:r><w:br w:type=\"page\"/></w:r>"),
             Block::Bibliography(bibliography) => {
+                let start = self.body.len();
                 if let Err(failure) = self.bibliography(bibliography) { self.bibliography_failure = Some(failure); }
+                else {
+                    let rendered = self.body.split_off(start);
+                    match self.citation_bindings.bibliography(bibliography.source_span.as_ref(), &rendered) {
+                        Ok(xml) => self.body.push_str(&xml),
+                        Err(code) => { self.body.push_str(&rendered); self.bibliography_failure = Some(BibliographyFailure {code,path:"bibliography".into()}); },
+                    }
+                }
             }
             Block::Html(_) | Block::SectionStart(_) => {}
             Block::FootnoteDef { .. } => {}
@@ -1103,7 +1320,7 @@ impl<'a> Ctx<'a> {
         let num_id = self.numbering_for(ordered, start, depth);
         for it in items {
             let mut first = true;
-            for blk in &it.blocks {
+            for (index, blk) in it.blocks.iter().enumerate() {
                 if first {
                     first = false;
                     let (first_block, attributes) = match blk {
@@ -1136,8 +1353,7 @@ impl<'a> Ctx<'a> {
                         self.para(&ppr, &content);
                         if let Some(attributes) = attributes {
                             let fragment = self.body.split_off(fragment_start);
-                            let style = crate::publication_blocks::Resolved::for_context_with_lines(self.style, attributes, first_block, !self.fn_stack.is_empty(), self.line_context);
-                            match crate::docx_local_style::apply(&fragment, &style, attributes, self.style, false) {
+                            match self.apply_local_layout(&fragment,attributes,first_block,false) {
                                 Ok(xml) => self.body.push_str(&xml),
                                 Err(code) => { self.warns.push(code.into()); self.body.push_str(&fragment); }
                             }
@@ -1145,8 +1361,9 @@ impl<'a> Ctx<'a> {
                         continue;
                     }
                 }
-                let s2 = Scope { list_depth: depth + 1, in_quote: sc.in_quote };
-                self.block(blk, &s2);
+                let s2 = Scope { list_depth: depth + 1, in_quote: sc.in_quote, nested_math_host:sc.nested_math_host };
+                let figure_caption = matches!(it.blocks.get(index + 1).map(Block::unstyled), Some(Block::Caption { label, .. }) if label.kind == "figure");
+                self.block(blk, &s2, figure_caption);
             }
         }
     }
@@ -1218,6 +1435,7 @@ impl<'a> Ctx<'a> {
                     bold: is_head && head_bold,
                     color: if is_head { Some(head_fg.clone()) } else { None },
                     size_hp: Some(cell_hp),
+                    block_base_hp:Some(ctx.author_local_base.unwrap_or((cell_hp as u32,cell_hp as u32))),
                     ..Fmt::default()
                 };
                 let content = cells.get(ci).map(|c| ctx.inlines(c, &f)).unwrap_or_default();
@@ -1263,7 +1481,7 @@ fn highlighted_runs(code: &str, lang: &str) -> String {
 
 // ------------------------------------------------------------------- styles
 
-fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publication_typography::DocxLine>, line_context: crate::publication_typography::LineContext) -> String {
+fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publication_typography::DocxLine>, line_context: crate::publication_typography::LineContext, numbered_headings:bool, math_style:bool) -> String {
     let layout = crate::publication_layout::Layout::from_style(st);
     let body_font = font_family(text(st, &["typography", "font"], "MicrosoftYaHei")).to_string();
     let code_font = font_family(text(st, &["code", "font"], "Consolas")).to_string();
@@ -1290,15 +1508,17 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
     let language_properties = language.map(|lang|format!("<w:lang w:val=\"{0}\" w:eastAsia=\"{0}\" w:bidi=\"{0}\"/>",xml_escape(lang)))
         .unwrap_or_else(||"<w:lang w:val=\"en-US\" w:eastAsia=\"zh-CN\"/>".into());
     s.push_str(&format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:styles xmlns:w=\"{W_NS}\">"));
+    let body_spacing=format!("<w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/>");
     s.push_str(&format!(
         "<w:docDefaults><w:rPrDefault><w:rPr>{}<w:sz w:val=\"{body_hp}\"/><w:szCs w:val=\"{body_hp}\"/><w:color w:val=\"{body_color}\"/>{language_properties}</w:rPr></w:rPrDefault>\
-<w:pPrDefault><w:pPr><w:spacing w:after=\"{after}\" w:line=\"{line}\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>",
-        fonts(&body_font)
+<w:pPrDefault><w:pPr>{}</w:pPr></w:pPrDefault></w:docDefaults>",
+        fonts(&body_font),if math_style{""}else{&body_spacing}
     ));
     s.push_str(&format!(
-        "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:pPr><w:widowControl w:val=\"{}\"/><w:jc w:val=\"{body_jc}\"/></w:pPr></w:style>",
-        u8::from(layout.widow_control)
+        "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/><w:qFormat/><w:pPr><w:widowControl w:val=\"{}\"/>{}<w:jc w:val=\"{body_jc}\"/></w:pPr></w:style>",
+        u8::from(layout.widow_control),if math_style{&body_spacing}else{""}
     ));
+    if math_style{s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"ReadMDMath\"><w:name w:val=\"Equation\"/><w:next w:val=\"Normal\"/><w:qFormat/></w:style>");}
     s.push_str(&format!("<w:style w:type=\"paragraph\" w:styleId=\"BodyText\"><w:name w:val=\"Body Text\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"BodyText\"/><w:qFormat/><w:pPr><w:keepLines w:val=\"{}\"/>{p04_spacing}<w:ind w:firstLine=\"{first_indent}\"/></w:pPr></w:style>",u8::from(layout.keep_lines)));
     for i in 1..=6 {
         let key = format!("h{i}");
@@ -1313,13 +1533,21 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
         let pbb = if h("pageBreakBefore").and_then(|v| v.as_bool()).unwrap_or(false) { "<w:pageBreakBefore/>" } else { "" };
         let keep_next = u8::from(h("keepNext").and_then(Value::as_bool).unwrap_or(true));
         let keep_lines = u8::from(h("keepLines").and_then(Value::as_bool).unwrap_or(true));
-        s.push_str(&format!(
+        let entry=format!(
             "<w:style w:type=\"paragraph\" w:styleId=\"Heading{i}\"><w:name w:val=\"heading {i}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/>\
 <w:pPr><w:keepNext w:val=\"{keep_next}\"/><w:keepLines w:val=\"{keep_lines}\"/>{pbb}<w:spacing w:before=\"{before}\" w:after=\"{aft}\" w:line=\"276\" w:lineRule=\"auto\"/><w:jc w:val=\"{al}\"/><w:outlineLvl w:val=\"{}\"/></w:pPr>\
 <w:rPr>{}<w:sz w:val=\"{hp}\"/><w:szCs w:val=\"{hp}\"/><w:color w:val=\"{c}\"/></w:rPr></w:style>",
             i - 1,
             if bold { "<w:b/><w:bCs/>" } else { "" }
-        ));
+        );
+        s.push_str(&entry);
+        if numbered_headings {
+            // Examples retain the same typography, without becoming a new
+            // chapter for STYLEREF/SEQ or entering the numbered outline.
+            s.push_str(&entry.replace(&format!("w:styleId=\"Heading{i}\""),&format!("w:styleId=\"ReadMDExampleHeading{i}\""))
+                .replace(&format!("w:val=\"heading {i}\""),&format!("w:val=\"ReadMD example heading {i}\""))
+                .replace(&format!("<w:outlineLvl w:val=\"{}\"/>",i-1),"<w:outlineLvl w:val=\"9\"/>"));
+        }
     }
     s.push_str(&format!(
         "<w:style w:type=\"paragraph\" w:styleId=\"Title\"><w:name w:val=\"Title\"/><w:basedOn w:val=\"Normal\"/><w:qFormat/><w:pPr><w:spacing w:before=\"2400\" w:after=\"240\"/><w:jc w:val=\"center\"/></w:pPr><w:rPr><w:b/><w:sz w:val=\"56\"/><w:color w:val=\"{}\"/></w:rPr></w:style>",
@@ -1348,11 +1576,14 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
         "<w:style w:type=\"paragraph\" w:styleId=\"TableText\"><w:name w:val=\"Table Text\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"264\" w:lineRule=\"auto\"/></w:pPr><w:rPr><w:sz w:val=\"{cell_hp}\"/><w:szCs w:val=\"{cell_hp}\"/></w:rPr></w:style>"
     ));
     s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"Caption\"><w:name w:val=\"caption\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:qFormat/><w:pPr><w:spacing w:before=\"60\" w:after=\"200\"/><w:jc w:val=\"center\"/></w:pPr><w:rPr><w:i/><w:sz w:val=\"18\"/><w:color w:val=\"5C6470\"/></w:rPr></w:style>");
-    let note_hp=(layout.note_size*2.).round() as u32;
-    let note_line=(layout.note_line_height*240.).round() as u32;
-    let note_style=if crate::publication_layout::notes_at_end(st){"Endnote"}else{"Footnote"};
-    s.push_str(&format!("<w:style w:type=\"paragraph\" w:styleId=\"{note_style}Text\"><w:name w:val=\"{} text\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:spacing w:after=\"0\" w:line=\"{note_line}\" w:lineRule=\"auto\"/></w:pPr><w:rPr><w:sz w:val=\"{note_hp}\"/><w:szCs w:val=\"{note_hp}\"/></w:rPr></w:style>",note_style.to_lowercase()));
-    s.push_str(&format!("<w:style w:type=\"character\" w:styleId=\"{note_style}Reference\"><w:name w:val=\"{} reference\"/><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr></w:style>",note_style.to_lowercase()));
+    let note_policies=note_policy::parse_layer(st).unwrap_or_default();
+    for kind in configured_note_kinds(st,&note_policies){
+        let policy=note_policies.paragraph_policy(kind);let note_style=if kind.is_end(){"Endnote"}else{"Footnote"};
+        let note_hp=(policy.size.unwrap_or(9.)*2.).round()as u32;let note_cs=(policy.size_cs.or(policy.size).unwrap_or(9.)*2.).round()as u32;
+        let line=policy.line_spacing.unwrap_or(crate::publication_typography::LineSpacing::Multiple(1.)).docx();
+        s.push_str(&format!("<w:style w:type=\"paragraph\" w:styleId=\"{note_style}Text\"><w:name w:val=\"{} text\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:spacing w:after=\"0\" w:line=\"{}\" w:lineRule=\"{}\"/></w:pPr><w:rPr><w:sz w:val=\"{note_hp}\"/><w:szCs w:val=\"{note_cs}\"/></w:rPr></w:style>",note_style.to_lowercase(),line.line,line.rule));
+        s.push_str(&format!("<w:style w:type=\"character\" w:styleId=\"{note_style}Reference\"><w:name w:val=\"{} reference\"/><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr></w:style>",note_style.to_lowercase()));
+    }
     s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"TOCHeading\"><w:name w:val=\"TOC Heading\"/><w:basedOn w:val=\"Heading1\"/><w:next w:val=\"Normal\"/><w:pPr><w:outlineLvl w:val=\"9\"/></w:pPr></w:style>");
     let (toc_width, _) = crate::export_styles::page_dimensions(st);
     let toc_tab = mm_twips((toc_width - num(st,&["page","marginLeft"],18.) - num(st,&["page","marginRight"],18.) - layout.gutter).max(20.));
@@ -1371,7 +1602,37 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
     s
 }
 
-fn numbering_xml(nums: &[(u32, u32, u64)], bullet_num: u32) -> String {
+fn caption_number_xml(label:&crate::cross_references::Label,run:&dyn Fn(&str)->String)->String {
+    let field=|instruction:&str,cached:&str|format!("<w:fldSimple w:instr=\"{}\" w:dirty=\"true\">{}</w:fldSimple>",xml_escape(instruction),run(cached));
+    let Some(numbering)=&label.numbering else {return field(&format!(" SEQ {} \\* ARABIC ",label.sequence()),&label.number.to_string());};
+    let mut result=String::new();
+    if let Some(chapter)=&numbering.chapter {
+        result.push_str(&field(&format!(" STYLEREF {} \\s ",chapter.level),&chapter.number));
+        result.push_str(&run(&numbering.separator));
+    }
+    let reset=numbering.chapter.as_ref().map(|chapter|format!(" \\s {}",chapter.level)).unwrap_or_default();
+    let format=crate::cross_references::word_number_format(&numbering.format);
+    if numbering.start==1 {
+        result.push_str(&field(&format!(" SEQ {}{reset} \\* {format} ",label.sequence()),&crate::cross_references::number_text(&numbering.format,label.number)));
+    } else {
+        // A formula around the native sequence offset remains updateable when
+        // captions move. Hard-coding a one-time SEQ reset would not.
+        result.push_str("<w:r><w:fldChar w:fldCharType=\"begin\" w:dirty=\"true\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> = </w:instrText></w:r>");
+        // Nested complex fields have explicit code/result boundaries. A simple
+        // field inserted amongst the outer instruction runs is ambiguous to
+        // field updaters and may expose its ordinal as visible duplicate text.
+        result.push_str(&format!("<w:r><w:fldChar w:fldCharType=\"begin\" w:dirty=\"true\"/></w:r><w:r><w:instrText xml:space=\"preserve\">{}</w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>{}<w:r><w:fldChar w:fldCharType=\"end\"/></w:r>",xml_escape(&format!(" SEQ {}{reset} ",label.sequence())),run(&numbering.ordinal.to_string())));
+        let offset=if numbering.start==0{" - 1".into()}else{format!(" + {}",numbering.start-1)};
+        result.push_str(&format!("<w:r><w:instrText xml:space=\"preserve\">{offset} \\* {format} </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>{}<w:r><w:fldChar w:fldCharType=\"end\"/></w:r>",run(&crate::cross_references::number_text(&numbering.format,label.number))));
+    }
+    result
+}
+
+fn heading_rules(blocks:&[Block])->Option<crate::cross_references::HeadingNumbering>{
+    blocks.iter().find_map(|block|match block.unstyled(){Block::Heading{numbering:Some(value),..}=>Some(value.clone()),_=>None})
+}
+
+fn numbering_xml(nums: &[(u32, u32, u64)], bullet_num: u32, headings:Option<(u32,&crate::cross_references::HeadingNumbering)>) -> String {
     const BULLETS: [&str; 3] = ["\u{2022}", "\u{25E6}", "\u{25AA}"];
     let mut s = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:numbering xmlns:w=\"{W_NS}\">");
     // abstract 0: bullets
@@ -1395,7 +1656,16 @@ fn numbering_xml(nums: &[(u32, u32, u64)], bullet_num: u32) -> String {
         ));
     }
     s.push_str("</w:abstractNum>");
+    if let Some((_,heading))=headings {
+        s.push_str("<w:abstractNum w:abstractNumId=\"2\"><w:multiLevelType w:val=\"multilevel\"/>");
+        for (level,rule) in heading.rules.iter().enumerate(){
+            let legal=if rule.is_legal{"<w:isLgl/>"}else{""};
+            s.push_str(&format!("<w:lvl w:ilvl=\"{level}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{}\"/><w:lvlRestart w:val=\"{}\"/><w:pStyle w:val=\"Heading{}\"/><w:suff w:val=\"{}\"/><w:lvlText w:val=\"{}\"/>{legal}<w:lvlJc w:val=\"left\"/></w:lvl>",rule.start,xml_escape(&rule.format),rule.restart_after,level+1,xml_escape(&rule.suffix),xml_escape(&rule.text)));
+        }
+        s.push_str("</w:abstractNum>");
+    }
     s.push_str(&format!("<w:num w:numId=\"{bullet_num}\"><w:abstractNumId w:val=\"0\"/></w:num>"));
+    if let Some((id,_))=headings {s.push_str(&format!("<w:num w:numId=\"{id}\"><w:abstractNumId w:val=\"2\"/></w:num>"));}
     for (id, lvl, start) in nums {
         s.push_str(&format!(
             "<w:num w:numId=\"{id}\"><w:abstractNumId w:val=\"1\"/><w:lvlOverride w:ilvl=\"{lvl}\"><w:startOverride w:val=\"{start}\"/></w:lvlOverride></w:num>"
@@ -1406,6 +1676,96 @@ fn numbering_xml(nums: &[(u32, u32, u64)], bullet_num: u32) -> String {
 }
 
 // ------------------------------------------------------------------ package
+
+fn configured_note_kinds(style:&Value,policies:&NotePolicies)->BTreeSet<NoteKind>{
+    let mut kinds=policies.kind_by_label.values().copied().collect::<BTreeSet<_>>();
+    if let Some(configured)=style["footnotes"].get("kinds").and_then(Value::as_object){
+        for kind in NoteKind::ALL{if configured.get(kind.as_str()).is_some_and(|v|v.as_object().is_some_and(|o|!o.is_empty())){kinds.insert(kind);}}
+    }
+    kinds.insert(if policies.position==Some(note_policy::NotePosition::Document){NoteKind::Endnote}else{NoteKind::Footnote});kinds
+}
+fn note_section_properties(style:&Value,overrides:Option<&note_policy::SectionNotePolicies>)->String{
+    let Ok(policies)=note_policy::parse_layer(style)else{return String::new()};
+    let footnote_placement=if configured_note_kinds(style,&policies).contains(&NoteKind::Footnote){policies.policy(NoteKind::Footnote).placement}else{None};
+    let mut properties=String::new();
+    for kind in NoteKind::ALL{
+        let mut value=String::new();
+        if kind==NoteKind::Footnote{if let Some(placement)=footnote_placement{value.push_str(&format!("<w:pos w:val=\"{}\"/>",placement.word_value()));}}
+        if let Some(overrides)=overrides{
+            let numbering=if kind.is_end(){&overrides.endnote_numbering}else{&overrides.footnote_numbering};
+            if numbering.number_format.is_some()||numbering.number_pattern.is_some(){
+                let effective=policies.policy(kind);
+                let format=numbering.number_format.as_deref().or(effective.number_format.as_deref()).unwrap_or(if kind.is_end(){"lowerRoman"}else{"decimal"});
+                // A format-only override deliberately omits w:format, clearing
+                // an inherited pattern. A pattern-only override still needs
+                // the effective native val required by CT_NumFmt.
+                let pattern=numbering.number_pattern.as_ref().map(|pattern|format!(" w:format=\"{}\"",xml_escape(pattern))).unwrap_or_default();
+                value.push_str(&format!("<w:numFmt w:val=\"{format}\"{pattern}/>"));
+            }
+            if let Some(start)=numbering.start{value.push_str(&format!("<w:numStart w:val=\"{start}\"/>"));}
+            if let Some(restart)=numbering.restart{value.push_str(&format!("<w:numRestart w:val=\"{}\"/>",restart.word_value()));}
+        }
+        if !value.is_empty(){let name=kind.as_str();properties.push_str(&format!("<w:{name}Pr>{value}</w:{name}Pr>"));}
+    }
+    properties
+}
+fn note_document_properties(kind:NoteKind,policy:&NotePolicyPatch,notice_id:Option<u32>)->String{
+    let name=kind.as_str();let mut value=String::new();
+    if kind.is_end(){value.push_str(&format!("<w:pos w:val=\"{}\"/>",policy.placement.unwrap_or(note_policy::NotePlacement::DocEnd).word_value()));}
+    let pattern=policy.number_pattern.as_ref().map(|p|format!(" w:format=\"{}\"",xml_escape(p))).unwrap_or_default();
+    value.push_str(&format!("<w:numFmt w:val=\"{}\"{pattern}/>",policy.number_format.as_deref().unwrap_or(if kind.is_end(){"lowerRoman"}else{"decimal"})));
+    if let Some(start)=policy.start{value.push_str(&format!("<w:numStart w:val=\"{start}\"/>"));}
+    if let Some(restart)=policy.restart{value.push_str(&format!("<w:numRestart w:val=\"{}\"/>",restart.word_value()));}
+    value.push_str(&format!("<w:{name} w:id=\"-1\"/><w:{name} w:id=\"0\"/>"));
+    if let Some(id)=notice_id{value.push_str(&format!("<w:{name} w:id=\"{id}\"/>"));}format!("<w:{name}Pr>{value}</w:{name}Pr>")
+}
+
+fn note_story(kind:NoteKind,policy:&NotePolicyPatch,definitions:&[(NoteKind,u32,String)],count:u32)->(String,Option<u32>){
+    let name=kind.as_str();let mut value=format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:{name}s xmlns:w=\"{W_NS}\" xmlns:r=\"{R_NS}\" xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\">");
+    for(id,ty,marker,on)in[(-1,"separator","separator",policy.separator!=Some(NoteSeparator::None)),(0,"continuationSeparator","continuationSeparator",policy.continuation_separator!=Some(NoteSeparator::None))]{
+        value.push_str(&format!("<w:{name} w:type=\"{ty}\" w:id=\"{id}\"><w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr>{}</w:p></w:{name}>",if on{format!("<w:r><w:{marker}/></w:r>")}else{String::new()}));
+    }
+    for(story,id,xml)in definitions{if *story==kind{value.push_str(&format!("<w:{name} w:id=\"{id}\">{xml}</w:{name}>"));}}
+    let notice=policy.continuation_notice.as_deref().filter(|s|!s.is_empty());
+    let notice_id=notice.and_then(|_|count.checked_add(1));
+    if let(Some(notice),Some(id))=(notice,notice_id){
+        value.push_str(&format!("<w:{name} w:type=\"continuationNotice\" w:id=\"{id}\"><w:p><w:pPr><w:pStyle w:val=\"{}Text\"/></w:pPr>{}</w:p></w:{name}>",if kind.is_end(){"Endnote"}else{"Footnote"},run_xml(notice,&Fmt::default())));
+    }
+    value.push_str(&format!("</w:{name}s>"));(value,notice_id)
+}
+
+/// Note flow defaults never replace explicit local paragraph controls. Keeping
+/// paragraphs together still permits a multi-page note to break between them.
+fn note_paragraph_flow(fragment:&str,style:&Value)->Result<String,&'static str>{
+    let policies=note_policy::parse_layer(style).map_err(|_|note_policy::INVALID)?;
+    let kind=if crate::publication_layout::notes_at_end(style){NoteKind::Endnote}else{NoteKind::Footnote};
+    note_paragraph_flow_policy(fragment,&policies.paragraph_policy(kind))
+}
+fn note_paragraph_flow_policy(fragment:&str,policy:&NotePolicyPatch)->Result<String,&'static str>{
+    use crate::math_document::{XmlNode,XmlPart};
+    let Some(long)=policy.long_note else{return Ok(fragment.into())};let keep=long==LongNote::KeepParagraphs;
+    let mut root=crate::math_document::parse_xml(fragment).map_err(|_|"publication_local_style_invalid")?;
+    let control=crate::math_document::parse_xml(&format!("<w:keepLines w:val=\"{}\"/>",keep as u8)).map_err(|_|"publication_local_style_invalid")?
+        .content.into_iter().find(|part|matches!(part,XmlPart::Element(_))).ok_or("publication_local_style_invalid")?;
+    fn walk(node:&mut XmlNode,control:&XmlPart)->Result<(),&'static str>{
+        if node.name=="w:p" {
+            if !node.children().any(|child|child.name=="w:pPr"){
+                let properties=crate::math_document::parse_xml("<w:pPr/>").map_err(|_|"publication_local_style_invalid")?
+                    .content.into_iter().find(|part|matches!(part,XmlPart::Element(_))).ok_or("publication_local_style_invalid")?;
+                node.content.insert(0,properties);
+            }
+            if let Some(XmlPart::Element(properties))=node.content.iter_mut().find(|part|matches!(part,XmlPart::Element(child) if child.name=="w:pPr")){
+                if !properties.children().any(|child|child.name=="w:keepLines"){
+                    let at=properties.content.iter().take_while(|part|matches!(part,XmlPart::Element(child) if matches!(child.name.as_str(),"w:pStyle"|"w:keepNext"))).count();
+                    properties.content.insert(at,control.clone());
+                }
+            }
+        }
+        for part in &mut node.content{if let XmlPart::Element(child)=part{walk(child,control)?;}}
+        Ok(())
+    }
+    walk(&mut root,&control)?;Ok(root.xml())
+}
 
 fn collect_footnote_defs(blocks: &[Block], into: &mut HashMap<String, Vec<Block>>) {
     for b in blocks {
@@ -1491,7 +1851,8 @@ fn publication_section_properties(ctx: &mut Ctx<'_>, parts: &mut Vec<(String, Ve
     let (width, height) = crate::export_styles::page_dimensions(st);
     let orient = if width > height { "landscape" } else { "portrait" };
     let start = section.page_start.map(|n| format!(" w:start=\"{n}\"")).unwrap_or_default();
-    format!(concat!("<w:sectPr>{refs}<w:type w:val=\"{}\"/>",
+    let note_properties=note_section_properties(st,section.note_overrides.as_ref());
+    format!(concat!("<w:sectPr>{refs}{note_properties}<w:type w:val=\"{}\"/>",
         "<w:pgSz w:w=\"{}\" w:h=\"{}\" w:orient=\"{orient}\"/>",
         "<w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\" w:header=\"{}\" w:footer=\"{}\" w:gutter=\"{}\"/>",
         "<w:pgNumType w:fmt=\"{}\"{start}/><w:cols w:num=\"{}\" w:space=\"{}\" w:equalWidth=\"1\"/>{}<w:docGrid w:linePitch=\"360\"/></w:sectPr>"),
@@ -1500,7 +1861,7 @@ fn publication_section_properties(ctx: &mut Ctx<'_>, parts: &mut Vec<(String, Ve
         mm_twips(num(st, &["page","marginBottom"],20.)), mm_twips(num(st, &["page","marginLeft"],18.)),
         mm_twips(layout.header_distance), mm_twips(layout.footer_distance), mm_twips(layout.gutter),
         layout.page_format, layout.columns, mm_twips(layout.column_gap), if layout.hide_first { "<w:titlePg/>" } else { "" },
-        refs=refs, orient=orient, start=start)
+        refs=refs, orient=orient, start=start,note_properties=note_properties)
 }
 
 /// Separate bookmark namespace from user-authored heading/caption identifiers.
@@ -1531,6 +1892,14 @@ pub fn build(doc: &Document, style: &Value, source_name: &str, images: ImageLoad
     }
 }
 pub(crate) fn build_with_lines(doc: &Document, style: &Value, source_name: &str, images: ImageLoader, line_context: crate::publication_typography::LineContext) -> DocxPackage {
+    let resolved_math = match crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
+        .and_then(|plan| plan.render_document(doc)) {
+        Ok(value) => value,
+        Err(error) => return DocxPackage { parts: Vec::new(), warns: vec![error.message()] },
+    };
+    let doc = resolved_math.as_ref();
+    if let Err(code)=crate::math_word_projection::validate_render_document_with_style(doc,"docx",style){return DocxPackage{parts:Vec::new(),warns:vec![code]};}
+    if let Err(error)=note_policy::validate_consumer(note_policy::Consumer::Docx,doc,style){return DocxPackage{parts:Vec::new(),warns:vec![error.code.into()]};}
     if let Err(code) = crate::publication_typography::validate_docx_document(doc, style) {
         return DocxPackage { parts: Vec::new(), warns: vec![code.into()] };
     }
@@ -1553,6 +1922,23 @@ pub(crate) fn build_with_lines(doc: &Document, style: &Value, source_name: &str,
         Err(code) => DocxPackage { parts: Vec::new(), warns: vec![code] },
     }
 }
+fn native_math_paragraph_sources(doc:&Document)->Result<Vec<crate::math_word::NativeParagraphSource>,&'static str>{
+    let mut sources=Vec::new();let mut bytes=0usize;
+    // Match the writer's unwrapped body lane. Nested hosts already have
+    // explicit geometry/preflight rules and cannot acquire unused styles.
+    for block in &doc.blocks {
+        if let Block::OfficeMath{omml,..}=block {
+            let tree=crate::math_document::parse_xml(omml)?;
+            if let Some(source)=crate::math_word::capture_native_paragraph(&tree)? {
+                bytes=bytes.checked_add(source.description_bytes()).ok_or("math_budget")?;
+                if sources.len()>=4096||bytes>16*1024*1024{return Err("math_budget");}
+                sources.push(source);
+            }
+        }
+    }
+    Ok(sources)
+}
+
 fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLoader, line_context: crate::publication_typography::LineContext, front_count: usize) -> DocxPackage {
     let body_baseline_half_points = match crate::publication_typography::baseline::global(style) {
         Ok(value) => value.map(|value| value.docx_half_points()),
@@ -1578,6 +1964,8 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
     } else { None };
     let language=doc.publication_language(style);
     let layout = crate::publication_layout::Layout::from_style(style);
+    let note_policies=match note_policy::parse_layer(style){Ok(value)=>value,Err(error)=>return DocxPackage{parts:Vec::new(),warns:vec![error.code.into()]}};
+    let note_kinds=configured_note_kinds(style,&note_policies);
     let (page_w, page_h) = crate::export_styles::page_dimensions(style);
     let (mt, mr, mb, ml) = (
         num(style, &["page", "marginTop"], 20.0),
@@ -1601,7 +1989,19 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
     }
     let mut labels = HashMap::new(); collect_labels(&doc.blocks, &mut labels);
 
+    let heading_definition=heading_rules(&doc.blocks);
+    let native_sources=match native_math_paragraph_sources(doc){
+        Ok(sources)=>sources,Err(code)=>return DocxPackage{parts:Vec::new(),warns:vec![code.into()]},
+    };
+    let math_paragraph_registry=match crate::math_word::NativeParagraphRegistry::prepare(
+        &styles_xml(style,language.as_deref(),body_line,line_context,heading_definition.is_some(),true),&native_sources
+    ){
+        Ok(registry)=>registry,Err(code)=>return DocxPackage{parts:Vec::new(),warns:vec![code.into()]},
+    };
     let mut ctx = Ctx {
+        author_token:uuid::Uuid::new_v4().simple().to_string(),
+        author_block_base:None,
+        author_local_base:None,
         line_context,
         body_tracking_twips,
         body_baseline_half_points,
@@ -1614,8 +2014,9 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         media: Vec::new(),
         image_cache: HashMap::new(),
         bullet_num: 1,
+        heading_num:heading_definition.as_ref().map(|_|2),
         nums: Vec::new(),
-        next_num: 2,
+        next_num: if heading_definition.is_some(){3}else{2},
         bookmark_id: 0,
         labels,
         publication_section_ids: sectioned.as_ref().map(|sections| sections.iter().filter(|section| section.explicit).map(|section| section.id.clone()).collect()).unwrap_or_default(),
@@ -1623,23 +2024,27 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         footnote_defs,
         footnotes: Vec::new(),
         footnote_ids: HashMap::new(),
-        footnote_rels: HashSet::new(),
+        footnote_rels: HashMap::new(),
+        note_policies,
+        note_counts:[0,0],
         fn_stack: Vec::new(),
         warns: Vec::new(),
-        math_settings: None,
-        math_defaults_signature: None,
+        math_defaults: Default::default(),
+        math_paragraph_registry,
+        has_math_paragraph_style:false,
+        math_failure: None,
         text_w_emu,
         text_h_emu,
         bibliography_control_id: 0,
         bibliography_failure: None,
+        citation_bindings: Default::default(),
+        citation_depth: 0,
     };
     // Fixed relationships first so their ids are stable.
     ctx.rel("styles", "styles.xml".into(), false);
     ctx.rel("numbering", "numbering.xml".into(), false);
     ctx.rel("settings", "settings.xml".into(), false);
-    let note_kind=if crate::publication_layout::notes_at_end(style){"endnote"}else{"footnote"};
-    let (note_part,note_rels_part,note_content_type)=if note_kind=="endnote"{("word/endnotes.xml","word/_rels/endnotes.xml.rels","endnotes+xml")}else{("word/footnotes.xml","word/_rels/footnotes.xml.rels","footnotes+xml")};
-    ctx.rel(if note_kind=="endnote"{"endnotes"}else{"footnotes"}, format!("{note_kind}s.xml"), false);
+    for kind in &note_kinds{ctx.rel(if kind.is_end(){"endnotes"}else{"footnotes"},format!("{}s.xml",kind.as_str()),false);}
 
     let title = doc_title(doc, style, source_name);
 
@@ -1696,6 +2101,9 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         }
         ctx.style = style;
     } else { ctx.blocks(&doc.blocks, &Scope::default()); }
+    if let Some(error) = ctx.math_failure.take() {
+        return DocxPackage { parts: Vec::new(), warns: vec![error] };
+    }
     if let Some(failure) = ctx.bibliography_failure.take() {
         // No package reaches the atomic exporter on a failed display layout.
         // Keep the existing localized code first and a diagnostic path separate.
@@ -1748,8 +2156,9 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
 
     let (w_tw, h_tw) = (mm_twips(page_w), mm_twips(page_h));
     let orient = if page_w > page_h { " w:orient=\"landscape\"" } else { "" };
+    let note_properties=note_section_properties(style,None);
     let section=|columns:u32,first:bool,start:bool,next:bool|format!(
-        "<w:sectPr>{sect_refs}{}<w:pgSz w:w=\"{w_tw}\" w:h=\"{h_tw}\"{orient}/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\" w:header=\"{}\" w:footer=\"{}\" w:gutter=\"{}\"/><w:pgNumType w:fmt=\"{}\"{}/><w:cols w:num=\"{columns}\" w:space=\"{}\"/>{}<w:docGrid w:linePitch=\"360\"/></w:sectPr>",
+        "<w:sectPr>{sect_refs}{note_properties}{}<w:pgSz w:w=\"{w_tw}\" w:h=\"{h_tw}\"{orient}/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\" w:header=\"{}\" w:footer=\"{}\" w:gutter=\"{}\"/><w:pgNumType w:fmt=\"{}\"{}/><w:cols w:num=\"{columns}\" w:space=\"{}\"/>{}<w:docGrid w:linePitch=\"360\"/></w:sectPr>",
         if next{"<w:type w:val=\"nextPage\"/>"}else{""},mm_twips(mt),mm_twips(mr),mm_twips(mb),mm_twips(ml),
         mm_twips(layout.header_distance),mm_twips(layout.footer_distance),mm_twips(layout.gutter),layout.page_format,
         if start{format!(" w:start=\"{}\"",layout.page_start)}else{String::new()},mm_twips(layout.column_gap),if first{"<w:titlePg/>"}else{""});
@@ -1763,6 +2172,10 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         }
         properties.last().cloned().expect("resolved final section")
     } else { section(layout.columns,layout.hide_first&&!front_section,!front_section,false) };
+    // The source section offsets above still refer to the intermediate bytes.
+    // Remove private run-axis markers only after every offset is consumed.
+    match crate::docx_local_style::strip_author_axes(&ctx.body,&ctx.author_token){Ok(body)=>ctx.body=body,Err(code)=>return DocxPackage{parts:Vec::new(),warns:vec![code.into()]}}
+    for(_,_,xml)in &mut ctx.footnotes{match crate::docx_local_style::strip_author_axes(xml,&ctx.author_token){Ok(clean)=>*xml=clean,Err(code)=>return DocxPackage{parts:Vec::new(),warns:vec![code.into()]}}}
     let document = format!(
         concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
@@ -1779,38 +2192,31 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         sect = sect
     );
 
-    // Native note story; separators and relationships belong to this part.
-    let mut fx = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:{note_kind}s xmlns:w=\"{W_NS}\" xmlns:r=\"{R_NS}\" xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\">\
-<w:{note_kind} w:type=\"separator\" w:id=\"-1\"><w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr><w:r><w:separator/></w:r></w:p></w:{note_kind}>\
-<w:{note_kind} w:type=\"continuationSeparator\" w:id=\"0\"><w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:{note_kind}>"
-    );
-    for (id, xml) in &ctx.footnotes {
-        fx.push_str(&format!("<w:{note_kind} w:id=\"{id}\">{xml}</w:{note_kind}>"));
+    let mut note_parts=Vec::new();let mut note_settings=String::new();
+    for kind in &note_kinds{
+        let policy=ctx.note_policies.policy(*kind);let(story,notice)=note_story(*kind,&policy,&ctx.footnotes,ctx.note_counts[usize::from(kind.is_end())]);
+        note_parts.push((format!("word/{}s.xml",kind.as_str()),story.into_bytes()));note_settings.push_str(&note_document_properties(*kind,&policy,notice));
     }
-    fx.push_str(&format!("</w:{note_kind}s>"));
-
     let settings = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:settings xmlns:w=\"{W_NS}\">{}<w:defaultTabStop w:val=\"420\"/><w:characterSpacingControl w:val=\"compressPunctuation\"/>\
-<w:updateFields w:val=\"true\"/><w:{note_kind}Pr>{}<w:numFmt w:val=\"{}\"/>{}<w:{note_kind} w:id=\"-1\"/><w:{note_kind} w:id=\"0\"/></w:{note_kind}Pr>\
+<w:updateFields w:val=\"true\"/>{note_settings}\
 <w:compat><w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/></w:compat>{}</w:settings>",
-        format!("{}{}",if layout.mirror {"<w:mirrorMargins/>"}else{""},if layout.different_odd_even{"<w:evenAndOddHeaders/>"}else{""}),if note_kind=="endnote"{"<w:pos w:val=\"docEnd\"/>"}else{""},layout.note_format,
-        if style["footnotes"].get("start").is_some(){format!("<w:numStart w:val=\"{}\"/>",layout.note_start)}else{String::new()},
-        ctx.math_settings.as_ref().map(|n| n.xml()).unwrap_or_default()
+        format!("{}{}",if layout.mirror {"<w:mirrorMargins/>"}else{""},if layout.different_odd_even{"<w:evenAndOddHeaders/>"}else{""}),
+        ctx.math_defaults.settings().map(|n| n.xml()).unwrap_or_default()
     );
 
     // Relationships.
     let mut rels = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"{REL_NS}\">");
-    let mut note_rels = rels.clone();
+    let mut note_rels=note_kinds.iter().map(|kind|(*kind,rels.clone())).collect::<HashMap<_,_>>();
     for r in &ctx.rels {
         let ty = format!("http://schemas.openxmlformats.org/officeDocument/2006/relationships/{}", r.kind);
         let mode = if r.external { " TargetMode=\"External\"" } else { "" };
         let xml = format!("<Relationship Id=\"{}\" Type=\"{ty}\" Target=\"{}\"{mode}/>", r.id, r.target);
         rels.push_str(&xml);
-        if ctx.footnote_rels.contains(&r.id) { note_rels.push_str(&xml); }
+        for kind in &note_kinds{if ctx.footnote_rels.get(kind).is_some_and(|set|set.contains(&r.id)){note_rels.get_mut(kind).unwrap().push_str(&xml);}}
     }
     rels.push_str("</Relationships>");
-    note_rels.push_str("</Relationships>");
+    for value in note_rels.values_mut(){value.push_str("</Relationships>");}
 
     let mut ct = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
     ct.push_str("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>");
@@ -1823,10 +2229,10 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         ("/word/styles.xml", "styles+xml"),
         ("/word/numbering.xml", "numbering+xml"),
         ("/word/settings.xml", "settings+xml"),
-        (if note_kind=="endnote"{"/word/endnotes.xml"}else{"/word/footnotes.xml"}, note_content_type),
     ] {
         ct.push_str(&format!("<Override PartName=\"{part}\" ContentType=\"{wml}.{kind}\"/>"));
     }
+    for kind in &note_kinds{ct.push_str(&format!("<Override PartName=\"/word/{}s.xml\" ContentType=\"{wml}.{}s+xml\"/>",kind.as_str(),kind.as_str()));}
     for (part,_) in &parts {
         if part.starts_with("word/header")||part.starts_with("word/footer") {
             let kind=if part.starts_with("word/header"){"header"}else{"footer"};
@@ -1868,25 +2274,34 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
     if let Some(metadata)=&publication{core=crate::publication_metadata_formats::core_properties(metadata,&stamp);}
     let app = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"><Application>ReadMD</Application></Properties>";
 
+    let mut native_styles=styles_xml(style,language.as_deref(),body_line,line_context,heading_definition.is_some(),ctx.has_math_paragraph_style);
+    let definitions=ctx.math_paragraph_registry.style_xml();
+    if !definitions.is_empty(){
+        let Some(prefix)=native_styles.strip_suffix("</w:styles>")else{
+            return DocxPackage{parts:Vec::new(),warns:vec!["math_invalid_source".into()]};
+        };
+        native_styles=format!("{prefix}{definitions}</w:styles>");
+    }
     let mut all: Vec<(String, Vec<u8>)> = vec![
         ("[Content_Types].xml".into(), ct.into_bytes()),
         ("_rels/.rels".into(), root_rels.into_bytes()),
         ("docProps/core.xml".into(), core.into_bytes()),
         ("docProps/app.xml".into(), app.as_bytes().to_vec()),
         ("word/document.xml".into(), document.into_bytes()),
-        ("word/styles.xml".into(), styles_xml(style,language.as_deref(),body_line,line_context).into_bytes()),
-        ("word/numbering.xml".into(), numbering_xml(&ctx.nums, ctx.bullet_num).into_bytes()),
+        ("word/styles.xml".into(), native_styles.into_bytes()),
+        ("word/numbering.xml".into(), numbering_xml(&ctx.nums, ctx.bullet_num,ctx.heading_num.zip(heading_definition.as_ref())).into_bytes()),
         ("word/settings.xml".into(), settings.into_bytes()),
-        (note_part.into(), fx.into_bytes()),
         ("word/_rels/document.xml.rels".into(), rels.into_bytes()),
     ];
+    all.extend(note_parts);
     if let Some(metadata)=&publication{all.push(("docProps/custom.xml".into(),crate::publication_metadata_formats::custom_properties(metadata).into_bytes()));}
     all.extend(parts);
-    if !ctx.footnote_rels.is_empty() {
-        all.push((note_rels_part.into(),note_rels.into_bytes()));
-    }
+    for kind in &note_kinds{if ctx.footnote_rels.get(kind).is_some_and(|set|!set.is_empty()){all.push((format!("word/_rels/{}s.xml.rels",kind.as_str()),note_rels.remove(kind).unwrap().into_bytes()));}}
     for (name, bytes) in ctx.media {
         all.push((format!("word/media/{name}"), bytes));
+    }
+    if let Err(code) = ctx.citation_bindings.attach(&mut all) {
+        return DocxPackage {parts:Vec::new(),warns:vec![code]};
     }
     DocxPackage { parts: all, warns: ctx.warns }
 }
@@ -1894,6 +2309,14 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
 #[cfg(test)]
 #[path = "docx_bibliography_layout_tests.rs"]
 mod bibliography_layout_tests;
+
+#[cfg(test)]
+#[path = "docx_notes_layout_tests.rs"]
+mod notes_layout_tests;
+
+#[cfg(test)]
+#[path = "docx_note_policies_tests.rs"]
+mod note_policies_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1985,6 +2408,10 @@ mod tests {
         fn descendant<'a>(node: &'a crate::math_document::XmlNode, name: &str) -> Option<&'a crate::math_document::XmlNode> {
             if node.name == name { Some(node) } else { node.children().find_map(|child| descendant(child, name)) }
         }
+        fn entry_paragraphs<'a>(node: &'a crate::math_document::XmlNode, entries: &mut Vec<&'a crate::math_document::XmlNode>) {
+            if node.name=="w:p" && node.text().ends_with("body") { entries.push(node); }
+            else { for child in node.children() { entry_paragraphs(child,entries); } }
+        }
         // Independently read DejaVu Sans hmtx: UPEM=2048, brackets=799,
         // digits=1303. This checks the package column against those advances.
         for size in [9_f64,17.] {
@@ -2001,7 +2428,8 @@ mod tests {
                 let xml=part(&package,"word/document.xml");
                 let root=crate::math_document::parse_xml(xml).unwrap();
                 let body=descendant(&root,"w:body").unwrap();
-                let entries=body.children().filter(|node|node.name=="w:p"&&node.text().ends_with("body")).collect::<Vec<_>>();
+                let mut entries=Vec::new();
+                entry_paragraphs(body,&mut entries);
                 assert_eq!(entries.len(),3);
                 let tab=(((2.*799.+3.*1303.)/2048.+0.75)*size*20.).ceil().max(360.) as i64;
                 assert!(tab as f64 >= ((2.*799.+3.*1303.)/2048.+0.75)*size*20.);
@@ -2141,7 +2569,7 @@ mod tests {
     }
 
     #[test]
-    fn math_document_defaults_merge_limits_without_putting_settings_in_paragraphs() {
+    fn math_document_defaults_merge_limits_and_reject_incompatible_fonts_before_parts() {
         let expression = |font: &str, location: &str| format!("row(office.mathPr({font}office.naryLim(val: {location})), office.oMath(sum(x, from: 0, to: 1)))");
         let block = |s: String| format!("```readmd-math v1\n{s}\n```\n\n");
         for with_conflict in [false, true] {
@@ -2149,7 +2577,15 @@ mod tests {
             let markdown = block(expression(font, "undOvr")) + &block(expression("", "subSup")) + ":math[sum(x, from: 0, to: 1)]";
             let doc = crate::md_ast::parse(&markdown);
             let package = build(&doc, &serde_json::json!({}), "merged.md", &|_|None);
-            assert_eq!(package.warns.contains(&"math_document_defaults_conflict".into()), with_conflict);
+            if with_conflict {
+                assert!(package.parts.is_empty());
+                assert_eq!(package.warns.len(), 1);
+                let details: Value = serde_json::from_str(package.warns[0].strip_prefix("math_document_defaults_conflict: ").unwrap()).unwrap();
+                assert_eq!(details, serde_json::json!({"property":"mathFont","firstFormula":1,"formula":2}));
+                continue;
+            }
+            assert!(!package.parts.is_empty(), "{:?}", package.warns);
+            assert!(!package.warns.iter().any(|warning| warning.starts_with("math_document_defaults_conflict")));
             let body = part(&package, "word/document.xml");
             assert!(!body.contains("mathPr"));
             assert_eq!(body.matches("m:val=\"undOvr\"").count(), 1);

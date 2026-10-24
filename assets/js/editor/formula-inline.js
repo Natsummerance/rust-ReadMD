@@ -10,6 +10,15 @@ window.ReadMDInlineMath = (() => {
     return persistence;
   }
   const tr = (key, args) => i18n.t(key, args);
+  const contextDisplaySource=value=>String(value).replace(/\r\n?/g,'\n');
+  const contextInputChanged=d=>d.input.value!==(d.contextInputBaseline??contextDisplaySource(d.tex));
+  function contextAuthorSource(d,value){
+    const o=d.range.contextSite.occurrence,body=d.doc.slice(o.body_from,o.body_to);
+    // Only a real edit chooses an EOL convention. A no-op keeps every original
+    // byte, including mixed EOLs and whitespace outside the displayed source.
+    const eol=/\r\n|\r|\n/.exec(body)?.[0]||/\r\n|\r|\n/.exec(d.doc)?.[0]||'\n';
+    return contextDisplaySource(value).replace(/\n/g,eol);
+  }
   function spanInput(d,s){
     if(s.kind==='text')return s.raw;
     if(!d.rich)return d.tex.slice(s.from,s.to);
@@ -24,7 +33,7 @@ window.ReadMDInlineMath = (() => {
     if(!d||d.closed||d.applied)return persistence;
     clearTimeout(d.persistTimer);
     const s=d.spans[d.selected],input=d.input.value;
-    const changed=d.tex!==d.range.tex||d.richDirty||(s&&input!==spanInput(d,s));
+    const changed=d.tex!==d.range.tex||d.richDirty||(s&&input!==spanInput(d,s))||(d.contextOrdinary&&contextInputChanged(d));
     if(!changed)return persistence;
     const payload={schema:1,from:d.range.from,to:d.range.to,original:d.doc.slice(d.range.from,d.range.to),dialect:d.range.dialect||'latex',
       tex:d.tex,model_source:d.rich?.source||'',model_dialect:d.rich?.dialect||'',model_metadata:d.rich?.extensionMetadata||'',model_identity:d.rich?.identity||'',rich_dirty:!!d.richDirty,
@@ -67,12 +76,40 @@ window.ReadMDInlineMath = (() => {
     const r = await apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
     const data = await r.json();
     if (!r.ok || !data.ok) throw Error(data.error_code || 'math_invalid_source');
+    if(body.document_context){
+      const c=data.document_context;
+      if(!c||Object.keys(c).length!==5||!['id','revision','fingerprint'].every(k=>typeof c[k]==='string'&&c[k])||!['from','to'].every(k=>Number.isSafeInteger(c[k])&&c[k]>=0)||c.from>=c.to)throw Error('transaction_conflict');
+    }
     const doc=data.document;
-    if(doc){doc.preview=data.preview;doc.vectorPreview=data.vector_preview;doc.projection=data.latex;doc.projections=data.projections;doc.visualDsl=data.visual_dsl;doc.fontWarnings=data.font_warnings;doc.layoutDiagnostics=data.layout_diagnostics;doc.metadataStatus=data.metadata_status;doc.identity=data.identity;doc.extensionMetadata=data.metadata;doc.extensionPreservation=data.extension_preservation;}
+    if(doc){doc.preview=data.preview;doc.previewSupported=data.preview_supported;doc.mathmlWarns=data.mathml_warns;doc.vectorPreview=data.vector_preview;doc.projection=data.latex;doc.projections=data.projections;doc.visualDsl=data.visual_dsl;doc.fontWarnings=data.font_warnings;doc.layoutDiagnostics=data.layout_diagnostics;doc.metadataStatus=data.metadata_status;doc.identity=data.identity;doc.extensionMetadata=data.metadata;doc.extensionPreservation=data.extension_preservation;doc.documentContext=data.document_context;}
     return doc || data;
+  }
+  async function contextExpressionModel(d,text,signal,live){
+    const site=d.range.contextSite,original=site?.occurrence,inventory=site?.record.context.occurrences;
+    if(!d.contextOrdinary||!original||site.record.raw!==d.doc||!original.patchable||original.dialect!=='latex'||original.metadata||!text.trim())throw Error('transaction_conflict');
+    const candidate=d.doc.slice(0,original.body_from)+text+d.doc.slice(original.body_to);
+    const candidateRevision=await revision(candidate);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    const registered=await request('/api/math/context',{content:candidate,expected_revision:candidateRevision},signal);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    const context=registered.context,delta=text.length-(original.body_to-original.body_from);
+    if(!context||context.revision!==candidateRevision||typeof context.id!=='string'||typeof context.fingerprint!=='string'||!Array.isArray(context.occurrences)||context.occurrences.length!==inventory.length)throw Error('transaction_conflict');
+    for(const [index,before]of inventory.entries()){
+      const after=context.occurrences[index],selected=index===original.ordinal,shift=index>original.ordinal?delta:0;
+      if(!after||after.ordinal!==index||after.dialect!==before.dialect||after.display!==before.display||after.metadata!==before.metadata||after.patchable!==before.patchable
+        ||after.from!==before.from+shift||after.to!==before.to+(selected?delta:shift)||after.body_from!==before.body_from+shift||after.body_to!==(selected?before.body_from+text.length:before.body_to+shift)
+        ||typeof after.source!=='string'||!selected&&(after.source!==before.source||after.source_revision!==before.source_revision))throw Error('transaction_conflict');
+    }
+    const occurrence=context.occurrences[original.ordinal],document_context={id:context.id,revision:context.revision,fingerprint:context.fingerprint,from:occurrence.from,to:occurrence.to};
+    // Markdown decides the semantic source (including its newline rules).
+    // The registered full-source revision and exact body span prove its owner.
+    const sourceRevision=await revision(occurrence.source);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    if(occurrence.source_revision!==sourceRevision)throw Error('transaction_conflict');
+    const model=await request('/api/math/parse',{source:occurrence.source,dialect:'latex',display:original.display,document_context},signal);if(!live())throw new DOMException('Superseded formula draft','AbortError');
+    if(model.source!==occurrence.source||model.dialect!=='latex'||model.revision!==sourceRevision||Object.keys(document_context).some(k=>model.documentContext?.[k]!==document_context[k]))throw Error('transaction_conflict');
+    return model;
   }
   function locate(container) {
     const pane = document.getElementById('preview-pane');
+    if(container.closest('.readmd-model-math'))return cmView?window.ReadMDMathContext?.locate(container,cmView.state.doc.toString()):null;
     const dsl=container.closest('.readmd-dsl-math');
     if(dsl&&cmView){
       const index=Array.from(pane.querySelectorAll('.readmd-dsl-math:not([data-readmd-unsupported])')).indexOf(dsl);
@@ -184,6 +221,7 @@ window.ReadMDInlineMath = (() => {
   }
   async function richPatch(d,patch){
     if(!current(d)||!d.rich)return;
+    if(d.contextOrdinary)throw Error('math_unsupported_extension');
     if(d.patching)throw Error('math_busy');
     d.patching=true;
     const base=d.rich;
@@ -191,9 +229,10 @@ window.ReadMDInlineMath = (() => {
     d.host.querySelectorAll('.formula-properties input,.formula-properties select,.formula-properties button').forEach(el=>el.disabled=true);
     const before=snapshot(d);
     try{
-      const result=await request('/api/math/patch',{source:d.rich.source,dialect:d.rich.dialect,expected_revision:d.rich.revision,metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,display:d.range.mode==='block',patch});
+      if(d.range.contextSite&&!d.rich.documentContext)throw Error('transaction_conflict');
+      const result=await request('/api/math/patch',{source:d.rich.source,dialect:d.rich.dialect,expected_revision:d.rich.revision,metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,display:d.range.mode==='block',document_context:d.rich.documentContext,patch});
       if(!current(d)||d.rich!==base)return;
-      d.undo.push(before);d.redo.length=0;d.rich=result;d.richDirty=true;d.tex=d.range.dialect==='dsl'?result.source:result.projection;
+      d.undo.push(before);d.redo.length=0;d.rich=result;d.richDirty=true;d.tex=d.range.dialect==='dsl'||d.contextOrdinary?result.source:result.projection;
       await render(d,d.selected??0);
     }finally{
       d.patching=false;
@@ -201,11 +240,48 @@ window.ReadMDInlineMath = (() => {
       scheduleDraft(d);
     }
   }
+  async function openSource(d){
+    if(!current(d)||d.sourceOpening)return;
+    d.sourceOpening=true;
+    try{
+      // The existing studio does not edit opaque carriers. Retain this draft
+      // rather than hand it a partial source that could discard extensions.
+      const base=d.rich;if(!base||base.extensionMetadata)throw Error('math_unsupported_extension');
+      if(d.range.contextSite)throw Error('math_unsupported_extension');
+      let source=base.source;
+      if(base.dialect!=='dsl'){
+        const result=await request('/api/math/serialize',{source:base.source,dialect:base.dialect,target:'dsl',display:d.range.mode==='block',id:base.identity||d.identity,document_context:base.documentContext});
+        if(result.metadata)throw Error('math_unsupported_extension');source=result.output;
+      }
+      if(!current(d)||d.rich!==base)return;
+      if(!await persist(d))return;
+      if(!current(d)||d.rich!==base)return;
+      const initial={source,dialect:'dsl',view:d.view,tab:d.tab,doc:d.doc,from:d.range.from,to:d.range.to,original:d.doc.slice(d.range.from,d.range.to)};
+      cancel(false);await ReadMDFormula.open(d.range.mode,d.range,initial);
+    }catch(error){if(current(d))d.message.textContent=apiMessage({error_code:error.message},'formula.invalid');}
+    finally{d.sourceOpening=false;}
+  }
   async function renderRich(d,serial,selectAfter){
-    const node=await renderMathDocument({preview:d.rich.preview,vector_preview:d.rich.vectorPreview,font_warnings:d.rich.fontWarnings,layout_diagnostics:d.rich.layoutDiagnostics,extension_preservation:d.rich.extensionPreservation,metadata_status:d.rich.metadataStatus},d.range.mode==='block');
-    if(!current(d)||serial!==epoch)return;
+    const base=d.rich;
+    const node=await renderMathDocument({preview:d.rich.preview,preview_supported:d.rich.previewSupported,mathml_warns:d.rich.mathmlWarns,document:d.rich,vector_preview:d.rich.vectorPreview,font_warnings:d.rich.fontWarnings,layout_diagnostics:d.rich.layoutDiagnostics,extension_preservation:d.rich.extensionPreservation,metadata_status:d.rich.metadataStatus},d.range.mode==='block');
+    if(!current(d)||serial!==epoch||base!==d.rich)return;
     if(node.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('invalid');
-    d.canvas.replaceChildren(node);const svg=node.querySelector('svg');if(svg){svg.removeAttribute('aria-hidden');svg.setAttribute('role','group');svg.setAttribute('aria-label',tr('formula.visualPreview'));}
+    if(d.contextOrdinary){
+      d.canvas.replaceChildren(node);d.spans=[];d.selected=null;d.input.hidden=false;d.input.disabled=false;d.input.value=d.tex;d.contextInputBaseline=d.input.value;d.input.setAttribute('aria-label',tr('formula.source'));
+      d.valid=true;d.apply.disabled=false;return;
+    }
+    d.canvas.replaceChildren(node);d.input.hidden=d.rich.previewSupported===false;
+    if(d.rich.previewSupported===false){
+      d.spans=[];d.selected=null;d.input.value='';d.input.disabled=true;
+      d.message.textContent=apiMessage({error_code:'math_unsupported_extension'},'formula.invalid');
+      if(!d.rich.extensionMetadata){
+        let source=node.querySelector('[data-readmd-math-source-entry]');
+        if(!source){source=document.createElement('button');source.type='button';source.dataset.readmdMathSourceEntry='true';source.textContent=tr('formula.source');node.append(source);}
+        source.removeAttribute('aria-expanded');source.setAttribute('aria-haspopup','dialog');source.onclick=()=>openSource(d);
+      }
+      d.valid=true;d.apply.disabled=false;return;
+    }
+    const svg=node.querySelector('svg');if(svg){svg.removeAttribute('aria-hidden');svg.setAttribute('role','group');svg.setAttribute('aria-label',tr('formula.visualPreview'));}
     node.querySelectorAll('mjx-assistive-mml,.readmd-math-accessible').forEach(el=>el.setAttribute('aria-hidden','true'));
     // Source regions share SVG coordinates, but their DOM hierarchy must
     // reflect containment. A numerator's characters are its descendants, not
@@ -267,6 +343,7 @@ window.ReadMDInlineMath = (() => {
       const model = await request('/api/math/parse', { source: d.tex, dialect: 'latex', display: d.range.mode === 'block' }, d.abort.signal);
       if (!current(d) || serial !== epoch) return;
       d.model = model;
+      if(model.previewSupported===false){d.rich=model;await renderRich(d,serial,selectAfter);return;}
       const slots = model.nodes.flatMap(n => n.slots.filter(s => s.role !== 'name').map(s => ({ ...s, node: n.id, tex: d.tex.slice(s.from, s.to) })));
       const leaves = ReadMDFormula.tokens(d.tex).map(s => ({ ...s, role: null }));
       // Exact coincident spans prefer the structural slot. Crossing annotations
@@ -299,7 +376,9 @@ window.ReadMDInlineMath = (() => {
     } catch (e) { if (current(d) && serial === epoch && e.name !== 'AbortError') error(d,'formula.invalid'); }
   }
   async function replace(next = false) {
-    const d = draft; if (!d || d.composing || d.selected === null) return;
+    const d = draft; if (!d || d.composing) return;
+    if(d.contextOrdinary){d.pending=replaceContextExpression(d);await d.pending;return;}
+    if(d.selected===null)return;
     if (d.replacing || d.input.disabled) {
       try{await(d.replacing||d.pending);}catch(_){if(current(d))error(d,'formula.invalid');}
       return;
@@ -365,9 +444,24 @@ window.ReadMDInlineMath = (() => {
       }
     } else if (next) select((index+1)%d.spans.length);
   }
+  async function replaceContextExpression(d){
+    if(!contextInputChanged(d)){await render(d);return;}
+    const displayed=d.input.value,text=contextAuthorSource(d,displayed),base=d.rich,serial=++epoch;
+    d.abort?.abort();d.abort=new AbortController();d.valid=false;d.apply.disabled=true;d.input.disabled=false;
+    const live=()=>current(d)&&epoch===serial&&d.rich===base&&d.input.value===displayed;
+    try{
+      const model=await contextExpressionModel(d,text,d.abort.signal,live);if(!live())return;
+      const node=await renderMathDocument({preview:model.preview,preview_supported:model.previewSupported,mathml_warns:model.mathmlWarns,document:model,vector_preview:model.vectorPreview,font_warnings:model.fontWarnings,layout_diagnostics:model.layoutDiagnostics,extension_preservation:model.extensionPreservation,metadata_status:model.metadataStatus},d.range.mode==='block');
+      if(!live())return;if(node.querySelector('[data-mml-node="merror"],[data-mjx-error]'))throw Error('math_invalid_source');
+      if(text!==d.tex){d.undo.push(snapshot(d));d.redo.length=0;d.richDirty=true;}
+      d.rich=model;d.tex=text;d.contextInputBaseline=displayed;d.canvas.replaceChildren(node);d.spans=[];d.selected=null;d.message.textContent='';d.valid=true;d.apply.disabled=false;
+    }catch(e){if(live()&&e.name!=='AbortError'){d.message.textContent=apiMessage({error_code:e.message},'formula.invalid');d.valid=false;d.apply.disabled=true;d.input.disabled=false;}}
+    finally{if(current(d)&&epoch===serial)scheduleDraft(d);}
+  }
   async function history(redo) {
     const d = draft; if (!d) return;
     if(d.patching||d.committing)return;
+    if(d.contextOrdinary){d.abort?.abort();epoch++;}
     const source = redo ? d.redo : d.undo, target = redo ? d.undo : d.redo;
     if (!source.length) return;
     target.push(snapshot(d));const previous=source.pop();d.tex=previous.tex;d.rich=previous.rich;d.richDirty=previous.richDirty;await render(d,0);await d.properties?.refresh();
@@ -386,7 +480,10 @@ window.ReadMDInlineMath = (() => {
     await replace();
     if (!current(d) || !d.valid || d.composing) return false;
     let insert = d.range.open + d.tex + d.range.close,to=d.range.to;
-    if(d.range.dialect==='dsl'){
+    if(d.contextOrdinary){
+      if(d.rich.dialect!=='latex'||!d.rich.documentContext){error(d,'formula.stale');return false;}
+      insert=d.richDirty?d.range.open+d.tex+d.range.close:d.doc.slice(d.range.from,d.range.to);
+    }else if(d.range.dialect==='dsl'){
       insert=ReadMDFormula.write(d.range,d.rich.source);
       if(d.rich.extensionMetadata){
         // Replace this occurrence's body and carrier in one editor change.
@@ -398,7 +495,7 @@ window.ReadMDInlineMath = (() => {
       d.apply.disabled=true;d.input.disabled=true;
       d.host.querySelectorAll('.formula-properties input,.formula-properties select,.formula-properties button').forEach(el=>el.disabled=true);
       try{
-        const body={source:d.rich.source,dialect:d.rich.dialect,display:d.range.mode==='block',metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity};
+        const body={source:d.rich.source,dialect:d.rich.dialect,display:d.range.mode==='block',metadata:d.rich.extensionMetadata,id:d.rich.identity||d.identity,document_context:d.rich.documentContext};
         try{
           const result=await request('/api/math/serialize',{...body,target:'dsl'});
           if(!current(d))return false;
@@ -431,23 +528,27 @@ window.ReadMDInlineMath = (() => {
     return true;
   }
   async function open(container, recovered = null, character = null) {
-    if(!container.closest('.readmd-dsl-math'))container=container.closest('mjx-container')||container;
-    if (!state.editing || !cmView || !window.MathJax?.tex2svgPromise) return;
+    const model=container.closest('.readmd-model-math');
+    if(model)container=model;
+    else if(!container.closest('.readmd-dsl-math'))container=container.closest('mjx-container')||container;
+    if (!state.editing || !cmView || !window.MathJax?.tex2svgPromise&&container.dataset.readmdPreviewSupported!=='false') return;
     if (draft && !await leave()) return;
     if (!container.isConnected) return;
     const range = locate(container); if (!range) return;
     cancel(false);
+    const contextOrdinary=!!range.contextSite&&range.dialect==='latex'&&!range.contextSite.occurrence.metadata;
     const host = document.createElement(range.mode === 'block' ? 'div' : 'span'); host.className = 'formula-inline'; host.contentEditable = 'false'; host.setAttribute('role','group'); host.setAttribute('aria-label',tr('formula.visualPreview'));
     const canvas = document.createElement('span'); canvas.className='formula-inline-canvas';
     const controls = document.createElement('span'); controls.className='formula-inline-controls';
-    const input = document.createElement('input'); input.type='text'; input.autocomplete='off'; input.spellcheck=false; input.className='formula-inline-input'; input.disabled=true;
+    const input = document.createElement(contextOrdinary?'textarea':'input');if(contextOrdinary){input.rows=3;input.wrap='off';}else input.type='text';input.autocomplete='off'; input.spellcheck=false; input.className='formula-inline-input'; input.disabled=true;
     const apply = document.createElement('button'); apply.type='button'; apply.textContent=tr('formula.apply'); apply.disabled=true;
     const close = document.createElement('button'); close.type='button'; close.textContent=tr('common.cancel');
     const message = document.createElement('span'); message.className='formula-inline-message'; message.setAttribute('role','status');
     controls.append(input,apply,close); host.append(canvas,controls,message);
     const doc=cmView.state.doc.toString(),metadata=/^\s*(<!--readmd:math:v(?:1:[A-Za-z0-9+/=]+|2:[A-Za-z0-9_-]+:[A-Za-z0-9+/=]+)-->)/.exec(doc.slice(range.to));
     const tabRef=getActiveTab();
-    const d = { range, original:container,host,canvas,input,apply,message,view:cmView,tab:tabRef?.id,tabRef,doc,tex:range.tex,spans:[],selected:null,undo:[],redo:[],valid:false,composing:false,richDirty:false,identity:'eq-'+crypto.randomUUID(),metadata:metadata?.[0] };
+    const d = { range, original:container,host,canvas,input,apply,message,view:cmView,tab:tabRef?.id,tabRef,doc,tex:range.tex,spans:[],selected:null,undo:[],redo:[],valid:false,composing:false,richDirty:false,contextOrdinary,identity:'eq-'+crypto.randomUUID(),metadata:metadata?.[0] };
+    if(d.contextOrdinary){input.id='readmd-inline-source-'+d.identity;input.setAttribute('aria-label',tr('formula.source'));const label=document.createElement('label');label.htmlFor=input.id;label.textContent=tr('formula.source');controls.prepend(label);}
     container.replaceWith(host); draft=d;
     host.addEventListener('focusout', e => {
       // Internal slot/property navigation is still the same local draft.
@@ -476,8 +577,8 @@ window.ReadMDInlineMath = (() => {
       if(e.isComposing || d.composing) return;
       if(e.key==='Escape') { e.preventDefault();e.stopPropagation();cancel(); }
       else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z') { e.preventDefault();e.stopPropagation();await history(e.shiftKey); }
-      else if(e.key==='Tab' && e.target===input) { e.preventDefault(); await replace(); if(current(d)&&d.spans.length)select((d.selected+(e.shiftKey?-1:1)+d.spans.length)%d.spans.length); }
-      else if(e.key==='Enter' && e.target===input) { e.preventDefault();e.stopPropagation();if(e.ctrlKey||e.metaKey)await commit();else await replace(); }
+      else if(e.key==='Tab' && e.target===input&&!d.contextOrdinary) { e.preventDefault(); await replace(); if(current(d)&&d.spans.length)select((d.selected+(e.shiftKey?-1:1)+d.spans.length)%d.spans.length); }
+      else if(e.key==='Enter' && e.target===input) { if(d.contextOrdinary&&!e.ctrlKey&&!e.metaKey)return;e.preventDefault();e.stopPropagation();if(e.ctrlKey||e.metaKey)await commit();else await replace(); }
     });
     apply.onclick=commit;close.onclick=()=>cancel();
     d.watch=setInterval(()=>{ if(!current(d))cancel(false); },200);
@@ -489,8 +590,17 @@ window.ReadMDInlineMath = (() => {
     }
     if(recovered){
       d.tex=recovered.tex;d.richDirty=recovered.rich_dirty;
+      if(range.contextSite){error(d,'formula.stale');return;}
       if(recovered.model_source){try{d.rich=await request('/api/math/parse',{source:recovered.model_source,dialect:recovered.model_dialect,metadata:recovered.model_metadata||undefined,id:recovered.model_identity||undefined,display:range.mode==='block'});}
         catch(_){if(current(d))error(d,'formula.invalid');return;}}
+    }
+    if(!d.rich&&range.contextSite){
+      try{
+        const site=range.contextSite,document_context=await ReadMDMathContext.ensure(site),o=site.occurrence;
+        if(!current(d))return;
+        d.rich=await request('/api/math/parse',{source:o.source,dialect:o.dialect,metadata:o.metadata||undefined,display:o.display,document_context});
+        if(!current(d))return;
+      }catch(e){if(current(d))error(d,'formula.invalid');return;}
     }
     if(!d.rich&&range.dialect==='dsl'){
       try{d.rich=await request('/api/math/parse',{source:range.tex,dialect:'dsl',metadata:metadata?.[1],display:range.mode==='block'});
@@ -511,9 +621,9 @@ window.ReadMDInlineMath = (() => {
     if(recovered&&current(d)){
       const index=d.spans.findIndex(s=>recovered.selected.node?s.node===recovered.selected.node&&(recovered.selected.kind!=='text'||s.kind==='text'&&s.textFrom===recovered.selected.text_from&&s.textTo===recovered.selected.text_to):s.from===recovered.selected.from&&s.to===recovered.selected.to);
       if(index>=0){select(index);input.value=recovered.input;input.setSelectionRange(recovered.input_from||0,recovered.input_to||0);await replace();}
-      if(current(d)&&d.valid)d.message.textContent=tr('storage.draftKept');
+      if(current(d)&&d.valid)d.message.textContent=(d.rich?.previewSupported===false?apiMessage({error_code:'math_unsupported_extension'},'formula.invalid')+'\n':'')+tr('storage.draftKept');
     }
-    if(current(d))d.properties=await ReadMDMathProperties.mount(d,()=>activateRich(d),p=>{
+    if(current(d)&&!d.contextOrdinary)d.properties=await ReadMDMathProperties.mount(d,()=>activateRich(d),p=>{
       d.pending=richPatch(d,p);return d.pending;
     });
   }

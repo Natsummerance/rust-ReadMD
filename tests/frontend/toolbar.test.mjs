@@ -162,7 +162,7 @@ test('slash inserts replace the typed query in one change', () => {
 
 test('table of contents skips fenced code and nests by level', () => {
   const toc = T.tocMarkdown('# A\n## B c\n```\n# not\n```\n### D\n## B c');
-  assert.equal(toc, '- [A](#a)\n  - [B c](#b-c)\n    - [D](#d)\n  - [B c](#b-c-2)');
+  assert.equal(toc, '- [A](#a)\n  - [B c](#b-c)\n    - [D](#d)\n  - [B c](#b-c-1)');
   assert.equal(T.tocMarkdown('no headings'), '');
 });
 

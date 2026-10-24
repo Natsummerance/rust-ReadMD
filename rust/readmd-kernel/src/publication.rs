@@ -66,6 +66,26 @@ fn read_resource(
     Ok(crate::text_encoding::detect_and_decode(&bytes).0)
 }
 
+fn embedded_resources(source: &str) -> ApiResult<Option<crate::publication_docx_citations::Resources>> {
+    crate::publication_docx_citations::Resources::from_markdown(source)
+        .map_err(|_|invalid(crate::publication_docx_citations::RESOURCE_INVALID))
+}
+fn read_citation_resource(root: Option<&Path>, embedded: Option<&crate::publication_docx_citations::Resources>, name: &str, extensions: &[&str], budget: &mut usize) -> ApiResult<String> {
+    if let Some(resources) = embedded {
+        if !Path::new(name).extension().and_then(|e|e.to_str()).is_some_and(|e|extensions.iter().any(|allowed|e.eq_ignore_ascii_case(allowed))) {
+            return Err(invalid("academic_resource"));
+        }
+        // An embedded document is self-contained. A missing or renamed resource
+        // never grants access to an old path on the importing computer.
+        let content = resources.read(name).ok_or_else(||invalid("academic_resource"))?;
+        *budget = budget.saturating_add(content.len());
+        if *budget > crate::publication_docx_citations::MAX_RESOURCES { return Err(ApiError::new(413,"academic_budget")); }
+        Ok(content.into())
+    } else {
+        read_resource(root.ok_or_else(||invalid("academic_resource"))?,name,extensions,budget)
+    }
+}
+
 fn markdown_text(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
@@ -112,7 +132,8 @@ pub fn resource_revision(source: &str, base: &str) -> ApiResult<String> {
 }
 pub fn resource_revision_with_options(source: &str, base: &str, options: &Value) -> ApiResult<String> {
     let doc = front_document(source);
-    let mut names = crate::publication_metadata::bibliography_sources(source).map_err(|e|ApiError::new(422,e.code))?;
+    let embedded = embedded_resources(source)?;
+    let mut names = if let Some(resources)=&embedded {resources.bibliography.clone()} else {crate::publication_metadata::bibliography_sources(source).map_err(|e|ApiError::new(422,e.code))?};
     if names.is_empty() {
         return Ok(String::new());
     }
@@ -120,24 +141,22 @@ pub fn resource_revision_with_options(source: &str, base: &str, options: &Value)
         return Err(ApiError::new(413, "academic_budget"));
     }
     let style_override=options.pointer("/citations/style").map(|value|value.as_str().filter(|value|!value.is_empty()&&value.len()<=1024).ok_or_else(||invalid("academic_style"))).transpose()?;
-    if let Some(csl) = style_override.map(str::to_string).or_else(||doc.meta("csl"))
+    if let Some(csl) = style_override.map(str::to_string).or_else(||doc.meta("csl")).or_else(||embedded.as_ref().map(|r|r.style.clone()))
         .filter(|s| s.to_ascii_lowercase().ends_with(".csl"))
     {
         names.push(csl);
     }
-    let root = Path::new(base)
-        .canonicalize()
-        .map_err(|_| invalid("academic_resource"))?;
+    let root = if embedded.is_none() {Some(Path::new(base).canonicalize().map_err(|_|invalid("academic_resource"))?)} else {None};
     let mut budget = 0;
     let mut digest = sha2::Sha256::default();
     use sha2::Digest;
-    if let Some(xml) = citation_locale_xml(options)? {
+    if let Some(xml) = citation_locale_xml(options)?.or_else(||embedded.as_ref().and_then(|r|r.locale_xml.as_deref())) {
         digest.update(b"ReadMD CSL locale XML\0");
         digest.update((xml.len() as u64).to_le_bytes());
         digest.update(xml.as_bytes());
     }
     for name in names {
-        let content = read_resource(&root, &name, &["bib", "json", "csl"], &mut budget)?;
+        let content = read_citation_resource(root.as_deref(), embedded.as_ref(), &name, &["bib", "json", "csl"], &mut budget)?;
         digest.update((name.len() as u64).to_le_bytes());
         digest.update(name.as_bytes());
         digest.update((content.len() as u64).to_le_bytes());
@@ -165,7 +184,9 @@ pub fn prepare_with_options(source: &str, base: &str, options: &Value) -> ApiRes
     if !source_sections.is_empty(){
         crate::publication_sections::resolve(&crate::md_ast::parse(source),&crate::export_styles::sanitize(options)).map_err(|code|ApiError::new(422,code))?;
     }
-    let language = crate::publication_metadata::from_source(source, options, "").map_err(|e|ApiError::new(422,e.code))?.language;
+    let embedded = embedded_resources(source)?;
+    let language = crate::publication_metadata::from_source(source, options, "").map_err(|e|ApiError::new(422,e.code))?.language
+        .or_else(||embedded.as_ref().map(|r|r.locale.clone()));
     let style = options.pointer("/citations/style").map(|value| value.as_str().filter(|value| !value.is_empty() && value.len() <= 1024).ok_or_else(|| invalid("academic_style"))).transpose()?;
     let locale_xml = citation_locale_xml(options)?;
     if let Some(xml) = locale_xml { academic::custom_locale(xml, language.as_deref().unwrap_or("en-US"))
@@ -183,11 +204,88 @@ pub(crate) fn prepare_with_language_and_style(source: &str, base: &str, language
     prepare_with_citation_context(source, base, language, style, None)
 }
 
+/// Only actual Markdown/HTML comments can carry import diagnostics. The
+/// annotation is evidence for review, never an instruction to restore content.
+fn numbering_import_diagnostics(source: &str) -> Vec<Value> {
+    const FAMILY: &str = "<!--readmd-numbering-import:";
+    const HEADER: &str = "<!--readmd-numbering-import:v1 ";
+    const MAX_BYTES: usize = 256 * 1024;
+    const MAX_DIAGNOSTICS: usize = 4096;
+    fn text(value: &Value, limit: usize) -> bool {
+        value.as_str().is_some_and(|text| text.len() <= limit && !text.chars().any(char::is_control))
+    }
+    fn valid(value: &Value) -> bool {
+        let Some(object) = value.as_object() else { return false };
+        object.keys().all(|key| matches!(key.as_str(), "code" | "reason" | "detail" | "paragraph" | "kind" | "source_id" | "visible_content_preserved"))
+            && matches!(value["code"].as_str(), Some("docx_numbering_import_conflict" | "docx_numbering_invalid" | "docx_numbering_unrepresentable" | "docx_numbering_budget"))
+            && text(&value["reason"], 128) && value["reason"].as_str().is_some_and(|reason| !reason.is_empty())
+            && value["visible_content_preserved"].as_bool() == Some(true)
+            && object.get("detail").is_none_or(|value| text(value, 8192))
+            && object.get("source_id").is_none_or(|value| text(value, 1024))
+            && object.get("kind").is_none_or(|value| matches!(value.as_str(), Some("figure" | "table" | "equation")))
+            && object.get("paragraph").is_none_or(|value| value.as_u64().is_some_and(|n| n <= u32::MAX as u64))
+    }
+    let mut diagnostics = Vec::new();
+    let mut bytes = 0usize;
+    for (index, range) in crate::publication_docx_citations::source_comments(source, FAMILY, 9).into_iter().enumerate() {
+        let annotation = &source[range.clone()];
+        let from = source[..range.start].encode_utf16().count();
+        let to = source[..range.end].encode_utf16().count();
+        bytes = bytes.saturating_add(annotation.len());
+        let budget = index >= 8 || bytes > MAX_BYTES;
+        let values = (!budget).then(|| annotation.strip_prefix(HEADER).and_then(|raw| raw.strip_suffix("-->")))
+            .flatten().filter(|raw| !raw.contains("<!--") && !raw.contains("-->"))
+            .and_then(|raw| serde_json::from_str::<Vec<Value>>(raw).ok())
+            .filter(|values| diagnostics.len().saturating_add(values.len()) <= MAX_DIAGNOSTICS && values.iter().all(valid));
+        if let Some(values) = values {
+            for mut value in values {
+                value["from"] = json!(from); value["to"] = json!(to);
+                value["path"] = json!("source.readmd-numbering-import");
+                value["key"] = value.get("source_id").cloned().unwrap_or_else(|| value["reason"].clone());
+                diagnostics.push(value);
+            }
+        } else {
+            diagnostics.push(json!({"code":if budget {"docx_numbering_budget"} else {"docx_numbering_invalid"},
+                "reason":if budget {"numbering_import_annotation_budget"} else {"numbering_import_annotation_invalid"},
+                "visible_content_preserved":true,"source_preserved":true,"from":from,"to":to,
+                "key":"readmd-numbering-import","path":"source.readmd-numbering-import"}));
+        }
+        if budget { break; }
+    }
+    diagnostics
+}
+
 fn prepare_with_citation_context(source: &str, base: &str, language: Option<&str>, style: Option<&str>, locale_xml: Option<&str>) -> ApiResult<Prepared> {
+    crate::publication_inline_text::validate_source(source).map_err(|code|ApiError::new(422,code))?;
+    crate::cross_references::validate_source(source).map_err(|code|ApiError::new(422,code))?;
     crate::publication_typography::validate_input(source, &Value::Null).map_err(|code| ApiError::new(422, code))?;
     crate::publication_navigation::from_source(source,&Value::Null).map_err(|e|e.api_error())?;
     crate::publication_sections::validate_source(source).map_err(|code| ApiError::new(422, code))?;
     let mut prepared = prepare_citations(source, base, language, style, locale_xml)?;
+    let mut source_diagnostics = crate::publication_profile::source_diagnostics(source).into_iter().map(|diagnostic| {
+        json!({"code":diagnostic.code,"key":diagnostic.path,"path":diagnostic.path,
+            "from":diagnostic.from,"to":diagnostic.to,"visible_content_preserved":true,"source_preserved":true})
+    }).collect::<Vec<_>>();
+    source_diagnostics.extend(numbering_import_diagnostics(source));
+    if !source_diagnostics.is_empty() {
+        prepared.data["active"] = json!(true);
+        let revision = crate::document_transaction::revision(source);
+        for mut diagnostic in source_diagnostics {
+            diagnostic["revision"] = json!(revision);
+            prepared.warnings.push(format!("{}: {}", diagnostic["code"].as_str().unwrap_or("publication_metadata_field"), diagnostic["key"].as_str().unwrap_or("")));
+            prepared.data["diagnostics"].as_array_mut().expect("diagnostics").push(diagnostic);
+        }
+    }
+    let imported=crate::publication_docx_citations::import_diagnostics(source);
+    if !imported.is_empty(){
+        prepared.data["active"]=json!(true);
+        let revision=crate::document_transaction::revision(source);
+        for mut diagnostic in imported{
+            diagnostic["revision"]=json!(revision);
+            prepared.warnings.push(diagnostic["code"].as_str().unwrap_or(crate::publication_docx_citations::INVALID).into());
+            prepared.data["diagnostics"].as_array_mut().expect("diagnostics").push(diagnostic);
+        }
+    }
     let versions = crate::math_dsl::version_diagnostics(source);
     if !versions.is_empty() {
         prepared.data["active"] = json!(true);
@@ -195,6 +293,10 @@ fn prepare_with_citation_context(source: &str, base: &str, language: Option<&str
         prepared.data["diagnostics"].as_array_mut().expect("diagnostics").extend(versions);
     }
     let references = crate::cross_references::project(source);
+    if let Some(plan)=&references.numbering {
+        prepared.data["active"]=json!(true);
+        prepared.data["source_numbering"]=json!(plan);
+    }
     prepared.content = crate::cross_references::project(&prepared.content).content;
     if !references.labels.is_empty() || !references.diagnostics.is_empty() {
         prepared.data["active"] = json!(true);
@@ -211,7 +313,8 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
         return Err(ApiError::new(413, "academic_budget"));
     }
     let doc = front_document(source);
-    let names = crate::publication_metadata::bibliography_sources(source).map_err(|e|ApiError::new(422,e.code))?;
+    let embedded = embedded_resources(source)?;
+    let names = if let Some(resources)=&embedded {resources.bibliography.clone()} else {crate::publication_metadata::bibliography_sources(source).map_err(|e|ApiError::new(422,e.code))?};
     if names.is_empty() {
         return Ok(Prepared {
             content: source.into(),
@@ -223,9 +326,7 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
     if names.len() > 8 {
         return Err(ApiError::new(413, "academic_budget"));
     }
-    let root = Path::new(base)
-        .canonicalize()
-        .map_err(|_| invalid("academic_resource"))?;
+    let root = if embedded.is_none() {Some(Path::new(base).canonicalize().map_err(|_|invalid("academic_resource"))?)} else {None};
     let json_format = names[0].to_ascii_lowercase().ends_with(".json");
     let mut data = String::new();
     let mut json_items = Vec::<Value>::new();
@@ -234,8 +335,8 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
         if name.to_ascii_lowercase().ends_with(".json") != json_format {
             return Err(invalid("academic_mixed_bibliography"));
         }
-        let text = read_resource(
-            &root,
+        let text = read_citation_resource(
+            root.as_deref(),embedded.as_ref(),
             &name,
             if json_format { &["json"] } else { &["bib"] },
             &mut budget,
@@ -252,20 +353,23 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
     if json_format {
         data = serde_json::to_string(&json_items).map_err(|_| invalid("academic_bibliography"))?;
     }
-    let requested = style_override.map(str::to_string).or_else(||doc.meta("csl")).unwrap_or_else(|| "american-psychological-association".into());
+    let requested = style_override.map(str::to_string).or_else(||doc.meta("csl")).or_else(||embedded.as_ref().map(|r|r.style.clone())).unwrap_or_else(|| "american-psychological-association".into());
     let (style, csl) = if requested.to_ascii_lowercase().ends_with(".csl") {
         (
             "american-psychological-association".into(),
-            Some(read_resource(&root, &requested, &["csl"], &mut budget)?),
+            Some(read_citation_resource(root.as_deref(),embedded.as_ref(), &requested, &["csl"], &mut budget)?),
         )
     } else {
         (requested, None)
     };
+    let language = language.or_else(||embedded.as_ref().map(|r|r.locale.as_str()));
+    let locale_xml = locale_xml.or_else(||embedded.as_ref().and_then(|r|r.locale_xml.as_deref()));
+    let manual_bibliography = embedded.as_ref().is_some_and(|r|r.manual_bibliography);
     let format=if json_format { "csl-json" } else { "bibtex" };
     let known=academic::reference_keys(format,&data)?;
     let note_style=academic::is_note_style(&style,csl.as_deref())?;
     let scan=citations::scan(source,language.unwrap_or("en-US"))?;
-    let spans=citations::reading_order(source,scan.citations,note_style,&known);
+    let spans=citations::reading_order(source,scan.citations,note_style,&known)?;
     let request = Request {
         format: if json_format { "csl-json" } else { "bibtex" }.into(),
         data,
@@ -330,7 +434,7 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
     let mut bibliography = String::new();
     if let Some(items) = rendered["bibliography"]["items"]
         .as_array()
-        .filter(|items| !items.is_empty())
+        .filter(|items| !items.is_empty() && !manual_bibliography)
     {
         let title = doc.meta("reference-section-title").unwrap_or_else(|| {
             if request.locale.starts_with("zh") {
@@ -378,7 +482,10 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
             _ => None,
         })
         .collect::<Vec<_>>();
-    if let Some(range) = markers.first() {
+    if manual_bibliography {
+        // The imported bibliography has author edits and remains ordinary
+        // document content. Citation preparation may not append another copy.
+    } else if let Some(range) = markers.first() {
         output.replace_range(range.clone(), &bibliography);
     } else {
         output.push_str(&bibliography);
@@ -413,6 +520,7 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
         })
         .collect();
     rendered["active"] = json!(true);
+    if manual_bibliography {rendered["manual_bibliography"]=json!(true);}
     rendered["revision"] = json!(revision);
     rendered["source_citations"] = json!(positions);
     Ok(Prepared {
@@ -422,6 +530,10 @@ fn prepare_citations(source: &str, base: &str, language: Option<&str>, style_ove
         projection,
     })
 }
+
+#[cfg(test)]
+#[path = "publication_profile_reader_tests.rs"]
+mod profile_reader_tests;
 
 #[cfg(test)]
 mod tests {

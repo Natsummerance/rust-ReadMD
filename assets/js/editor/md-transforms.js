@@ -442,42 +442,38 @@
     return { changes: { from, to: doc.length, insert }, selection: { anchor: next.length, head: next.length }, id };
   }
 
+  let nodeHeadings;
+  function headingIdentity() {
+    if (root && root.ReadMDHeadings) return root.ReadMDHeadings;
+    if (typeof module !== 'undefined' && module.exports) return nodeHeadings ||= require('../reader/heading-identity.js');
+    throw new Error('ReadMDHeadings must be loaded before TOC transforms');
+  }
+
   function headingSlug(text, seen) {
-    let slug = Array.from(text.trim()).map(c=>/[\p{L}\p{N}_-]/u.test(c)?c.toLowerCase():/\p{White_Space}/u.test(c)?'-':'').join('');
-    if (!slug) slug = 'section';
+    let slug = headingIdentity().slug(text);
     const base=slug;let count=1;while(Object.prototype.hasOwnProperty.call(seen,slug))slug=base+'-'+count++;seen[slug]=1;
     return slug;
   }
 
-  /* A Markdown list linking every ATX heading (fenced code is skipped). */
+  /* Serialize the reader's heading identities in both Node and the browser.
+     Escape all Markdown punctuation in a plain title, including ampersands
+     from code spans, so reparsing a label cannot change its visible text. */
   function tocMarkdown(doc) {
-    if(typeof window!=='undefined'&&window.ReadMDHeadings){
-      const headings=ReadMDHeadings.fromMarkdown(doc);if(!headings.length)return '';
-      const min=Math.min(...headings.map(h=>h.level));
-      return headings.map(h=>'  '.repeat(h.level-min)+'- ['+h.text.replace(/([\\[\]])/g,'\\$1')+'](#'+encodeURIComponent(h.id)+')').join('\n');
-    }
-    const heads = [];
-    let fence = null;
-    for (const raw of String(doc).split('\n')) {
-      const f = /^\s{0,3}(`{3,}|~{3,})/.exec(raw);
-      if (f) {
-        if (!fence) fence = f[1][0].repeat(f[1].length);
-        else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-        continue;
-      }
-      if (fence) continue;
-      const m = /^\s{0,3}(#{1,6})[ \t]+(.+?)[ \t#]*$/.exec(raw);
-      if (!m) continue;
-      const text = m[2]
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/[*_`~]/g, '')
-        .trim();
-      if (text) heads.push({ level: m[1].length, text });
-    }
+    const heads = headingIdentity().fromMarkdown(doc);
     if (!heads.length) return '';
     const min = Math.min(...heads.map(h => h.level));
-    const seen = {};
-    return heads.map(h => '  '.repeat(h.level - min) + '- [' + h.text.replace(/([[\]])/g, '\\$1') + '](#' + headingSlug(h.text, seen) + ')').join('\n');
+    // Math protection precedes Markdown parsing in the reader. Backslash
+    // escapes such as \[text\] and \(text\) would be saved as TeX and then
+    // restored after Markdown, exposing the escape characters to the reader.
+    // Character references remain portable Markdown and carry literal intent
+    // through both that pre-pass and the later MathJax scan.
+    const literalDelimiters = new Set('\\$()[]');
+    const label = text => text.replace(/[!-/:-@\[-`{-~]/g,
+      c => literalDelimiters.has(c) ? '&#' + c.charCodeAt(0) + ';' : '\\' + c);
+    // encodeURIComponent leaves parentheses unescaped; those delimit a
+    // Markdown destination and can otherwise truncate an explicit ID.
+    const fragment = id => encodeURIComponent(id).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    return heads.map(h => '  '.repeat(h.level - min) + '- [' + label(h.text) + '](#' + fragment(h.id) + ')').join('\n');
   }
 
   /* ---------------- 模糊匹配（斜杠菜单） ---------------- */

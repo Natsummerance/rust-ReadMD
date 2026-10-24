@@ -25,6 +25,30 @@ fn math_error(code: &'static str) -> ApiError {
         code,
     )
 }
+fn context_error(message: String) -> ApiError {
+    let (code, details) = message.split_once(": ").map_or((message.as_str(), None), |(code, details)| (code, Some(details)));
+    let status = if code == "transaction_conflict" {409} else if matches!(code,"math_budget"|"transaction_budget") {413} else {422};
+    let mut error = ApiError::new(status, code);
+    if code == "math_document_defaults_conflict" {
+        if let Some(value) = details.and_then(|text| serde_json::from_str::<Value>(text).ok()) { error = error.noted_json("details",value); }
+    }
+    error
+}
+fn math_json(mut value: Value) -> ApiResult<Response> {
+    if value["document_context"].is_null() { if let Some(object)=value.as_object_mut() {object.remove("document_context");} }
+    ok_json(value)
+}
+pub fn math_context(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    let v=input(req)?;
+    if !v.is_object() || v.as_object().unwrap().keys().any(|key| !matches!(key.as_str(),"operation"|"content"|"expected_revision"|"view_content")) {
+        return Err(ApiError::bad_request("invalid_json"));
+    }
+    let view=v.get("view_content").map(|v|v.as_str().ok_or_else(||ApiError::bad_request("invalid_json"))).transpose()?;
+    if v.get("operation").is_some_and(|value|value.as_str()!=Some("context")) {return Err(ApiError::bad_request("invalid_json"));}
+    let value=if view.is_some() {app.math_context.register_view(field(&v,"content")?,field(&v,"expected_revision")?,view)}
+        else {app.math_context.register(field(&v,"content")?,field(&v,"expected_revision")?)};
+    ok_json(value.map_err(context_error)?)
+}
 fn math_preview_size(v:&Value)->ApiResult<f64>{
     if v.get("font_size").is_none(){return Ok(12.0);}
     v["font_size"].as_f64().filter(|size|size.is_finite()&&(4.0..=512.0).contains(size)).ok_or_else(||ApiError::bad_request("invalid_json"))
@@ -42,6 +66,23 @@ fn math_vector_preview(doc:&math_document::MathDocument,display:bool,size:f64,wi
         Some(result)=>(Some(result.svg),result.diagnostics),None=>(None,Vec::new()),
     }
 }
+
+/// Keep valid source editable when its rendering capability is unavailable.
+/// This response has no pretend preview and performs no font/resource work.
+fn math_source_only(mut doc:math_document::MathDocument,code:&'static str,mut extra:Value)->ApiResult<Response>{
+    let diagnostic=math_document::Diagnostic{code:code.into(),from:0,to:doc.source.encode_utf16().count()};
+    if !doc.diagnostics.iter().any(|value|value.code==diagnostic.code&&value.from==diagnostic.from&&value.to==diagnostic.to){doc.diagnostics.push(diagnostic);}
+    extra["ok"]=json!(true);
+    extra["preview"]=json!("");extra["vector_preview"]=Value::Null;
+    extra["preview_supported"]=json!(false);extra["mathml_profile"]=Value::Null;
+    extra["mathml_warns"]=json!([code]);extra["layout_diagnostics"]=json!([]);
+    extra["font_warnings"]=json!([]);
+    extra["latex"]=json!(crate::math_formats::tex(&doc.root));
+    extra["projections"]=projections(&doc.root);
+    extra["visual_dsl"]=json!(crate::math_dsl::visual_projections(&doc.root));
+    extra["document"]=json!(doc);
+    math_json(extra)
+}
 pub fn academic_citations(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let request = crate::academic::parse_request(input(req)?)?;
     ok_json(crate::academic::citations(&request)?)
@@ -56,6 +97,13 @@ pub fn academic_document(_app: &Arc<App>, req: &Request) -> ApiResult<Response> 
     let displayed=if view {crate::cross_references::project(&result.projection.reader_content(source)?).content}else{result.content};
     let displayed=if view&&displayed.contains(crate::publication_sections::PREFIX){crate::mdexport::section_flow_source(&displayed,&crate::export_styles::sanitize(&v["options"])).map_err(|code|crate::ApiError::new(422,code))?}else{displayed};
     let mut data = result.data;
+    let displayed=if view&&crate::publication_inline_view::requires_projection(&displayed){
+        let mut author=crate::publication_inline_view::project(&displayed,&v["options"]).map_err(|code|ApiError::new(422,code))?;
+        // Runs consume the prepared display bytes, while the frontend revision
+        // belongs to the immutable request source that produced that display.
+        author.revision=crate::document_transaction::revision(source);
+        let content=author.content.clone();data["author_text"]=json!(author);data["active"]=json!(true);content
+    }else{displayed};
     if view&&displayed.contains(crate::publication_blocks::PREFIX){
         let (content,layout)=crate::publication_blocks::view(&displayed).map_err(math_error)?;
         data["content"]=json!(content);data["layout"]=layout;
@@ -74,6 +122,16 @@ pub fn publication_metadata(_app: &Arc<App>, req: &Request) -> ApiResult<Respons
         )),
     }
 }
+pub fn publication_profile(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+    let value = input(req)?;
+    match crate::publication_profile::handle(&value) {
+        Ok(data) => ok_json(data),
+        Err(error) => Ok(Response::json_status(
+            if error.code.contains("conflict") || error.code.contains("revision") { 409 } else if error.code.ends_with("budget") { 413 } else { 422 },
+            &error.response_body(),
+        )),
+    }
+}
 pub fn publication_blocks(_app:&Arc<App>,req:&Request)->ApiResult<Response>{
     let v=input(req)?;let source=field(&v,"content")?;
     match v["action"].as_str().unwrap_or("list"){
@@ -81,6 +139,12 @@ pub fn publication_blocks(_app:&Arc<App>,req:&Request)->ApiResult<Response>{
         "apply"=>ok_json(crate::publication_blocks::apply(source,field(&v,"base_revision")?,field(&v,"id")?,&v["patch"]).map_err(math_error)?),
         _=>Err(ApiError::bad_request("invalid_json")),
     }
+}
+pub fn publication_numbering(_app:&Arc<App>,req:&Request)->ApiResult<Response>{
+    ok_json(crate::cross_references::numbering_request(&input(req)?).map_err(math_error)?)
+}
+pub fn publication_inline_text(_app:&Arc<App>,req:&Request)->ApiResult<Response>{
+    ok_json(crate::publication_inline_text::handle(&input(req)?).map_err(math_error)?)
 }
 fn projections(root: &math_document::XmlNode) -> Value {
     fn visit(
@@ -115,6 +179,7 @@ pub fn transact(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 }
 pub fn math_migrate(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let v = input(req)?;
+    if v.get("document_context").is_some() { return Err(ApiError::bad_request("invalid_json")); }
     let source = field(&v, "content")?;
     if v["expected_revision"].as_str().is_some_and(|r| r != document_transaction::revision(source)) {
         return Err(math_error("transaction_conflict"));
@@ -124,6 +189,8 @@ pub fn math_migrate(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
 }
 pub fn math_parse(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let v = input(req)?;
+    if v.get("view_content").is_some() {return Err(ApiError::bad_request("invalid_json"));}
+    let binding=app.math_context.bind(&v).map_err(context_error)?;
     let source = field(&v, "source")?;
     let mut doc = math_document::parse(
         source,
@@ -162,20 +229,28 @@ pub fn math_parse(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         }}
     }
     let display = v["display"].as_bool().unwrap_or(false);
-    let font_view=crate::omml::parse(&doc.root.xml()).map_err(|_|math_error("math_invalid_xml"))?;
+    let rendered=if let Some(binding)=&binding {binding.render(&doc).map_err(context_error)?} else {doc.clone()};
+    let font_view=crate::omml::parse(&rendered.root.xml()).map_err(|code|ApiError::new(422,code))?;
+    if let Err(code)=crate::omml::validate_display_context(&font_view,display,math_preview_width(&v)?) {
+        if let Some(binding)=&binding {app.math_context.current(binding).map_err(context_error)?;}
+        return math_source_only(doc,code,json!({"metadata_status":metadata_status,"identity":identity,"metadata":extension_metadata,"extension_preservation":preservation,"document_context":binding.as_ref().map(|b|b.response())}));
+    }
     let _fonts=crate::math_layout::needs_managed_fonts(&font_view).then(||crate::publication_fonts::scope(&app.paths.data_dir,&app.paths.assets_dir));
     let font_warnings=crate::math_layout::font_warnings(&font_view);
-    crate::math_layout::spacing_budget(&doc.root.xml(),display,math_preview_size(&v)?).map_err(math_error)?;
-    let mathml = math_document::preview_constrained(&doc, display, math_preview_size(&v)?, math_preview_width(&v)?).map_err(math_error)?;
+    crate::math_layout::spacing_budget(&rendered.root.xml(),display,math_preview_size(&v)?).map_err(math_error)?;
+    let mathml = math_document::preview_constrained(&rendered, display, math_preview_size(&v)?, math_preview_width(&v)?).map_err(math_error)?;
     let preview = mathml.output;
-    let (vector_preview,layout_diagnostics)=math_vector_preview(&doc,display,math_preview_size(&v)?,math_preview_width(&v)?);
-    if vector_preview.is_none()&&crate::math_spacing::contains_spacing(&doc.root){return Err(math_error("math_unsupported_extension"));}
-    ok_json(
-        json!({"ok":true,"document":doc,"preview":preview,"mathml_profile":mathml.profile,"mathml_warns":mathml.warnings,"vector_preview":vector_preview,"layout_diagnostics":layout_diagnostics,"latex":crate::math_formats::tex(&doc.root),"projections":projections(&doc.root),"visual_dsl":crate::math_dsl::visual_projections(&doc.root),"font_warnings":font_warnings,"metadata_status":metadata_status,"identity":identity,"metadata":extension_metadata,"extension_preservation":preservation}),
+    let (vector_preview,layout_diagnostics)=math_vector_preview(&rendered,display,math_preview_size(&v)?,math_preview_width(&v)?);
+    if vector_preview.is_none()&&crate::math_spacing::contains_spacing(&rendered.root){return Err(math_error("math_unsupported_extension"));}
+    if let Some(binding)=&binding {app.math_context.current(binding).map_err(context_error)?;}
+    math_json(
+        json!({"ok":true,"document":doc,"preview":preview,"mathml_profile":mathml.profile,"mathml_warns":mathml.warnings,"vector_preview":vector_preview,"layout_diagnostics":layout_diagnostics,"latex":crate::math_formats::tex(&doc.root),"projections":projections(&doc.root),"visual_dsl":crate::math_dsl::visual_projections(&doc.root),"font_warnings":font_warnings,"metadata_status":metadata_status,"identity":identity,"metadata":extension_metadata,"extension_preservation":preservation,"document_context":binding.as_ref().map(|b|b.response())}),
     )
 }
 pub fn math_patch(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let v = input(req)?;
+    if v.get("view_content").is_some() {return Err(ApiError::bad_request("invalid_json"));}
+    let binding=app.math_context.bind(&v).map_err(context_error)?;
     let op = serde_json::from_value(v["patch"].clone())
         .map_err(|_| ApiError::bad_request("invalid_json"))?;
     if let Some(comment)=v["metadata"].as_str().filter(|s|s.starts_with(crate::math_extension::PREFIX)) {
@@ -189,21 +264,28 @@ pub fn math_patch(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         &op,
     )
     .map_err(math_error)?;
+    let binding=if let Some(binding)=binding {Some(app.math_context.patch_binding(&binding,&doc).map_err(context_error)?)} else {None};
     let extension_metadata=if let Some(comment)=v["metadata"].as_str().filter(|s|s.starts_with(crate::math_extension::PREFIX)){
         Some(crate::math_extension::rebind(field(&v,"source")?,comment,v["id"].as_str(),&doc,&op,v["display"].as_bool().unwrap_or(false)).map_err(math_error)?)
     }else{None};
     let identity=extension_metadata.as_ref().map(|comment|crate::math_extension::decode(comment).map(|p|p.id)).transpose().map_err(math_error)?;
-    let font_view=crate::omml::parse(&doc.root.xml()).map_err(|_|math_error("math_invalid_xml"))?;
+    let rendered=if let Some(binding)=&binding {binding.render(&doc).map_err(context_error)?} else {doc.clone()};
+    let font_view=crate::omml::parse(&rendered.root.xml()).map_err(|code|ApiError::new(422,code))?;
+    if let Err(code)=crate::omml::validate_display_context(&font_view,v["display"].as_bool().unwrap_or(false),math_preview_width(&v)?) {
+        if let Some(binding)=&binding {app.math_context.current(binding).map_err(context_error)?;}
+        return math_source_only(doc,code,json!({"metadata":extension_metadata,"identity":identity,"metadata_status":if extension_metadata.is_some(){"current"}else{"absent"},"extension_preservation":extension_metadata.as_ref().map(|_|json!({"editable":false,"preview":"standard_projection"})),"document_context":binding.as_ref().map(|b|b.response())}));
+    }
     let _fonts=crate::math_layout::needs_managed_fonts(&font_view).then(||crate::publication_fonts::scope(&app.paths.data_dir,&app.paths.assets_dir));
     let font_warnings=crate::math_layout::font_warnings(&font_view);
-    crate::math_layout::spacing_budget(&doc.root.xml(),v["display"].as_bool().unwrap_or(false),math_preview_size(&v)?).map_err(math_error)?;
-    let mathml = math_document::preview_constrained(&doc, v["display"].as_bool().unwrap_or(false), math_preview_size(&v)?, math_preview_width(&v)?)
+    crate::math_layout::spacing_budget(&rendered.root.xml(),v["display"].as_bool().unwrap_or(false),math_preview_size(&v)?).map_err(math_error)?;
+    let mathml = math_document::preview_constrained(&rendered, v["display"].as_bool().unwrap_or(false), math_preview_size(&v)?, math_preview_width(&v)?)
         .map_err(math_error)?;
     let preview = mathml.output;
-    let (vector_preview,layout_diagnostics)=math_vector_preview(&doc,v["display"].as_bool().unwrap_or(false),math_preview_size(&v)?,math_preview_width(&v)?);
-    if vector_preview.is_none()&&crate::math_spacing::contains_spacing(&doc.root){return Err(math_error("math_unsupported_extension"));}
-    ok_json(
-        json!({"ok":true,"document":doc,"preview":preview,"mathml_profile":mathml.profile,"mathml_warns":mathml.warnings,"vector_preview":vector_preview,"layout_diagnostics":layout_diagnostics,"latex":crate::math_formats::tex(&doc.root),"projections":projections(&doc.root),"visual_dsl":crate::math_dsl::visual_projections(&doc.root),"font_warnings":font_warnings,"metadata":extension_metadata,"identity":identity,"metadata_status":if extension_metadata.is_some(){"current"}else{"absent"},"extension_preservation":extension_metadata.as_ref().map(|_|json!({"editable":false,"preview":"standard_projection"}))}),
+    let (vector_preview,layout_diagnostics)=math_vector_preview(&rendered,v["display"].as_bool().unwrap_or(false),math_preview_size(&v)?,math_preview_width(&v)?);
+    if vector_preview.is_none()&&crate::math_spacing::contains_spacing(&rendered.root){return Err(math_error("math_unsupported_extension"));}
+    if let Some(binding)=&binding {app.math_context.current(binding).map_err(context_error)?;}
+    math_json(
+        json!({"ok":true,"document":doc,"preview":preview,"mathml_profile":mathml.profile,"mathml_warns":mathml.warnings,"vector_preview":vector_preview,"layout_diagnostics":layout_diagnostics,"latex":crate::math_formats::tex(&doc.root),"projections":projections(&doc.root),"visual_dsl":crate::math_dsl::visual_projections(&doc.root),"font_warnings":font_warnings,"metadata":extension_metadata,"identity":identity,"metadata_status":if extension_metadata.is_some(){"current"}else{"absent"},"extension_preservation":extension_metadata.as_ref().map(|_|json!({"editable":false,"preview":"standard_projection"})),"document_context":binding.as_ref().map(|b|b.response())}),
     )
 }
 pub fn math_schema(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
@@ -212,12 +294,14 @@ pub fn math_schema(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     }
     ok_json(json!({"ok":true,"schema":math_document::schema()}))
 }
-pub fn math_serialize(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
+pub fn math_serialize(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let v = input(req)?;
+    if v.get("view_content").is_some() {return Err(ApiError::bad_request("invalid_json"));}
+    let binding=app.math_context.bind(&v).map_err(context_error)?;
     let source = field(&v, "source")?;
     let dialect = v["dialect"].as_str().unwrap_or("latex");
     let display = v["display"].as_bool().unwrap_or(false);
-    let doc = math_document::parse(source, dialect, display).map_err(math_error)?;
+    let doc = if let Some(binding)=&binding {binding.document().clone()} else {math_document::parse(source, dialect, display).map_err(math_error)?};
     if !doc.diagnostics.is_empty() {
         return Err(ApiError::new(422, "math_invalid_source")
             .noted_json("diagnostics", json!(doc.diagnostics)));
@@ -228,11 +312,14 @@ pub fn math_serialize(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         let resolved=crate::math_extension::resolve(source,comment,v["id"].as_str(),display).map_err(math_error)?;
         preservation=json!({"parts":resolved.payload.anchors.iter().map(|a|a.parts.len()+a.attributes.len()).sum::<usize>(),"editable":false,"preview":"standard_projection"});resolved.xml
     }else{doc.root.xml()};
+    let rendered=if let Some(binding)=&binding {binding.render(&doc).map_err(context_error)?} else {doc.clone()};
     if extension_metadata.is_some()&&matches!(v["target"].as_str(),Some("mathml"|"latex")){return Err(math_error("math_unsupported_extension"));}
     if matches!(v["target"].as_str().unwrap_or("omml"),"omml"|"latex")&&crate::math_spacing::contains_spacing(&doc.root){return Err(math_error("math_unsupported_extension"));}
-    if v["target"].as_str()==Some("mathml"){crate::math_layout::spacing_budget(&xml,display,math_preview_size(&v)?).map_err(math_error)?;}
     let mathml=if v["target"].as_str()==Some("mathml"){
-        let root=crate::omml::parse(&xml).map_err(|_|math_error("math_invalid_xml"))?;
+        let render_xml=rendered.root.xml();
+        let root=crate::omml::parse(&render_xml).map_err(|code|ApiError::new(422,code))?;
+        crate::omml::validate_display_context(&root,display,math_preview_width(&v)?).map_err(math_error)?;
+        crate::math_layout::spacing_budget(&render_xml,display,math_preview_size(&v)?).map_err(math_error)?;
         Some(crate::omml::to_mathml_constrained(&root,display,source,math_preview_size(&v)?,math_preview_width(&v)?).map_err(math_error)?)
     }else{None};
     let warns=mathml.as_ref().map(|p|p.warnings.clone()).unwrap_or_default();
@@ -263,7 +350,8 @@ pub fn math_serialize(_app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         _ => return Err(math_error("math_unsupported_dialect")),
     };
     let warn_items=crate::api_codes::warn_items(&warns);
-    ok_json(json!({"ok":true,"output":output,"revision":doc.revision,"mathml_profile":mathml.and_then(|p|p.profile),"warns":warns,"warn_items":warn_items,"metadata":extension_metadata,"extension_preservation":preservation}))
+    if let Some(binding)=&binding {app.math_context.current(binding).map_err(context_error)?;}
+    math_json(json!({"ok":true,"output":output,"revision":doc.revision,"mathml_profile":mathml.and_then(|p|p.profile),"warns":warns,"warn_items":warn_items,"metadata":extension_metadata,"extension_preservation":preservation,"document_context":binding.as_ref().map(|b|b.response())}))
 }
 
 #[cfg(test)]
@@ -307,5 +395,15 @@ mod tests {
         assert_eq!(input(&request).unwrap_err().status, 405);
         assert_eq!(math_error("transaction_conflict").status, 409);
         assert_eq!(math_error("math_invalid_xml").status, 422);
+    }
+    #[test]fn source_only_math_is_editable_and_has_no_claimed_preview(){
+        let source="row(word.pPr(word.jc(val: \"both\")), office.mathPr(office.dispDef(val: \"0\")), office.oMath(x))";
+        let doc=math_document::parse(source,"dsl",true).unwrap();let revision=doc.revision.clone();
+        let response=math_source_only(doc,"math_unsupported_extension",json!({"metadata_status":"absent"})).unwrap();
+        let value:Value=serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(value["ok"],true);assert_eq!(value["preview_supported"],false);assert_eq!(value["preview"],"");assert!(value["vector_preview"].is_null());
+        assert_eq!(value["document"]["source"],source);assert_eq!(value["document"]["revision"],revision);
+        assert_eq!(value["document"]["diagnostics"][0]["code"],"math_unsupported_extension");assert_eq!(value["metadata_status"],"absent");
+        assert_eq!(value["mathml_warns"],json!(["math_unsupported_extension"]));assert_eq!(value["font_warnings"],json!([]));
     }
 }

@@ -1,5 +1,336 @@
 [
   {
+    "path": "tools/test/inspect-rust-note-numbering.py",
+    "reason": "Development-only independent inspection of owned real PDF marker glyphs, embedded fonts, coordinates and per-reference GoTo links, plus DOCX and Typst numbering semantics. Never shipped, installed or called by ReadMD; production note layout remains Rust.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-rust-note-numbering.test.py",
+    "reason": "Synthetic adversarial calibration of the development note-numbering inspector only. Not a product acceptance run or a production Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-rust-note-numbering-stdio.cjs",
+    "pattern": "inspect-rust-note-numbering\\.py|ORACLE\\.replace\\('\\.py'|inspect-author-inline\\.py|inspect-mcp-publication-closure\\.py",
+    "reason": "Candidate-bound development-only actual note roundtrip invokes explicit source-hashed independent inspection helpers. These literal QA source references do not add an application or normal-build Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-citation-author-return.py",
+    "reason": "Development-only independent ZIP/XML, HTML/EPUB and actual PDF inspection of owned citation-author return fixtures and outputs. Never shipped, installed or invoked by ReadMD; production citation processing remains Rust.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-citation-author-return.test.py",
+    "reason": "Pure adversarial calibration of the development citation-author inspector. Not a product acceptance run and not an application Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-citation-author-return-stdio.cjs",
+    "pattern": "inspect-citation-author-return\\.py|ORACLE\\.replace\\('\\.py'|inspect-author-inline\\.py|inspect-math-document-defaults\\.py|inspect-math-native-runs\\.py|inspect-math-word-paragraph\\.py|inspect-mcp-publication-closure\\.py",
+    "reason": "Candidate-bound development-only actual return lane invokes its source-hashed independent inspector and explicitly pins the existing QA dependency files. Restricted literal QA references; no application or normal-build Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-windows-resource-wait.py",
+    "reason": "Development-only independent Windows handle, Job accounting, task-journal and actual PDF artifact inspection for owned fault tests. Never shipped, installed or called by ReadMD; production resource management remains Rust.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-windows-resource-wait.test.py",
+    "reason": "Pure adversarial controls for the development resource-wait inspector. No product or engine execution and no production Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-windows-resource-wait-stdio.cjs",
+    "pattern": "inspect-windows-resource-wait\\.py|ORACLE\\.replace\\('\\.py'|inspect-math-section-roundtrip\\.py",
+    "reason": "Candidate-bound development fault lane invokes one explicit source-hashed independent Windows observer and records its existing HTTP broker dependency. Restricted to these literal QA source references; no application or normal-build Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-math-native-defaults.py",
+    "reason": "Development-only independent ZIP/XML inspection of real DOCX mathematical document defaults, sparse direct declarations and current inherited values. Never shipped, installed or called by ReadMD; all production parsing and export remain Rust.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-math-native-defaults.test.py",
+    "reason": "Synthetic adversarial controls for the independent native math-default inspector only. Not application code or production acceptance by itself; never shipped, installed or called by ReadMD.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-math-native-defaults-stdio.cjs",
+    "pattern": "inspect-math-native-defaults\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "This isolated candidate-bound Windows QA invokes a source-hashed independent artifact inspector through an explicit QA interpreter. Only these two literal inspection/source references are allowed; no application or normal-build Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-typst-baseline.py",
+    "reason": "Development-only independent inspection of real exported/preview PDFs, embedded TrueType glyph outlines, all-page paint, actual links and preview PNGs. Not shipped or called by ReadMD; runtime pagination and geometry checks remain Rust with the locked managed engine.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-typst-baseline.test.py",
+    "reason": "Synthetic adversarial controls for the independent Typst paragraph-baseline artifact inspector. No product or engine acceptance is inferred from synthetic controls; never an application dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/batch3-typst-baseline-stdio.cjs",
+    "pattern": "inspect-(?:typst-baseline|math-section-roundtrip|mcp-publication-closure)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "The isolated CLI/loopback QA invokes its source-hashed independent inspector and binds existing inspection helpers as inert source references. Not shipped, installed or called by ReadMD; no application or normal-build Python dependency.",
+    "requirement": "R028"
+  },
+  {
+    "path": "tools/test/inspect-math-native-runs.py",
+    "reason": "Development-only independent native OPC run-style, sparse declaration, current-member edit and four-axis cascade oracle; an existing QA interpreter is never a product or offline-pack dependency.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-native-runs.test.py",
+    "reason": "Development-only positive and adversarial native run-style oracle controls; not shipped or invoked by the application.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-native-runs-render.py",
+    "reason": "Independent QA-only vector, MathML, visible font-program and finite three-fraction copy-layer comparisons, using an explicitly selected existing development interpreter. Not a ReadMD runtime dependency.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-native-runs-render.test.py",
+    "reason": "QA-only adversarial paint, visible glyph, geometry and hidden-copy corpus controls; no product runtime installation.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-native-runs-stdio.cjs",
+    "pattern": "inspect-math-native-runs(?:-render)?\\.py|(?:ORACLE|RENDER)\\.replace\\('\\.py'",
+    "reason": "Frozen-candidate development-only native run-source interoperability and output inspection with one selected existing QA interpreter. Never shipped, installed or called by ReadMD or its plugins.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-document-defaults.test.py",
+    "reason": "Development-only positive/adversarial XML, MathML and PDF vector inspector controls using one existing QA interpreter, never shipped or invoked by ReadMD.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-document-defaults-stdio.cjs",
+    "pattern": "inspect-math-document-defaults\\.py",
+    "reason": "Development-only candidate-bound ordinary/native math interoperability output inspection with one explicitly selected existing QA interpreter; never shipped, installed or invoked by ReadMD or its managed capability packs.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-document-defaults.py",
+    "reason": "Independent development-only OPC, MathML and real PDF vector checks. The existing QA interpreter is not a product dependency, plugin or bundled runtime.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-native-styles-stdio.cjs",
+    "pattern": "inspect-(?:math-(?:native-styles(?:\\.test)?|unit-measures(?:\\.test)?|logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only frozen-candidate native paragraph graph, deterministic alias, sparse/raw property, current DOCX member mutation, independent PDF geometry inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-native-styles-stdio.test.cjs",
+    "pattern": "inspect-(?:math-(?:native-styles(?:\\.test)?|unit-measures(?:\\.test)?|logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only frozen-candidate native paragraph graph, deterministic alias, sparse/raw property, current DOCX member mutation, independent PDF geometry inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-native-styles.py",
+    "reason": "Development-only frozen-candidate native paragraph graph, deterministic alias, sparse/raw property, current DOCX member mutation, independent PDF geometry inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-native-styles.test.py",
+    "reason": "Development-only frozen-candidate native paragraph graph, deterministic alias, sparse/raw property, current DOCX member mutation, independent PDF geometry inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-unit-measures-stdio.cjs",
+    "pattern": "inspect-(?:math-(?:unit-measures(?:\\.test)?|logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only frozen-candidate six-unit, exact rational, native DOCX lexical/source, SVG/MathML and actual PDF inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-unit-measures-stdio.test.cjs",
+    "pattern": "inspect-(?:math-(?:unit-measures(?:\\.test)?|logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only frozen-candidate six-unit, exact rational, native DOCX lexical/source, SVG/MathML and actual PDF inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-unit-measures.py",
+    "reason": "Development-only frozen-candidate six-unit, exact rational, native DOCX lexical/source, SVG/MathML and actual PDF inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-unit-measures.test.py",
+    "reason": "Development-only frozen-candidate six-unit, exact rational, native DOCX lexical/source, SVG/MathML and actual PDF inspection and adversarial controls; one explicitly selected existing QA interpreter. Not shipped, installed or invoked by ReadMD, its plugins or offline runtimes. Production Python rules stay unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-logical-align-stdio.cjs",
+    "pattern": "inspect-(?:math-(?:logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only candidate-bound LTR logical-alignment OPC, source-identity, SVG/MathML and actual PDF inspection or adversarial oracle controls, using one explicitly selected existing QA interpreter. Never shipped, installed or called by ReadMD, its plugins or offline runtimes; production Python rules remain unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-logical-align-stdio.test.cjs",
+    "pattern": "inspect-(?:math-(?:logical-align(?:\\.test)?|word-paragraph|section-roundtrip)|docx-settings-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only candidate-bound LTR logical-alignment OPC, source-identity, SVG/MathML and actual PDF inspection or adversarial oracle controls, using one explicitly selected existing QA interpreter. Never shipped, installed or called by ReadMD, its plugins or offline runtimes; production Python rules remain unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-logical-align.py",
+    "reason": "Development-only candidate-bound LTR logical-alignment OPC, source-identity, SVG/MathML and actual PDF inspection or adversarial oracle controls, using one explicitly selected existing QA interpreter. Never shipped, installed or called by ReadMD, its plugins or offline runtimes; production Python rules remain unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-logical-align.test.py",
+    "reason": "Development-only candidate-bound LTR logical-alignment OPC, source-identity, SVG/MathML and actual PDF inspection or adversarial oracle controls, using one explicitly selected existing QA interpreter. Never shipped, installed or called by ReadMD, its plugins or offline runtimes; production Python rules remain unchanged.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-word-paragraph-stdio.cjs",
+    "pattern": "inspect-math-(?:word-paragraph|section-roundtrip)\\.py|ORACLE\\.replace\\('\\.py'",
+    "reason": "Development-only candidate-bound real stdio and independent Word paragraph/vector inspection. The explicitly selected QA interpreter is not shipped, installed or called by ReadMD or its managed engines.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-word-paragraph.py",
+    "reason": "Independent development-only OPC/XML, actual SVG path and PDF outline inspector. Uses an explicitly selected existing QA interpreter, never a product dependency, plugin or offline engine runtime.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-word-paragraph.test.py",
+    "reason": "Development-only positive and adversarial controls for the independent Word paragraph and physical-vector oracle. No interpreter is bundled or required by ReadMD.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-author-inline-reader-http.cjs",
+    "pattern": "(?:inspect-(?:author-inline(?:\\.test)?|math-section-roundtrip(?:\\.test)?|docx-settings-roundtrip)|publication-smallcaps-proof)\\.py",
+    "reason": "Development-only candidate-bound loopback HTTP inspection through the existing isolated QA broker and independent HTML inspector. The explicitly selected QA interpreter never ships with or runs from ReadMD, its plugins or capability packs.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-author-inline-reader-http.test.cjs",
+    "pattern": "(?:inspect-(?:author-inline(?:\\.test)?|math-section-roundtrip(?:\\.test)?|docx-settings-roundtrip)|publication-smallcaps-proof)\\.py",
+    "reason": "Development-only negative and binding controls for the isolated author-reader HTTP acceptance driver. These source references certify QA dependencies, never a product Python dependency or runtime installation.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-author-inline.test.py",
+    "reason": "Development-only positive and adversarial controls for independent author-text OPC/XML inspection, using owned synthetic fixtures. Never bundled, installed or called by ReadMD.",
+    "requirement": "R013"
+  },
+  {
+    "path": "tools/test/batch3-author-inline-engines-stdio.cjs",
+    "pattern": "(?:inspect-(?:publication-batch3|mcp-publication-closure)|publication-smallcaps-proof)\\.py",
+    "reason": "Development-only hash-bound inspection of actual managed PDF output and CLI EPUB-reader glyphs. The selected existing QA interpreter is independent of every shipped product and capability runtime.",
+    "requirement": "R013"
+  },
+  {
+    "path": "tools/test/inspect-author-inline.py",
+    "reason": "Independent development-only OPC/XML inspection of actual author size axes and source run identities. The explicitly selected QA interpreter never ships with or runs from ReadMD, its plugins or offline engines.",
+    "requirement": "R013"
+  },
+  {
+    "path": "tools/test/batch3-author-inline-stdio.cjs",
+    "pattern": "inspect-(?:author-inline(?:\\.test)?|mcp-publication-closure)\\.py",
+    "reason": "Development-only digest-bound inspection of real Rust stdio author-text transactions, save/restart and native publication outputs. No product or capability runtime calls Python.",
+    "requirement": "R013"
+  },
+  {
+    "path": "tools/test/inspect-math-section-roundtrip.py",
+    "reason": "Development-only independent OPC and PDF inspection, with a hidden-console broker to terminate its own headless QA host gracefully. Explicit QA interpreter and owned test processes only; never shipped, installed or invoked by ReadMD.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-math-section-roundtrip.test.py",
+    "reason": "Development-only positive and adversarial controls for native math-default and section-note inspection. Uses owned in-memory fixtures, not a product runtime or application dependency.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-math-section-stdio.cjs",
+    "pattern": "inspect-(?:math-section-roundtrip(?:\\.test)?|docx-settings-roundtrip|mcp-publication-closure)\\.py",
+    "reason": "Development-only digest-bound independent inspection and hidden headless HTTP lifecycle via the selected QA interpreter. No application, plugin or installed capability calls Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-docx-settings-roundtrip.py",
+    "reason": "Development-only independent stdlib OPC fixture, mutation and native-settings inspector. Explicitly selected QA Python never ships with or runs from ReadMD or its offline capability packs.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-docx-settings-roundtrip.test.py",
+    "reason": "Development-only positive and negative controls of the independent DOCX settings oracle. Uses only owned and in-memory package fixtures, never product runtime Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/mcp-docx-settings-roundtrip.cjs",
+    "pattern": "inspect-docx-settings-roundtrip(?:\\.test)?\\.py",
+    "reason": "Development-only digest-bound inspection of real Rust stdio native DOCX round trips. The explicitly selected QA interpreter is separate from the System32-only product process and never bundled or invoked by it.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-mcp-publication-closure.test.py",
+    "reason": "Development-only positive and negative controls of the independent PDF inspector, using owned in-memory PDFs. Never shipped, invoked or required by ReadMD or its offline capability engines.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/publication-tex-numbering-stdio.cjs",
+    "pattern": "inspect-mcp-publication-closure\\.py",
+    "reason": "Development-only hash-bound inspection of actual managed offline TeX PDF numbering and navigation. The explicitly selected QA interpreter is never invoked by ReadMD or an installed capability.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/mutate-docx-citations.py",
+    "reason": "Independent development-only, digest-bound inspection of actual Rust stdio publication outputs. Only an explicitly selected QA interpreter runs this verifier; no product code or installed capability invokes Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-citation-return-stdio.cjs",
+    "pattern": "mutate-docx-citations\\.py|inspect-mcp-publication-closure\\.py|inspect-publication-numbering\\.py",
+    "reason": "Independent development-only, digest-bound inspection of actual Rust stdio publication outputs. Only an explicitly selected QA interpreter runs this verifier; no product code or installed capability invokes Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/publication-notes-stdio.cjs",
+    "pattern": "inspect-mcp-publication-closure\\.py",
+    "reason": "Independent development-only, digest-bound inspection of actual Rust stdio publication outputs. Only an explicitly selected QA interpreter runs this verifier; no product code or installed capability invokes Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-publication-numbering.py",
+    "reason": "Independent development-only, digest-bound inspection of actual Rust stdio publication outputs. Only an explicitly selected QA interpreter runs this verifier; no product code or installed capability invokes Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-publication-numbering.test.py",
+    "reason": "Development-only positive and adversarial controls for current drawing descriptions, adjacent automatic caption identity, native style axes and media bytes. Uses owned in-memory packages and never ships with or runs from ReadMD or its capability engines.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/publication-numbering-stdio.cjs",
+    "pattern": "inspect-(?:publication-numbering(?:\\.test)?|docx-settings-roundtrip|mcp-publication-closure)\\.py",
+    "reason": "Independent development-only, digest-bound inspection of actual Rust stdio publication outputs. Only an explicitly selected QA interpreter runs this verifier; no product code or installed capability invokes Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/batch3-semantics-stdio.cjs",
+    "pattern": "inspect-mcp-publication-closure\\.py",
+    "reason": "Development-only real-stdio M10/M11 acceptance binds the existing independent output inspector and explicitly selected interpreter by hash. Only the QA process inspects actual DOCX/EPUB/PDF outputs; ReadMD and its installed capabilities never execute Python.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/inspect-mcp-publication-closure.py",
+    "reason": "Independent development-only ZIP/XML and PyMuPDF inspection of files created by the real Rust MCP process. The verifier and its explicitly selected interpreter are hash-bound QA tools, never shipped, imported or launched by ReadMD or an installed capability.",
+    "requirement": "R018"
+  },
+  {
+    "path": "tools/test/mcp-publication-math-closure.cjs",
+    "pattern": "inspect-mcp-publication-closure\\.py",
+    "reason": "Development-only real-stdio acceptance references an independent output inspector by digest. The product process itself runs with System32-only PATH and invokes no Python; this exemption is limited to the QA inspector reference, not any product runtime.",
+    "requirement": "R018"
+  },
+  {
     "path": "ui-tests/math-literal-native.cjs",
     "pattern": "inspect-publication-batch3\\.py",
     "reason": "Development-only hash-bound inspection of actual formula PDF outlines and ink. The explicit QA interpreter is never shipped, loaded or invoked by ReadMD; production math and publication remain Rust and managed offline engines.",

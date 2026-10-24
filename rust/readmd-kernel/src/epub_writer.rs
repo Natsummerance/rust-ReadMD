@@ -14,6 +14,10 @@ use std::collections::HashMap;
 #[path = "epub_numeric_inheritance_tests.rs"]
 mod numeric_inheritance_tests;
 
+#[cfg(test)]
+#[path="epub_writer_author_inline_tests.rs"]
+mod author_inline_tests;
+
 /// EPUB overrides are sparse. Missing/null values inherit body typography or
 /// the reflow margin defaults; a numeric zero is an explicit margin choice.
 pub(crate) const NUMERIC_INVALID: &str = "epub_invalid_options";
@@ -60,6 +64,12 @@ pub(crate) fn numeric_profile(options: &serde_json::Value) -> Result<NumericProf
 /// share those metrics; report the projection gap rather than silently certify
 /// a data attribute as functional alignment.
 pub fn mathml_alignment_warnings(doc:&Document)->Vec<String>{
+    let resolved_math=match crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
+        .and_then(|plan|plan.render_document(doc)) {
+        Ok(value)=>value,
+        Err(error)=>return vec![crate::math_word_projection::static_code(&error.message()).into()],
+    };
+    let doc=resolved_math.as_ref();
     fn math(xml:&str,out:&mut std::collections::BTreeSet<String>){
         if let Ok(root)=crate::omml::parse(xml){out.extend(crate::omml::mathml_warnings(&root));}
     }
@@ -131,7 +141,7 @@ pub fn navigation_ncx(items:&[NavItem])->(String,usize){
 }
 fn navigation_headings(block:&Block,out:&mut Vec<NavHeading>){
     match block.unstyled(){
-        Block::Heading{level,id,inlines}=>out.push(NavHeading{level:*level,id:id.clone(),title:inline_plain(inlines).trim().to_string()}),
+        Block::Heading{level,id,inlines,numbering}=>out.push(NavHeading{level:*level,id:id.clone(),title:format!("{}{}",numbering.as_ref().map(|n|n.full_text()).unwrap_or_default(),inline_plain(inlines).trim())}),
         Block::Quote(inner)=>{for b in inner{navigation_headings(b,out);}},
         Block::List{items,..}=>{for b in items.iter().flat_map(|i|&i.blocks){navigation_headings(b,out);}},
         _=>{}
@@ -271,6 +281,10 @@ pub fn profile_css(options:&serde_json::Value)->String {
     css.push_str("li p,blockquote p,.footnotes p,figcaption,.publication-caption{ text-indent:0 }\n");
     let notes=crate::publication_layout::Layout::from_style(&style);
     css.push_str(&format!(".footnotes{{font-size:{}em;line-height:{}}}\n",notes.note_size/body,notes.note_line_height));
+    if style["footnotes"].get("longNote").is_some(){
+        let flow=if notes.note_keep_paragraphs{"avoid"}else{"auto"};
+        css.push_str(&format!(".footnotes p{{break-inside:{flow};page-break-inside:{flow}}}\n"));
+    }
     css.push_str(&crate::export_styles::scientific_table_css(&style,"body"));
     css
 }
@@ -285,15 +299,39 @@ struct Writer<'a, 'm> {
     used_notes: Vec<String>,
     /// Per-note occurrence IDs: repeated references must never duplicate IDs.
     note_refs: HashMap<String, Vec<String>>,
+    /// Display numbers are global/source-section values, never local link IDs.
+    note_numbers:HashMap<String,usize>,
     /// A document-wide note chapter uses global IDs and qualified backlinks.
     note_file:Option<String>,file:String,
     in_note: bool,
     has_math: bool,
     math_fonts: std::collections::BTreeSet<(String, bool)>,
     math_font_warnings: bool,
+    author:Option<crate::publication_inline_text::ResolvedTextStyle>,
+    author_base:crate::publication_inline_text::ResolvedTextStyle,
+    local_pair:Option<crate::publication_inline_text::ResolvedTextStyle>,
+    author_error:Option<&'static str>,
 }
 
 impl<'a, 'm> Writer<'a, 'm> {
+    fn text_pair(&self,block:&Block)->crate::publication_inline_text::ResolvedTextStyle{
+        use crate::publication_inline_text::ResolvedTextStyle;
+        if let Some(pair)=self.local_pair{return pair;}
+        let body=numeric_profile(self.style).map(|profile|profile.font_size).unwrap_or(11.);
+        if self.in_note{let size=crate::publication_layout::Layout::from_style(self.style).note_size;return ResolvedTextStyle::base(size,self.style["footnotes"]["sizeCs"].as_f64().unwrap_or(size));}
+        let size=match block.unstyled(){Block::Heading{level,..}=>self.style["headings"][format!("h{level}")]["size"].as_f64().unwrap_or(body),Block::Table{..}=>self.style["table"]["cellSize"].as_f64().unwrap_or(10.),Block::Caption{..}=>body*0.9,_=>body};ResolvedTextStyle::base(size,size)
+    }
+    fn author_text(&mut self,text:&str)->String{
+        let Some(style)=self.author else{return esc(text);};
+        if !text.is_empty(){if let Some(error)=self.author_direction_error(){return error;}}
+        if [style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.){self.author_error.get_or_insert(crate::publication_inline_text::UNSUPPORTED);return format!("<span class=\"readmd-export-error\">{}</span>",crate::publication_inline_text::UNSUPPORTED);}
+        match crate::publication_text_runs::split(text,&style){
+            Ok(segments)=>segments.into_iter().map(|segment|format!("<span style=\"font-size:{}pt\">{}</span>",segment.size,esc(&text[segment.from..segment.to]))).collect(),
+            Err(code)=>{self.author_error.get_or_insert(code);format!("<span class=\"readmd-export-error\">{}</span>",esc(code))},
+        }
+    }
+    fn author_direction_error(&mut self)->Option<String>{if self.author.is_some_and(|style|style.rtl==Some(true)){self.author_error.get_or_insert(crate::publication_inline_text::UNSUPPORTED);Some(format!("<span class=\"readmd-export-error\">{}</span>",crate::publication_inline_text::UNSUPPORTED))}else{None}}
+    fn author_atom(&mut self,body:String)->String{if body.is_empty(){body}else{self.author_direction_error().unwrap_or(body)}}
     fn rich_flow(&mut self,nodes:&[crate::publication_rich::RichLayoutNode],hanging:bool)->String{
         use crate::publication_rich::RichLayoutNode as L;
         fn flush(out:&mut String,pending:&mut String,hanging:bool){
@@ -352,18 +390,18 @@ impl<'a, 'm> Writer<'a, 'm> {
         self.has_math=true;
         let size=if self.in_note{crate::publication_layout::Layout::from_style(self.style).note_size}else{self.style["typography"]["size"].as_f64().unwrap_or(12.0)};
         let color=self.style["typography"]["color"].as_str().and_then(|s|s.strip_prefix('#')).filter(|s|s.len()==6&&s.bytes().all(|c|c.is_ascii_hexdigit())).map(|s|[u8::from_str_radix(&s[..2],16).unwrap(),u8::from_str_radix(&s[2..4],16).unwrap(),u8::from_str_radix(&s[4..],16).unwrap()]);
-        crate::omml::parse(xml).map(|root|{
-            self.math_fonts.extend(crate::math_layout::mathml_fonts(&root));
-            self.math_font_warnings|=!crate::math_layout::font_warnings(&root).is_empty();
-            crate::omml::to_mathml_with_context(&root,display,latex,size,color)
-        }).unwrap_or_else(|_|esc(latex))
+        let root=match crate::omml::parse(xml){Ok(root)=>root,Err(code)=>{self.author_error=Some(crate::math_word_projection::static_code(&code));return String::new();}};
+        if let Err(code)=crate::omml::validate_display_context(&root,display,None){self.author_error=Some(code);return String::new();}
+        self.math_fonts.extend(crate::math_layout::mathml_fonts(&root));
+        self.math_font_warnings|=!crate::math_layout::font_warnings(&root).is_empty();
+        match crate::omml::to_mathml_checked_with_context(&root,display,latex,size,color){Ok(output)=>output,Err(code)=>{self.author_error=Some(code);String::new()}}
     }
     fn inlines(&mut self, v: &[Inline]) -> String {
         let mut out = String::new();
         for (idx, i) in v.iter().enumerate() {
             match i {
-                Inline::Text(t) => out.push_str(&esc(t)),
-                Inline::Code(t) => out.push_str(&format!("<code>{}</code>", esc(t))),
+                Inline::Text(t) => out.push_str(&self.author_text(t)),
+                Inline::Code(t) => out.push_str(&format!("<code>{}</code>", self.author_text(t))),
                 Inline::Strong(c) => out.push_str(&format!("<strong>{}</strong>", self.inlines(c))),
                 Inline::Emph(c) => out.push_str(&format!("<em>{}</em>", self.inlines(c))),
                 Inline::Strike(c) => out.push_str(&format!("<del>{}</del>", self.inlines(c))),
@@ -379,6 +417,7 @@ impl<'a, 'm> Writer<'a, 'm> {
                     }
                     else{out.push_str(&format!("<span style=\"{css}\">{}</span>",self.inlines(children)));}
                 },
+                Inline::AuthorStyled{style,children}=>{let previous=self.author;self.author=Some(style.resolve(&previous.unwrap_or(self.author_base),&self.author_base));if self.author.is_some_and(|style|[style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.)){self.author_error.get_or_insert(crate::publication_inline_text::UNSUPPORTED);out.push_str(&format!("<span class=\"readmd-export-error\">{}</span>",crate::publication_inline_text::UNSUPPORTED));}else{out.push_str(&self.inlines(children));}self.author=previous;},
                 Inline::Display { display, children } => {
                     let css = match display { crate::publication_rich::RichDisplay::Block => "display:block;", crate::publication_rich::RichDisplay::Indent => "display:block;padding-left:4em;", crate::publication_rich::RichDisplay::LeftMargin => "display:inline-block;", crate::publication_rich::RichDisplay::RightInline => "display:inline;" };
                     out.push_str(&format!("<span style=\"{css}\">{}</span>", self.inlines(children)));
@@ -386,7 +425,7 @@ impl<'a, 'm> Writer<'a, 'm> {
                 Inline::Citation { children, .. } => out.push_str(&self.inlines(children)),
                 Inline::Link { href, title, children } => {
                     let inner = self.inlines(children);
-                    let inner = if inner.is_empty() { esc(href) } else { inner };
+                    let inner = if inner.is_empty() { self.author_text(href) } else { inner };
                     if !safe_href(href) || href.is_empty() {
                         out.push_str(&inner);
                         continue;
@@ -404,27 +443,28 @@ impl<'a, 'm> Writer<'a, 'm> {
                     let title_attr = if title.is_empty() { String::new() } else { format!(" title=\"{}\"", esc(title)) };
                     out.push_str(&format!("<a href=\"{}\"{title_attr}>{inner}</a>", esc(&target)));
                 }
-                Inline::Image { src, alt, .. } => match (self.images)(src) {
-                    Some(href) => out.push_str(&format!("<img src=\"{}\" alt=\"{}\"/>", esc(&href), esc(alt))),
+                Inline::Image { src, alt, .. } => {let body=match (self.images)(src) {
+                    Some(href) => format!("<img src=\"{}\" alt=\"{}\"/>", esc(&href), esc(alt)),
                     None => {
                         if !alt.is_empty() {
-                            out.push_str(&format!("<span class=\"img-missing\">[{}]</span>", esc(alt)));
-                        }
+                            format!("<span class=\"img-missing\">{}</span>", self.author_text(&format!("[{alt}]")))
+                        }else{String::new()}
                     }
-                },
-                Inline::Math(m) => out.push_str(&self.math(m, false)),
-                Inline::OfficeMath {latex,omml} => out.push_str(&self.office_math(latex,omml,false)),
+                };out.push_str(&self.author_atom(body));},
+                Inline::Math(m) => {let body=self.math(m, false);out.push_str(&self.author_atom(body));},
+                Inline::OfficeMath {latex,omml} => {let body=self.office_math(latex,omml,false);out.push_str(&self.author_atom(body));},
                 Inline::SoftBreak => {
                     // A source line break between two CJK characters is not a space.
                     let prev = crate::md_ast::inline_plain(&v[..idx]).chars().last();
                     let next = crate::md_ast::inline_plain(&v[idx + 1..]).chars().next();
                     let cjk = matches!((prev, next), (Some(a), Some(b)) if crate::latex_writer::is_cjk(a) && crate::latex_writer::is_cjk(b));
                     if !cjk {
-                        out.push(' ');
+                        out.push_str(&self.author_atom(" ".into()));
                     }
                 }
-                Inline::HardBreak => out.push_str("<br/>"),
+                Inline::HardBreak => out.push_str(&self.author_atom("<br/>".into())),
                 Inline::FootnoteRef(label) => {
+                    if let Some(error)=self.author_direction_error(){out.push_str(&error);continue;}
                     if self.footnote_defs.contains_key(label) {
                         let n = match self.used_notes.iter().position(|l| l == label) {
                             Some(p) => p + 1,
@@ -437,16 +477,16 @@ impl<'a, 'm> Writer<'a, 'm> {
                         let id=if refs.is_empty(){format!("fnref-{n}")}else{format!("fnref-{n}-{}",refs.len()+1)};
                         refs.push(if self.note_file.is_some(){format!("{}#{id}",self.file)}else{id.clone()});
                         let destination=self.note_file.as_ref().map_or_else(||format!("#fn-{n}"),|file|format!("{file}#fn-{n}"));
-                        let number=crate::publication_layout::note_number(self.style["footnotes"]["numberFormat"].as_str().unwrap_or("decimal"),crate::publication_layout::note_index(self.style,n));
+                        let number=crate::publication_layout::note_number(self.style["footnotes"]["numberFormat"].as_str().unwrap_or("decimal"),self.note_numbers.get(label).copied().unwrap_or_else(||crate::publication_layout::note_index(self.style,n)));
                         out.push_str(&format!(
                             "<a epub:type=\"noteref\" role=\"doc-noteref\" href=\"{destination}\" id=\"{id}\" class=\"noteref\"><sup>{number}</sup></a>"
                         ));
                     } else {
-                        out.push_str(&format!("[{}]", esc(label)));
+                        out.push_str(&self.author_text(&format!("[{label}]")));
                     }
                 }
                 Inline::Html(h) => {
-                    if let Ok(Some(anchor))=crate::publication_navigation::anchor_html(h){out.push_str(&anchor);}else{out.push_str(&esc(&html_text(h)));}
+                    if let Ok(Some(anchor))=crate::publication_navigation::anchor_html(h){out.push_str(&anchor);}else{out.push_str(&self.author_text(&html_text(h)));}
                 },
             }
         }
@@ -513,10 +553,25 @@ impl<'a, 'm> Writer<'a, 'm> {
     }
 
     fn block(&mut self, b: &Block, tight: bool) -> String {
+        let author=self.author.take();let base=self.author_base;self.author_base=self.text_pair(b);
+        if matches!(b.unstyled(),Block::Caption{..}){self.author=author;}
+        let result=self.block_inner(b,tight);self.author=author;self.author_base=base;result
+    }
+    fn block_inner(&mut self, b: &Block, tight: bool) -> String {
         match b {
             Block::Styled{attributes,block}=>{
                 let style=crate::publication_blocks::Resolved::for_context(self.style,attributes,block,self.in_note);
+                let old_pair=self.local_pair;self.local_pair=Some(crate::publication_inline_text::ResolvedTextStyle::base(style.size,style.size));
+                if matches!(block.unstyled(),Block::Caption{..}){
+                    match crate::publication_blocks::author_style(attributes){
+                        // The effective caption pair is also the reset target
+                        // for title-local author overrides, on both axes.
+                        Ok(author)if !author.is_empty()=>{let base=self.local_pair.unwrap();let caption=author.resolve(&base,&base);self.local_pair=Some(caption);self.author=Some(caption);},
+                        Ok(_)=>(),Err(error)=>{self.author_error.get_or_insert(error);},
+                    }
+                }
                 let mut html=self.block(block,tight);
+                self.local_pair=old_pair;
                 if let Some(end)=html.find('>'){html.insert_str(end,&format!(" style=\"{}\"",esc(&style.css())));}html
             }
             Block::Bibliography(bibliography) => {
@@ -546,11 +601,11 @@ impl<'a, 'm> Writer<'a, 'm> {
                 if columns { body.push_str("</tbody></table>"); }
                 body.push_str("</section>"); body
             }
-            Block::Heading { level, id, inlines } => {
+            Block::Heading { level, id, inlines, numbering } => {
                 let lv = (*level).clamp(1, 6);
-                format!("<h{lv} id=\"{}\">{}</h{lv}>", xml_id(id), self.inlines(inlines))
+                format!("<h{lv} id=\"{}\">{}{}</h{lv}>", xml_id(id), esc(&numbering.as_ref().map(|n|n.full_text()).unwrap_or_default()), self.inlines(inlines))
             }
-            Block::Caption { label, inlines } => format!("<p class=\"publication-caption\" id=\"{}\">{}{}</p>", xml_id(&label.id), esc(&label.text()), self.inlines(inlines)),
+            Block::Caption { label, inlines } => format!("<p class=\"publication-caption\" id=\"{}\">{}{}</p>", xml_id(&label.id), self.author_text(&label.text()), self.inlines(inlines)),
             Block::Paragraph(inl) => {
                 // A paragraph that is only an image becomes a figure.
                 let meaningful: Vec<&Inline> = inl
@@ -649,16 +704,20 @@ impl<'a, 'm> Writer<'a, 'm> {
             i += 1;
             let def = self.footnote_defs.get(&label).cloned().unwrap_or_default();
             self.in_note = true;
+            let local=self.local_pair.take();let author=self.author.take();
             let body = self.blocks(&def, false);
+            self.local_pair=local;self.author=author;
             self.in_note = false;
             bodies.push((label,body));
         }
         let end=self.note_file.is_some();
-        let mut s = if end{format!("<section class=\"footnotes\" epub:type=\"endnotes\" role=\"doc-endnotes\" aria-label=\"{}\"><ol class=\"endnote-list\" role=\"list\">",esc(&crate::publication_layout::note_title(self.style)))}else{String::from("<section class=\"footnotes\" epub:type=\"footnotes\"><hr/>")};
+        let layout=crate::publication_layout::Layout::from_style(self.style);
+        let separator=if layout.note_separator&&(!end||self.style["footnotes"].get("separator").is_some()){"<hr/>"}else{""};
+        let mut s = if end{format!("<section class=\"footnotes\" epub:type=\"endnotes\" role=\"doc-endnotes\" aria-label=\"{}\">{separator}<ol class=\"endnote-list\" role=\"list\">",esc(&crate::publication_layout::note_title(self.style)))}else{format!("<section class=\"footnotes\" epub:type=\"footnotes\">{separator}")};
         for (index,(label,body)) in bodies.into_iter().enumerate(){
             let i=index+1;
             let backs=self.note_refs.get(&label).into_iter().flatten().enumerate().map(|(at,id)|{
-                let number=crate::publication_layout::note_number(self.style["footnotes"]["numberFormat"].as_str().unwrap_or("decimal"),crate::publication_layout::note_index(self.style,i));
+                let number=crate::publication_layout::note_number(self.style["footnotes"]["numberFormat"].as_str().unwrap_or("decimal"),self.note_numbers.get(&label).copied().unwrap_or_else(||crate::publication_layout::note_index(self.style,i)));
                 let text=if at==0{format!("{number}.")}else{format!("↩{}",at+1)};
                 let href=if end{id.clone()}else{format!("#{id}")};
                 format!("<a epub:type=\"backlink\" role=\"doc-backlink\" href=\"{href}\" class=\"fn-back\">{text}</a>")
@@ -698,25 +757,41 @@ pub fn render_chapters(doc: &Document, split_level: &str, images: ImageMap) -> V
     render_chapters_with_options(doc,split_level,images,&crate::export_styles::default_style())
 }
 pub fn render_chapters_with_options(doc:&Document,split_level:&str,images:ImageMap,style:&serde_json::Value)->Vec<Chapter>{
-    render_chapters_core(doc,split_level,images,style,None)
+    let Ok(resolved_math)=crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
+        .and_then(|plan|plan.render_document(doc)) else {return Vec::new();};
+    let doc=resolved_math.as_ref();
+    let Ok(style)=crate::publication_note_policies::project_legacy(doc,style)else{return Vec::new();};
+    render_chapters_core(doc,split_level,images,&style,None).0
 }
 pub(crate) fn render_chapters_with_navigation(doc:&Document,split_level:&str,images:ImageMap,style:&serde_json::Value,front_count:usize,request:&crate::publication_navigation::Request)->crate::publication_navigation::Result<Vec<Chapter>>{
+    let resolved_math=crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
+        .and_then(|plan|plan.render_document(doc)).map_err(|error|crate::publication_navigation::Error{
+            code:crate::math_word_projection::static_code(&error.message()),path:"epub.math".into(),from:0,to:0,
+        })?;
+    let doc=resolved_math.as_ref();
+    let style=crate::publication_note_policies::project_legacy(doc,style)
+        .map_err(|error|crate::publication_navigation::Error{code:error.code,path:error.path,from:0,to:0})?;
     crate::publication_navigation::validate_document(doc,request)?;
     if front_count>doc.blocks.len(){return Err(crate::publication_navigation::Error{code:crate::publication_navigation::INVALID,path:"epub.navigation.bodymatter".into(),from:0,to:0});}
     let first_body=doc.blocks[front_count..].iter().find(|b|!matches!(b.unstyled(),Block::Html(_)|Block::FootnoteDef{..}|Block::SectionStart(_)));
     if first_body.is_none()&&!request.anchors.is_empty(){return Err(crate::publication_navigation::Error{code:crate::publication_navigation::REFERENCE,path:"epub.navigation.bodymatter".into(),from:0,to:0});}
-    Ok(render_chapters_core(doc,split_level,images,style,first_body))
+    let (chapters,error)=render_chapters_core(doc,split_level,images,&style,first_body);
+    if let Some(code)=error{return Err(crate::publication_navigation::Error{code,path:"epub.authorText".into(),from:0,to:0});}Ok(chapters)
 }
 fn navigation_boundary(block:&Block)->bool{
     matches!(block.unstyled(),Block::SectionStart(_))||matches!(block.unstyled(),Block::Html(raw) if crate::publication_navigation::parse_html(raw).is_ok_and(|v|!v.is_empty()))
 }
-fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&serde_json::Value,first_body:Option<&Block>)->Vec<Chapter>{
+fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&serde_json::Value,first_body:Option<&Block>)->(Vec<Chapter>,Option<&'static str>){
+    if let Err(code)=crate::math_word_projection::validate_render_document_at_width(doc,"epub",None){return (Vec::new(),Some(crate::math_word_projection::static_code(&code)));}
+    if let Err(code) = crate::publication_blocks::validate_author_render_document(doc) {
+        return (Vec::new(), Some(code));
+    }
     let max_level: u8 = match split_level { "none" => 0, "h2" => 2, _ => 1 };
     let mut groups: Vec<(String, Vec<&Block>)> = Vec::new();
     let mut cur_title = "序言".to_string();
     let mut cur: Vec<&Block> = Vec::new();
     for b in &doc.blocks {
-        if let Block::Heading { level, inlines, .. } = b.unstyled() {
+        if let Block::Heading { level, inlines, numbering, .. } = b.unstyled() {
             if *level <= max_level {
                 let trailing=cur.iter().rposition(|block|!matches!(block.unstyled(),Block::FootnoteDef{..})&&!navigation_boundary(block)).map_or(0,|index|index+1);
                 let mut boundaries=cur.split_off(trailing);
@@ -727,7 +802,7 @@ fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&se
                 // Keep a leading boundary with its heading instead of
                 // manufacturing an empty preface chapter or losing its ID.
                 cur=boundaries;
-                cur_title = inline_plain(inlines).trim().to_string();
+                cur_title = format!("{}{}",numbering.as_ref().map(|n|n.full_text()).unwrap_or_default(),inline_plain(inlines)).trim().to_string();
             }
         }
         cur.push(b);
@@ -746,7 +821,7 @@ fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&se
         fn inline_anchors(values:&[Inline],file:&str,anchors:&mut HashMap<String,String>){
             for value in values{match value{
                 Inline::Html(raw)=>{if let Ok(items)=crate::publication_navigation::parse_html(raw){for item in items{anchors.entry(format!("readmd-epub-{}",item.id)).or_insert_with(||file.to_string());}}},
-                Inline::Strong(c)|Inline::Emph(c)|Inline::Strike(c)|Inline::Styled{children:c,..}|Inline::Display{children:c,..}|Inline::Citation{children:c,..}|Inline::Link{children:c,..}=>inline_anchors(c,file,anchors),_=>(),
+                Inline::Strong(c)|Inline::Emph(c)|Inline::Strike(c)|Inline::Styled{children:c,..}|Inline::AuthorStyled{children:c,..}|Inline::Display{children:c,..}|Inline::Citation{children:c,..}|Inline::Link{children:c,..}=>inline_anchors(c,file,anchors),_=>(),
             }}
         }
         fn walk(b: &Block, file: &str, anchors: &mut HashMap<String, String>) {
@@ -774,7 +849,7 @@ fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&se
 
     let mut out = Vec::new();let end=crate::publication_layout::notes_at_end(style);
     let note_file=end.then(||format!("chapter_{}.xhtml",groups.len()+1));
-    let mut w = Writer { style, images: &mut *images, anchors: &anchors, footnote_defs: &defs, used_notes: Vec::new(), note_refs:HashMap::new(), note_file:note_file.clone(),file:String::new(),in_note:false, has_math: false, math_fonts:Default::default(), math_font_warnings:false };
+    let mut w = Writer { style, images: &mut *images, anchors: &anchors, footnote_defs: &defs, used_notes: Vec::new(), note_refs:HashMap::new(), note_numbers:crate::publication_layout::note_numbers(doc,style),note_file:note_file.clone(),file:String::new(),in_note:false, has_math: false, math_fonts:Default::default(), math_font_warnings:false,author:None,author_base:crate::publication_inline_text::ResolvedTextStyle::base(11.,11.),local_pair:None,author_error:None };
     for (index,(title, blocks)) in groups.into_iter().enumerate() {
         w.file=format!("chapter_{}.xhtml",index+1);
         let mut body = String::new();
@@ -793,7 +868,7 @@ fn render_chapters_core(doc:&Document,split_level:&str,images:ImageMap,style:&se
         w.file=note_file.unwrap();let title=crate::publication_layout::note_title(style);let body=format!("<h1>{}</h1>{}",esc(&title),w.notes());
         out.push(Chapter {title,body,headings:Vec::new(),has_math:w.has_math,math_fonts:w.math_fonts,math_font_warnings:w.math_font_warnings});
     }
-    out
+    (out,w.author_error)
 }
 
 /// Extra stylesheet rules for the constructs this writer emits.
@@ -853,6 +928,10 @@ del { color: inherit; }
 #[cfg(test)]
 #[path = "epub_table_reflow_tests.rs"]
 mod table_reflow_tests;
+
+#[cfg(test)]
+#[path = "epub_notes_layout_tests.rs"]
+mod notes_layout_tests;
 
 #[cfg(test)]
 mod tests {
@@ -955,10 +1034,10 @@ mod tests {
             let style=crate::export_styles::sanitize(&serde_json::json!({"footnotes":{"position":position,"start":27,"numberFormat":"upperLetter"}}));
             let chapters=render_chapters_with_options(&doc,"h1",&mut |_|None,&style);
             assert_eq!(chapters[0].body.matches("<sup>AA</sup>").count(),2);
-            assert_eq!(chapters[0].body.matches("<sup>AB</sup>").count(),1);
+            assert_eq!(chapters[0].body.matches("<sup>BB</sup>").count(),1);
             let notes=&chapters.last().unwrap().body;
             assert!(notes.contains("id=\"fn-1\"")&&notes.contains("id=\"fn-2\""));
-            assert!(notes.contains(">AA.</a>")&&notes.contains(">AB.</a>"));
+            assert!(notes.contains(">AA.</a>")&&notes.contains(">BB.</a>"));
             assert!(notes.contains("#fnref-1-2\""));assert!(!notes.contains("fn-27"));
         }
     }

@@ -61,6 +61,17 @@ impl Expr {
             _ => self,
         }
     }
+    fn is_empty(&self) -> bool {
+        match &self.kind {
+            Kind::Text(value) => value.is_empty(),
+            Kind::Row(args) => args.iter().all(Self::is_empty),
+            Kind::Group(_, body, _) => body.is_empty(),
+            _ => false,
+        }
+    }
+    fn is_operator(&self) -> bool {
+        matches!(&self.kind, Kind::Text(value) if value.chars().all(|c| "+-−=<>:,;.*×·÷/⁄∕¦".contains(c)))
+    }
 }
 
 struct Parser<'a> {
@@ -68,6 +79,9 @@ struct Parser<'a> {
     at: usize,
     items: usize,
     diagnostics: Vec<Diagnostic>,
+    // In sin⁡^2 x, the name's contiguous source span also contains ⁡.
+    // Preserve that operator when a name slot is replaced.
+    function_markers: BTreeMap<(usize, usize), (usize, usize)>,
 }
 fn is_function(value: &str) -> bool {
     matches!(
@@ -129,6 +143,19 @@ impl Parser<'_> {
             self.next()?;
         }
         Ok(())
+    }
+    fn function_marker(&self) -> Option<(usize, usize)> {
+        let rest = &self.source[self.at..];
+        let trimmed = rest.trim_start();
+        let from = self.at + rest.len() - trimmed.len();
+        if trimmed.starts_with('\u{2061}') {
+            Some((from, from + '\u{2061}'.len_utf8()))
+        } else {
+            trimmed.strip_prefix("\\funcapply").filter(|tail| {
+                !tail.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            })?;
+            Some((from, from + "\\funcapply".len()))
+        }
     }
     fn expression(&mut self, stops: &[char], depth: usize) -> Result<Expr> {
         if depth > MAX_DEPTH {
@@ -235,6 +262,9 @@ impl Parser<'_> {
         if depth > MAX_DEPTH {
             return Err("math_budget");
         }
+        if self.function_marker().is_some() {
+            return Err("math_missing_argument");
+        }
         if matches!(self.peek(), Some('_' | '^')) {
             let from = self.at;
             let mut sub = Expr::row(from, from, vec![]);
@@ -253,7 +283,36 @@ impl Parser<'_> {
             return Ok(Expr::call(from, base.to, "prescript", vec![sub, sup, base]));
         }
         let atom = self.atom(depth + 1)?;
-        self.scripts(atom, None, depth + 1)
+        let name = self.scripts(atom, None, false, depth + 1)?;
+        let Some((marker_from, marker_to)) = self.function_marker() else {
+            return Ok(name);
+        };
+        if name.is_empty() || name.is_operator() {
+            return Err("math_missing_argument");
+        }
+        self.spaces()?;
+        while self.at < marker_to {
+            self.next()?;
+        }
+        // UTN28 §3.5 moves scripts immediately following ⁡ onto the name.
+        let name = self.scripts(name, None, true, depth + 1)?;
+        if marker_from < name.to {
+            self.function_markers
+                .insert((name.from, name.to), (marker_from, marker_to));
+        }
+        self.spaces()?;
+        let argument = self.operand(depth + 1)?;
+        if argument.is_empty() || argument.is_operator() {
+            return Err("math_missing_argument");
+        }
+        let (from, to) = (name.from, argument.to);
+        // Visible argument parentheses are significant; only 〖〗 disappear.
+        let argument = if matches!(&argument.kind, Kind::Group('〖', _, '〗')) {
+            argument.ungroup()
+        } else {
+            argument
+        };
+        Ok(Expr::call(from, to, "function", vec![name, argument]))
     }
     fn script_argument(&mut self, marker: char, depth: usize) -> Result<Expr> {
         if depth > MAX_DEPTH {
@@ -271,27 +330,20 @@ impl Parser<'_> {
         };
         let atom = atom.ungroup();
         // Repeated scripts associate right; opposite scripts share one base.
-        self.scripts(atom, Some(marker), depth + 1)
+        self.scripts(atom, Some(marker), false, depth + 1)
     }
-    fn scripts(&mut self, mut base: Expr, only: Option<char>, depth: usize) -> Result<Expr> {
+    fn scripts(
+        &mut self,
+        mut base: Expr,
+        only: Option<char>,
+        whole_base: bool,
+        depth: usize,
+    ) -> Result<Expr> {
         if depth > MAX_DEPTH {
             return Err("math_budget");
         }
         let mut sub = None;
         let mut sup = None;
-        let mut prefix = None;
-        if matches!(self.peek(), Some('^' | '_')) {
-            if let Kind::Text(value) = &base.kind {
-                if !is_function(value)
-                    && value.chars().count() > 1
-                    && value.chars().all(char::is_alphanumeric)
-                {
-                    let (offset, last) = value.char_indices().last().unwrap();
-                    prefix = Some(Expr::text(base.from, base.from + offset, &value[..offset]));
-                    base = Expr::text(base.from + offset, base.to, last.to_string());
-                }
-            }
-        }
         while let Some(c @ ('^' | '_')) = self.peek() {
             if only.is_some_and(|m| m != c) {
                 break;
@@ -302,6 +354,22 @@ impl Parser<'_> {
                 sup = Some(value);
             } else {
                 sub = Some(value);
+            }
+        }
+        let mut prefix = None;
+        if !whole_base
+            && (sub.is_some() || sup.is_some())
+            && (only.is_some() || self.function_marker().is_none())
+        {
+            if let Kind::Text(value) = &base.kind {
+                if !is_function(value)
+                    && value.chars().count() > 1
+                    && value.chars().all(char::is_alphanumeric)
+                {
+                    let (offset, last) = value.char_indices().last().unwrap();
+                    prefix = Some(Expr::text(base.from, base.from + offset, &value[..offset]));
+                    base = Expr::text(base.from + offset, base.to, last.to_string());
+                }
             }
         }
         let from = base.from;
@@ -701,6 +769,7 @@ pub fn compile(source: &str, display: bool) -> Result<(XmlNode, Vec<SourceNode>,
         at: 0,
         items: 0,
         diagnostics: vec![],
+        function_markers: BTreeMap::new(),
     };
     let tree = parser.expression(&[], 0)?;
     let mut pending = vec![(&tree, 0)];
@@ -746,7 +815,7 @@ pub fn compile(source: &str, display: bool) -> Result<(XmlNode, Vec<SourceNode>,
 /// A slot replacement is one operand, even when the user types an ungrouped
 /// sum or fraction. Reuse existing syntactic parentheses without doubling them.
 pub(crate) fn slot_replacement(source: &str, from: usize, to: usize, text: &str) -> Result<String> {
-    if text.len() > MAX_SOURCE {
+    if source.len() > MAX_SOURCE || text.len() > MAX_SOURCE {
         return Err("math_budget");
     }
     let mut parser = Parser {
@@ -754,21 +823,39 @@ pub(crate) fn slot_replacement(source: &str, from: usize, to: usize, text: &str)
         at: 0,
         items: 0,
         diagnostics: vec![],
+        function_markers: BTreeMap::new(),
     };
     let expr = parser.expression(&[], 0)?;
     if !parser.diagnostics.is_empty() {
         return Err("math_unknown_macro");
     }
-    let compound = matches!(expr.kind, Kind::Row(_) | Kind::Call("frac", _, _));
+    let compound = matches!(
+        expr.kind,
+        Kind::Row(_) | Kind::Call("frac" | "function", _, _)
+    );
     let from = crate::document_transaction::byte_offset(source, from)?;
     let to = crate::document_transaction::byte_offset(source, to)?;
-    let already_grouped =
-        source[..from].chars().next_back() == Some('(') && source[to..].starts_with(')');
-    Ok(if compound && !already_grouped {
+    let already_grouped = matches!(
+        (source[..from].chars().next_back(), source[to..].chars().next()),
+        (Some('('), Some(')')) | (Some('〖'), Some('〗'))
+    );
+    let mut replacement = if compound && !already_grouped {
         format!("({text})")
     } else {
         text.into()
-    })
+    };
+    let mut original = Parser {
+        source,
+        at: 0,
+        items: 0,
+        diagnostics: vec![],
+        function_markers: BTreeMap::new(),
+    };
+    original.expression(&[], 0)?;
+    if let Some((marker_from, marker_to)) = original.function_markers.get(&(from, to)) {
+        replacement.push_str(&source[*marker_from..*marker_to]);
+    }
+    Ok(replacement)
 }
 
 #[cfg(test)]
@@ -776,6 +863,146 @@ mod tests {
     use super::*;
     fn xml(source: &str) -> String {
         compile(source, false).unwrap().0.xml()
+    }
+    fn find<'a>(node: &'a XmlNode, local: &str) -> Option<&'a XmlNode> {
+        if node.local() == local {
+            Some(node)
+        } else {
+            node.children().find_map(|child| find(child, local))
+        }
+    }
+    #[test]
+    fn explicit_functions_have_native_name_and_argument_roles() {
+        for source in ["sin⁡(x+1)", r"sin\funcapply(x+1)", "sin ⁡ (x+1)"] {
+            let (root, nodes, diagnostics) = compile(source, false).unwrap();
+            assert!(diagnostics.is_empty(), "{source}");
+            let function = find(&root, "func").unwrap();
+            assert_eq!(find(function, "fName").unwrap().text(), "sin");
+            let argument = function.children().find(|n| n.local() == "e").unwrap();
+            assert_eq!(argument.text(), "x+1");
+            assert_eq!(argument.children().next().unwrap().local(), "d");
+            assert!(!root.text().contains('⁡'));
+            let node = nodes.iter().find(|n| n.kind == "func").unwrap();
+            assert_eq!(node.slots.iter().map(|s| s.role.as_str()).collect::<Vec<_>>(), ["fName", "e"]);
+            let dsl = crate::math_dsl::decompile(&root).unwrap();
+            assert!(dsl.contains("function("));
+            assert_eq!(crate::math_dsl::compile(&dsl, false).unwrap().0.xml(), root.xml());
+        }
+    }
+    #[test]
+    fn function_name_scripts_bind_before_and_immediately_after_apply() {
+        for source in ["sin^2⁡x", "sin⁡^2 x", r"sin\funcapply^2 x"] {
+            let (root, _, diagnostics) = compile(source, false).unwrap();
+            assert!(diagnostics.is_empty(), "{source}");
+            let function = find(&root, "func").unwrap();
+            let name = find(function, "fName").unwrap();
+            let script = name.children().next().unwrap();
+            assert_eq!(script.local(), "sSup");
+            assert_eq!(script.children().find(|n| n.local() == "e").unwrap().text(), "sin");
+            assert_eq!(script.children().find(|n| n.local() == "sup").unwrap().text(), "2");
+            assert_eq!(function.children().find(|n| n.local() == "e").unwrap().text(), "x");
+        }
+        let (root, _, _) = compile("sin^ab^c⁡x", false).unwrap();
+        let name = find(&root, "fName").unwrap();
+        let exponent = name.children().next().unwrap().children().find(|n| n.local() == "sup").unwrap();
+        let mut parts = exponent.children();
+        assert_eq!(parts.next().unwrap().text(), "a");
+        let nested = parts.next().unwrap();
+        assert_eq!(nested.local(), "sSup");
+        assert_eq!(nested.children().find(|n| n.local() == "e").unwrap().text(), "b");
+    }
+    #[test]
+    fn functions_associate_right_and_bracketed_arguments_end_at_the_close() {
+        let (root, _, _) = compile("f⁡g⁡x", false).unwrap();
+        let outer = find(&root, "func").unwrap();
+        assert_eq!(find(outer, "fName").unwrap().text(), "f");
+        let argument = outer.children().find(|n| n.local() == "e").unwrap();
+        let inner = argument.children().next().unwrap();
+        assert_eq!(inner.local(), "func");
+        assert_eq!(find(inner, "fName").unwrap().text(), "g");
+        assert_eq!(inner.children().find(|n| n.local() == "e").unwrap().text(), "x");
+
+        let (root, _, _) = compile("sin⁡(x)y", false).unwrap();
+        let math = root.children().next().unwrap();
+        let mut children = math.children();
+        let function = children.next().unwrap();
+        assert_eq!(function.local(), "func");
+        assert_eq!(function.children().find(|n| n.local() == "e").unwrap().text(), "x");
+        assert_eq!(children.next().unwrap().text(), "y");
+        assert!(children.next().is_none());
+    }
+    #[test]
+    fn repeated_functions_keep_utf16_slots_and_patch_only_the_selected_argument() {
+        use crate::math_document::{parse, patch, MathPatch};
+        let source = "𝛼+sin⁡(x+1)+sin⁡(x+1)";
+        let doc = parse(source, "unicodemath", false).unwrap();
+        let functions: Vec<_> = doc.nodes.iter().filter(|n| n.kind == "func").collect();
+        assert_eq!(functions.len(), 2);
+        assert_ne!(functions[0].id, functions[1].id);
+        for (node, from, to, name_from, name_to, arg_from, arg_to) in [
+            (functions[0], 3, 12, 3, 6, 7, 12),
+            (functions[1], 13, 22, 13, 16, 17, 22),
+        ] {
+            assert_eq!((node.from, node.to), (from, to));
+            let name = node.slots.iter().find(|s| s.role == "fName").unwrap();
+            let argument = node.slots.iter().find(|s| s.role == "e").unwrap();
+            assert_eq!((name.from, name.to), (name_from, name_to));
+            assert_eq!((argument.from, argument.to), (arg_from, arg_to));
+        }
+        let changed = patch(source, "unicodemath", false, &doc.revision, &MathPatch::ReplaceSlot {
+            node_id: functions[1].id.clone(), role: "e".into(), text: "y+2".into(),
+        }).unwrap();
+        assert_eq!(changed.source, "𝛼+sin⁡(x+1)+sin⁡(y+2)");
+        assert_eq!(changed.nodes.iter().filter(|n| n.kind == "func").count(), 2);
+        assert!(crate::math_document::preview(&changed, false).unwrap().contains("&#x2061;"));
+    }
+    #[test]
+    fn function_argument_hidden_grouping_survives_slot_replacement() {
+        use crate::math_document::{parse, patch, MathPatch};
+        let source = "sin⁡〖x+1〗";
+        let doc = parse(source, "unicodemath", false).unwrap();
+        assert!(!doc.root.xml().contains("<m:d>"));
+        let function = doc.nodes.iter().find(|n| n.kind == "func").unwrap();
+        assert_eq!((function.from, function.to), (0, 9));
+        let argument = function.slots.iter().find(|s| s.role == "e").unwrap();
+        assert_eq!((argument.from, argument.to), (5, 8));
+        let changed = patch(source, "unicodemath", false, &doc.revision, &MathPatch::ReplaceSlot {
+            node_id: function.id.clone(), role: "e".into(), text: "y+2".into(),
+        }).unwrap();
+        assert_eq!(changed.source, "sin⁡〖y+2〗");
+        assert!(!changed.root.xml().contains("<m:d>"));
+    }
+    #[test]
+    fn replacing_a_name_keeps_the_apply_marker_that_precedes_its_script() {
+        use crate::math_document::{parse, patch, MathPatch};
+        for (source, expected) in [
+            ("sin⁡^2 x", "cos⁡ x"),
+            (r"sin\funcapply^2 x", r"cos\funcapply x"),
+        ] {
+            let doc = parse(source, "unicodemath", false).unwrap();
+            let function = doc.nodes.iter().find(|n| n.kind == "func").unwrap();
+            let changed = patch(source, "unicodemath", false, &doc.revision, &MathPatch::ReplaceSlot {
+                node_id: function.id.clone(), role: "fName".into(), text: "cos".into(),
+            }).unwrap();
+            assert_eq!(changed.source, expected);
+            let function = find(&changed.root, "func").unwrap();
+            assert_eq!(find(function, "fName").unwrap().text(), "cos");
+            assert_eq!(function.children().find(|n| n.local() == "e").unwrap().text(), "x");
+        }
+    }
+    #[test]
+    fn explicit_function_errors_literals_and_macro_boundaries_are_distinct() {
+        for source in ["⁡x", r"\funcapply x", "f⁡", "f⁡()", "f⁡〖〗", "()⁡x", "f⁡)", "f⁡+x", "f⁡⁡x", "a+⁡x"] {
+            assert_eq!(compile(source, false).unwrap_err(), "math_missing_argument", "{source}");
+        }
+        for source in ["sin x", r"f\⁡x", "\"sin⁡x\""] {
+            assert!(!xml(source).contains("<m:func>"), "{source}");
+        }
+        let (_, nodes, diagnostics) = compile(r"sin\funcapplyExtra x", false).unwrap();
+        assert!(nodes.iter().all(|n| n.kind != "func"));
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].code, "math_unknown_macro");
+        assert_eq!(compile(&format!("{}x", "f⁡".repeat(MAX_DEPTH + 1)), false).unwrap_err(), "math_budget");
     }
     #[test]
     fn fraction_styles_grouping_and_associativity() {

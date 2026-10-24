@@ -1,0 +1,89 @@
+{
+  "recordedAt": "2026-10-20T23:27:32.546Z",
+  "status": "bounded-increment-verified",
+  "candidate": "candidate-35",
+  "binarySha256": "d6f328d2857bc11edda474b222b4cc3f2636b1dcb56bd53f5416dd76149dc105",
+  "bootSha256": "6ec65cf783834adbda4f19717ba0712ecbe2c45060e9ae6ba00a8cd4c2a08e6f",
+  "sourceFreezeSha256": "09c4ef153ebe2fc10ad909788ce4416c1d27e22ac012dbd535e79322f93f3eab",
+  "checks": [
+    {
+      "name": "final-ledger",
+      "command": [
+        "node",
+        "tools/check-capability-upgrade.mjs"
+      ],
+      "code": 0,
+      "signal": null,
+      "log": "docs/reviews/evidence/batch3-math-section-final-ledger-2026-10-21.log",
+      "sha256": "b2c2b126b12fe5582d3cd5261e53a544805f52a441af6495fbc1ca3c16a63fe8"
+    },
+    {
+      "name": "final-source",
+      "command": [
+        "node",
+        "tools/test/freeze-longtail-candidate.cjs",
+        "--verify",
+        ".cache/capability-upgrade/longtail-step12-20261018/candidate-35/candidate.json"
+      ],
+      "code": 0,
+      "signal": null,
+      "log": "docs/reviews/evidence/batch3-math-section-final-source-2026-10-21.log",
+      "sha256": "3acd82e191668c46b6855c278c5cf18793384c6351fd3eccdc0d337b814dc0ea"
+    }
+  ],
+  "sourceEquivalence": {
+    "baseline": "candidate-33",
+    "finalCandidate": "candidate-35",
+    "sameBinary": true,
+    "sameBoot": true,
+    "sourceFiles": 1029,
+    "unchangedFiles": 1025,
+    "changedQaFiles": [
+      "tools/test/batch3-math-section-stdio.cjs",
+      "tools/test/batch3-math-section-stdio.test.cjs",
+      "tools/test/inspect-math-section-roundtrip.py",
+      "tools/test/inspect-math-section-roundtrip.test.py"
+    ],
+    "affectedLane": "mathsection",
+    "unaffectedLanes": [
+      "settings",
+      "numbering",
+      "citations",
+      "notes",
+      "tex"
+    ],
+    "historicalReportsRelabeled": false
+  },
+  "totals": {
+    "checks": 185,
+    "oracleOnlyChecks": 1,
+    "productionChecks": 184,
+    "exports": 125,
+    "requests": 734
+  },
+  "rust": 3253,
+  "frontend": 676,
+  "wholeRequirementCounts": {
+    "pending": 16,
+    "in_progress": 59,
+    "implemented": 0,
+    "verified": 0
+  },
+  "manifest": {
+    "path": "docs/evidence/capability-upgrade/2026-10-21/batch3-math-section-scoped/manifest.json",
+    "sha256": "9e62b9b23f60ddf5f6f6278f8648de2869c4d2ea7ffd2b728d44471f1a1d46fe"
+  },
+  "review": {
+    "path": "docs/reviews/readmd-v005-batch3-math-section-roundtrip-2026-10-21.md",
+    "sha256": "0762263ca1a847f81512517f764ce76e05cf01e3fa3024057960cf08c6e9a9ee"
+  },
+  "cleanup": {
+    "path": "docs/reviews/evidence/batch3-math-section-cache-cleanup-2026-10-21.json",
+    "sha256": "12e8f90354b66d5858599172d199c91f50f6735634078e966c644e69f025c8d0",
+    "freedBytes": 52001249
+  },
+  "computerUse": false,
+  "wordApplicationCertified": false,
+  "fullBatch3Certification": false,
+  "releaseAccepted": false
+}

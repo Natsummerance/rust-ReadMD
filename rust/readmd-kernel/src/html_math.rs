@@ -16,6 +16,9 @@ pub(crate) fn lower_dsl(source:&str,size:f64)->Result<Projection<'_>,String>{
     // A stale or unmapped carrier must fail before any destination is written.
     crate::math_dsl::expand_markdown(source).map_err(str::to_string)?;
     if !crate::math_dsl::version_diagnostics(source).is_empty(){return Err("math_unsupported_version".into());}
+    let author=crate::md_ast::parse(source);
+    let plan=crate::math_document_defaults::DocumentDefaultsPlan::analyze(&author).map_err(|error|error.message())?;
+    if plan.is_active(){return lower_document_math(source,size);}
     let mut formulas=Vec::<(Range<usize>,String,bool)>::new();
     let mut block=None::<(Range<usize>,String)>;
     // Event text removes quote/list indentation. The source span still points
@@ -28,7 +31,7 @@ pub(crate) fn lower_dsl(source:&str,size:f64)->Result<Projection<'_>,String>{
             _=>(),
         }
     }
-    for r in crate::math_dsl::markdown_ranges(source).into_iter().filter(|r|!r.display){
+    for r in crate::math_dsl::markdown_ranges(source).map_err(str::to_string)?.into_iter().filter(|r|!r.display){
         formulas.push((r.from..r.to,source[r.body_from..r.body_to].to_string(),false));
     }
     if formulas.is_empty(){return Ok(Projection{markdown:Cow::Borrowed(source),warnings:Vec::new(),formulas:0});}
@@ -40,6 +43,7 @@ pub(crate) fn lower_dsl(source:&str,size:f64)->Result<Projection<'_>,String>{
         let (root,_)=crate::math_dsl::compile(body.trim_end_matches(['\r','\n']),display).map_err(str::to_string)?;
         let tex=crate::math_formats::tex(&root);let xml=root.xml();
         let parsed=crate::omml::parse(&xml).map_err(|_|"math_invalid_source".to_string())?;
+        crate::omml::validate_display_context(&parsed,display,None).map_err(str::to_string)?;
         if !crate::math_layout::font_warnings(&parsed).is_empty(){warnings.insert("math_font_substituted".to_string());}
         let (drawing,label)=if let Some(formula)=crate::math_layout::layout_source(&tex,Some(&xml),display,size){
             (formula.publication_svg(),formula.copy_text())
@@ -51,7 +55,12 @@ pub(crate) fn lower_dsl(source:&str,size:f64)->Result<Projection<'_>,String>{
         let (tag,class)=if display{("div","readmd-export-math readmd-export-math-block")}else{("span","readmd-export-math")};
         out.push_str(&source[cursor..range.start]);
         let semantics=if label.is_empty(){"aria-hidden=\"true\"".to_string()}else{format!("role=\"math\" aria-label=\"{}\"",crate::epub_writer::esc(&label))};
-        out.push_str(&format!("<{tag} class=\"{class}\" {semantics}>{drawing}</{tag}>"));
+        let paragraph=parsed.children.iter().find(|node|node.is_math()&&node.name=="oMathPara");
+        let paragraph_style=crate::omml::math_paragraph_style(&parsed,paragraph);
+        let position=if display&&paragraph_style.explicit_alignment {
+            format!(" style=\"text-align:{}\"",if paragraph_style.alignment==crate::omml::MathJustification::CenterGroup{"center"}else{paragraph_style.alignment.as_str()})
+        }else{String::new()};
+        out.push_str(&format!("<{tag} class=\"{class}\"{position} {semantics}>{drawing}</{tag}>"));
         if display{out.push('\n');}
         if out.len()>64*1024*1024{return Err("math_budget".into());}
         cursor=range.end;
@@ -59,6 +68,46 @@ pub(crate) fn lower_dsl(source:&str,size:f64)->Result<Projection<'_>,String>{
     out.push_str(&source[cursor..]);
     if out.len()>64*1024*1024{return Err("math_budget".into());}
     Ok(Projection{markdown:Cow::Owned(out),warnings:warnings.into_iter().collect(),formulas:count})
+}
+
+/// Active document defaults also apply to bare LaTeX. All source locations
+/// come from the same checked occurrence analysis as reader/API contexts.
+fn lower_document_math(source:&str,size:f64)->Result<Projection<'_>,String>{
+    let analysis=crate::math_source_context::analyze_source(source)?;
+    let mut occurrences:Vec<_>=analysis.occurrences.iter().collect();
+    occurrences.sort_by_key(|occurrence|occurrence.byte_from);
+    let mut cursor=0;let mut out=String::with_capacity(source.len());let mut warnings=BTreeSet::new();
+    for occurrence in &occurrences {
+        let from=occurrence.byte_from;let to=occurrence.byte_to;
+        if from<cursor||to>source.len()||!source.is_char_boundary(from)||!source.is_char_boundary(to){return Err("transaction_conflict".into());}
+        if crate::speech::cancelled(){return Err("cancelled".into());}
+        let rendered=analysis.plan.render_formula(&occurrence.document,occurrence.ordinal,occurrence.display).map_err(|error|error.message())?;
+        let tex=crate::math_formats::tex(&rendered.root);let xml=rendered.root.xml();
+        let parsed=crate::omml::parse(&xml)?;
+        crate::omml::validate_display_context(&parsed,occurrence.display,None).map_err(str::to_string)?;
+        if !crate::math_layout::font_warnings(&parsed).is_empty(){warnings.insert("math_font_substituted".to_string());}
+        let (drawing,label)=if let Some(formula)=crate::math_layout::layout_source(&tex,Some(&xml),occurrence.display,size){
+            (formula.publication_svg(),formula.copy_text())
+        }else{
+            warnings.insert("math_font_substituted".to_string());warnings.extend(crate::omml::mathml_warnings(&parsed));
+            (crate::omml::to_mathml(&parsed,occurrence.display,&tex),tex)
+        };
+        out.push_str(&source[cursor..from]);
+        let (tag,class)=if occurrence.display{("div","readmd-export-math readmd-export-math-block")}else{("span","readmd-export-math")};
+        let semantics=if label.is_empty(){"aria-hidden=\"true\"".to_string()}else{format!("role=\"math\" aria-label=\"{}\"",crate::epub_writer::esc(&label))};
+        let paragraph=parsed.children.iter().find(|node|node.is_math()&&node.name=="oMathPara");
+        let paragraph_style=crate::omml::math_paragraph_style(&parsed,paragraph);
+        let position=if occurrence.display&&paragraph_style.explicit_alignment{
+            format!(" style=\"text-align:{}\"",if paragraph_style.alignment==crate::omml::MathJustification::CenterGroup{"center"}else{paragraph_style.alignment.as_str()})
+        }else{String::new()};
+        out.push_str(&format!("<{tag} class=\"{class}\"{position} {semantics}>{drawing}</{tag}>"));
+        if occurrence.display{out.push('\n');}
+        if out.len()>64*1024*1024{return Err("math_budget".into());}
+        cursor=to;
+    }
+    out.push_str(&source[cursor..]);
+    if out.len()>64*1024*1024{return Err("math_budget".into());}
+    Ok(Projection{markdown:Cow::Owned(out),warnings:warnings.into_iter().collect(),formulas:occurrences.len()})
 }
 
 #[cfg(test)]mod tests{

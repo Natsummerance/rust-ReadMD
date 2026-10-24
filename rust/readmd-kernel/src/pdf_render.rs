@@ -39,6 +39,10 @@ use serde_json::Value;
 #[path = "pdf_render_csl_display_tests.rs"]
 mod csl_display_tests;
 
+#[cfg(test)]
+#[path = "pdf_render_author_inline_tests.rs"]
+mod author_inline_tests;
+
 // =========================================================== reportlab constants
 
 /// `reportlab.lib.units.mm` (`from reportlab.lib.units import mm`, :12).
@@ -964,6 +968,9 @@ pub enum RunContent {
     /// It must not be replaced by source text, a PNG or old-size geometry.
     Error(PdfError),
     Text(String),
+    /// A validated note glyph carries its own real inline destination until
+    /// pagination. Its identity is never inferred from ordinary text.
+    NoteMarker { text: String, destination: Option<String> },
     Image(InlineImage),
     Break { hard: bool },
 }
@@ -979,6 +986,13 @@ pub struct TextStyle {
     pub baseline_shift_pt: f64,
     pub indent_em: f64,
     pub display: Option<crate::publication_rich::RichDisplay>,
+    /// Independent author axes and their cascade provenance. The selected
+    /// segment keeps its axis so a later block retarget cannot erase an
+    /// explicit size or confuse a base reset with an absolute override.
+    pub author: Option<crate::publication_inline_text::ResolvedTextStyle>,
+    pub author_complex: bool,
+    pub author_base: Option<crate::publication_inline_text::ResolvedTextStyle>,
+    pub author_depth: u16,
 }
 impl TextStyle {
     fn scale(self) -> f64 {
@@ -1013,7 +1027,7 @@ pub struct Run {
 impl Run {
     pub fn text(&self) -> &str {
         match &self.content {
-            RunContent::Text(s) => s,
+            RunContent::Text(s) | RunContent::NoteMarker { text:s, .. } => s,
             RunContent::Error(_) | RunContent::Image(_) | RunContent::Break { .. } => "",
         }
     }
@@ -1027,18 +1041,24 @@ fn check_run_errors(runs:&[Run])->Result<(),PdfError>{
 }
 
 fn has_spacing_markup(value:&Value)->bool{
-    match value{
-        Value::Object(map)=>map.get("omml").and_then(Value::as_str).is_some_and(|xml|xml.contains(crate::math_spacing::MATHML_NS)
+    let mut found=false;
+    let checked=crate::math_render_json::visit_math_subtree_sites(value,|node|{
+        found|=node.get("omml").and_then(Value::as_str).is_some_and(|xml|xml.contains(crate::math_spacing::MATHML_NS)
             &&crate::math_document::parse_xml(xml).map(|root|crate::math_spacing::contains_spacing(&root)).unwrap_or(true))
-            ||map.get("latex").and_then(Value::as_str).is_some_and(crate::latex2omml::has_math_extensions)||map.values().any(has_spacing_markup),
-        Value::Array(values)=>values.iter().any(has_spacing_markup),_=>false,
-    }
+            ||node.get("latex").and_then(Value::as_str).is_some_and(crate::latex2omml::has_math_extensions);
+        Ok(())
+    });
+    checked.is_err()||found
+}
+
+fn has_author_markup(value:&Value)->bool{
+    let mut pending=vec![value];while let Some(value)=pending.pop(){match value{Value::Object(map)=>{if map.get("t").and_then(Value::as_str)==Some("author-styled"){return true;}pending.extend(map.values());},Value::Array(values)=>pending.extend(values),_=>(),}}false
 }
 
 /// Existing markup keeps its compatibility path. A newly supported space
 /// must be laid out at the actual inherited size on its first construction.
 fn inline_markup_at_size(nodes:&Value,style:&Value,tmpdir:&str,resolve:&dyn Fn(&str)->Option<String>,size:f64)->Vec<Run>{
-    if !has_spacing_markup(nodes){return inline_markup(nodes,style,tmpdir,resolve);}
+    if !has_spacing_markup(nodes)&&!has_author_markup(nodes){return inline_markup(nodes,style,tmpdir,resolve);}
     let ctx=InlineCtx{face:FaceStyle::Regular,color:hex_d(dig(style,&["typography","color"])),href:None,size,base_face:Face::Helvetica,text_style:TextStyle::default()};
     inline_markup_ctx(nodes,style,tmpdir,resolve,&ctx)
 }
@@ -1075,6 +1095,34 @@ pub fn inline_markup(
     inline_markup_ctx(nodes, style, tmpdir, resolve, &ctx)
 }
 
+fn inline_error_run(ctx:&InlineCtx,code:&str)->Run{
+    Run{content:RunContent::Error(PdfError::new(PdfErrorKind::Invalid,code)),face:ctx.face,size:ctx.size,color:ctx.color,href:ctx.href.clone(),text_style:ctx.text_style}
+}
+
+fn author_atom_run(run:Run)->Run{
+    let visible=match &run.content{
+        RunContent::Text(text)|RunContent::NoteMarker{text,..}=>!text.is_empty(),
+        RunContent::Image(image)=>image.width>0.&&image.height>0.,
+        RunContent::Break{hard}=>*hard,
+        RunContent::Error(_)=>false,
+    };
+    if visible&&run.text_style.author.is_some_and(|style|style.rtl==Some(true)){
+        Run{content:RunContent::Error(PdfError::new(PdfErrorKind::Invalid,crate::publication_inline_text::UNSUPPORTED)),..run}
+    }else{run}
+}
+
+fn author_text_runs(text:&str,ctx:&InlineCtx,code:bool,code_size:f64)->Vec<Run>{
+    let Some(author)=ctx.text_style.author else{return vec![Run{content:RunContent::Text(text.into()),face:ctx.face,size:if code{code_size}else{ctx.size},color:ctx.color,href:ctx.href.clone(),text_style:ctx.text_style}];};
+    if [author.size,author.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.){return vec![inline_error_run(ctx,crate::publication_inline_text::UNSUPPORTED)];}
+    let segments=match crate::publication_text_runs::split(text,&author){Ok(segments)=>segments,Err(error)=>return vec![inline_error_run(ctx,error)]};
+    segments.into_iter().map(|segment|{
+        if segment.requires_shaping||segment.rtl{return inline_error_run(ctx,&format!("author_inline_text_pdf_shaping_unsupported: {}",serde_json::json!({"consumer":"rustPdf","coordinateSpace":"textUtf8Bytes","from":segment.from,"to":segment.to})));}
+        let Some(body)=text.get(segment.from..segment.to)else{return inline_error_run(ctx,crate::publication_inline_text::INVALID);};
+        let mut text_style=ctx.text_style;text_style.author_complex=segment.kind==crate::publication_text_runs::SizeKind::Complex;
+        Run{content:RunContent::Text(body.into()),face:ctx.face,size:if code&&!segment.origin.is_explicit(){code_size}else{segment.size},color:ctx.color,href:ctx.href.clone(),text_style}
+    }).collect()
+}
+
 fn inline_markup_ctx(
     nodes: &Value,
     style: &Value,
@@ -1097,18 +1145,41 @@ fn inline_markup_ctx(
         let t = nd.get("t").and_then(Value::as_str).unwrap_or("");
         // Legacy plain-text/ignored wrappers cannot silently erase a real
         // spacing element. Only these recursive math-capable paths preserve it.
-        if has_spacing_markup(nd)&&!matches!(t,"math"|"styled"|"display"|"bold"|"italic"|"link"){
+        if has_spacing_markup(nd)&&!matches!(t,"math"|"styled"|"author-styled"|"display"|"bold"|"italic"|"link"){
             out.push(Run{content:RunContent::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")),face:ctx.face,size:ctx.size,color:ctx.color,href:ctx.href.clone(),text_style:ctx.text_style});continue;
         }
         match t {
-            "br" => out.push(Run {
+            "note-marker"=>{
+                match crate::rust_pdf_notes::Marker::parse(nd){
+                    Ok(marker)=>{
+                        if ctx.href.is_some(){out.push(inline_error_run(ctx,crate::rust_pdf_notes::UNSUPPORTED));continue;}
+                        let mut sub=ctx.clone();sub.href=Some(marker.href());sub.color=link_color;
+                        if marker.role!="definition"{sub.text_style.vertical=crate::publication_rich::RichVerticalAlign::Sup;}
+                        let mut destination=marker.destination();
+                        for mut run in author_text_runs(&marker.text(),&sub,false,code_size){
+                            if let RunContent::Text(text)=&run.content{run.content=RunContent::NoteMarker{text:text.clone(),destination:destination.take()};}
+                            out.push(run);
+                        }
+                    },
+                    Err(code)=>out.push(inline_error_run(ctx,&code)),
+                }
+            },
+            "author-styled"=>{
+                if usize::from(ctx.text_style.author_depth)>=crate::publication_inline_text::MAX_DEPTH{out.push(inline_error_run(ctx,crate::publication_inline_text::BUDGET));continue;}
+                let base=ctx.text_style.author_base.unwrap_or_else(||crate::publication_inline_text::ResolvedTextStyle::base(ctx.size,ctx.size));
+                match crate::publication_inline_text::AuthorTextStyle::from_value(nd.get("text").unwrap_or(&Value::Null)){
+                    Ok(author)=>{let mut sub=ctx.clone();sub.text_style.author_depth+=1;sub.text_style.author=Some(author.resolve(&ctx.text_style.author.unwrap_or(base),&base));sub.text_style.author_base=Some(base);if sub.text_style.author.is_some_and(|style|[style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.)){out.push(inline_error_run(ctx,crate::publication_inline_text::UNSUPPORTED));}else{out.extend(inline_markup_ctx(&normalize_inline(nd.get("v").unwrap_or(&Value::Null)),style,tmpdir,resolve,&sub));}},
+                    Err(code)=>out.push(inline_error_run(ctx,code)),
+                }
+            },
+            "br" => out.push(author_atom_run(Run {
                 content: RunContent::Break { hard: true },
                 face: ctx.face,
                 size: ctx.size,
                 color: ctx.color,
                 href: ctx.href.clone(),
                 text_style: ctx.text_style,
-            }),
+            })),
             "styled" => {
                 use crate::publication_rich::*;
                 let format = serde_json::from_value::<RichFormat>(
@@ -1176,14 +1247,7 @@ fn inline_markup_ctx(
                     });
                 }
             }
-            "text" => out.push(Run {
-                content: RunContent::Text(json_text(nd.get("v").unwrap_or(&Value::Null))),
-                face: ctx.face,
-                size: ctx.size,
-                color: ctx.color,
-                href: ctx.href.clone(),
-                text_style: ctx.text_style,
-            }),
+            "text" => out.extend(author_text_runs(&json_text(nd.get("v").unwrap_or(&Value::Null)),ctx,false,code_size)),
             "bold" | "italic" => {
                 let mut sub = ctx.clone();
                 sub.face = if t == "bold" {
@@ -1206,19 +1270,14 @@ fn inline_markup_ctx(
                 };
                 sub.base_face = mono_face;
                 let body = json_text(nd.get("v").unwrap_or(&Value::Null));
-                out.push(Run {
-                    content: RunContent::Text(body),
-                    face: FaceStyle::Mono,
-                    size: code_size,
-                    color: hex_parse("#c7254e").unwrap(),
-                    href: ctx.href.clone(),
-                    text_style: TextStyle { baseline_shift_pt: 0., ..ctx.text_style },
-                });
+                sub.color=hex_parse("#c7254e").unwrap();sub.text_style.baseline_shift_pt=0.;
+                out.extend(author_text_runs(&body,&sub,true,code_size));
             }
             "strike" => {
                 // The authority emits *only* the escaped text here (:146-147) —
                 // no `<strike>` tag — so a strikethrough is visually plain text.
                 let v = nd.get("v").cloned().unwrap_or(Value::Null);
+                if ctx.text_style.author.is_some()||has_author_markup(&v)||crate::rust_pdf_notes::contains_marker(&v){out.extend(inline_markup_ctx(&normalize_inline(&v),style,tmpdir,resolve,ctx));continue;}
                 let body = match &v {
                     Value::String(s) => s.clone(),
                     Value::Array(_) => inline_text(&v),
@@ -1253,7 +1312,7 @@ fn inline_markup_ctx(
                                 let base =
                                     plain_float(dig(style, &["typography", "size"]), 11.0) * 1.3;
                                 let scale = (base / ih).min(1.0);
-                                out.push(Run {
+                                out.push(author_atom_run(Run {
                                     content: RunContent::Image(InlineImage {
                                         src: p.replace('\\', "/"),
                                         width: iw * scale,
@@ -1265,21 +1324,14 @@ fn inline_markup_ctx(
                                     color: ctx.color,
                                     href: ctx.href.clone(),
                                     text_style: ctx.text_style,
-                                });
+                                }));
                                 continue;
                             }
                         }
                         // `except Exception:` -> `_esc(nd['alt'] or nd['src'])`
                         let alt = json_text(nd.get("alt").unwrap_or(&Value::Null));
                         let body = if alt.is_empty() { src_key } else { alt };
-                        out.push(Run {
-                            content: RunContent::Text(body),
-                            face: ctx.face,
-                            size: ctx.size,
-                            color: ctx.color,
-                            href: ctx.href.clone(),
-                            text_style: ctx.text_style,
-                        });
+                        out.extend(author_text_runs(&body,ctx,false,code_size));
                     }
                     // `if src:` false -> the node contributes nothing at all.
                     None => {}
@@ -1297,27 +1349,18 @@ fn inline_markup_ctx(
                     false,
                     ctx.size,
                 ) {
-                    out.push(Run {
+                    out.push(author_atom_run(Run {
                         content: RunContent::Image(InlineImage::formula(f)),
                         face: ctx.face,
                         size: ctx.size,
                         color: ctx.color,
                         href: ctx.href.clone(),
                         text_style: ctx.text_style,
-                    });
+                    }));
                 } else if has_spacing_markup(nd) {
                     out.push(Run{content:RunContent::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")),face:ctx.face,size:ctx.size,color:ctx.color,href:ctx.href.clone(),text_style:ctx.text_style});
                 } else if fallback {
-                    out.push(Run {
-                        content: RunContent::Text(json_text(
-                            nd.get("latex").unwrap_or(&Value::Null),
-                        )),
-                        face: ctx.face,
-                        size: ctx.size,
-                        color: ctx.color,
-                        href: ctx.href.clone(),
-                        text_style: ctx.text_style,
-                    });
+                    out.extend(author_text_runs(&json_text(nd.get("latex").unwrap_or(&Value::Null)),ctx,false,code_size));
                 } else {
                     let png = nd.get("png").and_then(|v| match v {
                         Value::Array(a) => Some(
@@ -1331,14 +1374,14 @@ fn inline_markup_ctx(
                     let w = plain_float(nd.get("w").unwrap_or(&Value::Null), 0.0);
                     let h = plain_float(nd.get("h").unwrap_or(&Value::Null), 0.0);
                     if let Some(tag) = img_tag(tmpdir, png.as_deref(), w, h) {
-                        out.push(Run {
+                        out.push(author_atom_run(Run {
                             content: RunContent::Image(tag),
                             face: ctx.face,
                             size: ctx.size,
                             color: ctx.color,
                             href: ctx.href.clone(),
                             text_style: ctx.text_style,
-                        });
+                        }));
                     }
                 }
             }
@@ -1381,7 +1424,7 @@ pub fn inline_text(nodes: &Value) -> String {
                             nd.get("v").or(nd.get("latex")).unwrap_or(&Value::Null),
                         ));
                     }
-                    "bold" | "italic" | "styled" | "display" => s.push_str(&inline_text(
+                    "bold" | "italic" | "styled" | "author-styled" | "display" => s.push_str(&inline_text(
                         &normalize_inline(nd.get("v").unwrap_or(&Value::Null)),
                     )),
                     "br" => s.push('\n'),
@@ -1396,6 +1439,7 @@ pub fn inline_text(nodes: &Value) -> String {
                         nd.get("text").unwrap_or(&Value::Null),
                     ))),
                     "image" => s.push_str(&json_text(nd.get("alt").unwrap_or(&Value::Null))),
+                    "note-marker"=>if let Ok(marker)=crate::rust_pdf_notes::Marker::parse(nd){s.push_str(&marker.text());},
                     _ => {}
                 }
             }
@@ -1411,7 +1455,7 @@ pub fn runs_plain_text(runs: &[Run]) -> String {
     let mut s = String::new();
     for r in runs {
         match &r.content {
-            RunContent::Text(t) => s.push_str(t),
+            RunContent::Text(t)|RunContent::NoteMarker{text:t,..} => s.push_str(t),
             RunContent::Image(_) => {}
             RunContent::Error(_) => {}
             RunContent::Break { .. } => s.push('\n'),
@@ -1454,6 +1498,7 @@ pub struct PStyle {
     pub right_indent: f64,
     pub line_spacing: Option<crate::publication_typography::LineSpacing>,
     pub(crate) baseline_shift: Option<crate::publication_typography::baseline::BaselineShiftPt>,
+    pub(crate) author_text: Option<crate::publication_inline_text::ResolvedTextStyle>,
     pub publication_block: Option<(usize, Option<String>)>,
     pub page_break_before: bool,
     pub keep_with_next: bool,
@@ -1478,6 +1523,7 @@ impl PStyle {
             right_indent: 0.0,
             line_spacing: None,
             baseline_shift: None,
+            author_text: None,
             publication_block: None,
             page_break_before: false,
             keep_with_next: false,
@@ -1658,6 +1704,8 @@ pub struct Atom {
     pub hard_break: Option<bool>,
     pub indent: f64,
     pub join_left: bool,
+    pub author_size: bool,
+    pub destination: Option<String>,
 }
 
 /// A laid-out line: atoms plus the readable text it produces (the value that
@@ -1696,6 +1744,8 @@ fn atoms_from_runs(runs: &[Run]) -> Vec<Atom> {
                 hard_break: None,
                 indent: r.text_style.indent_em * r.size,
                 join_left: false,
+                author_size: false,
+                destination: None,
             }),
             RunContent::Break { hard } => atoms.push(Atom {
                 text: String::new(),
@@ -1714,9 +1764,12 @@ fn atoms_from_runs(runs: &[Run]) -> Vec<Atom> {
                 hard_break: Some(*hard),
                 indent: 0.,
                 join_left: false,
+                author_size: r.text_style.author.is_some(),
+                destination: None,
             }),
-            RunContent::Text(s) => {
+            RunContent::Text(s)|RunContent::NoteMarker{text:s,..} => {
                 let base = Face::Helvetica;
+                let mut destination=match &r.content{RunContent::NoteMarker{destination,..}=>destination.clone(),_=>None};
                 // Split on spaces, keeping the separators as their own atoms.
                 for piece in split_keep_space(s) {
                     if piece.is_empty() {
@@ -1754,11 +1807,21 @@ fn atoms_from_runs(runs: &[Run]) -> Vec<Atom> {
                             hard_break: None,
                             indent: r.text_style.indent_em * r.size,
                             join_left: i > 0,
+                            author_size: r.text_style.author.is_some(),
+                            destination: destination.take(),
                         });
                     }
                 }
             }
         }
+    }
+    // An author selection can start in the middle of a word. Its run boundary
+    // changes metrics, not the word-break contract. Leave legacy unmarked
+    // streams untouched, and join only actual adjacent text on either side
+    // of a newly styled run.
+    for index in 1..atoms.len(){
+        let previous=&atoms[index-1];let current=&atoms[index];
+        if (previous.author_size||current.author_size)&&!previous.text.is_empty()&&!current.text.is_empty()&&!previous.is_space&&!current.is_space&&previous.hard_break.is_none()&&current.hard_break.is_none()&&previous.image.is_none()&&current.image.is_none(){atoms[index].join_left=true;}
     }
     atoms
 }
@@ -1824,6 +1887,7 @@ pub fn wrap_atoms(atoms: &[Atom], avail: f64, out: &mut Vec<Line>) {
                     text: chunk.clone(),
                     paint_text: chunk,
                     width: cw,
+                    destination: if start==0{a.destination.clone()}else{None},
                     ..a.clone()
                 });
                 start = end;
@@ -1961,6 +2025,7 @@ fn wrap_two_phase_with_min_width(atoms: &[Atom], first_w: f64, rest_w: f64, out:
             if atom.width > avail && !atom.paint_text.is_empty() && atom.paint_text == atom.text {
                 let mut text = String::new();
                 let mut width = 0.;
+                let mut destination=atom.destination.clone();
                 for c in atom.text.chars() {
                     let cw = char_advance(atom.face, atom.base, c, atom.size);
                     let chunk_avail=((if out.is_empty(){first_w}else{rest_w})-atom.indent).max(min_width);
@@ -1974,6 +2039,7 @@ fn wrap_two_phase_with_min_width(atoms: &[Atom], first_w: f64, rest_w: f64, out:
                                 text: text.clone(),
                                 paint_text: std::mem::take(&mut text),
                                 width,
+                                destination: destination.take(),
                                 ..atom.clone()
                             },
                         );
@@ -1993,6 +2059,7 @@ fn wrap_two_phase_with_min_width(atoms: &[Atom], first_w: f64, rest_w: f64, out:
                             text: text.clone(),
                             paint_text: text,
                             width,
+                            destination: destination.take(),
                             ..atom.clone()
                         },
                     );
@@ -2019,7 +2086,7 @@ fn line_height(line: &Line, style: &PStyle) -> f64 {
     let mut below = 0f64;
     for atom in &line.atoms {
         let semantic_rise = atom.rise - atom.baseline_shift_pt;
-        if semantic_rise != 0. {
+        if semantic_rise != 0. || atom.author_size {
             let face = atom.face.face(atom.base);
             above = above.max(semantic_rise + atom.size * face.asc1000() / 1000. - ascent);
             below = below.max(atom.size * face.desc1000() / 1000. - semantic_rise - descent);
@@ -2040,9 +2107,25 @@ fn line_height(line: &Line, style: &PStyle) -> f64 {
 /// A spacing formula instead carries a typed error; its old geometry cannot
 /// be returned as a successful inherited-size projection.
 pub fn retarget_runs(runs: &[Run], size: f64, color: Rgb) -> Vec<Run> {
+    retarget_runs_pair(runs,size,size,color)
+}
+
+fn retarget_runs_pair(runs:&[Run],size:f64,size_cs:f64,color:Rgb)->Vec<Run>{
     runs.iter()
         .map(|r| {
             let mut n = r.clone();
+            if matches!(n.content,RunContent::Text(_)|RunContent::NoteMarker{..}|RunContent::Break{..}){
+                if let Some(mut author)=n.text_style.author{
+                    use crate::publication_inline_text::SizeOrigin;
+                    if author.size_origin!=SizeOrigin::Author{author.size=size;}
+                    if author.size_cs_origin!=SizeOrigin::Author{author.size_cs=size_cs;}
+                    let (selected,origin)=if n.text_style.author_complex{(author.size_cs,author.size_cs_origin)}else{(author.size,author.size_origin)};
+                    if n.face!=FaceStyle::Mono||origin.is_explicit(){n.size=selected;}
+                    n.text_style.author=Some(author);n.text_style.author_base=Some(crate::publication_inline_text::ResolvedTextStyle::base(size,size_cs));
+                    if n.href.is_none()&&n.face!=FaceStyle::Mono{n.color=color;}
+                    return n;
+                }
+            }
             if n.size!=size{
                 let replacement=match &n.content{
                     RunContent::Image(image)=>image.math.as_ref().map(|formula|formula.spacing_at_size(size)),_=>None,
@@ -2055,7 +2138,7 @@ pub fn retarget_runs(runs: &[Run], size: f64, color: Rgb) -> Vec<Run> {
             if n.face != FaceStyle::Mono {
                 match &mut n.content {
                     RunContent::Error(_) => {},
-                    RunContent::Text(_) | RunContent::Break { .. } => n.size = size,
+                    RunContent::Text(_) | RunContent::NoteMarker{..} | RunContent::Break { .. } => n.size = size,
                     RunContent::Image(im) if n.size != size => {
                         if let Some(f) = im.math.as_ref().and_then(|f| f.at_size(size)) {
                             *im = InlineImage::formula(f);
@@ -2643,8 +2726,16 @@ impl Styles {
     }
 }
 
+/// Pure source preflight for the actual Rust PDF caption consumer. Keep the
+/// dynamic shaping details intact for the existing export error serializer.
+pub(crate) fn validate_caption_author_source(source:&str,options:&Value)->Result<(),String>{
+    if !source.contains(crate::publication_blocks::PREFIX){return Ok(());}
+    let document=crate::md_ast::parse(source);
+    let blocks=crate::md_ast::to_render_json(&document.blocks);
+    publication_paragraph::validate_caption_author(&blocks,options).map_err(|error|error.message)
+}
+
 /// `render(blocks, out_path, style, tmpdir, resolve, warns)` (`:217-462`).
-///
 /// Returns the `out_path` it wrote, like the authority returns `out_path`.
 pub fn render(
     blocks: &Value,
@@ -2675,13 +2766,14 @@ fn commit_rendered(bytes:&[u8],out_path:&str)->Result<String,PdfError>{
     Ok(out_path.to_string())
 }
 
-pub(crate) fn render_with_lines(blocks:&Value,out_path:&str,style:&Value,tmpdir:&str,
+pub(crate) fn render_bytes_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
     resolve:&dyn Fn(&str)->Option<String>,warns:&mut Vec<String>,lines:crate::publication_typography::LineContext)
-    ->Result<String,PdfError>
+    ->Result<Vec<u8>,PdfError>
 {
     let document=build_with_lines(blocks,style,tmpdir,resolve,warns,lines)?;
     let bytes=write_pdf(&document);
-    commit_rendered(&bytes,out_path)
+    if crate::speech::cancelled(){return Err(PdfError::new(PdfErrorKind::Invalid,"cancelled"));}
+    Ok(bytes)
 }
 
 /// The file-system-free half of [`render`]: the same document as PDF bytes.
@@ -2765,6 +2857,8 @@ pub enum DrawItem {
     },
     /// A non-painting destination recorded after pagination, in page coordinates.
     Destination { name: String, top: f64 },
+    /// Actual glyph origin for an inline note marker (PDF user coordinates).
+    InlineDestination { name: String, left: f64, baseline: f64 },
     /// A placed `Image` flowable: `src` is the resolved file, `x/y` the lower
     /// left corner of the box reportlab would have drawn it in.
     Image {
@@ -2876,8 +2970,23 @@ pub fn build_story(
 
     // ---- per-block dispatch (`:319-456`)
     if let Value::Array(arr) = blocks {
+        let note_policies=crate::publication_note_policies::parse_layer(style);
         for (block_index, blk) in arr.iter().enumerate() {
             let t = blk.get("type").and_then(Value::as_str).unwrap_or("");
+            // Author-aware note JSON retains its actual label. Legacy JSON
+            // has no such hint and deliberately keeps its prior projection.
+            let mut note_style=None;let mut note_size_cs=None;
+            if let Some(label)=blk.get("publicationNoteLabel").and_then(Value::as_str){
+                let policies=match &note_policies{Ok(policies)=>policies,Err(error)=>{story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,&error.to_string())));continue;}};
+                let patch=policies.paragraph_policy(policies.kind_for_label(label));let layout=crate::publication_layout::Layout::from_style(style);let size=patch.size.unwrap_or(layout.note_size);note_size_cs=Some(patch.size_cs.unwrap_or(size));
+                let local=blk.get("publicationStyle").unwrap_or(&Value::Null);let local_size=match local{Value::Array(layers)=>layers.iter().filter_map(|layer|layer.pointer("/text/size").and_then(Value::as_f64)).last(),value=>value.pointer("/text/size").and_then(Value::as_f64)};if let Some(size)=local_size{note_size_cs=Some(size);}
+                let mut scoped=st.clone();for paragraph in [&mut scoped.body,&mut scoped.li,&mut scoped.quote]{paragraph.size=size;paragraph.leading=size*layout.note_line_height;paragraph.first_line_indent=0.;}
+                note_style=Some(scoped);
+            }
+            let st=note_style.as_ref().unwrap_or(st);
+            if has_author_markup(blk)&&!matches!(t,"paragraph"|"heading"|"caption"|"table"|"quote"|"list"|"bibliography"){
+                story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,crate::publication_inline_text::UNSUPPORTED)));continue;
+            }
             if has_spacing_markup(blk)&&!matches!(t,"paragraph"|"heading"|"math"|"table"|"quote"|"list"|"bibliography"){
                 story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")));continue;
             }
@@ -3030,6 +3139,7 @@ pub fn build_story(
                         style,
                         tmpdir,
                         resolve,
+                        None,
                     );
                     if let Some(Flowable::Paragraph { anchor, .. }) = story.last_mut() {
                         *anchor = blk
@@ -3054,6 +3164,7 @@ pub fn build_story(
                         style,
                         tmpdir,
                         resolve,
+                        None,
                     );
                     if let Some(Flowable::Paragraph { anchor, .. }) = story.last_mut() {
                         *anchor = blk.get("id").and_then(Value::as_str).map(str::to_owned);
@@ -3104,7 +3215,7 @@ pub fn build_story(
                         let body = match publication_paragraph::style(blk, block_index, st.body.clone(), style, warns) {
                             Ok(style)=>style, Err(error)=>{story.push(Flowable::Error(error));continue;}
                         };
-                        add_inline_par(&mut story, txt, body, style, tmpdir, resolve);
+                        add_inline_par(&mut story, txt, body, style, tmpdir, resolve,note_size_cs);
                     }
                 }
                 // `:346-395`
@@ -3332,7 +3443,7 @@ pub fn build_story(
                                     resolve,
                                     st.quote.size,
                                 )
-                            } else if qt=="heading"&&has_spacing_markup(qb.get("text").unwrap_or(&Value::Null)){
+                            } else if qt=="heading"&&(has_spacing_markup(qb.get("text").unwrap_or(&Value::Null))||has_author_markup(qb.get("text").unwrap_or(&Value::Null))){
                                 let mut runs=inline_markup_at_size(qb.get("text").unwrap_or(&Value::Null),style,tmpdir,resolve,st.quote.size);
                                 for run in &mut runs{if run.face!=FaceStyle::Mono{run.face=FaceStyle::Bold;}}runs
                             } else if qt == "heading" {
@@ -3348,6 +3459,7 @@ pub fn build_story(
                                 }]
                             } else {
                                 if has_spacing_markup(qb){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")));}
+                                if has_author_markup(qb){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,crate::publication_inline_text::UNSUPPORTED)));}
                                 continue;
                             };
                             let mut cst = st.quote.clone();
@@ -3385,6 +3497,15 @@ pub fn build_story(
                     let latex = json_text(blk.get("latex").unwrap_or(&Value::Null));
                     let size = st.body.size * 1.1;
                     let spacing=has_spacing_markup(blk);
+                    let word_geometry=match blk.get("omml").and_then(Value::as_str).map(crate::math_word_projection::uses_word_geometry).transpose(){
+                        Ok(value)=>value.unwrap_or(false),
+                        Err(code)=>{story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,code)));continue;},
+                    };
+                    if word_geometry {
+                        if let Err(code)=crate::math_word_projection::validate_formula(blk["omml"].as_str().unwrap(),true,Some(geom.avail),"rust"){
+                            story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,code)));continue;
+                        }
+                    }
                     if let Err(code)=crate::math_spacing::require_vector_for_spacing_at_size(blk,size){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,code)));continue;}
                     let formula = crate::math_layout::layout_source_constrained(
                         &latex,
@@ -3396,7 +3517,7 @@ pub fn build_story(
                     .and_then(|f| {
                         // Too wide for the column: set it smaller rather than overflow.
                         let max_w = geom.avail;
-                        if f.width > max_w&&!spacing {
+                        if f.width > max_w&&!spacing&&!word_geometry {
                             crate::math_layout::layout_source_constrained(
                                 &latex,
                                 blk.get("omml").and_then(Value::as_str),
@@ -3408,8 +3529,8 @@ pub fn build_story(
                             Some(f)
                         }
                     });
-                    if spacing&&formula.is_none(){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")));continue;}
-                    if spacing&&formula.as_ref().is_some_and(|f|f.width>geom.avail||f.height+f.depth>geom.height-2.*FRAME_PAD){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY)));continue;}
+                    if (spacing||word_geometry)&&formula.is_none(){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,"math_unsupported_extension")));continue;}
+                    if (spacing||word_geometry)&&formula.as_ref().is_some_and(|f|f.width>geom.avail+1e-7||f.height+f.depth>geom.height-2.*FRAME_PAD){story.push(Flowable::Error(PdfError::new(PdfErrorKind::Invalid,crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY)));continue;}
                     if let Some(f) = formula {
                         story.push(Flowable::Spacer(4.0));
                         story.push(Flowable::ImageBlock(InlineImage::formula(f)));
@@ -3506,9 +3627,11 @@ fn add_inline_par(
     style: &Value,
     tmpdir: &str,
     resolve: &dyn Fn(&str) -> Option<String>,
+    size_cs:Option<f64>,
 ) {
     if st.page_break_before && !story.is_empty() {story.push(Flowable::PageBreak);}
-    let runs = if st.publication_block.is_some()||has_spacing_markup(nodes) {
+    let size_cs=st.author_text.map(|author|author.size_cs).or(size_cs);
+    let runs = if st.publication_block.is_some()||st.author_text.is_some()||has_spacing_markup(nodes)||has_author_markup(nodes) {
         publication_paragraph::inline(nodes, style, tmpdir, resolve, &st)
     } else { inline_markup(nodes, style, tmpdir, resolve) };
     if let Err(error)=check_run_errors(&runs){story.push(Flowable::Error(error));return;}
@@ -3521,8 +3644,8 @@ fn add_inline_par(
         });
         let width = atoms_from_runs(&first).iter().map(|a| a.width).sum::<f64>() + st.size * 0.75;
         story.push(Flowable::BibliographyEntry {
-            first: retarget_runs(&first, st.size, st.color),
-            runs: retarget_runs(&body, st.size, st.color),
+            first: retarget_runs_pair(&first, st.size,size_cs.unwrap_or(st.size), st.color),
+            runs: retarget_runs_pair(&body, st.size,size_cs.unwrap_or(st.size), st.color),
             first_width: width,
             st,
         });
@@ -3530,7 +3653,7 @@ fn add_inline_par(
     }
     story.push(Flowable::Paragraph {
         anchor: None,
-        runs: retarget_runs(&runs, st.size, st.color),
+        runs: retarget_runs_pair(&runs, st.size,size_cs.unwrap_or(st.size), st.color),
         st,
     });
 }
@@ -3807,7 +3930,7 @@ impl<'a> Sheet<'a> {
         let mut text_start = 0.0f64;
         let mut span_text = String::new();
         let mut text_y = baseline;
-        let mut anchored: Vec<(String, f64, f64, f64, f64)> = Vec::new();
+        let mut anchored: Vec<(String, f64, f64, f64, f64, bool)> = Vec::new();
         // Images/formulas are positioned after alignment is known.
         let mut placed: Vec<DrawItem> = Vec::new();
         for a in atoms {
@@ -3838,7 +3961,7 @@ impl<'a> Sheet<'a> {
                 }
                 if let Some(hr) = &a.href {
                     let descent = im.math.as_ref().map(|f| f.depth).unwrap_or(0.2 * a.size);
-                    anchored.push((hr.clone(), pen, w, baseline - descent, im.height));
+                    anchored.push((hr.clone(), pen, w, baseline - descent, im.height, false));
                 }
                 pen += w;
                 text_start = pen;
@@ -3848,6 +3971,7 @@ impl<'a> Sheet<'a> {
                 continue;
             }
             let at_y = baseline + a.rise;
+            if let Some(name)=&a.destination{placed.push(DrawItem::InlineDestination{name:name.clone(),left:pen,baseline:at_y});}
             if !spans.is_empty() && (text_y - at_y).abs() > 1e-9 {
                 placed.push(DrawItem::Text {
                     x: text_start,
@@ -3917,6 +4041,7 @@ impl<'a> Sheet<'a> {
                     pen - seg_x,
                     text_y - 0.25 * a.size,
                     a.size * 1.25,
+                    a.destination.is_some(),
                 ));
             }
             if a.underline {
@@ -3938,14 +4063,14 @@ impl<'a> Sheet<'a> {
         let mut joined: Vec<(String, f64, f64, f64, f64)> = Vec::new();
         for item in anchored {
             if let Some(last) = joined.last_mut().filter(|last| {
-                last.0 == item.0
+                !item.5 && last.0 == item.0
                     && (last.1 + last.2 - item.1).abs() < 0.01
                     && (last.3 - item.3).abs() < 0.01
                     && (last.4 - item.4).abs() < 0.01
             }) {
                 last.2 += item.2;
             } else {
-                joined.push(item);
+                joined.push((item.0,item.1,item.2,item.3,item.4));
             }
         }
         if !spans.is_empty() {
@@ -3965,6 +4090,7 @@ impl<'a> Sheet<'a> {
                     *x1 += x_left + dx;
                     *x2 += x_left + dx;
                 }
+                DrawItem::InlineDestination{left,..}=>*left+=x_left+dx,
                 _ => {}
             }
             self.items.push(it);
@@ -4637,6 +4763,10 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
     resolve:&dyn Fn(&str)->Option<String>,warns:&mut Vec<String>,lines:crate::publication_typography::LineContext)
     ->Result<RenderedDoc,PdfError>
 {
+    let note_destinations=crate::rust_pdf_notes::validated_destinations(blocks,style).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
+    let resolved_math=crate::math_render_json::resolve(blocks).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
+    let blocks=resolved_math.as_ref();
+    crate::math_word_projection::validate_render_json_at_width(blocks,"rust",Some(DocGeometry::from_style(style).avail)).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
     publication_paragraph::validate(blocks,style)?;
     publication_paragraph::warnings(blocks,warns);
     if blocks.as_array().is_some_and(|values|values.iter().any(|value|value.get("type").and_then(Value::as_str)==Some("section"))){
@@ -4657,20 +4787,13 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
 
     // Owned R/B proportional and non-WinAnsi TrueType contexts; ended below.
     crate::pdf_fonts::begin(&selected);
-    fn math_font_loss(value: &Value) -> bool {
-        match value {
-            Value::Object(map) => {
-                map.get("omml")
-                    .and_then(Value::as_str)
-                    .and_then(|xml| crate::omml::parse(xml).ok())
-                    .is_some_and(|root| !crate::math_layout::font_warnings(&root).is_empty())
-                    || map.values().any(math_font_loss)
-            }
-            Value::Array(values) => values.iter().any(math_font_loss),
-            _ => false,
-        }
-    }
-    if math_font_loss(blocks) && !warns.iter().any(|w| w == "publication_font_substituted") {
+    let mut math_font_loss=false;
+    crate::math_render_json::visit_math_sites(blocks,|node,_,_|{
+        math_font_loss|=node.get("omml").and_then(Value::as_str).and_then(|xml|crate::omml::parse(xml).ok())
+            .is_some_and(|root|!crate::math_layout::font_warnings(&root).is_empty());
+        Ok(())
+    }).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
+    if math_font_loss && !warns.iter().any(|w| w == "publication_font_substituted") {
         warns.push("publication_font_substituted".into());
     }
     fn rich_font_warnings(value: &Value, codes: &mut std::collections::BTreeSet<&'static str>) {
@@ -4820,11 +4943,19 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
     validate_ucs2_fallback(&pages)?;
     std::mem::forget(guard);
     for warning in font_warns { if !warns.contains(&warning) { warns.push(warning); } }
+    // Pagination may repeat a table header, and therefore paint its logical
+    // reference more than once. Forward links stay on every painted marker;
+    // its return destination is its first physical occurrence only.
+    let mut actual_note_destinations=std::collections::BTreeSet::new();
+    for page in &mut pages{page.items.retain(|item|match item{
+        DrawItem::InlineDestination{name,..} if crate::rust_pdf_notes::private_destination(name)=>actual_note_destinations.insert(name.clone()),_=>true,
+    });}
+    if actual_note_destinations!=note_destinations{return Err(PdfError::new(PdfErrorKind::Invalid,crate::rust_pdf_notes::INVALID));}
     let names: std::collections::HashSet<&str> = pages
         .iter()
         .flat_map(|p| &p.items)
         .filter_map(|item| match item {
-            DrawItem::Destination { name, .. } => Some(name.as_str()),
+            DrawItem::Destination { name, .. } | DrawItem::InlineDestination{name,..} => Some(name.as_str()),
             _ => None,
         })
         .collect();
@@ -5487,7 +5618,7 @@ fn content_stream(
                 );
                 w!("/I{idx} Do\nQ\n");
             }
-            DrawItem::Link { .. } | DrawItem::Destination { .. } => {}
+            DrawItem::Link { .. } | DrawItem::Destination { .. } | DrawItem::InlineDestination{..} => {}
             DrawItem::Formula { x, y, f, color } => {
                 s.push_str(&math_text.draw(f, *x, *y));
                 s.push_str(&f.draw(*x, *y, &color_ops(color)));
@@ -5845,6 +5976,9 @@ pub fn write_pdf(doc: &RenderedDoc) -> Vec<u8> {
                 destinations.entry(name.clone()).or_insert_with(|| {
                     format!("[ {} 0 R /XYZ null {} null ]", page_ids[pi], fp_str(*top))
                 });
+            }
+            if let DrawItem::InlineDestination{name,left,baseline}=item{
+                destinations.entry(name.clone()).or_insert_with(||format!("[ {} 0 R /XYZ {} {} null ]",page_ids[pi],fp_str(*left),fp_str(*baseline)));
             }
         }
     }

@@ -60,9 +60,12 @@ function ps(file, args = [], timeout = 30000) {
     return "'" + value.replaceAll("'", "''") + "'";
   }).join(' ');
   const command = '& {\n' + fs.readFileSync(file, 'utf8') + '\n} ' + invocation;
-  const encoded = Buffer.from(command, 'utf16le').toString('base64');
+  // Keep the actual script out of Windows' command-line length limit. stdin is
+  // interpreted by the same PowerShell engine; no execution policy is changed.
+  const bootstrap = '[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); $source = [Console]::In.ReadToEnd(); & ([ScriptBlock]::Create($source))';
+  const encoded = Buffer.from(bootstrap, 'utf16le').toString('base64');
   return spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], {
-    cwd: ROOT, encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 2 * 1024 * 1024
+    cwd: ROOT, input: command + '\n', encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 2 * 1024 * 1024
   });
 }
 function copyFixture(input, extension, directory) {

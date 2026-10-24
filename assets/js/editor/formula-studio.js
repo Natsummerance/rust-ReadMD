@@ -157,6 +157,7 @@ window.ReadMDFormula = (() => {
     if (!draft) return;
     const current = draft, epoch = ++renderEpoch, target = byId('formula-preview');
     current.tokens = current.dialect==='dsl'?[]:tokens(current.tex); current.selected = null;
+    current.valid=false;current.previewSupported=undefined;
     byId('formula-source').value = current.tex;
     byId('formula-token-row').hidden = true;
     byId('formula-apply').disabled = true;
@@ -166,6 +167,21 @@ window.ReadMDFormula = (() => {
     }
     target.textContent = tr('formula.loading');
     try {
+      if(!current.tex.trim()){target.replaceChildren();renderTemplatePreviews();return;}
+      let data;
+      if(current.dialect==='dsl'){
+        const response=await apiFetch('/api/math/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:current.tex,dialect:'dsl',display:byId('formula-mode').value==='block'})});
+        data=await response.json();if(!response.ok||!data.ok)throw Error('invalid');
+        if(draft!==current||epoch!==renderEpoch)return;
+        current.previewSupported=data.preview_supported;
+        if(data.preview_supported===false){
+          const unavailable=await renderMathDocument(data,byId('formula-mode').value==='block');
+          if(draft!==current||epoch!==renderEpoch)return;
+          target.replaceChildren(unavailable);current.tokens=[];current.valid=true;byId('formula-apply').disabled=false;
+          byId('formula-error').textContent=apiMessage({error_code:'math_unsupported_extension'},'formula.invalid');
+          byId('formula-source-details').open=true;return;
+        }
+      }
       // Use the existing offline MathJax loader, then render from source rather
       // than HTML. A stale promise never changes another draft or a closed modal.
       if (!window.MathJax?.tex2svgPromise) { target.textContent = '$$x$$'; renderMath(target); }
@@ -174,14 +190,10 @@ window.ReadMDFormula = (() => {
       while (!window.MathJax?.tex2svgPromise && Date.now() < deadline) await new Promise(r => setTimeout(r, 40));
       if (draft !== current || epoch !== renderEpoch) return;
       if (!window.MathJax?.tex2svgPromise) throw Error('renderer unavailable');
-      if(!current.tex.trim()){target.replaceChildren();renderTemplatePreviews();return;}
       const prefix = 'rd-formula-token-' + epoch + '-' + Math.random().toString(36).slice(2, 10) + '-';
       current.prefix = prefix;
       let node;
       if(current.dialect==='dsl'){
-        const response=await apiFetch('/api/math/parse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:current.tex,dialect:'dsl',display:byId('formula-mode').value==='block'})});
-        const data=await response.json();if(!response.ok||!data.ok)throw Error('invalid');
-        if(draft!==current||epoch!==renderEpoch)return;
         current.tokens=data.document.nodes.filter(n=>['r','num','den','e','deg','sub','sup','lim','fName'].includes(n.kind)).sort((a,b)=>a.from-b.from||a.to-b.to).filter((n,i,all)=>!all.slice(0,i).some(p=>p.from===n.from&&p.to===n.to));
         node=await queueMathOperation(()=>MathJax.mathml2svgPromise(data.preview,{display:byId('formula-mode').value==='block'}));
         current.tokens.forEach((token,index)=>{const el=node.querySelector('[id="rd-formula-token-omml-'+token.id.replaceAll('.','-')+'"]');if(el)el.id=prefix+index;});
@@ -296,15 +308,19 @@ window.ReadMDFormula = (() => {
       } catch (_) { /* Keep the localized label and source spelling available. */ }
     }
   }
-  async function open(mode, range) {
+  async function open(mode, range, initial) {
     if (!state.editing || !cmView) return;
     closeMdPopups();
     const view = cmView, doc = view.state.doc.toString(), sel = view.state.selection.main;
     const found = range || ranges(doc).find(r => sel.from >= r.from && sel.to <= r.to
       && (sel.from !== sel.to || sel.from < r.to));
+    if(initial&&(!found||initial.view!==view||initial.tab!==getActiveTab()?.id||initial.doc!==doc
+      ||initial.from!==found.from||initial.to!==found.to||!Number.isInteger(initial.from)||!Number.isInteger(initial.to)
+      ||initial.from<0||initial.to<initial.from||initial.to>doc.length||doc.slice(initial.from,initial.to)!==initial.original
+      ||initial.dialect!=='dsl'||typeof initial.source!=='string'))return false;
     const selected = doc.slice(sel.from, sel.to);
     draft = { view, tab: getActiveTab()?.id, doc, from: found?.from ?? sel.from, to: found?.to ?? sel.to,
-      tex: found ? found.tex : selected, range: found, dialect:found?.dialect||(!found&&!selected.includes('\\')?'dsl':'latex'),tokens: [], selected: null, valid: false };
+      tex: initial?initial.source:found ? found.tex : selected, range: found, dialect:initial?.dialect||found?.dialect||(!found&&!selected.includes('\\')?'dsl':'latex'),tokens: [], selected: null, valid: false };
     renderEpoch++;
     byId('formula-preview').textContent = tr('formula.loading');
     byId('formula-token-row').hidden = true;
@@ -319,7 +335,8 @@ window.ReadMDFormula = (() => {
     try { await load(); if (draft !== current) return; picker(); }
     catch (_) { if (draft === current) byId('formula-error').textContent = tr('formula.catalogError'); return; }
     if (draft !== current) return;
-    await renderDraft(); byId('formula-search').focus();
+    await renderDraft(); if(draft!==current)return;
+    byId(current.previewSupported===false?'formula-source':'formula-search').focus();return true;
   }
   function close() { draft = null; renderEpoch++; window.ReadMDModal.close('formula-modal'); if (cmView) cmView.focus(); }
   async function pasteExternalFormula(event) {
@@ -331,7 +348,7 @@ window.ReadMDFormula = (() => {
     const input = text.trim();
     const dialect = /^<(?:[A-Za-z_][\w.-]*:)?math(?:\s|>)/.test(input) ? 'mathml'
       : /^\\(?:[dt]?frac|binom|sqrt|begin|text|math(?:bf|rm|it|cal|sf|bb)|operatorname)\s*\{/.test(input) && draft.dialect === 'dsl' ? 'latex'
-      : /[■√∑∏∫∬∭∮⁄∕¦▒〖〗]|\\(?:[bBpPvV]?matrix|eqarray|rect|overbar|underbar|overbrace|underbrace)\b|\\sqrt\s*\(|\)\s*\\(?:vec|hat|bar|dot|ddot|tilde)\b/.test(input) ? 'unicodemath' : null;
+      : /[■√∑∏∫∬∭∮⁄∕¦▒〖〗\u2061]|\\(?:funcapply|[bBpPvV]?matrix|eqarray|rect|overbar|underbar|overbrace|underbrace)\b|\\sqrt\s*\(|\)\s*\\(?:vec|hat|bar|dot|ddot|tilde)\b/.test(input) ? 'unicodemath' : null;
     if (!dialect) return;
     event.preventDefault();
     const current = draft, epoch = ++renderEpoch;

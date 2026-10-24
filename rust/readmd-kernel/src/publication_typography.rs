@@ -93,7 +93,10 @@ impl LineContext { pub(crate) fn legacy_multiple(self) -> f64 { self.legacy_mult
 pub(crate) struct ResolvedOptions { canonical: Value, line: LineContext }
 impl ResolvedOptions {
     pub(crate) fn from_request(raw: &Value) -> Result<Self, &'static str> {
+        let empty=serde_json::json!({});
+        let raw=if raw.is_null(){&empty}else{raw};
         validate_request(raw)?;
+        crate::publication_note_policies::parse_layer(raw).map_err(|e| e.code)?;
         let complete = crate::export_styles::sanitize(raw);
         let multiple = complete["typography"]["lineHeight"].as_f64().unwrap_or(1.6);
         Ok(Self { canonical: raw.clone(), line: LineContext { legacy_multiple: multiple } })
@@ -166,14 +169,18 @@ pub fn validate_input(source: &str, options: &Value) -> Result<bool, &'static st
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Consumer { Docx, RustPdf, Typst, Tex, Unsupported }
+pub(crate) enum Consumer { Docx, RustPdf, Typst, Tex, Flow, Unsupported }
 
 /// Actual consumer identity cannot be overridden by the client's engine key.
 pub(crate) fn validate_consumer(consumer: Consumer, source: &str, options: &Value) -> Result<(), &'static str> {
+    if consumer==Consumer::Docx {crate::publication_blocks::validate_author_consumer(source,true)?;}
+    else if consumer==Consumer::Unsupported {crate::publication_blocks::validate_author_consumer(source,false)?;}
+    else {crate::publication_blocks::validate_author_render_consumer(source)?;}
     tracking::validate_consumer(source, options, matches!(consumer, Consumer::Docx))?;
     baseline::validate_source(source, options, match consumer {
         Consumer::Docx => baseline::Consumer::Docx,
         Consumer::RustPdf => baseline::Consumer::RustPdf,
+        Consumer::Typst => baseline::Consumer::Typst,
         _ => baseline::Consumer::Unsupported,
     })?;
     if !validate_input(source, options)? { return Ok(()); }
@@ -182,7 +189,7 @@ pub(crate) fn validate_consumer(consumer: Consumer, source: &str, options: &Valu
         Consumer::RustPdf => validate_rust_pdf_document(&crate::md_ast::parse(source)),
         Consumer::Typst => validate_typst_document(&crate::md_ast::parse(source), options),
         Consumer::Tex => validate_tex_document(&crate::md_ast::parse(source), options),
-        Consumer::Unsupported => Err(UNSUPPORTED),
+        Consumer::Flow | Consumer::Unsupported => Err(UNSUPPORTED),
     }
 }
 
@@ -193,6 +200,7 @@ pub fn validate_export(format: &str, source: &str, options: &Value) -> Result<()
         else if format.eq_ignore_ascii_case("pdf") && options.pointer("/pdf/engine").and_then(Value::as_str)==Some("typst") { Consumer::Typst }
         else if matches!(format.to_ascii_lowercase().as_str(), "tex" | "latex")
             || (format.eq_ignore_ascii_case("pdf") && matches!(options.pointer("/pdf/engine").and_then(Value::as_str), Some("xelatex" | "pdflatex"))) { Consumer::Tex }
+        else if matches!(format.to_ascii_lowercase().as_str(), "html" | "epub") { Consumer::Flow }
         else { Consumer::Unsupported };
     validate_consumer(consumer,source,options)
 }
@@ -211,6 +219,7 @@ pub(crate) fn validate_pdf_preview(format: &str, source: &str, options: &Value) 
 /// container stories is rejected before resources; a global body value does
 /// not alter their existing special-story geometry.
 pub(crate) fn validate_rust_pdf_document(doc: &crate::md_ast::Document) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_render_document(doc)?;
     use crate::md_ast::Block;
     let mut pending = doc.blocks.iter().map(|b|(b,true)).collect::<Vec<_>>();
     let mut count = 0;
@@ -240,8 +249,9 @@ pub(crate) fn validate_rust_pdf_document(doc: &crate::md_ast::Document) -> Resul
 /// Ordinary top-level body paragraphs only. Actual parents decide scope;
 /// neither a JSON hint nor the selected engine may broaden this capability.
 pub(crate) fn validate_typst_document(doc: &crate::md_ast::Document, options: &Value) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_render_document(doc)?;
     tracking::validate_document(doc, options, false)?;
-    baseline::validate_document(doc, options, baseline::Consumer::Unsupported)?;
+    baseline::validate_document(doc, options, baseline::Consumer::Typst)?;
     use crate::md_ast::Block;
     validate_request(options)?;
     let global = global_line_spacing(options)?;
@@ -282,7 +292,7 @@ pub(crate) fn validate_typst_inlines(values: &[crate::md_ast::Inline]) -> Result
             Inline::Html(value) if value.trim().is_empty() || value.trim().starts_with("<!--") => (),
             Inline::Math(_) | Inline::OfficeMath {..} if !transformed => (),
             Inline::Strong(children) | Inline::Emph(children) | Inline::Strike(children)
-                | Inline::Citation {children, ..} | Inline::Link {children, ..} => pending.extend(children.iter().map(|value|(value,transformed))),
+                | Inline::AuthorStyled {children, ..} | Inline::Citation {children, ..} | Inline::Link {children, ..} => pending.extend(children.iter().map(|value|(value,transformed))),
             Inline::Styled {format, children} => {
                 let transformed = transformed || format.vertical_align != RichVerticalAlign::Baseline
                     || format.text_decoration == RichDecoration::Underline;
@@ -302,6 +312,7 @@ pub(crate) fn validate_tex_document(doc: &crate::md_ast::Document, options: &Val
 }
 
 pub(crate) fn validate_tex_document_with_front(doc: &crate::md_ast::Document, options: &Value, front_count: usize) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_render_document(doc)?;
     use crate::md_ast::Block;
     tracking::validate_document(doc, options, false)?;
     baseline::validate_document(doc, options, baseline::Consumer::Unsupported)?;
@@ -381,7 +392,7 @@ pub(crate) fn validate_tex_inlines(values: &[crate::md_ast::Inline], native_cita
             Inline::OfficeMath {..} => return Err(UNSUPPORTED),
             Inline::Citation {children,..} if !native_citations => pending.extend(children),
             Inline::Strong(children) | Inline::Emph(children) | Inline::Strike(children)
-                | Inline::Styled {children,..} | Inline::Link {children,..} => pending.extend(children),
+                | Inline::AuthorStyled {children,..} | Inline::Styled {children,..} | Inline::Link {children,..} => pending.extend(children),
             _ => return Err(UNSUPPORTED),
         }
     }
@@ -437,6 +448,7 @@ fn tex_metric_math_is_pure(value: &str) -> bool {
 /// PDF preview. It permits bounded local ordinary-body tracking, never a
 /// global Word request or typed physical line spacing.
 pub fn validate_reader_view(source: &str, options: &Value) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_render_consumer(source)?;
     tracking::validate_reader(source, options)?;
     baseline::validate_source(source, options, baseline::Consumer::Reader)?;
     if validate_input(source, options)? { return Err(UNSUPPORTED); }
@@ -446,6 +458,7 @@ pub fn validate_reader_view(source: &str, options: &Value) -> Result<(), &'stati
 /// Even DOCX preview uses an unimplemented PDF projection. It cannot certify
 /// native Word exact/atLeast spacing, nor reuse a prior approximate artifact.
 pub fn validate_preview(source: &str, options: &Value) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_render_consumer(source)?;
     tracking::validate_consumer(source, options, false)?;
     baseline::validate_source(source, options, baseline::Consumer::Unsupported)?;
     if validate_input(source, options)? { return Err(UNSUPPORTED); }
@@ -494,6 +507,7 @@ pub fn resolve_line_spacing(global: Option<LineSpacing>, paragraph: &Value, inhe
 /// any image loader. Route-level source validation is still mandatory because
 /// invalid readable declarations may deliberately remain raw HTML in the AST.
 pub fn validate_docx_document(doc: &crate::md_ast::Document, style: &Value) -> Result<(), &'static str> {
+    crate::publication_blocks::validate_author_document(doc, true)?;
     tracking::validate_document(doc, style, true)?;
     baseline::validate_document(doc, style, baseline::Consumer::Docx)?;
     validate_request(style)?;

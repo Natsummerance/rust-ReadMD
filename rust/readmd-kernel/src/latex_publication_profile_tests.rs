@@ -54,11 +54,26 @@ fn shared_tex_front_none_hides_metadata_but_preserves_native_section_order() {
     assert_eq!(body.matches("\\begin{multicols}{2}").count(), 1);
     assert!(body.contains("layoutwidth=297mm,layoutheight=210mm"));
     assert!(body.contains("\\renewcommand{\\thepage}{\\roman{page}}"));
-    assert!(body.contains("\\renewcommand{\\thepage}{\\Alph{page}}"));
+    assert!(body.contains("\\renewcommand{\\thepage}{\\readmdAlph{\\value{page}}}"));
     assert!(body.contains("\\ifodd\\value{readmdphysicalpage}\\else\\hbox{}\\thispagestyle{empty}\\newpage\\fi"));
     assert!(body.contains("\\ifodd\\value{readmdphysicalpage}\\hbox{}\\thispagestyle{empty}\\newpage\\fi"));
     assert!(body.contains("\\setcounter{page}{7}"));
     assert!(!body.contains("readmd-section:v1"));
+}
+
+#[test]
+fn letter_page_counters_share_the_expandable_office_formatter_without_numbered_headings() {
+    for (format,helper) in [("upperLetter","readmdAlph"),("lowerLetter","readmdalph")] {
+        let source=format!("<!-- readmd-section:v1 {{\"id\":\"letters52\",\"numbering\":{{\"format\":\"{format}\",\"start\":52}}}} -->\n\n# Ordinary heading\n\nFIRSTLETTERPAGE\n\n<!-- readmd-section:v1 {{\"id\":\"letters53\",\"break\":\"nextPage\",\"numbering\":{{\"format\":\"{format}\",\"start\":53}}}} -->\n\nSECONDLETTERPAGE\n");
+        let (_directory,tex,_)=export(&source,&options());let (preamble,body)=tex.split_once("\\begin{document}\n").unwrap();
+        assert_eq!(preamble.matches("\\cs_new:Npn \\readmdAlph").count(),1);
+        assert!(preamble.contains("\\prg_replicate:nn")&&preamble.contains("\\int_div_truncate:nn")&&preamble.contains("\\int_mod:nn"));
+        assert!(!preamble.contains("\\newcounter{readmdh1}"));
+        assert!(body.contains(&format!("\\renewcommand{{\\thepage}}{{\\{helper}{{\\value{{page}}}}}}")));
+        assert!(body.contains("\\setcounter{page}{52}")&&body.contains("\\setcounter{page}{53}"));
+        assert!(body.contains("\\thepage")&&body.contains("FIRSTLETTERPAGE")&&body.contains("SECONDLETTERPAGE"));
+        assert!(!body.contains("readmdnumberedheadingmark"));
+    }
 }
 
 #[test]

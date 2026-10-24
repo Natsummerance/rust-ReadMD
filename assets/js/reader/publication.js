@@ -6,8 +6,11 @@ window.ReadMDPublication=(()=>{
   const layouts=[],projections=[];
   const citationBindings=new WeakMap(),citationContainers=new WeakSet();
   const bibliographyMeasurements=new Map();
+  const authorSurfaces=new Map();
   const trackingBindings=new WeakMap();
   const baselineBindings=new WeakMap();
+  const headingNumberBindings=new WeakMap();
+  const pagedHeadingBindings=new WeakMap();
   const untrackedSelector='code,pre,.readmd-citation,.rd-fnref,mjx-container,.readmd-dsl-math,[data-readmd-math-renderer],math';
   const untrackedProperty='--readmd-untracked-letter-spacing';
   const scheduleMeasurement=callback=>typeof requestIdleCallback==='function'?requestIdleCallback(callback,{timeout:200}):requestAnimationFrame(()=>callback({timeRemaining:()=>4}));
@@ -32,10 +35,12 @@ window.ReadMDPublication=(()=>{
     if(!r.ok||!data.ok){const error=new Error('publication');error.response=data;throw error;}return data;
   }
   function projectionRecord(source,data,request){
-    return {source,epoch:request.epoch,generation:request.generation,owner:request.owner,source_citations:data.source_citations||[],projection:data.projection||null,revision:data.projection?.revision||data.revision||''};
+    return {source,epoch:request.epoch,generation:request.generation,owner:request.owner,source_citations:data.source_citations||[],projection:data.projection||null,revision:data.projection?.revision||data.revision||'',numbering:data.source_numbering||null};
   }
   async function prepare(source,file=''){
-    if(!/:label\[|:ref\[|readmd-math|<!-- readmd:layout |<!-- readmd-section:/.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^bibliography\s*:/m.test(source))return source;
+    const front=/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source)?.[1]||'';
+    const hasProfile=/(?:^|[\s{,])(?:readmd|"readmd"|'readmd')\s*:/.test(front);
+    if(!hasProfile&&!/:label\[|:ref\[|readmd-math|data-readmd-text|<!-- readmd:layout |<!-- readmd-section:|<!-- readmd-numbering:|<!--readmd-numbering-import:|<!--readmd:citation-(?:resources|import):/i.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^(?:bibliography|citation-resources)\s*:/m.test(source))return source;
     const base=String(file||'').replace(/[\\/][^\\/]*$/,'');
     const owner=origin(),navigationSource=readerOriginal(source,owner);
     if(cached?.source===source&&cached.base===base&&cached.navigationSource===navigationSource&&cached.epoch===epoch&&Date.now()-cached.time<2000){cached.owner=owner;return cached.content;}
@@ -48,7 +53,7 @@ window.ReadMDPublication=(()=>{
         const [data,navigationData]=await Promise.all([preparedDocument(source,base),navigationSource===null?null:preparedDocument(navigationSource,base)]);
         const content=typeof data.reader_content==='string'?data.reader_content:data.content;
         if(typeof content!=='string')throw new Error('publication');
-        const record={...projectionRecord(source,data,request),base,content,time:Date.now(),navigationSource,navigation:null,diagnostics:data.diagnostics||[],labels:data.source_labels||[],layout:data.layout||{}};
+        const record={...projectionRecord(source,data,request),base,content,time:Date.now(),navigationSource,navigation:null,diagnostics:data.diagnostics||[],labels:data.source_labels||[],layout:data.layout||{},authorText:data.author_text||null};
         if(navigationData){const original=projectionRecord(navigationSource,navigationData,request);if(sameCitations(record,original))record.navigation=original;}
         if(request.generation===cacheGeneration){
           projections.push(record);if(projections.length>4)projections.shift();
@@ -56,7 +61,7 @@ window.ReadMDPublication=(()=>{
         }
         if(request.epoch===epoch){
           cached=record;
-          const warns=(data.warnings||[]).map(text=>{const at=text.indexOf(': '),code=at<0?text:text.slice(0,at),key=at<0?'':text.slice(at+2),label=i18n.t('warn.'+code,{key});return label==='warn.'+code?i18n.t('academic.prepareFailed'):label;});
+          const warns=(data.warnings||[]).map(text=>{const at=text.indexOf(': '),code=at<0?text:text.slice(0,at),key=at<0?'':text.slice(at+2),label=i18n.t('warn.'+code,{key});if(label!=='warn.'+code)return label;const error=i18n.t('error.'+code,{key});return error==='error.'+code?i18n.t('academic.prepareFailed'):error;});
           if(warns.length&&currentOrigin(request.owner,source))showToast(warns.join('\n'),6000);
         }
         return content;
@@ -121,7 +126,81 @@ window.ReadMDPublication=(()=>{
       if(activeLayout?.[key]?.['--readmd-baseline-shift']===value)applyBaseline(target,key,value);
     }
   }
+  function currentNumberingRecord(){
+    const source=currentSource();
+    return [cached,...[...projections].reverse()].find(record=>record?.numbering&&record.generation===cacheGeneration&&currentOrigin(record.owner,source)&&record.source===source)||null;
+  }
+  function projectedHeadingNumbers(record){
+    if(record.numberingIds)return record.numberingIds;
+    const mapping=new Map(),plan=record.numbering?.headings;
+    if(!Array.isArray(plan)||typeof marked==='undefined'||typeof ReadMDHeadings==='undefined')return mapping;
+    // Reader pages carry globally allocated identities from the projected
+    // Markdown. Match those real top-level rows to the authoritative source
+    // plan, so a page never restarts its heading counter at one.
+    const source=record.content.replace(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/,front=>'\n'.repeat((front.match(/\n/g)||[]).length));
+    const lines=new Set();let line=1;
+    for(const token of marked.lexer(source,{gfm:true})){if(token.type==='heading')lines.add(line);line+=(token.raw?.match(/\n/g)||[]).length;}
+    const rows=ReadMDHeadings.fromMarkdown(record.content).filter(row=>lines.has(row.sourceLine));
+    if(rows.length===plan.length&&rows.every((row,index)=>row.level===plan[index].level))for(let index=0;index<rows.length;index++)mapping.set(rows[index].id,plan[index]);
+    record.numberingIds=mapping;return mapping;
+  }
+  function syncPagedHeadingIds(record,targetId=null,pageIndex=state.pagination?.currentPage){
+    if(state.pagination?.rawContent!==record.content)return targetId;
+    const mapping=projectedHeadingNumbers(record),changes=new Map(),rows=state.pagination.allHeadings||[];
+    for(const row of rows){
+      let binding=pagedHeadingBindings.get(row);
+      if(!binding||binding.content!==record.content){binding={content:record.content,projectedId:row.id};pagedHeadingBindings.set(row,binding);}
+      const entry=mapping.get(binding.projectedId);
+      if(entry&&row.level===entry.level&&row.id!==entry.id){changes.set(row.id,entry.id);row.id=entry.id;}
+    }
+    // buildToc may already have materialized the active page's links. Lazy
+    // groups retain these same row objects and use the resolved IDs later.
+    if(changes.size)for(const link of document.getElementById('toc-list')?.querySelectorAll('[data-heading-id]')||[]){
+      const id=changes.get(link.dataset.headingId);if(id){link.dataset.headingId=id;link.setAttribute('href','#'+id);}
+    }
+    if(rows.some(row=>row.pageIndex===pageIndex&&row.id===targetId))return targetId;
+    return changes.get(targetId)||targetId;
+  }
+  function preparePagedHeadings(buildOutline,targetId,pageIndex){
+    const record=currentNumberingRecord();
+    if(!record||state.pagination?.rawContent!==record.content)return targetId;
+    // The first page has no global IDs yet. Build its existing outline before
+    // binding DOM headings, then resolve both outline and links in one pass.
+    buildOutline();return syncPagedHeadingIds(record,targetId,pageIndex);
+  }
+  function applyHeadingNumbering(container){
+    if(container?.isConnected===false)return;
+    const headings=[...container.querySelectorAll('h1,h2,h3,h4,h5,h6')];
+    for(const heading of headings){
+      const previous=headingNumberBindings.get(heading);if(!previous)continue;
+      previous.span?.remove();
+      if(previous.global===undefined)delete heading.dataset.readmdGlobalId;else heading.dataset.readmdGlobalId=previous.global;
+      headingNumberBindings.delete(heading);
+    }
+    const record=currentNumberingRecord(),plan=record?.numbering?.headings;if(!Array.isArray(plan))return;
+    const real=headings.filter(heading=>!heading.closest?.('blockquote,li,pre,code,figcaption,.rd-footnotes,.readmd-bibliography,[data-readmd-footnote],[role="doc-endnotes"]'));
+    const complete=real.length===plan.length&&real.every((heading,index)=>Number(heading.tagName.slice(1))===plan[index].level);
+    const mapped=projectedHeadingNumbers(record),bySourceId=new Map(plan.map(entry=>[entry.id,entry]));
+    syncPagedHeadingIds(record);
+    const pageIds=new Set(state.pagination?.rawContent===record.content?(state.pagination.allHeadings||[]).filter(row=>pagedHeadingBindings.get(row)?.content===record.content).map(row=>row.id):[]);
+    for(let index=0;index<real.length;index++){
+      const heading=real[index],known=heading.dataset.readmdGlobalId||heading.id||heading.dataset.readmdExplicitId;
+      const entry=complete?plan[index]:pageIds.has(known)?bySourceId.get(known):mapped.get(known)||bySourceId.get(known);
+      if(!entry||Number(heading.tagName.slice(1))!==entry.level||typeof entry.id!=='string')continue;
+      if(heading.dataset.readmdHeadingText===undefined){
+        const authorTitle=[...heading.childNodes||[]].filter(node=>!(node.nodeType===1&&node.classList?.contains('rd-anchor'))).map(node=>node.textContent).join('');
+        heading.dataset.readmdHeadingText=typeof ReadMDHeadings==='undefined'?authorTitle:ReadMDHeadings.attributes(authorTitle).text;
+      }
+      const global=heading.dataset.readmdGlobalId;heading.dataset.readmdGlobalId=entry.id;
+      let span=null;
+      if(entry.numbering&&typeof entry.numbering.text==='string'&&[' ','\t',''].includes(entry.numbering.suffix)){
+        span=(heading.ownerDocument||document).createElement('span');span.className='readmd-heading-number';span.dataset.readmdHeadingNumber='';span.textContent=entry.numbering.text+entry.numbering.suffix;heading.prepend(span);
+      }
+      headingNumberBindings.set(heading,{global,span});
+    }
+  }
   function applyLayout(container){
+    applyHeadingNumbering(container);
     const activeLayout=currentLayout();
     // A sparse source edit can remove just the marker while retaining its
     // unchanged paragraph DOM. Restore that paragraph's exact prior CSS.
@@ -149,6 +228,9 @@ window.ReadMDPublication=(()=>{
         for(const [index,node]of nodes.entries())node.style.marginBottom=(index<nodes.length-1?entry*line:0)+'em';
       }
     }
+    const authorRecord=[cached,...[...projections].reverse()].find(record=>record?.generation===cacheGeneration&&sameDocument(record.owner)&&record.source===currentSource());
+    window.ReadMDAuthorText?.apply(container,authorRecord?.authorText||null);
+    if(authorRecord?.authorText?.runs?.length)authorSurfaces.set(container,authorRecord);else authorSurfaces.delete(container);
     measureBibliographies(container);
     bindCitations(container);
   }
@@ -438,18 +520,18 @@ window.ReadMDPublication=(()=>{
     return{issue,inheritGlobal,mount,validateExport,collectExport,refreshExport};
   }
   const trackingControls=physicalTextControls({key:'trackingPt',labelKey:'export.trackingPt',marker:'tracking',min:-5,max:20,supported:format=>format==='docx',unsupported:'error.publication_tracking_unsupported'});
-  const baselineControls=physicalTextControls({key:'baselineShiftPt',labelKey:'export.baselineShiftPt',marker:'baseline',min:-72,max:72,supported:(format,engine)=>format==='docx'||format==='pdf'&&(!engine||engine==='rust'),unsupported:'error.publication_baseline_unsupported'});
+  const baselineControls=physicalTextControls({key:'baselineShiftPt',labelKey:'export.baselineShiftPt',marker:'baseline',min:-72,max:72,supported:(format,engine)=>format==='docx'||format==='pdf'&&(!engine||['rust','typst'].includes(engine)),unsupported:'error.publication_baseline_unsupported'});
 
   async function blocks(body,signal){
     const response=await apiFetch('/api/publication/blocks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
     const value=await response.json();if(!response.ok||!value.ok){const error=new Error('publication');error.response=value;throw error;}return value;
   }
   function closeStyle(){
-    const session=styleSession;styleSession=null;session?.controller.abort();if(session?.modal){ReadMDModal.close(session.modal);session.modal.remove();if(window.cmView===session.view&&state.activeTabId===session.tab&&state.editing)session.view.focus();}
+    const session=styleSession;styleSession=null;session?.numbering?.destroy();session?.inlineText?.destroy();session?.controller.abort();if(session?.modal){ReadMDModal.close(session.modal);session.modal.remove();if(editorView()===session.view&&state.activeTabId===session.tab&&state.editing)session.view.focus();}
   }
-  const current=s=>styleSession===s&&state.editing&&window.cmView===s.view&&state.activeTabId===s.tab&&s.view.state.doc.toString()===s.source;
+  const current=s=>styleSession===s&&state.editing&&editorView()===s.view&&state.activeTabId===s.tab&&s.view.state.doc.toString()===s.source;
   async function openStyle(target=null){
-    closeStyle();const view=window.cmView;if(!state.editing||!view)return;
+    closeStyle();const view=editorView();if(!state.editing||!view)return;
     const session={view,source:view.state.doc.toString(),tab:state.activeTabId,controller:new AbortController(),modal:null};styleSession=session;
     const t=(key)=>i18n.t(key);
     try{
@@ -487,6 +569,8 @@ window.ReadMDPublication=(()=>{
       if(node.kind==='paragraph')field('text','trackingPt','export.trackingPt','number',-5,20,extra);
       if(['paragraph','heading','caption'].includes(node.kind))field('text','baselineShiftPt','export.baselineShiftPt','number',-72,72,extra);
       const lineSpacing=node.kind==='math'?null:lineSpacingControls.mount(extra,{scope:'local',style:node.style.paragraph||{},t});
+      session.numbering=window.ReadMDPublicationNumbering?.mount(extra,{source:session.source,getSource:()=>session.view.state.doc.toString(),isCurrent:()=>current(session),view:session.view,signal:session.controller.signal,onApplied:closeStyle});
+      session.inlineText=window.ReadMDPublicationInlineText?.mount(extra,{source:session.source,isCurrent:()=>current(session),view:session.view,signal:session.controller.signal,onApplied:closeStyle,t});
       const error=document.createElement('p');error.className='publication-style-error';error.role='alert';box.append(error);
       const actions=document.createElement('div');actions.className='publication-style-actions';box.append(actions);
       const reset=document.createElement('button');reset.type='button';reset.dataset.localAction='reset';reset.className='tb-btn';reset.textContent=t('publication.local.reset');actions.append(reset);
@@ -499,7 +583,7 @@ window.ReadMDPublication=(()=>{
           const result=await blocks({action:'apply',content:session.source,base_revision:model.revision,id:node.id,patch},session.controller.signal);
           if(!current(session)){error.textContent=t('error.publication_local_style_target');return;}
           if(result.result.changed)session.view.dispatch({changes:result.transaction.edits,userEvent:'input.publication'});
-          closeStyle();if(window.cmView===session.view&&state.activeTabId===session.tab)session.view.focus();
+          closeStyle();if(editorView()===session.view&&state.activeTabId===session.tab)session.view.focus();
         }catch(e){if(styleSession===session)error.textContent=apiMessage(e.response,'error.publication_local_style_invalid');}
         finally{reset.disabled=apply.disabled=false;}
       }
@@ -548,31 +632,46 @@ window.ReadMDPublication=(()=>{
     finally{clearTimeout(timeout);session.pageLoading=false;if(paged===session&&session.current())showPaged(session);}
   }
   async function renderPaged(pane,{view,tab,current}){
-    const source=view.state.doc.toString(),baseDir=state.dir||'',suggestedName=state.sourceName||'document',options=JSON.parse(JSON.stringify(state.export?.options||{}));options.pdf={...(options.pdf||{}),engine:'typst'};
-    const signature=JSON.stringify([source,baseDir,suggestedName,options]);
+    const sourceDocument=view.state.doc,source=sourceDocument.toString(),baseDir=state.dir||'',suggestedName=state.sourceName||'document',fallback=JSON.parse(JSON.stringify(state.export?.options||{}));fallback.pdf={...(fallback.pdf||{}),engine:'typst'};
+    const signature=JSON.stringify([source,baseDir,suggestedName,fallback]);
     pane.classList.add('publication-paged');
-    if(paged?.signature===signature&&paged.view===view&&paged.tab===tab){paged.current=current;return;}
-    stopPaged();const session={pane,source,signature,view,tab,current,controller:new AbortController(),task:crypto.randomUUID(),images:new Map(),page:1,pageLoading:false};paged=session;
+    if(paged?.signature===signature&&paged.view===view&&paged.document===sourceDocument&&paged.tab===tab&&sameDocument(paged.owner)){paged.current=current;return;}
+    stopPaged();const session={pane,source,signature,view,document:sourceDocument,owner:origin(),tab,current,controller:new AbortController(),task:crypto.randomUUID(),images:new Map(),page:1,pageLoading:false};paged=session;
+    const valid=()=>paged===session&&!session.controller.signal.aborted&&session.current()&&view.state.doc===sourceDocument&&sameDocument(session.owner)&&editorView()===view;
     window.ReadMDTask.loading(pane,'export.previewGenerating');
     try{
-      const prepared=await prepareExportFigures(source,options,session.controller.signal);if(paged!==session||!session.current())return;
+      if(!valid())return;
+      const profileResponse=await apiFetch('/api/publication/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:source}),signal:session.controller.signal}),profile=await profileResponse.json();
+      if(!valid())return;
+      if(!profileResponse.ok||profile.ok!==true||profile.diagnostics?.length)throw Object.assign(Error('publication'),{response:profile.error_code?profile:{ok:false,error_code:profile.diagnostics?.[0]?.code||'publication_metadata_type',...profile.diagnostics?.[0]}});
+      if(!window.ReadMDPublicationProfile)throw Object.assign(Error('publication'),{response:{ok:false,error_code:'publication_metadata_type'}});
+      const options=window.ReadMDPublicationProfile.create(profile.options,fallback).request(fallback);
+      const prepared=await prepareExportFigures(source,options,session.controller.signal);if(!valid())return;
       const response=await apiFetch('/api/export/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:'pdf',content:source,baseDir,suggestedName,options:prepared,task_id:session.task}),signal:session.controller.signal}),data=await response.json();
-      if(paged!==session||!session.current())return;
+      if(!valid())return;
       if(response.ok&&data.ok&&data.sourceMap&&!data.firstPage){
         if(await ReadMDCapabilities.ensure('pdfium')){
-          if(paged!==session||!session.current())return;
+          if(!valid())return;
           const rendered=await apiFetch('/api/export/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:data.key,page:1}),signal:session.controller.signal}),page=await rendered.json();
-          if(paged!==session||!session.current())return;
+          if(!valid())return;
           if(rendered.ok&&page.ok)data.firstPage=page.png;
         }
       }
       if(!response.ok||!data.ok||!data.sourceMap||!data.firstPage)throw Object.assign(Error('publication'),{response:data});
       session.task='';session.data=data;session.images.set(1,data.firstPage);showPaged(session);
     }catch(error){
-      if(paged!==session||!session.current()||session.controller.signal.aborted)return;
+      if(!valid())return;
       pane.setAttribute('aria-busy','false');pane.replaceChildren();const message=document.createElement('p');message.role='alert';message.textContent=apiMessage(error.response,'export.previewFailed');pane.append(message);
       const retry=document.createElement('button');retry.type='button';retry.className='tb-btn';retry.textContent=i18n.t('plugin.retry');retry.onclick=()=>{stopPaged();renderPaged(pane,{view,tab,current:session.current});};pane.append(retry);
     }
   }
-  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,applyLayout,refreshBaseline,refreshLayout:()=>{for(const record of bibliographyMeasurements.values())record.refresh?.();},bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;++cacheGeneration;++citationNavigation;for(const record of bibliographyMeasurements.values())record.stop();cached=null;pending=null;projections.length=0;rangeCache=null;stopPaged();}};
+  function refreshLayout(){
+    for(const record of bibliographyMeasurements.values())record.refresh?.();
+    for(const [container,record]of authorSurfaces){
+      const current=container.isConnected!==false&&record.generation===cacheGeneration&&sameDocument(record.owner)&&record.source===currentSource();
+      window.ReadMDAuthorText?.apply(container,current?record.authorText:null);
+      if(!current)authorSurfaces.delete(container);
+    }
+  }
+  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,preparePagedHeadings,applyLayout,refreshBaseline,refreshLayout,bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;++cacheGeneration;++citationNavigation;for(const record of bibliographyMeasurements.values())record.stop();for(const container of authorSurfaces.keys())window.ReadMDAuthorText?.apply(container,null);authorSurfaces.clear();cached=null;pending=null;projections.length=0;rangeCache=null;stopPaged();}};
 })();

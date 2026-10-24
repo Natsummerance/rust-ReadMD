@@ -37,6 +37,7 @@ pub enum Inline {
     Emph(Vec<Inline>),
     Strike(Vec<Inline>),
     Styled { format: crate::publication_rich::RichFormat, children: Vec<Inline> },
+    AuthorStyled { style: crate::publication_inline_text::AuthorTextStyle, children: Vec<Inline> },
     Display { display: crate::publication_rich::RichDisplay, children: Vec<Inline> },
     Citation { source: crate::publication_rich::SourceCitation, children: Vec<Inline> },
     Link { href: String, title: String, children: Vec<Inline> },
@@ -59,7 +60,7 @@ pub struct ListItem {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
     Styled { attributes:Value, block:Box<Block> },
-    Heading { level: u8, id: String, inlines: Vec<Inline> },
+    Heading { level: u8, id: String, inlines: Vec<Inline>, numbering: Option<crate::cross_references::HeadingNumbering> },
     Caption { label: crate::cross_references::Label, inlines: Vec<Inline> },
     Paragraph(Vec<Inline>),
     List { ordered: bool, start: u64, items: Vec<ListItem> },
@@ -225,12 +226,16 @@ pub fn parse(src: &str) -> Document {
 /// Resolve them during parsing, before heading identity and local styles are
 /// computed. No processor markup or opaque slot survives into a writer.
 pub fn parse_prepared(src: &str, projection: &crate::publication_rich::Projection) -> crate::ApiResult<Document> {
+    crate::publication_inline_text::validate_source(src).map_err(|code|crate::ApiError::new(422,code))?;
     let instrumented = projection.instrument(src)?;
-    parse_internal(&instrumented, Some(projection))
+    let mut doc = parse_internal(&instrumented, Some(projection))?;
+    crate::cross_references::attach_numbering(&mut doc.blocks,src).map_err(|code|crate::ApiError::new(422,code))?;
+    Ok(doc)
 }
 
 fn parse_internal(src: &str, projection: Option<&crate::publication_rich::Projection>) -> crate::ApiResult<Document> {
     let src = src.strip_prefix('\u{feff}').unwrap_or(src);
+    let numbering_source = src;
     let publication = crate::cross_references::project(src);
     let src = publication.content.as_str();
     let expanded = match crate::math_dsl::expand_markdown(src){
@@ -239,15 +244,26 @@ fn parse_internal(src: &str, projection: Option<&crate::publication_rich::Projec
         Err(_)=>src.into(),
     };
     let src = expanded.as_str();
-    let events: Vec<Event> = Parser::new_ext(src, options()).collect();
+    let owned_syntax=crate::publication_inline_text::has_owned_syntax(src);
+    let events: Vec<Event> = if !owned_syntax{Parser::new_ext(src,options()).collect()}else{match crate::publication_inline_text::markdown_events(src){
+        Ok(events)=>events.into_iter().map(|(event,_)|event).collect(),
+        Err(code)if projection.is_some()=>return Err(crate::ApiError::new(422,code)),
+        Err(_)=>Parser::new_ext(src,options()).collect(),
+    }};
     let mut b = Builder { ev: events, pos: 0, front_matter: None, slugs: HeadingIds::default(), projection, consumed_slots: std::collections::HashSet::new(), slot_error: None, projected_notes: Vec::new() };
     let mut blocks = b.blocks_until(None);
     if let Some(code) = b.slot_error { return Err(crate::ApiError::new(422, code)); }
     if projection.is_some_and(|p| b.consumed_slots.len() != p.slot_count()) { return Err(crate::ApiError::new(422, "academic_projection_slots")); }
     blocks.append(&mut b.projected_notes);
+    if owned_syntax{if let Err(code)=crate::publication_inline_text::attach(&mut blocks){if projection.is_some(){return Err(crate::ApiError::new(422,code));}}}
     attach_office_math(&mut blocks);
     crate::cross_references::attach(&mut blocks);
     crate::publication_blocks::attach(&mut blocks);
+    if projection.is_none() {
+        // Plain reading remains tolerant of incomplete declarations while the
+        // publication entry point validates before any file is generated.
+        let _ = crate::cross_references::attach_numbering(&mut blocks,numbering_source);
+    }
     crate::publication_sections::attach(&mut blocks);
     Ok(Document { front_matter: b.front_matter, blocks })
 }
@@ -279,10 +295,12 @@ fn attach_office_math(blocks: &mut Vec<Block>) {
         }
         if index>0 {
             if let Block::Html(comment)=&blocks[index] {
-                let latex=match &blocks[index-1] {Block::Math(m)=>Some(m.clone()),Block::Paragraph(v) if v.len()==1=>if let Inline::Math(m)=&v[0] {Some(m.clone())} else {None},_=>None};
-                if let Some(latex)=latex {
+                let carrier=match &blocks[index-1] {Block::Math(m)=>Some((m.clone(),true)),Block::Paragraph(v) if v.len()==1=>if let Inline::Math(m)=&v[0] {Some((m.clone(),false))} else {None},_=>None};
+                if let Some((latex,display))=carrier {
                     if let Ok((metadata,true))=crate::math_document::read_metadata(comment.trim(),&latex) {
-                        blocks[index-1]=Block::OfficeMath {latex,omml:metadata.omml};blocks.remove(index);continue;
+                        blocks[index-1]=if display {Block::OfficeMath {latex,omml:metadata.omml}}
+                            else {Block::Paragraph(vec![Inline::OfficeMath {latex,omml:metadata.omml}])};
+                        blocks.remove(index);continue;
                     }
                 }
             }
@@ -461,9 +479,12 @@ impl<'a> Builder<'a> {
     fn block(&mut self, tag: Tag<'a>) -> Option<Block> {
         match tag {
             Tag::Paragraph => {
-                // A paragraph holding nothing but one `$$…$$` is a display block.
+                // One real $$…$$ event, optionally with its current native
+                // capsule and whitespace, is a display block.
                 let mut j = self.pos;
                 let mut maths = Vec::new();
+                let mut office = None;
+                let mut stale = None;
                 let mut only_math = true;
                 while let Some(e) = self.ev.get(j) {
                     match e {
@@ -471,6 +492,21 @@ impl<'a> Builder<'a> {
                         Event::DisplayMath(m) => maths.push(m.to_string()),
                         Event::SoftBreak | Event::HardBreak => {}
                         Event::Text(t) if t.trim().is_empty() => {}
+                        Event::InlineHtml(comment) | Event::Html(comment) if maths.len() == 1 && office.is_none() && stale.is_none() => {
+                            // A native display carrier may follow $$...$$ in
+                            // this same paragraph. Preserve the actual display
+                            // event before inline_event would erase its mode.
+                            // Only one complete, current capsule is invisible;
+                            // surrounding prose or inline $...$ stays inline.
+                            match crate::math_document::read_metadata(comment.trim(), maths[0].trim()) {
+                                Ok((metadata, true)) => office = Some(metadata),
+                                // The new body owns display/inline mode even
+                                // when its recoverable old carrier is stale.
+                                // Keep the comment as a separate inert block.
+                                Ok((_, false)) => stale = Some(comment.clone()),
+                                _ => { only_math = false; break; }
+                            }
+                        }
                         _ => {
                             only_math = false;
                             break;
@@ -480,7 +516,11 @@ impl<'a> Builder<'a> {
                 }
                 if only_math && maths.len() == 1 {
                     self.pos = j + 1;
-                    return Some(Block::Math(maths.remove(0).trim().to_string()));
+                    if let Some(comment) = stale { self.ev.insert(self.pos, Event::Html(comment)); }
+                    let latex = maths.remove(0).trim().to_string();
+                    return Some(if let Some(metadata) = office {
+                        Block::OfficeMath { latex, omml: metadata.omml }
+                    } else { Block::Math(latex) });
                 }
                 let inl = self.inlines_until(TagEnd::Paragraph);
                 Some(paragraph_or_special(inl))
@@ -490,7 +530,7 @@ impl<'a> Builder<'a> {
                 let inl = self.inlines_until(TagEnd::Heading(level));
                 let plain = inline_plain(&inl);
                 let id = self.slugs.allocate(&plain, id.as_deref());
-                Some(Block::Heading { level: lvl, id, inlines: inl })
+                Some(Block::Heading { level: lvl, id, inlines: inl, numbering: None })
             }
             Tag::BlockQuote(k) => Some(Block::Quote(self.blocks_until(Some(TagEnd::BlockQuote(k))))),
             Tag::CodeBlock(kind) => {
@@ -808,7 +848,7 @@ pub fn inline_plain(v: &[Inline]) -> String {
             Inline::Text(t) | Inline::Code(t) | Inline::Math(t) => s.push_str(t),
             Inline::OfficeMath {latex,..} => s.push_str(latex),
             Inline::Strong(c) | Inline::Emph(c) | Inline::Strike(c)
-                | Inline::Styled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => s.push_str(&inline_plain(c)),
+                | Inline::Styled { children: c, .. } | Inline::AuthorStyled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => s.push_str(&inline_plain(c)),
             Inline::Link { children, .. } => s.push_str(&inline_plain(children)),
             Inline::Image { alt, .. } => s.push_str(alt),
             Inline::SoftBreak | Inline::HardBreak => s.push(' '),
@@ -830,7 +870,7 @@ pub fn walk_inlines<'d>(blocks: &'d [Block], f: &mut dyn FnMut(&'d Inline)) {
             f(i);
             match i {
                 Inline::Strong(c) | Inline::Emph(c) | Inline::Strike(c)
-                    | Inline::Styled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => walk_list(c, f),
+                    | Inline::Styled { children: c, .. } | Inline::AuthorStyled { children: c, .. } | Inline::Display { children: c, .. } | Inline::Citation { children: c, .. } => walk_list(c, f),
                 Inline::Link { children, .. } => walk_list(children, f),
                 _ => {}
             }
@@ -864,33 +904,36 @@ pub fn walk_inlines<'d>(blocks: &'d [Block], f: &mut dyn FnMut(&'d Inline)) {
 //
 // Projection onto the block/inline JSON shape `pdf_render::render` consumes.
 
-fn inline_json(i: &Inline, out: &mut Vec<Value>) {
+fn inline_json(i: &Inline, out: &mut Vec<Value>, notes: Option<&crate::rust_pdf_notes::Projection>) {
     match i {
         Inline::Text(t) => out.push(json!({"t": "text", "v": t})),
         Inline::Code(t) => out.push(json!({"t": "code", "v": t})),
-        Inline::Strong(c) => out.push(json!({"t": "bold", "v": inlines_json(c)})),
-        Inline::Emph(c) => out.push(json!({"t": "italic", "v": inlines_json(c)})),
-        Inline::Strike(c) => out.push(json!({"t": "strike", "v": inlines_json(c)})),
-        Inline::Styled { format, children } => out.push(json!({"t":"styled", "format":format, "v":inlines_json(children)})),
-        Inline::Display { display, children } => out.push(json!({"t":"display", "display":display, "v":inlines_json(children)})),
-        Inline::Citation { children, .. } => out.extend(inlines_json(children).as_array().cloned().unwrap_or_default()),
+        Inline::Strong(c) => out.push(json!({"t": "bold", "v": inlines_json_with_notes(c,notes)})),
+        Inline::Emph(c) => out.push(json!({"t": "italic", "v": inlines_json_with_notes(c,notes)})),
+        Inline::Strike(c) => out.push(json!({"t": "strike", "v": inlines_json_with_notes(c,notes)})),
+        Inline::Styled { format, children } => out.push(json!({"t":"styled", "format":format, "v":inlines_json_with_notes(children,notes)})),
+        Inline::AuthorStyled { style, children } => out.push(json!({"t":"author-styled", "text":style, "v":inlines_json_with_notes(children,notes)})),
+        Inline::Display { display, children } => out.push(json!({"t":"display", "display":display, "v":inlines_json_with_notes(children,notes)})),
+        Inline::Citation { children, .. } => out.extend(inlines_json_with_notes(children,notes).as_array().cloned().unwrap_or_default()),
         Inline::Link { href, title, children } => {
-            out.push(json!({"t": "link", "text": inlines_json(children), "href": href, "title": title}))
+            out.push(json!({"t": "link", "text": inlines_json_with_notes(children,notes), "href": href, "title": title}))
         }
         Inline::Image { src, alt, title } => out.push(json!({"t": "image", "alt": alt, "src": src, "title": title})),
         Inline::Math(m) => out.push(json!({"t": "math", "latex": m, "display": false, "fallback": true})),
         Inline::OfficeMath {latex,omml} => out.push(json!({"t":"math","latex":latex,"omml":omml,"display":false,"fallback":true})),
         Inline::SoftBreak => out.push(json!({"t": "text", "v": " "})),
         Inline::HardBreak => out.push(json!({"t": "br"})),
-        Inline::FootnoteRef(l) => out.push(json!({"t": "text", "v": format!("[{l}]")})),
+        Inline::FootnoteRef(l) => out.push(notes.map(|plan|plan.reference(l)).unwrap_or_else(||json!({"t": "text", "v": format!("[{l}]")}))),
         Inline::Html(_) => {}
     }
 }
 
-pub fn inlines_json(v: &[Inline]) -> Value {
+pub fn inlines_json(v: &[Inline]) -> Value { inlines_json_with_notes(v,None) }
+
+fn inlines_json_with_notes(v: &[Inline], notes: Option<&crate::rust_pdf_notes::Projection>) -> Value {
     let mut out = Vec::new();
     for i in v {
-        inline_json(i, &mut out);
+        inline_json(i, &mut out,notes);
     }
     Value::Array(out)
 }
@@ -955,12 +998,12 @@ pub fn quote_callout(blocks: &[Block]) -> Option<(&'static str, Vec<Inline>, Vec
     Some((kind, title, body))
 }
 
-fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, context: Option<&'static str>) {
+fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, context: Option<&'static str>, notes: Option<&crate::rust_pdf_notes::Projection>) {
     for b in blocks {
         let first = out.len();
         match b {
             Block::Styled { attributes, block } => {
-                push_blocks_json(std::slice::from_ref(block.as_ref()),level,out,context);
+                push_blocks_json(std::slice::from_ref(block.as_ref()),level,out,context,notes);
                 let covered = ["text", "paragraph"].iter().any(|key| attributes[*key].as_object().is_some_and(|values| !values.is_empty()));
                 if covered {
                     if let Some(value) = out.get_mut(first) {
@@ -974,13 +1017,16 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                 }
             },
             Block::SectionStart(section) => out.push(json!({"type":"section", "section":section})),
-            Block::Heading { level: l, inlines, id } => {
-                out.push(json!({"type": "heading", "level": *l as i64, "id": id, "text": inlines_json(inlines)}))
+            Block::Heading { level: l, inlines, id, numbering } => {
+                let mut full = Vec::new();
+                if let Some(numbering)=numbering { full.push(Inline::Text(numbering.full_text())); }
+                full.extend_from_slice(inlines);
+                out.push(json!({"type": "heading", "level": *l as i64, "id": id, "text": inlines_json_with_notes(&full,notes)}))
             }
-            Block::Paragraph(inl) => out.push(json!({"type": "paragraph", "text": inlines_json(inl)})),
+            Block::Paragraph(inl) => out.push(json!({"type": "paragraph", "text": inlines_json_with_notes(inl,notes)})),
             Block::Caption { label, inlines } => {
                 let mut full = vec![Inline::Text(label.text())]; full.extend_from_slice(inlines);
-                out.push(json!({"type":"caption","id":label.id,"text":inlines_json(&full)}));
+                out.push(json!({"type":"caption","id":label.id,"text":inlines_json_with_notes(&full,notes)}));
             }
             Block::List { ordered, start, items } => {
                 // `pdf_render` draws a flat list of items; nesting is carried as
@@ -993,7 +1039,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                     for (bi, blk) in it.blocks.iter().enumerate() {
                         match blk {
                             Block::Paragraph(inl) if bi == 0 => {
-                                if let Value::Array(a) = inlines_json(inl) {
+                                if let Value::Array(a) = inlines_json_with_notes(inl,notes) {
                                     text = a;
                                 }
                             }
@@ -1012,7 +1058,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                         if let Block::List { .. } = blk {
                             // Nested list: flush what we have, then the child.
                             let mut child = Vec::new();
-                            push_blocks_json(std::slice::from_ref(blk), level + 1, &mut child, context.map(|_| "list"));
+                            push_blocks_json(std::slice::from_ref(blk), level + 1, &mut child, context.map(|_| "list"),notes);
                             for c in child {
                                 if c.get("type").and_then(|t| t.as_str()) == Some("list") {
                                     if let Some(Value::Array(ci)) = c.get("items") {
@@ -1024,7 +1070,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                             }
                         } else {
                             let mut child = Vec::new();
-                            push_blocks_json(std::slice::from_ref(blk), level + 1, &mut child, context.map(|_| "list"));
+                            push_blocks_json(std::slice::from_ref(blk), level + 1, &mut child, context.map(|_| "list"),notes);
                             // Non-list continuation blocks (code, quote…) break the
                             // flat list; emit the list so far, then them.
                             if !flat.is_empty() {
@@ -1042,10 +1088,11 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
             Block::Quote(inner) => {
                 let mut v = Vec::new();
                 if let Some((kind, title, body)) = quote_callout(inner) {
-                    push_blocks_json(&body, level, &mut v, context.map(|_| "quote"));
-                    out.push(json!({"type": "quote", "kind": kind, "title": inlines_json(&title), "blocks": v}));
+                    let title=inlines_json_with_notes(&title,notes);
+                    push_blocks_json(&body, level, &mut v, context.map(|_| "quote"),notes);
+                    out.push(json!({"type": "quote", "kind": kind, "title": title, "blocks": v}));
                 } else {
-                    push_blocks_json(inner, level, &mut v, context.map(|_| "quote"));
+                    push_blocks_json(inner, level, &mut v, context.map(|_| "quote"),notes);
                     out.push(json!({"type": "quote", "blocks": v}));
                 }
             }
@@ -1060,8 +1107,8 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                 let has_align = aligns.iter().any(|a| *a != Align::None);
                 let mut t = json!({
                     "type": "table",
-                    "header": header.iter().map(|c| inlines_json(c)).collect::<Vec<_>>(),
-                    "rows": rows.iter().map(|r| r.iter().map(|c| inlines_json(c)).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                    "header": header.iter().map(|c| inlines_json_with_notes(c,notes)).collect::<Vec<_>>(),
+                    "rows": rows.iter().map(|r| r.iter().map(|c| inlines_json_with_notes(c,notes)).collect::<Vec<_>>()).collect::<Vec<_>>(),
                 });
                 if has_align {
                     t["aligns"] = Value::Array(al);
@@ -1074,16 +1121,29 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                 out.push(json!({"type":"bibliography", "title":bibliography.title, "hangingIndent":bibliography.hanging_indent,
                     "lineSpacing":bibliography.line_spacing, "entrySpacing":bibliography.entry_spacing,
                     "complexLayout":bibliography.items.iter().any(|item|item.layout().map(|flow|crate::publication_rich::layout_requires_flow(&flow)).unwrap_or(true)),
-                    "items":bibliography.items.iter().map(|item|{let layout=item.layout();json!({"key":item.key,"text":inlines_json(&rich_inlines(&item.rich)),"firstField":inlines_json(&rich_inlines(&item.first_field)),"layout":layout.as_ref().ok(),"layoutError":layout.as_ref().err().map(|error|&error.code)})}).collect::<Vec<_>>()}));
+                    "items":bibliography.items.iter().map(|item|{let layout=item.layout();json!({"key":item.key,"text":inlines_json_with_notes(&rich_inlines(&item.rich),notes),"firstField":inlines_json_with_notes(&rich_inlines(&item.first_field),notes),"layout":layout.as_ref().ok(),"layoutError":layout.as_ref().err().map(|error|&error.code)})}).collect::<Vec<_>>()}));
             }
             Block::Html(_) => {}
             Block::FootnoteDef { label, blocks } => {
                 let mut inner = Vec::new();
-                push_blocks_json(blocks, level, &mut inner, context.map(|_| "footnote"));
+                push_blocks_json(blocks, level, &mut inner, context.map(|_| "footnote"),notes);
+                if let Some(plan)=notes {
+                    let marker=plan.definition(label);
+                    if let Some(text)=inner.first_mut().filter(|block|block["type"]=="paragraph").and_then(|block|block.get_mut("text")).and_then(Value::as_array_mut){
+                        text.insert(0,json!({"t":"text","v":" "}));text.insert(0,marker);
+                    }else{inner.insert(0,json!({"type":"paragraph","text":[marker],"publicationContext":"footnote"}));}
+                    let backlinks=plan.backlinks(label);
+                    if !backlinks.is_empty(){
+                        if inner.last().is_none_or(|block|block["type"]!="paragraph"){inner.push(json!({"type":"paragraph","text":[],"publicationContext":"footnote"}));}
+                        if let Some(text)=inner.last_mut().and_then(|block|block.get_mut("text")).and_then(Value::as_array_mut){for backlink in backlinks{text.push(json!({"t":"text","v":" "}));text.push(backlink);}}
+                    }
+                }
                 // Rendered as a small paragraph `[label] …`.
                 let mut first = true;
+                let author_note=context.is_some();
                 for mut b in inner {
-                    if first && b.get("type").and_then(|t| t.as_str()) == Some("paragraph") {
+                    if author_note{fn mark(value:&mut Value,label:&str){match value{Value::Array(values)=>for value in values{mark(value,label)},Value::Object(object)=>{if object.contains_key("type"){object.insert("publicationNoteLabel".into(),json!(label));}for child in object.values_mut(){mark(child,label);}},_=>(),}}mark(&mut b,label);}
+                    if notes.is_none() && first && b.get("type").and_then(|t| t.as_str()) == Some("paragraph") {
                         if let Some(Value::Array(a)) = b.get_mut("text") {
                             a.insert(0, json!({"t": "text", "v": format!("[{label}] ")}));
                         }
@@ -1103,16 +1163,27 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
 
 /// The `pdf_render` block JSON for a parsed document.
 pub fn to_render_json(blocks: &[Block]) -> Value {
+    if crate::publication_inline_text::has_author_styles(blocks){return to_author_render_json(blocks);}
     let mut out = Vec::new();
-    push_blocks_json(blocks, 0, &mut out, None);
+    push_blocks_json(blocks, 0, &mut out, None,None);
     Value::Array(out)
 }
+
+/// Author text needs its exact story base even without typed paragraph spacing.
+pub fn to_author_render_json(blocks:&[Block])->Value{let mut out=Vec::new();push_blocks_json(blocks,0,&mut out,Some("body"),None);Value::Array(out)}
 
 /// New typed paragraph spacing needs story ownership that the legacy flat
 /// adapter did not retain. Existing callers without a new request keep the
 /// old JSON shape; this projection adds only non-visible context metadata.
 pub(crate) fn to_publication_render_json(blocks: &[Block]) -> Value {
-    let mut out = Vec::new(); push_blocks_json(blocks,0,&mut out,Some("body")); Value::Array(out)
+    let mut out = Vec::new(); push_blocks_json(blocks,0,&mut out,Some("body"),None); Value::Array(out)
+}
+
+/// Production Rust PDF keeps note identities until its typed atom consumer.
+/// This never changes the author's tree or the public legacy JSON adapter.
+pub(crate) fn to_rust_note_render_json(blocks:&[Block],notes:&crate::rust_pdf_notes::Projection,front_count:usize,style:&Value)->Result<Value,String>{
+    let mut out=Vec::new();for(index,block)in blocks.iter().enumerate(){let first=out.len();push_blocks_json(std::slice::from_ref(block),0,&mut out,Some("body"),Some(notes));if index<front_count{for value in &mut out[first..]{value["publicationContext"]=json!("frontMatter");}}}
+    notes.finish()?;let value=Value::Array(out);crate::rust_pdf_notes::validate_json(&value,style)?;Ok(value)
 }
 
 #[cfg(test)]

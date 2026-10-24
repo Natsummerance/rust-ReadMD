@@ -70,7 +70,7 @@ fn p04_baseline_docx_invalid_and_unverified_semantic_combination_fail_before_ima
 #[test]
 fn p04_baseline_unsupported_exports_preserve_target_and_never_stage_resources() {
     let root=tempfile::tempdir().unwrap();let data=root.path().join("profile-not-created");let assets=root.path().join("assets-not-created");
-    for (format,engine) in [("html","rust"),("epub","rust"),("tex","rust"),("pdf","typst"),("pdf","xelatex")] {
+    for (format,engine) in [("html","rust"),("epub","rust"),("tex","rust"),("pdf","xelatex")] {
         let target=root.path().join(format!("protected-{format}-{engine}.{format}"));std::fs::write(&target,b"OWNED ORIGINAL").unwrap();
         let request=json!({"typography":{"baselineShiftPt":0},"pdf":{"engine":engine},"bibliography":"missing-owned.json"});
         let error=crate::mdexport::export_document_with_data(format,"Body [@missing].",root.path().to_str().unwrap(),target.to_str().unwrap(),&request,"QA",&assets,&data).unwrap_err();

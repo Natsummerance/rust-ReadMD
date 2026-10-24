@@ -644,6 +644,7 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/collaboration/resume", crate::collaboration_host::desktop),
     ("/api/collaboration/session", crate::collaboration_host::desktop),
     ("/api/math/parse", crate::upgrade_api::math_parse),
+    ("/api/math/context", crate::upgrade_api::math_context),
     ("/api/math/patch", crate::upgrade_api::math_patch),
     ("/api/math/serialize", crate::upgrade_api::math_serialize),
     ("/api/math/migrate", crate::upgrade_api::math_migrate),
@@ -651,6 +652,9 @@ pub const ROUTES: &[(&str, Handler)] = &[
     ("/api/academic/citations", crate::upgrade_api::academic_citations),
     ("/api/academic/document", crate::upgrade_api::academic_document),
     ("/api/publication/blocks", crate::upgrade_api::publication_blocks),
+    ("/api/publication/numbering", crate::upgrade_api::publication_numbering),
+    ("/api/publication/inline-text", crate::upgrade_api::publication_inline_text),
+    ("/api/publication/profile", crate::upgrade_api::publication_profile),
     ("/api/publication/metadata", crate::upgrade_api::publication_metadata),
     ("/api/pdf/workspace", crate::pdf_workspace::endpoint),
     ("/api/developer/openapi", crate::openapi_document::endpoint),
@@ -7824,8 +7828,10 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 crate::epub_writer::validate_numeric_request(opts).map_err(|code| ApiError::new(422, code).noted("field", crate::epub_writer::numeric_error_field(opts)))?;
                 crate::publication_navigation::validate_options(opts).map_err(|e|e.api_error())?;
                 crate::publication_metadata::validate_options(opts).map_err(|e|ApiError::new(422,e.code).noted("field",e.path))?;
+                crate::publication_profile::validate_options(opts).map_err(|e|ApiError::new(422,e.code).noted("field",e.path))?;
                 let mut sanitized=es::sanitize(opts);
                 if let Some(meta)=opts.get("meta"){sanitized["meta"]=meta.clone();}
+                if let Some(notes)=opts.get("footnotes"){sanitized["footnotes"]=notes.clone();}
                 next.insert(name.to_string(), sanitized);
             }
             custom = next;
@@ -7837,6 +7843,7 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 crate::publication_typography::validate_request(&opts).map_err(|code| ApiError::new(422, code).noted("field", crate::publication_typography::request_error_field(&opts)))?;
                 crate::epub_writer::validate_numeric_request(&opts).map_err(|code| ApiError::new(422, code).noted("field", crate::epub_writer::numeric_error_field(&opts)))?;
                 crate::publication_navigation::validate_options(&opts).map_err(|e|e.api_error())?;
+                crate::publication_profile::validate_options(&opts).map_err(|e|ApiError::new(422,e.code).noted("field",e.path))?;
                 last = json!({ "fmt": fmt, "options": opts, "preset": l.get("preset").cloned().unwrap_or(Value::Null) });
             }
         }
@@ -7921,11 +7928,18 @@ mod sharing_validation {
 fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     if req.method != "POST" {return Err(ApiError::new(405,"method_not_allowed"));}
     let body = body_value(req);
+    let task=match body.get("task_id").and_then(Value::as_str).filter(|s|!s.is_empty()){
+        Some(id)=>Some(crate::cancel::register(id).ok_or_else(||ApiError::bad_request("invalid_task_id"))?),None=>None,
+    };
+    let check=task.as_ref().map(|t|t.checker()).unwrap_or_else(||Arc::new(||false));
     if let Some(key) = body.get("key").and_then(Value::as_str) {
         let artifact = crate::export_preview::cached(key).ok_or_else(||ApiError::bad_request("preview_expired"))?;
         let page = body.get("page").and_then(Value::as_u64).unwrap_or(1);
-        return match crate::export_preview::page_payload(&artifact, page as usize) {
-            Ok(value)=>ok_json(value),Err(error)=>ok_json(json!({"ok":false,"error":error})),
+        return match crate::speech::with_cancel(check,||->Result<Value,String>{
+            let value=crate::export_preview::page_payload(&artifact,page as usize)?;
+            crate::publication_budget::check()?;Ok(value)
+        }) {
+            Ok(value)=>ok_json(value),Err(error)=>ok_json(crate::latex_compile::error_body(&error)),
         };
     }
     let format=body.get("format").and_then(Value::as_str).unwrap_or("pdf");
@@ -7933,12 +7947,12 @@ fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let base=body.get("baseDir").and_then(Value::as_str).unwrap_or("");
     let name=body.get("suggestedName").and_then(Value::as_str).unwrap_or("export");
     let options=body.get("options").cloned().unwrap_or_else(||json!({}));
+    let resolved = match crate::publication_profile::resolve_for_format(format,content,&options) { Ok(value)=>value, Err(error)=>return ok_json(error.response_body()) };
+    let options = resolved.values().clone();
+    if let Err(error)=crate::publication_profile::preflight(format,content,&options){return ok_json(error.response_body());}
     if let Err(error)=crate::publication_navigation::preflight_export(format,content,&options){return ok_json(error.response_body());}
     if let Err(code) = crate::publication_typography::validate_pdf_preview(format, content, &options) { return ok_json(crate::latex_compile::error_body(code)); }
-    let task=match body.get("task_id").and_then(Value::as_str).filter(|s|!s.is_empty()){
-        Some(id)=>Some(crate::cancel::register(id).ok_or_else(||ApiError::bad_request("invalid_task_id"))?),None=>None,
-    };
-    let check=task.as_ref().map(|t|t.checker()).unwrap_or_else(||Arc::new(||false));
+    if let Err(code)=crate::mdexport::validate_caption_author_export(format,content,&options){return ok_json(crate::latex_compile::error_body(&code));}
     if format=="epub" {
         return match crate::speech::with_cancel(check,||crate::epub_preview::prepare(content,base,&options,name)){
             Ok(value)=>ok_json(value),Err(error)=>{
@@ -7950,8 +7964,12 @@ fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             },
         };
     }
-    match crate::speech::with_cancel(check,||crate::export_preview::prepare_with_data(format,content,base,&options,name,&app.paths.assets_dir,&app.paths.data_dir))
-        .and_then(|artifact|crate::export_preview::payload(&artifact)) {
+    match crate::speech::with_cancel(check,||crate::publication_budget::run(format,&options,||{
+        let artifact=crate::export_preview::prepare_with_data(format,content,base,&options,name,&app.paths.assets_dir,&app.paths.data_dir)?;
+        crate::publication_budget::check()?;
+        let value=crate::export_preview::payload(&artifact)?;
+        crate::publication_budget::check()?;Ok(value)
+    })) {
         Ok(value)=>ok_json(value),Err(error)=>ok_json(crate::publication_metadata_formats::error_body(content,&options,name,format,&error).unwrap_or_else(||crate::latex_compile::error_body(&error))),
     }
 }
@@ -7984,11 +8002,15 @@ fn h_export_with_dialog(
         .unwrap_or("")
         .to_string();
 
+    let resolved = match crate::publication_profile::resolve_for_format(&format,&content,&options) { Ok(value)=>value, Err(error)=>return ok_json(error.response_body()) };
+    let options = resolved.values().clone();
+    if let Err(error)=crate::publication_profile::preflight(&format,&content,&options){return ok_json(error.response_body());}
     if let Err(error)=crate::publication_navigation::preflight_export(&format,&content,&options){return ok_json(error.response_body());}
     if crate::win_dialogs::DialogShape::export_filter_text(&format).is_none() {
         return Err(ApiError::bad_request("unsupported_export_format"));
     }
     if let Err(code) = crate::publication_typography::validate_export(&format, &content, &options) { return ok_json(crate::latex_compile::error_body(code)); }
+    if let Err(code)=crate::mdexport::validate_caption_author_export(&format,&content,&options){return ok_json(crate::latex_compile::error_body(&code));}
     // Register before the native chooser blocks: Cancel remains effective
     // while choosing a destination, and is checked again before any writing.
     let task = match body.get("task_id").and_then(Value::as_str).filter(|id| !id.is_empty()) {
@@ -8084,14 +8106,17 @@ fn h_export_with_dialog(
         };
     }
 
-    let cached_key = crate::export_preview::key_with_data(&format, &content, &base_dir, &options, &suggested_name,&app.paths.data_dir,&app.paths.assets_dir);
     let check=task.as_ref().map(|t|t.checker()).unwrap_or_else(||Arc::new(||false));
-    let result = crate::speech::with_cancel(check,|| if let Some(artifact) = crate::export_preview::cached(&cached_key) {
+    let result = crate::speech::with_cancel(check,||crate::publication_budget::run(&format,&options,||{
+        let cached_key=crate::export_preview::key_with_data_checked(&format,&content,&base_dir,&options,&suggested_name,&app.paths.data_dir,&app.paths.assets_dir)?;
+        if let Some(artifact) = crate::export_preview::cached(&cached_key) {
         std::fs::read(&artifact.file).map_err(|e|e.to_string()).and_then(|bytes| {
+            crate::publication_budget::check()?;
             content::write_bytes_atomic(Path::new(&out_path), &bytes).map_err(|e|e.to_string())?;
             Ok(crate::mdexport::ExportResult { ok:true, path:Some(out_path.clone()), size:Some(bytes.len() as u64), warns:Some(artifact.warnings.clone()), error:None, canceled:Some(false) })
         })
-    } else {crate::mdexport::export_document_with_data(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir,&app.paths.data_dir)});
+    } else {crate::mdexport::export_document_with_data(&format, &content, &base_dir, &out_path, &options, &suggested_name, &app.paths.assets_dir,&app.paths.data_dir)}
+    }));
     match result {
         Ok(res) => {
             if let Err(body) = commit(res.ok) {

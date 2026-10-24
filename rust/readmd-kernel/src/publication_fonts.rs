@@ -4,6 +4,9 @@ use std::{cell::RefCell,path::{Path,PathBuf},sync::{Arc,atomic::{AtomicUsize,Ord
 pub const MATH:&[u8]=include_bytes!("../../../assets/fonts/STIXTwoMath-Regular.ttf");
 pub(crate) const CORE_TEXT_FALLBACK:&[u8]=include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
 pub(crate) const CORE_TEXT_FALLBACK_LICENSE:&[u8]=include_bytes!("../../../assets/fonts/DejaVuSans.LICENSE.txt");
+/// One reviewed, unmodified regular face; no other Waree styles are bundled.
+pub(crate) const CORE_THAI_FALLBACK:&[u8]=include_bytes!("../../../assets/fonts/Waree-Regular.otf");
+pub(crate) const CORE_THAI_FALLBACK_LICENSE:&[u8]=include_bytes!("../../../assets/fonts/Waree.LICENSE.txt");
 /// Keep ordinary typefaces unchanged. Supplemental-plane text can use the
 /// same reviewed outline font in the native renderer and managed engines.
 pub(crate) fn core_text_fallback_character(character:char)->bool {
@@ -72,6 +75,34 @@ pub(crate) fn math_text_family(requested:Option<&str>,character:char)->Option<&s
 }
 #[cfg(test)]mod tests{
     use super::*;
+    #[test]fn reviewed_thai_regular_retains_locked_bytes_license_and_real_outlines(){
+        use sha2::{Digest,Sha256};
+        let source:serde_json::Value=serde_json::from_str(include_str!("../../../assets/fonts/Waree.source.json")).unwrap();
+        assert_eq!(CORE_THAI_FALLBACK.len(),57596);
+        assert_eq!(format!("{:x}",Sha256::digest(CORE_THAI_FALLBACK)),"749185833758edba65c050b18314cef9c44adecb18ec52ebe3d095e25cf23956");
+        assert_eq!(source["font"]["sha256"],format!("{:x}",Sha256::digest(CORE_THAI_FALLBACK)));
+        assert_eq!(source["font"]["bytes"],CORE_THAI_FALLBACK.len());
+        assert_eq!(source["font"]["unmodified"],true);assert_eq!(source["font"]["internalSubfamily"],"Regular");
+        assert_eq!(source["license"]["sha256"],format!("{:x}",Sha256::digest(CORE_THAI_FALLBACK_LICENSE)));
+        let license=std::str::from_utf8(CORE_THAI_FALLBACK_LICENSE).unwrap();
+        for notice in ["TLWG changes are in public domain","Copyright (c) 2003 by Bitstream, Inc.","copyright and trademark notices","Permission is hereby granted","Font Software may be sold as part of a larger software package","WITHOUT WARRANTY OF ANY KIND","Gnome"]{assert!(license.contains(notice),"{notice}");}
+        let face=ttf_parser::Face::parse(CORE_THAI_FALLBACK,0).unwrap();
+        assert_ne!(face.permissions(),Some(ttf_parser::Permissions::Restricted));assert!(face.is_subsetting_allowed());
+        assert!(face.names().into_iter().any(|name|name.name_id==ttf_parser::name_id::FAMILY&&name.to_string().as_deref()==Some("Waree")));
+        #[derive(Default)]struct Outline{segments:usize}
+        impl ttf_parser::OutlineBuilder for Outline{
+            fn move_to(&mut self,_x:f32,_y:f32){}
+            fn line_to(&mut self,_x:f32,_y:f32){self.segments+=1;}
+            fn quad_to(&mut self,_x1:f32,_y1:f32,_x:f32,_y:f32){self.segments+=1;}
+            fn curve_to(&mut self,_x1:f32,_y1:f32,_x2:f32,_y2:f32,_x:f32,_y:f32){self.segments+=1;}
+            fn close(&mut self){}
+        }
+        for character in "ภาษาไทยกิ่".chars(){
+            let glyph=face.glyph_index(character).unwrap();assert_ne!(glyph.0,0);assert!(face.glyph_hor_advance(glyph).is_some());
+            let mut outline=Outline::default();let bounds=face.outline_glyph(glyph,&mut outline).unwrap();
+            assert!(outline.segments>0&&bounds.x_max>bounds.x_min&&bounds.y_max>bounds.y_min,"{character}");
+        }
+    }
     #[test]fn shared_text_fallback_requires_a_real_supplemental_outline(){
         assert!(needs_core_text_fallback("中文 😀"));
         assert!(core_text_fallback_character('😀'));

@@ -85,7 +85,7 @@ fn tex_typed_paragraph_rejects_unimplemented_stories_and_office_sizes_before_res
     let mode=options(json!({"mode":"exact","pt":18}));
     let local=|block|Block::Styled{attributes:json!({"paragraph":{"lineSpacing":{"mode":"exact","pt":18}}}),block:Box::new(block)};
     let body=Block::Paragraph(vec![Inline::Text("BODY".into())]);
-    for block in [local(Block::Heading{level:1,id:"head".into(),inlines:vec![Inline::Text("HEAD".into())]}),
+    for block in [local(Block::Heading{level:1,id:"head".into(),inlines:vec![Inline::Text("HEAD".into())],numbering:None}),
         Block::Quote(vec![local(body.clone())]),Block::Paragraph(vec![Inline::FootnoteRef("n".into())]),
         Block::Paragraph(vec![Inline::OfficeMath{latex:"x".into(),omml:"<m:oMath><m:r><w:rPr><w:sz w:val=\"96\"/></w:rPr><m:t>x</m:t></m:r></m:oMath>".into()}]),
         Block::Paragraph(vec![Inline::Image{src:"not-read.png".into(),alt:"Image".into(),title:String::new()}])] {

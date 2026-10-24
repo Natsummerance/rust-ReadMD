@@ -797,38 +797,57 @@ pub fn edit_document(
         return Err("document_too_large".into());
     }
     edited.push_str(&text[previous..]);
-    let encoded =
+    let mut encoded =
         crate::text_encoding::encode(&edited, encoding).map_err(|_| "encoding_unrepresentable")?;
     if encoded.len() > MAX_DOCUMENT_BYTES {
         return Err("document_too_large".into());
     }
-    let changed = encoded != bytes;
+    let mut changed = encoded != bytes;
+    cancelled(cancel)?;
+    // A preview validates references but never materializes them. A logical
+    // no-op keeps its old byte/response contract without opening staged files.
+    let staged = if changed { crate::document_assets::discover_staged(&edited, &app.paths.data_dir)? } else { Vec::new() };
+    let resource_rewrite_required = !staged.is_empty();
+    let mut resources = None;
     let mut checkpoint = Value::Null;
     if !dry_run && changed {
         cancelled(cancel)?;
         if revision(&bytes_bounded(&path)?) != expected.to_lowercase() {
             return Err("document_conflict".into());
         }
-        checkpoint = json!(crate::document_history::checkpoint_file(
-            &app.paths.data_dir,
-            &path,
-            "mcp_edit"
-        )?
-        .map(|entry| entry.id));
-        cancelled(cancel)?;
-        if revision(&bytes_bounded(&path)?) != expected.to_lowercase() {
-            return Err("document_conflict".into());
+        if resource_rewrite_required {
+            let materialized = crate::document_assets::materialize_staged(&edited, &path, &staged, &app.paths.data_dir)?;
+            encoded = crate::text_encoding::encode(&materialized.text, encoding).map_err(|_| "encoding_unrepresentable")?;
+            if encoded.len() > MAX_DOCUMENT_BYTES { return Err("document_too_large".into()); }
+            edited = materialized.text.clone();
+            resources = Some(materialized);
+            changed = encoded != bytes;
         }
-        content::write_bytes_atomic(&path, &encoded).map_err(|_| "file_write_failed")?;
-        let _ = content::index(app, &path);
+        if changed {
+            cancelled(cancel)?;
+            if revision(&bytes_bounded(&path)?) != expected.to_lowercase() { return Err("document_conflict".into()); }
+            checkpoint = json!(crate::document_history::checkpoint_file(
+                &app.paths.data_dir, &path, "mcp_edit"
+            )?.map(|entry| entry.id));
+            cancelled(cancel)?;
+            if revision(&bytes_bounded(&path)?) != expected.to_lowercase() { return Err("document_conflict".into()); }
+            content::write_bytes_atomic(&path, &encoded).map_err(|_| "file_write_failed")?;
+            if let Some(resources) = &mut resources { resources.commit(); }
+            let _ = content::index(app, &path);
+        }
     }
-    Ok(
-        json!({"ok":true,"dry_run":dry_run,"changed":changed,"replacements":if replace_all{count}else{1},
+    let mut response = json!({"ok":true,"dry_run":dry_run,"changed":changed,"replacements":if replace_all{count}else{1},
         "revision":revision(if dry_run {&bytes}else{&encoded}),"proposed_revision":revision(&encoded),
         "encoding":encoding,"checkpoint_id":checkpoint,
         "preview":{"before":old.chars().take(1600).collect::<String>(),"after":new.chars().take(1600).collect::<String>(),
-            "truncated":old.chars().count()>1600 || new.chars().count()>1600}}),
-    )
+            "truncated":old.chars().count()>1600 || new.chars().count()>1600}});
+    if dry_run && resource_rewrite_required { response["resource_rewrite_required"] = json!(true); }
+    if let Some(resources) = &resources {
+        response["saved_content"] = json!(edited);
+        response["asset_edits"] = json!(resources.edits);
+        response["saved_assets"] = json!(resources.assets);
+    }
+    Ok(response)
 }
 
 #[cfg(test)]
@@ -1114,4 +1133,96 @@ mod tests {
             .ends_with("Plato.md"));
         assert_eq!(report["diagnostics"][0]["code"], "outside_workspace");
     }
+    #[test]
+    fn staged_image_commit_reports_exact_permanent_content_utf16_edits_and_actual_encoded_revision() {
+        for encoding in ["utf-8-sig", "utf-16le"] {
+            let dir = tempfile::tempdir().unwrap(); let app = app(dir.path());
+            let file = dir.path().join("returned.md"); let original = "# Original\r\n\r\nSENTINEL\r\n";
+            let original_bytes = crate::text_encoding::encode(original, encoding).unwrap(); fs::write(&file, &original_bytes).unwrap();
+            let asset = crate::document_assets::stage(&app.paths.data_dir, b"owned image bytes", "own", "png").unwrap();
+            let image = format!("![One]({})", asset.reference);
+            let replacement = format!("🚀 Unicode\n\n{image}\n\n{image}\n\n`{image}`");
+            let logical = original.replace("SENTINEL", &replacement.replace('\n', "\r\n"));
+            let response = edit_document(&app, &file, &revision(&original_bytes), "SENTINEL", &replacement, false, false, true, None).unwrap();
+            let saved = response["saved_content"].as_str().expect("actual materialization must expose its final Markdown");
+            assert!(saved.contains("![One](readmd-assets/")); assert!(saved.contains(&format!("`{image}`")));
+            assert!(saved.contains("🚀 Unicode\r\n\r\n")); assert_eq!(response["changed"], true);
+            let final_bytes = fs::read(&file).unwrap();
+            assert_eq!(crate::text_encoding::detect_and_decode(&final_bytes).0, saved);
+            assert_eq!(crate::text_encoding::encode(saved, encoding).unwrap(), final_bytes);
+            assert_eq!(response["revision"], revision(&final_bytes)); assert_eq!(response["proposed_revision"], response["revision"]);
+            let edits: Vec<crate::document_transaction::TextEdit> = serde_json::from_value(response["asset_edits"].clone()).unwrap();
+            assert_eq!(edits.len(), 2);
+            let tx = crate::document_transaction::ContentTransaction { base_revision: crate::document_transaction::revision(&logical), origin: "editor".into(), edits };
+            assert_eq!(crate::document_transaction::apply(&logical, &tx).unwrap().content, saved);
+            let assets = response["saved_assets"].as_array().unwrap(); assert_eq!(assets.len(), 1);
+            let permanent = assets[0]["path"].as_str().unwrap(); assert_eq!(fs::read(permanent).unwrap(), b"owned image bytes");
+            fs::remove_file(&asset.path).unwrap(); assert_eq!(fs::read(permanent).unwrap(), b"owned image bytes");
+            let repeated = edit_document(&app, &file, response["revision"].as_str().unwrap(), saved, saved, false, false, true, None).unwrap();
+            assert_eq!(repeated["changed"], false); assert!(repeated.get("saved_content").is_none());
+            assert_eq!(fs::read(file).unwrap(), final_bytes);
+        }
+    }
+    #[test]
+    fn staged_preview_confirmation_stale_cancel_and_logical_noop_do_not_create_permanent_resources() {
+        let dir = tempfile::tempdir().unwrap(); let app = app(dir.path()); let file = dir.path().join("returned.md");
+        let original = "Original\n"; fs::write(&file, original).unwrap();
+        let asset = crate::document_assets::stage(&app.paths.data_dir, b"owned image", "own", "png").unwrap();
+        let replacement = format!("![current]({})\n", asset.reference); let expected = revision(original.as_bytes());
+        let preview = edit_document(&app, &file, &expected, original, &replacement, false, true, false, None).unwrap();
+        assert_eq!(preview["resource_rewrite_required"], true); assert_eq!(preview["revision"], expected);
+        assert_eq!(preview["proposed_revision"], revision(replacement.as_bytes())); assert!(preview["checkpoint_id"].is_null()); assert!(preview.get("saved_content").is_none());
+        assert_eq!(edit_document(&app, &file, &expected, original, &replacement, false, false, false, None).unwrap_err(), "confirmation_required");
+        assert_eq!(edit_document(&app, &file, &"0".repeat(64), original, &replacement, false, false, true, None).unwrap_err(), "document_conflict");
+        let cancel = AtomicBool::new(true);
+        assert_eq!(edit_document(&app, &file, &expected, original, &replacement, false, false, true, Some(&cancel)).unwrap_err(), "cancelled");
+        assert_eq!(fs::read(&file).unwrap(), original.as_bytes()); assert!(!dir.path().join("readmd-assets").exists());
+        // A byte no-op never tries to repair or dereference existing raw URLs.
+        fs::write(&file, &replacement).unwrap(); fs::remove_file(&asset.path).unwrap();
+        let same = edit_document(&app, &file, &revision(replacement.as_bytes()), &replacement, &replacement, false, false, true, None).unwrap();
+        assert_eq!(same["changed"], false); assert!(same.get("resource_rewrite_required").is_none()); assert!(same.get("saved_content").is_none());
+        assert!(!dir.path().join("readmd-assets").exists());
+    }
+    #[test]
+    fn invalid_staged_content_and_materialization_directory_failure_leave_original_document_untouched() {
+        let dir = tempfile::tempdir().unwrap(); let app = app(dir.path()); let file = dir.path().join("returned.md");
+        let original = b"Original\n"; fs::write(&file, original).unwrap();
+        let asset = crate::document_assets::stage(&app.paths.data_dir, b"owned image", "own", "png").unwrap();
+        let replacement = format!("![current]({})", asset.reference);
+        fs::write(&asset.path, b"tampered").unwrap();
+        assert_eq!(edit_document(&app, &file, &revision(original), "Original", &replacement, false, false, true, None).unwrap_err(), "asset_identity_conflict");
+        assert_eq!(fs::read(&file).unwrap(), original); assert!(!dir.path().join("readmd-assets").exists());
+        fs::write(&asset.path, b"owned image").unwrap(); let blocked = dir.path().join("readmd-assets"); fs::write(&blocked, b"existing owned blocker").unwrap();
+        assert_eq!(edit_document(&app, &file, &revision(original), "Original", &replacement, false, false, true, None).unwrap_err(), "asset_directory_symlink");
+        assert_eq!(fs::read(file).unwrap(), original); assert_eq!(fs::read(blocked).unwrap(), b"existing owned blocker");
+    }
+    #[test]
+    fn ordinary_edits_and_inert_raw_examples_keep_the_original_response_contract() {
+        let dir = tempfile::tempdir().unwrap(); let app = app(dir.path()); let file = dir.path().join("ordinary.md");
+        fs::write(&file, "Old\n").unwrap();
+        let replacement = "Plain [link](/raw?p=outside) `![](/raw?p=outside)`\n\n<pre>\n![](/raw?p=outside)\n</pre>\n";
+        let response = edit_document(&app, &file, &revision(b"Old\n"), "Old\n", replacement, false, false, true, None).unwrap();
+        assert_eq!(fs::read_to_string(file).unwrap(), replacement);
+        for key in ["saved_content", "asset_edits", "saved_assets", "resource_rewrite_required"] { assert!(response.get(key).is_none(), "{key}"); }
+        assert!(!dir.path().join("readmd-assets").exists());
+    }
+
+    #[test]
+    fn partial_or_unknown_author_drafts_with_inert_raw_examples_save_without_resource_validation() {
+        let dir = tempfile::tempdir().unwrap(); let app = app(dir.path()); let file = dir.path().join("draft.md");
+        for draft in [
+            "A <span data-readmd-text=\"future\">unknown draft</span>",
+            "A <span data-readmd-text=\"v1\" data-size-pt=\"draft\">partial size</span>",
+            "A <span data-readmd-text=\"v1\" data-size-pt=\"30\">unfinished",
+        ] {
+            fs::write(&file, b"Original\n").unwrap();
+            let content = format!("{draft}\n\n`![](/raw?p=outside)` [ordinary](/raw?p=outside)\n");
+            let result = edit_document(&app, &file, &revision(b"Original\n"), "Original\n", &content, false, false, true, None).unwrap();
+            assert_eq!(fs::read_to_string(&file).unwrap(), content);
+            assert_eq!(result["revision"], revision(content.as_bytes()));
+            for key in ["saved_content", "asset_edits", "saved_assets", "resource_rewrite_required"] { assert!(result.get(key).is_none(), "{key}"); }
+            assert!(!dir.path().join("readmd-assets").exists());
+        }
+    }
+
 }

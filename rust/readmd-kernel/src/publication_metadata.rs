@@ -10,6 +10,9 @@ use yaml_rust2::{
     parser::{Event, Parser},
     scanner::TScalarStyle,
 };
+#[path = "publication_metadata_extension.rs"]
+mod extension;
+pub(crate) use extension::{bounded_source_member, patch_source_member};
 
 pub const MAX_FRONT_MATTER: usize = 64 * 1024;
 const MAX_DEPTH: usize = 16;
@@ -1193,7 +1196,15 @@ pub fn from_source(
 /// Preserve clear provenance while merging presets. Other options keep the
 /// existing export merge contract, including its handling of JSON null.
 pub fn merge_options(base: &Value, over: &Value) -> Result<Value> {
+    // Public callers historically use an omitted/top-level null as an empty
+    // sparse options layer. Null leaves still retain their per-field meaning.
+    let empty_base=json!({});let empty_over=json!({});
+    let base=if base.is_null(){&empty_base}else{base};
+    let over=if over.is_null(){&empty_over}else{over};
     for options in [base,over]{crate::publication_navigation::validate_options(options).map_err(|e|MetadataError{code:e.code.into(),path:e.path,from:e.from,to:e.to})?;}
+    let (note_base, note_over) = crate::publication_note_policies::merge_layers(base, over)
+        .map_err(|e| err(e.code, &e.path))?;
+    let base = &note_base; let over = &note_over;
     let mut navigation_over=over.clone();crate::publication_navigation::inherit_null_overlay(&mut navigation_over);let over=&navigation_over;
     let (base, over) = crate::publication_typography::merge_layers(base, over).map_err(|code| err(code, crate::publication_typography::merge_error_field(base, over)))?;
     let base = &base; let over = &over;
@@ -1843,7 +1854,13 @@ fn object_insert(
     }
     if node.flow {
         let at = node.end.saturating_sub(1);
-        let prefix = if node.value.as_object().is_some_and(|m| !m.is_empty()) {
+        let tail = match &node.kind {Kind::Object(entries)=>entries.last().map(|e|&source[e.node.end..at]).unwrap_or(""),_=>""};
+        let mut comment=false;
+        let trailing_comma=tail.chars().any(|ch|{
+            if matches!(ch,'\r'|'\n'){comment=false;}else if ch=='#'{comment=true;}
+            ch==','&&!comment
+        });
+        let prefix = if node.value.as_object().is_some_and(|m| !m.is_empty()) && !trailing_comma {
             ", "
         } else {
             ""

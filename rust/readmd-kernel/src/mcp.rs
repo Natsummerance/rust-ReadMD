@@ -70,8 +70,8 @@ fn schema(props: Value, required: &[&str]) -> Value {
 }
 
 fn math_input_schema() -> Value {
-    let mut props=json!({"operation":{"type":"string","enum":["parse","patch","serialize","migrate","schema"]},
-        "source":{"type":"string"},"content":{"type":"string"},
+    let mut props=json!({"operation":{"type":"string","enum":["parse","patch","serialize","migrate","schema","context"]},
+        "source":{"type":"string"},"content":{"type":"string"},"view_content":{"type":"string"},
         "dialect":{"type":"string","enum":["dsl","latex","omml","mathml","unicodemath"]},
         "display":{"type":"boolean"},"expected_revision":{"type":"string"},"patch":{"type":"object"},
         "target":{"type":"string"},"latex":{"type":"string"},"id":{"type":"string"}});
@@ -81,6 +81,8 @@ fn math_input_schema() -> Value {
         "description":"Available content width in physical points. Omit for intrinsic layout."});
     props["metadata"]=json!({"type":"string",
         "description":"Optional legacy math metadata for read-only identity and stale-state inspection."});
+    props["document_context"]=schema(json!({"id":{"type":"string"},"revision":{"type":"string"},"fingerprint":{"type":"string"},
+        "from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0}}), &["id","revision","fingerprint","from","to"]);
     schema(props,&["operation"])
 }
 
@@ -107,14 +109,18 @@ pub fn tools() -> Value {
     let mut list = json!([
         { "name":"readmd_publication_metadata", "description":"Read structured publication metadata or plan a revision-checked, source-preserving metadata edit and inverse. Authors, institutions, funding and book data share the desktop/export model. Never writes files.",
           "inputSchema":crate::publication_metadata::request_schema() },
+        { "name":"readmd_publication_profile", "description":"Read document-owned publication settings or plan one revision-checked reversible source edit. Sparse settings inherit without changing export presets. Null in patch removes a source field; null in options inherits. Never writes files.",
+          "inputSchema":crate::publication_profile::request_schema() },
         { "name":"readmd_publication_blocks", "description":"List exact UTF-16 publication block ranges or return a revision-checked local-formatting transaction and its inverse. Readable Markdown metadata supports Word, Typst PDF and EPUB. Never writes files; unsupported targets and properties are rejected.",
           "inputSchema":schema(json!({"action":{"type":"string","enum":["list","apply"]},"content":{"type":"string"},"base_revision":{"type":"string"},"id":{"type":"string"},"patch":{"type":"object"}}), &["content"]) },
+        { "name":"readmd_publication_numbering", "description":"Read or edit source-owned heading and equation/figure/table numbering. Apply requires base_revision and config (null clears). Returns one reversible content transaction, stable identities and the effective plan. Never writes files or changes export preferences.",
+          "inputSchema":crate::cross_references::numbering_request_schema() },
         { "name":"readmd_openapi_document", "description":"Generate or update a provenance-tracked Markdown region from local OpenAPI 3.0/3.1 JSON or YAML. Returns a revision-checked transaction, operation changes, source maps and unresolved-reference diagnostics. Preserves surrounding prose and refuses to overwrite manual edits. Never writes files or fetches references.",
           "inputSchema":schema(json!({"source":{"type":"string"},"source_name":{"type":"string"},"source_id":{"type":"string"},"file_path":{"type":"string"},"content":{"type":"string"},"base_revision":{"type":"string"},"expected_source_revision":{"type":"string"},"locale":{"type":"string"}}), &["content","base_revision"]) },
         { "name":"readmd_pdf_document", "description":"Use the desktop PDF object editor and managed offline PDFium worker. Open/render/edit/undo/redo/save/recovery share revision-guarded drafts. Only save modifies the original PDF. Requires the matching installed capability pack and explicit confirmation; never returns passwords.",
           "inputSchema":pdf_document_schema() },
         { "name":"readmd_academic_document", "description":"Prepare Markdown citations and a bibliography with the shared offline CSL processor. bibliography/csl resources must stay under baseDir. Returns an ephemeral publication view and diagnostics; never writes source files.",
-          "inputSchema":schema(json!({"content":{"type":"string"},"baseDir":{"type":"string"},"options":{"type":"object","description":"Publication metadata overrides; meta.language controls CSL localization independently of the UI language."}}), &["content","baseDir"]) },
+          "inputSchema":schema(json!({"content":{"type":"string"},"baseDir":{"type":"string"},"view":{"type":"boolean","description":"Return the read-only complete reader publication view before pagination."},"options":{"type":"object","description":"Publication metadata overrides; meta.language controls CSL localization independently of the UI language."}}), &["content","baseDir"]) },
         { "name":"readmd_content_transaction", "description":"Apply revision-checked, nonoverlapping UTF-16 edits in memory. Returns new content and an inverse transaction; does not write a file.",
           "inputSchema":schema(json!({"content":{"type":"string"},"transaction":{"type":"object"}}), &["content","transaction"]) },
         { "name":"readmd_math", "description":"Use the desktop's mathematical model to parse, patch, serialize or plan migration to readable DSL. Patches require expected_revision; migration plans never write files. Unknown macros and invalid properties are diagnosed.",
@@ -241,12 +247,18 @@ pub fn tools() -> Value {
           "description": "Restore a PDF from its .bak backup written by a previous ReadMD edit.",
           "inputSchema": schema(json!({ "pdf_path": { "type": "string" }, "confirm": confirm_prop() }), &["pdf_path", "confirm"]) },
     ]);
+    // Keep independent schema construction outside the already large literal;
+    // adding a tool must not require raising the whole crate's macro limit.
+    list.as_array_mut().unwrap().push(json!({
+        "name":"readmd_publication_inline_text", "description":"Read source-bound author text spans or plan one reversible UTF-16 range edit. Western size and complex-script size are independent. Null clears direct formatting; base resets to the paragraph base. No file writes; revisions, nesting and atomic source targets are checked.",
+        "inputSchema":crate::publication_inline_text::request_schema()
+    }));
     for tool in list.as_array_mut().unwrap() {
         let name = tool["name"].as_str().unwrap_or("");
         let read_only = matches!(name, "readmd_fix_markdown" | "readmd_generate_toc" | "readmd_latex_to_md" | "readmd_md_to_latex" | "readmd_latex_to_omml" | "readmd_parse_bibtex" | "readmd_process_imports" | "readmd_ai_assistant" | "readmd_ai_providers" | "readmd_export_presets" | "readmd_pdf_audit");
         let read_only = read_only || matches!(name, "readmd_analyze_document" | "readmd_search_workspace" | "readmd_read_document" | "readmd_document_history");
         let read_only = read_only || matches!(name, "readmd_ai_complete" | "readmd_suggest_links" | "readmd_resolve_link");
-        let read_only = read_only || matches!(name, "readmd_math" | "readmd_content_transaction" | "readmd_academic_document" | "readmd_openapi_document" | "readmd_publication_blocks" | "readmd_publication_metadata");
+        let read_only = read_only || matches!(name, "readmd_math" | "readmd_content_transaction" | "readmd_academic_document" | "readmd_openapi_document" | "readmd_publication_blocks" | "readmd_publication_inline_text" | "readmd_publication_metadata" | "readmd_publication_numbering" | "readmd_publication_profile");
         let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_complete" | "readmd_ai_models" | "readmd_run_code_chunk");
         tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only && name != "readmd_ai_complete", "openWorldHint": open_world });
     }
@@ -507,13 +519,20 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
             else {Err(metadata_error_result(body))}
         },
         "readmd_publication_blocks" => Ok(json_result(&api(app,"POST","/api/publication/blocks",Some(args))?)),
+        "readmd_publication_inline_text" => Ok(json_result(&api(app,"POST","/api/publication/inline-text",Some(args))?)),
+        "readmd_publication_numbering" => Ok(json_result(&api(app,"POST","/api/publication/numbering",Some(args))?)),
+        "readmd_publication_profile" => Ok(json_result(&api(app,"POST","/api/publication/profile",Some(args))?)),
         "readmd_pdf_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/pdf/workspace",Some(args))?))),
         "readmd_academic_document" => Ok(json_result(&api(app,"POST","/api/academic/document",Some(args))?)),
         "readmd_openapi_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/developer/openapi",Some(args))?))),
         "readmd_content_transaction" => Ok(json_result(&api(app,"POST","/api/documents/transaction",Some(args))?)),
         "readmd_math" => {
             let operation=args["operation"].as_str().unwrap_or("parse");
-            let target=match operation {"parse"=>"/api/math/parse","patch"=>"/api/math/patch","serialize"=>"/api/math/serialize","migrate"=>"/api/math/migrate","schema"=>"/api/math/schema",_=>return Err(error_result("invalid_arguments",None))};
+            if args.get("document_context").is_some() && !matches!(operation,"parse"|"patch"|"serialize") {
+                return Err(error_result("invalid_arguments",None));
+            }
+            if args.get("view_content").is_some() && operation!="context" {return Err(error_result("invalid_arguments",None));}
+            let target=match operation {"parse"=>"/api/math/parse","patch"=>"/api/math/patch","serialize"=>"/api/math/serialize","migrate"=>"/api/math/migrate","schema"=>"/api/math/schema","context"=>"/api/math/context",_=>return Err(error_result("invalid_arguments",None))};
             Ok(json_result(&api(app,if operation=="schema"{"GET"}else{"POST"},target,if operation=="schema"{None}else{Some(args)})?))
         },
         "readmd_suggest_links" | "readmd_resolve_link" => {
@@ -578,7 +597,8 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
             let path = existing_file(&arg_str(args, "file_path", ""))?;
             let t = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &path.to_string_lossy(), true, None);
             if let Some(err) = t.error {
-                return Err(error_result("conversion_failed", Some(&err)));
+                let body = crate::conversion_errors::body(&err);
+                return Err(json!({"isError":true,"structuredContent":body,"content":[{"type":"text","text":body.to_string()}]}));
             }
             if t.text.trim().is_empty() {
                 return Err(error_result("convert_no_text", Some("未提取到文字；如果是扫描件，可使用 readmd_ocr_to_markdown")));
@@ -782,7 +802,7 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
 fn export_error(message:Option<&str>)->Value {
     let Some(message)=message else{return error_result("export_failed",None)};
     let body=crate::latex_compile::error_body(message);
-    if matches!(body["error_code"].as_str(),Some(crate::api_codes::PDF_MISSING_GLYPH | crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY))
+    if matches!(body["error_code"].as_str(),Some(crate::api_codes::PDF_MISSING_GLYPH | crate::api_codes::PUBLICATION_LAYOUT_GEOMETRY | crate::api_codes::PUBLICATION_NOTE_LAYOUT | crate::api_codes::MATH_DOCUMENT_DEFAULTS_CONFLICT | crate::api_codes::AUTHOR_INLINE_TEXT_PDF_SHAPING_UNSUPPORTED | crate::api_codes::AUTHOR_INLINE_TEXT_UNSUPPORTED))
         &&body["details"].is_object(){return metadata_error_result(body);}
     error_result(body["error_code"].as_str().unwrap_or("export_failed"),Some(message))
 }
@@ -800,21 +820,21 @@ fn export_document(app: &Arc<App>, args: &Value, cancel: Option<&AtomicBool>) ->
     let overwrite = arg_bool(args, "overwrite", false);
     let out = output_target(&arg_str(args, "output_path", ""), &format!(".{fmt}"), overwrite).map_err(|c| error_result(c, None))?;
     let base = arg_str(args, "base_dir", &out.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
+    let content=arg_str(args,"markdown_content","");
     let preset = arg_str(args, "style_preset", "minimal");
     let catalog = api(app, "GET", "/api/export/presets", None)?;
     let preset_options = catalog["presets"].get(&preset).or_else(|| catalog["custom"].get(&preset))
         .ok_or_else(|| error_result("unknown_style_preset", None))?;
-    let inherited = crate::publication_typography::ResolvedOptions::from_request(preset_options).map_err(|code| export_error(Some(code)))?;
-    let mut options=crate::export_styles::sanitize(preset_options);
-    if let Some(meta)=preset_options.get("meta"){options["meta"]=meta.clone();}
     if args.get("options").is_some_and(|v|!v.is_object()){return Err(error_result("invalid_options",None));}
-    let resolved = inherited.with_completed_values(options).map_err(|code| export_error(Some(code)))?
-        .merge(args.get("options").unwrap_or(&json!({})))
+    let resolved = crate::publication_profile::resolve_with_preset(&content, preset_options,
+        args.get("style_preset").map(|_|preset_options), args.get("options").unwrap_or(&json!({})))
         .map_err(|error|metadata_error_result(error.response_body()))?;
+    let resolved = crate::publication_profile::for_format(&fmt,&content,resolved).map_err(|error|metadata_error_result(error.response_body()))?;
     let options = resolved.values();
     let title = arg_str(args, "title", "ReadMD Document");
-    let content=arg_str(args,"markdown_content","");
+    crate::publication_profile::preflight(&fmt,&content,options).map_err(|e|metadata_error_result(e.response_body()))?;
     crate::publication_typography::validate_export(&fmt, &content, &options).map_err(|code| export_error(Some(code)))?;
+    crate::mdexport::validate_caption_author_export(&fmt,&content,options).map_err(|code|export_error(Some(&code)))?;
     // TeX has a companion assets directory and commits when rendering begins.
     // Single-file formats are rendered in isolation before atomic publication.
     check_cancel(cancel)?;
@@ -1095,6 +1115,63 @@ pub fn run_stdio(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn tex_author_guard_preserves_only_validated_details_in_both_mcp_channels(){
+        let code=crate::api_codes::AUTHOR_INLINE_TEXT_UNSUPPORTED;
+        let details=json!({"consumer":"tex","reason":"rtl","coordinateSpace":"textUtf8Bytes","from":0,"to":14});
+        let result=export_error(Some(&format!("{code}: {details}")));
+        assert_eq!(result["isError"],true);
+        assert_eq!(result["structuredContent"],json!({"ok":false,"error_code":code,"details":details}));
+        assert_eq!(serde_json::from_str::<Value>(result["content"][0]["text"].as_str().unwrap()).unwrap(),result["structuredContent"]);
+        for text in ["[\"tex\",\"rtl\",\"textUtf8Bytes\",0,14]","{\"consumer\":\"tex\",\"reason\":\"rtl\",\"from\":0,\"to\":14}","{\"consumer\":\"tex\",\"reason\":\"rtl\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":14,\"to\":14}","{\"consumer\":\"tex\",\"reason\":\"rtl\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":0,\"to\":14,\"extra\":true}","{\"consumer\":\"tex\",\"consumer\":\"tex\",\"reason\":\"rtl\",\"coordinateSpace\":\"textUtf8Bytes\",\"from\":0,\"to\":14}"]{
+            let message=format!("{code}: {text}");let result=export_error(Some(&message));
+            assert_eq!(result["isError"],true);assert_eq!(result["structuredContent"]["error_code"],code);
+            assert!(result["structuredContent"].get("details").is_none());
+            assert_eq!(result["structuredContent"]["error"],message);
+            assert_eq!(serde_json::from_str::<Value>(result["content"][0]["text"].as_str().unwrap()).unwrap(),result["structuredContent"]);
+        }
+    }
+    #[test]
+    fn math_default_conflicts_keep_validated_details_at_mcp_export_boundary(){
+        let details=json!({"property":"smallFrac","firstFormula":1,"formula":2});
+        let result=export_error(Some(&format!("math_document_defaults_conflict: {details}")));
+        assert_eq!(result["isError"],true);
+        assert_eq!(result["structuredContent"],json!({"ok":false,"error_code":crate::api_codes::MATH_DOCUMENT_DEFAULTS_CONFLICT,"details":details}));
+        assert_eq!(serde_json::from_str::<Value>(result["content"][0]["text"].as_str().unwrap()).unwrap(),result["structuredContent"]);
+        let bad=json!({"property":"smallFrac","firstFormula":2,"formula":1});
+        assert!(export_error(Some(&format!("math_document_defaults_conflict: {bad}")))["structuredContent"].get("details").is_none());
+    }
+
+    #[test]
+    fn citation_binding_errors_keep_their_mcp_classification() {
+        let message="docx_citation_invalid: duplicate_binding:word/document.xml";
+        let result=export_error(Some(message));
+        assert_eq!(result["isError"],true);
+        assert_eq!(result["structuredContent"]["error_code"],crate::api_codes::DOCX_CITATION_INVALID);
+        let text=result["content"][0]["text"].as_str().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(text).unwrap(),result["structuredContent"]);
+        assert_eq!(export_error(Some("docx_citation_invalid:duplicate_binding:word/document.xml"))["structuredContent"]["error_code"],"export_failed");
+    }
+
+    #[test]
+    fn note_layout_diagnostics_retain_validated_geometry_at_mcp_export_boundary() {
+        let details=json!({"coordinateSpace":"pdfFootnoteStartPage","noteIndex":31,"definitionPage":2,"referencePage":3});
+        let message=format!("publication_note_layout: {details}");
+        let result=export_error(Some(&message));
+        assert_eq!(result["isError"],true);
+        assert_eq!(result["structuredContent"],json!({"ok":false,"error_code":"publication_note_layout","details":details}));
+        let text=result["content"][0]["text"].as_str().unwrap();
+        assert_eq!(serde_json::from_str::<Value>(text).unwrap(),result["structuredContent"]);
+        for invalid in [json!({"coordinateSpace":"pdfFootnoteStartPage","noteIndex":0,"definitionPage":2,"referencePage":3}),
+            json!({"coordinateSpace":"pdfFootnoteStartPage","noteIndex":31,"definitionPage":3,"referencePage":3}),
+            json!({"coordinateSpace":"pdfFootnoteStartPage","noteIndex":31,"definitionPage":2,"referencePage":3,"unexpected":true})] {
+            let result=export_error(Some(&format!("publication_note_layout: {invalid}")));
+            assert_eq!(result["isError"],true);
+            assert_eq!(result["structuredContent"]["error_code"],"publication_note_layout");
+            assert!(result["structuredContent"].get("details").is_none());
+        }
+    }
+
+    #[test]
     fn managed_export_keeps_retryable_busy_code_and_original_output() {
         let root=tempfile::tempdir().unwrap();let data=root.path().join("profile");
         let app=Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(&data,root.path(),&root.path().join("assets"))).unwrap());
@@ -1201,6 +1278,39 @@ mod tests {
         }), Some(&cancelled));
         assert_eq!(result["structuredContent"]["error_code"], "cancelled");
         assert_eq!(std::fs::read(&output).unwrap(), b"KEEP");
+    }
+
+    #[test]
+    fn native_pdf_exports_track_owned_output_with_and_without_metadata() {
+        let directory = tempfile::tempdir().unwrap();
+        let (app, _, _, _, _) = harness("native-pdf-owned-stage");
+        for (name, source) in [
+            ("Plain", "# Plain\n\nActual native formula $x^2+y^2=z^2$.\n"),
+            ("Metadata", "---\ntitle: Scoped metadata publication\nlanguage: en-US\n---\n\nActual native formula $x^2+y^2=z^2$.\n"),
+        ] {
+            let output = directory.path().join(format!("{name}.pdf"));
+            let result = call_tool(&app, "readmd_export_document", &json!({
+                "markdown_content": source, "output_path": output, "output_format": "pdf",
+                "options": {"pdf":{"engine":"rust"},"typography":{"font":"Arial"},
+                    "cover":{"enabled":false},"toc":{"enabled":false},"frontMatter":{"mode":"none"}},
+                "confirm": true,
+            }));
+            assert_ne!(result["isError"], true, "{result}");
+            let bytes = std::fs::read(&output).unwrap();
+            let document = lopdf::Document::load_mem(&bytes).unwrap();
+            assert_eq!(document.get_pages().len(), 1);
+            if name == "Metadata" {
+                let catalog = document.catalog().unwrap();
+                let metadata = document.get_object(catalog.get(b"Metadata").unwrap().as_reference().unwrap()).unwrap().as_stream().unwrap();
+                let xmp = metadata.decompressed_content().unwrap_or_else(|_| metadata.content.clone());
+                assert!(String::from_utf8(xmp).unwrap().contains("Scoped metadata publication"));
+            }
+            let journals = app.paths.data_dir.join("worker-tasks-v1");
+            assert!(!std::fs::read_dir(&journals).unwrap().flatten()
+                .any(|entry| entry.path().join("record.jsonl").exists()),
+                "A successful native PDF export left an unidentified owned task output");
+        }
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 2);
     }
 
     #[test]

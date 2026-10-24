@@ -10,6 +10,21 @@ use std::ops::Range;
 pub struct Scan { pub citations: Vec<SourceCitation>, pub diagnostics: Vec<Value> }
 fn error(field: &str) -> ApiError { ApiError::new(422, "academic_context").noted("field", field) }
 fn options() -> Options { Options::ENABLE_TABLES | Options::ENABLE_FOOTNOTES | Options::ENABLE_MATH | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS | Options::ENABLE_STRIKETHROUGH }
+type SourceEvents<'a> = Box<dyn Iterator<Item=(Event<'a>,Range<usize>)>+'a>;
+/// Author scopes are source syntax only after the shared parser validates
+/// their exact delimiters. Keep ordinary HTML opaque, including an ordinary
+/// span nested inside a validated author scope. The legacy path adds no author
+/// parsing budget and keeps its original parser options and source offsets.
+fn source_events(source:&str)->ApiResult<(SourceEvents<'_>,HashSet<(usize,usize)>)>{
+    if !crate::publication_inline_text::has_owned_syntax(source){
+        return Ok((Box::new(Parser::new_ext(source,options()).into_offset_iter()),HashSet::new()));
+    }
+    let document=crate::publication_inline_text::consumer_document(source).map_err(|code|ApiError::new(422,code))?;
+    let edges=document.nodes.into_iter().flat_map(|node|[node.opening,node.closing].into_iter().flatten())
+        .map(|range|(range.start,range.end)).collect();
+    let events=crate::publication_inline_text::markdown_events(source).map_err(|code|ApiError::new(422,code))?;
+    Ok((Box::new(events.into_iter()),edges))
+}
 fn escaped(source: &str, at: usize) -> bool { source[..at].bytes().rev().take_while(|b| *b == b'\\').count() % 2 == 1 }
 fn trim(source: &str, range: Range<usize>) -> Range<usize> {
     let text = &source[range.clone()]; let start = range.start + text.len() - text.trim_start().len();
@@ -236,9 +251,11 @@ fn item(source: &str, range: Range<usize>, terms: &[(String,String)], mode: Cite
 pub fn scan(source: &str, locale: &str) -> ApiResult<Scan> {
     if source.len()>crate::document_transaction::MAX_DOCUMENT_BYTES{return Err(ApiError::new(413,"academic_budget"));}
     let mut hard=Vec::new();let mut links=Vec::new();let mut html_stack:Vec<(String,usize)>=Vec::new();
-    for(event,range)in Parser::new_ext(source,options()).into_offset_iter(){match event{
+    let(events,owned_edges)=source_events(source)?;
+    for(event,range)in events{match event{
         Event::Start(Tag::CodeBlock(_)|Tag::MetadataBlock(_)|Tag::Image{..})|Event::Code(_)|Event::InlineMath(_)|Event::DisplayMath(_)|Event::Html(_)=>hard.push(range),
         Event::InlineHtml(raw)=>{
+            if owned_edges.contains(&(range.start,range.end)){hard.push(range);continue;}
             let raw=raw.trim();let closing=raw.starts_with("</");
             let tag=raw.trim_start_matches('<').trim_start_matches('/').chars().take_while(|c|c.is_ascii_alphanumeric()||*c=='-').collect::<String>().to_ascii_lowercase();
             if !tag.is_empty(){
@@ -304,9 +321,10 @@ pub fn scan(source: &str, locale: &str) -> ApiResult<Scan> {
 /// Returns actual reading order: a note's citations occur at its first real
 /// reference, not at the later definition. Unknown clusters do not create a
 /// synthetic note or influence following citation state.
-pub fn reading_order(source:&str,citations:Vec<SourceCitation>,note_style:bool,known:&HashSet<String>)->Vec<SourceCitation>{
+pub fn reading_order(source:&str,citations:Vec<SourceCitation>,note_style:bool,known:&HashSet<String>)->ApiResult<Vec<SourceCitation>>{
     let mut definitions=HashMap::<String,Range<usize>>::new();let mut refs=Vec::new();
-    for(event,range)in Parser::new_ext(source,options()).into_offset_iter(){match event{
+    let(events,_)=source_events(source)?;
+    for(event,range)in events{match event{
         Event::Start(Tag::FootnoteDefinition(label))=>{definitions.insert(label.into_string(),range);},
         Event::FootnoteReference(label)=>refs.push((range.start,label.into_string())),_=>()
     }}
@@ -330,7 +348,7 @@ pub fn reading_order(source:&str,citations:Vec<SourceCitation>,note_style:bool,k
             }
         }
     }}
-    out
+    Ok(out)
 }
 
 #[cfg(test)]mod tests{
@@ -372,9 +390,13 @@ pub fn reading_order(source:&str,citations:Vec<SourceCitation>,note_style:bool,k
         let mut source=String::from("[@a] :cite[author-only @a] [@missing] ");
         for index in 0..100{source.push_str(&format!("manual[^n{index}] "));}
         source.push_str("[@a]\n\n");for index in 0..100{source.push_str(&format!("[^n{index}]: Manual note {index}.\n\n"));}
-        let known=HashSet::from(["a".into()]);let ordered=reading_order(&source,scan(&source,"en-US").unwrap().citations,true,&known);
+        let known=HashSet::from(["a".into()]);let ordered=reading_order(&source,scan(&source,"en-US").unwrap().citations,true,&known).unwrap();
         assert_eq!(ordered.len(),4);assert_eq!(ordered[0].context.note_number,Some(1));assert_eq!(ordered[1].context.note_number,None);assert_eq!(ordered[2].context.note_number,None);assert_eq!(ordered[3].context.note_number,Some(102));
-        let source="A[^n], then [@b]. Again[^n].\n\n[^n]: See [@a, p. 1].\n";let known=HashSet::from(["a".into(),"b".into()]);let ordered=reading_order(source,scan(source,"en-US").unwrap().citations,true,&known);
+        let source="A[^n], then [@b]. Again[^n].\n\n[^n]: See [@a, p. 1].\n";let known=HashSet::from(["a".into(),"b".into()]);let ordered=reading_order(source,scan(source,"en-US").unwrap().citations,true,&known).unwrap();
         assert_eq!(ordered[0].items[0].cite.key,"a");assert!(ordered[0].context.in_note);assert_eq!(ordered[0].context.note_number,Some(1));assert_eq!(ordered[1].context.note_number,Some(2));
     }
 }
+
+#[cfg(test)]
+#[path="publication_citations_author_tests.rs"]
+mod author_tests;

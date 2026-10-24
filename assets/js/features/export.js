@@ -9,6 +9,7 @@ const EXPORT_FONTS = ['MicrosoftYaHei', 'SimHei', 'SimSun', 'KaiTi', 'DengXian',
 const EXPORT_MONO = ['Consolas', 'Courier New', 'SimHei'];
 const EXPORT_ALIGNS = ['left', 'center', 'right', 'justify'];
 const EXPORT_PAGES = ['A3', 'A4', 'A5', 'B5', 'Letter', 'Legal', 'Custom'];
+let exportNumberingControl = null;
 
 function getExportPresetNames() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -115,6 +116,11 @@ function getExportSections() {
       { k: 'footnotes.lineHeight', label: _t('export.footnoteLineHeight'), type:'number', min:1, max:3, step:.1, fmts:['pdf','docx','epub'], engines:['typst'], default:1 },
       { k: 'footnotes.numberFormat', label: _t('export.footnoteNumberFormat'), type:'select', opts:[['decimal','1, 2, 3'],['lowerRoman','i, ii, iii'],['upperRoman','I, II, III'],['lowerLetter','a, b, c'],['upperLetter','A, B, C']], fmts:['pdf','docx','epub'], engines:['typst'], default:'decimal' },
       { k: 'footnotes.start', label: _t('export.noteStart'), type:'number', min:1, max:9999, step:1, fmts:['pdf','docx','epub'], engines:['typst'], default:1 },
+      { k: 'footnotes.restart', label: _t('export.noteRestart'), type:'select', opts:[['continuous',_t('export.noteRestartContinuous')],['section',_t('export.noteRestartSection')],['page',_t('export.noteRestartPage')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'continuous' },
+      { k: 'footnotes.separator', label: _t('export.noteSeparator'), type:'select', opts:[['line',_t('export.noteSeparatorLine')],['none',_t('export.noteSeparatorNone')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'line' },
+      { k: 'footnotes.continuationSeparator', label: _t('export.noteContinuationSeparator'), type:'select', opts:[['line',_t('export.noteSeparatorLine')],['none',_t('export.noteSeparatorNone')]], fmts:['docx'], default:'line' },
+      { k: 'footnotes.continuationNotice', label: _t('export.noteContinuationNotice'), type:'text', fmts:['docx'], default:'', maxLength:120 },
+      { k: 'footnotes.longNote', label: _t('export.noteLongNote'), type:'select', opts:[['split',_t('export.noteLongNoteSplit')],['keepParagraphs',_t('export.noteLongNoteKeepParagraphs')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'split' },
     ]},
     { title: _t('export.secHeadings') || '', fmts: ['pdf', 'docx', 'html', 'epub'], headingRows: true },
     { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
@@ -198,16 +204,20 @@ function getExportSections() {
 
 
 function expGet(obj, path) {
-  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  return path.split('.').reduce((o, k) => (o == null || !Object.hasOwn(o,k) ? undefined : o[k]), obj);
 }
 function expSet(obj, path, val) {
   const ks = path.split('.');
+  // This setter also receives AI-proposed dotted paths. Fixed UI options have
+  // no prototype segments; never walk inherited objects from such a path.
+  if(ks.some(k=>['__proto__','prototype','constructor'].includes(k)))return false;
   let o = obj;
   for (let i = 0; i < ks.length - 1; i++) {
-    if (typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
+    if (!Object.hasOwn(o,ks[i]) || typeof o[ks[i]] !== 'object' || o[ks[i]] === null) o[ks[i]] = {};
     o = o[ks[i]];
   }
   o[ks[ks.length - 1]] = val;
+  return true;
 }
 const EXPORT_EPUB_NUMERIC = {
   'epub.fontSize': { min: 6, max: 72, inherit: 'typography.size', fallback: 11, unit: 'pt' },
@@ -247,9 +257,9 @@ function expDeepMerge(base, over) {
   if (!over || typeof over !== 'object') return out;
   Object.keys(over).forEach(k => {
     const v = over[k];
-    if (v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object') {
-      out[k] = expDeepMerge(out[k], v);
-    } else if (v !== undefined) out[k] = JSON.parse(JSON.stringify(v));
+    if (v && typeof v === 'object' && !Array.isArray(v) && Object.hasOwn(out,k) && out[k] && typeof out[k] === 'object') {
+      Object.defineProperty(out,k,{value:expDeepMerge(out[k],v),enumerable:true,writable:true,configurable:true});
+    } else if (v !== undefined) Object.defineProperty(out,k,{value:JSON.parse(JSON.stringify(v)),enumerable:true,writable:true,configurable:true});
   });
   const merged=window.ReadMDPublication?.lineSpacing.inheritGlobal(base,over,out)||out;
   const physical=window.ReadMDPublication?.tracking.inheritGlobal(base,over,merged)||merged;
@@ -287,6 +297,30 @@ async function loadExportPresets() {
 }
 
 let exportOpenEpoch = 0;
+let exportProfileContext = null;
+async function prepareExportProfile(epoch) {
+  exportProfileContext = null;
+  if (!window.ReadMDPublicationProfile || window.READMD_ENGINE !== 'rust') return true;
+  const content = currentExportContent();
+  const tab=typeof getActiveTab==='function'?getActiveTab():null,id=state.activeTabId,file=state.file,name=state.sourceName;
+  const same=()=>state.activeTabId===id&&state.file===file&&state.sourceName===name&&(typeof getActiveTab!=='function'||getActiveTab()===tab);
+  try {
+    const response = await apiFetch('/api/publication/profile', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+    const data = await response.json();
+    if (epoch !== exportOpenEpoch || !same() || currentExportContent() !== content) return false;
+    if (!response.ok || data.ok === false || data.diagnostics?.length) throw Error(data.error_code || data.diagnostics?.[0]?.code || 'publication_metadata_type');
+    exportProfileContext = {content,isCurrent:same,session:window.ReadMDPublicationProfile.create(data.options,state.export.options)};
+    return true;
+  } catch (error) {
+    if (epoch === exportOpenEpoch) showToast(i18n.t('error.' + (error.message || 'publication_metadata_type')));
+    return false;
+  }
+}
+// A modal's controls share one snapshot. Do not serialize a million-word CM
+// document separately for every field; verify at request/preview boundaries.
+function exportProfileSession() {return exportProfileContext?.session || null;}
+function exportProfileIsCurrent(content) {return !exportProfileContext || exportProfileContext.isCurrent() && exportProfileContext.content===content;}
+function effectiveExportOptions(options) {return exportProfileSession()?.request(options) || options;}
 async function openExportModal() {
   const epoch = ++exportOpenEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -299,14 +333,29 @@ async function openExportModal() {
     const ok = await loadExportPresets();
     if (ok) state.export.ready = true;
     if (epoch !== exportOpenEpoch || state.mode === 'welcome') return;
-    if (ok) renderExportModal();
+    if (ok) {if(await prepareExportProfile(epoch))renderExportModal();}
     else showToast(_t('toast.exportModuleLoadFail') || '');
     return;
   }
-  renderExportModal();
+  if(await prepareExportProfile(epoch))renderExportModal();
 }
 
-function closeExportModal() { exportOpenEpoch++; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+
+function mountExportNumbering(host) {
+  if(!window.ReadMDPublicationNumbering)return null;
+  const source=currentExportContent(),tab=state.activeTabId,file=state.file,name=state.sourceName,documentTab=typeof getActiveTab==='function'?getActiveTab():null;
+  const same=()=>state.activeTabId===tab&&state.file===file&&state.sourceName===name&&(typeof getActiveTab!=='function'||getActiveTab()===documentTab)&&host.isConnected!==false;
+  const view=()=>typeof cmView==='undefined'?null:cmView;
+  return window.ReadMDPublicationNumbering.mount(host,{source,getSource:currentExportContent,isCurrent:same,
+    ensureEditor:async()=>{
+      if(!same()||currentExportContent()!==source)return null;
+      if(!state.editing&&typeof toggleEdit==='function')await toggleEdit();
+      const editor=view();if(!same()||!state.editing||!editor)return null;
+      return {view:editor,source:currentExportContent(),current:()=>same()&&state.editing&&view()===editor};
+    },
+    onApplied:()=>{closeExportModal();view()?.focus();}});
+}
 
 function currentExportContent() {
   if (state.editing) {
@@ -1176,11 +1225,17 @@ function htmlExportFigureContent(content,options) {
 function updateExportLivePreview() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
-  const opts = collectExportOptions();
+  const opts = effectiveExportOptions(collectExportOptions());
   // TeX source export supports typed spacing; its browser-only mock page is
   // not a TeX renderer. Do not present that approximation as a verified layout.
   const spacing=window.ReadMDPublication?.lineSpacing,tracking=window.ReadMDPublication?.tracking,baseline=window.ReadMDPublication?.baseline,spacingError=spacing?.validateExport($('export-opts'))===false||tracking?.validateExport($('export-opts'))===false||baseline?.validateExport($('export-opts'))===false?'error.publication_local_style_invalid':spacing?.issue(opts,fmt==='tex'?'html':fmt,opts.pdf?.engine)||tracking?.issue(opts,fmt)||baseline?.issue(opts,fmt,opts.pdf?.engine)||(fmt==='epub'&&(!validateEpubNumericControls()?'error.epub_invalid_options':expEpubNumericIssue(opts)));
   if(spacingError){cancelNativeExportPreview();const message=_t(spacingError);for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=message;target.setAttribute('aria-busy','false');}}const wrapper=$('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');if(wrapper){wrapper.textContent=message;wrapper.setAttribute('aria-busy','false');}return;}
+  let content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){
+    cancelNativeExportPreview();
+    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('error.transaction_conflict');target.setAttribute('aria-busy','false');}}
+    return;
+  }
   if(state.editing&&state.pvPublication)schedulePreview();
   const badge = $('export-preview-badge');
   const sel = $('exp-preset');
@@ -1189,7 +1244,6 @@ function updateExportLivePreview() {
   if (badge) badge.textContent = fmtLabel + ' · ' + presetName;
   renderExportPresetCards();
 
-  let content = currentExportContent();
   const docTitle = currentExportName();
   if (window.READMD_ENGINE === 'rust' && (fmt === 'pdf' || fmt === 'docx' || fmt === 'epub')) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
@@ -1318,11 +1372,12 @@ function updateExportLivePreview() {
 
 function expFieldApplicable(f, secFmts, fmt) {
   if(f.type==='tracking')return fmt==='docx'||state.export.options?.typography?.trackingPt!=null;
-  if(f.type==='baseline')return fmt==='docx'||fmt==='pdf'&&(!state.export.options?.pdf?.engine||state.export.options.pdf.engine==='rust')||state.export.options?.typography?.baselineShiftPt!=null;
+  if(f.type==='baseline')return fmt==='docx'||fmt==='pdf'&&(!state.export.options?.pdf?.engine||['rust','typst'].includes(state.export.options.pdf.engine))||state.export.options?.typography?.baselineShiftPt!=null;
   if(f.type==='lineSpacing')return ['pdf','docx','html'].includes(fmt)||['epub','tex','presentation'].includes(fmt)&&state.export.options?.typography?.lineSpacing!=null;
   if(['tex','presentation'].includes(fmt)&&/^(?:typography|footnotes)\./.test(f.k))return false;
   if(fmt==='pdf'&&f.engines&&!f.engines.includes(state.export.options?.pdf?.engine||'rust'))return false;
-  if(f.k==='footnotes.title'&&state.export.options?.footnotes?.position!=='document')return false;
+  if(f.k==='footnotes.position'&&exportProfileSession()?.hasBindings)return false;
+  if(f.k==='footnotes.title'&&effectiveExportOptions(state.export.options||{}).footnotes?.position!=='document')return false;
   if((f.k==='toc.depth'||f.k==='toc.leader')&&fmt!=='epub'&&!state.export.options?.toc?.enabled)return false;
   const fmts = f.fmts || secFmts || ['pdf', 'docx', 'html'];
   return fmts.indexOf(fmt) >= 0;
@@ -1332,6 +1387,7 @@ function renderExportSections(preserveSections = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const fmt = state.export.fmt || 'pdf';
   const host = $('export-opts');
+  exportNumberingControl?.destroy();exportNumberingControl=null;
   const sectionState = preserveSections ? new Map([...host.querySelectorAll('.exp-sec')].map(section => [section.dataset.section, section.classList.contains('open')])) : null;
   const focusedKey = preserveSections && host.contains(document.activeElement) ? document.activeElement.dataset.k : null;
   const texPdf=fmt==='pdf'&&['xelatex','pdflatex'].includes(state.export.options?.pdf?.engine);
@@ -1394,7 +1450,17 @@ function renderExportSections(preserveSections = false) {
           extra.append(group);body.append(extra);
         }
       }
+      exportNumberingControl=mountExportNumbering(body);
     } else {
+      const profile = exportProfileSession();
+      if (profile?.hasKinds && fields.some(f => f.k?.startsWith('footnotes.'))) {
+        const row = document.createElement('label'); row.className = 'exp-field full';
+        const select = document.createElement('select'); select.className='modal-select';select.dataset.profileKind='';
+        select.setAttribute('aria-label',_t('export.notePlacement'));
+        for (const [kind,key] of [['footnote','export.noteFootnotes'],['endnote','export.noteEndnotes']]) select.add(new Option(_t(key),kind));
+        select.value=profile.kind();select.onchange=()=>{profile.selectKind(select.value);renderExportSections(true);};
+        row.append(select);body.append(row);
+      }
       fields.forEach(f => {
         if (!expFieldApplicable(f, secFmts, fmt)) return;
         body.appendChild(expFieldEl(f));
@@ -1409,9 +1475,15 @@ function renderExportSections(preserveSections = false) {
 
   // 绑定配置项实时变动事件
   host.querySelectorAll('input, select').forEach(el => {
-    if (el.closest('#publication-metadata-export')||el.closest('[data-line-spacing-control]')) return;
+    if (el.dataset.profileKind!==undefined) return;
+    if (el.closest('#publication-metadata-export')||el.closest('[data-line-spacing-control]')||el.closest('[data-publication-numbering]')) return;
     const onValChange = () => {
       if (EXPORT_EPUB_NUMERIC[el.dataset.k]) delete el.dataset.epubNumericInvalid;
+      if (el.dataset.k?.startsWith('footnotes.')) {
+        const profile = exportProfileSession();
+        const value = el.type==='checkbox'?el.checked:el.type==='number'?(el.value.trim()===''?null:Number(el.value)):el.value;
+        if (profile) profile.change(el.dataset.k,value);
+      }
       state.export.options = collectExportOptions();
       if(el.dataset.k==='cover.enabled'||el.dataset.k==='page.differentOddEven')applyExportOptionsToDom();
       const sel = $('exp-preset');
@@ -1467,6 +1539,10 @@ function expFieldEl(f) {
   }
   box.innerHTML = inner;
   if (f.default !== undefined) box.querySelector('[data-k]')?.setAttribute('data-default', JSON.stringify(f.default));
+  if(f.maxLength!==undefined)box.querySelector('input')?.setAttribute('maxlength',String(f.maxLength));
+  if(f.k==='footnotes.restart'&&(state.export.fmt==='epub'||state.export.fmt==='pdf'&&state.export.options?.footnotes?.position==='document')){
+    const page=box.querySelector('option[value="page"]');if(page)page.disabled=true;
+  }
   if (f.type === 'asset') {
     const input=box.querySelector('input');input.title=i18n.t('slash.imageDesc');
     const row=document.createElement('div');row.className='exp-asset';input.replaceWith(row);row.append(input);
@@ -1489,7 +1565,19 @@ function applyExportOptionsToDom() {
   const opts = state.export.options || {};
   document.querySelectorAll('#export-opts [data-k]').forEach(el => {
     if(el.dataset.k==='page.differentFirstPage')el.dataset.default=JSON.stringify(!!opts.cover?.enabled);
-    const v = expGet(opts, el.dataset.k) ?? (el.dataset.default !== undefined ? JSON.parse(el.dataset.default) : {'figures.style':'original','figures.widthMm':89,'figures.fontSizePt':7}[el.dataset.k]);
+    const profile = el.dataset.k.startsWith('footnotes.') && exportProfileSession();
+    const v = (profile ? profile.display(el.dataset.k) : expGet(opts, el.dataset.k)) ?? (el.dataset.default !== undefined ? JSON.parse(el.dataset.default) : {'figures.style':'original','figures.widthMm':89,'figures.fontSizePt':7}[el.dataset.k]);
+    if (profile) {el.title=i18n.t('pm.inherit');el.dataset.profileNote='';}
+    if (profile && el.dataset.k==='footnotes.lineHeight') {
+      const spacing=profile.display('footnotes.lineSpacing');
+      el.placeholder='';
+      if(spacing){
+        const key={exact:'export.lineSpacingExact',atLeast:'export.lineSpacingAtLeast',multiple:'export.lineSpacingMultiple'}[spacing.mode];
+        const description=i18n.t(key)+' · '+(spacing.mode==='multiple'?spacing.multiple:spacing.pt+' pt');
+        el.value='';el.placeholder=description;el.title=i18n.t('pm.inherit')+' · '+description;
+        return;
+      }
+    }
     const numeric = EXPORT_EPUB_NUMERIC[el.dataset.k];
     if (numeric) {
       // An empty field stays sparse; the placeholder explains its effective
@@ -1503,6 +1591,13 @@ function applyExportOptionsToDom() {
       return;
     }
     if (v === undefined || v === null) return;
+    // A native value outside the convenience slider/list remains visible and
+    // untouched. Merely opening/collecting this control must not clamp it.
+    if (profile && el.type==='number' && typeof v==='number') {
+      if (el.min!=='' && v<Number(el.min)) el.min=String(v);
+      if (el.max!=='' && v>Number(el.max)) el.max=String(v);
+    }
+    if (profile && el.tagName==='SELECT' && typeof v==='string' && !Array.from(el.options).some(o=>o.value===v)) el.add(new Option(v,v));
     // Preserve an explicit stored tag even when it is outside the short list.
     if (el.dataset.k === 'epub.language' && typeof v === 'string' && v && !Array.from(el.options).some(o => o.value === v)) el.add(new Option(v, v));
     if (el.type === 'checkbox') el.checked = !!v;
@@ -1522,6 +1617,7 @@ function collectExportOptions() {
   // Fields absent from the current format still belong to the selected preset.
   const opts = expDeepMerge(state.export.defaults, state.export.options);
   document.querySelectorAll('#export-opts [data-k]').forEach(el => {
+    if (el.dataset.profileNote!==undefined && exportProfileSession()) return;
     let v;
     if (EXPORT_EPUB_NUMERIC[el.dataset.k]) {
       if (el.dataset.epubNumericInvalid !== undefined) v = JSON.parse(el.dataset.epubNumericInvalid);
@@ -1560,7 +1656,8 @@ function collectExportOptions() {
   window.ReadMDPublication?.lineSpacing.collectExport(opts,$('export-opts'));
   window.ReadMDPublication?.tracking.collectExport(opts,$('export-opts'));
   window.ReadMDPublication?.baseline.collectExport(opts,$('export-opts'));
-  return window.ReadMDPublicationMetadata?.collectExport(opts) || opts;
+  const raw = window.ReadMDPublicationMetadata?.collectExport(opts) || opts;
+  return exportProfileSession()?.collect(raw) || raw;
 }
 
 // AI providers sometimes return a flat dotted object while the exporter uses
@@ -1628,6 +1725,7 @@ function renderExportPresetSelect() {
     const v = sel.value;
     state.export.selectedPreset = v;
     if (v !== '__custom__') {
+      exportProfileSession()?.selectPreset(v==='__default__'?{}:(state.export.presets[v]||state.export.custom[v]||{}));
       state.export.options = exportPresetOptions(v);
       renderExportSections();
     }
@@ -1706,10 +1804,12 @@ async function runExportOnce(taskId) {
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
   const fmt = state.export.fmt;
-  let options = collectExportOptions();
+  const rememberedOptions = collectExportOptions();
+  let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
   const spacingError=window.ReadMDPublication?.lineSpacing.issue(options,fmt,options.pdf?.engine)||window.ReadMDPublication?.tracking.issue(options,fmt)||window.ReadMDPublication?.baseline.issue(options,fmt,options.pdf?.engine);if(spacingError){showToast(i18n.t(spacingError));return false;}
   const content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){showToast(i18n.t('error.transaction_conflict'));return false;}
   const baseDir = state.dir || '';
   const suggestedName = currentExportName();
   const preset = ($('exp-preset') || {}).value || '__custom__';
@@ -1807,7 +1907,7 @@ async function runExportOnce(taskId) {
   res.className = 'export-result ok';
   const warnList = warnMessages(r);
   if(options.figures?.rendered){options={...options,figures:{...options.figures}};delete options.figures.rendered;}
-  state.export.last = { fmt, options, preset };
+  state.export.last = { fmt, options:rememberedOptions, preset };
   try {
     if (hasPy && py.save_export_presets && !(await py.save_export_presets({ last: state.export.last }))) throw new Error('preset_save_failed');
   } catch (_) { warnList.push(_t('export.lastPresetSaveFailed')); }
@@ -1862,7 +1962,10 @@ function renderExportWarns(list, payload = null) {
   const ul = document.createElement('ul');
   counts.forEach((n, w) => {
     const li = document.createElement('li');
-    const key='warn.'+w, localized=_t(key), message=localized&&localized!==key?localized:w;
+    const coded=String(w).match(/^([a-z][a-z0-9_]*)(?::\s*(.*))?$/su),code=coded?.[1]||w;
+    const key='warn.'+code, localized=_t(key), errorKey='error.'+code, errorLocalized=localized&&localized!==key?'':_t(errorKey);
+    const translated=localized&&localized!==key?localized:errorLocalized&&errorLocalized!==errorKey?errorLocalized:'';
+    const message=translated?translated+(coded?.[2]?' · '+coded[2]:''):w;
     li.textContent = n > 1 ? message + ' ×' + n : message;
     ul.appendChild(li);
   });

@@ -1,7 +1,11 @@
 'use strict';
 /* Content identities shared by reader, paged outlines, preview and TOC insertion.
    Keep allocation consistent with md_ast::HeadingIds; never change the source. */
-window.ReadMDHeadings=(()=>{
+(function(root,factory){
+  if(typeof module!=='undefined'&&module.exports){
+    module.exports=factory(require('../../vendor/marked.min.js'),null,require('../../vendor/html5-character-references.json'));
+  }else root.ReadMDHeadings=factory(root.marked,root.document);
+})(typeof window!=='undefined'?window:null,(marked,document,entities)=>{
   function slug(text){
     let value='';
     for(const char of String(text).trim()){
@@ -28,27 +32,69 @@ window.ReadMDHeadings=(()=>{
     return {text:title,id:match[1],suffix:text.slice(title.length)};
   }
   let decoder;
+  // HTML numeric references use the Windows-1252 replacements in this range.
+  // The Node path uses the same HTML5 names as a browser textarea, including
+  // legacy names without semicolons; no DOM shim or runtime dependency needed.
+  const numericReplacements={128:8364,130:8218,131:402,132:8222,133:8230,134:8224,135:8225,136:710,137:8240,138:352,139:8249,140:338,142:381,145:8216,146:8217,147:8220,148:8221,149:8226,150:8211,151:8212,152:732,153:8482,154:353,155:8250,156:339,158:382,159:376};
+  function decodeWithoutDom(text){
+    return text.replace(/\r\n?/g,'\n').replace(/&(#(?:[xX][\da-fA-F]+|\d+);?|[A-Za-z][\dA-Za-z]{0,31};?)/g,(reference,name)=>{
+      if(name[0]==='#'){
+        const hex=/^#[xX]/.test(name);
+        let cp=parseInt(name.slice(hex?2:1),hex?16:10);
+        if(!cp||cp>0x10ffff||cp>=0xd800&&cp<=0xdfff)cp=0xfffd;
+        return String.fromCodePoint(numericReplacements[cp]||cp);
+      }
+      for(let end=name.length;end>0;end--){
+        const key=name.slice(0,end);
+        if(Object.prototype.hasOwnProperty.call(entities,key))return entities[key]+name.slice(end);
+      }
+      return reference;
+    });
+  }
   function decode(text){
     text=String(text);
     // Most headings contain plain text. Avoid creating and parsing a DOM node
     // for every token in a book's complete outline.
     if(!/[&\r]/.test(text))return text;
+    // Marked escapes an ampersand unless it starts a complete reference.
+    // Protect the same literals before HTML decoding (e.g. bare "&copy").
+    text=text.replace(/&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/g,'&amp;');
+    if(!document)return decodeWithoutDom(text);
     decoder||=document.createElement('textarea');
-    decoder.innerHTML=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');return decoder.value;
+    // textContent preserves numeric CR references exactly as heading DOM text;
+    // textarea.value would silently normalize them to LF.
+    decoder.innerHTML=text.replace(/</g,'&lt;').replace(/>/g,'&gt;');return decoder.textContent;
   }
   function inlineText(tokens){return (tokens||[]).map(token=>{
     if(token.type==='html')return '';
     if(token.type==='br')return ' ';
-    if(token.type==='codespan'||token.type==='image')return token.text||'';
+    if(token.type==='codespan'||token.type==='escape')return token.text||'';
     if(token.tokens)return inlineText(token.tokens);
     return decode(token.text||'');
   }).join('');}
+  function heading(token){
+    const attrs=attributes(token.text||'');
+    let tokens=token.tokens||marked.Lexer.lexInline(token.text||'');
+    if(attrs.id){
+      // Retain already-resolved reference links and inline formatting in the
+      // title. Re-lexing the whole title would lose the document definitions.
+      const title=[];let remaining=attrs.text.length;
+      for(const part of tokens){
+        if(remaining<=0)break;
+        const raw=part.raw||'';
+        if(raw.length<=remaining){title.push(part);remaining-=raw.length;}
+        else {title.push(...marked.Lexer.lexInline(raw.slice(0,remaining)));break;}
+      }
+      tokens=title;
+    }
+    return {id:attrs.id,text:inlineText(tokens),tokens};
+  }
   function fromMarkdown(source,allocate=createIds()){
     const rows=[];
     function walk(tokens,start=1){let line=start;for(const token of tokens){
       if(token.type==='heading'){
-        const attrs=attributes(token.text||''),plain=inlineText(attrs.id?marked.Lexer.lexInline(attrs.text):(token.tokens||marked.Lexer.lexInline(attrs.text)));
-        rows.push({id:allocate(plain,attrs.id),text:plain,level:token.depth,sourceLine:line});
+        const info=heading(token);
+        rows.push({id:allocate(info.text,info.id),text:info.text,level:token.depth,sourceLine:line});
       }else if(token.type==='blockquote')walk(token.tokens||[],line);
       else if(token.type==='list')for(const item of token.items||[])walk(item.tokens||[],line);
       line+=(token.raw?.match(/\n/g)||[]).length;
@@ -74,5 +120,5 @@ window.ReadMDHeadings=(()=>{
       if(!explicit)heading.dataset.readmdAutoId='true';
     }
   }
-  return {slug,createIds,attributes,fromMarkdown,applyDom};
-})();
+  return {slug,createIds,attributes,heading,fromMarkdown,applyDom};
+});

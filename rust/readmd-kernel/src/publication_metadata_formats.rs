@@ -17,6 +17,11 @@ pub fn warnings(metadata: &PublicationMetadata) -> Vec<String> {
 /// Recover a field diagnostic only when an export failed metadata validation.
 /// Writer/engine failures retain their original code and are never relabelled.
 pub fn error_body(source: &str, options: &Value, name: &str, format: &str, code: &str) -> Option<Value> {
+    if code.starts_with("publication_note_") || code.starts_with("publication_metadata_") {
+        if let Err(error) = crate::publication_profile::resolve(source,options).and_then(|resolved|crate::publication_profile::preflight(format,source,resolved.values())) {
+            if error.code == code { return Some(error.response_body()); }
+        }
+    }
     if code.starts_with("publication_navigation_") {
         return crate::publication_navigation::preflight_export(format,source,options).err().filter(|e|e.code==code).map(|e|e.response_body());
     }

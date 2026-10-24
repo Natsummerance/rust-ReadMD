@@ -1,0 +1,69 @@
+{
+  "recordedAt": "2026-10-23T08:29:19.444Z",
+  "scope": "Post-validation cleanup receipt; blocked action is explicitly not counted as deletion",
+  "duplicateBinaries": {
+    "recordedAt": "2026-10-23T08:22:52.8360350Z",
+    "scope": "Only hash-equivalent duplicate compressed EXEs from this task; no recursive removal",
+    "removed": [
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-36-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-36-readmd.exe.gz",
+        "sha256": "a235f68da3df6cc55d5b0ce463c9317979ead1a3381f0b04c109bdf0d3390c26",
+        "bytes": 24938097
+      },
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-37-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-37-readmd.exe.gz",
+        "sha256": "8b66b4234ec5f1e4f4637b7241835199b64a42a64d8a21a22c30c7d85c48cce8",
+        "bytes": 25325441
+      },
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-38-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-38-readmd.exe.gz",
+        "sha256": "06a72003070cf0888aa02a6e0532875c3e601cb38a14c5a6646a97dbac1a13d4",
+        "bytes": 25322925
+      },
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-40-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-40-readmd.exe.gz",
+        "sha256": "044fd7b7c4972419a845ba64290117babb0e945eee567f0d3fc373645d08dffa",
+        "bytes": 25349901
+      },
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-41-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-41-readmd.exe.gz",
+        "sha256": "070f2ba7183f4efc67ab3961c66932c84332d2678167fafaeaddfbf307f8fbd4",
+        "bytes": 25351828
+      },
+      {
+        "path": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\.cache\\capability-upgrade\\batch3-author-inline-20261021\\root\\candidate-42-readmd.exe.gz",
+        "archive": "Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\docs\\evidence\\capability-upgrade\\2026-10-23\\batch3-author-inline-scoped\\binaries\\candidate-42-readmd.exe.gz",
+        "sha256": "78fe0fb6966b5521c1ad750fc7a98520ea5d04d2d126de77dd8e4da2dd953730",
+        "bytes": 25360519
+      }
+    ],
+    "reclaimedBytes": 151648711,
+    "preserved": [
+      "Immutable first-failure records and archived source/binaries",
+      "Reusable offline engines and materials",
+      "Build tree and latest development executable",
+      "User files and other tasks caches"
+    ]
+  },
+  "incompleteArchive": {
+    "path": "docs/evidence/capability-upgrade/2026-10-23/batch3-author-inline-scoped-attempt-01-incomplete",
+    "files": 2351,
+    "bytes": 102713763,
+    "deleted": false,
+    "reason": "Automatic approval review rejected the planned batch deletion: blocked by policy; no more specific reason returned",
+    "planSha256": "638afd4a3b18e2adf52349b27eac2c46b3551f36c5a8863fd916016308359dd6"
+  },
+  "acceptedArchive": {
+    "archive": "docs/evidence/capability-upgrade/2026-10-23/batch3-author-inline-scoped",
+    "files": 21460,
+    "bytes": 862280799,
+    "newSourceBlobs": 215,
+    "manifestSha256": "3e887daeb6ee217670ea3840bdb9566d2f99070f1a121a61a72df1af841f48cf"
+  },
+  "computerUse": false
+}

@@ -5,9 +5,9 @@ use crate::publication_rich::{RichBibliography, RichBibliographyItem, RichDispla
 
 fn writer() -> Writer<'static> {
     Writer { out: String::new(), images: &|_| None, footnotes: HashMap::new(), fn_stack: Vec::new(),
-        bib_engine: String::new(), chapter_headings: false, publication_style: None,
+        bib_engine: String::new(), chapter_headings: false, heading_numbering:false, toc_numbers:TocNumbers::new(), publication_style: None,
         core_text_fallback: false, core_text_used: false, csl_columns_text: false,
-        paragraphs: paragraphs::State::default() }
+        paragraphs: paragraphs::State::default(),author:None,author_base:crate::publication_inline_text::ResolvedTextStyle::base(11.,11.),local_pair:None }
 }
 fn inline(text: &str) -> L { L::Inline { children: vec![RichNode::text(text)] } }
 fn group(display: RichDisplay, children: Vec<RichNode>) -> RichNode {

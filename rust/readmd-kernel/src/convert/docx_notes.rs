@@ -10,6 +10,8 @@ const WORD: &str = crate::math_document::WORD_NS;
 const REL: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const OFFICE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const WORD_DRAWING: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+const PICTURE: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const MAX_PART: usize = 32 * 1024 * 1024;
 const MAX_NODES: usize = 400_000;
 
@@ -32,10 +34,12 @@ fn qualified(namespace: ResolveResult<'_>, name: &str) -> Result<String, String>
         crate::math_document::MATH_NS | "http://purl.oclc.org/ooxml/officeDocument/math" => "m",
         OFFICE_REL | "http://purl.oclc.org/ooxml/officeDocument/relationships" => "r",
         DRAWING | "http://purl.oclc.org/ooxml/drawingml/main" => "a",
+        WORD_DRAWING => "wp",
+        PICTURE => "pic",
         REL => "pkg",
         "http://www.w3.org/XML/1998/namespace" => "xml",
         "" => return Ok(name.to_string()),
-        _ => return Ok(if name.split_once(':').is_some_and(|(prefix,_)|matches!(prefix,"w"|"m"|"r"|"a"|"pkg")) {format!("foreign:{local}")}else{name.to_string()}),
+        _ => return Ok(if name.split_once(':').is_some_and(|(prefix,_)|matches!(prefix,"w"|"m"|"r"|"a"|"wp"|"pic"|"pkg")) {format!("foreign:{local}")}else{name.to_string()}),
     };
     Ok(format!("{prefix}:{local}"))
 }
@@ -114,7 +118,7 @@ pub(super) fn xml(data: &[u8]) -> Result<XmlNode, String> {
     if !stack.is_empty() || roots.len() != 1 { return Err(err()); }
     let mut root = roots.pop().unwrap();
     // Canonical names let the shared converter handle arbitrary source prefixes.
-    for (prefix, namespace) in [("w",WORD),("m",crate::math_document::MATH_NS),("r",OFFICE_REL),("a",DRAWING)] {
+    for (prefix, namespace) in [("w",WORD),("m",crate::math_document::MATH_NS),("r",OFFICE_REL),("a",DRAWING),("wp",WORD_DRAWING),("pic",PICTURE)] {
         root.attrs.retain(|(key,_)| key != &format!("xmlns:{prefix}"));
         root.attrs.push((format!("xmlns:{prefix}"),namespace.into()));
     }
@@ -178,13 +182,40 @@ fn references(node: &XmlNode, out: &mut Vec<(bool,i32)>) -> Result<(),String> {
 
 pub(super) fn label(end: bool, id: i32) -> String { format!("word-{}-{id}",if end {"endnote"} else {"footnote"}) }
 
-struct Story { end: bool, base: String, root: XmlNode, rels: Vec<DocxRel>, definitions: HashMap<i32,usize> }
+struct Story { end: bool, base: String, part: String, root: XmlNode, rels: Vec<DocxRel>, definitions: HashMap<i32,usize> }
+/// Borrow an already validated story. Settings import must not parse the same
+/// part again for every definition, or infer its kind from a Markdown label.
+pub(super) struct NoteStoryRef<'a> {
+    pub end: bool,
+    pub part: &'a str,
+    pub root: &'a XmlNode,
+    pub definitions: &'a HashMap<i32,usize>,
+}
 #[derive(Default)]
 pub(super) struct Notes {
     stories: Vec<Story>, order: Vec<(bool,i32)>, identities: HashSet<(bool,i32)>,
     expected: HashMap<(bool,i32),usize>, rendered: RefCell<HashMap<(bool,i32),usize>>,
+    suppressed_generated: RefCell<HashSet<(bool,i32)>>,
 }
 impl Notes {
+    pub(super) fn settings_stories(&self) -> Vec<NoteStoryRef<'_>> {
+        self.stories.iter().map(|story|NoteStoryRef{end:story.end,part:&story.part,root:&story.root,definitions:&story.definitions}).collect()
+    }
+    /// Borrow the same validated note node used by the run/style index. No
+    /// reparsing, text matching, label-prefix inference or story cloning.
+    pub(super) fn settings_note(&self,end:bool,id:i32)->Option<(&str,&XmlNode)>{
+        let story=self.stories.iter().find(|story|story.end==end)?;
+        let node=story.root.children.get(*story.definitions.get(&id)?)?;
+        Some((&story.part,node))
+    }
+    /// Call after citation controls have been rendered: verified generated
+    /// notes have no Markdown definition and must not leave a stale binding.
+    pub(super) fn settings_bindings(&self) -> Vec<(bool,i32,String)> {
+        let suppressed=self.suppressed_generated.borrow();
+        self.order.iter().filter(|identity|!suppressed.contains(identity)).map(|(end,id)|(*end,*id,label(*end,*id))).collect()
+    }
+    pub(super) fn settings_used(&self) -> &[(bool,i32)] { &self.order }
+
     pub(super) fn load(entries: &[(String,Vec<u8>)], body: &XmlNode, rels: &[DocxRel]) -> Result<Self,String> {
         let mut out = Self::default();
         references(body,&mut out.order)?;
@@ -221,7 +252,7 @@ impl Notes {
                 }
             }
             if out.order.iter().any(|(kind,id)| *kind == end && !definitions.contains_key(id)) { return Err(err()); }
-            out.stories.push(Story {end,base:part.rsplit_once('/').map(|(base,_)|base).unwrap_or("").into(),rels:relationships(entries,&part)?,root,definitions});
+            out.stories.push(Story {end,base:part.rsplit_once('/').map(|(base,_)|base).unwrap_or("").into(),rels:relationships(entries,&part)?,part,root,definitions});
         }
         Ok(out)
     }
@@ -243,24 +274,71 @@ impl Notes {
     pub(super) fn ensure_rendered(&self) -> Result<(),String> {
         // Unknown containing structures must fail instead of emitting a note
         // definition after silently discarding its reference in the body.
-        if *self.rendered.borrow() != self.expected { return Err(err()); }
+        let suppressed=self.suppressed_generated.borrow();
+        let expected=self.expected.iter().filter(|(key,_)|!suppressed.contains(key)).map(|(key,value)|(*key,*value)).collect::<HashMap<_,_>>();
+        if *self.rendered.borrow() != expected { return Err(err()); }
         Ok(())
     }
 
+    /// Only a verified source-owned anchor may remove its unchanged generated
+    /// note. Ordinary author notes and shared/copied references cannot enter it.
+    pub(super) fn suppress_generated(&self,end:bool,id:i32)->Result<(),String>{
+        if self.expected.get(&(end,id))!=Some(&1)||self.rendered.borrow().contains_key(&(end,id)){return Err(err());}
+        if !self.suppressed_generated.borrow_mut().insert((end,id)){return Err(err());}Ok(())
+    }
+
     pub(super) fn render(&self, pkg: &DocxPackage, styles: &DocxStyles) -> Result<String,String> {
+        self.render_inner(pkg,styles,None)
+    }
+    pub(super) fn render_with_settings(&self,pkg:&DocxPackage,styles:&DocxStyles,settings:&super::docx_note_settings::ImportedNoteSettings)->Result<String,String>{
+        self.render_inner(pkg,styles,Some(settings))
+    }
+    fn render_inner(&self,pkg:&DocxPackage,styles:&DocxStyles,settings:Option<&super::docx_note_settings::ImportedNoteSettings>)->Result<String,String>{
+        let mut patches=HashMap::<(bool,i32),Vec<&super::docx_note_settings::NoteLocalPatch>>::new();
+        if let Some(settings)=settings{for patch in &settings.local{patches.entry((patch.kind.is_end(),patch.native_id)).or_default().push(patch);}}
         let mut notes = Vec::new();
         for (end,id) in &self.order {
+            if self.suppressed_generated.borrow().contains(&(*end,*id)){continue;}
             let story = self.stories.iter().find(|s|s.end==*end).unwrap();
             let note = &story.root.children[story.definitions[id]];
-            let local = DocxPackage {entries:pkg.entries,rels:story.rels.clone(),source:pkg.source,base_dir:story.base.clone(),strict_story:true,notes:self,numbering:pkg.numbering,math_defaults:pkg.math_defaults,math_styles:pkg.math_styles,math_theme:pkg.math_theme,math_fonts:pkg.math_fonts,namespaces:story.root.attrs.iter().filter(|(k,_)|k=="xmlns"||k.starts_with("xmlns:")).cloned().collect()};
+            let settings_error=|code,detail:&str|super::docx_note_settings::Error{code,part:story.part.clone(),path:format!("{}[@w:id='{id}']",if *end{"endnote"}else{"footnote"}),detail:detail.into()}.to_string();
+            let mut local_styles=HashMap::<usize,String>::new();
+            if let Some(patches)=patches.remove(&(*end,*id)){
+                for patch in patches{
+                    if patch.label!=label(*end,*id){return Err(settings_error(super::docx_note_settings::INVALID,"note binding changed"));}
+                    let mut node=note;
+                    for index in &patch.paragraph_path{node=node.children.get(*index).ok_or_else(||settings_error(super::docx_note_settings::INVALID,"note paragraph moved"))?;}
+                    if node.name!="w:p"{return Err(settings_error(super::docx_note_settings::INVALID,"note paragraph moved"));}
+                    let comment=crate::publication_blocks::comment(&patch.style).map_err(|_|settings_error(super::docx_note_settings::UNSUPPORTED,"native note paragraph style cannot be represented by source local layout"))?;
+                    if local_styles.insert(node as *const XmlNode as usize,comment).is_some(){return Err(settings_error(super::docx_note_settings::INVALID,"duplicate note paragraph binding"));}
+                }
+            }
+            let local = DocxPackage {entries:pkg.entries,rels:story.rels.clone(),source:pkg.source,base_dir:story.base.clone(),part:story.part.clone(),strict_story:true,notes:self,numbering:pkg.numbering,heading_import:pkg.heading_import,section_anchors:pkg.section_anchors,citations:pkg.citations,fields:DocxFields::new(note)?,math_defaults:pkg.math_defaults,math_styles:pkg.math_styles,math_theme:pkg.math_theme,math_fonts:pkg.math_fonts,text_styles:pkg.text_styles,namespaces:story.root.attrs.iter().filter(|(k,_)|k=="xmlns"||k.starts_with("xmlns:")).cloned().collect()};
             let (mut lines,mut code,mut lang,mut ordered) = (Vec::new(),Vec::new(),String::new(),0);
             for child in docx_word_children(note) {
                 match child.name.as_str() {
-                    "w:p" => docx_handle_para(child,&local,styles,&mut lines,&mut code,&mut lang,&mut ordered)?,
+                    "w:p" => {
+                        if let Some(comment)=local_styles.remove(&(child as *const XmlNode as usize)){
+                            docx_flush_code(&mut lines,&mut code,&mut lang);
+                            let mut paragraph=Vec::new();
+                            docx_handle_para(child,&local,styles,&mut paragraph,&mut code,&mut lang,&mut ordered)?;
+                            docx_flush_code(&mut paragraph,&mut code,&mut lang);
+                            if paragraph.iter().all(|line|line.trim().is_empty()){return Err(settings_error(super::docx_note_settings::UNSUPPORTED,"empty styled note paragraph has no source block"));}
+                            // Inline directives are the existing local-layout
+                            // representation for nested list/quote paragraphs.
+                            // A separate block directive would split the list.
+                            let nested=docx_para_list_info(child,styles).0||docx_style_for_para(child,styles).is_some_and(|s|s.name.to_lowercase().contains("quote"))||docx_pstyle_raw(child).as_deref()==Some("Quote");
+                            if nested{
+                                let at=paragraph.iter().rposition(|line|!line.trim().is_empty()).unwrap();paragraph[at].push(' ');paragraph[at].push_str(&comment);
+                            }else{lines.push(comment);lines.push(String::new());}
+                            lines.extend(paragraph);
+                        }else{docx_handle_para(child,&local,styles,&mut lines,&mut code,&mut lang,&mut ordered)?;}
+                    },
                     "w:tbl" => { docx_flush_code(&mut lines,&mut code,&mut lang); lines.push(docx_table_to_md(child,&local,false)?); lines.push(String::new()); },
                     _ => (),
                 }
             }
+            if !local_styles.is_empty(){return Err(settings_error(super::docx_note_settings::UNSUPPORTED,"note paragraph inside an unsupported source container"));}
             docx_flush_code(&mut lines,&mut code,&mut lang);
             let content = lines.join("\n").trim().to_string();
             // A legal empty note still needs a definition; it must not become an unresolved ref.
@@ -269,7 +347,10 @@ impl Notes {
             for line in content { definition.push('\n'); if !line.is_empty(){definition.push_str("    ");definition.push_str(line);} }
             notes.push(definition);
         }
-        Ok(notes.join("\n\n"))
+        if !patches.is_empty(){return Err(super::docx_note_settings::Error{code:super::docx_note_settings::INVALID,part:"notes".into(),path:"local".into(),detail:"unconsumed note paragraph binding".into()}.to_string());}
+        let result=notes.join("\n\n");
+        if settings.is_some(){crate::publication_blocks::validate_source(&result).map_err(|_|super::docx_note_settings::Error{code:super::docx_note_settings::UNSUPPORTED,part:"notes".into(),path:"local".into(),detail:"native paragraph style has no matching source layout block".into()}.to_string())?;}
+        Ok(result)
     }
 }
 
@@ -343,11 +424,39 @@ mod tests {
         let entries = package(BODY,&note(false,"1","Foot evidence"),&note(true,"1","End evidence"));
         let before = entries.clone();
         let markdown = convert(&entries).unwrap();
-        assert!(markdown.starts_with("Before[^word-footnote-1]Middle[^word-endnote-1]After[^word-footnote-1]"),"{markdown}");
+        let parsed=crate::md_ast::parse(&markdown);let expected=crate::md_ast::parse("Before[^word-footnote-1]Middle[^word-endnote-1]After[^word-footnote-1]\n\n[^word-footnote-1]: Foot evidence\n\n[^word-endnote-1]: End evidence\n");
+        assert_eq!(parsed.blocks.first(),expected.blocks.first(),"{markdown}");
+        let profile=crate::publication_profile::from_source(&markdown).unwrap();assert!(profile.diagnostics.is_empty());assert_eq!(profile.options["footnotes"]["kindByLabel"]["word-endnote-1"],"endnote");
         assert_eq!(markdown.matches("[^word-footnote-1]:").count(),1);
         assert_eq!(markdown.matches("[^word-endnote-1]:").count(),1);
         assert!(markdown.contains("[^word-footnote-1]: Foot evidence")&&markdown.contains("[^word-endnote-1]: End evidence"));
         assert_eq!(entries,before);
+    }
+
+    #[test]
+    fn adjacent_note_references_and_a_link_remain_distinct_without_added_visible_spaces() {
+        let body=format!(r#"<w:p><w:r><w:t>Before</w:t><w:footnoteReference w:id="1"/><w:endnoteReference w:id="1"/><w:footnoteReference w:id="1"/></w:r><w:hyperlink xmlns:r="{OFFICE_REL}" r:id="link"><w:r><w:t>Jump</w:t></w:r></w:hyperlink></w:p>"#);
+        let mut entries=package(&body,&note(false,"1","Foot evidence"),&note(true,"1","End evidence"));
+        replace(&mut entries,"word/_rels/document.xml.rels","</Relationships>",&format!(r#"<Relationship Id="link" Type="{OFFICE_REL}/hyperlink" Target="https://example.test/note-target" TargetMode="External"/></Relationships>"#));
+        let source=convert(&entries).unwrap();let document=crate::md_ast::parse(&source);
+        let mut references=Vec::new();let mut links=Vec::new();
+        crate::md_ast::walk_inlines(&document.blocks,&mut|inline|match inline{
+            crate::md_ast::Inline::FootnoteRef(label)=>references.push(label.clone()),
+            crate::md_ast::Inline::Link{href,children,..}=>links.push((href.clone(),crate::md_ast::inline_plain(children))),_=>(),
+        });
+        assert_eq!(references,["word-footnote-1","word-endnote-1","word-footnote-1"],"{source}");
+        assert_eq!(links,[("https://example.test/note-target".into(),"Jump".into())]);
+        let crate::md_ast::Block::Paragraph(inlines)=&document.blocks[0] else{panic!("{source}")};
+        assert_eq!(crate::md_ast::inline_plain(inlines),"Before[word-footnote-1][word-endnote-1][word-footnote-1]Jump");
+        let options=crate::publication_profile::resolve(&source,&serde_json::json!({})).unwrap();
+        let output=crate::docx_writer::build(&document,options.values(),"notes-again.md",&|_|None);
+        assert!(output.warns.is_empty(),"{:?}",output.warns);
+        let native=std::str::from_utf8(&output.parts.iter().find(|(name,_)|name=="word/document.xml").unwrap().1).unwrap();
+        assert_eq!(native.matches("<w:footnoteReference w:id=\"1\"").count(),2);
+        assert_eq!(native.matches("<w:endnoteReference w:id=\"1\"").count(),1);
+        assert!(native.contains("<w:hyperlink r:id="));
+        let relationships=std::str::from_utf8(&output.parts.iter().find(|(name,_)|name=="word/_rels/document.xml.rels").unwrap().1).unwrap();
+        assert!(relationships.contains("Target=\"https://example.test/note-target\" TargetMode=\"External\""));
     }
 
     #[test]
@@ -490,7 +599,9 @@ mod tests {
         let body=r#"<w:p><w:fldSimple w:instr="REF example"><w:r><w:t>Field</w:t><w:footnoteReference w:id="1"/></w:r></w:fldSimple><w:moveTo><w:r><w:t>Moved</w:t><w:footnoteReference w:id="1"/></w:r></w:moveTo><w:moveFrom><w:r><w:footnoteReference w:id="99"/></w:r></w:moveFrom></w:p>"#;
         let entries=package(body,&note(false,"1","Evidence"),"");
         let markdown=convert(&entries).unwrap();
-        assert!(markdown.starts_with("Field[^word-footnote-1]Moved[^word-footnote-1]"),"{markdown}");
+        let parsed=crate::md_ast::parse(&markdown);let expected=crate::md_ast::parse("Field[^word-footnote-1]Moved[^word-footnote-1]\n\n[^word-footnote-1]: Evidence\n");
+        assert_eq!(parsed.blocks.first(),expected.blocks.first(),"{markdown}");
+        let profile=crate::publication_profile::from_source(&markdown).unwrap();assert!(profile.diagnostics.is_empty());assert_eq!(profile.options["footnotes"]["kindByLabel"]["word-footnote-1"],"footnote");
         assert!(!markdown.contains("99"));
         let hidden=r#"<w:p><w:unsupported><w:r><w:footnoteReference w:id="1"/></w:r></w:unsupported></w:p>"#;
         assert_eq!(convert(&package(hidden,&note(false,"1","Evidence"),"")).unwrap_err(),INVALID);

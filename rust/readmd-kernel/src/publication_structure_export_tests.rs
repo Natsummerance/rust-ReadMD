@@ -142,7 +142,7 @@ fn publication_structure_managed_writer_uses_physical_parity_and_current_section
     assert!(tex.contains("\\ifodd\\value{readmdphysicalpage}"));
     assert!(tex.contains("layoutwidth=297mm,layoutheight=210mm"));
     assert!(tex.contains("\\renewcommand{\\thepage}{\\roman{page}}"));
-    assert!(tex.contains("\\renewcommand{\\thepage}{\\Alph{page}}"));
+    assert!(tex.contains("\\renewcommand{\\thepage}{\\readmdAlph{\\value{page}}}"));
     assert_eq!(tex.matches("\\hypertarget{readmd-section-").count(),4);
     assert!(!tex.contains("readmd-section:v1"));
 }

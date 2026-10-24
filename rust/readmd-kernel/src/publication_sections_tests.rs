@@ -528,3 +528,159 @@ fn docx_sections_keep_real_notes_math_and_relationships_in_the_workflow() {
     assert!(part(&p, "word/footnotes.xml").contains("The note is a real Word note"));
     assert!(part(&p, "word/_rels/document.xml.rels").contains("https://example.invalid/sections"));
 }
+
+#[test]
+fn section_note_position_comments_are_sparse_strict_and_not_visible_author_text(){
+    let section=s(json!({"id":"footnotes","footnotes":{"kinds":{"footnote":{"placement":"beneathText"}}}}));let raw=comment(&section).unwrap();
+    assert_eq!(read_comment(&raw).unwrap().unwrap(),section);assert!(raw.contains("\"footnotes\":{\"kinds\":{\"footnote\":{\"placement\":\"beneathText\"}}}"));
+    assert!(!comment(&s(json!({"id":"ordinary"}))).unwrap().contains("footnotes"));
+    for raw in [
+        r#"<!-- readmd-section:v1 {"id":"a","footnotes":{"kinds":{"footnote":{"placement":"pageBottom","placement":"beneathText"}}}} -->"#,
+        r#"<!-- readmd-section:v1 {"id":"a","footnotes":{"kinds":{"footnote":{"restart":"chapter"}}}} -->"#,
+        r#"<!-- readmd-section:v1 {"id":"a","footnotes":{"kinds":{"endnote":{"placement":"sectEnd"}}}} -->"#,
+        r#"<!-- readmd-section:v1 {"id":"a","footnotes":{"kinds":{"footnote":{"placement":"docEnd"}}}} -->"#,
+    ]{assert_eq!(read_comment(raw).unwrap_err(),INVALID,"{raw}");}
+    let doc=md_ast::parse(&format!("{raw}\n\nVisible[^a].\n\n[^a]: Note.\n"));let mut copied=String::new();md_ast::walk_inlines(&doc.blocks,&mut|inline|if let md_ast::Inline::Text(text)=inline{copied.push_str(text)});assert!(!copied.contains("beneathText"));assert!(copied.contains("Visible"));
+}
+
+#[test]
+fn each_section_note_position_resolves_from_document_defaults_not_the_previous_section(){
+    let source=format!("{}\n\nA[^a].\n\n{}\n\n{}\n\nSame title[^a].\n\n{}\n\nLast[^a].\n\n[^a]: Note.\n",
+        marker(json!({"id":"first","footnotes":{"kinds":{"footnote":{"placement":"beneathText"}}}})),
+        marker(json!({"id":"empty","break":"continuous"})),
+        marker(json!({"id":"third","footnotes":{"kinds":{"footnote":{"placement":"pageBottom"}}}})),
+        marker(json!({"id":"last"})));
+    let global=json!({"footnotes":{"kinds":{"footnote":{"size":30,"start":0,"placement":"pageBottom"},"endnote":{"placement":"docEnd","start":65535}}}});let original=global.clone();let doc=md_ast::parse(&source);let scopes=resolve(&doc,&global).unwrap();assert_eq!(scopes.len(),4);assert!(scopes[1].block_range.is_empty());
+    let placements=scopes.iter().map(|scope|crate::publication_note_policies::parse_layer(&scope.style).unwrap().policy(crate::publication_note_policies::NoteKind::Footnote).placement).collect::<Vec<_>>();use crate::publication_note_policies::NotePlacement;assert_eq!(placements,vec![Some(NotePlacement::BeneathText),Some(NotePlacement::PageBottom),Some(NotePlacement::PageBottom),Some(NotePlacement::PageBottom)]);
+    for scope in &scopes{assert_eq!(scope.style["footnotes"]["kinds"]["footnote"]["size"],30);assert_eq!(scope.style["footnotes"]["kinds"]["footnote"]["start"],0);assert_eq!(scope.style["footnotes"]["kinds"]["endnote"],global["footnotes"]["kinds"]["endnote"]);}assert_eq!(global,original);
+    let beneath=json!({"footnotes":{"kinds":{"footnote":{"placement":"beneathText"}}}});let scopes=resolve(&doc,&beneath).unwrap();assert_eq!(scopes[1].style["footnotes"]["kinds"]["footnote"]["placement"],"beneathText");assert_eq!(scopes[2].style["footnotes"]["kinds"]["footnote"]["placement"],"pageBottom");assert_eq!(scopes[3].style["footnotes"]["kinds"]["footnote"]["placement"],"beneathText","an omitted final override must restore the document default, not the preceding pageBottom");
+}
+
+#[test]
+fn docx_section_note_positions_reach_actual_sectpr_without_changing_global_stories(){
+    let source=format!("{}\n\nFirst[^f], again[^f] and end[^e].\n\n{}\n\nLater[^f], end again[^e].\n\n[^f]: Independent footnote.\n\n[^e]: Independent endnote.\n",
+        marker(json!({"id":"first","footnotes":{"kinds":{"footnote":{"placement":"beneathText"}}}})),marker(json!({"id":"second","break":"continuous"})));
+    let global=json!({"frontMatter":{"mode":"none"},"footnotes":{"kindByLabel":{"f":"footnote","e":"endnote"},"kinds":{"footnote":{"placement":"pageBottom","size":10},"endnote":{"placement":"docEnd","size":11}}}});let output=package(&source,&global);let scopes=sections(&output);assert_eq!(scopes.len(),2);assert!(scopes[0].contains("<w:footnotePr><w:pos w:val=\"beneathText\"/></w:footnotePr>"));assert!(scopes[1].contains("<w:footnotePr><w:pos w:val=\"pageBottom\"/></w:footnotePr>"));assert!(scopes[1].contains("<w:type w:val=\"continuous\"/>"));assert!(scopes.iter().all(|scope|!scope.contains("w:endnotePr")));
+    let document=part(&output,"word/document.xml");assert_eq!(document.matches("<w:footnoteReference w:id=\"1\"").count(),3);assert_eq!(document.matches("<w:endnoteReference w:id=\"1\"").count(),2);assert!(part(&output,"word/footnotes.xml").contains("Independent footnote."));assert!(part(&output,"word/endnotes.xml").contains("Independent endnote."));assert!(part(&output,"word/settings.xml").contains("<w:endnotePr><w:pos w:val=\"docEnd\"/>"));
+}
+
+#[test]
+fn section_numbering_comments_preserve_explicit_defaults_without_exposing_global_fields() {
+    let value = json!({"id":"notes-middle","break":"continuous","footnotes":{"kinds":{
+        "footnote":{"placement":"beneathText","numberFormat":"upperRoman","start":7,"restart":"section"},
+        "endnote":{"numberFormat":"upperLetter","numberPattern":"A","start":27,"restart":"continuous"}
+    }}});
+    let section = s(value);
+    let raw = comment(&section).unwrap();
+    assert_eq!(read_comment(&raw).unwrap().unwrap(), section);
+    assert!(raw.contains("\"restart\":\"continuous\""));
+    assert!(!raw.contains("size"));
+    let explicit = s(json!({"id":"defaults","footnotes":{"kinds":{"footnote":{"numberFormat":"decimal","start":0,"restart":"continuous"}}}}));
+    let raw = comment(&explicit).unwrap();
+    assert!(raw.contains("\"start\":0"));
+    assert_eq!(read_comment(&raw).unwrap().unwrap(), explicit);
+    let doc = md_ast::parse(&format!("{raw}\n\nVisible body.\n"));
+    let projected = md_ast::to_render_json(&doc.blocks);
+    assert_eq!(projected[0]["section"]["footnotes"]["kinds"]["footnote"]["start"], 0);
+}
+
+#[test]
+fn section_numbering_declarations_reject_struct_sequences_and_duplicate_leaves() {
+    for footnotes in [
+        "[]", "[{}]", r#"{"kinds":[]}"#,
+        r#"{"kinds":{"footnote":[]}}"#,
+        r#"{"kinds":{"endnote":[]}}"#,
+        r#"{"kinds":{"footnote":{"start":null,"start":1}}}"#,
+        r#"{"kinds":{"endnote":{"restart":"continuous","restart":"section"}}}"#,
+        r#"{"kinds":{"endnote":{"size":null}}}"#,
+    ] {
+        let raw = format!(r#"<!-- readmd-section:v1 {{"id":"a","footnotes":{footnotes}}} -->"#);
+        assert_eq!(read_comment(&raw).unwrap_err(), INVALID, "{raw}");
+        assert_eq!(analyze(&format!("{raw}\n\nBody.\n")).unwrap_err(), INVALID, "{raw}");
+    }
+}
+
+#[test]
+fn resolved_sections_keep_sparse_note_overrides_and_independently_inherit_global_numbering() {
+    use crate::publication_note_policies::{parse_layer, NoteKind, NoteRestart};
+    let explicit_value = json!({"kinds":{
+        "footnote":{"numberFormat":"upperRoman","start":7,"restart":"section"},
+        "endnote":{"numberFormat":"upperLetter","start":27,"restart":"section"}
+    }});
+    let default_value = json!({"kinds":{
+        "footnote":{"numberFormat":"decimal","start":0,"restart":"continuous"},
+        "endnote":{"numberFormat":"decimal","start":0,"restart":"continuous"}
+    }});
+    let source = format!("Prefix.\n\n{}\n\nFirst.\n\n{}\n\n{}\n\nLast.\n",
+        marker(json!({"id":"first","footnotes":explicit_value})),
+        marker(json!({"id":"empty","break":"continuous","footnotes":default_value})),
+        marker(json!({"id":"last"})));
+    let doc = md_ast::parse(&source);
+    let global = json!({"footnotes":{"kinds":{
+        "footnote":{"size":10.5,"numberFormat":"lowerLetter","start":3,"restart":"continuous"},
+        "endnote":{"size":30,"numberFormat":"lowerRoman","start":1,"restart":"continuous"}
+    }}});
+    let before = global.clone();
+    let scopes = resolve(&doc, &global).unwrap();
+    assert_eq!(scopes.iter().map(|scope|scope.id.as_str()).collect::<Vec<_>>(), ["_document","first","empty","last"]);
+    assert!(scopes[2].block_range.is_empty());
+    assert!(scopes[0].note_overrides.is_none());
+    assert!(scopes[3].note_overrides.is_none());
+    assert_eq!(scopes[1].note_overrides.as_ref().unwrap().to_value(), explicit_value);
+    assert_eq!(scopes[2].note_overrides.as_ref().unwrap().to_value(), default_value);
+    let expected = [
+        ("lowerLetter",3,NoteRestart::Continuous,"lowerRoman",1),
+        ("upperRoman",7,NoteRestart::Section,"upperLetter",27),
+        ("decimal",0,NoteRestart::Continuous,"decimal",0),
+        ("lowerLetter",3,NoteRestart::Continuous,"lowerRoman",1),
+    ];
+    for (scope, (foot_format,foot_start,restart,end_format,end_start)) in scopes.iter().zip(expected) {
+        let policy = parse_layer(&scope.style).unwrap();
+        let footnote = policy.policy(NoteKind::Footnote);
+        let endnote = policy.policy(NoteKind::Endnote);
+        assert_eq!(footnote.number_format.as_deref(), Some(foot_format));
+        assert_eq!(footnote.start, Some(foot_start));
+        assert_eq!(footnote.restart, Some(restart));
+        assert_eq!(endnote.number_format.as_deref(), Some(end_format));
+        assert_eq!(endnote.start, Some(end_start));
+        assert_eq!(endnote.restart, Some(restart));
+        assert_eq!(footnote.size, Some(10.5));
+        assert_eq!(endnote.size, Some(30.));
+    }
+    assert_eq!(global, before);
+
+    let changed = json!({"footnotes":{"kinds":{
+        "footnote":{"numberFormat":"chicago","start":65535,"restart":"page"},
+        "endnote":{"numberFormat":"custom","numberPattern":"i","start":12000,"restart":"page"}
+    }}});
+    let changed_scopes = resolve(&doc, &changed).unwrap();
+    for index in [0usize,3] {
+        assert_eq!(changed_scopes[index].style["footnotes"], changed["footnotes"]);
+    }
+    for index in [1usize,2] {
+        let old = parse_layer(&scopes[index].style).unwrap();
+        let new = parse_layer(&changed_scopes[index].style).unwrap();
+        for kind in NoteKind::ALL {
+            let old = old.policy(kind);
+            let new = new.policy(kind);
+            assert_eq!((new.number_format,new.number_pattern,new.start,new.restart), (old.number_format,old.number_pattern,old.start,old.restart));
+        }
+        assert_eq!(changed_scopes[index].note_overrides, scopes[index].note_overrides);
+    }
+}
+
+#[test]
+fn section_note_override_presence_survives_effective_equality_and_unused_notes() {
+    let notes = json!({"kinds":{"footnote":{"numberFormat":"decimal","start":1,"restart":"continuous"}}});
+    let source = format!("{}\n\nNo notes.\n\n{}\n\nStill no notes.\n",
+        marker(json!({"id":"explicit","footnotes":notes})), marker(json!({"id":"inherited"})));
+    let doc = md_ast::parse(&source);
+    let global = json!({"footnotes":notes});
+    let scopes = resolve(&doc, &global).unwrap();
+    assert_eq!(scopes[0].style, scopes[1].style);
+    assert_eq!(scopes[0].note_overrides.as_ref().unwrap().to_value(), notes);
+    assert!(scopes[1].note_overrides.is_none());
+    let plain = resolve(&md_ast::parse("Ordinary body.\n"), &json!({})).unwrap();
+    assert!(plain[0].note_overrides.is_none());
+    assert!(plain[0].style.get("footnotes").is_none());
+}

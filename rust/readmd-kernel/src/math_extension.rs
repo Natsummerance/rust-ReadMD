@@ -355,7 +355,7 @@ mod tests{
         let legacy=math_document::metadata("a/b",&xml(),"duplicate").unwrap();
         let source=format!("\u{feff}# 😀 Author\r\n\r\nFirst $a/b${legacy}. Second $a/b${legacy}. Third $a/b${legacy}.\r\n");
         let migrated=crate::math_migration::plan(&source).unwrap();assert_eq!(migrated.edits.len(),3);assert!(migrated.recoveries.is_empty());assert!(migrated.diagnostics.is_empty(),"{:?}",migrated.diagnostics);
-        let ranges=crate::math_dsl::markdown_ranges(&migrated.content);assert_eq!(ranges.len(),3);let mut ids=BTreeSet::new();
+        let ranges=crate::math_dsl::markdown_ranges(&migrated.content).unwrap();assert_eq!(ranges.len(),3);let mut ids=BTreeSet::new();
         for range in &ranges{let(_,_,comment)=adjacent(&migrated.content,range.to).unwrap();assert!(ids.insert(decode(comment).unwrap().id));}
         assert_eq!(crate::math_migration::plan(&migrated.content).unwrap().content,migrated.content);
         let range=&ranges[1];let changed=tx::apply(&migrated.content,&tx::ContentTransaction{base_revision:tx::revision(&migrated.content),origin:"formula".into(),edits:vec![tx::TextEdit{from:migrated.content[..range.body_from].encode_utf16().count(),to:migrated.content[..range.body_to].encode_utf16().count(),insert:"z + 1".into()}]}).unwrap();

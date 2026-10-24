@@ -1,7 +1,7 @@
 //! Source-bound publication blocks and readable, opt-in local layout attributes.
 //! Operations return ordinary revision-checked edits; they never write a file.
 use crate::document_transaction::{self as tx, ContentTransaction, TextEdit};
-use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
@@ -58,6 +58,7 @@ pub fn validate_style(style: &Value) -> Result<(), &'static str> {
         let values = value.as_object().ok_or("publication_local_style_invalid")?;
         for (key, value) in values {
             let valid = match (section.as_str(), key.as_str()) {
+                ("text", "author") => crate::publication_inline_text::AuthorTextStyle::from_value(value).is_ok(),
                 ("text", "size") => bounded(value, 6., 72.),
                 ("text", "trackingPt") => crate::publication_typography::tracking::parse(value).is_ok(),
                 ("text", "baselineShiftPt") => crate::publication_typography::baseline::parse(value).is_ok(),
@@ -105,6 +106,7 @@ fn bounded(v: &Value, min: f64, max: f64) -> bool {
         .is_some_and(|n| n.is_finite() && n >= min && n <= max)
 }
 fn validate_target(kind: &str, style: &Value) -> Result<(), &'static str> {
+    if style["text"].get("author").is_some()&&kind!="caption"{return Err(crate::publication_inline_text::INVALID);}
     if kind == "math"
         && (style["text"]
             .as_object()
@@ -219,6 +221,14 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
     if source.len() > tx::MAX_DOCUMENT_BYTES {
         return Err("transaction_budget");
     }
+    if crate::publication_inline_text::has_owned_syntax(source){
+        analyze_events(source,crate::publication_inline_text::markdown_events(source)?)
+    }else{
+        let bom=usize::from(source.starts_with('\u{feff}'))*3;
+        analyze_events(source,pulldown_cmark::Parser::new_ext(&source[bom..],crate::md_ast::options()).into_offset_iter().map(|(event,range)|(event,range.start+bom..range.end+bom)))
+    }
+}
+fn analyze_events<'event>(source:&str,events:impl IntoIterator<Item=(Event<'event>,Range<usize>)>)->Result<Document,&'static str>{
     let mut nodes = Vec::new();
     let mut markers = Vec::new();
     let mut diagnostics = Vec::new();
@@ -227,13 +237,20 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
     let mut active = None;
     let mut implicit = false;
     let mut blocked = 0usize;
+    // Raw HTML blocks emit a separate Html event for each physical line.
+    // A declaration-looking line inside <pre>/<script>/another raw block is
+    // an example, not a live layout comment. Only an HTML block introduced by
+    // the declaration itself may supply block markers.
+    let mut html_block_markers = false;
+    // A prepared caption consists of one strict typed marker followed by its
+    // exact anchor paragraph. Keep that source range with the paragraph so a
+    // preceding layout declaration still selects the same caption after
+    // cross-reference projection. Visible title text never selects a target.
+    let mut caption_marker:Option<(Range<usize>,String)>=None;
     // Mapping must use the exact content parser dialect. Options::all also
     // enables legacy footnotes, which consume later note paragraphs without
     // the normal structural events and make those paragraphs uneditable.
-    let options = crate::md_ast::options();
-    let bom = if source.starts_with('\u{feff}') { 3 } else { 0 };
-    for (event, raw_range) in Parser::new_ext(&source[bom..], options).into_offset_iter() {
-        let range = raw_range.start + bom..raw_range.end + bom;
+    for (event, range) in events {
         let inline = inline_event(&event);
         if implicit && !inline {
             active = None;
@@ -279,11 +296,16 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
                 }
             }
         }
+        let mut caption_start=None;
         let kind = match &event {
             Event::Start(Tag::Paragraph) => {
                 paragraph = true;
                 let raw = source[range.clone()].trim();
-                Some(if raw.starts_with(":label[") {
+                if let Some((marker,anchor))=caption_marker.take(){
+                    if container==0&&blocked==0&&marker.end<=range.start
+                        &&source[marker.end..range.start].trim().is_empty()&&raw.starts_with(&anchor){caption_start=Some(marker.start);}
+                }
+                Some(if caption_start.is_some()||raw.starts_with(":label[") {
                     "caption"
                 } else if raw.starts_with("$$") && raw.ends_with("$$") {
                     "math"
@@ -340,7 +362,7 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
                 editable,
                 nested,
                 style: json!({}),
-                bytes: range.clone(),
+                bytes: caption_start.unwrap_or(range.start)..range.end,
                 directive: None,
                 inline_content: range.end..range.start,
                 directive_inline: false,
@@ -350,8 +372,17 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
             }
         }
         match event {
-            Event::Start(Tag::CodeBlock(_) | Tag::Table(_) | Tag::HtmlBlock) => blocked += 1,
-            Event::End(TagEnd::CodeBlock | TagEnd::Table | TagEnd::HtmlBlock) => {
+            Event::Start(Tag::HtmlBlock) => {
+                let raw=source[range.clone()].trim();
+                html_block_markers=raw.starts_with(PREFIX)||crate::cross_references::read_marker(raw).is_some();
+                blocked+=1;
+            }
+            Event::End(TagEnd::HtmlBlock) => {
+                html_block_markers=false;
+                blocked=blocked.saturating_sub(1);
+            }
+            Event::Start(Tag::CodeBlock(_) | Tag::Table(_)) => blocked += 1,
+            Event::End(TagEnd::CodeBlock | TagEnd::Table) => {
                 blocked = blocked.saturating_sub(1)
             }
             Event::Start(
@@ -369,7 +400,12 @@ pub fn analyze(source: &str) -> Result<Document, &'static str> {
                 active = None;
             }
             Event::End(TagEnd::Heading(_)) => active = None,
-            Event::Html(html) if html.trim_start().starts_with(PREFIX) => {
+            Event::Html(html) if html_block_markers&&container==0&&blocked<=1&&crate::cross_references::read_marker(&html).is_some() => {
+                let label=crate::cross_references::read_marker(&html).expect("checked typed caption marker");
+                let trimmed=html.trim();let start=range.start+html.len()-html.trim_start().len();
+                caption_marker=Some((start..start+trimmed.len(),format!("<span id=\"{}\" class=\"publication-caption\"></span>",label.id)));
+            }
+            Event::Html(html) if html_block_markers&&html.trim_start().starts_with(PREFIX) => {
                 let trimmed = html.trim();
                 let start = range.start + html.len() - html.trim_start().len();
                 let end = start + trimmed.len();
@@ -593,6 +629,80 @@ pub fn validate_source(source: &str) -> Result<(), &'static str> {
     }
     Ok(())
 }
+/// Native caption fields use the same independent author axes as inline text.
+/// Existing text.size retains its older two-axis block semantics.
+pub(crate) fn author_style(attributes:&Value)->Result<crate::publication_inline_text::AuthorTextStyle,&'static str>{
+    attributes["text"].get("author").map(crate::publication_inline_text::AuthorTextStyle::from_value).transpose().map(|style|style.unwrap_or_default())
+}
+pub(crate) fn validate_author_document(doc:&crate::md_ast::Document,supported:bool)->Result<(),&'static str>{
+    use crate::md_ast::{Block,Inline};
+    let mut pending=doc.blocks.iter().collect::<Vec<_>>();let mut count=0;
+    while let Some(block)=pending.pop(){
+        if crate::speech::cancelled(){return Err("cancelled");}
+        match block{
+            Block::Styled{attributes,block}=>{
+                if attributes["text"].get("author").is_some(){
+                    count+=1;if count>MAX_NODES{return Err(crate::publication_inline_text::BUDGET);}
+                    validate_style(attributes)?;
+                    let Block::Caption{inlines,..}=block.unstyled()else{return Err(crate::publication_inline_text::INVALID);};
+                    let author=author_style(attributes)?;
+                    if !author.is_empty(){
+                        if !supported{return Err(crate::publication_inline_text::UNSUPPORTED);}
+                        let mut values=inlines.iter().collect::<Vec<_>>();
+                        while let Some(value)=values.pop(){
+                            if crate::speech::cancelled(){return Err("cancelled");}count+=1;if count>MAX_NODES{return Err(crate::publication_inline_text::BUDGET);}
+                            match value{
+                            Inline::Math(_)|Inline::OfficeMath{..}=>return Err(crate::publication_inline_text::UNSUPPORTED),
+                            Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)|Inline::Styled{children,..}|Inline::AuthorStyled{children,..}|Inline::Display{children,..}|Inline::Citation{children,..}|Inline::Link{children,..}=>values.extend(children),_=>(),
+                        }}
+                    }
+                }
+                pending.push(block);
+            },
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>pending.extend(blocks),
+            Block::List{items,..}=>for item in items{pending.extend(&item.blocks);},_=>(),
+        }
+    }Ok(())
+}
+pub(crate) fn validate_author_consumer(source:&str,supported:bool)->Result<(),&'static str>{
+    if !source.contains(PREFIX){return Ok(());}
+    validate_source(source)?;
+    let model=analyze(source)?;
+    if model.nodes.iter().any(|node|node.style["text"].get("author").is_some()){
+        validate_author_document(&crate::md_ast::parse(source),supported)?;
+    }Ok(())
+}
+
+/// Flow renderers consume the two size axes, but Word's explicit RTL run
+/// behavior still has no equivalent. Check this before resource callbacks or
+/// staging; native DOCX can continue using validate_author_document directly.
+pub(crate) fn validate_author_render_document(doc:&crate::md_ast::Document)->Result<(),&'static str>{
+    use crate::md_ast::Block;
+    validate_author_document(doc,true)?;
+    let mut pending=doc.blocks.iter().collect::<Vec<_>>();
+    while let Some(block)=pending.pop(){
+        if crate::speech::cancelled(){return Err("cancelled");}
+        match block{
+            Block::Styled{attributes,block}=>{
+                if author_style(attributes)?.rtl==Some(true){return Err(crate::publication_inline_text::UNSUPPORTED);}
+                pending.push(block);
+            },
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>pending.extend(blocks),
+            Block::List{items,..}=>for item in items{pending.extend(&item.blocks);},_=>(),
+        }
+    }Ok(())
+}
+pub(crate) fn validate_author_render_consumer(source:&str)->Result<(),&'static str>{
+    if !source.contains(PREFIX){return Ok(());}
+    validate_source(source)?;
+    if analyze(source)?.nodes.iter().any(|node|node.style["text"].get("author").is_some()){
+        validate_author_render_document(&crate::md_ast::parse(source))?;
+    }Ok(())
+}
+
+#[cfg(test)]
+#[path="publication_blocks_author_tests.rs"]
+mod author_tests;
 
 /// The existing reading surface receives only explicit overrides. Reading
 /// typography and theme remain intact when a publication attribute is absent.
@@ -896,7 +1006,8 @@ impl Resolved {
             keep_lines: p["keepLines"].as_bool().unwrap_or(if heading.is_some() {
                 base["keepLines"].as_bool().unwrap_or(true)
             } else {
-                !in_note && body["keepLines"].as_bool().unwrap_or(false)
+                if in_note { crate::publication_layout::Layout::from_style(global).note_keep_paragraphs }
+                else { body["keepLines"].as_bool().unwrap_or(false) }
             }),
             widow: p["widowControl"]
                 .as_bool()

@@ -25,6 +25,28 @@ function batchT(k, p) {
   return window.i18n ? window.i18n.t(k, p) : k;
 }
 
+function batchFailureMessage(item) {
+  const message = apiMessage(item, 'error.conversion_failed');
+  const details = item?.error_details;
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return message;
+  const code = item.error_code;
+  const keys = Object.keys(details).sort().join(',');
+  if (['docx_note_settings_invalid', 'docx_note_settings_unsupported', 'author_inline_text_invalid', 'author_inline_text_unsupported', 'author_inline_text_budget'].includes(code)
+      && keys === 'detail,part,path') {
+    const bounded = (value, bytes) => typeof value === 'string' && value.length > 0
+      && value.length <= bytes && !/[\u0000-\u001f\u007f-\u009f]/u.test(value)
+      && new TextEncoder().encode(value).length <= bytes;
+    if (bounded(details.part, 512) && bounded(details.path, 2048) && bounded(details.detail, 2048)) {
+      return [message, details.part, details.path, details.detail].join('\n');
+    }
+  } else if (['docx_numbering_invalid', 'docx_numbering_unrepresentable'].includes(code)
+      && keys === 'reason' && typeof details.reason === 'string'
+      && /^[a-z0-9_]{1,128}$/.test(details.reason)) {
+    return message + '\n' + details.reason;
+  }
+  return message;
+}
+
 function openBatchModal() {
   if (isBatchRunning()) {
     $('convert-modal')?.classList.remove('hidden');
@@ -95,7 +117,11 @@ function setBatchRow(row, status, title) {
   // A completed result must never regress to an older progress snapshot.
   if (row.dataset.done) return;
   row.className = 'batch-item ' + status;
-  if (title) row.title = title;
+  if (title) {
+    row.title = title;
+    row.setAttribute('aria-description', title);
+    if (status === 'error') row.tabIndex = 0;
+  }
   if (row.dataset.out) {
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
@@ -284,7 +310,7 @@ function renderBatchProgress(d) {
     const status = it.status || 'queued';
     if (status !== 'queued') {
       if ((status === 'ok' || status === 'skipped') && it.out) row.dataset.out = it.out;
-      setBatchRow(row, status, it.error || '');
+      setBatchRow(row, status, status === 'error' ? batchFailureMessage(it) : it.error || '');
       countBatchRow(row, status);
     }
   });

@@ -51,6 +51,9 @@ fn body(source:&str,file:&str,resources:&HashMap<String,String>,spine:&[String])
     String::from_utf8(writer.into_inner()).map_err(|_|"preview_generation_failed".into())
 }
 pub fn prepare(content:&str,base:&str,options:&Value,name:&str)->Result<Value,String>{
+    let profile = crate::publication_profile::resolve_for_format("epub",content,options).map_err(|e|e.code)?;
+    let options = profile.values();
+    crate::publication_profile::preflight("epub",content,options).map_err(|e|e.code)?;
     crate::publication_typography::validate_preview(content, options).map_err(str::to_string)?;
     let (entries,warnings)=crate::mdexport::epub_build_entries(&json!(content),base,options,name,"ReadMD Author","zh-CN","preview","2026-01-01T00:00:00Z")?;
     if entries.iter().map(|e|e.data.len()).sum::<usize>()>32*1024*1024{return Err("preview_generation_failed".into());}

@@ -49,6 +49,35 @@ function saveEditorPrefs() {
 
 let cmCompartments = null;
 let cmPointerDown = false;
+let cmReusedState = false;
+let cmLayoutCleanup = null;
+
+// A host can become visible or change its flex allocation without a window
+// resize (sidebars, split preview, native restore). Ask CodeMirror to measure
+// that allocation; do not replace its state or move its scroll/caret to repaint.
+function measureEditorLayout(view = cmView) {
+  if (!view || view !== cmView || !view.dom.isConnected || document.hidden) return;
+  const bounds = view.dom.getBoundingClientRect();
+  if (bounds.width > 0 && bounds.height > 0) view.requestMeasure();
+}
+
+function observeEditorLayout(view) {
+  const measure = () => measureEditorLayout(view);
+  const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+  if (observer) observer.observe($('edit-wrap'));
+  document.addEventListener('visibilitychange', measure);
+  window.addEventListener('pageshow', measure);
+  window.addEventListener('focus', measure);
+  document.fonts?.addEventListener('loadingdone', measure);
+  cmLayoutCleanup = () => {
+    observer?.disconnect();
+    document.removeEventListener('visibilitychange', measure);
+    window.removeEventListener('pageshow', measure);
+    window.removeEventListener('focus', measure);
+    document.fonts?.removeEventListener('loadingdone', measure);
+  };
+  measure();
+}
 
 function createEditor(doc) {
   destroyEditor();
@@ -57,6 +86,7 @@ function createEditor(doc) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const tab = getActiveTab();
   const reusable = tab?.editorState?.doc.toString() === doc.replace(/\r\n?/g, '\n');
+  cmReusedState = reusable;
   const C = cmCompartments = (reusable && tab.editorCompartments) || {
     theme: new CM.Compartment(), gutter: new CM.Compartment(),
     focus: new CM.Compartment(), typewriter: new CM.Compartment(),
@@ -139,7 +169,8 @@ function createEditor(doc) {
       }),
     ],
   });
-  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm') });
+  cmView = new CM.EditorView({ state: reusable ? tab.editorState : st, parent: $('edit-cm'),
+    scrollTo: reusable ? tab.editorScrollSnapshot : undefined });
   if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
     C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
@@ -153,6 +184,7 @@ function createEditor(doc) {
   }, { passive: true });
   updateDocStatistics();
   cmView.focus();
+  observeEditorLayout(cmView);
   return true;
 
 }
@@ -376,6 +408,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
   if (cmView) {
@@ -387,6 +420,7 @@ function destroyEditor() {
   if (c) c.innerHTML = '';
   cmThemeCompartment = null;
   cmCompartments = null;
+  cmReusedState = false;
 }
 
 

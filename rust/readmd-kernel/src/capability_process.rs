@@ -8,6 +8,12 @@ use std::{fs,path::{Path,PathBuf},sync::atomic::{AtomicUsize,Ordering}};
 #[derive(Clone,Copy)]
 pub(crate) enum Mode { Shared, Exclusive }
 pub(crate) struct Guard { _file:fs::File }
+/// One profile's installation writers share the same quota observation. This
+/// gate is held through staging and commit, never by ordinary resource readers.
+pub(crate) fn install_admission(data:&Path)->ApiResult<Guard> {
+    try_key(data,"installation",Key::InstallAdmission,Mode::Exclusive)?
+        .ok_or_else(||ApiError::new(409,"capability_install_busy"))
+}
 // Fixed names coordinate all current clients of one profile. Do not make the
 // number a caller argument: clients using different limits would overcommit.
 const WORKER_SLOTS:usize=2;
@@ -64,7 +70,7 @@ pub(crate) fn reserve_worker(data:&Path,id:&str,active:&'static AtomicUsize)->Ap
     Ok(WorkerReservation{_local:local,_process:process})
 }
 #[derive(Clone,Copy)]
-enum Key { Resource, Worker(usize), TransferGate, TransferCount(usize), TransferBytes(usize) }
+enum Key { Resource, Worker(usize), TransferGate, TransferCount(usize), TransferBytes(usize), InstallAdmission }
 fn invalid()->ApiError { ApiError::new(422,"capability_pack_invalid") }
 fn real_directory(path:&Path)->ApiResult<()> {
     let metadata=fs::symlink_metadata(path).map_err(|_|invalid())?;
@@ -84,6 +90,7 @@ fn location(data:&Path,id:&str,key:Key)->ApiResult<(PathBuf,PathBuf)> {
         Key::TransferGate if id=="transfers"=>"transfer-v1.gate.lock".into(),
         Key::TransferCount(index) if id=="transfers"&&index<TRANSFER_SLOTS=>format!("transfer-v1.count-{index}.lock"),
         Key::TransferBytes(index) if id=="transfers"&&index<TRANSFER_BYTES_SLOTS=>format!("transfer-v1.bytes-{index}.lock"),
+        Key::InstallAdmission if id=="installation"=>"install-admission-v1.lock".into(),
         _=>return Err(invalid()),
     };
     let base=data.canonicalize().map_err(|_|invalid())?;
@@ -294,6 +301,48 @@ mod tests {
     struct OwnedChild(Child);
     impl Drop for OwnedChild {
         fn drop(&mut self) { let _=self.0.kill();let _=self.0.wait(); }
+    }
+    #[test]
+    fn install_admission_is_profile_wide_and_keeps_resource_leases_independent() {
+        let root=tempfile::tempdir().unwrap();
+        let admission=install_admission(root.path()).unwrap();
+        assert_eq!(install_admission(root.path()).err().unwrap().code,"capability_install_busy");
+        let reader=try_acquire(root.path(),"fonts",Mode::Shared).unwrap().unwrap();
+        let worker=try_worker_slot(root.path(),"typst").unwrap().unwrap();
+        let other=tempfile::tempdir().unwrap();drop(install_admission(other.path()).unwrap());
+        drop((admission,reader,worker));drop(install_admission(root.path()).unwrap());
+        let lock=root.path().join("capabilities/managed-v2/.locks/install-admission-v1.lock");
+        fs::write(&lock,b"unrecognized content").unwrap();
+        assert_eq!(install_admission(root.path()).err().unwrap().code,"capability_pack_invalid");
+        assert_eq!(fs::read(lock).unwrap(),b"unrecognized content");
+    }
+    #[test]
+    fn install_admission_releases_after_real_process_termination() {
+        if let Some(root)=std::env::var_os("READMD_INSTALL_ADMISSION_CHILD") {
+            let root=PathBuf::from(root);
+            let _admission=install_admission(&root).unwrap();
+            fs::write(root.join("admission.ready"),b"ready").unwrap();
+            let deadline=Instant::now()+Duration::from_secs(20);
+            while !root.join("admission.stop").exists() {
+                assert!(Instant::now()<deadline,"Parent did not stop the owned admission child");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            return;
+        }
+        let root=tempfile::tempdir().unwrap();
+        let mut child=OwnedChild(crate::silent_command(std::env::current_exe().unwrap())
+            .args(["--exact","capability_process::tests::install_admission_releases_after_real_process_termination","--test-threads=1"])
+            .env("READMD_INSTALL_ADMISSION_CHILD",root.path()).stdout(Stdio::null()).stderr(Stdio::inherit()).spawn().unwrap());
+        let deadline=Instant::now()+Duration::from_secs(20);
+        while !root.path().join("admission.ready").is_file() {
+            if let Some(status)=child.0.try_wait().unwrap(){panic!("Admission child exited: {status}");}
+            assert!(Instant::now()<deadline,"Admission child not ready");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(install_admission(root.path()).err().unwrap().code,"capability_install_busy");
+        child.0.kill().unwrap();assert!(!child.0.wait().unwrap().success());
+        drop(install_admission(root.path()).unwrap());
+        assert_eq!(fs::metadata(root.path().join("capabilities/managed-v2/.locks/install-admission-v1.lock")).unwrap().len(),0);
     }
     #[test]
     fn transfer_allocations_bound_count_and_bytes_and_release_partial_failures() {

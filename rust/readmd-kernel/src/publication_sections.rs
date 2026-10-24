@@ -82,12 +82,18 @@ pub struct Section {
     pub header: RunningPatch,
     #[serde(default)]
     pub footer: RunningPatch,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footnotes: Option<crate::publication_note_policies::SectionNotePolicies>,
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedSection {
     pub id: String,
     pub break_kind: SectionBreak,
     pub style: Value,
+    /// Original sparse source fields. Equal effective values remain explicit
+    /// overrides when the document-wide note policy is edited later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note_overrides: Option<crate::publication_note_policies::SectionNotePolicies>,
     /// Indices in the ORIGINAL top-level Document.blocks, excluding the marker.
     pub block_range: Range<usize>,
     /// None means continue numbering, never inherit a prior restart.
@@ -124,6 +130,7 @@ fn running_valid(p: &RunningPatch) -> bool {
             || p.link_previous == Some(false))
 }
 pub fn validate_section(s: &Section) -> Result<(), &'static str> {
+    if s.footnotes.as_ref().is_some_and(|notes|notes.validate().is_err()) { return Err(INVALID); }
     if s.id.is_empty()
         || s.id.len() > 64
         || !s.id.as_bytes()[0].is_ascii_alphabetic()
@@ -352,7 +359,13 @@ pub fn validate_document(doc: &Document) -> Result<(), &'static str> {
                         return Err(BUDGET);
                     }
                 }
-                Block::Html(raw) if raw.trim().starts_with(PREFIX) => return Err(INVALID),
+                Block::Html(raw) if raw.trim().starts_with(PREFIX) => {
+                    // The forgiving AST keeps malformed declarations as HTML.
+                    // Preserve the original geometry/budget/type diagnostic
+                    // before rejecting a misplaced otherwise-valid marker.
+                    read_comment(raw)?;
+                    return Err(INVALID);
+                },
                 Block::Styled { block, .. } => walk(
                     std::slice::from_ref(block.as_ref()),
                     true,
@@ -491,10 +504,13 @@ pub fn resolve(doc: &Document, global: &Value) -> Result<Vec<ResolvedSection>, &
     let mut sections = Vec::new();
     let mut style = global.clone();
     let mut begin = 0;
+    let has_section_notes=crate::publication_note_policies::has_section_policies(doc);
+    let inherit_notes=crate::publication_note_policies::SectionNotePolicies::default();
     let mut current = ResolvedSection {
         id: "_document".into(),
         break_kind: SectionBreak::NextPage,
         style: style.clone(),
+        note_overrides: None,
         block_range: 0..0,
         page_start: Some(crate::publication_layout::Layout::from_style(global).page_start),
         header_link_previous: false,
@@ -514,6 +530,13 @@ pub fn resolve(doc: &Document, global: &Value) -> Result<Vec<ResolvedSection>, &
             }
             let previous_page = page_signature(&style);
             apply_patch(&mut style, s);
+            // Native section notes inherit from document defaults, rather
+            // than from an unrelated override in the preceding section.
+            if has_section_notes {
+                let resolved=crate::publication_note_policies::resolve_section(global,s.footnotes.as_ref().unwrap_or(&inherit_notes)).map_err(|error|error.code)?;
+                if let Some(notes)=resolved.get("footnotes"){style["footnotes"]=notes.clone();}
+                else if let Some(object)=style.as_object_mut(){object.remove("footnotes");}
+            }
             geometry(&style)?;
             if s.header.first_text.is_some() || s.footer.first_text.is_some() {
                 if !crate::publication_layout::Layout::from_style(&style).hide_first {
@@ -541,6 +564,7 @@ pub fn resolve(doc: &Document, global: &Value) -> Result<Vec<ResolvedSection>, &
                 id: s.id.clone(),
                 break_kind: s.break_kind,
                 style: style.clone(),
+                note_overrides: s.footnotes.clone(),
                 block_range: index + 1..index + 1,
                 page_start: s.numbering.start.or_else(|| {
                     first

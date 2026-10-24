@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Sha256, Digest};
 
 mod docx_notes;
+pub(crate) mod docx_citations;
+mod docx_note_settings;
+mod docx_text_style;
+pub(crate) mod docx_numbering_import;
 
 // ============================================================================
 // Document Asset & OOXML Helpers (FID-1)
@@ -372,7 +376,7 @@ pub fn convert_triple_with_language(path: &str, form_tables: bool, language: Opt
             Ok(res) if res.success => ConvertTriple::ok(res.content.unwrap_or_default(), "docx"),
             // A lossy fallback must never turn an invalid note story into a
             // successful body-only conversion or erase its localized error.
-            Err(error) if matches!(error.as_str(), crate::api_codes::DOCX_NOTES_INVALID | crate::api_codes::DOCX_NESTED_FOOTNOTE) => ConvertTriple::err(error),
+            Err(error) if crate::conversion_errors::decode(&error).is_some() => ConvertTriple::err(error),
             r => match markitdown_text(path) {
                 Some(t) => ConvertTriple::ok(t, "markitdown"),
                 None => ConvertTriple::err(legacy_markitdown_failure(&err_text(r))),
@@ -2186,7 +2190,9 @@ const DOCX_SKIP_TAGS: &[&str] = &["del", "sdtPr", "moveFrom"];
 fn docx_word_children<'a>(node: &'a XmlNode) -> Vec<&'a XmlNode> {
     let mut out: Vec<&'a XmlNode> = Vec::new();
     for child in &node.children {
-        if DOCX_FLATTEN_TAGS.contains(&child.local.as_str()) {
+        if docx_citations::is_control(child) {
+            out.push(child);
+        } else if DOCX_FLATTEN_TAGS.contains(&child.local.as_str()) {
             out.extend(docx_word_children(child));
         } else if !DOCX_SKIP_TAGS.contains(&child.local.as_str()) {
             out.push(child);
@@ -2296,6 +2302,12 @@ fn docx_parse_styles(data: &[u8]) -> DocxStyles {
         return out;
     };
     for root in &roots {
+        let current=docx_styles_from_root(root);out.paragraph.extend(current.paragraph);if current.default_id.is_some(){out.default_id=current.default_id;}
+    }
+    out
+}
+fn docx_styles_from_root(root:&XmlNode)->DocxStyles{
+    let mut out=DocxStyles::default();
         for style in el_children(root, "w:style") {
             if style.attr_prefixed("type").unwrap_or("") != "paragraph" {
                 continue;
@@ -2316,7 +2328,6 @@ fn docx_parse_styles(data: &[u8]) -> DocxStyles {
             out.paragraph
                 .insert(id.to_string(), DocxStyleInfo { name, base, num_ilvl });
         }
-    }
     out
 }
 
@@ -2384,19 +2395,62 @@ struct DocxRel {
     kind: String,
 }
 
+/// Complex fields have an instruction phase and a visible cached-result phase.
+/// An outer instruction phase also hides every nested field's cached result.
+/// The state belongs to one story so fields may cross paragraph boundaries.
+struct DocxFields {
+    result: std::cell::RefCell<Vec<bool>>,
+    passthrough: std::collections::HashSet<usize>,
+}
+impl DocxFields {
+    fn new(root:&XmlNode)->Result<Self,String>{
+        fn walk(node:&XmlNode,stack:&mut Vec<(usize,bool)>,passthrough:&mut std::collections::HashSet<usize>,count:&mut usize)->Result<(),String>{
+            if matches!(node.name.as_str(),"w:del"|"w:moveFrom"|"w:sdtPr"|"w:rPr"|"w:pPr"){return Ok(());}
+            if node.name=="w:fldChar"{
+                *count+=1;if *count>65536{return Err("docx_field_budget".into());}
+                match node.attr("w:fldCharType").or_else(||node.attr("fldCharType")).unwrap_or(""){
+                    "begin"=>{if stack.len()>=128{return Err("docx_field_budget".into());}stack.push((node as *const XmlNode as usize,false));},
+                    "separate"=>if let Some((_,result))=stack.last_mut(){*result=true;},
+                    "end"=>if let Some((id,false))=stack.pop(){passthrough.insert(id);},
+                    _=>(),
+                }
+            }
+            for child in &node.children{walk(child,stack,passthrough,count)?;}Ok(())
+        }
+        let mut stack=Vec::new();let mut passthrough=std::collections::HashSet::new();walk(root,&mut stack,&mut passthrough,&mut 0)?;
+        for (id,separated) in stack{if !separated{passthrough.insert(id);}}
+        Ok(Self{result:Default::default(),passthrough})
+    }
+    fn visible(&self)->bool{self.result.borrow().iter().all(|result|*result)}
+    fn is_open(&self)->bool{!self.result.borrow().is_empty()}
+    fn advance(&self,node:&XmlNode)->Result<(),String>{
+        let mut stack=self.result.borrow_mut();match node.attr("w:fldCharType").or_else(||node.attr("fldCharType")).unwrap_or(""){
+            "begin"=>{if stack.len()>=128{return Err("docx_field_budget".into());}stack.push(self.passthrough.contains(&(node as *const XmlNode as usize)));},
+            "separate"=>if let Some(result)=stack.last_mut(){*result=true;},
+            "end"=>{stack.pop();},_=>(),
+        }Ok(())
+    }
+}
+
 struct DocxPackage<'a> {
     entries: &'a [(String, Vec<u8>)],
     rels: Vec<DocxRel>,
     source: &'a Path,
     base_dir: String,
+    part: String,
     strict_story: bool,
     notes: &'a docx_notes::Notes,
     numbering: &'a docx_notes::Numbering,
+    heading_import: &'a docx_numbering_import::ImportPlan,
+    section_anchors: &'a std::collections::HashMap<String,String>,
+    citations: &'a docx_citations::Citations,
+    fields: DocxFields,
     namespaces: Vec<(String,String)>,
     math_defaults: Option<&'a str>,
     math_styles: &'a crate::math_word::WordMathStyles,
     math_theme: &'a crate::math_theme::ThemeColors,
     math_fonts: &'a crate::math_font_theme::ThemeFonts,
+    text_styles: &'a docx_text_style::RunStyleIndex,
 }
 
 /// Preserve Word's complex mathematical properties beside a readable LaTeX
@@ -2488,6 +2542,27 @@ fn docx_document_rels(entries: &[(String, Vec<u8>)]) -> Vec<DocxRel> {
 }
 
 impl DocxPackage<'_> {
+    fn literal_mode(&self)->bool { self.citations.literal_mode() || self.heading_import.literal_mode() }
+    fn field_base(&self,paragraph:&XmlNode)->Option<(u32,u32)>{
+        if self.part!="word/document.xml"{return None;}
+        let context=if self.heading_import.caption(paragraph).is_some(){crate::docx_writer::AuthorTextContext::Caption}
+            else if let Some(heading)=self.heading_import.heading(paragraph){crate::docx_writer::AuthorTextContext::Heading(heading.level)}
+            else if let Some(style)=docx_style_for_para(paragraph,&self.text_styles.block_styles){
+                // The legacy importer also turns these native paragraph styles
+                // into source headings. Compare against that output context,
+                // rather than silently treating inherited Body11 as equivalent.
+                let name=style.name.to_lowercase();
+                if name.starts_with("heading") {let digits=style.name.chars().filter(|ch|ch.is_numeric()).collect::<String>();crate::docx_writer::AuthorTextContext::Heading(if digits.is_empty(){1}else{docx_int_or(&digits,1).clamp(1,6) as u8})}
+                else if name=="title"{crate::docx_writer::AuthorTextContext::Heading(1)}else{crate::docx_writer::AuthorTextContext::Body}
+            }else{crate::docx_writer::AuthorTextContext::Body};
+        Some(self.text_styles.main_text_base(context))
+    }
+    fn text_base(&self,paragraph:&XmlNode)->Option<(u32,u32)>{
+        // A conflicted caption becomes ordinary, editable literal prose. Its
+        // old native field baseline still validates the cache, but source text
+        // must carry any size that differs from the new BodyText paragraph.
+        if self.part=="word/document.xml"&&self.heading_import.caption(paragraph).is_some_and(|caption|!caption.automatic){Some(self.text_styles.main_text_base(crate::docx_writer::AuthorTextContext::Body))}else{self.field_base(paragraph)}
+    }
     fn rel(&self, rid: &str) -> Option<&DocxRel> {
         self.rels.iter().find(|r| r.id == rid)
     }
@@ -2502,24 +2577,110 @@ impl DocxPackage<'_> {
     }
 }
 
-fn docx_formatted_run(run: &XmlNode, text: &str) -> String {
-    if text.is_empty() { return String::new(); }
-    let mut text = text.to_string();
-    if DOCX_MONO_FONTS.contains(&docx_run_font_lower(run).as_str()) { text = format!("`{text}`"); }
+/// Bind alternative text to its own native drawing/picture, never another
+/// image in the run. Canonical names come from the namespace-aware parser.
+/// A present empty description wins; only a missing attribute falls back.
+fn docx_drawing_images(node: &XmlNode) -> Result<Vec<(&XmlNode, Option<&str>)>, String> {
+    fn unique_child<'a>(node: &'a XmlNode, name: &str) -> Result<Option<&'a XmlNode>, String> {
+        let mut children = node.children.iter().filter(|child| child.name == name);
+        let value = children.next();
+        if children.next().is_some() { return Err(docx_notes::INVALID.into()); }
+        Ok(value)
+    }
+    let mut images = Vec::new();
+    let mut pending = vec![(node, None)];
+    while let Some((node, inherited)) = pending.pop() {
+        let description = if matches!(node.name.as_str(), "wp:inline" | "wp:anchor") {
+            unique_child(node, "wp:docPr")?.and_then(|property| property.attr("descr"))
+        } else if node.name == "pic:pic" {
+            let property = unique_child(node, "pic:nvPicPr")?
+                .map(|properties| unique_child(properties, "pic:cNvPr")).transpose()?.flatten();
+            inherited.or_else(|| property.and_then(|property| property.attr("descr")))
+        } else { inherited };
+        if node.name == "a:blip" { images.push((node, description)); }
+        pending.extend(node.children.iter().rev().map(|child| (child, description)));
+    }
+    Ok(images)
+}
+
+fn docx_image_alt_source(description: Option<&str>) -> String {
+    docx_citations::literal_text(description.unwrap_or("image"))
+        .replace('\t', "&#9;").replace('\r', "&#13;").replace('\n', "&#10;")
+}
+
+fn docx_run_requires_literal(text:&str)->bool{
+    if text.chars().any(|ch|"\\`*_{}[]<>&#$@|~^".contains(ch)){return true;}
+    let start=text.trim_start();if start.starts_with("- ")||start.starts_with("+ ")||start.starts_with("---"){return true;}
+    let digits=start.bytes().take_while(u8::is_ascii_digit).count();digits>0&&matches!(start.as_bytes().get(digits),Some(b'.'|b')'))&&start.as_bytes().get(digits+1).is_some_and(u8::is_ascii_whitespace)
+}
+fn docx_formatted_run(run: &XmlNode, text: &str, literal:bool, pkg:&DocxPackage,paragraph:&XmlNode) -> Result<String,String> {
+    if text.is_empty() { return Ok(String::new()); }
+    let expected=pkg.text_base(paragraph);let field_expected=pkg.field_base(paragraph);
+    let literal=literal||!pkg.text_styles.style(&pkg.part,run,expected,field_expected).map_err(|e|e.to_string())?.is_empty()||docx_run_requires_literal(text);
+    let mono=DOCX_MONO_FONTS.contains(&docx_run_font_lower(run).as_str());
+    if mono{pkg.text_styles.guard_inline_code(&pkg.part,run,text,expected,field_expected).map_err(|e|e.to_string())?;}
+    let mut text = if literal && mono {docx_citations::literal_code(text,false)}
+        else if literal {docx_citations::literal_text(text)} else {text.to_string()};
+    if mono && !literal { text = format!("`{text}`"); }
+    let (start,end)=if literal {(text.len()-text.trim_start().len(),text.len()-text.trim_end().len())}else{(0,0)};
+    let (leading,trailing)=if literal {(text[..start].to_string(),text[text.len()-end..].to_string())}else{(String::new(),String::new())};
+    if literal {text=text.trim().to_string();if text.is_empty(){return pkg.text_styles.wrap(&pkg.part,run,&leading,expected,field_expected).map_err(|e|e.to_string());}}
     if docx_run_flag(run,"b") { text = format!("**{text}**"); }
     if docx_run_flag(run,"i") { text = format!("*{text}*"); }
-    text
+    pkg.text_styles.wrap(&pkg.part,run,&format!("{leading}{text}{trailing}"),expected,field_expected).map_err(|e|e.to_string())
 }
 
 /// `convert.py:1562-1622` `_para_inline_with_math`.
 fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> Result<String,String> {
+    docx_para_inline_edges(p,pkg,false)
+}
+fn docx_para_inline_edges(p:&XmlNode,pkg:&DocxPackage,preserve_edges:bool)->Result<String,String>{
+    docx_para_inline_context(p,pkg,preserve_edges,p)
+}
+/// Numbering semantic replacements must be seen before fldSimple/content
+/// wrappers are flattened. Pointer identity belongs to this immutable tree.
+fn docx_numbered_inline_children<'a>(node:&'a XmlNode,pkg:&DocxPackage)->Vec<&'a XmlNode>{
+    let mut result=Vec::new();
+    for child in &node.children {
+        if pkg.heading_import.inline_edit(child).is_some() || docx_citations::is_control(child) { result.push(child); }
+        else if DOCX_FLATTEN_TAGS.contains(&child.local.as_str()) {result.extend(docx_numbered_inline_children(child,pkg));}
+        else if !DOCX_SKIP_TAGS.contains(&child.local.as_str()) {result.push(child);}
+    }
+    result
+}
+fn docx_para_inline_context(p:&XmlNode,pkg:&DocxPackage,preserve_edges:bool,paragraph:&XmlNode)->Result<String,String>{
     let mut parts: Vec<String> = Vec::new();
-    for child in docx_word_children(p) {
+    let mut note_parts = std::collections::HashSet::new();
+    // The writer's bare one-space run after the native note marker belongs to
+    // that marker. Authored spaces inside a real text run stay at their node.
+    let note_gap=if pkg.part!="word/document.xml"&&std::ptr::eq(p,paragraph){let runs=el_children(p,"w:r");runs.first().filter(|run|docx_run_text(run).is_empty()&&run.children.iter().any(|node|matches!(node.name.as_str(),"w:footnoteRef"|"w:endnoteRef"))).and_then(|_|runs.get(1)).filter(|run|el_child(run,"w:rPr").is_none()&&run.children.iter().all(|node|node.name=="w:t")&&docx_run_text(run)==" ").map(|run|*run as *const XmlNode as usize)}else{None};
+    for child in docx_numbered_inline_children(p,pkg) {
+        if note_gap==Some(child as *const XmlNode as usize){continue;}
+        if let Some(edit)=pkg.heading_import.inline_edit(child) {
+            match edit {
+                docx_numbering_import::InlineEdit::Skip=>continue,
+                docx_numbering_import::InlineEdit::Source(source)=>{parts.push(pkg.text_styles.semantic_source(&pkg.part,child,pkg.field_base(paragraph),source).map_err(|e|e.to_string())?);continue;},
+                docx_numbering_import::InlineEdit::ReplaceText(text)=>{parts.push(docx_citations::literal_text(text));continue;},
+            }
+        }
         match child.local.as_str() {
+            "sdt" if docx_citations::is_control(child) => {let source=pkg.citations.inline(child,pkg,paragraph)?;parts.push(pkg.text_styles.semantic_source(&pkg.part,child,pkg.field_base(paragraph),&source).map_err(|e|e.to_string())?);},
             "r" => {
                 // Keep markers and images at their actual position inside a run.
                 let mut text = String::new();
                 for item in &child.children {
+                    if let Some(edit)=pkg.heading_import.inline_edit(item) {
+                        match edit {
+                            docx_numbering_import::InlineEdit::Skip=>continue,
+                            docx_numbering_import::InlineEdit::ReplaceText(value)=>{text.push_str(value);continue;},
+                            docx_numbering_import::InlineEdit::Source(value)=>{
+                                parts.push(docx_formatted_run(child,&text,pkg.literal_mode(),pkg,paragraph)?);text.clear();
+                                parts.push(pkg.text_styles.semantic_source(&pkg.part,item,pkg.field_base(paragraph),value).map_err(|e|e.to_string())?);continue;
+                            },
+                        }
+                    }
+                    if item.name=="w:fldChar" {pkg.fields.advance(item)?;continue;}
+                    if matches!(item.name.as_str(),"w:instrText"|"w:delInstrText") || !pkg.fields.visible(){continue;}
                     match item.name.as_str() {
                         "w:t" => { text.push_str(&item.text); continue; },
                         "w:tab" => { text.push('\t'); continue; },
@@ -2528,12 +2689,13 @@ fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> Result<String,String> {
                         _ => (),
                     }
                     if let Some(reference) = pkg.notes.reference(item)? {
-                        parts.push(docx_formatted_run(child,&text)); text.clear();
-                        parts.push(reference); continue;
+                        parts.push(docx_formatted_run(child,&text,pkg.literal_mode(),pkg,paragraph)?); text.clear();
+                        note_parts.insert(parts.len());
+                        parts.push(pkg.text_styles.wrap(&pkg.part,child,&reference,pkg.text_base(paragraph),pkg.field_base(paragraph)).map_err(|e|e.to_string())?); continue;
                     }
-                    let images: Vec<_> = std::iter::once(item).chain(item.descendants()).filter(|n| n.name == "a:blip").collect();
-                    if !images.is_empty() { parts.push(docx_formatted_run(child,&text)); text.clear(); }
-                    for blip in images {
+                    let images = docx_drawing_images(item)?;
+                    if !images.is_empty() { parts.push(docx_formatted_run(child,&text,pkg.literal_mode(),pkg,paragraph)?); text.clear(); }
+                    for (blip, description) in images {
                     let rid = blip.attr_prefixed("embed").unwrap_or("");
                     if rid.is_empty() {
                         if pkg.strict_story { return Err(docx_notes::INVALID.into()); }
@@ -2553,45 +2715,64 @@ fn docx_para_inline(p: &XmlNode, pkg: &DocxPackage) -> Result<String,String> {
                         .and_then(|s| s.to_str())
                         .unwrap_or("bin");
                     if let Some(uri) = save_doc_asset(pkg.source, bytes, ext) {
-                        parts.push(format!("![image]({})", uri));
+                        parts.push(format!("![{}]({})", docx_image_alt_source(description), uri));
                     } else if pkg.strict_story {
                         return Err(docx_notes::INVALID.into());
                     }
                     }
                 }
-                parts.push(docx_formatted_run(child,&text));
+                parts.push(docx_formatted_run(child,&text,pkg.literal_mode(),pkg,paragraph)?);
             }
             "hyperlink" => {
+                // Field state crosses hyperlink boundaries; resolve a target
+                // only when the link has an actually visible result.
+                let link_text = docx_para_inline_context(child,pkg,pkg.literal_mode(),paragraph)?;
+                if link_text.is_empty(){continue;}
                 let rid = child.attr_prefixed("id").unwrap_or("");
                 let url = if rid.is_empty() {
-                    child.attr("w:anchor").map(|anchor|format!("#{}",py_url_quote(anchor,"-_.~"))).unwrap_or_default()
+                    child.attr("w:anchor").map(|anchor|format!("#{}",py_url_quote(pkg.section_anchors.get(anchor).map(String::as_str).or_else(||pkg.heading_import.anchor(anchor)).unwrap_or(anchor),"-_.~"))).unwrap_or_default()
                 } else {
                     if pkg.strict_story && pkg.rel(rid).is_none() { return Err(docx_notes::INVALID.into()); }
                     pkg.target_ref(rid)
                 };
-                let link_text = docx_para_inline(child,pkg)?;
                 if !url.is_empty() && !link_text.is_empty() {
-                    parts.push(format!("[{}]({})", link_text, url));
+                    let target=if pkg.literal_mode(){docx_citations::literal_link_target(&url)}else{url};
+                    parts.push(format!("[{}]({})", link_text, target));
                 } else if !link_text.is_empty() {
                     parts.push(link_text);
                 }
             }
-            "oMath" => {
+            "oMath" if pkg.fields.visible() => {
                 let latex = omml_to_latex(child).trim().to_string();
                 if !latex.is_empty() {
-                    parts.push(format!("${}${}", latex,docx_math_metadata(child,p,&latex,pkg)?));
+                    parts.push(format!("${}${}", latex,docx_math_metadata(child,paragraph,&latex,pkg)?));
                 }
             }
-            "oMathPara" => {
+            "oMathPara" if pkg.fields.visible() => {
                 let equations:Vec<_>=el_children(child,"m:oMath").into_iter().map(|om|omml_to_latex(om).trim().to_string()).filter(|s|!s.is_empty()).collect();
                 let latex=if equations.len()>1{format!("\\begin{{aligned}}{}\\end{{aligned}}",equations.join(" \\\\ "))}else{equations.first().cloned().unwrap_or_default()};
-                if !latex.is_empty(){parts.push(format!("$${}$${}",latex,docx_math_metadata(child,p,&latex,pkg)?));}
+                if !latex.is_empty(){parts.push(format!("$${}$${}",latex,docx_math_metadata(child,paragraph,&latex,pkg)?));}
             }
             _ => {}
         }
     }
-    let joined = parts.join("");
-    let res = joined.trim().to_string();
+    let mut joined = String::new();
+    let mut previous_note = false;
+    for (index, part) in parts.iter().enumerate() {
+        if part.is_empty() { continue; }
+        // A generated [^note] immediately before another bracket construct
+        // can be parsed as the label of a link, consuming the reference.
+        // A zero-width HTML separator preserves both source semantics and
+        // the original visible spacing; do not rewrite authored brackets.
+        if previous_note && part.starts_with('[') { joined.push_str("<!-- -->"); }
+        joined.push_str(part);
+        previous_note = note_parts.contains(&index);
+    }
+    if preserve_edges{return Ok(joined);}
+    let res = if !pkg.literal_mode()&&!joined.trim().is_empty(){
+        let leading=joined.len()-joined.trim_start_matches([' ','\t','\r','\n']).len();let trailing=joined.len()-joined.trim_end_matches([' ','\t','\r','\n']).len();
+        let edge=|text:&str|text.chars().map(|ch|match ch{' '=>"&#32;".into(),'\t'=>"&#9;".into(),'\r'=>"&#13;".into(),'\n'=>"<br/>".into(),ch=>ch.to_string()}).collect::<String>();format!("{}{}{}",edge(&joined[..leading]),&joined[leading..joined.len()-trailing],edge(&joined[joined.len()-trailing..]))
+    }else{joined.trim().to_string()};
     // `convert.py:1617-1621` — a lone inline formula that is structurally rich is
     // promoted to a display formula.
     if res.len() >= 2 && res.starts_with('$') && res.ends_with('$') && !res.starts_with("$$")
@@ -2710,7 +2891,9 @@ fn docx_table_to_md(tbl: &XmlNode, pkg: &DocxPackage, form_tables: bool) -> Resu
             r.push(String::new());
         }
     }
-    if form_tables && ncol == 2 {
+    // A native caption and its REF fields depend on this exact table object.
+    // Keep that structure even when the caller prefers form-like tables as lists.
+    if form_tables && ncol == 2 && !pkg.heading_import.preserve_table(tbl) {
         let items = docx_form_table_items(&rows);
         if !items.is_empty() {
             return Ok(items.join("\n"));
@@ -2742,6 +2925,18 @@ fn docx_flush_code(
     }
 }
 
+/// Recognize only the writer's small language-label run, never an ordinary
+/// first source line which happens to be a language name.
+fn docx_generated_code_label(p:&XmlNode,text:&str)->Option<String>{
+    let runs=el_children(p,"w:r");let first=*runs.first()?;
+    let properties=el_child(first,"w:rPr");let label=docx_run_text(first);
+    let generated=properties.and_then(|n|el_child(n,"w:color")).and_then(|n|n.attr("w:val"))==Some("8A8F98")
+        && properties.and_then(|n|el_child(n,"w:sz")).and_then(|n|n.attr("w:val"))==Some("15")
+        && runs.get(1).is_some_and(|r|docx_run_text(r)=="\n")
+        && !label.is_empty() && label.len()<=40 && label.chars().all(|c|c.is_ascii_alphanumeric()||"_+.#-".contains(c));
+    (generated&&text.starts_with(&format!("{label}\n"))).then_some(label)
+}
+
 /// `convert.py:1755-1807` `handle_para`.
 fn docx_handle_para(
     p: &XmlNode,
@@ -2752,6 +2947,29 @@ fn docx_handle_para(
     code_lang: &mut String,
     ordered_n: &mut i64,
 ) -> Result<(),String> {
+    if let Some(heading)=pkg.heading_import.heading(p) {
+        docx_flush_code(lines,code_buf,code_lang); *ordered_n=0;
+        let text=docx_para_inline(p,pkg)?;
+        if !text.is_empty() || heading.native_num_id.is_some() {
+            let class=if heading.unnumbered {" .unnumbered"}else{""};
+            lines.push(format!("{} {}{} {{#{}{class}}}","#".repeat(heading.level as usize),heading.literal_prefix,text,heading.id));
+            lines.push(String::new());
+        }
+        return Ok(());
+    }
+    if let Some(caption)=pkg.heading_import.caption(p) {
+        docx_flush_code(lines,code_buf,code_lang); *ordered_n=0;
+        if caption.automatic{
+            let generated=p.descendants().into_iter().filter(|node|node.name=="w:r"&&std::iter::once(*node).chain(node.descendants()).any(|node|matches!(pkg.heading_import.inline_edit(node),Some(docx_numbering_import::InlineEdit::Skip|docx_numbering_import::InlineEdit::ReplaceText(_))))).collect::<Vec<_>>();
+            let author=pkg.text_styles.caption_style(&pkg.part,p,pkg.field_base(p),&generated).map_err(|e|e.to_string())?;
+            if !author.is_empty(){lines.push(crate::publication_blocks::comment(&serde_json::json!({"text":{"author":author.to_value()}})).map_err(str::to_string)?);lines.push(String::new());}
+        }
+        let text=docx_para_inline(p,pkg)?;
+        if caption.automatic { lines.push(format!(":label[{}] {text}",caption.id)); }
+        else { lines.push(format!("<span id=\"{}\"></span>\n\n{text}",crate::docx_writer::xml_escape(&caption.id))); }
+        lines.push(String::new());
+        return Ok(());
+    }
     let style = docx_style_for_para(p, styles);
     let style_name: String = style.map(|s| s.name.clone()).unwrap_or_default();
     let lowered = style_name.to_lowercase();
@@ -2784,21 +3002,25 @@ fn docx_handle_para(
     }
     let has_math = p.descendants().iter().any(|n| n.name == "m:oMath");
     let has_note = p.descendants().iter().any(|n| matches!(n.name.as_str(),"w:footnoteReference"|"w:endnoteReference"));
+    let has_field = pkg.fields.is_open() || p.descendants().iter().any(|n|n.name=="w:fldChar");
     let code_style=matches!(lowered.as_str(),"code"|"source code"|"code block") || docx_pstyle_raw(p).as_deref()==Some("Code");
-    if (code_style || docx_para_has_mono(p)) && !has_math && !has_note {
+    if pkg.literal_mode() && code_style && !has_math && !has_note && !has_field {
+        docx_flush_code(lines,code_buf,code_lang);
+        let plain=docx_para_plain(p);let language=docx_generated_code_label(p,&plain).unwrap_or_default();
+        let text=if language.is_empty(){plain.as_str()}else{&plain[language.len()+1..]};
+        let longest=text.split(|c|c!='`').map(str::len).max().unwrap_or(0);let fence="`".repeat(3.max(longest+1));
+        let ending=if text.is_empty()||text.ends_with('\n'){""}else{"\n"};
+        lines.push(format!("{fence}{language}\n{text}{ending}{fence}"));lines.push(String::new());return Ok(());
+    }
+    let inferred_code=!pkg.literal_mode()&&!code_style&&!has_math&&!has_note&&!has_field&&docx_para_has_mono(p)
+        &&!pkg.text_styles.paragraph_has_author_style(&pkg.part,p,pkg.text_base(p),pkg.field_base(p)).map_err(|e|e.to_string())?;
+    if !pkg.literal_mode() && (code_style || inferred_code) && !has_math && !has_note && !has_field {
         let mut txt = docx_para_plain(p).trim_end_matches('\n').to_string();
         if code_style && code_buf.is_empty() {
             // ReadMD's small language label is not part of the source program.
             // Ordinary Word code paragraphs keep their first line unchanged.
-            let runs=el_children(p,"w:r");
-            if let Some(first)=runs.first() {
-                let properties=el_child(first,"w:rPr");
-                let label=docx_run_text(first);
-                let generated=properties.and_then(|n|el_child(n,"w:color")).and_then(|n|n.attr("w:val"))==Some("8A8F98")
-                    && properties.and_then(|n|el_child(n,"w:sz")).and_then(|n|n.attr("w:val"))==Some("15")
-                    && runs.get(1).is_some_and(|r|docx_run_text(r)=="\n")
-                    && !label.is_empty() && label.len()<=40 && label.chars().all(|c|c.is_ascii_alphanumeric()||"_+.#-".contains(c));
-                if generated && txt.starts_with(&format!("{label}\n")) { *code_lang=label.clone();txt=txt[label.len()+1..].to_string(); }
+            if let Some(label)=docx_generated_code_label(p,&txt) {
+                txt=txt[label.len()+1..].to_string();*code_lang=label;
             }
         }
         if !txt.is_empty() {
@@ -2841,6 +3063,16 @@ fn docx_handle_para(
 }
 
 /// `convert.py:1731-1826` `docx2md`.
+fn docx_root_declares_namespace(data:&[u8])->Result<bool,String>{
+    let mut reader=quick_xml::Reader::from_reader(data);
+    loop{match reader.read_event().map_err(|_|docx_notes::INVALID.to_string())?{
+        quick_xml::events::Event::Start(element)|quick_xml::events::Event::Empty(element)=>{
+            for attribute in element.attributes(){let attribute=attribute.map_err(|_|docx_notes::INVALID.to_string())?;let name=attribute.key.as_ref();if name=="xmlns"||name.starts_with("xmlns:"){return Ok(true);}}
+            return Ok(false);
+        },
+        quick_xml::events::Event::Eof=>return Ok(false),_=>(),
+    }}
+}
 fn docx_convert(
     entries: &[(String, Vec<u8>)],
     source: &Path,
@@ -2850,27 +3082,34 @@ fn docx_convert(
         find_zip_entry(entries, "word/document.xml")
             .ok_or_else(|| "No word/document.xml found in DOCX file".to_string())?;
     let has_note_xml = [b"footnoteReference".as_slice(),b"endnoteReference".as_slice()].iter().any(|name|doc_data.windows(name.len()).any(|s|s==*name));
-    if has_note_xml { docx_notes::unique(entries,"word/document.xml")?; }
-    let roots = if has_note_xml { vec![docx_notes::xml(doc_data)?] } else { xml_parse(doc_data)? };
+    let has_citation_xml = entries.iter().any(|(name,_)|name==crate::publication_docx_citations::PART)
+        || [b"readmd:citation:".as_slice(),b"readmd:bibliography:".as_slice()].iter().any(|name|doc_data.windows(name.len()).any(|s|s==*name));
+    let has_field_xml = doc_data.windows(b"fldChar".len()).any(|value|value==b"fldChar");
+    let has_numbering_xml = [b"numPr".as_slice(),b"fldSimple".as_slice()].iter().any(|name|doc_data.windows(name.len()).any(|value|value==*name))
+        || entries.iter().any(|(name,bytes)|name=="word/numbering.xml" || name=="word/_rels/document.xml.rels"&&bytes.windows(b"/numbering".len()).any(|s|s==b"/numbering"));
+    let strict = has_note_xml || has_citation_xml || has_field_xml || has_numbering_xml;
+    // Canonical native names are required even when font size is inherited
+    // entirely from styles and the main story contains no explicit property.
+    // Inspect an actual root attribute, never a string in a comment or w:t.
+    let canonical = strict || docx_root_declares_namespace(doc_data)?;
+    if canonical { docx_notes::unique(entries,"word/document.xml")?; }
+    let roots = if canonical {let document=docx_notes::xml(doc_data)?;if document.name!="w:document"{return Err(docx_notes::INVALID.into());}vec![document]} else { xml_parse(doc_data)? };
     let root = roots
         .first()
         .ok_or_else(|| "empty word/document.xml".to_string())?;
     let body = el_child(root, "w:body")
         .ok_or_else(|| "no w:body in word/document.xml".to_string())?;
 
-    let rels = if has_note_xml { docx_notes::relationships(entries,"word/document.xml")? } else { docx_document_rels(entries) };
+    // Preserve the shared field budget/error contract before specialized
+    // importers inspect the same immutable nodes. Reuse this state below.
+    let fields = DocxFields::new(body)?;
+    let section_anchors = docx_note_settings::source_section_anchors(body).map_err(|e|e.to_string())?;
+
+    let rels = if strict { docx_notes::relationships(entries,"word/document.xml")? } else { docx_document_rels(entries) };
     let notes = docx_notes::Notes::load(entries,body,&rels)?;
-    let numbering = if has_note_xml { docx_notes::Numbering::load(entries,&rels)? } else { docx_notes::Numbering::default() };
-    let styles = match rels.iter().find(|rel| rel.kind.ends_with("/styles")) {
-        Some(rel) => {
-            let member = normalize_zip_path("word", &rel.raw);
-            match find_zip_entry(entries, &member) {
-                Some(data) => docx_parse_styles(data),
-                None => DocxStyles::default(),
-            }
-        }
-        None => DocxStyles::default(),
-    };
+    let numbering = if strict { docx_notes::Numbering::load(entries,&rels)? } else { docx_notes::Numbering::default() };
+    let heading_import = if strict { docx_numbering_import::ImportPlan::load(entries,"word/document.xml",root,&rels)? } else { docx_numbering_import::ImportPlan::default() };
+    let citations = docx_citations::Citations::load(entries,body,&rels);
     let math_defaults = docx_math_defaults(entries, &rels)?;
     let has_math=notes.has_math() || body.descendants().iter().any(|n| n.local=="oMath" || n.local=="oMathPara");
     let math_styles = if has_math {
@@ -2883,15 +3122,24 @@ fn docx_convert(
         }
     } else { crate::math_word::WordMathStyles::default() };
     let (math_theme,math_fonts)=if has_math{docx_math_theme(entries,&rels)?}else{(crate::math_theme::ThemeColors::default(),crate::math_font_theme::ThemeFonts::default())};
-    let pkg = DocxPackage { entries, rels, source, base_dir:"word".into(),strict_story:has_note_xml,notes:&notes,numbering:&numbering,math_defaults:math_defaults.as_deref(),math_styles:&math_styles,math_theme:&math_theme,math_fonts:&math_fonts,namespaces:root.attrs.iter().filter(|(k,_)|k=="xmlns"||k.starts_with("xmlns:")).cloned().collect() };
+    let text_styles=docx_text_style::RunStyleIndex::build(entries,&rels,body,&notes).map_err(|e|e.to_string())?;
+    let styles=&text_styles.block_styles;
+    let pkg = DocxPackage { entries, rels, source, base_dir:"word".into(),part:"word/document.xml".into(),strict_story:strict,notes:&notes,numbering:&numbering,heading_import:&heading_import,section_anchors:&section_anchors,citations:&citations,fields,math_defaults:math_defaults.as_deref(),math_styles:&math_styles,math_theme:&math_theme,math_fonts:&math_fonts,text_styles:&text_styles,namespaces:root.attrs.iter().filter(|(k,_)|k=="xmlns"||k.starts_with("xmlns:")).cloned().collect() };
 
     let mut lines: Vec<String> = Vec::new();
     let mut code_buf: Vec<String> = Vec::new();
     let mut code_lang = String::new();
     let mut ordered_n: i64 = 0;
+    let mut source_starts = std::collections::HashMap::new();
     for child in docx_word_children(body) {
+        source_starts.insert(child as *const XmlNode as usize, lines.len());
         // `convert.py:1812-1821` matches full Clark names, not local names.
         match child.name.as_str() {
+            "w:sdt" if docx_citations::is_control(child) => {
+                docx_flush_code(&mut lines,&mut code_buf,&mut code_lang);
+                lines.push(citations.block(child,&pkg,&styles,form_tables)?);
+                lines.push(String::new());
+            },
             "w:p" => docx_handle_para(child, &pkg, &styles, &mut lines, &mut code_buf, &mut code_lang, &mut ordered_n)?,
             "w:tbl" => {
                 docx_flush_code(&mut lines, &mut code_buf, &mut code_lang);
@@ -2903,17 +3151,42 @@ fn docx_convert(
             }
             _ => {}
         }
+        // A native section can end inside a Code paragraph. Close the source
+        // fence before recording the following section's insertion point.
+        if child.name=="w:p" && el_child(child,"w:pPr").and_then(|p|el_child(p,"w:sectPr")).is_some(){
+            docx_flush_code(&mut lines,&mut code_buf,&mut code_lang);ordered_n=0;
+        }
     }
     docx_flush_code(&mut lines, &mut code_buf, &mut code_lang);
     notes.ensure_rendered()?;
-    let note_content = notes.render(&pkg,&styles)?;
+    let imported_notes = docx_note_settings::parse_with_text_styles(entries,body,&pkg.rels,&notes,&text_styles).map_err(|e|e.to_string())?;
+    let source_sections = imported_notes.plan_source_sections(body).map_err(|e|e.to_string())?;
+    let mut section_insertions = std::collections::BTreeMap::<usize,Vec<String>>::new();
+    for declaration in &source_sections.declarations {
+        let at=match declaration.before_node {
+            Some(key)=>*source_starts.get(&key).ok_or_else(||docx_note_settings::Error{
+                code:docx_note_settings::UNSUPPORTED,part:"word/document.xml".into(),
+                path:"sectPr".into(),detail:"missing native section source boundary".into(),
+            }.to_string())?,
+            None=>lines.len(),
+        };
+        section_insertions.entry(at).or_default().extend([declaration.comment.clone(),String::new()]);
+    }
+    for(at,comments)in section_insertions.into_iter().rev(){lines.splice(at..at,comments);}
+    let note_content = notes.render_with_settings(&pkg,&styles,&imported_notes)?;
     if !note_content.is_empty() { lines.push(note_content); }
     let text = lines.join("\n").trim().to_string();
     if text.is_empty() {
         // `convert.py:1825` `raise ValueError('docx 未提取到文字内容')`.
         return Err("docx 未提取到文字内容".to_string());
     }
-    Ok(text)
+    let text = citations.finish(text)?;
+    let text = heading_import.finish(text)?;
+    crate::publication_inline_text::validate_source(&text).map_err(|code|docx_note_settings::Error{code,part:"word/document.xml".into(),path:"source".into(),detail:"native run styles have no valid editable source representation".into()}.to_string())?;
+    crate::publication_blocks::validate_author_consumer(&text,true).map_err(|code|docx_note_settings::Error{code,part:"word/document.xml".into(),path:"source".into(),detail:"native semantic field styles have no valid editable source representation".into()}.to_string())?;
+    let mut note_options = source_sections.note_options;
+    if let Some(size)=text_styles.source_body_size(){note_options["typography"]=serde_json::json!({"size":size});}
+    crate::publication_profile::embed_imported(&text,&note_options).map_err(|e|e.to_string())
 }
 
 /// `convert.py:531-533` — `.docx` has exactly one engine, `docx2md`.
@@ -2939,6 +3212,14 @@ fn docx_to_md(path: &str, form_tables: bool) -> Result<ConvertResult, String> {
         error: None,
     })
 }
+
+#[cfg(test)]
+#[path="convert/docx_fields_tests.rs"]
+mod docx_fields_tests;
+
+#[cfg(test)]
+#[path="convert/docx_image_caption_tests.rs"]
+mod docx_image_caption_tests;
 
 // ============================================================================
 // OLE2 / Word 97-2003 (.doc) Binary Compound File Parser (FID-OLE2)
@@ -4157,8 +4438,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
     }));
     if let Ok(Ok(extracted)) = tier1_res {
         let conf = calculate_text_confidence(&extracted);
-        let non_ws_count = extracted.chars().filter(|c| !c.is_whitespace()).count();
-        if non_ws_count >= 150 && conf >= 0.65 {
+        if conf >= 0.65 {
             let md = clean_pdf_text_to_markdown(&extracted, filename, form_tables);
             return Ok(ConvertResult {
                 success: true,
@@ -4184,8 +4464,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
     }));
     if let Ok(Ok(extracted)) = tier2_res {
         let conf = calculate_text_confidence(&extracted);
-        let non_ws_count = extracted.chars().filter(|c| !c.is_whitespace()).count();
-        if non_ws_count >= 150 && conf >= 0.65 {
+        if conf >= 0.65 {
             let md = clean_pdf_text_to_markdown(&extracted, filename, form_tables);
             return Ok(ConvertResult {
                 success: true,
@@ -4207,8 +4486,7 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
         if result.status.success() {
             let content = String::from_utf8_lossy(&result.stdout).to_string();
             let conf = calculate_text_confidence(&content);
-            let non_ws_count = content.chars().filter(|c| !c.is_whitespace()).count();
-            if non_ws_count >= 150 && conf >= 0.65 {
+            if conf >= 0.65 {
                 let md = clean_pdf_text_to_markdown(&content, filename, form_tables);
                 return Ok(ConvertResult {
                     success: true,
@@ -4267,22 +4545,10 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
     }
 
     if crate::speech::cancelled() { return Err("cancelled".into()); }
-    // Tier 6: Native stream operator decompression fallback
-    if let Ok(mut file) = fs::File::open(path) {
-        let mut data = Vec::new();
-        if file.read_to_end(&mut data).is_ok() {
-            let extracted_text = extract_pdf_text_streams(&data);
-            if !extracted_text.trim().is_empty() {
-                let md = clean_pdf_text_to_markdown(&extracted_text, filename, form_tables);
-                return Ok(ConvertResult {
-                    success: true,
-                    content: Some(md),
-                    engine: Some("pdf-native".to_string()),
-                    error: None,
-                });
-            }
-        }
-    }
+    // Only page-aware, font-mapped parsers may return text. Scanning arbitrary
+    // streams for BT/ET byte pairs also reads CMaps and font programs as prose
+    // (the ET in a ToUnicode copyright comment's "WHETHER" was enough).
+    // An unmappable document must take the OCR/error path, never invent text.
 
     // Every extraction tier came up empty.  Python `pdf2md` raises
     // `ValueError('pdf 未提取到文字内容（可能是扫描件，请用 OCR）')` (convert.py:2295-2296) so
@@ -4293,8 +4559,10 @@ fn pdf_tier_ladder(path: &str, form_tables: bool) -> Result<ConvertResult, Strin
 }
 
 fn calculate_text_confidence(text: &str) -> f32 {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() < 15 {
+    // Font mapping has already been checked by the caller. Whitespace and
+    // document length do not determine whether a real text layer is useful.
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.is_empty() {
         return 0.0;
     }
     let mut replacement_count = 0;
@@ -4307,7 +4575,7 @@ fn calculate_text_confidence(text: &str) -> f32 {
             replacement_count += 1;
         } else if c.is_control() && c != '\n' && c != '\r' && c != '\t' {
             control_count += 1;
-        } else if c.is_alphabetic()
+        } else if c.is_alphanumeric()
             || ('\u{4e00}'..='\u{9fff}').contains(&c)
             || ('\u{3400}'..='\u{4dbf}').contains(&c)
             || ('\u{f900}'..='\u{faff}').contains(&c)
@@ -4327,6 +4595,11 @@ fn calculate_text_confidence(text: &str) -> f32 {
     }
     if (control_count as f32 / total) > 0.02 {
         return 0.0;
+    }
+    // A one-character label, number or mathematical sign is a valid document;
+    // statistical punctuation ratios cannot diagnose such a small sample.
+    if chars.len() < 15 {
+        return 1.0;
     }
     let alpha_cjk_ratio = valid_alpha_cjk as f32 / total;
     let punct_ratio = punctuation_count as f32 / total;
@@ -4725,8 +4998,8 @@ fn split_pdf_table_cols(line: &str) -> Vec<String> {
     if is_likely_code_or_command(line) {
         return Vec::new();
     }
-    if line.starts_with('|') && line.ends_with('|') {
-        let cols: Vec<String> = line[1..line.len() - 1]
+    if let Some(inner) = line.strip_prefix('|').and_then(|rest| rest.strip_suffix('|')) {
+        let cols: Vec<String> = inner
             .split('|')
             .map(|s| s.trim().to_string())
             .collect();
@@ -4792,202 +5065,6 @@ fn is_pdf_heading(line: &str) -> bool {
     false
 }
 
-fn extract_pdf_text_streams(data: &[u8]) -> String {
-    use flate2::read::{ZlibDecoder, DeflateDecoder};
-    use std::io::Read;
-
-    let mut extracted = String::new();
-    let mut pos = 0;
-
-    while pos < data.len() {
-        let stream_tag = b"stream";
-        let endstream_tag = b"endstream";
-
-        let stream_start_idx = match data[pos..].windows(stream_tag.len()).position(|w| w == stream_tag) {
-            Some(i) => pos + i,
-            None => break,
-        };
-
-        let mut data_start = stream_start_idx + 6;
-        if data_start < data.len() && data[data_start] == b'\r' {
-            data_start += 1;
-        }
-        if data_start < data.len() && data[data_start] == b'\n' {
-            data_start += 1;
-        }
-
-        let stream_end_idx = match data[data_start..].windows(endstream_tag.len()).position(|w| w == endstream_tag) {
-            Some(i) => data_start + i,
-            None => break,
-        };
-
-        let raw_stream = &data[data_start..stream_end_idx];
-        let header_start = if stream_start_idx > 300 { stream_start_idx - 300 } else { 0 };
-        let header_slice = &data[header_start..stream_start_idx];
-
-        // Skip non-content streams (Image, Font, XRef, Metadata)
-        let is_image = header_slice.windows(8).any(|w| w == b"/Image")
-            || header_slice.windows(15).any(|w| w == b"/CCITTFaxDecode")
-            || header_slice.windows(10).any(|w| w == b"/DCTDecode")
-            || header_slice.windows(12).any(|w| w == b"/JBIG2Decode");
-        let is_font = header_slice.windows(5).any(|w| w == b"/Font")
-            || header_slice.windows(11).any(|w| w == b"/FontDescriptor")
-            || header_slice.windows(10).any(|w| w == b"/CIDFontType");
-        let is_meta = header_slice.windows(9).any(|w| w == b"/Metadata")
-            || header_slice.windows(5).any(|w| w == b"/XRef");
-
-        if is_image || is_font || is_meta {
-            pos = stream_end_idx + 9;
-            continue;
-        }
-
-        let is_flate = header_slice.windows(12).any(|w| w == b"/FlateDecode") || header_slice.windows(3).any(|w| w == b"/Fl");
-
-        let decompressed = if is_flate {
-            let mut zlib = ZlibDecoder::new(raw_stream);
-            let mut buf = Vec::new();
-            if zlib.read_to_end(&mut buf).is_ok() {
-                buf
-            } else {
-                let mut def = DeflateDecoder::new(raw_stream);
-                let mut def_buf = Vec::new();
-                if def.read_to_end(&mut def_buf).is_ok() {
-                    def_buf
-                } else {
-                    Vec::new()
-                }
-            }
-        } else {
-            raw_stream.to_vec()
-        };
-
-        if !decompressed.is_empty() {
-            let chunk = extract_text_from_stream_bytes(&decompressed);
-            if !chunk.is_empty() {
-                extracted.push_str(&chunk);
-                extracted.push('\n');
-            }
-        }
-
-        pos = stream_end_idx + 9;
-    }
-
-    extracted
-}
-
-fn extract_text_from_stream_bytes(stream: &[u8]) -> String {
-    // Must contain text operators BT or Tj/TJ
-    let has_text_op = stream.windows(2).any(|w| w == b"BT" || w == b"ET" || w == b"Tj" || w == b"TJ");
-    if !has_text_op {
-        return String::new();
-    }
-
-    let mut out = String::new();
-    let mut i = 0;
-    while i < stream.len() {
-        if stream[i] == b'(' {
-            let mut depth = 1;
-            let start = i + 1;
-            i += 1;
-            while i < stream.len() {
-                if stream[i] == b'(' && stream[i - 1] != b'\\' {
-                    depth += 1;
-                } else if stream[i] == b')' && stream[i - 1] != b'\\' {
-                    depth -= 1;
-                    if depth == 0 {
-                        let raw = String::from_utf8_lossy(&stream[start..i]);
-                        let dec = decode_pdf_string(&raw);
-                        if !dec.is_empty() {
-                            out.push_str(&dec);
-                            out.push(' ');
-                        }
-                        break;
-                    }
-                }
-                i += 1;
-            }
-        } else if stream[i] == b'<' && (i + 1 == stream.len() || stream[i + 1] != b'<') {
-            let start = i + 1;
-            if let Some(end_rel) = stream[start..].iter().position(|&b| b == b'>') {
-                let end = start + end_rel;
-                let hex_slice = &stream[start..end];
-                if let Ok(hex_str) = std::str::from_utf8(hex_slice) {
-                    let clean_hex: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-                    if clean_hex.len() >= 2 && clean_hex.len() % 2 == 0 {
-                        let mut bytes = Vec::new();
-                        for chunk in clean_hex.as_bytes().chunks(2) {
-                            if let Ok(b_str) = std::str::from_utf8(chunk) {
-                                if let Ok(val) = u8::from_str_radix(b_str, 16) {
-                                    bytes.push(val);
-                                }
-                            }
-                        }
-                        if bytes.len() >= 4 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-                            let mut u16_chars = Vec::new();
-                            for pair in bytes[2..].chunks(2) {
-                                if pair.len() == 2 {
-                                    u16_chars.push(u16::from_be_bytes([pair[0], pair[1]]));
-                                }
-                            }
-                            if let Ok(s) = String::from_utf16(&u16_chars) {
-                                out.push_str(&s);
-                                out.push(' ');
-                            }
-                        } else if let Ok(s) = std::str::from_utf8(&bytes) {
-                            if s.chars().any(|c| !c.is_control() && !c.is_whitespace()) {
-                                out.push_str(s);
-                                out.push(' ');
-                            }
-                        }
-                    }
-                }
-                i = end;
-            }
-        }
-        i += 1;
-    }
-    out
-}
-
-// Decode PDF string escape sequences
-fn decode_pdf_string(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-    
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.peek() {
-                Some(&'n') => { result.push('\n'); chars.next(); }
-                Some(&'r') => { result.push('\r'); chars.next(); }
-                Some(&'t') => { result.push('\t'); chars.next(); }
-                Some(&b) if b == '(' || b == ')' || b == '\\' => { 
-                    result.push(chars.next().unwrap()); 
-                }
-                Some(&digit @ '0'..='7') => {
-                    let mut octal = digit.to_string();
-                    for _ in 0..2 {
-                        if let Some(&next_digit @ '0'..='7') = chars.peek() {
-                            // The binding is what disambiguates the range pattern from
-                            // `&'0' ..= '7'`; consume the peeked digit itself.
-                            octal.push(next_digit);
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    if let Ok(byte_val) = u8::from_str_radix(&octal, 8) {
-                        result.push(byte_val as char);
-                    }
-                }
-                _ => { result.push(c); }
-            }
-        } else {
-            result.push(c);
-        }
-    }
-    
-    result
-}
 
 fn xlsx_to_md(path: &str) -> Result<ConvertResult, String> {
     // Faithful port of `_xlsx_to_md` (src/readmd_modules/convert.py:354-427).
@@ -7627,6 +7704,128 @@ fn detect_language(ext: &str) -> String {
 mod pdf_tests {
     use super::*;
 
+    // Valid one-page PDFs exercise the real font decoders and page traversal.
+    // Composite-font character IDs deliberately differ from Unicode code points.
+    fn write_short_text_pdf(dir: &Path, text: &str, composite: bool, mapped: bool) -> PathBuf {
+        use lopdf::{content::{Content, Operation}, dictionary, Document, Object, Stream, StringFormat};
+        let mut doc = Document::with_version("1.7");
+        let pages = doc.new_object_id();
+        let (font, bytes) = if composite {
+            let descriptor = doc.add_object(dictionary! {
+                "Type" => "FontDescriptor", "FontName" => "ReadMDTest",
+                "Flags" => 4, "FontBBox" => vec![0.into(), (-200).into(), 1000.into(), 900.into()],
+                "ItalicAngle" => 0, "Ascent" => 900, "Descent" => -200,
+                "CapHeight" => 700, "StemV" => 80,
+            });
+            let descendant = doc.add_object(dictionary! {
+                "Type" => "Font", "Subtype" => "CIDFontType2", "BaseFont" => "ReadMDTest",
+                "CIDSystemInfo" => dictionary! {"Registry" => Object::string_literal("Adobe"), "Ordering" => Object::string_literal("Identity"), "Supplement" => 0},
+                "FontDescriptor" => descriptor, "CIDToGIDMap" => "Identity", "DW" => 600,
+            });
+            let mut font = dictionary! {
+                "Type" => "Font", "Subtype" => "Type0", "BaseFont" => "ReadMDTest",
+                "Encoding" => "Identity-H", "DescendantFonts" => vec![Object::Reference(descendant)],
+            };
+            let mut bytes = Vec::new();
+            let mut entries = Vec::new();
+            for (i, ch) in text.chars().enumerate() {
+                let cid = (i + 1) as u16;
+                bytes.extend_from_slice(&cid.to_be_bytes());
+                let unicode: String = ch.to_string().encode_utf16().map(|unit| format!("{unit:04X}")).collect();
+                entries.push(format!("<{cid:04X}> <{unicode}>"));
+            }
+            if mapped {
+                let cmap = format!("/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> def\n/CMapName /ReadMDTest def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n{} beginbfchar\n{}\nendbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend", entries.len(), entries.join("\n"));
+                let unicode = doc.add_object(Stream::new(dictionary! {}, cmap.into_bytes()));
+                font.set("ToUnicode", unicode);
+            }
+            (doc.add_object(font), bytes)
+        } else {
+            assert!(text.is_ascii());
+            (doc.add_object(dictionary! {"Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding"}), text.as_bytes().to_vec())
+        };
+        let content = Content { operations: vec![
+            Operation::new("BT", vec![]),
+            Operation::new("Tf", vec![Object::Name(b"F1".to_vec()), 12.into()]),
+            Operation::new("Td", vec![72.into(), 720.into()]),
+            Operation::new("Tj", vec![Object::String(bytes, StringFormat::Hexadecimal)]),
+            Operation::new("ET", vec![]),
+        ] }.encode().expect("encode page content");
+        let content_id = doc.add_object(Stream::new(dictionary! {}, content));
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => pages,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Resources" => dictionary! {"Font" => dictionary! {"F1" => font}},
+            "Contents" => content_id,
+        });
+        doc.objects.insert(pages, dictionary! {"Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1}.into());
+        let catalog = doc.add_object(dictionary! {"Type" => "Catalog", "Pages" => pages});
+        doc.trailer.set("Root", catalog);
+        // Both an innocent ET byte pair in a CMap comment and real text operators
+        // outside page content must never become visible document text.
+        // Keep the previous page's /Font dictionary beyond the deleted scanner's
+        // 300-byte look-behind, so this is a regression for the old implementation.
+        doc.add_object(Object::String(vec![b'p'; 1024], StringFormat::Literal));
+        doc.add_object(Stream::new(dictionary! {}, b"% WHETHER\n/CIDInit (Adobe-GB1-UCS2)\nBT (PRIVATE-RESOURCE-NOT-PAGE-TEXT) Tj ET\n".to_vec()));
+        let path = dir.join("short-mapped.pdf");
+        doc.save(&path).expect("write PDF fixture");
+        let serialized = fs::read(&path).unwrap();
+        let noise = serialized.windows(b"% WHETHER".len()).position(|s| s == b"% WHETHER").unwrap();
+        let header = &serialized[noise - 300..noise];
+        for excluded in [b"/Font".as_slice(), b"/Image", b"/Metadata", b"/XRef"] {
+            assert!(!header.windows(excluded.len()).any(|s| s == excluded));
+        }
+        path
+    }
+
+    #[test]
+    fn pdf_short_text_accepts_labels_numbers_and_pipes() {
+        let dir = tempfile::tempdir().unwrap();
+        for text in ["A", "|", "12345", "2026", "12345678901234567890", "A short document with fewer than 150 characters."] {
+            let path = write_short_text_pdf(dir.path(), text, false, true);
+            let result = pdf_to_md(path.to_str().unwrap(), true).expect("short mapped PDF must convert");
+            assert!(result.success, "{text:?}: {:?}", result.error);
+            assert!(matches!(result.engine.as_deref(), Some("pdf-extract" | "lopdf")), "must use a bundled page parser: {:?}", result.engine);
+            assert_eq!(result.content.as_deref().map(str::trim), Some(text));
+        }
+    }
+
+    #[test]
+    fn pdf_short_text_decodes_nonunicode_cids_and_excludes_font_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = "READMDPROCESSCOLD01 中文正文 2026";
+        let path = write_short_text_pdf(dir.path(), text, true, true);
+        let compact = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        assert_eq!(compact(&pdf_extract::extract_text(&path).expect("pdf_extract font mapping")), compact(text));
+        let doc = lopdf::Document::load(&path).unwrap();
+        assert_eq!(compact(&doc.extract_text(&[1]).expect("lopdf font mapping")), compact(text));
+        let result = pdf_to_md(path.to_str().unwrap(), true).expect("mapped CID PDF must convert");
+        assert!(result.success, "{:?}", result.error);
+        let md = result.content.unwrap();
+        assert_eq!(compact(&md), compact(text));
+        assert!(!md.contains("CIDInit") && !md.contains("PRIVATE-RESOURCE"), "resource stream leaked: {md:?}");
+    }
+
+    #[test]
+    fn pdf_short_text_never_uses_nonpage_streams_or_unmapped_font_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        for (text, composite, mapped) in [("", false, true), ("UNMAPPED", true, false)] {
+            let path = write_short_text_pdf(dir.path(), text, composite, mapped);
+            let result = pdf_to_md(path.to_str().unwrap(), true);
+            assert!(result.is_err(), "no valid mapped page text: {result:?}");
+        }
+    }
+
+    #[test]
+    fn pdf_short_text_confidence_accepts_printable_text_but_rejects_decode_errors() {
+        for text in ["A", "12345678901234567890", "中文正文", "x = 1", "|"] {
+            assert!(calculate_text_confidence(text) >= 0.65, "valid short text: {text:?}");
+        }
+        for text in ["", " \n\t", "\u{fffd}", "\0", "bad\0text", "bad\u{fffd}text"] {
+            assert_eq!(calculate_text_confidence(text), 0.0, "invalid extraction: {text:?}");
+        }
+    }
+
     #[test]
     fn test_lopdf_api() {
         let pdf_path = "T:\\Programming\\Project\\codex\\creator\\readmd\\build\\document-upgrade-samples\\sample.pdf";
@@ -7647,6 +7846,37 @@ mod pdf_tests {
         // The form feed only starts a new page; nothing on it may be dropped.
         assert!(md.contains("Page 2 Header"), "page 2 content lost: {:?}", md);
         assert!(md.contains("## Chapter 1 Introduction") || md.contains("Chapter 1 Introduction"));
+    }
+
+    #[test]
+    fn pdf_table_extraction_accepts_incomplete_delimiters_without_panicking() {
+        // PDF text extraction can put a table border on its own line.
+        for line in ["", "|", "||", "|字|", "|😀|", "|字", "字|"] {
+            assert!(split_pdf_table_cols(line).is_empty(), "not a row: {line:?}");
+        }
+        assert_eq!(split_pdf_table_cols("| 项目 | 数量 |"), vec!["项目", "数量"]);
+        assert_eq!(split_pdf_table_cols("| α | 😀 |"), vec!["α", "😀"]);
+        assert_eq!(split_pdf_table_cols("| 左 | | 右 |"), vec!["左", "", "右"]);
+        assert_eq!(split_pdf_table_cols("项目\t数量"), vec!["项目", "数量"]);
+    }
+
+    #[test]
+    fn pdf_table_extraction_preserves_lone_pipes_and_adjacent_content() {
+        for form_tables in [true, false] {
+            assert_eq!(clean_pdf_text_to_markdown("|", "pipes.pdf", form_tables), "|");
+            let raw = "转换前正文。\n\n|\n\n| 项目 | 数量 |\n| 样本 | 12 |\n\n转换后正文。";
+            let md = clean_pdf_text_to_markdown(raw, "pipes.pdf", form_tables);
+            assert!(md.contains("转换前正文。"), "{md:?}");
+            assert!(md.contains("转换后正文。"), "{md:?}");
+            // A single blank PDF line is joined into the preceding paragraph;
+            // two blank lines delimit a paragraph. Both must retain the pipe.
+            assert!(md.contains("转换前正文。 |"), "border lost: {md:?}");
+            let separate = clean_pdf_text_to_markdown(&raw.replace("\n\n", "\n\n\n"), "pipes.pdf", form_tables);
+            assert!(separate.lines().any(|line| line == "|"), "separate border lost: {separate:?}");
+            for cell in ["项目", "数量", "样本", "12"] {
+                assert!(md.contains(cell), "cell {cell:?} lost: {md:?}");
+            }
+        }
     }
 
     #[test]
@@ -9928,7 +10158,11 @@ mod native_legacy_lanes {
         let saved=crate::math_migration::plan(&md).unwrap();assert!(saved.recoveries.is_empty());assert!(saved.content.contains("word.styles(")&&saved.content.contains("Accent")&&!saved.content.contains("Unused"),"{} / {:?}",saved.content,saved.diagnostics);
         assert_eq!(crate::math_migration::plan(&saved.content).unwrap().content,saved.content);
         for source in [&md,&saved.content] {
-            let document=crate::md_ast::parse(source);let package=crate::docx_writer::build(&document,&serde_json::json!({}),"proof.md",&|_|None);assert!(package.warns.is_empty(),"{:?}",package.warns);
+            let document=crate::md_ast::parse(source);let package=crate::docx_writer::build(&document,&serde_json::json!({}),"proof.md",&|_|None);
+            // This source has a nonempty document run default. Its effective
+            // values still round-trip; native inheritance is explicitly not
+            // certified by the finite four-axis registry.
+            assert_eq!(package.warns,[crate::api_codes::WARN_MATH_RUN_STYLE_MATERIALIZED]);
             let body=String::from_utf8(package.parts.iter().find(|(n,_)|n=="word/document.xml").unwrap().1.clone()).unwrap();
             assert!(!body.contains("w:styles")&&!body.contains("v:styles")&&!body.contains("rStyle"));
             let parsed=crate::math_document::parse_xml(&body).unwrap();

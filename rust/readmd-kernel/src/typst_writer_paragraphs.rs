@@ -13,10 +13,20 @@ pub(crate) struct ParagraphRequest {
 pub(crate) struct GeometryContext {
     pub marker: String,
     pub paragraphs: Vec<ParagraphRequest>,
+    pub note_count: usize,
 }
 impl GeometryContext {
     pub(super) fn new() -> Self {
-        Self { marker: format!("readmd-p04-{}:", uuid::Uuid::new_v4().simple()), paragraphs: Vec::new() }
+        Self { marker: format!("readmd-p04-{}:", uuid::Uuid::new_v4().simple()), paragraphs: Vec::new(), note_count: 0 }
+    }
+
+    /// Observe final native entry locations without changing their layout.
+    /// Typst 0.15.1 can retain an insertion when an orphan group moves; an
+    /// entry may then precede its callout. Long entries may continue on later
+    /// pages, but their first page must match the original native declaration.
+    pub(super) fn note_guard(&mut self, count: usize) -> String {
+        self.note_count = count;
+        format!("\n#context {{\n for (index,entry) in query(footnote.entry).enumerate() {{\n let actual=entry.location().page()\n let expected=entry.note.location().page()\n if actual != expected {{\n panic({} + json.encode((coordinateSpace:\"pdfFootnoteStartPage\",noteIndex:index+1,definitionPage:actual,referencePage:expected),pretty:false))\n }}\n }}\n}}\n", string(&self.marker))
     }
 
     /// Only an exact, generated diagnostic with this render's random marker
@@ -52,6 +62,23 @@ impl GeometryContext {
                 || source_column.parse::<u32>().ok().filter(|n| *n > 0).is_none() { return None; }
             let json = message.strip_prefix("panicked with: ")?.strip_prefix(&self.marker)?;
             if json.len() > 4096 { return None; }
+            let value = serde_json::from_str::<Value>(json).ok()?;
+            if value["coordinateSpace"] == "pdfFootnoteStartPage" {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct NoteDetails {
+                    coordinate_space: String, note_index: usize, definition_page: u32, reference_page: u32,
+                }
+                let details = serde_json::from_str::<NoteDetails>(json).ok()?;
+                if details.coordinate_space != "pdfFootnoteStartPage"
+                    || self.note_count == 0 || self.note_count > crate::publication_blocks::MAX_NODES
+                    || details.note_index == 0 || details.note_index > self.note_count
+                    || !(1..=100_000).contains(&details.definition_page)
+                    || !(1..=100_000).contains(&details.reference_page)
+                    || details.definition_page == details.reference_page { return None; }
+                diagnostic = Some(format!("publication_note_layout: {}", serde_json::to_string(&value).ok()?));
+                continue;
+            }
             // A typed struct also rejects duplicate fields, unknown keys and
             // floats/strings where an index is required.
             #[derive(serde::Deserialize)]
@@ -62,7 +89,6 @@ impl GeometryContext {
                 available_width_pt: f64, available_height_pt: f64,
             }
             let details = serde_json::from_str::<Details>(json).ok()?;
-            let value = serde_json::from_str::<Value>(json).ok()?;
             if details.coordinate_space != "pdfParagraphLine" || details.mode != "exact"
                 || details.line != 1 { return None; }
             let request = self.paragraphs.iter().find(|p| p.index == details.block_index)?;
@@ -86,9 +112,12 @@ impl Writer<'_> {
     pub(super) fn special_blocks(&mut self, values: &[Block]) -> Result<String, String> {
         let ordinary = self.ordinary_body;
         let line = self.local_line;
+        let baseline = self.baseline.take();
+        let local_baseline = self.local_baseline.take();
         self.ordinary_body = false; self.local_line = None;
         let result = self.blocks(values);
         self.ordinary_body = ordinary; self.local_line = line;
+        self.baseline = baseline; self.local_baseline = local_baseline;
         result
     }
 
@@ -99,8 +128,8 @@ impl Writer<'_> {
         for value in values {
             if crate::speech::cancelled() { return Err("cancelled".into()); }
             let body = match value {
-                Inline::Text(value) => text(value),
-                Inline::Code(value) => format!("#raw({})", string(value)),
+                Inline::Text(value) => self.author_text(value,false)?,
+                Inline::Code(value) => self.author_text(value,true)?,
                 Inline::Strong(values) => format!("#strong[{}]", self.paragraph_metric(values)?),
                 Inline::Emph(values) => format!("#emph[{}]", self.paragraph_metric(values)?),
                 Inline::Strike(values) => format!("#strike[{}]", self.paragraph_metric(values)?),
@@ -108,6 +137,7 @@ impl Writer<'_> {
                     let body = self.paragraph_metric(children)?;
                     self.styled_inline(format, body)?
                 },
+                Inline::AuthorStyled{style,children}=>{let previous=self.author;self.author=Some(style.resolve(&previous.unwrap_or(self.author_base),&self.author_base));let body=self.paragraph_metric(children);self.author=previous;body?},
                 Inline::Citation {children, ..} | Inline::Link {children, ..} => self.paragraph_metric(children)?,
                 Inline::SoftBreak | Inline::HardBreak | Inline::Math(_) | Inline::OfficeMath {..} => text(" "),
                 Inline::Html(value) if value.trim().is_empty() || value.trim().starts_with("<!--") => String::new(),

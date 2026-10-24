@@ -59,7 +59,29 @@ pub const TYPST_FORMULA_FAILED: &str = "typst_formula_failed";
 pub const TYPST_INVALID_CONTENT: &str = "typst_invalid_content";
 pub const DOCX_NESTED_FOOTNOTE: &str = "docx_nested_footnote";
 pub const DOCX_NOTES_INVALID: &str = "docx_notes_invalid";
+pub const DOCX_CITATION_INVALID: &str = "docx_citation_invalid";
+pub const DOCX_CITATION_CONFLICT: &str = "docx_citation_conflict";
+pub const DOCX_CITATION_RESOURCES_INVALID: &str = "docx_citation_resources_invalid";
+pub const PUBLICATION_NUMBERING_INVALID: &str = "publication_numbering_invalid";
+pub const PUBLICATION_NUMBERING_BUDGET: &str = "publication_numbering_budget";
+pub const PUBLICATION_NUMBERING_HIERARCHY: &str = "publication_numbering_hierarchy";
+pub const PUBLICATION_NUMBERING_CHAPTER_MISSING: &str = "publication_numbering_chapter_missing";
+pub const DOCX_NUMBERING_INVALID: &str = "docx_numbering_invalid";
+pub const DOCX_NUMBERING_BUDGET: &str = "docx_numbering_budget";
+pub const DOCX_NUMBERING_UNREPRESENTABLE: &str = "docx_numbering_unrepresentable";
+pub const DOCX_NUMBERING_IMPORT_CONFLICT: &str = "docx_numbering_import_conflict";
+pub const PUBLICATION_NOTE_POLICY_INVALID: &str = "publication_note_policy_invalid";
+pub const PUBLICATION_NOTE_POLICY_UNSUPPORTED: &str = "publication_note_policy_unsupported";
+pub const PUBLICATION_NOTE_BINDING_MISMATCH: &str = "publication_note_binding_mismatch";
+pub const DOCX_NOTE_SETTINGS_INVALID: &str = "docx_note_settings_invalid";
+pub const DOCX_NOTE_SETTINGS_UNSUPPORTED: &str = "docx_note_settings_unsupported";
+pub const AUTHOR_INLINE_TEXT_INVALID: &str = "author_inline_text_invalid";
+pub const AUTHOR_INLINE_TEXT_UNSUPPORTED: &str = "author_inline_text_unsupported";
+pub const AUTHOR_INLINE_TEXT_TARGET: &str = "author_inline_text_target";
+pub const AUTHOR_INLINE_TEXT_BUDGET: &str = "author_inline_text_budget";
+pub const AUTHOR_INLINE_TEXT_PDF_SHAPING_UNSUPPORTED: &str = "author_inline_text_pdf_shaping_unsupported";
 pub const PUBLICATION_LAYOUT_GEOMETRY: &str = "publication_layout_geometry";
+pub const PUBLICATION_NOTE_LAYOUT: &str = "publication_note_layout";
 pub const PUBLICATION_FONTS_UNAVAILABLE: &str = "publication_fonts_unavailable";
 pub const PUBLICATION_RUNNING_OVERLAP: &str = "publication_running_overlap";
 pub const PUBLICATION_LOCAL_INVALID: &str = "publication_local_style_invalid";
@@ -69,6 +91,7 @@ pub const PUBLICATION_BASELINE_UNSUPPORTED: &str = "publication_baseline_unsuppo
 pub const EPUB_INVALID_OPTIONS: &str = "epub_invalid_options";
 pub const MATH_METADATA_STALE: &str = "math_metadata_stale";
 pub const MATH_METADATA_INVALID: &str = "math_metadata_invalid";
+pub const MATH_DOCUMENT_DEFAULTS_CONFLICT: &str = "math_document_defaults_conflict";
 pub const PUBLICATION_NAVIGATION_INVALID: &str = "publication_navigation_invalid";
 pub const PUBLICATION_NAVIGATION_REFERENCE: &str = "publication_navigation_reference";
 pub const PUBLICATION_NAVIGATION_BUDGET: &str = "publication_navigation_budget";
@@ -80,6 +103,13 @@ pub const WARN_PUBLICATION_LOCAL_UNSUPPORTED: &str = "publication_local_style_un
 pub const WARN_PUBLICATION_LAYOUT_PAGED: &str = "publication_layout_paged_unsupported";
 pub const WARN_PUBLICATION_LAYOUT_PARAGRAPH: &str = "publication_layout_paragraph_unsupported";
 pub const WARN_PUBLICATION_LAYOUT_NOTES: &str = "publication_layout_notes_unsupported";
+pub const WARN_PUBLICATION_NUMBERING_TAB: &str = "publication_numbering_tab_unsupported";
+pub const WARN_PUBLICATION_NOTE_PAGE_RESTART: &str = "publication_note_page_restart_unsupported";
+pub const WARN_PUBLICATION_NOTE_SECTION_RESTART: &str = "publication_note_section_restart_unsupported";
+pub const WARN_PUBLICATION_NOTE_CONTINUATION: &str = "publication_note_continuation_unsupported";
+pub const WARN_DOCX_CITATION_INVALID: &str = "docx_citation_invalid";
+pub const WARN_DOCX_CITATION_CONFLICT: &str = "docx_citation_conflict";
+pub const WARN_DOCX_CITATION_RESOURCES_INVALID: &str = "docx_citation_resources_invalid";
 pub const WARN_PUBLICATION_LAYOUT_HEADING: &str = "publication_layout_heading_unsupported";
 pub const WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL: &str = "publication_continuous_columns_partial";
 pub const WARN_PUBLICATION_FONT_SUBSTITUTED: &str = "publication_font_substituted";
@@ -210,6 +240,8 @@ pub const WARN_ACADEMIC_MISSING_TITLE: &str = "academic_missing_title";
 pub const WARN_ACADEMIC_MISSING_AUTHOR: &str = "academic_missing_author";
 pub const WARN_ACADEMIC_PROJECTION: &str = "academic_style_projection_limited";
 pub const WARN_MATH_DOCUMENT_DEFAULTS: &str = "math_document_defaults_conflict";
+pub const WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED: &str = "math_paragraph_style_materialized";
+pub const WARN_MATH_RUN_STYLE_MATERIALIZED: &str = "math_run_style_materialized";
 pub const WARN_MATHML_ALIGNMENT: &str = "math_manual_alignment_fallback";
 pub const WARN_MATHML_SCRIPT_SPACING: &str = "math_script_spacing_fallback";
 pub const WARN_MATH_EQARR_INVALID_GEOMETRY: &str = "math_equation_array_invalid_geometry";
@@ -238,15 +270,21 @@ pub const ERROR_CODES: &[&str] = &[
     OCR_NO_ENGINE, ENCODING_UNREPRESENTABLE, ENCODING_UNKNOWN, DIALOG_UNAVAILABLE, PATH_NOT_FOUND,
     OPEN_FAILED, PRESET_NAME_CONFLICT, INTERNAL_ERROR, ZIP_CORRUPT, ZIP_TOO_LARGE, ZIP_UNSUPPORTED,
     CANCELLED,
+    DOCX_CITATION_INVALID,DOCX_CITATION_CONFLICT,DOCX_CITATION_RESOURCES_INVALID,
+    PUBLICATION_NUMBERING_INVALID,PUBLICATION_NUMBERING_BUDGET,PUBLICATION_NUMBERING_HIERARCHY,PUBLICATION_NUMBERING_CHAPTER_MISSING,
+    DOCX_NUMBERING_INVALID,DOCX_NUMBERING_BUDGET,DOCX_NUMBERING_UNREPRESENTABLE,DOCX_NUMBERING_IMPORT_CONFLICT,
+    PUBLICATION_NOTE_POLICY_INVALID,PUBLICATION_NOTE_POLICY_UNSUPPORTED,PUBLICATION_NOTE_BINDING_MISMATCH,
+    DOCX_NOTE_SETTINGS_INVALID,DOCX_NOTE_SETTINGS_UNSUPPORTED,
+    AUTHOR_INLINE_TEXT_INVALID,AUTHOR_INLINE_TEXT_UNSUPPORTED,AUTHOR_INLINE_TEXT_TARGET,AUTHOR_INLINE_TEXT_BUDGET,AUTHOR_INLINE_TEXT_PDF_SHAPING_UNSUPPORTED,
     OPENAPI_INVALID,OPENAPI_BUDGET,OPENAPI_BUSY,OPENAPI_VERSION,OPENAPI_REGION_INVALID,OPENAPI_LOCAL_CHANGES,
     LATEX_ENGINE_UNAVAILABLE,LATEX_INVALID_ENGINE,LATEX_INVALID_OPTIONS,LATEX_WORKSPACE_FAILED,
     LATEX_TIMEOUT,LATEX_OUTPUT_LIMIT,LATEX_PROCESS_FAILED,LATEX_INVALID_OUTPUT,
     LATEX_COMPILATION_FAILED,LATEX_REFERENCES_UNSETTLED,LATEX_SAVE_FAILED,LATEX_BUSY,
     TYPST_ENGINE_UNAVAILABLE,TYPST_WORKSPACE_FAILED,TYPST_TIMEOUT,TYPST_OUTPUT_LIMIT,TYPST_PROCESS_FAILED,TYPST_INVALID_OUTPUT,TYPST_COMPILATION_FAILED,TYPST_SAVE_FAILED,TYPST_BUSY,TYPST_FORMULA_FAILED,TYPST_INVALID_CONTENT,
-    PUBLICATION_LAYOUT_GEOMETRY,PUBLICATION_FONTS_UNAVAILABLE,PUBLICATION_RUNNING_OVERLAP,
+    PUBLICATION_LAYOUT_GEOMETRY,PUBLICATION_NOTE_LAYOUT,PUBLICATION_FONTS_UNAVAILABLE,PUBLICATION_RUNNING_OVERLAP,
     PUBLICATION_LINE_SPACING_UNSUPPORTED,
     PUBLICATION_TRACKING_UNSUPPORTED,
-    PUBLICATION_BASELINE_UNSUPPORTED,EPUB_INVALID_OPTIONS,MATH_METADATA_STALE,MATH_METADATA_INVALID,
+    PUBLICATION_BASELINE_UNSUPPORTED,EPUB_INVALID_OPTIONS,MATH_METADATA_STALE,MATH_METADATA_INVALID,MATH_DOCUMENT_DEFAULTS_CONFLICT,
     PUBLICATION_LOCAL_INVALID,PUBLICATION_LOCAL_VERSION,PUBLICATION_LOCAL_ORPHAN,PUBLICATION_LOCAL_DUPLICATE,PUBLICATION_LOCAL_TARGET,DOCX_NESTED_FOOTNOTE,DOCX_NOTES_INVALID,
     PDF_BUSY,PDF_CONFLICT,PDF_ENGINE_UNAVAILABLE,PDF_INVALID_OPERATION,PDF_INVALID_PAGE,
     PDF_LAST_PAGE,PDF_LIMIT,PDF_MISSING_GLYPH,PDF_OPEN_FAILED,PDF_OPERATION_FAILED,
@@ -294,9 +332,13 @@ pub const ERROR_CODES: &[&str] = &[
 ];
 pub const NOTE_CODES: &[&str] = &[CONVERT_NO_TEXT, OCR_NO_TEXT, TRANSCRIBE_UNAVAILABLE];
 pub const WARN_CODES: &[&str] = &[
+    WARN_DOCX_CITATION_INVALID,WARN_DOCX_CITATION_CONFLICT,WARN_DOCX_CITATION_RESOURCES_INVALID,
+    WARN_PUBLICATION_NUMBERING_TAB,WARN_PUBLICATION_NOTE_PAGE_RESTART,WARN_PUBLICATION_NOTE_SECTION_RESTART,WARN_PUBLICATION_NOTE_CONTINUATION,
     WARN_ACADEMIC_UNPRINTABLE_REFERENCE,WARN_ACADEMIC_DIAGNOSTIC,
     WARN_PUBLICATION_METADATA_DATE_CUSTOM_ONLY,WARN_PUBLICATION_METADATA_SERIES_POSITION_CUSTOM_ONLY,
     WARN_MATH_DOCUMENT_DEFAULTS,
+    WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,
+    WARN_MATH_RUN_STYLE_MATERIALIZED,
     WARN_MATHML_ALIGNMENT,
     WARN_MATHML_SCRIPT_SPACING,
     WARN_MATH_EQARR_INVALID_GEOMETRY,WARN_MATH_EQARR_LITERAL_ALIGNMENT,
@@ -323,6 +365,13 @@ pub const WARN_CODES: &[&str] = &[
 /// their historical Chinese text; this table is the one place that knows
 /// their shapes.  Longer prefixes first.
 const WARN_PREFIXES: &[(&str, &str, &str)] = &[
+    ("docx_citation_invalid",WARN_DOCX_CITATION_INVALID,""),
+    ("docx_citation_conflict",WARN_DOCX_CITATION_CONFLICT,""),
+    ("docx_citation_resources_invalid",WARN_DOCX_CITATION_RESOURCES_INVALID,""),
+    ("publication_numbering_tab_unsupported",WARN_PUBLICATION_NUMBERING_TAB,""),
+    ("publication_note_page_restart_unsupported",WARN_PUBLICATION_NOTE_PAGE_RESTART,""),
+    ("publication_note_section_restart_unsupported",WARN_PUBLICATION_NOTE_SECTION_RESTART,""),
+    ("publication_note_continuation_unsupported",WARN_PUBLICATION_NOTE_CONTINUATION,""),
     ("academic_unprintable_reference: ",WARN_ACADEMIC_UNPRINTABLE_REFERENCE,"key"),
     ("academic_diagnostic: ",WARN_ACADEMIC_DIAGNOSTIC,"key"),
     ("publication_metadata_date_custom_only",WARN_PUBLICATION_METADATA_DATE_CUSTOM_ONLY,""),
@@ -365,7 +414,7 @@ const WARN_PREFIXES: &[(&str, &str, &str)] = &[
 pub fn warn_item(text: &str) -> Value {
     // Exact machine codes only. A lookalike suffix must not be accepted as a
     // known warning or interpolate arbitrary source into a translated message.
-    if EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
+    if [WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,WARN_MATH_RUN_STYLE_MATERIALIZED].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
     for (prefix, code, param) in WARN_PREFIXES {
         if let Some(rest) = text.strip_prefix(prefix) {
             let mut params = serde_json::Map::new();
@@ -405,6 +454,32 @@ pub fn attach_warn_items(body: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_paragraph_style_warning_is_typed_exactly_through_both_warning_envelopes() {
+        let code=WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED;
+        assert!(WARN_CODES.contains(&code));
+        assert_eq!(warn_item(code),json!({"code":code,"params":{},"text":code}));
+        assert_eq!(warn_items(&[code])[0]["code"],code);
+        let mut body=json!({"warns":[code]});attach_warn_items(&mut body);
+        assert_eq!(body["warn_items"][0]["code"],code);
+        for lookalike in [format!("{code}_lookalike"),format!("{code}/private.docx"),format!("{code}: source"),format!(" {code}")] {
+            assert_eq!(warn_item(&lookalike)["code"],WARN_OTHER);
+        }
+    }
+
+    #[test]
+    fn native_run_style_warning_is_exact_and_survives_warning_envelopes() {
+        let code=WARN_MATH_RUN_STYLE_MATERIALIZED;
+        assert!(WARN_CODES.contains(&code));
+        assert_eq!(warn_item(code),json!({"code":code,"params":{},"text":code}));
+        assert_eq!(warn_items(&[code])[0]["code"],code);
+        let mut body=json!({"warns":[code]});attach_warn_items(&mut body);
+        assert_eq!(body["warn_items"][0],warn_item(code));
+        for lookalike in [format!("{code}_lookalike"),format!("{code}/private.docx"),format!("{code}: source"),format!(" {code}")] {
+            assert_eq!(warn_item(&lookalike)["code"],WARN_OTHER);
+        }
+    }
 
     #[test]
     fn equation_array_warning_codes_are_registered_and_match_exactly() {

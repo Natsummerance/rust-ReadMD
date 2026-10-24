@@ -4,12 +4,38 @@
 use crate::math_document::{XmlNode, XmlPart, MATH_NS, WORD_NS};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "math_word/paragraph.rs"]
+mod paragraph;
+pub(crate) use paragraph::{word_paragraph_context, WordParagraphContext, WordFiniteParagraph, WordParagraphJustification};
+#[path = "math_word/native_paragraph.rs"]
+mod native_paragraph;
+pub(crate) use native_paragraph::{capture as capture_native_paragraph, NativeParagraphSource,
+    NativeParagraphRegistry, NativeParagraphResolution};
+#[cfg(test)]
+pub(crate) use paragraph::WordParagraphOrigin;
+
+#[cfg(test)]
+#[path = "math_word/capture_tests.rs"]
+mod paragraph_capture_tests;
+
 type Result<T> = std::result::Result<T, &'static str>;
 fn word(n: &XmlNode, local: &str) -> bool { n.namespace == WORD_NS && n.local() == local }
 fn child<'a>(n: &'a XmlNode, local: &str) -> Option<&'a XmlNode> { n.children().find(|n| word(n, local)) }
 fn attr<'a>(n: &'a XmlNode, local: &str) -> Option<&'a str> {
     n.attributes.iter().find(|(key, _)| key.rsplit(':').next() == Some(local)
         && n.attribute_namespaces.get(*key).is_some_and(|uri| uri == WORD_NS)).map(|(_, v)| v.as_str())
+}
+fn unique_resolved_attributes(node: &XmlNode) -> Result<()> {
+    // Check one bounded node before any attribute can choose a style identity.
+    // Namespace declarations bind aliases; they are not ordinary attributes.
+    let mut seen = BTreeSet::new();
+    for key in node.attributes.keys() {
+        if key == "xmlns" || key.starts_with("xmlns:") { continue; }
+        let namespace = node.attribute_namespaces.get(key).map(String::as_str).unwrap_or("");
+        let local = key.rsplit(':').next().unwrap_or(key);
+        if !seen.insert((namespace, local)) { return Err("math_invalid_property"); }
+    }
+    Ok(())
 }
 fn enabled(n: &XmlNode) -> Result<bool> {
     match attr(n, "val").unwrap_or("true") {
@@ -34,7 +60,7 @@ fn named(local: &str) -> XmlNode {
         attributes: [("xmlns:w".into(), WORD_NS.into())].into(), attribute_namespaces: BTreeMap::new(), content: vec![] }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct WordMathStyles {
     root: Option<XmlNode>, styles: BTreeMap<String, XmlNode>,
     paragraph_default: Option<String>, character_default: Option<String>,
@@ -47,8 +73,10 @@ impl WordMathStyles {
         Self::from_node(roots[0])
     }
     fn from_node(root: &XmlNode) -> Result<Self> {
+        unique_resolved_attributes(root)?;
         let mut out = Self { root: Some(root.clone()), ..Self::default() };
         for style in root.children().filter(|n| word(n, "style")) {
+            unique_resolved_attributes(style)?;
             let Some(id) = attr(style, "styleId") else { return Err("math_invalid_property"); };
             if id.is_empty() || out.styles.contains_key(id) { return Err("math_invalid_property"); }
             let style = style.clone();
@@ -69,7 +97,11 @@ impl WordMathStyles {
             if chain.len() >= 128 || !seen.insert(id) { return Err("math_invalid_property"); }
             let style = self.styles.get(id).ok_or("math_invalid_property")?;
             if attr(style, "type") != Some(kind) { return Err("math_invalid_property"); }
-            chain.push(style); current = child(style, "basedOn").and_then(|n| attr(n, "val"));
+            let mut references = style.children().filter(|node| word(node, "basedOn"));
+            let reference = references.next();
+            if references.next().is_some() { return Err("math_invalid_property"); }
+            if let Some(reference) = reference { unique_resolved_attributes(reference)?; }
+            chain.push(style); current = reference.and_then(|node| attr(node, "val"));
         }
         chain.reverse(); Ok(chain)
     }
@@ -79,7 +111,6 @@ impl WordMathStyles {
     /// Keep only the definitions the equation uses, in original catalogue order.
     /// No disk writes, whole-document duplication or inherited XML black box.
     pub(crate) fn capture(&self, paragraph: Option<&XmlNode>, equation: &XmlNode) -> Result<Vec<XmlNode>> {
-        let Some(root) = &self.root else { return Ok(vec![]); };
         let mut used = BTreeSet::new();
         let mut include = |id: &str, kind: &str| -> Result<()> {
             for style in self.chain(id, kind)? { used.insert(attr(style, "styleId").unwrap().to_string()); } Ok(())
@@ -92,12 +123,17 @@ impl WordMathStyles {
         }
         let mut ids = BTreeSet::new(); references(equation, &mut ids);
         for id in &ids { include(id, "character")?; }
-        let mut subset = root.clone();
-        subset.content.retain(|part| matches!(part, XmlPart::Element(n) if word(n,"docDefaults")
-            || word(n,"style") && attr(n,"styleId").is_some_and(|id|used.contains(id))));
-        if subset.content.is_empty() { return Ok(vec![]); }
-        let mut context = vec![subset];
-        if let Some(paragraph) = paragraph { context.push(paragraph.clone()); }
+        let mut context = vec![];
+        if let Some(root) = &self.root {
+            let mut subset = root.clone();
+            subset.content.retain(|part| matches!(part, XmlPart::Element(n) if word(n,"docDefaults")
+                || word(n,"style") && attr(n,"styleId").is_some_and(|id|used.contains(id))));
+            if !subset.content.is_empty() { context.push(subset); }
+        }
+        if let Some(paragraph) = paragraph {
+            if !word(paragraph,"pPr") { return Err("math_invalid_property"); }
+            context.push(paragraph.clone());
+        }
         Ok(context)
     }
 }
@@ -180,6 +216,13 @@ fn properties_node(properties: Properties) -> XmlNode {
     children.sort_by_key(|n| ORDER.iter().position(|v| *v == n.local()).unwrap_or(ORDER.len()));
     let mut pr = named("rPr"); pr.content = children.into_iter().map(XmlPart::Element).collect(); pr
 }
+fn is_context(n: &XmlNode) -> bool {
+    word(n,"styles") || word(n,"pPr") || crate::math_theme::is_context(n)
+        || crate::math_font_theme::is_context(n)
+}
+fn remove_context(root: &mut XmlNode) {
+    root.content.retain(|part| !matches!(part,XmlPart::Element(n) if is_context(n)));
+}
 
 /// Effective render/export copy. The source tree and style IDs remain untouched.
 /// Word paragraph-mark rPr is deliberately not inherited by paragraph text.
@@ -187,8 +230,14 @@ pub(crate) fn materialize(root: &mut XmlNode) -> Result<()> {
     let theme=crate::math_theme::ThemeColors::from_context(root)?;
     let fonts=crate::math_font_theme::ThemeFonts::from_context(root)?;
     let contexts = root.children().filter(|n| word(n,"styles")).collect::<Vec<_>>();
-    if contexts.is_empty() && theme.is_empty() && fonts.is_empty() { return Ok(()); }
     if contexts.len()>1 || root.children().filter(|n|word(n,"pPr")).count()>1 { return Err("math_invalid_property"); }
+    if contexts.is_empty() && theme.is_empty() && fonts.is_empty() {
+        // Direct paragraph properties also arrive without a style catalogue.
+        // Their effective values have already been projected by the caller;
+        // never leak this context into a second native paragraph-properties node.
+        remove_context(root);
+        return Ok(());
+    }
     let styles = contexts.first().map(|n|WordMathStyles::from_node(n)).transpose()?.unwrap_or_default();
     let mut base = Properties::new();
     let defaults = styles.root.as_ref().and_then(|r|child(r,"docDefaults")).and_then(|r|child(r,"rPrDefault")).and_then(|r|child(r,"rPr"));
@@ -206,16 +255,27 @@ pub(crate) fn materialize(root: &mut XmlNode) -> Result<()> {
             if let Some(color)=effective.get_mut("color"){theme.resolve_run_color(color)?;}
             if let Some(rfonts)=effective.get_mut("rFonts"){fonts.resolve(rfonts)?;}
             if !effective.is_empty() {
+                let direct_position = n.content.iter().position(|p|matches!(p,XmlPart::Element(c) if word(c,"rPr")));
                 n.content.retain(|p|!matches!(p,XmlPart::Element(c) if word(c,"rPr")));
-                let at = n.content.iter().position(|p|matches!(p,XmlPart::Element(c) if c.namespace==MATH_NS && matches!(c.local(),"t"|"break"))).unwrap_or(n.content.len());
+                // Replacing direct formatting must not reorder adjacent author
+                // extensions, comments or local math properties.
+                let at = direct_position.unwrap_or_else(||n.content.iter().position(|p|matches!(p,XmlPart::Element(c) if c.namespace==MATH_NS && matches!(c.local(),"t"|"break"))).unwrap_or(n.content.len()));
                 n.content.insert(at,XmlPart::Element(properties_node(effective)));
+            } else if let Some(pr) = n.content.iter_mut().find_map(|part| match part {
+                XmlPart::Element(pr) if word(pr,"rPr") => Some(pr), _ => None,
+            }) {
+                // Even an empty character chain is still a source reference.
+                // Its catalogue is removed below, so a materialized copy must
+                // not retain that now-dangling rStyle. Keep the original empty
+                // container, comments and foreign children in this case.
+                pr.content.retain(|part|!matches!(part,XmlPart::Element(reference) if word(reference,"rStyle")));
             }
         }
-        for p in &mut n.content { if let XmlPart::Element(c)=p { if !word(c,"styles")&&!word(c,"pPr")&&!crate::math_theme::is_context(c)&&!crate::math_font_theme::is_context(c) { walk(c,base,styles,theme,fonts)?; } } }
+        for p in &mut n.content { if let XmlPart::Element(c)=p { if !is_context(c) { walk(c,base,styles,theme,fonts)?; } } }
         Ok(())
     }
     walk(root,&base,&styles,&theme,&fonts)?;
-    root.content.retain(|p|!matches!(p,XmlPart::Element(n) if word(n,"styles")||word(n,"pPr")||crate::math_theme::is_context(n)||crate::math_font_theme::is_context(n)));
+    remove_context(root);
     Ok(())
 }
 
@@ -226,6 +286,37 @@ mod tests {
         format!("<w:styles xmlns:w=\"{WORD_NS}\">{styles}</w:styles><w:pPr xmlns:w=\"{WORD_NS}\">{paragraph}</w:pPr><m:oMath xmlns:m=\"{MATH_NS}\" xmlns:w=\"{WORD_NS}\">{runs}</m:oMath>")
     }
     fn runs(root:&crate::omml::Node)->Vec<&crate::omml::Node> {root.children.iter().find(|n|n.name=="oMath").unwrap().children.iter().filter(|n|n.name=="r").collect()}
+    #[test]
+    fn math_word_materialization_removes_only_root_context_even_without_styles() {
+        let run = r#"<m:r><w:rPr><w:rFonts w:ascii="STIX Two Math"/><w:b w:val="0"/><w:color w:val="112233"/><w:sz w:val="24"/></w:rPr><f:rPr f:note="keep"/><m:t>x</m:t></m:r>"#;
+        for context in ["", "<w:styles/>", "<w:clrSchemeMapping/>"] {
+            let xml = format!(r#"{context}<w:pPr><w:ind w:left="720"/><w:jc w:val="right"/><w:rPr><w:sz w:val="90"/></w:rPr></w:pPr><f:pPr f:note="keep"/><f:styles/><m:mathPr><m:dispDef m:val="0"/></m:mathPr><m:oMath>{run}</m:oMath>"#);
+            let xml = format!(r#"<root xmlns:m="{MATH_NS}" xmlns:w="{WORD_NS}" xmlns:f="urn:foreign">{xml}</root>"#);
+            let parsed = crate::math_document::parse_xml(&xml).unwrap();
+            let original = parsed.children().next().unwrap().clone();
+            let before = original.xml();
+            let mut effective = original.clone();
+            materialize(&mut effective).unwrap();
+            assert_eq!(original.xml(), before);
+            assert!(!effective.children().any(is_context));
+            assert_eq!(effective.children().filter(|n| n.namespace == "urn:foreign").count(), 2);
+            assert!(effective.children().any(|n| n.namespace == MATH_NS && n.local() == "mathPr"));
+            let before_math = original.children().find(|n| n.namespace == MATH_NS && n.local() == "oMath").unwrap();
+            let after_math = effective.children().find(|n| n.namespace == MATH_NS && n.local() == "oMath").unwrap();
+            assert_eq!(crate::math_document::xml_semantics(before_math), crate::math_document::xml_semantics(after_math));
+            assert_eq!(crate::math_document::xml_semantics(&effective), crate::math_document::xml_semantics(&crate::math_document::parse_xml(&effective.xml()).unwrap().children().next().unwrap().clone()));
+        }
+    }
+    #[test]
+    fn math_word_materialization_rejects_duplicate_paragraph_context_before_fast_path() {
+        for context in ["", "<w:styles/>", "<w:clrSchemeMapping/>"] {
+            let xml = format!(r#"{context}<w:pPr/><v:pPr xmlns:v="{WORD_NS}"/><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath>"#);
+            let mut root = crate::math_document::parse_xml(&xml).unwrap();
+            let before = root.xml();
+            assert_eq!(materialize(&mut root), Err("math_invalid_property"));
+            assert_eq!(root.xml(), before);
+        }
+    }
     #[test]
     fn math_word_style_cascade_toggles_and_direct_formatting_are_distinct() {
         let xml=context(r#"<w:docDefaults><w:rPrDefault><w:rPr><w:b/><w:i w:val="0"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>

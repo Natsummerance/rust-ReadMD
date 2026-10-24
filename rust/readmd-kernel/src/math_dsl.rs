@@ -386,7 +386,7 @@ impl ParticleMatcher<'_> {
         }
     }
 }
-fn validate_tree(n: &XmlNode) -> Result<()> {
+pub(crate) fn validate_tree(n: &XmlNode) -> Result<()> {
     if n.namespace==crate::math_spacing::MATHML_NS{crate::math_spacing::Spacing::from_xml(n)?;}
     if n.namespace == MATH_NS {
         let def = definition(n.local()).ok_or("math_invalid_property")?;
@@ -1175,14 +1175,77 @@ pub fn version_diagnostics(source: &str) -> Vec<serde_json::Value> {
 
 /// Source-aware discovery excludes code examples, raw HTML and legacy LaTeX.
 /// Byte offsets stay internal; editor endpoints use the compiler's UTF-16 map.
-pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
-    use pulldown_cmark::{CodeBlockKind,Event,Options,Parser,Tag};
+pub fn markdown_ranges(source: &str) -> Result<Vec<MarkdownRange>> {
+    let mut work=DiscoveryWork::new(source.len())?;
+    discover_markdown(source,&mut work)
+}
+
+const MAX_DISCOVERY_EVENTS:usize=32768*16;
+const MAX_DISCOVERY_RANGES:usize=4000;
+struct DiscoveryWork{remaining:usize,spent:usize,next_cancel:usize}
+impl DiscoveryWork{
+    fn new(bytes:usize)->Result<Self>{
+        if crate::speech::cancelled(){return Err("cancelled");}
+        // The inline consumer's temporary syntax may add two bytes per owned
+        // span to a 32 MiB source. Keep that bounded projection admissible.
+        if bytes>64*1024*1024{return Err("math_budget");}
+        let remaining=bytes.checked_mul(16).and_then(|n|n.checked_add(1024*1024)).ok_or("math_budget")?;
+        Ok(Self{remaining,spent:0,next_cancel:0})
+    }
+    fn spend(&mut self,amount:usize)->Result<()>{
+        if self.spent>=self.next_cancel||amount>self.remaining{
+            if crate::speech::cancelled(){return Err("cancelled");}
+            self.next_cancel=self.spent.saturating_add(1024);
+        }
+        self.remaining=self.remaining.checked_sub(amount).ok_or("math_budget")?;
+        self.spent+=amount;Ok(())
+    }
+    fn find(&mut self,text:&str,pattern:&str,ignore_case:bool)->Result<Option<usize>>{
+        let text=text.as_bytes();let pattern=pattern.as_bytes();
+        if pattern.is_empty(){return Ok(Some(0));}
+        if text.len()<pattern.len(){self.spend(text.len())?;return Ok(None);}
+        for at in 0..=text.len()-pattern.len(){
+            let mut matched=true;
+            for offset in 0..pattern.len(){
+                self.spend(1)?;
+                if if ignore_case{!text[at+offset].eq_ignore_ascii_case(&pattern[offset])}else{text[at+offset]!=pattern[offset]}{matched=false;break;}
+            }
+            if matched{return Ok(Some(at));}
+        }
+        Ok(None)
+    }
+    fn push(&mut self,ranges:&mut Vec<MarkdownRange>,range:MarkdownRange)->Result<()>{
+        self.spend(1)?;if ranges.len()>=MAX_DISCOVERY_RANGES{return Err("math_budget");}ranges.push(range);Ok(())
+    }
+}
+
+fn opaque_html_tag(raw:&str)->Option<(&'static str,bool)>{
+    let raw=raw.strip_prefix('<')?;let(closing,raw)=raw.strip_prefix('/').map_or((false,raw),|raw|(true,raw));
+    for name in ["script","style","textarea","pre","code","annotation","annotation-xml"]{
+        if raw.get(..name.len()).is_some_and(|prefix|prefix.eq_ignore_ascii_case(name))
+            &&raw.as_bytes().get(name.len()).is_some_and(|byte|byte.is_ascii_whitespace()||*byte==b'>'||*byte==b'/'){return Some((name,closing));}
+    }None
+}
+
+fn discover_markdown(source:&str,work:&mut DiscoveryWork)->Result<Vec<MarkdownRange>>{
+    use pulldown_cmark::{CodeBlockKind,Event,Options,Parser,Tag,TagEnd};
     // Markdown owns container and indentation rules. The lightweight inline
     // scanner must not compile examples inside a nested quote/list code block,
     // nor a URL, frontmatter or raw HTML that happens to contain :math[...].
-    let mut protected=Vec::<std::ops::Range<usize>>::new();
+    let mut protected=Vec::<std::ops::Range<usize>>::new();let mut opaque=Vec::<(&'static str,usize)>::new();let mut blocked=0usize;let mut events=0usize;
     for (event,range) in Parser::new_ext(source,Options::ENABLE_YAML_STYLE_METADATA_BLOCKS | Options::ENABLE_FOOTNOTES).into_offset_iter(){
-        let exclude=match event{
+        work.spend(1)?;events+=1;if events>MAX_DISCOVERY_EVENTS{return Err("math_budget");}
+        if matches!(&event,Event::Start(Tag::CodeBlock(_)|Tag::MetadataBlock(_)|Tag::HtmlBlock|Tag::Link{..}|Tag::Image{..})){blocked+=1;}
+        if let Event::InlineHtml(raw)=&event{if blocked==0{
+            work.spend(raw.len())?;
+            if let Some((name,closing))=opaque_html_tag(raw){
+                if closing{
+                    let mut matching=None;for index in (0..opaque.len()).rev(){work.spend(1)?;if opaque[index].0==name{matching=Some(index);break;}}
+                    if let Some(index)=matching{protected.push(opaque[index].1..range.end);opaque.truncate(index);}
+                }else{opaque.push((name,range.start));}
+            }
+        }}
+        let exclude=match &event{
             Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) if info.trim()=="readmd-math v1"=>{
                 let prefix=source[..range.start].rsplit('\n').next().unwrap_or("");
                 prefix.len()>3||!prefix.bytes().all(|c|c==b' ')
@@ -1191,10 +1254,12 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
             _=>false,
         };
         if exclude{protected.push(range);}
+        if matches!(event,Event::End(TagEnd::CodeBlock|TagEnd::MetadataBlock(_)|TagEnd::HtmlBlock|TagEnd::Link|TagEnd::Image)){blocked=blocked.saturating_sub(1);}
     }
+    if let Some((_,from))=opaque.first(){protected.push(*from..source.len());}
     protected.sort_by_key(|r|r.start);
     let mut merged=Vec::<std::ops::Range<usize>>::new();
-    for range in protected{if let Some(last)=merged.last_mut().filter(|last|range.start<=last.end){last.end=last.end.max(range.end);}else{merged.push(range);}}
+    for range in protected{work.spend(1)?;if let Some(last)=merged.last_mut().filter(|last|range.start<=last.end){last.end=last.end.max(range.end);}else{merged.push(range);}}
     let mut protected_at=0;
     let mut ranges = Vec::new();
     let mut i = 0;
@@ -1206,6 +1271,7 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
         let mut offset = source.len() - first.len() + first.find('\n').unwrap() + 1;
         let mut has_field = false;
         for line in source[offset..].split_inclusive('\n') {
+            work.spend(line.len())?;
             if line.trim_end_matches(['\r', '\n']) == "---" {
                 if has_field {
                     i = offset + line.len();
@@ -1223,11 +1289,11 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
         }
     }
     while i < source.len() {
+        work.spend(1)?;
         while protected_at<merged.len()&&merged[protected_at].end<=i{protected_at+=1;}
         if let Some(range)=merged.get(protected_at).filter(|range|range.start<=i){i=range.end;continue;}
         if i == 0 || source.as_bytes()[i - 1] == b'\n' {
-            let end = source[i..]
-                .find('\n')
+            let end = work.find(&source[i..],"\n",false)?
                 .map(|n| i + n + 1)
                 .unwrap_or(source.len());
             let line = source[i..end].trim_end_matches(['\r', '\n']);
@@ -1240,13 +1306,13 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
                     if marker == old && count >= length && stripped[count..].trim().is_empty() {
                         if math {
                             let body_to = source[..i].trim_end_matches(['\r', '\n']).len();
-                            ranges.push(MarkdownRange {
+                            work.push(&mut ranges,MarkdownRange {
                                 from,
                                 to: end,
                                 body_from,
                                 body_to,
                                 display: true,
-                            });
+                            })?;
                         }
                         fence = None;
                     }
@@ -1272,52 +1338,27 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
             continue;
         }
         if source[i..].starts_with("<!--") {
-            i = source[i + 4..]
-                .find("-->")
+            i = work.find(&source[i + 4..],"-->",false)?
                 .map(|n| i + 4 + n + 3)
                 .unwrap_or(source.len());
             continue;
         }
         if source.as_bytes()[i] == b'`' {
             let count = source[i..].bytes().take_while(|b| *b == b'`').count();
+            work.spend(count)?;
             let marker = &source[i..i + count];
-            i = source[i + count..]
-                .find(marker)
+            i = work.find(&source[i + count..],marker,false)?
                 .map(|n| i + count + n + count)
                 .unwrap_or(i + count);
             continue;
         }
         if source.as_bytes()[i] == b'<' {
             let rest = &source[i..];
-            let mut skipped = false;
-            for name in [
-                "script",
-                "style",
-                "textarea",
-                "pre",
-                "code",
-                "annotation",
-                "annotation-xml",
-            ] {
-                let open = format!("<{name}");
-                if rest
-                    .get(..open.len())
-                    .is_some_and(|s| s.eq_ignore_ascii_case(&open))
-                {
-                    let close = format!("</{name}>");
-                    i += rest
-                        .to_ascii_lowercase()
-                        .find(&close)
-                        .map(|n| n + close.len())
-                        .unwrap_or(rest.len());
-                    skipped = true;
-                    break;
-                }
+            if let Some((name,false))=opaque_html_tag(rest){
+                let close=format!("</{name}>");
+                i+=work.find(rest,&close,true)?.map(|n|n+close.len()).unwrap_or(rest.len());continue;
             }
-            if skipped {
-                continue;
-            }
-            if let Some(end) = rest.find('>') {
+            if let Some(end) = work.find(rest,">",false)? {
                 i += end + 1;
                 continue;
             }
@@ -1331,6 +1372,7 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
             let mut escaped = false;
             while end < source.len() {
                 let c = source[end..].chars().next().unwrap();
+                work.spend(c.len_utf8())?;
                 if escaped {
                     escaped = false;
                 } else if c == '\\' {
@@ -1353,13 +1395,13 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
                 end += c.len_utf8();
             }
             if depth == 0 {
-                ranges.push(MarkdownRange {
+                work.push(&mut ranges,MarkdownRange {
                     from,
                     to: end + 1,
                     body_from,
                     body_to: end,
                     display: false,
-                });
+                })?;
                 i = end + 1;
                 continue;
             }
@@ -1373,20 +1415,17 @@ pub fn markdown_ranges(source: &str) -> Vec<MarkdownRange> {
         } else {
             source[i..].chars().next().unwrap().len_utf8()
         };
-        if ranges.len() >= 4000 {
-            break;
-        }
     }
     if let Some((_, _, from, body_from, true)) = fence {
-        ranges.push(MarkdownRange {
+        work.push(&mut ranges,MarkdownRange {
             from,
             to: source.len(),
             body_from,
             body_to: source.len(),
             display: true,
-        });
+        })?;
     }
-    ranges
+    Ok(ranges)
 }
 
 /// Export-only lowering reuses the existing OfficeMath AST adapters. The
@@ -1408,7 +1447,7 @@ pub fn expand_markdown(source: &str) -> Result<String> {
             }
         }
     }
-    let ranges = markdown_ranges(source);
+    let ranges = markdown_ranges(source)?;
     let mut out = source.to_string();
     let mut identities=BTreeSet::new();
     for r in ranges.into_iter().rev() {
@@ -1422,7 +1461,11 @@ pub fn expand_markdown(source: &str) -> Result<String> {
         let latex = crate::math_formats::tex(&root);
         let metadata = math_document::metadata(&latex, &xml, &id)?;
         let lowered = if r.display {
-            format!("$$\n{latex}\n$$\n\n{metadata}\n")
+            // A fenced block can interrupt a paragraph without a blank line;
+            // a $$ event cannot. Preserve that block boundary in this transient
+            // projection so surrounding prose cannot detach the native carrier
+            // and turn explicit Office defaults into ordinary LaTeX defaults.
+            format!("\n\n$$\n{latex}\n$$\n\n{metadata}\n\n")
         } else {
             format!("${latex}${metadata}")
         };
@@ -1440,6 +1483,10 @@ pub fn expand_markdown(source: &str) -> Result<String> {
 }
 
 #[cfg(test)]
+#[path="math_discovery_budget_tests.rs"]
+mod discovery_budget_tests;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn math_visual_input_hides_only_word_run_format_and_preserves_literal_names() {
@@ -1455,11 +1502,83 @@ mod tests {
     }
     use super::*;
     #[test]
+    fn display_fence_lowering_keeps_native_carriers_between_unseparated_prose() {
+        use crate::md_ast::{Block, inline_plain};
+        let body="row(office.mathPr(office.dispDef()), office.oMathPara(office.oMath(x)))";
+        let expected=compile(body,true).unwrap().0;
+        for eol in ["\n","\r\n"] { for fence in ["```","~~~"] {
+            for before in [false,true] { for after in [false,true] {
+                let prefix=if before {format!("BEFORE_😀{eol}")} else {String::new()};
+                let suffix=if after {"AFTER_𝛂"} else {""};
+                let source=format!("{prefix}{fence}readmd-math v1{eol}{body}{eol}{fence}{eol}{suffix}");
+                let original=source.clone();
+                let expanded=expand_markdown(&source).unwrap();
+                let document=crate::md_ast::parse(&source);
+                assert_eq!(document,crate::md_ast::parse(&expanded));
+                assert_eq!(document.blocks.len(),1+usize::from(before)+usize::from(after),"{source}");
+                let index=usize::from(before);
+                let Block::OfficeMath {latex,omml}=&document.blocks[index] else {panic!("Native carrier lost: {source}")};
+                assert_eq!(latex,"x");
+                assert_eq!(math_document::xml_semantics(&math_document::parse_xml(omml).unwrap()),math_document::xml_semantics(&expected));
+                if before {assert!(matches!(&document.blocks[0],Block::Paragraph(values) if inline_plain(values)=="BEFORE_😀"));}
+                if after {assert!(matches!(document.blocks.last(),Some(Block::Paragraph(values)) if inline_plain(values)=="AFTER_𝛂"));}
+                assert_eq!(source,original);
+            }}
+        }}
+    }
+    #[test]
+    fn adjacent_repeated_display_fences_retain_each_native_declaration() {
+        use crate::md_ast::Block;
+        let bodies=["row(office.mathPr(office.dispDef()), office.oMathPara(office.oMath(x)))",
+                    "row(office.mathPr(office.dispDef(val: \"0\")), office.oMathPara(office.oMath(x)))"];
+        for eol in ["\n","\r\n"] {
+            let source=bodies.iter().map(|body|format!("```readmd-math v1{eol}{body}{eol}```{eol}")).collect::<String>();
+            let document=crate::md_ast::parse(&source);
+            assert_eq!(document.blocks.len(),2);
+            for (block,body) in document.blocks.iter().zip(bodies) {
+                let Block::OfficeMath {latex,omml}=block else {panic!("Repeated equation lost native source")};
+                assert_eq!(latex,"x");
+                let expected=compile(body,true).unwrap().0;
+                assert_eq!(math_document::xml_semantics(&math_document::parse_xml(omml).unwrap()),math_document::xml_semantics(&expected));
+            }
+        }
+    }
+    #[test]
+    fn container_owned_display_fences_keep_quote_and_list_scope() {
+        use crate::md_ast::{Block, inline_plain};
+        let body="row(office.mathPr(office.dispDef()), office.oMathPara(office.oMath(x)))";
+        let expected=compile(body,true).unwrap().0;
+        for eol in ["\n","\r\n"] {
+            let quoted=format!("> BEFORE{eol}> ```readmd-math v1{eol}> {body}{eol}> ```{eol}> AFTER{eol}");
+            let listed=format!("- BEFORE{eol}- ```readmd-math v1{eol}  {body}{eol}  ```{eol}  AFTER{eol}");
+            for (source,list) in [(quoted,false),(listed,true)] {
+                assert!(markdown_ranges(&source).unwrap().is_empty());
+                assert_eq!(expand_markdown(&source).unwrap(),source);
+                let document=crate::md_ast::parse(&source);
+                assert_eq!(document.blocks.len(),1);
+                let blocks=if list {
+                    let Block::List {items,..}=&document.blocks[0] else {panic!("List scope lost")};
+                    assert_eq!(items.len(),2);
+                    assert!(matches!(&items[0].blocks[..],[Block::Paragraph(values)] if inline_plain(values)=="BEFORE"));
+                    items[1].blocks.as_slice()
+                } else {
+                    let Block::Quote(blocks)=&document.blocks[0] else {panic!("Quote scope lost")};
+                    assert!(matches!(&blocks[0],Block::Paragraph(values) if inline_plain(values)=="BEFORE"));
+                    &blocks[1..]
+                };
+                assert_eq!(blocks.len(),2);
+                let Block::OfficeMath {omml,..}=&blocks[0] else {panic!("Container equation lost")};
+                assert_eq!(math_document::xml_semantics(&math_document::parse_xml(omml).unwrap()),math_document::xml_semantics(&expected));
+                assert!(matches!(&blocks[1],Block::Paragraph(values) if inline_plain(values)=="AFTER"));
+            }
+        }
+    }
+    #[test]
     fn nested_examples_and_links_never_compile_or_mutate_their_source() {
         let examples="😀\n\n> ```markdown\n> :math[frac(]\n> ```\n\n- ```text\n  :math[matrix(]\n  ```\n\nEnd of list.\n\n    :math[root(]\n\n`example :math[frac(]`\n\n[example](<https://example.test/:math[frac(]>)\n\n<div>\n:math[frac(]\n</div>\n\n";
-        assert!(markdown_ranges(examples).is_empty(),"{:?}",markdown_ranges(examples));assert_eq!(expand_markdown(examples).unwrap(),examples);
+        assert!(markdown_ranges(examples).unwrap().is_empty(),"{:?}",markdown_ranges(examples));assert_eq!(expand_markdown(examples).unwrap(),examples);
         let actual=format!("{examples}:math[a / b]\n\n> ```readmd-math v1\n> frac(a, b)\n> ```\n");
-        assert_eq!(markdown_ranges(&actual).len(),1);
+        assert_eq!(markdown_ranges(&actual).unwrap().len(),1);
         let expanded=expand_markdown(&actual).unwrap();assert!(expanded.starts_with(examples));assert!(expanded.contains("readmd:math:v1:"));
         let ast=crate::md_ast::parse(&expanded);assert!(matches!(ast.blocks.last(),Some(crate::md_ast::Block::Quote(blocks)) if matches!(blocks.first(),Some(crate::md_ast::Block::OfficeMath{..}))));
     }
@@ -1681,7 +1800,7 @@ mod tests {
         .is_ok());
         assert!(compile("office.r(office.rPr(office.nor()), office.t(\"x\"))", false).is_ok()); // omitted switch remains distinct from false
         let source = "---\ntitle: ':math[frac(a, b)]'\n---\n\n正文 :math[α]\n";
-        assert_eq!(markdown_ranges(source).len(), 1);
+        assert_eq!(markdown_ranges(source).unwrap().len(), 1);
         assert!(expand_markdown(source)
             .unwrap()
             .contains("title: ':math[frac(a, b)]'"));
@@ -1788,7 +1907,7 @@ mod tests {
     #[test]
     fn markdown_lowering_ignores_examples_and_preserves_standard_office_properties() {
         let source = "正文 :math[x^2 + α]\n\n```readmd-math v1\nfrac(a, b, style: skewed)\n```\n\n```markdown\n:math[a / b]\n```\n\n`:math[c / d]`\n";
-        assert_eq!(markdown_ranges(source).len(), 2);
+        assert_eq!(markdown_ranges(source).unwrap().len(), 2);
         let lowered = expand_markdown(source).unwrap();
         assert!(lowered.contains("```markdown\n:math[a / b]"));
         let document = crate::md_ast::parse(source);

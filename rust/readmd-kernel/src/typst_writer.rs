@@ -1,20 +1,34 @@
 //! Markdown publication projection into Typst. Author text is always quoted,
 //! never evaluated as Typst code. Only explicitly referenced images are staged.
 use crate::md_ast::{Block, Document, Inline};
+use crate::publication_inline_text::{AuthorTextStyle, ResolvedTextStyle};
 use serde_json::Value;
 use std::{collections::{HashMap,HashSet},path::Path};
 #[cfg(test)]use std::fs;
 
 #[path="typst_writer_paragraphs.rs"]
 mod paragraphs;
+#[path="typst_writer_baseline.rs"]
+mod baseline;
 pub(crate) use paragraphs::GeometryContext;
 pub struct Source { pub text:String, pub warnings:Vec<String>, pub requires_core_text_fallback:bool,
-    pub(crate) geometry:Option<GeometryContext> }
+    pub(crate) geometry:Option<GeometryContext>,
+    pub(crate) baseline_links:Vec<crate::publication_pagination::BaselineLinkRequest>,
+    pub(crate) baseline_protected:Vec<crate::publication_pagination::BaselineProtectedRequest> }
 pub(crate) fn string(value:&str)->String{
     let mut out=String::from("\"");for c in value.chars(){match c{
         '\\'=>out.push_str("\\\\"),'"'=>out.push_str("\\\""),'\n'=>out.push_str("\\n"),'\r'=>out.push_str("\\r"),'\t'=>out.push_str("\\t"),
         c if c.is_control()=>out.push_str(&format!("\\u{{{:x}}}",c as u32)),c=>out.push(c),
     }}out.push('"');out
+}
+/// Word's Latin letter formats repeat one letter (27=AA, 28=BB, 53=AAA).
+/// Use the same quotient/remainder rule for native heading, page and note
+/// counters; Typst's built-in a/A pattern alone uses a different sequence.
+fn number_format(format:&str)->String{
+    let pattern=string(crate::publication_layout::typst_number(format));
+    if matches!(format,"lowerLetter"|"upperLetter"){
+        format!("(readmd-n => numbering({pattern},calc.rem(readmd-n - 1,26) + 1) * (calc.quo(readmd-n - 1,26) + 1))")
+    }else{pattern}
 }
 fn n(v:&Value,default:f64,min:f64,max:f64)->f64{v.as_f64().filter(|n|n.is_finite()).unwrap_or(default).clamp(min,max)}
 fn color(v:&Value,default:&str)->String{let s=v.as_str().unwrap_or(default);if s.len()==7&&s.starts_with('#')&&s[1..].bytes().all(|b|b.is_ascii_hexdigit()){format!("rgb({})",string(s))}else{format!("rgb({})",string(default))}}
@@ -60,6 +74,46 @@ fn font_expression(name:&str,latin_variant:bool,fallback:bool,warnings:&mut Vec<
 fn align(v:&Value)->&str{match v.as_str(){Some("center")=>"center",Some("right")=>"right",_=>"left"}}
 fn text(value:&str)->String{format!("#text({})",string(value))}
 fn anchor(value:&str)->String{let mut id=String::from("readmd-");for byte in value.bytes(){id.push_str(&format!("{byte:02x}"));}id}
+// Public anchors contain only hex after `readmd-`; an internal kind is outside
+// that alphabet, so no author-supplied ID can shadow a note or source section.
+fn private_anchor(kind:&str,value:&str)->String{format!("readmd-internal-{kind}-{}",anchor(value).trim_start_matches("readmd-"))}
+
+/// A counter update in the actual page header runs on every physical page,
+/// including automatic overflow. It is independent of heading/chapter breaks.
+fn note_page_header(style:&Value)->String{
+    let layout=crate::publication_layout::Layout::from_style(style);
+    if layout.note_restart==crate::publication_layout::NoteRestart::Page&&!crate::publication_layout::notes_at_end(style){
+        format!("context {{ counter(footnote).update({}) }}",layout.note_start-1)
+    }else{"none".into()}
+}
+
+/// Feed source-owned starts/restarts into Typst's real heading counter. The
+/// numbering callback formats its native counter arguments, never author runs.
+fn heading_numbering(level:u8,numbering:&crate::cross_references::HeadingNumbering)->Result<(String,String),String>{
+    let depth=level as usize;
+    if !(1..=6).contains(&depth)||numbering.numbers.len()!=depth||numbering.rules.len()<depth
+        ||numbering.numbers.iter().any(|number|*number>crate::cross_references::MAX_NUMBER)
+        ||![" ","\t",""].contains(&numbering.suffix.as_str()) {
+        return Err("publication_numbering_invalid".into());
+    }
+    // Typst counters cannot be negative. A native zero-start heading steps
+    // from zero to one; its own formatter subtracts that one at the location.
+    // Every subsequent heading receives the resolved source counter state.
+    let mut before=numbering.numbers.clone();before[depth-1]=before[depth-1].saturating_sub(1);
+    let update=format!("#counter(heading).update(({},))\n",before.iter().map(usize::to_string).collect::<Vec<_>>().join(","));
+    let mut body=String::new();
+    for part in crate::cross_references::heading_text_parts(&numbering.rules[depth-1].text,depth){
+        let index=match part{crate::cross_references::HeadingTextPart::Literal(literal)=>{body.push_str(&text(literal));continue;},crate::cross_references::HeadingTextPart::Counter(index)=>index};
+        let selected=if numbering.rules[depth-1].is_legal{"decimal"}else{numbering.rules[index].format.as_str()};
+        if !crate::publication_layout::NUMBER_FORMATS.contains(&selected){return Err("publication_numbering_invalid".into());}
+        if numbering.numbers[index]==0{
+            let value=if index+1==depth{format!("readmd-levels.pos().at({index}) - 1")}else{format!("readmd-levels.pos().at({index})")};
+            body.push_str(&format!("#{{ let readmd-value = {value}; if readmd-value == 0 {{ text({}) }} else {{ numbering({},readmd-value) }} }}",string(if selected=="decimal"{"0"}else{""}),number_format(selected)));
+        }else{body.push_str(&format!("#numbering({},readmd-levels.pos().at({index}))",number_format(selected)));}
+    }
+    body.push_str(match numbering.suffix.as_str(){" "=>"#text(\" \")","\t"=>"#h(2em)",_=>""});
+    Ok((update,format!("(..readmd-levels) => [{body}]")))
+}
 
 /// Section running matter is selected from actual physical page locations.
 /// A continuous boundary does not replace the header of an already started
@@ -77,7 +131,7 @@ fn section_running(style:&Value,index:usize)->String{
         if layout.hide_first{format!("#if first [{}] else [{regular}]",text(style[part]["firstText"].as_str().unwrap_or("")))}else{regular}
     };
     let number=if style["footer"]["pageNumbers"].as_bool().unwrap_or(true){
-        let current=format!("#counter(page).display({})",string(crate::publication_layout::typst_number(&layout.page_format)));
+        let current=format!("#counter(page).display({})",number_format(&layout.page_format));
         let regular=if layout.page_total{format!("{current} / #str(query(<readmd-publication-document-end>).last().location().page())")}else{current};
         if layout.hide_first{format!("#if not first [{regular}]")}else{regular}
     }else{String::new()};
@@ -90,15 +144,22 @@ fn section_page(style:&Value)->String{
     let inside=n(&style["page"]["marginLeft"],18.,0.,60.)+layout.gutter;
     let outside=n(&style["page"]["marginRight"],18.,0.,60.);
     let margin=if layout.mirror{format!("top:{mt}mm,bottom:{mb}mm,inside:{inside}mm,outside:{outside}mm")}else{format!("top:{mt}mm,bottom:{mb}mm,left:{inside}mm,right:{outside}mm")};
-    format!("#set page(width:{width}mm,height:{height}mm,binding:left,margin:({margin}),header:none,footer:none,foreground:context {{ let current=here().page(); let boundaries=query(<readmd-publication-section-boundary>); let padding=query(<readmd-publication-parity-before>).any(mark => {{ let next=boundaries.find(start => start.value.index == mark.value); next != none and current > mark.location().page() and current < next.location().page() }}); let starts=boundaries.filter(mark => mark.location().page() < current or (mark.location().page() == current and mark.value.starts-page)); if not padding and starts.len() > 0 {{readmd-section-running.at(starts.last().value.index)}} }})\n")
+    let note_header=note_page_header(style);
+    format!("#set page(width:{width}mm,height:{height}mm,binding:left,margin:({margin}),header:{note_header},footer:none,foreground:context {{ let current=here().page(); let boundaries=query(<readmd-publication-section-boundary>); let padding=query(<readmd-publication-parity-before>).any(mark => {{ let next=boundaries.find(start => start.value.index == mark.value); next != none and current > mark.location().page() and current < next.location().page() }}); let starts=boundaries.filter(mark => mark.location().page() < current or (mark.location().page() == current and mark.value.starts-page)); if not padding and starts.len() > 0 {{readmd-section-running.at(starts.last().value.index)}} }})\n")
 }
 
 struct Writer<'a>{
     style:&'a Value,base:&'a str,dir:&'a Path,notes:HashMap<String,Vec<Block>>,seen_notes:HashSet<String>,
     end_notes:Vec<String>,end_ids:HashMap<String,usize>,end_refs:HashMap<String,Vec<String>>,
+    note_numbers:HashMap<String,usize>,section_ids:HashSet<String>,
     note_depth:usize,images:HashMap<String,(String,Option<f64>)>,resources:usize,bytes:usize,warnings:Vec<String>,local:Option<crate::publication_blocks::Resolved>,mapping_nonce:Option<&'a str>,
     ordinary_body:bool,local_line:Option<crate::publication_typography::LineSpacing>,local_id:Option<String>,
     paragraph_index:usize,inline_object_bounds:Option<(f64,f64)>,geometry:Option<GeometryContext>,front_blocks:HashSet<usize>,
+    author:Option<ResolvedTextStyle>,author_base:ResolvedTextStyle,local_pair:Option<ResolvedTextStyle>,
+    baseline:Option<crate::publication_typography::baseline::BaselineShiftPt>,
+    local_baseline:Option<crate::publication_typography::baseline::BaselineShiftPt>,
+    source_id:Option<String>,baseline_links:Vec<crate::publication_pagination::BaselineLinkRequest>,
+    baseline_protected:Vec<crate::publication_pagination::BaselineProtectedRequest>,
 }
 struct NativeBlock {
     source: String,
@@ -110,7 +171,7 @@ fn safe_column_inlines(values:&[Inline])->bool{
     values.iter().all(|value|match value{
         Inline::FootnoteRef(_)=>false,
         Inline::Strong(children)|Inline::Emph(children)|Inline::Strike(children)
-        |Inline::Styled{children,..}|Inline::Citation{children,..}
+        |Inline::Styled{children,..}|Inline::AuthorStyled{children,..}|Inline::Citation{children,..}
         |Inline::Link{children,..}=>safe_column_inlines(children),
         // Inline display containers can introduce nested block/grid flow.
         // They are outside this helper's calibrated positive-flow subset.
@@ -164,6 +225,30 @@ fn collect_notes(blocks:&[Block],notes:&mut HashMap<String,Vec<Block>>){for bloc
     Block::Quote(blocks)=>collect_notes(blocks,notes),Block::List{items,..}=>for item in items{collect_notes(&item.blocks,notes)},_=>(),
 }}}
 impl Writer<'_>{
+    fn text_pair(&self,block:&Block)->ResolvedTextStyle{
+        if let Some(pair)=self.local_pair{return pair;}
+        let body=n(&self.style["typography"]["size"],11.,6.,72.);
+        if self.note_depth>0{let size=crate::publication_layout::Layout::from_style(self.style).note_size;return ResolvedTextStyle::base(size,self.style["footnotes"]["sizeCs"].as_f64().unwrap_or(size));}
+        let size=match block.unstyled(){Block::Heading{level,..}=>self.style["headings"][format!("h{level}")]["size"].as_f64().unwrap_or(body),Block::Table{..}=>self.style["table"]["cellSize"].as_f64().unwrap_or(10.),Block::Caption{..}=>10.,_=>body};ResolvedTextStyle::base(size,size)
+    }
+    fn author_text(&self,value:&str,code:bool)->Result<String,String>{
+        let Some(style)=self.author else{return Ok(if code{format!("#raw({})",string(value))}else{text(value)});};
+        if !value.is_empty(){self.author_direction()?;}
+        if [style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.){return Err(crate::publication_inline_text::UNSUPPORTED.into());}
+        let mut out=String::new();for segment in crate::publication_text_runs::split(value,&style).map_err(str::to_string)?{
+            let body=value.get(segment.from..segment.to).ok_or(crate::publication_inline_text::INVALID)?;
+            // Raw's native 0.8em default remains for inherited/ordinary code.
+            // An author size (including an explicit block-base reset) is an
+            // absolute metric and must also override that inner raw default.
+            let body=if code&&segment.origin.is_explicit(){format!("#{{ show raw: set text(size:{}pt); raw({}) }}",segment.size,string(body))}else if code{format!("#raw({})",string(body))}else{text(body)};
+            // Natural script direction follows the engine's Unicode bidi
+            // algorithm. Word's explicit rtl run property is not an embedding.
+            out.push_str(&format!("#text(size:{}pt)[{body}]",segment.size));
+        }Ok(out)
+    }
+    fn author_direction(&self)->Result<(),String>{if self.author.is_some_and(|style|style.rtl==Some(true)){Err(crate::publication_inline_text::UNSUPPORTED.into())}else{Ok(())}}
+    fn author_atom(&self,body:String)->Result<String,String>{if !body.is_empty(){self.author_direction()?;}Ok(body)}
+    fn author_inlines(&mut self,style:&AuthorTextStyle,children:&[Inline])->Result<String,String>{let previous=self.author;self.author=Some(style.resolve(&previous.unwrap_or(self.author_base),&self.author_base));let result=if self.author.is_some_and(|style|[style.size,style.size_cs].into_iter().any(|size|!size.is_finite()||size<=0.||size>4096.)){Err(crate::publication_inline_text::UNSUPPORTED.into())}else{self.inlines(children)};self.author=previous;result}
     fn rich_measure(&mut self,nodes:&[crate::publication_rich::RichLayoutNode])->Result<String,String>{
         use crate::publication_rich::RichLayoutNode as L;
         let mut out=String::new();for node in nodes{match node{
@@ -231,6 +316,7 @@ impl Writer<'_>{
     fn math(&mut self,source:&str,xml:Option<&str>,display:bool)->Result<String,String>{
         let size=self.local.as_ref().map_or_else(||if self.note_depth>0{crate::publication_layout::Layout::from_style(self.style).note_size}else{n(&self.style["typography"]["size"],11.,6.,72.)},|s|s.size);
         let available=crate::publication_layout::Layout::from_style(self.style).column_width(self.style)*72.0/25.4-self.local.as_ref().map_or(0.0,|s|(s.left+s.right)*72.0/25.4);
+        if let Some(xml)=xml{crate::math_word_projection::validate_formula(xml,display,display.then_some(available),"typst")?;}
         let formula=crate::math_layout::layout_source_constrained(source,xml,display,size,display.then_some(available)).ok_or("typst_formula_failed")?;
         if !display {
             if let Some((upper,lower))=&mut self.inline_object_bounds {
@@ -277,39 +363,47 @@ impl Writer<'_>{
     }
     fn inlines(&mut self,values:&[Inline])->Result<String,String>{
         let mut out=String::new();for value in values{out.push_str(&match value{
-            Inline::Text(s)=>text(s),Inline::Code(s)=>format!("#raw({})",string(s)),
+            Inline::Text(s)=>self.ordinary_text(s)?,Inline::Code(s)=>{let body=self.author_text(s,true)?;self.protected_baseline_object(body)?},
             Inline::Strong(values)=>format!("#strong[{}]",self.inlines(values)?),Inline::Emph(values)=>format!("#emph[{}]",self.inlines(values)?),Inline::Strike(values)=>format!("#strike[{}]",self.inlines(values)?),
             Inline::Styled { format, children } => {
                 let body = self.inlines(children)?;
                 self.styled_inline(format, body)?
             },
+            Inline::AuthorStyled{style,children}=>self.author_inlines(style,children)?,
             Inline::Display { display, children } => {
                 let body=self.inlines(children)?;
                 match display { crate::publication_rich::RichDisplay::Block=>format!("#block[{body}]"),crate::publication_rich::RichDisplay::Indent=>format!("#pad(left:4em)[{body}]"),crate::publication_rich::RichDisplay::LeftMargin=>format!("#box[{body}]"),crate::publication_rich::RichDisplay::RightInline=>body }
             },
-            Inline::Citation { children, .. } => self.inlines(children)?,
-            Inline::SoftBreak=>" ".into(),Inline::HardBreak=>"#linebreak()".into(),
+            Inline::Citation { children, .. } => self.with_baseline(None,|writer|writer.inlines(children))?,
+            Inline::SoftBreak=>self.author_atom(" ".into())?,Inline::HardBreak=>self.author_atom("#linebreak()".into())?,
             Inline::Link{href,children,..}=>{
-                let destination=if let Some(id)=href.strip_prefix('#'){format!("label({})",string(&anchor(id)))}else{string(href)};
+                let destination=if let Some(id)=href.strip_prefix('#'){
+                    let target=id.strip_prefix("readmd-section-").filter(|id|self.section_ids.contains(*id)).map(|id|private_anchor("section",id)).unwrap_or_else(||anchor(id));
+                    format!("label({})",string(&target))
+                }else{string(href)};
                 format!("#link({destination})[{}]",self.inlines(children)?)
             },
-            Inline::Image{src,alt,..}=>self.image(src,alt)?,Inline::Math(s)=>self.math(s,None,false)?,Inline::OfficeMath{latex,omml}=>self.math(latex,Some(omml),false)?,
+            Inline::Image{src,alt,..}=>{let body=self.image(src,alt)?;self.author_atom(body)?},
+            Inline::Math(s)=>{let body=self.math(s,None,false)?;let body=self.author_atom(body)?;self.protected_baseline_object(body)?},
+            Inline::OfficeMath{latex,omml}=>{let body=self.math(latex,Some(omml),false)?;let body=self.author_atom(body)?;self.protected_baseline_object(body)?},
             Inline::FootnoteRef(label)=>{
-                let id=anchor(&format!("note:{label}"));
+                self.author_direction()?;
+                let id=private_anchor("note",label);
                         if self.note_depth>0{return Err("typst_invalid_content".into());}
                 if crate::publication_layout::notes_at_end(self.style){
                     if !self.notes.contains_key(label){return Err("typst_invalid_content".into());}
                     let index=if let Some(index)=self.end_ids.get(label){*index}else{self.end_notes.push(label.clone());let index=self.end_notes.len();self.end_ids.insert(label.clone(),index);index};
-                    let refs=self.end_refs.entry(label.clone()).or_default();let reference=anchor(&format!("note-ref:{label}:{}",refs.len()+1));refs.push(reference.clone());
+                    let refs=self.end_refs.entry(label.clone()).or_default();let reference=private_anchor("note-ref",&format!("{label}:{}",refs.len()+1));refs.push(reference.clone());
                     let layout=crate::publication_layout::Layout::from_style(self.style);
-                    let index=crate::publication_layout::note_index(self.style,index);
-                    format!("#link(label({}))[#super[#numbering({},{index})]]#label({})",string(&id),string(crate::publication_layout::typst_number(&layout.note_format)),string(&reference))
+                    let index=self.note_numbers.get(label).copied().unwrap_or_else(||crate::publication_layout::note_index(self.style,index));
+                    format!("#link(label({}))[#super[#numbering({},{index})]]#label({})",string(&id),number_format(&layout.note_format),string(&reference))
                 }else if self.seen_notes.contains(label){format!("#footnote(label({}))",string(&id))}else{
-                    let blocks=self.notes.get(label).cloned().ok_or("typst_invalid_content")?;self.seen_notes.insert(label.clone());self.note_depth+=1;let previous=self.local.take();
+                    let blocks=self.notes.get(label).cloned().ok_or("typst_invalid_content")?;self.seen_notes.insert(label.clone());self.note_depth+=1;let previous=self.local.take();let old_pair=self.local_pair.take();let old_author=self.author.take();let old_base=self.author_base;self.author_base=self.text_pair(&Block::Paragraph(Vec::new()));
                     // The first paragraph follows the note marker inline;
                     // wrapping it in par() would orphan the marker on a line.
-                    let body=if let Some((Block::Paragraph(values),rest))=blocks.split_first(){format!("{}\n\n{}",self.inlines(values)?,self.blocks(rest)?)}else{self.blocks(&blocks)?};
-                    self.local=previous;self.note_depth-=1;format!("#footnote[{body}]#label({})",string(&id))
+                    let keep=crate::publication_layout::Layout::from_style(self.style).note_keep_paragraphs;
+                    let body=if !keep{if let Some((Block::Paragraph(values),rest))=blocks.split_first(){format!("{}\n\n{}",self.inlines(values)?,self.blocks(rest)?)}else{self.blocks(&blocks)?}}else{self.blocks(&blocks)?};
+                    self.local=previous;self.local_pair=old_pair;self.author=old_author;self.author_base=old_base;self.note_depth-=1;format!("#footnote[{body}]#label({})",string(&id))
                 }
             },
             Inline::Html(s) if s.trim().is_empty()||s.trim().starts_with("<!--")=>String::new(),
@@ -320,12 +414,13 @@ impl Writer<'_>{
         if self.end_notes.is_empty(){return Ok(String::new());}
         let layout=crate::publication_layout::Layout::from_style(self.style);
         let mut out=format!("\n#pagebreak(weak:true)\n#heading(level:1,numbering:none,outlined:false)[{}]\n#block[\n#set text(size:{}pt,top-edge:\"ascender\",bottom-edge:\"descender\")\n#set par(first-line-indent:0pt,leading:{}pt,spacing:0pt)\n",text(&crate::publication_layout::note_title(self.style)),layout.note_size,(layout.note_line_height-1.)*layout.note_size);
+        if layout.note_separator&&self.style["footnotes"].get("separator").is_some(){out.push_str("#line(length:30%,stroke:0.5pt)\n");}
         for (at,label)in self.end_notes.clone().into_iter().enumerate(){
-            let blocks=self.notes.get(&label).cloned().ok_or("typst_invalid_content")?;self.note_depth+=1;let previous=self.local.take();
-            let body=self.blocks(&blocks);self.local=previous;self.note_depth-=1;let body=body?;
-            let refs=&self.end_refs[&label];let index=crate::publication_layout::note_index(self.style,at+1);
+            let blocks=self.notes.get(&label).cloned().ok_or("typst_invalid_content")?;self.note_depth+=1;let previous=self.local.take();let old_pair=self.local_pair.take();
+            let body=self.blocks(&blocks);self.local=previous;self.local_pair=old_pair;self.note_depth-=1;let body=body?;
+            let refs=&self.end_refs[&label];let index=self.note_numbers.get(&label).copied().unwrap_or_else(||crate::publication_layout::note_index(self.style,at+1));
             let backs=refs.iter().enumerate().skip(1).map(|(n,id)|format!("#h(0.5em)#link(label({}))[{}]",string(id),text(&format!("↩{}",n+1)))).collect::<String>();
-            out.push_str(&format!("#block(width:100%,above:6pt,breakable:true)[#grid(columns:(auto,1fr),column-gutter:0.7em,align:(right,top),[#link(label({}))[#numbering({},{index})]],[{body}\n{backs}])]#label({})\n",string(&refs[0]),string(crate::publication_layout::typst_number(&layout.note_format)),string(&anchor(&format!("note:{label}")))));
+            out.push_str(&format!("#block(width:100%,above:6pt,breakable:true)[#grid(columns:(auto,1fr),column-gutter:0.7em,align:(right,top),[#link(label({}))[#numbering({},{index})]],[{body}\n{backs}])]#label({})\n",string(&refs[0]),number_format(&layout.note_format),string(&private_anchor("note",&label))));
         }
         out.push_str("]\n");Ok(out)
     }
@@ -334,42 +429,61 @@ impl Writer<'_>{
     }
     fn rendered_blocks(&mut self,blocks:&[Block])->Result<Vec<NativeBlock>,String>{
         let mut out=Vec::new();let mut bytes=0usize;let mut target=None;for block in blocks{if crate::speech::cancelled(){return Err("cancelled".into());}
+            let previous_author=self.author.take();let previous_base=self.author_base;self.author_base=self.text_pair(block);
+            if matches!(block.unstyled(),Block::Caption{..}){self.author=previous_author;}
             let original_body=self.ordinary_body;
             if self.front_blocks.contains(&(block as *const Block as usize)){self.ordinary_body=false;}
-            if let (Some(nonce),Block::Html(comment))=(self.mapping_nonce,block){if let Some(id)=crate::publication_pagination::marker_id(comment,nonce){target=Some(id.to_string());continue;}}
+            if let (Some(nonce),Block::Html(comment))=(self.mapping_nonce,block){if let Some(id)=crate::publication_pagination::marker_id(comment,nonce){target=Some(id.to_string());self.author=previous_author;self.author_base=previous_base;self.ordinary_body=original_body;continue;}}
             let inline_target=match block {
                 Block::Paragraph(values)|Block::Heading{inlines:values,..}=>self.mapping_nonce.and_then(|nonce|values.iter().find_map(|value|if let Inline::Html(s)=value{crate::publication_pagination::marker_id(s,nonce).map(str::to_string)}else{None})),
                 _=>None,
             };
-            let mapped=target.take().or(inline_target);let rendered=match block{
+            let mapped=target.take().or(inline_target);
+            let previous_source_id=self.source_id.clone();
+            if let Some(id)=mapped.as_ref(){self.source_id=Some(id.clone());}
+            let rendered=match block{
                 Block::Styled{attributes,block}=>{
+                    let old_pair=self.local_pair;let base=self.text_pair(block);self.local_pair=Some(if attributes.pointer("/text/size").is_some(){let size=attributes["text"]["size"].as_f64().unwrap_or(base.size);ResolvedTextStyle::base(size,size)}else{base});self.author_base=self.local_pair.unwrap();
+                    if matches!(block.unstyled(),Block::Caption{..}){
+                        let author=crate::publication_blocks::author_style(attributes).map_err(str::to_string)?;
+                        // A title's base reset returns to the effective
+                        // caption pair rather than the body or raw default.
+                        if !author.is_empty(){let caption=author.resolve(&self.author_base,&self.author_base);self.local_pair=Some(caption);self.author_base=caption;self.author=Some(caption);}
+                    }
                     let previous_line=self.local_line;let previous_id=self.local_id.clone();
                     let ordinary=self.ordinary_body&&self.note_depth==0&&matches!(block.unstyled(),Block::Paragraph(_));
                     let inherited=previous_line.or(if ordinary{crate::publication_typography::global_line_spacing(self.style)?}else{None});
                     self.local_line=crate::publication_typography::resolve_line_spacing(inherited,&attributes["paragraph"],ordinary)?;
+                    let next_baseline=crate::publication_typography::baseline::resolve(
+                        self.local_baseline.or(if ordinary{crate::publication_typography::baseline::global(self.style)?}else{None}),
+                        &attributes["text"],ordinary)?;
+                    let previous_baseline=std::mem::replace(&mut self.local_baseline,next_baseline);
                     if let Some(id)=attributes["id"].as_str(){self.local_id=Some(id.into());}
                     let s=crate::publication_blocks::Resolved::for_context(self.style,attributes,block,self.note_depth>0);
                     let width=crate::publication_layout::Layout::from_style(self.style).column_width(self.style);if width-s.left-s.right<20.{return Err("publication_layout_geometry".into());}
                     let previous=self.local.replace(s.clone());
                     let body=match block.as_ref(){
-                        Block::Caption{label,inlines}=>Ok(format!("{} {}#label({})\n",text(&label.text()),self.inlines(inlines)?,string(&anchor(&label.id)))),
+                        Block::Caption{label,inlines}=>Ok(format!("{} {}#label({})\n",self.author_text(&label.text(),false)?,self.inlines(inlines)?,string(&anchor(&label.id)))),
                         _=>self.blocks(std::slice::from_ref(block.as_ref())),
-                    };self.local=previous;self.local_line=previous_line;self.local_id=previous_id;let body=body?;
+                    };self.local=previous;self.local_pair=old_pair;self.local_line=previous_line;self.local_id=previous_id;self.local_baseline=previous_baseline;let body=body?;
                     format!("{}#block(width:100%,above:{}pt,below:{}pt,sticky:{},breakable:{})[#set text(font:{},size:{}pt,fill:{},weight:{},style:{},costs:(widow:{}%,orphan:{}%))\n#set par(leading:{}pt,spacing:0pt,first-line-indent:{}mm,hanging-indent:{}mm,justify:{})\n{}#pad(left:{}mm,right:{}mm)[#block(width:100%)[#set align({})\n{}]]]\n",
-                        if s.page_break{"#pagebreak(weak:true)\n"}else{""},s.before,s.after,s.keep_next,!s.keep_lines,font_expression(&s.font,s.italic,crate::publication_fonts::needs_core_text_fallback(&body),&mut self.warnings),s.size,color(&serde_json::json!(s.color),"#262626"),string(if s.bold{"bold"}else{"regular"}),string(if s.italic{"italic"}else{"normal"}),if s.widow{100}else{0},if s.widow{100}else{0},(s.line_height-1.)*s.size,s.first,s.hanging,s.align=="justify",if matches!(block.as_ref(),Block::Heading{..}){"#show heading: it => it.body\n"}else{""},s.left,s.right,if s.align=="justify"{"left"}else{&s.align},body)
+                        if s.page_break{"#pagebreak(weak:true)\n"}else{""},s.before,s.after,s.keep_next,!s.keep_lines,font_expression(&s.font,s.italic,crate::publication_fonts::needs_core_text_fallback(&body),&mut self.warnings),s.size,color(&serde_json::json!(s.color),"#262626"),string(if s.bold{"bold"}else{"regular"}),string(if s.italic{"italic"}else{"normal"}),if s.widow{100}else{0},if s.widow{100}else{0},(s.line_height-1.)*s.size,s.first,s.hanging,s.align=="justify",match block.as_ref(){Block::Heading{numbering:Some(_),..}=>"#show heading: it => context { counter(heading).display(it.numbering) + it.body }\n",Block::Heading{..}=>"#show heading: it => it.body\n",_=>""},s.left,s.right,if s.align=="justify"{"left"}else{&s.align},body)
                 },
-                Block::Heading{level,id,inlines}=>format!("#heading(level:{level})[{}]#label({})\n",self.inlines(inlines)?,string(&anchor(id))),
-                Block::Caption{label,inlines}=>format!("#block(width:100%,above:4pt,below:8pt)[#set text(size:10pt)\n#set align(center)\n#set par(first-line-indent:0pt)\n{} {}]#label({})\n",text(&label.text()),self.inlines(inlines)?,string(&anchor(&label.id))),
+                Block::Heading{level,id,inlines,numbering}=>{
+                    let body=self.inlines(inlines)?;
+                    if let Some(numbering)=numbering{
+                        if numbering.suffix=="\t"&&!self.warnings.iter().any(|warning|warning=="publication_numbering_tab_unsupported"){self.warnings.push("publication_numbering_tab_unsupported".into());}
+                        let(update,native)=heading_numbering(*level,numbering)?;
+                        format!("{update}#heading(level:{level},numbering:{native})[{body}]#label({})\n",string(&anchor(id)))
+                    }else{format!("#heading(level:{level})[{body}]#label({})\n",string(&anchor(id)))}
+                },
+                Block::Caption{label,inlines}=>format!("#block(width:100%,above:4pt,below:8pt)[#set text(size:10pt)\n#set align(center)\n#set par(first-line-indent:0pt)\n{} {}]#label({})\n",self.author_text(&label.text(),false)?,self.inlines(inlines)?,string(&anchor(&label.id))),
                 Block::Paragraph(values)=>{
-                    let mode=if self.ordinary_body&&self.note_depth==0{self.local_line.or(crate::publication_typography::global_line_spacing(self.style)?)}else{None};
-                    let keep=self.note_depth==0&&self.local.as_ref().map_or_else(||self.style["typography"]["keepLines"].as_bool().unwrap_or(false),|s|s.keep_lines);
-                    if let Some(mode)=mode {
-                        let body=self.typed_paragraph(values,mode)?;
-                        if keep{format!("#block(breakable:false)[{body}]\n")}else{body}
-                    } else {
-                        let body=self.inlines(values)?;
-                        if keep{format!("#block(breakable:false)[#par[{body}]]\n")}else{format!("#par[{body}]\n")}
-                    }
+                    let baseline=if self.ordinary_body&&self.note_depth==0{
+                        self.local_baseline.or(crate::publication_typography::baseline::global(self.style)?)
+                    }else{None};
+                    self.register_baseline_links(values,baseline)?;
+                    self.with_baseline(baseline,|writer|writer.body_paragraph(values))?
                 },
                 Block::Math(s)=>self.math(s,None,true)?,Block::OfficeMath{latex,omml}=>self.math(latex,Some(omml),true)?,
                 Block::PageBreak=>"#pagebreak(weak:true)\n".into(),Block::Hr=>format!("#line(length:100%,stroke:0.5pt+{})\n",color(&self.style["hr"]["color"],"#d8dce2")),
@@ -428,7 +542,9 @@ impl Writer<'_>{
                 // across pages and columns. Preserve inherited hyphenation.
                 format!("#context {{ let inherited-hyphenation=text.hyphenate; show link.where(dest:{uri}): set text(hyphenate:inherited-hyphenation); link({uri})[{rendered}] }}\n")
             }else{rendered};
+            self.source_id=previous_source_id;
             self.ordinary_body=original_body;
+            self.author=previous_author;self.author_base=previous_base;
             bytes=bytes.saturating_add(source.len());if bytes>16*1024*1024{return Err("typst_output_limit".into());}
             let flow=!matches!(block,Block::Html(_)|Block::FootnoteDef{..}|Block::SectionStart(_));
             out.push(NativeBlock{source,flow,keep_next:column_keep_next(self.style,block),safe:safe_column_block(self.style,block)});
@@ -442,15 +558,25 @@ pub(crate) fn render_mapped(doc:&Document,options:&Value,base:&str,dir:&Path,nam
     render_inner(doc,options,base,dir,name,Some(nonce))
 }
 fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce:Option<&str>)->Result<Source,String>{
+    let resolved_math = crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
+        .and_then(|plan| plan.render_document(doc)).map_err(|error| error.message())?;
+    let doc = resolved_math.as_ref();
+    let math_style=crate::export_styles::sanitize(options);
+    crate::math_word_projection::validate_render_document_with_style(doc,"typst",&math_style)?;
+    crate::publication_blocks::validate_author_render_document(doc).map_err(str::to_string)?;
+    let options=crate::publication_note_policies::project_legacy(doc,options).map_err(|error|error.to_string())?;let options=&options;
     crate::publication_typography::validate_typst_document(doc,options)?;
     let (prepared,style,metadata)=crate::publication_metadata_formats::prepare(doc,options,&crate::docx_writer::doc_title(doc,options,name),"pdf")?;
     let front_len=prepared.blocks.len().saturating_sub(doc.blocks.len());
     let doc=&prepared;let (width,height)=crate::export_styles::page_dimensions(&style);
     let sections=crate::publication_sections::resolve(doc,&style).map_err(str::to_string)?;
     let has_sections=sections.iter().any(|section|section.explicit);
+    let has_numbered_headings=doc.blocks.iter().any(|block|matches!(block.unstyled(),Block::Heading{numbering:Some(_),..}));
     let layout=crate::publication_layout::Layout::from_style(&style);layout.validate(&style)?;
     let mut notes=HashMap::new();collect_notes(&doc.blocks,&mut notes);
-    let mut writer=Writer{style:&style,base,dir,notes,seen_notes:HashSet::new(),end_notes:Vec::new(),end_ids:HashMap::new(),end_refs:HashMap::new(),note_depth:0,images:HashMap::new(),resources:0,bytes:0,warnings:Vec::new(),local:None,mapping_nonce:nonce,ordinary_body:true,local_line:None,local_id:None,paragraph_index:0,inline_object_bounds:None,geometry:None,front_blocks:doc.blocks.iter().take(front_len).map(|block|block as *const Block as usize).collect()};
+    let mut diagnostic_options=style.clone();diagnostic_options["pdf"]=serde_json::json!({"engine":"typst"});
+    let note_warnings=crate::publication_layout::note_warnings("pdf",&diagnostic_options);
+    let mut writer=Writer{style:&style,base,dir,notes,seen_notes:HashSet::new(),end_notes:Vec::new(),end_ids:HashMap::new(),end_refs:HashMap::new(),note_numbers:crate::publication_layout::note_numbers(doc,&style),section_ids:sections.iter().filter(|section|section.explicit).map(|section|section.id.clone()).collect(),note_depth:0,images:HashMap::new(),resources:0,bytes:0,warnings:note_warnings,local:None,mapping_nonce:nonce,ordinary_body:true,local_line:None,local_id:None,paragraph_index:0,inline_object_bounds:None,geometry:None,front_blocks:doc.blocks.iter().take(front_len).map(|block|block as *const Block as usize).collect(),author:None,author_base:ResolvedTextStyle::base(n(&style["typography"]["size"],11.,6.,72.),n(&style["typography"]["size"],11.,6.,72.)),local_pair:None,baseline:None,local_baseline:None,source_id:None,baseline_links:Vec::new(),baseline_protected:Vec::new()};
     let title=options.pointer("/meta/title").and_then(Value::as_str).filter(|s|!s.is_empty()).map(str::to_owned).unwrap_or_else(||crate::docx_writer::doc_title(doc,&style,name));
     let author=metadata.author_text();
     let lang=metadata.language.clone().unwrap_or_else(||"en".into());
@@ -461,7 +587,7 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
     let inside=ml+layout.gutter;let outside=mr;let body_width=width-inside-outside;
     let margin=if layout.mirror{format!("top:{mt}mm,bottom:{mb}mm,inside:{inside}mm,outside:{outside}mm")}else{format!("top:{mt}mm,bottom:{mb}mm,left:{inside}mm,right:{outside}mm")};
     let numbers=if style["footer"]["pageNumbers"].as_bool().unwrap_or(true) {
-        let current=format!("#counter(page).display({})",string(crate::publication_layout::typst_number(&layout.page_format)));
+        let current=format!("#counter(page).display({})",number_format(&layout.page_format));
         if layout.page_total{format!("{current} / #str(counter(page).final().first()-{}+1)",layout.page_start)}else{current}
     }else{String::new()};
     // Position running text from the physical paper edges, independently of
@@ -483,10 +609,13 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
             }}
             if index==0||section.break_kind!=crate::publication_sections::SectionBreak::Continuous{body.push_str(&section_page(&section.style));}
             body.push_str(&format!("#metadata((index:{index},starts-page:{}))<readmd-publication-section-boundary>\n",index==0||section.break_kind!=crate::publication_sections::SectionBreak::Continuous));
-            body.push_str(&format!("#metadata(none)#label({})\n",string(&anchor(&format!("readmd-section-{}",section.id)))));
+            body.push_str(&format!("#metadata(none)#label({})\n",string(&private_anchor("section",&section.id))));
             if let Some(start)=section.page_start{body.push_str(&format!("#counter(page).update({start})\n"));}
             writer.style=&section.style;
             let section_layout=crate::publication_layout::Layout::from_style(&section.style);
+            if section_layout.note_restart==crate::publication_layout::NoteRestart::Section&&!crate::publication_layout::notes_at_end(&section.style){
+                body.push_str(&format!("#counter(footnote).update({})\n",section_layout.note_start-1));
+            }
             let blocks=&doc.blocks[section.block_range.clone()];
             if section_layout.columns>1{
                 // One traversal owns all note/resource effects and pending
@@ -520,8 +649,9 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
     // Typst spacing is edge-to-edge, including between distinct paragraphs.
     // A one-em strut and the extra leading keep a declared lineHeight of 1.1
     // at 11pt at 12.1pt rather than the font cap-height (about 8pt).
-    let mut source=format!("// ReadMD generated publication. No author code is executed.\n#set document(title:{},author:{})\n#set page(width:{width}mm,height:{height}mm,binding:left,margin:({margin}),header:none,footer:none,foreground:{running})\n#set text(font:{},size:{size}pt,fill:{},lang:{},top-edge:0.8em,bottom-edge:-0.2em,costs:(widow:{}%,orphan:{}%))\n#set par(leading:{leading}pt,spacing:{}pt,first-line-indent:{}mm,justify:{},hanging-indent:0pt)\n#set align({})\n#show link: set text(fill:{})\n#show raw: set text(font:{})\n#set footnote(numbering:{})\n#set footnote.entry(separator:line(length:30%,stroke:0.5pt),gap:0.6em)\n#show footnote.entry: set par(first-line-indent:0pt,leading:{}pt)\n#show footnote.entry: set text(size:{}pt,top-edge:\"ascender\",bottom-edge:\"descender\")\n#show heading: set block(sticky:false,breakable:true)\n#counter(page).update({})\n",
-        string(&title),format!("({}{})",metadata.authors.iter().map(|person|string(&person.name)).collect::<Vec<_>>().join(","),if metadata.authors.is_empty(){""}else{","}),font_expression(style["typography"]["font"].as_str().unwrap_or("MicrosoftYaHei"),false,requires_core_text_fallback,&mut writer.warnings),color(&style["typography"]["color"],"#262626"),string(lang.split(['-','_']).next().unwrap_or("en")),if layout.widow_control{100}else{0},if layout.widow_control{100}else{0},leading+n(&style["typography"]["spacing"],6.,0.,60.),n(&style["typography"]["firstLineIndent"],0.,0.,30.),style["typography"]["align"]=="justify",align(&style["typography"]["align"]),color(&style["link"]["color"],"#2b6cb0"),font_expression(style["code"]["font"].as_str().unwrap_or("Consolas"),false,requires_core_text_fallback,&mut writer.warnings),string(crate::publication_layout::typst_number(&layout.note_format)),(layout.note_line_height-1.)*layout.note_size,layout.note_size,layout.page_start);
+    let note_header=note_page_header(&style);let note_separator=if layout.note_separator{"line(length:30%,stroke:0.5pt)"}else{"none"};
+    let mut source=format!("// ReadMD generated publication. No author code is executed.\n#set document(title:{},author:{})\n#set page(width:{width}mm,height:{height}mm,binding:left,margin:({margin}),header:{note_header},footer:none,foreground:{running})\n#set text(font:{},size:{size}pt,fill:{},lang:{},top-edge:0.8em,bottom-edge:-0.2em,costs:(widow:{}%,orphan:{}%))\n#set par(leading:{leading}pt,spacing:{}pt,first-line-indent:{}mm,justify:{},hanging-indent:0pt)\n#set align({})\n#show link: set text(fill:{})\n#show raw: set text(font:{})\n#set footnote(numbering:{})\n#set footnote.entry(separator:{note_separator},gap:0.6em)\n#show footnote.entry: set par(first-line-indent:0pt,leading:{}pt)\n#show footnote.entry: set text(size:{}pt,top-edge:\"ascender\",bottom-edge:\"descender\")\n#show heading: set block(sticky:false,breakable:true)\n#counter(page).update({})\n",
+        string(&title),format!("({}{})",metadata.authors.iter().map(|person|string(&person.name)).collect::<Vec<_>>().join(","),if metadata.authors.is_empty(){""}else{","}),font_expression(style["typography"]["font"].as_str().unwrap_or("MicrosoftYaHei"),false,requires_core_text_fallback,&mut writer.warnings),color(&style["typography"]["color"],"#262626"),string(lang.split(['-','_']).next().unwrap_or("en")),if layout.widow_control{100}else{0},if layout.widow_control{100}else{0},leading+n(&style["typography"]["spacing"],6.,0.,60.),n(&style["typography"]["firstLineIndent"],0.,0.,30.),style["typography"]["align"]=="justify",align(&style["typography"]["align"]),color(&style["link"]["color"],"#2b6cb0"),font_expression(style["code"]["font"].as_str().unwrap_or("Consolas"),false,requires_core_text_fallback,&mut writer.warnings),number_format(&layout.note_format),(layout.note_line_height-1.)*layout.note_size,layout.note_size,layout.page_start);
     if writer.geometry.is_some(){source.push_str(include_str!("publication_typst_paragraph.typ"));source.push('\n');}
     if layout.note_start!=1 {source.push_str(&format!("#counter(footnote).update({})\n",layout.note_start-1));}
     if let Some(region)=region {source.push_str(&format!("#set text(region:{})\n",string(region)));}
@@ -529,7 +659,8 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
     // including locally formatted paragraphs, quotes and tables. The body
     // retains normal pagination and the marker links back to its declaration.
     source.push_str("#show footnote.entry: entry => {\n let note = entry.note\n let mark = counter(footnote).display(at:note.location(),note.numbering)\n grid(columns:(auto,1fr),column-gutter:0.2em,align:(left,top),link(note.location(),super(mark)),note.body)\n}\n");
-    for level in 1..=6{let h=&style["headings"][format!("h{level}")];source.push_str(&format!("#show heading.where(level:{level}): it => {{ {}block(above:{}pt,below:{}pt,sticky:{},breakable:{})[#set text(size:{}pt,fill:{},weight:{})\n#set par(first-line-indent:0pt)\n#align({})[#it]] }}\n",if h["pageBreakBefore"].as_bool().unwrap_or(false){"pagebreak(weak:true); "}else{""},n(&h["before"],12.,0.,100.),n(&h["after"],8.,0.,100.),h["keepNext"].as_bool().unwrap_or(true),!h["keepLines"].as_bool().unwrap_or(true),n(&h["size"],14.,6.,72.),color(&h["color"],"#262626"),string(if h["bold"].as_bool().unwrap_or(true){"bold"}else{"regular"}),align(&h["align"])));}
+    let heading_body=if has_numbered_headings{"#if it.numbering == none { it } else { context { counter(heading).display(it.numbering) + it.body } }"}else{"#it"};
+    for level in 1..=6{let h=&style["headings"][format!("h{level}")];source.push_str(&format!("#show heading.where(level:{level}): it => {{ {}block(above:{}pt,below:{}pt,sticky:{},breakable:{})[#set text(size:{}pt,fill:{},weight:{})\n#set par(first-line-indent:0pt)\n#align({})[{heading_body}]] }}\n",if h["pageBreakBefore"].as_bool().unwrap_or(false){"pagebreak(weak:true); "}else{""},n(&h["before"],12.,0.,100.),n(&h["after"],8.,0.,100.),h["keepNext"].as_bool().unwrap_or(true),!h["keepLines"].as_bool().unwrap_or(true),n(&h["size"],14.,6.,72.),color(&h["color"],"#262626"),string(if h["bold"].as_bool().unwrap_or(true){"bold"}else{"regular"}),align(&h["align"])));}
     if has_sections&&sections.iter().any(|section|crate::publication_layout::Layout::from_style(&section.style).columns>1){
         source.push_str(include_str!("publication_typst_columns.typ"));source.push('\n');
     }
@@ -549,12 +680,29 @@ fn render_inner(doc:&Document,options:&Value,base:&str,dir:&Path,name:&str,nonce
     if !has_sections&&layout.columns>1{source.push_str(&format!("#columns({},gutter:{}mm)[{body}]",layout.columns,layout.column_gap));}else{source.push_str(&body);}
     source.push_str(&document_notes);
     if has_sections{source.push_str("\n#metadata(none)<readmd-publication-document-end>\n");}
-    Ok(Source{text:source,warnings:writer.warnings,requires_core_text_fallback,geometry:writer.geometry})
+    if !writer.seen_notes.is_empty(){
+        if writer.seen_notes.len()>crate::publication_blocks::MAX_NODES{return Err("typst_output_limit".into());}
+        let geometry=writer.geometry.get_or_insert_with(GeometryContext::new);
+        source.push_str(&geometry.note_guard(writer.seen_notes.len()));
+    }
+    Ok(Source{text:source,warnings:writer.warnings,requires_core_text_fallback,geometry:writer.geometry,baseline_links:writer.baseline_links,baseline_protected:writer.baseline_protected})
 }
 
 #[cfg(test)]
 #[path="typst_writer_columns_tests.rs"]
 mod columns_tests;
+
+#[cfg(test)]
+#[path="typst_notes_layout_tests.rs"]
+mod notes_layout_tests;
+
+#[cfg(test)]
+#[path="typst_writer_author_inline_tests.rs"]
+mod author_inline_tests;
+
+#[cfg(test)]
+#[path="typst_heading_numbering_tests.rs"]
+mod heading_numbering_tests;
 
 #[cfg(test)]mod tests{
     use super::*;
@@ -695,8 +843,8 @@ mod columns_tests;
             let source=render(&doc,&style,"",dir.path(),"Notes").unwrap().text;
             assert!(source.contains("#counter(footnote).update(26)"));
             if position=="document" {
-                assert_eq!(source.matches("#numbering(\"A\",27)").count(),3);
-                assert_eq!(source.matches("#numbering(\"A\",28)").count(),2);
+                assert_eq!(source.matches(&format!("#numbering({},27)",number_format("upperLetter"))).count(),3);
+                assert_eq!(source.matches(&format!("#numbering({},28)",number_format("upperLetter"))).count(),2);
             }else{
                 assert_eq!(source.matches("#footnote[").count(),2);
                 assert_eq!(source.matches("#footnote(label(").count(),1);
@@ -708,7 +856,7 @@ mod columns_tests;
         let source=render(&doc,&serde_json::json!({"footnotes":{"position":"document","title":"Notes #read(\"private\")","numberFormat":"lowerRoman"}}),"",dir.path(),"Book").unwrap().text;
         assert!(!source.contains("#footnote["));assert!(!source.contains("#footnote(label("));
         assert_eq!(source.matches("#text(\"First note.\")").count(),1);assert!(source.find("#text(\"Last body\")").unwrap()<source.find("#text(\"First note.\")").unwrap());
-        for id in ["note:a","note:b","note-ref:a:1","note-ref:a:2","note-ref:b:1"]{assert!(source.contains(&format!("#label({})",string(&anchor(id)))));}
+        for (kind,id) in [("note","a"),("note","b"),("note-ref","a:1"),("note-ref","a:2"),("note-ref","b:1")]{assert!(source.contains(&format!("#label({})",string(&private_anchor(kind,id)))));}
         assert!(source.contains("#numbering(\"i\",1)"));assert!(source.contains("#text(\"Notes #read(\\\"private\\\")\")"));assert!(source.contains("#image("));
     }
     #[test]fn endnote_mode_without_references_adds_no_empty_notes_page(){

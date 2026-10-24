@@ -275,7 +275,7 @@ fn mathml_color(value:&str)->Option<String>{
         if hex.len()==6&&hex.bytes().all(|b|b.is_ascii_hexdigit()){return Some(hex.to_ascii_uppercase());}
         if hex.len()==3&&hex.bytes().all(|b|b.is_ascii_hexdigit()){return Some(hex.chars().flat_map(|c|[c,c]).collect::<String>().to_ascii_uppercase());}
     }
-    Some(match value.to_ascii_lowercase().as_str(){"black"=>"000000","silver"=>"C0C0C0","gray"=>"808080","white"=>"FFFFFF","maroon"=>"800000","red"=>"FF0000","purple"=>"800080","fuchsia"=>"FF00FF","green"=>"008000","lime"=>"00FF00","olive"=>"808000","yellow"=>"FFFF00","navy"=>"000080","blue"=>"0000FF","teal"=>"008080","aqua"=>"00FFFF",_=>return None}.into())
+    Some(match value.to_ascii_lowercase().as_str(){"canvastext"=>"auto","black"=>"000000","silver"=>"C0C0C0","gray"=>"808080","white"=>"FFFFFF","maroon"=>"800000","red"=>"FF0000","purple"=>"800080","fuchsia"=>"FF00FF","green"=>"008000","lime"=>"00FF00","olive"=>"808000","yellow"=>"FFFF00","navy"=>"000080","blue"=>"0000FF","teal"=>"008080","aqua"=>"00FFFF",_=>return None}.into())
 }
 fn mathml_half_points(value:&str)->Option<u32>{
     let value=value.trim();
@@ -291,8 +291,30 @@ fn word_property(key:&str,value:&str)->XmlNode{
 fn word_run_properties(properties:Vec<XmlNode>)->XmlNode{
     let mut pr=node("rPr",properties);pr.name="w:rPr".into();pr.namespace=WORD_NS.into();pr.attributes.insert("xmlns:w".into(),WORD_NS.into());pr
 }
+fn merge_mathml_control(target:&mut XmlNode,properties:Vec<XmlNode>){
+    fn ensure(n:&mut XmlNode,child:XmlNode)->&mut XmlNode{
+        let at=n.content.iter().position(|part|matches!(part,XmlPart::Element(c) if c.local()==child.local()&&c.namespace==child.namespace)).unwrap_or_else(||{n.content.push(XmlPart::Element(child));n.content.len()-1});
+        let XmlPart::Element(child)=&mut n.content[at]else{unreachable!()};child
+    }
+    let name=format!("{}Pr",target.local());
+    if !target.children().any(|n|n.local()==name&&is_office(n)){target.content.insert(0,XmlPart::Element(node(&name,vec![])));}
+    let pr=ensure(target,node(&name,vec![]));
+    let control=ensure(pr,node("ctrlPr",vec![]));
+    let word=ensure(control,word_run_properties(vec![]));
+    // The translated inner row/operator owns explicit overrides. A transparent
+    // outer mstyle supplies only missing defaults, never a second ctrlPr.
+    for property in properties{
+        if !word.children().any(|n|n.local()==property.local()&&n.namespace==property.namespace){word.content.push(XmlPart::Element(property));}
+    }
+}
 fn apply_mathml_appearance(source:&XmlNode,target:&mut XmlNode,diagnostics:&mut Vec<String>){
     let mut properties=vec![];
+    if matches!(target.local(),"func"|"d")&&source.local()=="mo"{
+        if let Some(variant)=attr(source,"mathvariant"){
+            let bold=matches!(variant.as_str(),"bold"|"bold-italic");let italic=matches!(variant.as_str(),"italic"|"bold-italic");
+            properties.extend([word_property("b",if bold{"1"}else{"0"}),word_property("i",if italic{"1"}else{"0"})]);
+        }
+    }
     if let Some(value)=attr(source,"mathcolor"){
         if let Some(value)=mathml_color(&value){properties.push(word_property("color",&value));}else{diagnostics.push("mathml_style_projection".into());}
     }
@@ -308,11 +330,8 @@ fn apply_mathml_appearance(source:&XmlNode,target:&mut XmlNode,diagnostics:&mut 
             let at=target.content.iter().position(|p|matches!(p,XmlPart::Element(n) if n.namespace==MATH_NS&&n.local()=="rPr")).map_or(0,|i|i+1);
             target.content.insert(at,XmlPart::Element(word_run_properties(properties)));
         }
-    }else if matches!(target.local(),"f"|"rad"|"nary"|"d"|"m"|"eqArr"|"acc"|"bar"|"limLow"|"limUpp"|"borderBox"|"groupChr"|"sSup"|"sSub"|"sSubSup"|"sPre"){
-        let name=format!("{}Pr",target.local());
-        let control=node("ctrlPr",vec![word_run_properties(properties)]);
-        if let Some(pr)=target.content.iter_mut().find_map(|p|if let XmlPart::Element(n)=p{(n.local()==name&&is_office(n)).then_some(n)}else{None}){pr.content.push(XmlPart::Element(control));}
-        else{target.content.insert(0,XmlPart::Element(node(&name,vec![control])));}
+    }else if matches!(target.local(),"func"|"f"|"rad"|"nary"|"d"|"m"|"eqArr"|"acc"|"bar"|"limLow"|"limUpp"|"borderBox"|"groupChr"|"sSup"|"sSub"|"sSubSup"|"sPre"){
+        merge_mathml_control(target,properties);
     }
 }
 // OMML has one gap rule for the entire matrix. Columns use twips and rows
@@ -378,6 +397,15 @@ fn validate_mathml(n:&XmlNode)->Result<(),&'static str>{
         if n.attributes.get(key).is_some_and(|value|value.len()>256){return Err("math_invalid_property");}
     }
     let children:Vec<_>=n.children().collect();
+    if matches!(n.local(),"math"|"mrow"|"mtd"|"mstyle"|"semantics"){
+        let presentation=children.iter().copied().filter(|n|!matches!(n.local(),"annotation"|"annotation-xml")).collect::<Vec<_>>();
+        for (i,_) in presentation.iter().enumerate().filter(|(_,n)|mathml_function_operator(n)){
+            if i==0||i+1==presentation.len()||mathml_function_empty(presentation[i-1])||mathml_function_empty(presentation[i+1])
+                ||mathml_function_operator(presentation[i-1])||mathml_function_operator(presentation[i+1]){
+                return Err("math_missing_argument");
+            }
+        }
+    }
     let arity=match n.local(){"mfrac"|"mroot"|"msub"|"msup"|"munder"|"mover"=>Some(2),"msubsup"|"munderover"=>Some(3),_=>None};
     if arity.is_some_and(|count|children.len()!=count){return Err("math_invalid_source");}
     if n.local()=="mmultiscripts"{
@@ -393,6 +421,42 @@ fn validate_mathml(n:&XmlNode)->Result<(),&'static str>{
     }
     Ok(())
 }
+/// MathML 3, sections 3.5.1/2/4: a row list overrides the table list,
+/// and a cell's single value overrides its row. Office Math can retain that
+/// cascade exactly only when all authored cells in a column agree.
+fn mathml_table_column_alignments(n:&XmlNode,rows:&[&XmlNode],columns:usize,diagnostics:&mut Vec<String>)->Option<Vec<&'static str>>{
+    fn values(n:&XmlNode,single:bool,explicit:&mut bool,projection:&mut bool)->Option<Vec<&'static str>>{
+        let value=n.attributes.get("columnalign")?;*explicit=true;
+        let values=value.split_whitespace().map(|value|match value{"left"=>Some("left"),"center"=>Some("center"),"right"=>Some("right"),_=>None}).collect::<Option<Vec<_>>>();
+        if let Some(values)=values{if !values.is_empty()&&(!single||values.len()==1){return Some(values);}}
+        *projection=true;None
+    }
+    let mut explicit=false;let mut projection=false;
+    let table=values(n,false,&mut explicit,&mut projection).unwrap_or_else(||vec!["center"]);
+    let at=|values:&[&'static str],column:usize|values.get(column).or_else(||values.last()).copied().unwrap_or("center");
+    let mut result=(0..columns).map(|column|at(&table,column)).collect::<Vec<_>>();
+    // A span changes the logical column coordinates. Keep the existing table
+    // projection and diagnose it rather than folding physical child indices.
+    let spans=rows.iter().filter(|row|row.local()=="mtr").flat_map(|row|row.children()).any(|cell|
+        ["rowspan","columnspan"].iter().any(|key|cell.attributes.get(*key).is_some_and(|value|value.trim().parse::<u32>().ok()!=Some(1))));
+    projection|=spans;
+    let mut effective=vec![None;columns];let mut conflicts=vec![false;columns];
+    for row in rows.iter().filter(|row|row.local()=="mtr"){
+        let row_values=values(row,false,&mut explicit,&mut projection);
+        for(column,cell)in row.children().enumerate(){
+            let cell_values=values(cell,true,&mut explicit,&mut projection);
+            if spans{continue;}
+            let alignment=cell_values.as_ref().map(|v|v[0]).or_else(||row_values.as_ref().map(|v|at(v,column))).unwrap_or(result[column]);
+            conflicts[column]|=effective[column].is_some_and(|previous|previous!=alignment);
+            effective[column]=Some(alignment);
+        }
+    }
+    for(column,alignment)in effective.into_iter().enumerate(){
+        if conflicts[column]{projection=true;}else if let Some(alignment)=alignment{result[column]=alignment;}
+    }
+    if projection{diagnostics.push("mathml_table_alignment_projection".into());}
+    explicit.then_some(result)
+}
 fn mathml_table(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode{
     let rows:Vec<_>=n.children().collect();
     let columns=rows.iter().map(|r|r.children().count()).max().unwrap_or(0);
@@ -401,12 +465,10 @@ fn mathml_table(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode{
         let base=match alignment.trim(){"axis"|"axis 0"=>Some("center"),"baseline"|"baseline 1"=>Some("top"),"baseline -1"=>Some("bot"),_=>{diagnostics.push("mathml_table_alignment_projection".into());None}};
         if let Some(base)=base{properties.content.extend(property("mPr","baseJc",base).content);}
     }
-    if let Some(value)=attr(n,"columnalign"){
-        let alignments:Vec<_>=value.split_whitespace().collect();
+    let column_alignments=mathml_table_column_alignments(n,&rows,columns,diagnostics);
+    if let Some(alignments)=&column_alignments{
         let mut groups=vec![];
-        for i in 0..columns{
-            let alignment=alignments.get(i).or_else(||alignments.last()).copied().unwrap_or("center");
-            let alignment=match alignment{"left"|"right"|"center"=>alignment,_=>{diagnostics.push("mathml_table_alignment_projection".into());"center"}};
+        for alignment in alignments{
             let mut p=property("mcPr","count","1");p.content.extend(property("mcPr","mcJc",alignment).content);
             groups.push(node("mc",vec![p]));
         }
@@ -439,8 +501,7 @@ fn mathml_table(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode{
         if css.keys().any(|k|!matches!(*k,"box-sizing"|"min-width"|"padding-left"|"padding-right"|"text-align")){return None;}
         if css.len()!=1 {
             if css.get("box-sizing")!=Some(&"content-box")||css.get("padding-left")!=Some(&if column==0{"0pt"}else{half_gap.as_str()})||css.get("padding-right")!=Some(&if column+1==columns{"0pt"}else{half_gap.as_str()}){return None;}
-            let alignment=attr(n,"columnalign").unwrap_or_else(||"center".into());let alignments=alignment.split_whitespace().collect::<Vec<_>>();
-            let expected=alignments.get(column).or_else(||alignments.last()).copied().unwrap_or("center");
+            let expected=column_alignments.as_ref().and_then(|alignments|alignments.get(column)).copied().unwrap_or("center");
             if css.get("text-align").is_some_and(|v|*v!=expected){return None;}
         }
         let value=css.get("min-width").copied().unwrap_or("0pt").strip_suffix("pt")?.parse::<f64>().ok()?*20.;
@@ -580,13 +641,73 @@ fn mathml_aligned_base(n:&XmlNode)->Option<&XmlNode>{
     let allowed=|n:&XmlNode,space:bool|n.attributes.keys().all(|k|matches!(k.as_str(),"xmlns"|"mathcolor"|"mathvariant"|"mathsize")||k.starts_with("xmlns:")||space&&k=="width");
     if !allowed(n,false)||!allowed(c[1],true){return None;}Some(c[0])
 }
+fn mathml_function_operator(n:&XmlNode)->bool{
+    (n.namespace.is_empty()||n.namespace==crate::math_spacing::MATHML_NS)&&n.local()=="mo"&&n.children().next().is_none()&&n.text().trim()=="\u{2061}"
+}
+fn mathml_function_empty(n:&XmlNode)->bool{
+    if n.local()=="mo"&&(attr(n,"fence").as_deref()==Some("true")||attr(n,"separator").as_deref()==Some("true")){return true;}
+    if matches!(n.local(),"mi"|"mn"|"mo"|"mtext"|"ms"){return n.text().trim().is_empty();}
+    n.children().filter(|n|!matches!(n.local(),"annotation"|"annotation-xml")).all(mathml_function_empty)
+}
+fn mathml_row_attributes(n:&XmlNode)->bool{
+    (n.namespace.is_empty()||n.namespace==crate::math_spacing::MATHML_NS)
+        &&n.attributes.keys().all(|key|matches!(key.as_str(),"xmlns"|"id"|"mathcolor")||key.starts_with("xmlns:"))
+        &&n.attribute_namespaces.iter().all(|(key,ns)|key.starts_with("xmlns")||ns.is_empty())
+}
+/// The single-slot delimiter emitted by ReadMD has explicit matching fence
+/// flags. Bare parenthesis characters or unrelated mo rows are never inferred.
+fn mathml_generated_delimiter(n:&XmlNode)->Option<[&XmlNode;3]>{
+    if n.local()!="mrow"||!mathml_row_attributes(n)||n.content.iter().any(|part|!matches!(part,XmlPart::Element(_))&&!matches!(part,XmlPart::Text(value) if value.trim().is_empty())){return None;}
+    let children=n.children().collect::<Vec<_>>();if children.len()!=3||children[1].local()!="mrow"{return None;}
+    for fence in [children[0],children[2]]{
+        if !fence.namespace.is_empty()&&fence.namespace!=crate::math_spacing::MATHML_NS{return None;}
+        if fence.local()!="mo"||fence.children().next().is_some()||fence.text().chars().count()!=1||attr(fence,"fence").as_deref()!=Some("true"){return None;}
+        if !matches!(attr(fence,"stretchy").as_deref(),Some("true"|"false"))||!matches!(attr(fence,"symmetric").as_deref(),Some("true"|"false")){return None;}
+        if fence.content.iter().any(|part|!matches!(part,XmlPart::Text(_)))||fence.attributes.iter().any(|(key,value)|!matches!(key.as_str(),"xmlns"|"id"|"mathcolor"|"mathsize"|"fence"|"stretchy"|"symmetric")&&!key.starts_with("xmlns:")&&!(key=="mathvariant"&&matches!(value.as_str(),"normal"|"bold"|"italic"|"bold-italic"))){return None;}
+        if fence.attribute_namespaces.iter().any(|(key,ns)|!key.starts_with("xmlns")&&!ns.is_empty()){return None;}
+    }
+    if !mathml_row_attributes(children[1]){return None;}
+    for key in ["stretchy","symmetric","mathcolor","mathsize","mathvariant"]{if attr(children[0],key)!=attr(children[2],key){return None;}}
+    Some([children[0],children[1],children[2]])
+}
+/// Recognize the explicit three-part row emitted for an Office function. Do
+/// not infer application from names, juxtaposition, or ungrouped sibling rows.
+fn mathml_function_row(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode{
+    let children=n.children().filter(|n|!matches!(n.local(),"annotation"|"annotation-xml")).collect::<Vec<_>>();
+    let content_only=n.content.iter().all(|part|matches!(part,XmlPart::Element(_))||matches!(part,XmlPart::Text(value) if value.trim().is_empty()));
+    let row_attributes=n.local()!="mrow"||mathml_row_attributes(n);
+    if let Some([begin,body,end])=mathml_generated_delimiter(n){
+        let mut pr=property("dPr","begChr",&begin.text());pr.content.extend(property("dPr","endChr",&end.text()).content);
+        pr.content.extend(property("dPr","grow",if attr(begin,"stretchy").as_deref()==Some("true"){"1"}else{"0"}).content);
+        pr.content.extend(property("dPr","shp",if attr(begin,"symmetric").as_deref()==Some("true"){"centered"}else{"match"}).content);
+        let mut delimiter=node("d",vec![pr,node("e",vec![mathml_node(body,diagnostics)])]);
+        apply_mathml_appearance(begin,&mut delimiter,diagnostics);return delimiter;
+    }
+    let operator=children.get(1).copied();
+    let supported=operator.is_some_and(|operator|mathml_function_operator(operator)
+        &&operator.content.iter().all(|part|matches!(part,XmlPart::Text(_)))
+        &&operator.attributes.iter().all(|(key,value)|matches!(key.as_str(),"xmlns"|"mathcolor"|"mathsize")||key.starts_with("xmlns:")
+            ||key=="mathvariant"&&matches!(value.as_str(),"normal"|"bold"|"italic"|"bold-italic")||key=="form"&&value=="infix")
+        &&operator.attribute_namespaces.iter().all(|(key,ns)|key.starts_with("xmlns")||ns.is_empty()));
+    if children.len()==3&&content_only&&row_attributes&&supported{
+        let mut function=node("func",vec![node("fName",vec![mathml_node(children[0],diagnostics)]),node("e",vec![mathml_node(children[2],diagnostics)])]);
+        apply_mathml_appearance(operator.unwrap(),&mut function,diagnostics);return function;
+    }
+    let mut content=children.into_iter().map(|n|mathml_node(n,diagnostics)).collect::<Vec<_>>();
+    if content_only&&content.len()==1&&content[0].local()=="func"{
+        if row_attributes{return content.remove(0);}
+        diagnostics.push("mathml_function_application_projection".into());
+    }
+    node("e",content)
+}
 fn mathml_node(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode {
     let c:Vec<_>=n.children().collect();let translated=|i:usize,d:&mut Vec<String>|c.get(i).map(|n|mathml_node(n,d)).unwrap_or_else(||run(""));
     let slot=|name:&str,i:usize,d:&mut Vec<String>|node(name,vec![translated(i,d)]);
     let all=|d:&mut Vec<String>|c.iter().map(|n|mathml_node(n,d)).collect();
     let mut result=match n.local(){
-        "math"=>node("oMath",all(diagnostics)),"mrow"|"mtd"|"semantics"=>node("e",c.iter().filter(|n|!matches!(n.local(),"annotation"|"annotation-xml")).map(|n|mathml_node(n,diagnostics)).collect()),
-        "mi"|"mn"|"mo"|"mtext"|"ms"=>mathml_run(n,diagnostics),
+        "math"=>node("oMath",all(diagnostics)),"mrow"|"mtd"=>mathml_function_row(n,diagnostics),
+        "semantics"=>{let presentation=c.iter().filter(|n|!matches!(n.local(),"annotation"|"annotation-xml")).collect::<Vec<_>>();if presentation.len()==1{mathml_node(presentation[0],diagnostics)}else{node("e",presentation.into_iter().map(|n|mathml_node(n,diagnostics)).collect())}},
+        "mi"|"mn"|"mo"|"mtext"|"ms"=>{if n.local()=="mo"&&n.text().contains('\u{2061}'){diagnostics.push("mathml_function_application_projection".into());}if n.local()=="mo"&&(attr(n,"fence").as_deref()==Some("true")||attr(n,"separator").as_deref()==Some("true")){diagnostics.push("mathml_delimiter_projection".into());}mathml_run(n,diagnostics)},
         "mfrac"=>{let mut f=node("f",vec![slot("num",0,diagnostics),slot("den",1,diagnostics)]);if attr(n,"linethickness").is_some_and(|v|matches!(v.as_str(),"0"|"0px"|"0pt")){f.content.insert(0,XmlPart::Element(property("fPr","type","noBar")));}else if attr(n,"bevelled").as_deref()==Some("true"){f.content.insert(0,XmlPart::Element(property("fPr","type","skw")));}f},
         "msqrt"=>node("rad",vec![property("radPr","degHide","1"),node("deg",vec![]),node("e",all(diagnostics))]),
         "mroot"=>node("rad",vec![property("radPr","degHide","0"),slot("deg",1,diagnostics),slot("e",0,diagnostics)]),
@@ -603,9 +724,9 @@ fn mathml_node(n:&XmlNode,diagnostics:&mut Vec<String>)->XmlNode {
             });
             if attr(n,"scriptlevel").is_some()&&size.is_none(){diagnostics.push("mathml_scriptlevel_projection".into());}
             if n.attributes.keys().any(|key|!matches!(key.as_str(),"scriptlevel"|"xmlns"|"mathvariant"|"mathsize"|"mathcolor"|"mathbackground"|"linethickness"|"bevelled"|"accent"|"accentunder"|"stretchy"|"open"|"close"|"separators"|"columnalign"|"columnspacing"|"rowspacing")&&!key.starts_with("xmlns:")){diagnostics.push("mathml_style_projection".into());}
-            let mut content=all(diagnostics);
-            if let Some(size)=size{content.insert(0,property("argPr","argSz",&size.to_string()));}
-            node("box",vec![node("e",content)])
+            let mut content=if c.len()==3&&mathml_function_operator(c[1]){vec![mathml_function_row(n,diagnostics)]}else{all(diagnostics)};
+            if attr(n,"scriptlevel").is_none()&&content.len()==1&&content[0].local()=="func"{content.remove(0)}
+            else{if let Some(size)=size{content.insert(0,property("argPr","argSz",&size.to_string()));}node("box",vec![node("e",content)])}
         },
         "munder"|"mover"=>{let under=n.local()=="munder";mathml_attachment(translated(0,diagnostics),c[1],under,attr(n,if under{"accentunder"}else{"accent"}).as_deref(),diagnostics)},
         "munderover"=>{let base=mathml_attachment(translated(0,diagnostics),c[1],true,attr(n,"accentunder").as_deref(),diagnostics);mathml_attachment(base,c[2],false,attr(n,"accent").as_deref(),diagnostics)},
@@ -704,6 +825,84 @@ pub fn from_unicode(source:&str)->Result<String,&'static str>{
 }
 
 #[cfg(test)]mod tests{
+    fn native_function_nodes(n:&XmlNode)->Vec<&XmlNode>{
+        let mut functions=vec![];if n.local()=="func"{functions.push(n);}for c in n.children(){functions.extend(native_function_nodes(c));}functions
+    }
+    fn native_find<'a>(n:&'a XmlNode,local:&str)->Option<&'a XmlNode>{if n.local()==local{Some(n)}else{n.children().find_map(|c|native_find(c,local))}}
+    fn native_count(n:&XmlNode,local:&str)->usize{usize::from(n.local()==local)+n.children().map(|c|native_count(c,local)).sum::<usize>()}
+    fn function_signatures(n:&XmlNode)->Vec<(String,String,usize,usize,usize)>{
+        native_function_nodes(n).into_iter().map(|f|{
+            let name=child(f,"fName").unwrap();let argument=child(f,"e").unwrap();
+            (name.text(),argument.text(),native_count(name,"sSup"),native_count(name,"d"),native_count(argument,"d"))
+        }).collect()
+    }
+    #[test]fn explicit_functions_keep_native_roles_through_real_mathml_and_readable_roundtrips(){
+        for source in ["sin⁡(x+1)+sin⁡(y+2)","sin^2⁡x","sin⁡^2 x","sin⁡〖x+1〗","f⁡(g⁡x)","(f+g)⁡x"]{
+            let original=crate::unicode_math::compile(source,false).unwrap().0;let expected=function_signatures(&original);
+            let mathml=crate::omml::to_mathml(&crate::omml::parse(&original.xml()).unwrap(),false,"");
+            let(xml,diagnostics)=from_mathml(&mathml).unwrap();assert!(diagnostics.is_empty(),"{source}: {mathml}: {diagnostics:?}");
+            let imported=crate::math_document::parse_xml(&xml).unwrap();assert_eq!(function_signatures(&imported),expected,"{source}: {xml}");
+            let readable=crate::math_dsl::decompile(&imported).unwrap();let(rebuilt,nodes)=crate::math_dsl::compile(&readable,false).unwrap();
+            assert_eq!(nodes.iter().filter(|n|n.kind=="func").count(),expected.len());
+            assert_eq!(crate::math_document::xml_semantics(&rebuilt),crate::math_document::xml_semantics(&imported));
+            let again=crate::omml::to_mathml(&crate::omml::parse(&rebuilt.xml()).unwrap(),false,"");
+            let(xml,diagnostics)=from_mathml(&again).unwrap();assert!(diagnostics.is_empty(),"{source}: {diagnostics:?}");
+            assert_eq!(function_signatures(&crate::math_document::parse_xml(&xml).unwrap()),expected);
+        }
+    }
+    #[test]fn explicit_function_mathml_keeps_token_variants_and_native_control_format(){
+        let source=r#"<m:oMath xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><m:func><m:funcPr><m:ctrlPr><w:rPr><w:color w:val="336699"/><w:sz w:val="48"/></w:rPr></m:ctrlPr></m:funcPr><m:fName><m:r><m:rPr><m:scr m:val="script"/><m:sty m:val="b"/></m:rPr><w:rPr><w:color w:val="FF0000"/><w:sz w:val="24"/></w:rPr><m:t>F</m:t></m:r></m:fName><m:e><m:r><m:rPr><m:scr m:val="double-struck"/><m:sty m:val="p"/></m:rPr><w:rPr><w:color w:val="008000"/><w:sz w:val="32"/></w:rPr><m:t>x</m:t></m:r></m:e></m:func></m:oMath>"#;
+        let mathml=crate::omml::to_mathml(&crate::omml::parse(source).unwrap(),false,"");
+        let(xml,diagnostics)=from_mathml(&mathml).unwrap();assert!(diagnostics.is_empty(),"{mathml}: {diagnostics:?}");
+        let imported=crate::math_document::parse_xml(&xml).unwrap();let functions=native_function_nodes(&imported);assert_eq!(functions.len(),1);
+        let function=functions[0];assert_eq!(native_count(child(function,"funcPr").unwrap(),"ctrlPr"),1);
+        let name=native_find(child(function,"fName").unwrap(),"r").unwrap();let argument=native_find(child(function,"e").unwrap(),"r").unwrap();
+        assert_eq!(prop(name,"rPr","scr"),Some("script"));assert_eq!(prop(name,"rPr","sty"),Some("b"));assert_eq!(prop(argument,"rPr","scr"),Some("double-struck"));
+        let tree=crate::omml::parse(&xml).unwrap();
+        fn find<'a>(n:&'a crate::omml::Node,name:&str,text:Option<&str>)->Option<&'a crate::omml::Node>{if n.name==name&&text.is_none_or(|text|n.run_text()==text){Some(n)}else{n.children.iter().find_map(|n|find(n,name,text))}}
+        let control=crate::omml::control_style(find(&tree,"func",None).unwrap());assert_eq!(control.color,Some([0x33,0x66,0x99]));assert_eq!(control.half_points,Some(48));
+        let name=crate::omml::run_style(find(&tree,"r",Some("F")).unwrap());let argument=crate::omml::run_style(find(&tree,"r",Some("x")).unwrap());
+        assert!(name.bold);assert_eq!((name.color,name.half_points),(Some([255,0,0]),Some(24)));assert_eq!((argument.color,argument.half_points),(Some([0,128,0]),Some(32)));
+        let dsl=crate::math_dsl::decompile(&imported).unwrap();let(rebuilt,_)=crate::math_dsl::compile(&dsl,false).unwrap();assert_eq!(crate::math_document::xml_semantics(&rebuilt),crate::math_document::xml_semantics(&imported));
+    }
+    #[test]fn function_style_wrappers_merge_inner_overrides_once_and_keep_automatic_color(){
+        let source=r#"<math><mstyle mathcolor="red" mathsize="18pt"><mstyle mathcolor="navy" mathsize="24pt"><mrow><mi mathvariant="bold-script">F</mi><mo>&#x2061;</mo><mi mathvariant="double-struck">x</mi></mrow></mstyle></mstyle></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");
+        let root=crate::math_document::parse_xml(&xml).unwrap();let function=native_function_nodes(&root)[0];let control=child(function,"funcPr").unwrap();assert_eq!(native_count(control,"ctrlPr"),1);
+        assert_eq!(control.text(),"");let word=native_find(control,"rPr").unwrap();
+        assert_eq!(word.children().filter(|n|n.local()=="color").count(),1);assert_eq!(word.children().filter(|n|n.local()=="sz").count(),1);
+        let tree=crate::omml::parse(&xml).unwrap();let style=crate::omml::control_style(tree.child("oMath").unwrap().child("func").unwrap());assert_eq!((style.color,style.half_points),(Some([0,0,128]),Some(48)));
+        let source=r#"<m:oMath xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><m:func><m:funcPr><m:ctrlPr><w:rPr><w:sz w:val="36"/></w:rPr></m:ctrlPr></m:funcPr><m:fName><m:r><m:t>sin</m:t></m:r></m:fName><m:e><m:r><m:t>x</m:t></m:r></m:e></m:func></m:oMath>"#;
+        let mathml=crate::omml::to_mathml(&crate::omml::parse(source).unwrap(),false,"");assert!(mathml.contains("CanvasText"));
+        let(xml,diagnostics)=from_mathml(&mathml).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");assert!(xml.contains("w:val=\"auto\""));
+        assert_eq!(native_function_nodes(&crate::math_document::parse_xml(&xml).unwrap()).len(),1);
+    }
+    #[test]fn explicit_function_semantics_use_only_the_presentation_branch(){
+        let source=r#"<math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi>f</mi><mo>+</mo><mi>g</mi></mrow><mo>&#x2061;</mo><mi>x</mi></mrow><annotation encoding="application/x-tex">f(x)</annotation><annotation-xml encoding="MathML-Content"><apply><sin/><ci>z</ci></apply></annotation-xml></semantics></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");let root=crate::math_document::parse_xml(&xml).unwrap();let functions=native_function_nodes(&root);assert_eq!(functions.len(),1);assert_eq!(child(functions[0],"fName").unwrap().text(),"f+g");assert_eq!(child(functions[0],"e").unwrap().text(),"x");assert!(!root.text().contains('z'));
+        let(xml,diagnostics)=from_mathml("<math><mrow><mi>sin</mi><mi>x</mi></mrow></math>").unwrap();assert!(diagnostics.is_empty());assert!(native_function_nodes(&crate::math_document::parse_xml(&xml).unwrap()).is_empty());
+    }
+    #[test]fn generated_function_delimiters_keep_explicit_grow_and_shape_flags(){
+        for (grow,symmetric) in [("true","true"),("false","false"),("true","false"),("false","true")]{
+            let source=format!(r#"<math><mrow><mi>f</mi><mo>&#x2061;</mo><mrow><mo fence="true" stretchy="{grow}" symmetric="{symmetric}">[</mo><mrow><mi>x</mi></mrow><mo fence="true" stretchy="{grow}" symmetric="{symmetric}">]</mo></mrow></mrow></math>"#);
+            let(xml,diagnostics)=from_mathml(&source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");let root=crate::math_document::parse_xml(&xml).unwrap();let delimiter=native_find(&root,"d").unwrap();
+            assert_eq!(prop(delimiter,"dPr","begChr"),Some("["));assert_eq!(prop(delimiter,"dPr","endChr"),Some("]"));assert_eq!(prop(delimiter,"dPr","grow"),Some(if grow=="true"{"1"}else{"0"}));assert_eq!(prop(delimiter,"dPr","shp"),Some(if symmetric=="true"{"centered"}else{"match"}));
+            assert_eq!(child(native_function_nodes(&root)[0],"e").unwrap().text(),"x");
+        }
+        for end in [r#"<mo fence="true" stretchy="false" symmetric="true">)</mo>"#,r#"<mo fence="true" stretchy="true" symmetric="true" lspace="1em">)</mo>"#]{
+            let source=format!(r#"<math><mrow><mi>f</mi><mo>&#x2061;</mo><mrow><mo fence="true" stretchy="true" symmetric="true">(</mo><mrow><mi>x</mi></mrow>{end}</mrow></mrow></math>"#);
+            let(xml,diagnostics)=from_mathml(&source).unwrap();assert!(diagnostics.contains(&"mathml_delimiter_projection".into()));let root=crate::math_document::parse_xml(&xml).unwrap();assert_eq!(native_count(&root,"d"),0);assert!(root.text().contains("(x)"));
+        }
+    }
+    #[test]fn malformed_and_ambiguous_mathml_function_application_is_not_silently_flattened(){
+        for body in ["<mi>f</mi><mo>⁡</mo>","<mo>⁡</mo><mi>x</mi>","<mi>f</mi><mo>⁡</mo><mrow/>","<mrow/><mo>⁡</mo><mi>x</mi>","<mi>f</mi><mo>⁡</mo><mo>⁡</mo><mi>x</mi>",r#"<mi>f</mi><mo>⁡</mo><mrow><mo fence="true" stretchy="true" symmetric="true">(</mo><mrow/><mo fence="true" stretchy="true" symmetric="true">)</mo></mrow>"#]{
+            assert_eq!(from_mathml(&format!("<math><mrow>{body}</mrow></math>")).unwrap_err(),"math_missing_argument","{body}");
+        }
+        for source in ["<math><mrow><mi>f</mi><mo>⁡</mo><mi>x</mi><mi>y</mi></mrow></math>","<math><mrow><mi>f</mi><mo>⁡</mo><mi>g</mi><mo>⁡</mo><mi>x</mi></mrow></math>",r#"<math><mrow><mi>f</mi><mo lspace="1em">⁡</mo><mi>x</mi></mrow></math>"#,"<math><mi>f</mi><mo>⁡</mo><mi>x</mi></math>",r#"<math><mrow data-other="unknown"><mi>f</mi><mo>⁡</mo><mi>x</mi></mrow></math>"#]{
+            let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.contains(&"mathml_function_application_projection".into()),"{source}: {diagnostics:?}");let root=crate::math_document::parse_xml(&xml).unwrap();assert!(native_function_nodes(&root).is_empty());assert!(root.text().contains('⁡'));
+        }
+        assert_eq!(from_mathml(r#"<math xmlns="http://www.w3.org/1998/Math/MathML" xmlns:f="urn:foreign"><mrow><mi>f</mi><f:mo>⁡</f:mo><mi>x</mi></mrow></math>"#).unwrap_err(),"math_invalid_xml");
+    }
     #[test]
     fn mathml_matrix_generated_minimum_and_empty_cells_reimport_as_semantics() {
         for hide in ["", "<m:plcHide/>"] {
@@ -942,6 +1141,74 @@ pub fn from_unicode(source:&str)->Result<String,&'static str>{
         assert!(exported.contains("columnalign=\"left right right\""));assert!(exported.contains("align=\"baseline -1\""));
         let repeated=crate::omml::parse("<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val=\"2\"/><m:mcJc m:val=\"right\"/></m:mcPr></m:mc></m:mcs></m:mPr></m:m>").unwrap();
         assert_eq!(crate::omml::matrix_column_alignments(repeated.child("m").unwrap(),3),["right","right","center"]);
+    }
+    #[test]fn mathml_table_row_and_cell_alignment_overrides_have_editable_column_semantics(){
+        let source=r#"<math><mtable columnalign="center left" columnspacing="1.25pt" rowspacing="12pt" align="baseline -1"><mtr columnalign="left right"><mtd columnalign="center"><mi>a</mi></mtd><mtd><mi>wide</mi></mtd><mtd><mi>c</mi></mtd></mtr><mtr columnalign="center left"><mtd><mi>long</mi></mtd><mtd columnalign="right"><mi>e</mi></mtd><mtd columnalign="right"><mi>f</mi></mtd></mtr></mtable></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");
+        let tree=crate::omml::parse(&xml).unwrap();let matrix=tree.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,3),["center","right","right"]);
+        assert_eq!(matrix.prop("mPr","baseJc"),Some("bot"));assert_eq!(matrix.prop("mPr","cGp"),Some("25"));assert_eq!(matrix.prop("mPr","rSp"),Some("12"));
+        let source_tree=crate::math_document::parse_xml(&xml).unwrap();let dsl=crate::math_dsl::decompile(&source_tree).unwrap();
+        let(rebuilt,_)=crate::math_dsl::compile(&dsl,false).unwrap();assert_eq!(crate::math_document::xml_semantics(&source_tree),crate::math_document::xml_semantics(&rebuilt));
+        let exported=crate::omml::to_mathml(&tree,true,"");assert!(exported.contains("columnalign=\"center right right\""));
+        let(again,diagnostics)=from_mathml(&exported).unwrap();assert!(diagnostics.is_empty(),"{exported}: {diagnostics:?}");
+        let again=crate::omml::parse(&again).unwrap();let matrix=again.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,3),["center","right","right"]);assert_eq!(matrix.prop("mPr","cGp"),Some("25"));assert_eq!(matrix.prop("mPr","rSp"),Some("12"));
+        let document=crate::math_document::parse(&dsl,"dsl",true).unwrap();let id=document.nodes.iter().find(|n|n.kind=="m").unwrap().id.clone();
+        let changed=crate::math_document::patch(&dsl,"dsl",true,&document.revision,&crate::math_document::MathPatch::MatrixColumnAlignment{node_id:id,index:1,alignment:"left".into()}).unwrap();
+        let changed=crate::omml::parse(&changed.root.xml()).unwrap();
+        let display=changed.child("oMathPara").expect("display-mode patch must retain its equation paragraph");
+        let matrix=display.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,3),["center","left","right"]);assert_eq!(matrix.prop("mPr","cGp"),Some("25"));assert_eq!(matrix.prop("mPr","rSp"),Some("12"));
+    }
+    #[test]fn mathml_table_alignment_cascade_preserves_empty_and_ragged_rows(){
+        let source=r#"<math><mtable><mtr columnalign="left right"><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd><mtd><mi>c</mi></mtd></mtr><mtr columnalign="center"/><mtr columnalign="left"><mtd><mi>d</mi></mtd></mtr></mtable></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");
+        let tree=crate::omml::parse(&xml).unwrap();let matrix=tree.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,3),["left","right","right"]);
+        assert_eq!(matrix.children.iter().filter(|n|n.name=="mr").map(|n|n.children.len()).collect::<Vec<_>>(),[3,0,1]);
+    }
+    #[test]fn mathml_table_alignment_overrides_combine_with_uniform_cell_minima(){
+        let source=r#"<math><mtable columnalign="left" columnspacing="1.5em" rowspacing="12pt"><mtr columnalign="right center"><mtd style="box-sizing:content-box;min-width:36pt;padding-left:0pt;padding-right:0.75em;text-align:right"><mi>a</mi></mtd><mtd style="box-sizing:content-box;min-width:36pt;padding-left:0.75em;padding-right:0pt;text-align:center"><mi>b</mi></mtd></mtr><mtr columnalign="left center"><mtd columnalign="right" style="box-sizing:content-box;min-width:36pt;padding-left:0pt;padding-right:0.75em;text-align:right"><mi>c</mi></mtd><mtd style="box-sizing:content-box;min-width:36pt;padding-left:0.75em;padding-right:0pt;text-align:center"><mi>d</mi></mtd></mtr></mtable></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");
+        let tree=crate::omml::parse(&xml).unwrap();let matrix=tree.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,2),["right","center"]);assert_eq!(matrix.prop("mPr","cSp"),Some("720"));assert_eq!(matrix.prop("mPr","cGpRule"),Some("1"));assert_eq!(matrix.prop("mPr","rSp"),Some("12"));
+        let exported=crate::omml::to_mathml(&tree,true,"");let(again,diagnostics)=from_mathml(&exported).unwrap();assert!(diagnostics.is_empty(),"{exported}: {diagnostics:?}");
+        let tree=crate::omml::parse(&again).unwrap();let matrix=tree.child("oMath").unwrap().child("m").unwrap();assert_eq!(crate::omml::matrix_column_alignments(matrix,2),["right","center"]);assert_eq!(matrix.prop("mPr","cSp"),Some("720"));
+    }
+    #[test]fn mathml_table_alignment_overrides_do_not_escape_into_nested_tables(){
+        let source=r#"<math><mstyle columnalign="left"><mtable columnalign="center"><mtr columnalign="center"><mtd columnalign="right"><mtable><mtr><mtd><mi>a</mi></mtd></mtr></mtable></mtd></mtr></mtable></mstyle><mtable><mtr><mtd><mi>b</mi></mtd></mtr></mtable></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");let tree=crate::omml::parse(&xml).unwrap();
+        fn matrices(n:&crate::omml::Node,alignments:&mut Vec<Vec<String>>){if n.name=="m"{alignments.push(crate::omml::matrix_column_alignments(n,1).into_iter().map(str::to_string).collect());}for child in &n.children{matrices(child,alignments);}}
+        let mut alignments=vec![];matrices(&tree,&mut alignments);assert_eq!(alignments,vec![vec!["right".to_string()],vec!["left".to_string()],vec!["center".to_string()]]);
+    }
+    #[test]fn mathml_table_conflicting_column_alignments_keep_explicit_projection(){
+        let source=r#"<math><mtable columnalign="center left"><mtr columnalign="left right"><mtd><mi>a</mi></mtd><mtd><mi>b</mi></mtd></mtr><mtr columnalign="right"><mtd><mi>c</mi></mtd><mtd><mi>d</mi></mtd></mtr></mtable></math>"#;
+        let(xml,diagnostics)=from_mathml(source).unwrap();assert_eq!(diagnostics,["mathml_table_alignment_projection"]);
+        let tree=crate::omml::parse(&xml).unwrap();let matrix=tree.child("oMath").unwrap().child("m").unwrap();
+        assert_eq!(crate::omml::matrix_column_alignments(matrix,2),["center","right"]);
+        for token in ["a","b","c","d"]{assert!(xml.contains(&format!(">{token}<")));}
+    }
+    #[test]fn mathml_table_invalid_alignment_overrides_are_not_silently_accepted(){
+        for value in ["", "left right", "decimalpoint", "LEFT"]{
+            let source=format!(r#"<math><mtable columnalign="left"><mtr columnalign="right"><mtd columnalign="{value}"><mi>x</mi></mtd></mtr></mtable></math>"#);
+            let(xml,diagnostics)=from_mathml(&source).unwrap();assert_eq!(diagnostics,["mathml_table_alignment_projection"],"{value}");
+            let tree=crate::omml::parse(&xml).unwrap();assert_eq!(crate::omml::matrix_column_alignments(tree.child("oMath").unwrap().child("m").unwrap(),1),["right"]);
+        }
+        for value in ["", "left decimalpoint", "RIGHT"]{
+            let source=format!(r#"<math><mtable columnalign="left"><mtr columnalign="{value}"><mtd><mi>x</mi></mtd></mtr></mtable></math>"#);
+            let(xml,diagnostics)=from_mathml(&source).unwrap();assert_eq!(diagnostics,["mathml_table_alignment_projection"],"{value}");
+            let tree=crate::omml::parse(&xml).unwrap();assert_eq!(crate::omml::matrix_column_alignments(tree.child("oMath").unwrap().child("m").unwrap(),1),["left"]);
+        }
+    }
+    #[test]fn mathml_table_spans_remain_outside_column_alignment_folding(){
+        for attribute in [r#"columnspan="2""#,r#"rowspan="2""#,r#"columnspan="0""#]{
+            let source=format!(r#"<math><mtable columnalign="center"><mtr columnalign="left"><mtd {attribute}><mi>x</mi></mtd></mtr></mtable></math>"#);
+            let(xml,diagnostics)=from_mathml(&source).unwrap();assert_eq!(diagnostics,["mathml_table_alignment_projection"],"{attribute}");
+            let tree=crate::omml::parse(&xml).unwrap();assert_eq!(crate::omml::matrix_column_alignments(tree.child("oMath").unwrap().child("m").unwrap(),1),["center"]);
+            assert!(xml.contains(">x<"));
+        }
+        let(_,diagnostics)=from_mathml(r#"<math><mtable><mtr columnalign="left"><mtd rowspan="1" columnspan="1"><mi>x</mi></mtd></mtr></mtable></math>"#).unwrap();assert!(diagnostics.is_empty(),"{diagnostics:?}");
     }
     #[test]fn all_representable_mathml_variants_share_one_valid_run_property_container(){
         for variant in ["normal","bold","italic","bold-italic","script","bold-script","fraktur","bold-fraktur","double-struck","sans-serif","bold-sans-serif","sans-serif-italic","sans-serif-bold-italic","monospace"]{

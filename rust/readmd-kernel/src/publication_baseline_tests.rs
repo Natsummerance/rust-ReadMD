@@ -55,11 +55,11 @@ fn p04_baseline_second_duplicate_edit_clear_and_inverse_preserve_exact_source() 
 fn p04_baseline_consumer_capabilities_reject_even_zero_and_escaped_fields() {
     for pt in [0.,3.] {
         let options=json!({"typography":{"baselineShiftPt":pt}});
-        for (format,engine) in [("docx","rust"),("pdf","rust")] {
+        for (format,engine) in [("docx","rust"),("pdf","rust"),("pdf","typst")] {
             let mut request=options.clone();request["pdf"]=json!({"engine":engine});
             assert!(crate::publication_typography::validate_export(format,"Body.",&request).is_ok());
         }
-        for (format,engine) in [("html","rust"),("epub","rust"),("tex","rust"),("pdf","typst"),("pdf","xelatex")] {
+        for (format,engine) in [("html","rust"),("epub","rust"),("tex","rust"),("pdf","xelatex")] {
             let mut request=options.clone();request["pdf"]=json!({"engine":engine});
             assert_eq!(crate::publication_typography::validate_export(format,"Body.",&request),Err(UNSUPPORTED));
         }
@@ -104,7 +104,7 @@ fn p04_baseline_absent_does_not_replace_legacy_unsupported_style_text_with_an_er
         json!({"text":{"font":"TeX Gyre Termes}\\input{injected}"}})] {
         let doc=Document {blocks:vec![Block::Quote(vec![Block::Styled {attributes:attributes.clone(),
             block:Box::new(Block::Paragraph(vec![Inline::Text("Preserved text.".into())]))}])],..Default::default()};
-        for consumer in [Consumer::Docx,Consumer::RustPdf,Consumer::Reader,Consumer::Unsupported] {
+        for consumer in [Consumer::Docx,Consumer::RustPdf,Consumer::Typst,Consumer::Reader,Consumer::Unsupported] {
             assert!(validate_document(&doc,&json!({}),consumer).is_ok(),"{consumer:?}: {attributes}");
         }
         // Strict source validation remains in force; compatibility belongs to
@@ -114,7 +114,7 @@ fn p04_baseline_absent_does_not_replace_legacy_unsupported_style_text_with_an_er
             let mut opted_in=attributes.clone();opted_in["text"]["baselineShiftPt"]=json!(0);
             let strict=Document {blocks:vec![Block::Styled {attributes:opted_in,
                 block:Box::new(Block::Paragraph(vec![Inline::Text("Invalid mixed request".into())]))}],..Default::default()};
-            for consumer in [Consumer::Docx,Consumer::RustPdf,Consumer::Reader,Consumer::Unsupported] {
+            for consumer in [Consumer::Docx,Consumer::RustPdf,Consumer::Typst,Consumer::Reader,Consumer::Unsupported] {
                 assert_eq!(validate_document(&strict,&json!({}),consumer),Err(INVALID),"{consumer:?}");
             }
         }

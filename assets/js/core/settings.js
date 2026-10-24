@@ -67,7 +67,10 @@ function applySettings() {
   }
   document.body.dataset.theme = theme;
   document.body.style.setProperty('--fs', (state.fontSize / 100).toFixed(2));
-  document.body.style.setProperty('--line-width', state.lineWidth + 'px');
+  const lineWidth = Math.max(320, Math.min(1800, Number.isFinite(state.lineWidth) ? state.lineWidth : 860));
+  document.body.style.setProperty('--line-width', lineWidth + 'px');
+  // Preserve a supplied measure when wide screens adapt the default workspace.
+  document.body.dataset.customLineWidth = String(lineWidth !== 860);
   document.body.style.setProperty('--ai-panel-width', state.aiPanelWidth + 'px');
   updateThemeButton();
   if (typeof syncWindowPreferences === 'function') syncWindowPreferences();

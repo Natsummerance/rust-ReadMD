@@ -252,7 +252,7 @@ pub fn schema() -> &'static Value {
 
 fn marked_root(doc:&MathDocument)->XmlNode{
     fn mark(node:&mut XmlNode){
-        if !node.local().ends_with("Pr") && node.local()!="#root" && node.local()!="t" {
+        if node.namespace==MATH_NS && !node.local().ends_with("Pr") && node.local()!="#root" && node.local()!="t" {
             node.attributes.insert("readmdId".into(),format!("rd-formula-token-omml-{}",node.id.replace('.',"-")));
         }
         for part in &mut node.content{if let XmlPart::Element(n)=part{mark(n);}}
@@ -287,6 +287,7 @@ pub fn preview(doc:&MathDocument,display:bool)->Result<String,&'static str>{
 pub fn preview_at_size(doc:&MathDocument,display:bool,size:f64)->Result<String,&'static str>{
     let root=marked_root(doc);
     let parsed=crate::omml::parse(&root.xml()).map_err(|_|"math_invalid_xml")?;
+    crate::omml::validate_display_context(&parsed,display,None)?;
     Ok(crate::omml::to_mathml_with_context(&parsed,display,&crate::math_formats::tex(&doc.root),size,None))
 }
 
@@ -296,6 +297,7 @@ pub(crate) fn preview_constrained(doc:&MathDocument,display:bool,size:f64,width:
     ->Result<crate::omml::MathmlProjection,&'static str>{
     let root=marked_root(doc);
     let parsed=crate::omml::parse(&root.xml()).map_err(|_|"math_invalid_xml")?;
+    crate::omml::validate_display_context(&parsed,display,width)?;
     crate::omml::to_mathml_constrained(&parsed,display,&crate::math_formats::tex(&doc.root),size,width)
 }
 
@@ -311,6 +313,9 @@ pub fn parse(source: &str, dialect: &str, display: bool) -> Result<MathDocument,
         "omml" => { let root=parse_xml(source)?; if !root.children().any(|n| is_math(n)&&matches!(n.local(),"oMath"|"oMathPara"|"mathPr")) { return Err("math_invalid_xml"); } (root,vec![],vec![]) },
         _ => return Err("math_unsupported_dialect"),
     };
+    // Compiler source markers have been removed before this pure source check.
+    // Finite rendering capabilities are checked by consumers, never by parse.
+    crate::math_word::word_paragraph_context(&root)?;
     Ok(MathDocument {dialect:dialect.into(),source:source.into(),revision:transaction::revision(source),root,nodes,diagnostics})
 }
 
@@ -334,7 +339,16 @@ fn element(name: &str) -> Option<&Value> { schema()["elements"].as_array()?.iter
 fn allowed_child(parent: &str,child: &str)->bool { element(parent).and_then(|e|e["children"].as_array()).is_some_and(|a|a.iter().any(|v|v==child)) }
 /// Documented Office legacy defaults, separate from the unchanged SDK schema.
 pub(crate) fn office_implicit_value(property:&str,attribute:&str)->Option<&'static str>{
-    (attribute=="m:val"&&matches!(property,"lMargin"|"rMargin"|"wrapIndent")).then_some("1440")
+    if attribute!="m:val"{return None;}
+    match property {
+        "lMargin"|"rMargin"|"wrapIndent"=>Some("1440"),
+        // The ISO/IEC remarks reproduced in the official SDK documentation
+        // explicitly define these absent-val defaults. Keep the pinned SDK's
+        // required attributes unchanged and fill values only in native output.
+        "defJc"=>Some("centerGroup"),"intLim"=>Some("subSup"),
+        "naryLim"=>Some("undOvr"),"brkBinSub"=>Some("--"),
+        _=>None,
+    }
 }
 pub(crate) fn validate_value(property:&str,value:&str)->Result<(),&'static str> {
     if value.len()>4096 || value.chars().any(|c| c=='\0' || c=='\u{b}' || c=='\u{c}') {return Err("math_invalid_property");}
@@ -504,6 +518,306 @@ fn matrix_axis(node:&mut XmlNode,axis:&str,index:usize,insert:bool)->Result<(),&
     Ok(())
 }
 
+// M07 edits only the selected Word paragraph leaves. Source validation is
+// separate from finite display capability: legal unsupported values survive.
+fn validate_word_paragraph_leaf(node:&XmlNode)->Result<(),&'static str>{
+    let mut leaf=node.clone();crate::math_word::bind_used_namespaces(&mut leaf);
+    let mut paragraph=XmlNode::new("w:pPr");paragraph.namespace=WORD_NS.into();
+    paragraph.attributes.insert("xmlns:w".into(),WORD_NS.into());
+    paragraph.content.push(XmlPart::Element(leaf));
+    let mut root=XmlNode::new("#root");root.content.push(XmlPart::Element(paragraph));
+    crate::math_word::word_paragraph_context(&root).map(|_|())
+}
+
+fn word_node_path<'a>(root:&'a XmlNode,node_id:&str)->Option<Vec<&'a XmlNode>>{
+    fn path<'a>(node:&'a XmlNode,id:&str,out:&mut Vec<&'a XmlNode>)->bool{
+        out.push(node);if node.id==id{return true;}
+        for child in node.children(){if path(child,id,out){return true;}}
+        out.pop();false
+    }
+    let mut nodes=Vec::new();path(root,node_id,&mut nodes).then_some(nodes)
+}
+
+fn word_attribute_suffix<'a>(root:&XmlNode,node_id:&str,name:&'a str)->Result<&'a str,&'static str>{
+    let nodes=word_node_path(root,node_id).ok_or("math_node_missing")?;
+    let node=nodes.last().ok_or("math_node_missing")?;
+    let (prefix,suffix)=name.split_once(':').ok_or("math_invalid_property")?;
+    // w:* is the canonical operation name, like existing m:* operations.
+    // An imported alias is accepted only with an actual resolved Word URI.
+    let alias=node.attribute_namespaces.get(name).is_some_and(|uri|uri==WORD_NS)
+        || node.name.split_once(':').is_some_and(|(p,_)|p==prefix&&node.namespace==WORD_NS)
+        || nodes.iter().rev().find_map(|entry|entry.attributes.get(&format!("xmlns:{prefix}"))).is_some_and(|uri|uri==WORD_NS);
+    if prefix!="w"&&!alias{return Err("math_invalid_property");}
+    match(node.local(),suffix){("jc"|"b"|"i"|"sz"|"color","val")|("ind","left"|"right")=>Ok(suffix),_=>Err("math_invalid_property")}
+}
+
+fn word_attribute_name(node:&mut XmlNode,suffix:&str)->Result<String,&'static str>{
+    let preferred=node.name.split_once(':').map(|(prefix,_)|prefix.to_string());
+    for index in 0..=MAX_NODES {
+        let prefix=if index==0{preferred.as_deref().unwrap_or("w").to_string()}
+            else if index==1{"w".into()}else{format!("readmdWord{}",index-2)};
+        if node.attributes.get(&format!("xmlns:{prefix}")).is_some_and(|uri|uri!=WORD_NS)
+            || node.attribute_namespaces.iter().any(|(key,uri)|key.split_once(':').is_some_and(|(p,_)|p==prefix)&&uri!=WORD_NS){continue;}
+        node.attributes.insert(format!("xmlns:{prefix}"),WORD_NS.into());
+        return Ok(format!("{prefix}:{suffix}"));
+    }
+    Err("math_budget")
+}
+
+fn word_paragraph_attribute_location(root:&XmlNode,node_id:&str)->bool{
+    let Some(nodes)=word_node_path(root,node_id)else{return false;};if nodes.len()<3{return false;}
+    let paragraph=nodes[nodes.len()-2];if paragraph.namespace!=WORD_NS||paragraph.local()!="pPr"{return false;}
+    let parent=nodes[nodes.len()-3];
+    if parent.local()=="#root"{return true;}
+    if parent.namespace!=WORD_NS{return false;}
+    if parent.local()=="style"{
+        let Some(index)=nodes.len().checked_sub(4)else{return false;};
+        return nodes.get(index).is_some_and(|n|n.namespace==WORD_NS&&n.local()=="styles")
+            && parent.attributes.iter().any(|(key,value)|key.rsplit(':').next()==Some("type")&&value=="paragraph"
+                &&parent.attribute_namespaces.get(key).is_some_and(|uri|uri==WORD_NS));
+    }
+    parent.local()=="pPrDefault"&&nodes.len()>=5
+        &&nodes[nodes.len()-4].namespace==WORD_NS&&nodes[nodes.len()-4].local()=="docDefaults"
+        &&nodes[nodes.len()-5].namespace==WORD_NS&&nodes[nodes.len()-5].local()=="styles"
+}
+
+fn set_word_paragraph_attribute(root:&mut XmlNode,node_id:&str,name:&str,value:Option<&str>)
+    ->Result<(String,Option<String>),&'static str>{
+    // Do not repair a malformed selected context by overwriting its bad value.
+    crate::math_word::word_paragraph_context(root)?;
+    if !word_paragraph_attribute_location(root,node_id){return Err("math_invalid_property");}
+    let suffix=word_attribute_suffix(root,node_id,name)?.to_string();
+    let node=root.find_mut(node_id).ok_or("math_node_missing")?;
+    if node.namespace!=WORD_NS{return Err("math_invalid_property");}
+    validate_word_paragraph_leaf(node)?;
+    if node.local()=="jc"&&value.is_none(){return Err("math_invalid_property");}
+    if value.is_some_and(|value|value.len()>4096||value.chars().any(|c|!matches!(c,'\t'|'\r'|'\n')&&(c as u32)<32||matches!(c,'\u{fffe}'|'\u{ffff}'))){return Err("math_invalid_property");}
+    let keys=node.attributes.keys().filter(|key|key.rsplit(':').next()==Some(suffix.as_str())
+        &&node.attribute_namespaces.get(*key).is_some_and(|uri|uri==WORD_NS)).cloned().collect::<Vec<_>>();
+    if keys.len()>1{return Err("math_invalid_property");}
+    let previous=keys.first().cloned();
+    if let Some(value)=value{
+        let actual=match &previous{Some(key)=>key.clone(),None=>word_attribute_name(node,&suffix)?};
+        node.attributes.insert(actual.clone(),value.into());node.attribute_namespaces.insert(actual,WORD_NS.into());
+    }else if let Some(key)=&previous{
+        node.attributes.remove(key);node.attribute_namespaces.remove(key);
+    }
+    // Validate the edited leaf even in an unselected style; the resolver's
+    // normal cascade intentionally visits only the selected paragraph chain.
+    validate_word_paragraph_leaf(node)?;
+    crate::math_word::word_paragraph_context(root)?;
+    Ok((suffix,previous))
+}
+
+fn validate_word_run_leaf(node:&XmlNode)->Result<(),&'static str>{
+    if node.namespace!=WORD_NS||!matches!(node.local(),"b"|"i"|"sz"|"color"){return Err("math_invalid_property");}
+    let mut value=None;
+    for (key,text) in &node.attributes{
+        if key=="xmlns"||key.starts_with("xmlns:"){continue;}
+        if key.rsplit(':').next()!=Some("val")||!node.attribute_namespaces.get(key).is_some_and(|uri|uri==WORD_NS)
+            ||value.replace(text.as_str()).is_some(){return Err("math_invalid_property");}
+    }
+    if node.content.iter().any(|part|match part{XmlPart::Element(_)=>true,XmlPart::Text(text)=>!text.trim().is_empty(),_=>false}){
+        return Err("math_invalid_property");
+    }
+    match node.local(){
+        "b"|"i"=>if value.is_none_or(|value|matches!(value,"1"|"true"|"on"|"0"|"false"|"off")){Ok(())}else{Err("math_invalid_property")},
+        "sz"=>if value.and_then(|value|value.parse::<u32>().ok()).is_some_and(|value|(1..=3276).contains(&value)){Ok(())}else{Err("math_invalid_property")},
+        "color"=>if value.is_some_and(|value|value.len()==6&&value.bytes().all(|byte|byte.is_ascii_hexdigit())){Ok(())}else{Err("math_invalid_property")},
+        _=>Err("math_invalid_property"),
+    }
+}
+
+fn word_attribute_value<'a>(node:&'a XmlNode,name:&str)->Option<&'a str>{
+    node.attributes.iter().find_map(|(key,value)|
+        (key.rsplit(':').next()==Some(name)&&node.attribute_namespaces.get(key).is_some_and(|uri|uri==WORD_NS)).then_some(value.as_str()))
+}
+
+fn validate_word_run_math_shape(root:&XmlNode)->Result<(),&'static str>{
+    fn canonical_attributes(node:&mut XmlNode)->Result<(),&'static str>{
+        if crate::speech::cancelled(){return Err("cancelled");}
+        if node.namespace==MATH_NS{
+            let definition=element(node.local()).ok_or("math_invalid_property")?;
+            let mut expanded=std::collections::BTreeSet::new();
+            let mut attributes=BTreeMap::new();let mut namespaces=BTreeMap::new();
+            for (key,value) in &node.attributes{
+                if key=="xmlns"||key.starts_with("xmlns:"){attributes.insert(key.clone(),value.clone());continue;}
+                let namespace=node.attribute_namespaces.get(key).map(String::as_str).unwrap_or("");
+                let local=key.rsplit(':').next().unwrap_or(key);
+                if !expanded.insert((namespace.to_string(),local.to_string())){return Err("math_invalid_property");}
+                // The SDK matcher reads canonical keys. A foreign binding of
+                // one of those keys must never impersonate a math attribute.
+                if namespace!=MATH_NS&&definition["attributes"].as_array().into_iter().flatten().any(|attr|attr["name"].as_str()==Some(key.as_str())){
+                    return Err("math_invalid_property");
+                }
+                let canonical=if namespace==MATH_NS{format!("m:{local}")}else{key.clone()};
+                if attributes.insert(canonical.clone(),value.clone()).is_some(){return Err("math_invalid_property");}
+                if !namespace.is_empty(){namespaces.insert(canonical,namespace.into());}
+            }
+            node.attributes=attributes;node.attribute_namespaces=namespaces;
+        }
+        for part in &mut node.content{if let XmlPart::Element(child)=part{canonical_attributes(child)?;}}
+        Ok(())
+    }
+    // This bounded parse-owned copy is only for the canonical-key SDK matcher.
+    // Never serialize it or copy its attribute spellings back to author data.
+    if crate::speech::cancelled(){return Err("cancelled");}
+    let mut validation=root.clone();canonical_attributes(&mut validation)?;
+    crate::math_dsl::validate_tree(&validation)
+}
+
+fn validate_word_run_attribute_context(root:&XmlNode,node_id:&str)->Result<(),&'static str>{
+    crate::math_word::word_paragraph_context(root)?;
+    // Only an actually valid math owner may expose its Word rPr for editing.
+    // A same-named node under an unknown/foreign wrapper is not a run site.
+    validate_word_run_math_shape(root)?;
+    let nodes=word_node_path(root,node_id).ok_or("math_node_missing")?;
+    if nodes.len()<4{return Err("math_invalid_property");}
+    let leaf=nodes[nodes.len()-1];let pr=nodes[nodes.len()-2];let owner=nodes[nodes.len()-3];
+    if pr.namespace!=WORD_NS||pr.local()!="rPr"{return Err("math_invalid_property");}
+    if owner.children().filter(|node|node.namespace==WORD_NS&&node.local()=="rPr").count()!=1{return Err("math_invalid_property");}
+    let style_kind=if owner.namespace==WORD_NS&&owner.local()=="style"{
+        if nodes.len()!=5||nodes[0].local()!="#root"||nodes[1].namespace!=WORD_NS||nodes[1].local()!="styles"{return Err("math_invalid_property");}
+        let kind=word_attribute_value(owner,"type").ok_or("math_invalid_property")?;
+        if !matches!(kind,"paragraph"|"character")||word_attribute_value(owner,"styleId").is_none_or(str::is_empty){return Err("math_invalid_property");}
+        Some(kind)
+    }else{
+        if owner.namespace!=MATH_NS||!matches!(owner.local(),"r"|"ctrlPr")
+            ||!nodes[..nodes.len()-2].iter().all(|node|node.local()=="#root"||node.namespace==MATH_NS)
+            ||!nodes[..nodes.len()-2].iter().any(|node|node.namespace==MATH_NS&&node.local()=="oMath"){return Err("math_invalid_property");}
+        None
+    };
+    if pr.attributes.keys().any(|key|key!="xmlns"&&!key.starts_with("xmlns:")){return Err("math_invalid_property");}
+    let mut axes=std::collections::BTreeSet::new();
+    for node in pr.children().filter(|node|node.namespace==WORD_NS&&matches!(node.local(),"b"|"i"|"sz"|"color")){
+        if !axes.insert(node.local()){return Err("math_invalid_property");}validate_word_run_leaf(node)?;
+    }
+    validate_word_run_leaf(leaf)?;
+    let catalog=root.children().find(|node|node.namespace==WORD_NS&&node.local()=="styles");
+    let styles=match catalog{Some(node)=>crate::math_word::WordMathStyles::parse(&node.xml())?,None=>crate::math_word::WordMathStyles::default()};
+    let paragraph=root.children().find(|node|node.namespace==WORD_NS&&node.local()=="pPr");
+    // Existing graph checks cover selected/default paragraph and all real run
+    // references. Also validate an edited style's chain when it is unselected.
+    styles.capture(paragraph,root)?;
+    if let Some(kind)=style_kind{
+        let mut reference=XmlNode::new(if kind=="paragraph"{"w:pStyle"}else{"w:rStyle"});reference.namespace=WORD_NS.into();
+        reference.attributes.insert("w:val".into(),word_attribute_value(owner,"styleId").ok_or("math_invalid_property")?.into());
+        reference.attribute_namespaces.insert("w:val".into(),WORD_NS.into());
+        let mut probe=XmlNode::new(if kind=="paragraph"{"w:pPr"}else{"w:rPr"});probe.namespace=WORD_NS.into();
+        probe.content.push(XmlPart::Element(reference));
+        if kind=="paragraph"{styles.capture(Some(&probe),root)?;}else{styles.capture(paragraph,&probe)?;}
+    }
+    Ok(())
+}
+
+fn set_word_run_attribute(root:&mut XmlNode,node_id:&str,name:&str,value:Option<&str>)
+    ->Result<(String,Option<String>),&'static str>{
+    // Reject a malformed original leaf/context before applying an otherwise
+    // valid value; this editor does not repair or broaden source admission.
+    validate_word_run_attribute_context(root,node_id)?;
+    let suffix=word_attribute_suffix(root,node_id,name)?.to_string();
+    let node=root.find_mut(node_id).ok_or("math_node_missing")?;
+    let previous=node.attributes.keys().find(|key|key.rsplit(':').next()==Some(suffix.as_str())
+        &&node.attribute_namespaces.get(*key).is_some_and(|uri|uri==WORD_NS)).cloned();
+    if let Some(value)=value{
+        if value.len()>4096{return Err("math_invalid_property");}
+        let actual=match &previous{Some(key)=>key.clone(),None=>word_attribute_name(node,&suffix)?};
+        node.attributes.insert(actual.clone(),value.into());node.attribute_namespaces.insert(actual,WORD_NS.into());
+    }else if let Some(key)=&previous{node.attributes.remove(key);node.attribute_namespaces.remove(key);}
+    validate_word_run_leaf(node)?;
+    validate_word_run_attribute_context(root,node_id)?;
+    Ok((suffix,previous))
+}
+
+#[derive(Clone)]
+struct WordSourceToken{from:usize,to:usize,text:String,quoted:bool}
+fn word_source_tokens(source:&str)->Result<Vec<WordSourceToken>,&'static str>{
+    // This scanner runs only inside a compiled Word scalar leaf. It retains
+    // comments/trivia as untouched bytes and never interprets another tree.
+    if source.len()>crate::math_dsl::MAX_SOURCE{return Err("math_budget");}
+    let mut out=Vec::new();let mut i=0;
+    while i<source.len(){
+        let from=i;let c=source[i..].chars().next().unwrap();
+        if c.is_whitespace(){i+=c.len_utf8();continue;}
+        if source[i..].starts_with("//")||c=='#'{i+=source[i..].find('\n').unwrap_or(source.len()-i);continue;}
+        let quoted=c=='"';let text=if quoted{
+            i+=1;let mut escaped=false;let mut closed=false;
+            while i<source.len(){let c=source[i..].chars().next().unwrap();i+=c.len_utf8();
+                if escaped{escaped=false;}else if c=='\\'{escaped=true;}else if c=='"'{closed=true;break;}}
+            if !closed{return Err("math_invalid_source");}
+            serde_json::from_str::<String>(&source[from..i]).map_err(|_|"math_invalid_source")?
+        }else if c.is_alphanumeric()||c=='_'{
+            i+=c.len_utf8();while i<source.len(){let c=source[i..].chars().next().unwrap();if !(c.is_alphanumeric()||matches!(c,'_'|'.')){break;}i+=c.len_utf8();}
+            source[from..i].into()
+        }else{i+=c.len_utf8();source[from..i].into()};
+        out.push(WordSourceToken{from,to:i,text,quoted});if out.len()>MAX_NODES{return Err("math_budget");}
+    }Ok(out)
+}
+
+fn patch_word_attribute_source(doc:&MathDocument,source:&str,display:bool,node_id:&str,suffix:&str,
+    previous:Option<&str>,value:Option<&str>)->Result<MathDocument,&'static str>{
+    let target=doc.nodes.iter().find(|node|node.id==node_id).ok_or("math_invalid_source")?;
+    let from=transaction::byte_offset(source,target.from)?;let to=transaction::byte_offset(source,target.to)?;
+    let fragment=&source[from..to];if fragment!=target.tex{return Err("math_invalid_source");}
+    let tokens=word_source_tokens(fragment)?;
+    let punct=|index:usize,value:&str|tokens.get(index).is_some_and(|token|!token.quoted&&token.text==value);
+    if tokens.len()<3||!matches!(tokens[0].text.as_str(),"word.jc"|"word.ind"|"word.b"|"word.i"|"word.sz"|"word.color")||tokens[0].quoted
+        ||!punct(1,"(")||!punct(tokens.len()-1,")"){return Err("math_invalid_source");}
+    let end=tokens.len()-1;let mut at=2;let mut arguments=Vec::new();
+    while at<end{
+        let key=at;if !punct(key+1,":"){return Err("math_invalid_source");}
+        let start=key+2;let mut depth=0usize;let mut next=start;
+        while next<end{
+            if !tokens[next].quoted{match tokens[next].text.as_str(){
+                "("=>depth+=1,
+                ")"=>depth=depth.checked_sub(1).ok_or("math_invalid_source")?,
+                "," if depth==0=>break,
+                _=>(),
+            }}next+=1;
+        }
+        if next==start||depth!=0{return Err("math_invalid_source");}
+        arguments.push((key,start,next));
+        if next==end{break;}at=next+1;if at==end{return Err("math_invalid_source");}
+    }
+    let matching=arguments.iter().enumerate().filter(|(_, (key,_,_))|{
+        let compiled=if tokens[*key].text.contains(':'){tokens[*key].text.clone()}else{format!("w:{}",tokens[*key].text)};
+        previous==Some(compiled.as_str())
+    }).map(|(index,_)|index).collect::<Vec<_>>();
+    if matching.len()>1||previous.is_some()&&matching.is_empty(){return Err("math_invalid_source");}
+    let mut edits=Vec::new();
+    let edit=|token:&WordSourceToken,insert:String|TextEdit{from:target.from+pos(fragment,token.from),to:target.from+pos(fragment,token.to),insert};
+    match(matching.first().copied(),value){
+        (Some(index),Some(value))=>{
+            let (_,start,next)=arguments[index];let mut atoms=Vec::new();
+            for token in &tokens[start..next]{
+                if !token.quoted&&matches!(token.text.as_str(),"("|")"){continue;}
+                if !token.quoted&&matches!(token.text.as_str(),"-"|"−"){edits.push(edit(token,String::new()));}
+                else{atoms.push(token);}
+            }
+            if atoms.len()!=1{return Err("math_invalid_source");}
+            edits.push(edit(atoms[0],serde_json::to_string(value).map_err(|_|"math_invalid_source")?));
+        },
+        (Some(index),None)=>{
+            let (key,_,next)=arguments[index];for token in &tokens[key..next]{edits.push(edit(token,String::new()));}
+            if index>0{edits.push(edit(&tokens[key-1],String::new()));}
+            else if next<end{edits.push(edit(&tokens[next],String::new()));}
+        },
+        (None,Some(value))=>{
+            let at=target.from+pos(fragment,tokens[end].from);
+            edits.push(TextEdit{from:at,to:at,insert:format!("{}{suffix}: {}",if arguments.is_empty(){""}else{", "},serde_json::to_string(value).map_err(|_|"math_invalid_source")?)});
+        },
+        (None,None)=>(),
+    }
+    let candidate=transaction::apply(source,&ContentTransaction{base_revision:transaction::revision(source),origin:"formula".into(),edits})?.content;
+    let parsed=parse(&candidate,"dsl",display)?;
+    crate::math_word::word_paragraph_context(&parsed.root)?;
+    if doc.root.find(node_id).is_some_and(|node|matches!(node.local(),"b"|"i"|"sz"|"color")){
+        validate_word_run_attribute_context(&parsed.root,node_id)?;
+    }
+    if xml_semantics(&parsed.root)!=xml_semantics(&doc.root){return Err("math_invalid_source");}
+    Ok(parsed)
+}
+
 pub fn patch(source:&str,dialect:&str,display:bool,expected:&str,operation:&MathPatch)->Result<MathDocument,&'static str> {
     if transaction::revision(source)!=expected {return Err("transaction_conflict");}
     let mut doc=parse(source,dialect,display)?;
@@ -543,6 +857,13 @@ pub fn patch(source:&str,dialect:&str,display:bool,expected:&str,operation:&Math
         MathPatch::MatrixAxis{node_id,axis,index,insert}=>matrix_axis(doc.root.find_mut(node_id).ok_or("math_node_missing")?,axis,*index,*insert)?,
         MathPatch::MatrixColumnAlignment{node_id,index,alignment}=>matrix_column_alignment(doc.root.find_mut(node_id).ok_or("math_node_missing")?,*index,alignment)?,
         MathPatch::SetAttribute{node_id,name,value}=>{
+            if doc.root.find(node_id).is_some_and(|node|node.namespace==WORD_NS){
+                let (suffix,previous)=if doc.root.find(node_id).is_some_and(|node|matches!(node.local(),"b"|"i"|"sz"|"color")){
+                    set_word_run_attribute(&mut doc.root,node_id,name,value.as_deref())?
+                }else{set_word_paragraph_attribute(&mut doc.root,node_id,name,value.as_deref())?};
+                if dialect=="dsl"{return patch_word_attribute_source(&doc,source,display,node_id,&suffix,previous.as_deref(),value.as_deref());}
+                return finish_patch(doc,source,dialect,display,operation);
+            }
             let node=doc.root.find_mut(node_id).ok_or("math_node_missing")?;
             if crate::math_spacing::is_spacing(node){
                 if !matches!(name.as_str(),"width"|"height"|"depth"|"mathsize"){return Err("math_invalid_property");}
@@ -1085,3 +1406,11 @@ mod tests {
         let doc=parse(r"\unknownMacro{x}","latex",false).unwrap();assert_eq!(doc.diagnostics[0].code,"math_unknown_macro");assert_eq!(doc.source,r"\unknownMacro{x}");
     }
 }
+
+#[cfg(test)]
+#[path="math_document_word_paragraph_tests.rs"]
+mod word_paragraph_tests;
+
+#[cfg(test)]
+#[path="math_word_run_edit_tests.rs"]
+mod word_run_edit_tests;

@@ -1525,6 +1525,8 @@ pub struct ConvertJobItem {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_details: Option<Value>,
     pub done: bool,
 }
 
@@ -2706,11 +2708,9 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             let reason = ["legacy_office_parse_failed", "mobi_drm", "mobi_huffcdic", "unsupported_format"]
                 .into_iter()
                 .find(|c| err.contains(c));
-            let mut body = json!({ "ok": false, "error_code": "conversion_failed", "engine": res.engine, "error": err });
-            for code in [crate::api_codes::DOCX_NOTES_INVALID,crate::api_codes::DOCX_NESTED_FOOTNOTE] {
-                if err == code { body["error_code"] = json!(code); }
-            }
-            if let Some(r) = reason {
+            let mut body = crate::conversion_errors::body(&err);
+            body["engine"] = json!(res.engine);
+            if let Some(r) = reason.filter(|_|crate::conversion_errors::decode(&err).is_none()) {
                 body["reason"] = json!(r);
             }
             return Ok(Response::json_status(422, &body));
@@ -2853,6 +2853,7 @@ fn start_convert_job_with_language(app: &Arc<App>, paths: Vec<String>, overwrite
             warns: None,
             error: None,
             error_code: None,
+            error_details: None,
             done: false,
         })
         .collect();
@@ -2949,14 +2950,17 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         let mut status = "error".to_string();
         let mut error: Option<String> = None;
         let mut error_code: Option<String> = None;
+        let mut error_details: Option<Value> = None;
         let mut out: Option<String> = None;
         let mut engine: Option<String> = None;
         let mut warns: Option<Vec<Value>> = None;
 
         if !err.is_empty() && res.text.is_empty() {
             // `if err and not text:` — nothing was produced, so no `out`/`engine`.
-            error = Some(err.clone());
-            error_code = Some("conversion_failed".to_string());
+            let failure = crate::conversion_errors::body(&err);
+            error = failure["error"].as_str().map(str::to_string);
+            error_code = failure["error_code"].as_str().map(str::to_string);
+            error_details = failure.get("error_details").cloned();
         } else if res.text.trim().is_empty() {
             error = Some("未提取到文字（可尝试 OCR）".to_string());
             error_code = Some("empty_output".to_string());
@@ -3003,6 +3007,7 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                     item.status = status;
                     item.error = error;
                     item.error_code = error_code;
+                    item.error_details = error_details;
                     item.out = out;
                     item.engine = engine;
                     item.warns = warns;
@@ -4758,6 +4763,7 @@ mod tests {
                 warns: Some(vec![]),
                 error: None,
                 error_code: None,
+                error_details: None,
                 done: true,
             },
             ConvertJobItem {
@@ -4769,6 +4775,7 @@ mod tests {
                 warns: None,
                 error: None,
                 error_code: None,
+                error_details: None,
                 done: false,
             },
         ];
