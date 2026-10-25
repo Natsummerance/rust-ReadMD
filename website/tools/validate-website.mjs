@@ -3,6 +3,7 @@
 // Usage: node website/tools/validate-website.mjs [--release] [--root DIR]
 import fs from 'node:fs';
 import { publishedRelease } from '../public/assets/release-contract.mjs';
+import { aiIllustrationProblems } from './build-ai-pages.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -492,11 +493,25 @@ function main() {
     if(/data-webm=/.test(html))errors.push('Derived WebM belongs to ignored dist only: '+c.path);
     if(/class="journey-caption[^>]*\sinert\b/.test(html))errors.push('Static chapters must remain accessible without JavaScript: '+c.path);
   }
-  for (const c of [...Object.values(INTEGRATION_PAGES),...Object.values(AI_PAGES)]) {
+  for (const c of Object.values(INTEGRATION_PAGES)) {
     if (!isFile(c.path)) { errors.push('Missing integration page: '+c.canonical); continue; }
     const html=read(c.path);
     if (!html.includes('rel="canonical" href="'+c.canonical+'"')) errors.push('Integration canonical mismatch: '+c.canonical);
-    if (!html.includes('V'+RELEASE_INFO.candidate) || (!html.includes('--mcp') && !html.includes('ai-autocomplete.mp4'))) errors.push('Integration capabilities missing: '+c.canonical);
+    if (!html.includes('V'+RELEASE_INFO.candidate) || !html.includes('--mcp')) errors.push('Integration capabilities missing: '+c.canonical);
+  }
+  for (const [lang, c] of Object.entries(AI_PAGES)) {
+    if (!isFile(c.path)) { errors.push('Missing AI illustration page: '+c.canonical); continue; }
+    const html = read(c.path);
+    if (!html.includes('rel="canonical" href="'+c.canonical+'"') || !html.includes('V'+RELEASE_INFO.candidate)) errors.push('AI illustration identity mismatch: '+c.canonical);
+    errors.push(...aiIllustrationProblems(html, lang));
+    if (RELEASE) {
+      const staged = path.join(SITE, 'dist', path.relative(PUBLIC, c.path));
+      if (!isFile(staged)) errors.push('Missing staged AI illustration: '+staged);
+      else errors.push(...aiIllustrationProblems(read(staged), lang));
+    }
+  }
+  for (const base of RELEASE ? [PUBLIC, path.join(SITE, 'dist')] : [PUBLIC]) {
+    if (!isFile(path.join(base, 'assets/ai-illustration.js'))) errors.push('Missing offline AI illustration script: '+base);
   }
   const groups = [[LANGUAGES, 'index'], [INTENT_PAGES, 'workflow page'], [DOWNLOAD_PAGES, 'download page'], [ANSWER_PAGES, 'answer page']];
   for (const [group, label] of groups) {

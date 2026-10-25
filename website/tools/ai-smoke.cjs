@@ -1,19 +1,63 @@
-const fs=require('fs'),path=require('path'),assert=require('assert/strict'),{chromium}=require('playwright'),{start}=require('./lib/serve-static.cjs');
-async function until(page,fn){const end=Date.now()+20000;while(Date.now()<end){if(await page.evaluate(fn))return;await page.waitForTimeout(80);}throw Error('Website state timeout');}
-(async()=>{const local=await start(path.resolve(__dirname,'../dist')),browser=await chromium.launch({headless:true,channel:'msedge'}),report={passed:false,cases:[],errors:[]};
-try{
- for(const prefix of ['','zh-cn/','zh-tw/','ja/'])for(const scheme of ['light','dark']){
-  const page=await browser.newPage({viewport:{width:1280,height:800},colorScheme:scheme});page.on('pageerror',e=>report.errors.push(e.message));page.on('response',r=>{if(r.status()>=400)report.errors.push(r.status()+' '+new URL(r.url()).pathname);});
-  await page.goto(local.url+'/'+prefix+'ai-autocomplete/');await until(page,()=>document.querySelector('main h1').classList.contains('motion-item'));
-  assert.ok((await page.locator('body').textContent()).includes('V0.0.5'));
-  await page.locator('video').scrollIntoViewIfNeeded();await page.locator('video').evaluate(v=>{v.preload='auto';v.load();});
-  await until(page,()=>document.querySelector('video').readyState>=2);
-  const media=await page.locator('video').evaluate(v=>({width:v.videoWidth,height:v.videoHeight,duration:v.duration}));assert.equal(media.width,3840);assert.equal(media.height,2160);assert.ok(media.duration>5);
-  await page.locator('video').evaluate(async v=>{v.muted=true;await v.play();});await page.waitForTimeout(150);assert.ok(await page.locator('video').evaluate(v=>v.currentTime>0));
-  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-  assert.equal(await page.locator('article').count(),2);report.cases.push({prefix,scheme,...media,mobileOverflow:false});await page.close();
- }
- assert.deepEqual(report.errors,[]);report.passed=true;console.log(JSON.stringify(report));
- if(process.env.READMD_AI_SITE_REPORT)fs.writeFileSync(process.env.READMD_AI_SITE_REPORT,JSON.stringify(report,null,2));
-}finally{await browser.close();await new Promise(r=>local.server.close(r));}
-})().catch(e=>{console.error(e);process.exitCode=1;});
+const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict');
+const { chromium } = require('playwright'), { start } = require('./lib/serve-static.cjs');
+
+(async () => {
+  const local = await start(path.resolve(__dirname, '../dist'));
+  const report = { passed: false, cases: [], errors: [] };
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true, ...(process.env.READMD_AI_SITE_CHANNEL ? { channel: process.env.READMD_AI_SITE_CHANNEL } : {}) });
+    for (const prefix of ['', 'zh-cn/', 'zh-tw/', 'ja/']) for (const scheme of ['light', 'dark']) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, colorScheme: scheme });
+      await page.route('https://api.github.com/**', route => route.abort());
+      page.on('pageerror', error => report.errors.push(error.message));
+      page.on('response', response => { if (response.url().startsWith(local.url) && response.status() >= 400) report.errors.push(response.status() + ' ' + new URL(response.url()).pathname); });
+      page.on('request', request => { if (/\.(?:mp4|webm|mov)(?:[?#]|$)/i.test(request.url())) report.errors.push('Unexpected recording request: ' + request.url()); });
+      await page.goto(local.url + '/' + prefix + 'ai-autocomplete/');
+      const demo = page.locator('[data-ai-illustration="offline"]');
+      await page.waitForFunction(() => document.querySelector('[data-ai-illustration]')?.dataset.aiReady === 'true');
+      assert.equal(await page.locator('video,source,iframe').count(), 0);
+      assert.ok((await demo.locator('[data-ai-disclosure]').textContent()).trim());
+      assert.ok((await demo.locator('[data-ai-context]').textContent()).trim());
+      const editor = demo.locator('[data-ai-editor]'), draft = await demo.locator('[data-ai-draft]').textContent();
+      const suggestion = await demo.locator('[data-ai-suggestion]').textContent();
+      const state = () => demo.getAttribute('data-ai-state');
+      await editor.focus(); await editor.press('Tab');
+      assert.equal(await state(), 'accepted');
+      assert.equal(await demo.locator('[data-ai-inserted]').textContent(), suggestion);
+      assert.equal(await demo.locator('[data-ai-suggestion]').isVisible(), false);
+      assert.equal(await demo.locator('[data-ai-draft]').textContent(), draft);
+      await editor.press('Tab');
+      assert.equal(await editor.evaluate(node => document.activeElement === node), false, 'Tab must leave after accepting');
+      await demo.locator('[data-ai-action="undo"]').click();
+      assert.equal(await state(), 'restored');
+      assert.equal(await demo.locator('[data-ai-inserted]').textContent(), '');
+      assert.equal(await demo.locator('[data-ai-draft]').textContent(), draft);
+      assert.equal(await demo.locator('[data-ai-action="undo"]').isDisabled(), true);
+      await demo.locator('[data-ai-action="reset"]').click(); await editor.press('Escape');
+      assert.equal(await state(), 'dismissed');
+      assert.equal(await demo.locator('[data-ai-inserted]').textContent(), '');
+      await demo.locator('[data-ai-action="reset"]').click();
+      await page.emulateMedia({ reducedMotion: 'reduce' }); await page.setViewportSize({ width: 390, height: 844 });
+      await editor.press('Tab'); await editor.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+      assert.equal(await state(), 'restored', 'reduced motion keeps controls usable');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      report.cases.push({ prefix, scheme, accepted: true, dismissed: true, oneUndo: true, tabLeaves: true, reducedMotion: true, mobileOverflow: false });
+      await page.close();
+    }
+    for (const prefix of ['', 'zh-cn/', 'zh-tw/', 'ja/']) {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+      await page.goto(local.url + '/' + prefix + 'ai-autocomplete/');
+      assert.ok(await page.locator('[data-ai-disclosure]').isVisible());
+      assert.ok(await page.locator('[data-ai-suggestion]').isVisible());
+      assert.ok(await page.locator('noscript').isVisible());
+      assert.equal(await page.locator('[data-ai-action="accept"]').isDisabled(), true);
+      report.cases.push({ prefix, noJavaScriptReadable: true }); await page.close();
+    }
+    assert.deepEqual(report.errors, []); report.passed = true;
+    console.log(JSON.stringify(report));
+    if (process.env.READMD_AI_SITE_REPORT) fs.writeFileSync(process.env.READMD_AI_SITE_REPORT, JSON.stringify(report, null, 2));
+  } finally {
+    await browser?.close(); await new Promise(resolve => local.server.close(resolve));
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });

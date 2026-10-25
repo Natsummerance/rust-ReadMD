@@ -2170,7 +2170,7 @@ mod tests {
         }
         for (code, ok, stdout) in NODE_GOLDEN {
             let res = execute_code_chunk(code, "js", false, 5, None);
-            assert_eq!(res.get("ok").and_then(|v| v.as_bool()), Some(*ok), "{code:?}");
+            assert_eq!(res.get("ok").and_then(|v| v.as_bool()), Some(*ok), "{code:?}: {res:?}");
             if stdout.contains("readmd-script-") {
                 // 临时目录名一次性：只验「脚本路径被当成一个 argv 元素」。
                 let out = get_str(&res, "stdout");

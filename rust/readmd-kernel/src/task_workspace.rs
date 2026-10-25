@@ -12,6 +12,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 mod registry;
+#[cfg(unix)]
+mod unix;
 
 const PROTOCOL: &str = "worker-tasks-v1";
 const MAX_RECORD: u64 = 4 * 1024 * 1024;
@@ -262,12 +264,23 @@ fn plain(path: &Path, directory: bool) -> io::Result<()> {
     Ok(())
 }
 fn directory(path: &Path) -> io::Result<()> {
-    match fs::create_dir(path) {
+    match create_directory(path) {
         Ok(()) => (),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
         Err(e) => return Err(e),
     }
     plain(path, true)
+}
+fn create_directory(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        fs::create_dir(path)
+    }
 }
 fn profile(data: &Path) -> io::Result<String> {
     let canonical = data.canonicalize()?;
@@ -305,25 +318,19 @@ fn journal_root(data: &Path, create: bool) -> io::Result<PathBuf> {
     Ok(root)
 }
 fn owner(path: &Path, create: bool) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create_new(create);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(0).custom_flags(0x00200000);
-    }
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        #[cfg(target_os = "linux")]
-        const NOFOLLOW: i32 = 0x20000;
-        #[cfg(target_os = "macos")]
-        const NOFOLLOW: i32 = 0x100;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        const NOFOLLOW: i32 = 0;
-        options.custom_flags(NOFOLLOW);
-    }
-    let file = options.open(path)?;
+    let file = unix::open_file(path, true, create)?;
+    #[cfg(not(unix))]
+    let file = {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(create);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0).custom_flags(0x00200000);
+        }
+        options.open(path)?
+    };
     if file.metadata()?.len() != 0 {
         return Err(invalid());
     }
@@ -355,19 +362,27 @@ fn append(file: &mut File, event: &Event) -> io::Result<()> {
     file.sync_data()
 }
 fn open_journal(path: &Path, writable: bool, deleting_links: bool) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.read(true).write(writable);
-    registry::nofollow(&mut options);
-    #[cfg(windows)]
+    #[cfg(unix)]
     {
-        use std::os::windows::fs::OpenOptionsExt;
-        options
-            .share_mode(1 | if deleting_links { 4 } else { 0 })
-            .custom_flags(0x00200000);
+        let _ = deleting_links;
+        unix::open_file(path, writable, false)
     }
-    #[cfg(not(windows))]
-    let _ = deleting_links;
-    options.open(path)
+    #[cfg(not(unix))]
+    {
+        let mut options = OpenOptions::new();
+        options.read(true).write(writable);
+        registry::nofollow(&mut options);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options
+                .share_mode(1 | if deleting_links { 4 } else { 0 })
+                .custom_flags(0x00200000);
+        }
+        #[cfg(not(windows))]
+        let _ = deleting_links;
+        options.open(path)
+    }
 }
 fn load(path: &Path) -> io::Result<Record> {
     load_file(open_journal(path, false, false)?)
@@ -573,7 +588,7 @@ impl Workspace {
         let _admission = registry::admit(&journal_root, &profile, purpose, &temp)?;
         let id = uuid::Uuid::new_v4().simple().to_string();
         let journal_dir = journal_root.join(&id);
-        fs::create_dir(&journal_dir)?;
+        create_directory(&journal_dir)?;
         let mut creation = Creation {
             identity: identity_path(&journal_dir, Kind::Directory)?,
             directory: journal_dir.clone(),
@@ -596,7 +611,7 @@ impl Workspace {
         identity_file(&work_guard, &Kind::Directory)?;
         creation.work_parents.push(work_guard);
         let root = parent.join(&id);
-        fs::create_dir(&root)?;
+        create_directory(&root)?;
         let root_id = identity_path(&root, Kind::Directory)?;
         creation.root = Some((root.clone(), root_id.clone()));
         checkpoint(CreationStage::WorkRoot, &root)?;
@@ -801,7 +816,7 @@ pub(crate) fn copy(source: &Path, target: &Path) -> io::Result<()> {
     Ok(())
 }
 pub(crate) fn create_dir(path: &Path) -> io::Result<()> {
-    fs::create_dir(path)?;
+    create_directory(path)?;
     if let Some(inner) = scoped(path) {
         let file = open_identity(path, false)?;
         track(&inner, path, &file, Kind::Directory, None)?;
@@ -1013,6 +1028,11 @@ fn recover_one_at(
         checkpoint,
     )
 }
+#[cfg(unix)]
+fn reclaim_work(record: &Record) -> io::Result<bool> {
+    unix::reclaim_work(record)
+}
+#[cfg(not(unix))]
 fn reclaim_work(record: &Record) -> io::Result<bool> {
     let root = &record.header.root;
     // The exclusive task lease also covers inherited worker handles. Recover
@@ -1075,7 +1095,11 @@ fn publish_retirement(
     let retiring = record.retiring.as_ref().ok_or_else(invalid)?;
     let journal_dir = root.join(id);
     let witness = witness_path(root, id);
-    match fs::hard_link(journal_dir.join("record.jsonl"), &witness) {
+    #[cfg(unix)]
+    let linked = unix::link_journal(&journal_dir, &witness, retiring);
+    #[cfg(not(unix))]
+    let linked = fs::hard_link(journal_dir.join("record.jsonl"), &witness);
+    match linked {
         Ok(()) => (),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => (),
         // No copy/delete fallback on filesystems without atomic hard links.
@@ -1105,6 +1129,10 @@ fn retire_witness(
     let witness_file = open_journal(&witness, false, true)?;
     let record = load_file(witness_file.try_clone()?)?;
     record_matches(data, id, &record)?;
+    #[cfg(unix)]
+    if !record.finished || !record.refs.is_empty() {
+        return Ok(Outcome::Retained);
+    }
     let retiring = record.retiring.as_ref().ok_or_else(invalid)?;
     if identity_file(&witness_file, &Kind::File)? != retiring.journal {
         return Ok(Outcome::Preserved);
@@ -1169,8 +1197,8 @@ fn retire_witness(
     }
     Ok(Outcome::Removed)
 }
-// Hold every absolute ancestor without delete-sharing. A concurrently replaced
-// parent cannot redirect a later path-based open into somebody else's files.
+// Windows pins absolute ancestors without delete-sharing. Unix deletion instead
+// anchors and revalidates the entire descriptor chain for each exact leaf.
 fn absolute_parents(path: &Path) -> io::Result<Vec<File>> {
     let parent = path.parent().ok_or_else(invalid)?;
     let mut current = PathBuf::new();
@@ -1235,9 +1263,9 @@ fn open_parent(path: &Path) -> io::Result<File> {
         .custom_flags(0x02000000 | 0x00200000)
         .open(path)
 }
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn open_parent(path: &Path) -> io::Result<File> {
-    open_identity(path, false)
+    unix::open_directory(path)
 }
 pub fn recover(data: &Path, maximum: usize) -> io::Result<RecoveryReport> {
     let mut report = RecoveryReport::default();
@@ -1373,35 +1401,32 @@ fn remove_identified(
 }
 #[cfg(unix)]
 fn open_identity(path: &Path, _deleting: bool) -> io::Result<File> {
-    File::open(path)
+    unix::open_identity(path)
 }
 #[cfg(unix)]
 fn identity_file(file: &File, kind: &Kind) -> io::Result<Identity> {
     use std::os::unix::fs::MetadataExt;
     let m = file.metadata()?;
-    if m.is_dir() != (*kind == Kind::Directory) || *kind == Kind::Link {
+    if !matches!(kind, Kind::Directory | Kind::File)
+        || (*kind == Kind::Directory && !m.is_dir())
+        || (*kind == Kind::File && !m.is_file())
+    {
         return Err(invalid());
     }
     Ok(Identity {
         volume: m.dev(),
         index: m.ino(),
-        created: m
-            .created()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0),
+        created: unix::birth_identity(file, &m),
     })
 }
-#[cfg(not(windows))]
+#[cfg(unix)]
 fn remove_identified(
-    _path: &Path,
-    _identities: &[Identity],
-    _kind: &Kind,
-    _target: Option<&Path>,
+    path: &Path,
+    identities: &[Identity],
+    kind: &Kind,
+    target: Option<&Path>,
 ) -> io::Result<bool> {
-    // Do not claim unlinkat/descriptor-relative native validation from Windows.
-    Ok(false)
+    unix::remove_identified(path, identities, kind, target)
 }
 
 #[cfg(all(test, windows))]

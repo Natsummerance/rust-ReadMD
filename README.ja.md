@@ -11,7 +11,7 @@
 
  # ReadMD (Pure Rust Edition)
 
- **100% ピュア Rust ネイティブ・クロスプラットフォーム Markdown リーダー＆エディター**
+ **Rust ネイティブコアを備えたクロスプラットフォーム Markdown リーダー＆エディター**
 
  長大文書の意味的ページネーション · 表示層での非破壊修復 · Office/PDF/Web から MD への変換 · オフライン OCR · LaTeX 学术支援 · MCP 連携 · Python 依存性ゼロ
 
@@ -34,24 +34,24 @@
 | 8,000 行または 500KB を超える文件 | セマンティックページ分割で目次と Ctrl+F 検索を使いやすく保ちます |
 | 表の区切り線や数式が壊れている場合 | メモリ上の表示だけを修復し、元ファイルは変更しません |
 | DOCX / PPTX / XLSX / PDF / HTML がある | Markdown への変換で手作業を減らします |
-| 画像内の文字が必要 | 対応環境ではシステム OCR をオフラインで利用できます |
+| 画像内の文字が必要 | 対応する OCR 機能パックを必要に応じて導入し、オフラインで認識できます |
 | 論文や技術資料を書く場合 | BibTeX カード、定理・証明ブロック、LaTeX エクスポートを支援します |
 | デスクトップでペットと対話したい | CC0 Arch-Chan Live2D & 73種の呼吸スプライト、全画面フキダシ同期 |
-| 高精度に PDF テキストを修復したい | ベクター PDF エディター内蔵、ゼロ汚染差分検査と一発ロールバック |
-| AI ワークフローに接したい | VS Code 拡張と FastMCP stdio サーバー (21種ツール) を提供します |
-| 多言語チームでの共同作業 | 46言語 100% 辞書完全一致 (1563項目)、英語の無断漏れゼロ |
+| PDF を編集したい | 対応プラットフォームに PDFium 機能パックを導入し、利用可能な操作を機能の状態表示で確認できます |
+| AI ワークフローに接したい | VS Code 拡張と Rust stdio MCP サーバーを提供します |
+| 自分の言語で操作したい | 46 の表示言語を提供し、キー・プレースホルダー・長文のレイアウトを検査しています |
 
 ## 直接ダウンロード
 
-[Windows インストーラー](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) ·
-[Windows ポータブル版](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) ·
-[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) ·
-[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) ·
-[麒麟 V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt)
+[Windows インストーラー](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) ·
+[Windows ポータブル版](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) ·
+[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) ·
+[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
+[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
+[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
+[VS Code 拡張](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) ·
+[MCP 設定キット](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) ·
+[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
 
 ## 3 ステップで開始
 
@@ -91,20 +91,24 @@ ReadMD は、長期間保管する資料で起こりやすい問題に取り組�
 
 ## プラットフォーム別ダウンロード (Release Assets)
 
+配布ファイルがあることは、すべての環境でネイティブ検証が完了したことを意味しません。対象範囲と検証記録は `release/platform-matrix.json` を参照してください。Windows 7/8、HarmonyOS/OpenHarmony、未公開のアーキテクチャは V0.0.5 の配布対象外です。
+
 | プラットフォーム | アーキテクチャ / 形式 | 直接ダウンロードリンク (GitHub Release) | 概要 |
 | :--- | :--- | :--- | :--- |
-| **Windows** | x64 (インストーラー) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) | `.md` 関連付けを自動登録するセットアップ版 |
-| **Windows** | x64 (ポータブル版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) | インストール不要の単一実行ファイル |
-| **macOS** | Apple Silicon (M1〜M4) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) | Apple Silicon Mac 向けネイティブビルド (Vision OCR 内蔵) |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) | Intel Mac 向けネイティブビルド (Vision OCR 内蔵) |
-| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) | インストール不要の Linux tar.gz パッケージ |
-| **Linux / 国産 OS** | Debian / Ubuntu / UOS / 麒麟 | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) | Deb ネイティブインストールパッケージ |
-| **チェックサム** | SHA-256 リスト | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt) | 配布ファイルの整合性検証用チェックサム |
+| **Windows** | x64 (インストーラー) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) | Windows x64 インストーラー。既定のアプリはシステム設定で選択 |
+| **Windows** | x64 (ポータブル版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) | ZIP 全体を展開し、assets とランタイムを保持したまま ReadMD.exe を実行 |
+| **macOS** | Apple Silicon (M1〜M4) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) | Apple Silicon Mac アプリ。ネイティブ検証状況はプラットフォーム表を参照 |
+| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) | Intel Mac アプリ。ネイティブ検証状況はプラットフォーム表を参照 |
+| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) | 展開後に ReadMD を実行。システムの GTK / WebKitGTK が必要 |
+| **Linux / 国産 OS** | Debian / Ubuntu / UOS / 麒麟 | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) | x86_64 Deb パッケージ。各環境の互換性はネイティブ検証記録を参照 |
+| **チェックサム** | SHA-256 リスト | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt) | 配布ファイルの整合性検証用チェックサム |
+
+Windows ZIP は全体を展開し、ディレクトリ構成を保持してください。デスクトップの起動には Windows WebView2、macOS のシステム WebKit、または Linux GTK / WebKitGTK が必要です。OCR、PDFium、Typst、出版用フォントは任意の機能パックで、基本インストーラーや ZIP には含まれません。エンジンパックの準備・実機検証は現在 Windows x64 のみで、他の環境は実際のパック一覧を確認してください。Linux ARM64 / 麒麟 ARM64 は現在ビルドスクリプトのみで、V0.0.5 インストーラーは未公開です。
 
 ---
 
 <div align="center">
 
-**ReadMD** · 完全ローカル優先、全プラットフォーム対応 Markdown ツール。
+**ReadMD** · ローカル優先、検証済みの対応環境で使える Markdown ツール。
 
 </div>

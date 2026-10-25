@@ -143,6 +143,26 @@ fn tex_typed_paragraph_absent_and_null_modes_keep_legacy_output_and_no_metric_re
 }
 
 #[test]
+fn tex_typed_paragraph_worker_alias_is_canonical_but_untrusted_log_paths_are_not_resolved() {
+    let (source, mut context) = render("BODY", json!({"mode":"exact","pt":18}));
+    let worker = tempfile::tempdir().unwrap();
+    let alias = worker.path().join(".");
+    context.bind_worker_directory(&alias).unwrap();
+    let canonical = dunce::canonicalize(worker.path()).unwrap();
+    for directory in [alias.as_path(), worker.path(), canonical.as_path()] {
+        let log = packet(&context, 18., 30., 493., 340.,
+            &directory.join("document.tex").to_string_lossy());
+        assert!(context.diagnostic(&log, &source, &alias).is_some(), "{log}");
+    }
+    let foreign = tempfile::tempdir().unwrap();
+    let log = packet(&context, 18., 30., 493., 340.,
+        &foreign.path().join("document.tex").to_string_lossy());
+    assert!(context.diagnostic(&log, &source, worker.path()).is_none());
+    let valid = packet(&context, 18., 30., 493., 340., "document.tex");
+    assert!(context.diagnostic(&valid, &source, foreign.path()).is_none());
+}
+
+#[test]
 fn tex_typed_paragraph_nonce_packet_is_bound_to_source_worker_and_registered_request() {
     let (source,mut context)=render("BODY",json!({"mode":"exact","pt":18}));
     let worker=tempfile::tempdir().unwrap();context.bind_worker_directory(worker.path()).unwrap();

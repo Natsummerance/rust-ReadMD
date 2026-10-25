@@ -3,9 +3,13 @@ const { test, expect } = require('@playwright/test');
 const json = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
 const initial = '# Panel acceptance\n\nKeep this draft.\n';
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, baseURL }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.addInitScript(() => localStorage.setItem('readmd_language', 'zh-CN'));
+  await page.addInitScript(origin => {
+    // Preview frames may have an opaque origin and cannot access app storage.
+    if (window !== window.top || location.origin !== origin) return;
+    localStorage.setItem('readmd_language', 'zh-CN');
+  }, new URL(baseURL).origin);
   await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async content => {
     const path = await uploadFile(new File([content], 'panel-acceptance.md', { type: 'text/markdown' }));
@@ -176,21 +180,54 @@ test('image completion cannot overwrite a document changed during the save', asy
 });
 
 test('batch OCR waits for each result and reports partial failure accurately', async ({ page }) => {
+  // This is a UI transport fixture, not a native OCR-engine acceptance test.
+  // OCR checks pack readiness and module readiness before requesting text.
+  let capabilityChecks = 0, moduleLoads = 0;
+  await page.route('**/api/capabilities/packs', route => {
+    const body = route.request().postDataJSON();
+    if (body.action !== 'status' || body.id !== 'ocr') return route.fallback();
+    expect(route.request().method()).toBe('POST'); capabilityChecks++;
+    return json(route, { ok:true, id:'ocr', installed:true, ready:true, busy:false, present:true });
+  });
+  await page.route('**/api/modules/load', route => {
+    const body = route.request().postDataJSON();
+    if (body.name !== 'ocr') return route.fallback();
+    expect(route.request().method()).toBe('POST');
+    expect(body).toEqual({ name:'ocr', retry:true }); moduleLoads++;
+    return json(route, { ok:true, name:'ocr', status:'ready' });
+  });
+  await page.route('**/api/modules', route => json(route, { ok:true, modules:{ ocr:'ready' }, errors:{}, win7:false }));
   let active = 0, peak = 0, calls = 0;
+  const events = [];
   await page.route('**/api/ocr?*', async route => {
+    expect(route.request().method()).toBe('GET');
+    const sourcePath = new URL(route.request().url()).searchParams.get('p');
+    const name = sourcePath.split(/[\\/]/).pop();
+    events.push('start:' + name);
     const index = ++calls; peak = Math.max(peak, ++active);
     await new Promise(resolve => setTimeout(resolve, 100)); --active;
-    await json(route, index === 2 ? { empty:true, content:'' } : { name:'Recognized-' + index, dir:'', content:'# Recognized-' + index, fixes:[] });
+    events.push('result:' + name);
+    await json(route, {
+      name, dir:sourcePath.replace(/[\\/][^\\/]*$/, ''), source:'ocr', path:sourcePath, fixes:[],
+      ...(index === 2 ? { empty:true, content:'', note_code:'ocr_no_text' } : { content:'# Recognized-' + index }),
+    });
   });
   const before = await page.evaluate(() => state.tabs.length);
   const chooser = page.waitForEvent('filechooser');
   await page.evaluate(() => chooseFile('ocr'));
   const selection = await chooser;
-  await selection.setFiles([1,2,3].map(n => ({ name:'scan-' + n + '.png', mimeType:'image/png', buffer:Buffer.from('demo OCR transport fixture') })));
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==', 'base64');
+  await selection.setFiles([1,2,3].map(n => ({ name:'scan-' + n + '.png', mimeType:'image/png', buffer:png })));
   const summary = await page.evaluate(() => i18n.t('batch.summary', { ok:2, skipped:0, failed:1 }));
   await expect(page.locator('#toast')).toHaveText(summary);
   expect(calls).toBe(3); expect(peak).toBe(1);
+  expect(capabilityChecks).toBe(3); expect(moduleLoads).toBe(1);
+  expect(events).toEqual([1,2,3].flatMap(n => ['start:scan-' + n + '.png', 'result:scan-' + n + '.png']));
   expect(await page.evaluate(() => state.tabs.length)).toBe(before + 2);
+  expect(await page.evaluate(before => state.tabs.slice(before).map(tab => ({ name:tab.name, content:tab.content, source:tab.source })), before)).toEqual([
+    { name:'scan-1.md', content:'# Recognized-1', source:'ocr' },
+    { name:'scan-3.md', content:'# Recognized-3', source:'ocr' },
+  ]);
   await expect(page.locator('#btn-ocr')).toBeEnabled();
 });
 

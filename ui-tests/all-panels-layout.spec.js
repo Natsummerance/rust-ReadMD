@@ -7,11 +7,16 @@ const json = (route, body) => route.fulfill({ status: 200, contentType: 'applica
 for (const size of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }]) {
   for (const locale of (process.env.READMD_PANEL_TEST_LOCALES || 'zh-CN,en,zh-TW').split(',')) {
     for (const theme of (process.env.READMD_PANEL_TEST_THEMES || 'light').split(',')) {
-    test(`F097 all 29 dialogs remain reachable at ${size.width}x${size.height} in ${locale}, ${theme}`, async ({ page }, testInfo) => {
+    test(`F097 all 29 dialogs remain reachable at ${size.width}x${size.height} in ${locale}, ${theme}`, async ({ page, baseURL }, testInfo) => {
       test.setTimeout(120000);
       const errors = []; page.on('pageerror', error => errors.push(error.message));
       await page.route('**/api/update/check', route => json(route, { ok: false }));
-      await page.addInitScript(locale => localStorage.setItem('readmd_language', locale), locale);
+      await page.addInitScript(({ locale, origin }) => {
+        // Init scripts also run in preview frames, including opaque documents.
+        // Only the top-level app owns this test's language preference.
+        if (window !== window.top || location.origin !== origin) return;
+        localStorage.setItem('readmd_language', locale);
+      }, { locale, origin: new URL(baseURL).origin });
       await page.setViewportSize(size); await page.emulateMedia({ reducedMotion: 'reduce' });
       await page.goto('/'); await waitForPage(page, locale => window.__readmdAppReady && i18n.currentLang===locale,locale);
       await page.evaluate(()=>window.__readmdSessionReady);

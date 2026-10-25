@@ -20,6 +20,7 @@ pub(crate) struct GeometryContext {
     paragraphs: Vec<ParagraphRequest>,
     source_hash: Option<[u8; 32]>,
     worker_directory: Option<std::path::PathBuf>,
+    worker_directory_alias: Option<std::path::PathBuf>,
 }
 
 impl GeometryContext {
@@ -29,6 +30,7 @@ impl GeometryContext {
             paragraphs: Vec::new(),
             source_hash: None,
             worker_directory: None,
+            worker_directory_alias: None,
         }
     }
 
@@ -40,7 +42,9 @@ impl GeometryContext {
 
     pub(crate) fn bind_worker_directory(&mut self, directory: &Path) -> Result<(), String> {
         if !directory.is_absolute() { return Err("latex_workspace_failed".into()); }
-        self.worker_directory = Some(dunce::canonicalize(directory).map_err(|_|"latex_workspace_failed")?);
+        let canonical = dunce::canonicalize(directory).map_err(|_|"latex_workspace_failed")?;
+        self.worker_directory = Some(canonical);
+        self.worker_directory_alias = Some(directory.to_owned());
         Ok(())
     }
 
@@ -56,8 +60,15 @@ impl GeometryContext {
             let s = s.strip_prefix(r"\\?\").unwrap_or(s).replace('\\', "/");
             if cfg!(windows) { s.to_ascii_lowercase() } else { s }
         };
-        let expected = normalize(worker_dir.join("document.tex").to_str()?);
-        if normalize(worker_dir.to_str()?) != normalize(self.worker_directory.as_ref()?.to_str()?) { return None; }
+        let bound = self.worker_directory.as_ref()?;
+        let actual_worker = dunce::canonicalize(worker_dir).ok()?;
+        if normalize(actual_worker.to_str()?) != normalize(bound.to_str()?) { return None; }
+        // Temp paths may be a junction, an 8.3 alias or /var on macOS. Only
+        // accept the exact private spellings supplied at bind/call time and
+        // their canonical directory, never resolve a path supplied by a log.
+        let expected = [bound.as_path(), self.worker_directory_alias.as_ref()?.as_path(), worker_dir]
+            .iter().map(|directory| directory.join("document.tex").to_str().map(&normalize))
+            .collect::<Option<Vec<_>>>()?;
         let mut fields = Vec::new();
         let mut began = false;
         let mut ended = false;
@@ -83,7 +94,7 @@ impl GeometryContext {
             if let Some((location, message)) = line.split_once(": Package ") {
                 let (path, number) = location.rsplit_once(':')?;
                 if !ended || error || number.parse::<usize>().ok().filter(|n| *n > 0).is_none()
-                    || !(matches!(path, "document.tex" | "./document.tex") || normalize(path) == expected)
+                    || !(matches!(path, "document.tex" | "./document.tex") || expected.contains(&normalize(path)))
                     || message != "ReadMD Error: readmd-p04-geometry." { return None; }
                 error = true;
             } else if line.contains(": LaTeX Error:") || line.contains(": Undefined control sequence.")

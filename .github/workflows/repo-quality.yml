@@ -18,12 +18,20 @@ jobs:
   kernel:
     name: Kernel tests · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # Native subprocess deadlines are tested separately from the explicit
+    # concurrency/stress lanes. Do not oversubscribe a small shared runner.
+    env:
+      RUST_TEST_THREADS: 4
+      CARGO_BUILD_JOBS: 2
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -114,9 +122,12 @@ jobs:
         env:
           NODE_PATH: ${{ github.workspace }}/ui-tests/node_modules
           READMD_MOTION_CHANNEL: chrome
+          READMD_AI_SITE_CHANNEL: chrome
         run: |
+          node --test website/tools/published-release.test.mjs website/tools/ai-pages.test.mjs
           npm run verify:release --prefix website
           node website/tools/motion-smoke.cjs
+          node website/tools/ai-smoke.cjs
       - name: Upload integration packages
         uses: actions/upload-artifact@v4
         with:

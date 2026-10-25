@@ -1,1 +1,52 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>V0.0.5 · AI 自动补全 — ReadMD</title><meta name="description" content="灰色候选在光标旁流式出现。Tab 接受眼前的文字，Esc 忽略；不满意，一次撤销回到原稿。"><link rel="canonical" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/"><link rel="alternate" hreflang="en" href="https://rust.readmd.asia/ai-autocomplete/"><link rel="alternate" hreflang="zh-CN" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/"><link rel="alternate" hreflang="zh-TW" href="https://rust.readmd.asia/zh-tw/ai-autocomplete/"><link rel="alternate" hreflang="ja" href="https://rust.readmd.asia/ja/ai-autocomplete/"><link rel="alternate" hreflang="x-default" href="https://rust.readmd.asia/ai-autocomplete/"><link rel="stylesheet" href="/assets/site.css"><meta property="og:type" content="website"><meta property="og:title" content="V0.0.5 · AI 自动补全"><meta property="og:description" content="灰色候选在光标旁流式出现。Tab 接受眼前的文字，Esc 忽略；不满意，一次撤销回到原稿。"><meta property="og:url" content="https://rust.readmd.asia/zh-cn/ai-autocomplete/"><meta property="og:image" content="https://rust.readmd.asia/media/overview-reader.png"></head><body class="text-ink"><header class="border-b border-line"><nav class="mx-auto max-w-6xl px-5 py-5"><a class="flex items-center gap-3 font-semibold" href="/zh-cn/"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a></nav></header><main class="mx-auto max-w-6xl px-5 py-16 md:py-24"><p class="text-sm text-muted">V0.0.5 · AI 自动补全 · 发布候选 · 尚未正式发布</p><h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight">下一句灵感，按 Tab 接上。</h1><p class="mt-6 text-xl text-muted max-w-3xl">灰色候选在光标旁流式出现。Tab 接受眼前的文字，Esc 忽略；不满意，一次撤销回到原稿。</p><figure class="mt-12"><video class="w-full rounded-3xl border border-line" controls playsinline preload="none" poster="/media/v005-ai-autocomplete.webp"><source src="/media/v005-ai-autocomplete.mp4" type="video/mp4"></video><figcaption class="mt-3 text-sm text-muted">真实流式录屏，未加速模型等待；响应速度因模型与网络而异。</figcaption></figure><p class="mt-6 text-muted max-w-3xl">在编辑视图菜单主动开启。AI 高级参数可自动优先选择快模型，也可独立指定补全模型。仅将附近内容发送给已保存的连接，不自动写入文件。</p><section class="grid md:grid-cols-2 gap-6 mt-16"><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">同一个 Rust 核心，两种编辑环境</h2><p class="mt-4 text-muted leading-relaxed">桌面与 VS Code 共用上下文限制、输出过滤和已保存凭据；MCP 也可调用同一个补全引擎。</p></article><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">平台支持，以验证为准</h2><p class="mt-4 text-muted leading-relaxed">Windows 已在本机实测；macOS 与 Linux 采用原生宿主。UOS、麒麟、Deepin、openEuler 和龙蜥仍需原生验收；鸿蒙已接入源码，等待 SDK 编译与设备验证。</p></article></section></main><footer class="mx-auto max-w-6xl px-5 py-8 border-t border-line"><a href="/zh-cn/">回到 ReadMD</a></footer><script src="/assets/site.js" defer></script><script type="module" src="/assets/release.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 自动补全 · V0.0.5 — ReadMD</title>
+<meta name="description" content="候选紧邻正在写的文字。Tab 接受，Esc 忽略；不满意，撤销这次插入。">
+<link rel="canonical" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/">
+<link rel="alternate" hreflang="en" href="https://rust.readmd.asia/ai-autocomplete/">
+<link rel="alternate" hreflang="zh-CN" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/">
+<link rel="alternate" hreflang="zh-TW" href="https://rust.readmd.asia/zh-tw/ai-autocomplete/">
+<link rel="alternate" hreflang="ja" href="https://rust.readmd.asia/ja/ai-autocomplete/">
+<link rel="alternate" hreflang="x-default" href="https://rust.readmd.asia/ai-autocomplete/">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/motion.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AI 自动补全 · V0.0.5">
+<meta property="og:description" content="候选紧邻正在写的文字。Tab 接受，Esc 忽略；不满意，撤销这次插入。">
+<meta property="og:url" content="https://rust.readmd.asia/zh-cn/ai-autocomplete/">
+<meta property="og:image" content="https://rust.readmd.asia/media/overview-reader.png">
+</head>
+<body class="text-ink">
+<header class="border-b border-line"><nav class="mx-auto max-w-6xl px-5 py-5"><a class="flex items-center gap-3 font-semibold" href="/zh-cn/"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a></nav></header>
+<main class="mx-auto max-w-6xl px-5 py-16 md:py-24">
+<p class="text-sm text-muted">AI 自动补全 · V0.0.5 · 交互示意</p>
+<h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight">下一句灵感，按 Tab 接上。</h1>
+<p class="mt-6 text-xl text-muted max-w-3xl">候选紧邻正在写的文字。Tab 接受，Esc 忽略；不满意，撤销这次插入。</p>
+<figure class="mt-10 max-w-4xl" data-ai-illustration="offline" aria-labelledby="ai-demo-title" aria-describedby="ai-demo-disclosure">
+<div class="overflow-hidden rounded-3xl border border-line bg-card">
+<div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4"><span class="font-semibold" id="ai-demo-title">ReadMD · 示例笔记</span><span class="text-sm text-muted">交互示意</span></div>
+<div class="p-6 md:p-8">
+<div class="rounded-2xl bg-surface px-5 py-4" data-ai-context><p class="text-xs text-muted">附近上下文</p><p class="mt-2 text-sm">散步札记 · 雨后的一段安静路程。</p></div>
+<p class="mt-5 text-sm text-muted" id="ai-demo-legend">灰字是候选，尚未写入原稿。</p>
+<div class="mt-3 rounded-2xl border border-line p-5 text-lg leading-relaxed break-words focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-action" data-ai-editor role="group" tabindex="0" aria-label="示例文档：试用 Tab、Esc 或撤销" aria-describedby="ai-demo-legend ai-demo-hint"><span data-ai-draft>雨停了，街道映着灯光。</span><span data-ai-inserted hidden></span><span data-ai-suggestion class="text-muted">我们沿河走了一会儿，把这一刻写进笔记。</span></div>
+<p class="mt-4 text-sm text-muted" id="ai-demo-hint">聚焦示例。首次 Tab 接受候选，再按 Tab 正常移至下一控件；Esc 忽略。Ctrl+Z 或 ⌘Z 撤销已接受的插入。</p>
+<div class="mt-5 flex flex-wrap gap-3"><button type="button" data-ai-action="accept" class="apple-pill-primary inline-flex items-center gap-2" disabled>接受<kbd class="text-xs">Tab</kbd></button><button type="button" data-ai-action="dismiss" class="apple-pill-secondary inline-flex items-center gap-2" disabled>忽略<kbd class="text-xs">Esc</kbd></button><button type="button" data-ai-action="undo" class="apple-pill-secondary inline-flex items-center gap-2" disabled>撤销<kbd class="text-xs">Ctrl / ⌘ Z</kbd></button><button type="button" data-ai-action="reset" class="apple-pill-secondary inline-flex items-center gap-2" disabled>再试一次</button></div>
+<p class="mt-4 min-h-12 text-sm text-muted" data-ai-status role="status" aria-live="polite" aria-atomic="true" data-pending="候选已就绪，原稿未变。" data-accepted="候选已插入，可以撤销这次插入。" data-dismissed="已忽略候选，原稿未变。" data-restored="已撤销插入，恢复原稿。">候选已就绪，原稿未变。</p>
+<noscript><p class="mt-4 text-sm text-muted">关闭 JavaScript 后仍可阅读示例；启用后可试用这些控件。</p></noscript>
+</div>
+</div>
+<figcaption class="mt-3 text-sm text-muted" id="ai-demo-disclosure" data-ai-disclosure>这是交互示意，并非 ReadMD 真实录屏。示例使用固定文字，不调用模型，也不承诺响应时延。</figcaption>
+</figure>
+<p class="mt-6 text-muted max-w-3xl">ReadMD 自动补全需主动开启。连接与模型沿用 AI 设置中的选择；本示意不会连接它们。</p>
+<section class="grid md:grid-cols-2 gap-6 mt-12"><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">同一个 Rust 核心，两种编辑环境</h2><p class="mt-4 text-muted leading-relaxed">桌面与 VS Code 共用补全上下文限制及输出过滤；MCP 也可调用相同补全引擎。</p></article><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">平台支持，以验证为准</h2><p class="mt-4 text-muted leading-relaxed">构建产物与原生验收分开记录。Windows 已在本机实测；macOS、Linux 及国产 Linux 发行版仍需各自的原生验收。鸿蒙保持源码集成候选状态。</p></article></section>
+</main>
+<footer class="mx-auto max-w-6xl px-5 py-8 border-t border-line"><a href="/zh-cn/">回到 ReadMD</a></footer>
+<script src="/assets/site.js" defer></script>
+<script src="/assets/motion.js" defer></script>
+<script src="/assets/ai-illustration.js" defer></script>
+<script type="module" src="/assets/release.js"></script>
+</body>
+</html>

@@ -1,1 +1,52 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>V0.0.5 · AI 自動補完 — ReadMD</title><meta name="description" content="カーソル横に候補が順次表示されます。Tab で見えている文字を確定、Esc で破棄。元に戻す操作で原稿を復元できます。"><link rel="canonical" href="https://rust.readmd.asia/ja/ai-autocomplete/"><link rel="alternate" hreflang="en" href="https://rust.readmd.asia/ai-autocomplete/"><link rel="alternate" hreflang="zh-CN" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/"><link rel="alternate" hreflang="zh-TW" href="https://rust.readmd.asia/zh-tw/ai-autocomplete/"><link rel="alternate" hreflang="ja" href="https://rust.readmd.asia/ja/ai-autocomplete/"><link rel="alternate" hreflang="x-default" href="https://rust.readmd.asia/ai-autocomplete/"><link rel="stylesheet" href="/assets/site.css"><meta property="og:type" content="website"><meta property="og:title" content="V0.0.5 · AI 自動補完"><meta property="og:description" content="カーソル横に候補が順次表示されます。Tab で見えている文字を確定、Esc で破棄。元に戻す操作で原稿を復元できます。"><meta property="og:url" content="https://rust.readmd.asia/ja/ai-autocomplete/"><meta property="og:image" content="https://rust.readmd.asia/media/overview-reader.png"></head><body class="text-ink"><header class="border-b border-line"><nav class="mx-auto max-w-6xl px-5 py-5"><a class="flex items-center gap-3 font-semibold" href="/ja/"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a></nav></header><main class="mx-auto max-w-6xl px-5 py-16 md:py-24"><p class="text-sm text-muted">V0.0.5 · AI 自動補完 · リリース候補 · 未公開</p><h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight">次のひらめきを、Tab でつなぐ。</h1><p class="mt-6 text-xl text-muted max-w-3xl">カーソル横に候補が順次表示されます。Tab で見えている文字を確定、Esc で破棄。元に戻す操作で原稿を復元できます。</p><figure class="mt-12"><video class="w-full rounded-3xl border border-line" controls playsinline preload="none" poster="/media/v005-ai-autocomplete.webp"><source src="/media/v005-ai-autocomplete.mp4" type="video/mp4"></video><figcaption class="mt-3 text-sm text-muted">実際のストリーミング録画です。待ち時間は短縮していません。応答速度はモデルとネットワークによって異なります。</figcaption></figure><p class="mt-6 text-muted max-w-3xl">編集表示メニューで有効にします。AI の詳細設定で高速モデルの自動選択や補完専用モデルを指定できます。周辺の文章のみを保存済み接続に送信し、自動保存はしません。</p><section class="grid md:grid-cols-2 gap-6 mt-16"><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">同じ Rust エンジンを二つのエディターで</h2><p class="mt-4 text-muted leading-relaxed">デスクトップと VS Code はコンテキスト制限と出力フィルターを共有。MCP も同じ補完エンジンを呼び出します。</p></article><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">検証に基づくプラットフォーム対応</h2><p class="mt-4 text-muted leading-relaxed">Windows はローカル実測済み。macOS と Linux はネイティブホストを使用。中国の Linux 環境は実機検証待ち。HarmonyOS はソース統合済みで SDK と端末検証が必要です。</p></article></section></main><footer class="mx-auto max-w-6xl px-5 py-8 border-t border-line"><a href="/ja/">ReadMD に戻る</a></footer><script src="/assets/site.js" defer></script><script type="module" src="/assets/release.js"></script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 自動補完 · V0.0.5 — ReadMD</title>
+<meta name="description" content="書いている文章のすぐ横に候補を表示。Tab で確定、Esc で破棄。挿入した文は元に戻せます。">
+<link rel="canonical" href="https://rust.readmd.asia/ja/ai-autocomplete/">
+<link rel="alternate" hreflang="en" href="https://rust.readmd.asia/ai-autocomplete/">
+<link rel="alternate" hreflang="zh-CN" href="https://rust.readmd.asia/zh-cn/ai-autocomplete/">
+<link rel="alternate" hreflang="zh-TW" href="https://rust.readmd.asia/zh-tw/ai-autocomplete/">
+<link rel="alternate" hreflang="ja" href="https://rust.readmd.asia/ja/ai-autocomplete/">
+<link rel="alternate" hreflang="x-default" href="https://rust.readmd.asia/ai-autocomplete/">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/motion.css">
+<meta property="og:type" content="website">
+<meta property="og:title" content="AI 自動補完 · V0.0.5">
+<meta property="og:description" content="書いている文章のすぐ横に候補を表示。Tab で確定、Esc で破棄。挿入した文は元に戻せます。">
+<meta property="og:url" content="https://rust.readmd.asia/ja/ai-autocomplete/">
+<meta property="og:image" content="https://rust.readmd.asia/media/overview-reader.png">
+</head>
+<body class="text-ink">
+<header class="border-b border-line"><nav class="mx-auto max-w-6xl px-5 py-5"><a class="flex items-center gap-3 font-semibold" href="/ja/"><img src="/assets/icon-256.png" width="32" height="32" alt="">ReadMD</a></nav></header>
+<main class="mx-auto max-w-6xl px-5 py-16 md:py-24">
+<p class="text-sm text-muted">AI 自動補完 · V0.0.5 · 操作イメージ</p>
+<h1 class="mt-6 max-w-4xl text-4xl md:text-6xl font-bold tracking-tight">次のひらめきを、Tab でつなぐ。</h1>
+<p class="mt-6 text-xl text-muted max-w-3xl">書いている文章のすぐ横に候補を表示。Tab で確定、Esc で破棄。挿入した文は元に戻せます。</p>
+<figure class="mt-10 max-w-4xl" data-ai-illustration="offline" aria-labelledby="ai-demo-title" aria-describedby="ai-demo-disclosure">
+<div class="overflow-hidden rounded-3xl border border-line bg-card">
+<div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4"><span class="font-semibold" id="ai-demo-title">ReadMD · サンプルのメモ</span><span class="text-sm text-muted">操作イメージ</span></div>
+<div class="p-6 md:p-8">
+<div class="rounded-2xl bg-surface px-5 py-4" data-ai-context><p class="text-xs text-muted">周辺の文脈</p><p class="mt-2 text-sm">散歩のメモ · 雨上がりの静かな道。</p></div>
+<p class="mt-5 text-sm text-muted" id="ai-demo-legend">灰色の文字は候補です。まだ原稿には挿入されていません。</p>
+<div class="mt-3 rounded-2xl border border-line p-5 text-lg leading-relaxed break-words focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-action" data-ai-editor role="group" tabindex="0" aria-label="サンプル文書：Tab、Esc、元に戻す操作を試す" aria-describedby="ai-demo-legend ai-demo-hint"><span data-ai-draft>雨が上がり、道に明かりが映っていた。</span><span data-ai-inserted hidden></span><span data-ai-suggestion class="text-muted">川沿いを少し歩き、このひとときをノートに残した。</span></div>
+<p class="mt-4 text-sm text-muted" id="ai-demo-hint">サンプルにフォーカスしてください。最初の Tab で候補を確定し、次の Tab で次の操作項目へ移動します。Esc で破棄。Ctrl+Z または ⌘Z で挿入を元に戻せます。</p>
+<div class="mt-5 flex flex-wrap gap-3"><button type="button" data-ai-action="accept" class="apple-pill-primary inline-flex items-center gap-2" disabled>確定<kbd class="text-xs">Tab</kbd></button><button type="button" data-ai-action="dismiss" class="apple-pill-secondary inline-flex items-center gap-2" disabled>破棄<kbd class="text-xs">Esc</kbd></button><button type="button" data-ai-action="undo" class="apple-pill-secondary inline-flex items-center gap-2" disabled>元に戻す<kbd class="text-xs">Ctrl / ⌘ Z</kbd></button><button type="button" data-ai-action="reset" class="apple-pill-secondary inline-flex items-center gap-2" disabled>もう一度試す</button></div>
+<p class="mt-4 min-h-12 text-sm text-muted" data-ai-status role="status" aria-live="polite" aria-atomic="true" data-pending="候補を表示しています。原稿は変更されていません。" data-accepted="候補を挿入しました。この挿入を元に戻せます。" data-dismissed="候補を破棄しました。原稿は変更されていません。" data-restored="挿入を取り消し、元の原稿に戻しました。">候補を表示しています。原稿は変更されていません。</p>
+<noscript><p class="mt-4 text-sm text-muted">JavaScript が無効でも例文は読めます。操作を試すには JavaScript を有効にしてください。</p></noscript>
+</div>
+</div>
+<figcaption class="mt-3 text-sm text-muted" id="ai-demo-disclosure" data-ai-disclosure>これは操作イメージであり、ReadMD の実際の録画ではありません。固定の例文を使い、モデルへのリクエストは送信せず、応答時間も保証しません。</figcaption>
+</figure>
+<p class="mt-6 text-muted max-w-3xl">ReadMD の自動補完は任意で有効にします。接続とモデルは AI 設定で選択します。この操作イメージはそれらに接続しません。</p>
+<section class="grid md:grid-cols-2 gap-6 mt-12"><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">同じ Rust エンジンを二つのエディターで</h2><p class="mt-4 text-muted leading-relaxed">デスクトップと VS Code は補完のコンテキスト制限と出力フィルターを共有します。MCP も同じ補完エンジンを呼び出せます。</p></article><article class="rounded-3xl border border-line bg-card p-8"><h2 class="text-xl font-semibold">検証に基づくプラットフォーム対応</h2><p class="mt-4 text-muted leading-relaxed">ビルドとネイティブ環境での受け入れ確認は別です。Windows はローカルで確認済みですが、macOS、Linux、中国の Linux 環境はそれぞれ検証が必要です。HarmonyOS はソース統合済みの候補です。</p></article></section>
+</main>
+<footer class="mx-auto max-w-6xl px-5 py-8 border-t border-line"><a href="/ja/">ReadMD に戻る</a></footer>
+<script src="/assets/site.js" defer></script>
+<script src="/assets/motion.js" defer></script>
+<script src="/assets/ai-illustration.js" defer></script>
+<script type="module" src="/assets/release.js"></script>
+</body>
+</html>

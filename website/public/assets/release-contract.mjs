@@ -51,7 +51,61 @@ export const intro = {
   'zh-TW': r => `下載 ReadMD <span class="latest-version-badge" data-version-slot>${r.releaseTag}</span> 目前正式版，發行於 <time data-release-date datetime="${r.updatedAt}">${r.updatedAt.slice(0, 10)}</time>。選擇下方安裝套件，安裝前請核對 SHA256SUMS.txt。`,
   ja: r => `ReadMD <span class="latest-version-badge" data-version-slot>${r.releaseTag}</span> 安定版。公開日：<time data-release-date datetime="${r.updatedAt}">${r.updatedAt.slice(0, 10)}</time>。以下のパッケージを選び、インストール前に SHA256SUMS.txt を確認してください。`,
 };
+const featureStatusCopy = {
+  en: { pending: /release candidate\s*·\s*(?:not yet published|not published yet)/i, available: 'Available in the stable release' },
+  'zh-CN': { pending: /发布候选\s*·\s*尚未正式发布/, available: '已在正式版提供' },
+  'zh-TW': { pending: /發布候選\s*·\s*尚未正式發布/, available: '已於正式版提供' },
+  ja: { pending: /リリース候補\s*·\s*未公開/, available: '安定版で利用できます' },
+};
+// Only an explicit feature version plus a known status is eligible. Null means
+// ordinary prose; callers must leave it alone. The feature version never moves.
+export function featureStatusText(text, release, lang = 'en') {
+  const language = lang.toLowerCase();
+  const locale = /^zh(?:-|$)/.test(language)
+    ? (/^zh-(?:hant|tw|hk)(?:-|$)/.test(language) ? 'zh-TW' : 'zh-CN') : language.split('-')[0];
+  const copy = featureStatusCopy[locale] || featureStatusCopy.en;
+  const version = /[vV](\d+\.\d+\.\d+)(?![\d.])/.exec(text)?.[1];
+  if (!version || (!copy.pending.test(text) && !text.includes(copy.available))) return null;
+  const current = release.version.split('.').map(Number), feature = version.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if (current[i] < feature[i]) return text;
+    if (current[i] > feature[i]) break;
+  }
+  return text.replace(copy.pending, copy.available);
+}
+function protectFeatureLabels(html, release, lang) {
+  const saved = [];
+  const save = text => {
+    const token = `<!--readmd-feature-label-${saved.length}-->`;
+    saved.push([token, text]); return token;
+  };
+  const labels = text => {
+    let matched = false;
+    const output = text.replace(/<(script|style|pre|code)\b[^>]*>[\s\S]*?<\/\1>|<(p|span)(\b[^>]*)>([^<]*)<\/\2>/gi,
+      (whole, excluded, tag, attrs, body) => {
+        if (excluded) return whole;
+        const updated = featureStatusText(body, release, lang);
+        if (updated === null) return whole;
+        matched = true; return `<${tag}${attrs}>${updated}</${tag}>`;
+      });
+    return { output, matched };
+  };
+  // A section with an explicit feature-status label owns its versioned heading
+  // too. Protect it from the generic stable-version replacement below.
+  html = html.replace(/<(script|style|pre|code)\b[^>]*>[\s\S]*?<\/\1>|<section\b[^>]*>[\s\S]*?<\/section>/gi, (whole, excluded) => {
+    if (excluded) return whole;
+    const result = labels(whole); return result.matched ? save(result.output) : whole;
+  });
+  html = html.replace(/<(script|style|pre|code)\b[^>]*>[\s\S]*?<\/\1>|<(p|span)(\b[^>]*)>([^<]*)<\/\2>/gi,
+    (whole, excluded, tag, attrs, body) => {
+      if (excluded) return whole;
+      const updated = featureStatusText(body, release, lang);
+      return updated === null ? whole : save(`<${tag}${attrs}>${updated}</${tag}>`);
+    });
+  return { html, restore: text => saved.reduce((result, [token, content]) => result.replace(token, content), text) };
+}
 export function updateReleaseHtml(html, r, { download = false, historical = false, candidate = false } = {}) {
+  r = publishedRelease(r);
   const previous = new Set();
   // Legacy deployments can have current JSON-LD but stale visible titles/badges.
   for (const label of html.matchAll(/<(?:title\b[^>]*|[a-z]+\b[^>]*(?:data-version-slot|class="latest-version-badge)[^>]*)>([^<]*)</gi))
@@ -60,7 +114,7 @@ export function updateReleaseHtml(html, r, { download = false, historical = fals
     let value; try { value = JSON.parse(body); } catch { return original; }
     const visit = object => {
       if (!object || typeof object !== 'object') return;
-      if (object['@type'] === 'SoftwareApplication' && !candidate) {
+      if (object['@type'] === 'SoftwareApplication' && !candidate && !historical) {
         if (object.softwareVersion) previous.add(object.softwareVersion);
         object.softwareVersion = r.version;
         if (object.dateModified) object.dateModified = r.updatedAt.slice(0, 10);
@@ -73,6 +127,9 @@ export function updateReleaseHtml(html, r, { download = false, historical = fals
     return '<script type="application/ld+json">' + JSON.stringify(value, null, 2) + '</script>';
   });
   html = html.replace(/https:\/\/github\.com\/Natsummerance\/(?:rust-)?readmd\/[^\s"'<>]+/gi, url => releaseLink(url, r));
+  const lang = /<html[^>]*lang="([^"]+)"/i.exec(html)?.[1] || 'en';
+  const features = historical ? { html, restore: text => text } : protectFeatureLabels(html, r, lang);
+  html = features.html;
   if (!historical && !candidate) for (const v of previous)
     html = html.replace(new RegExp(`[vV]${v.replaceAll('.', '\\.')}(?![\\d.])`, 'g'), r.releaseTag);
   if (download) {
@@ -87,5 +144,5 @@ export function updateReleaseHtml(html, r, { download = false, historical = fals
   }
   if (!html.includes('src="/assets/release.js"'))
     html = html.replace('</body>', '<script type="module" src="/assets/release.js"></script></body>');
-  return html;
+  return features.restore(html);
 }

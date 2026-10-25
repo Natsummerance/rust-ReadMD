@@ -11,7 +11,7 @@
 
  # ReadMD (Pure Rust Edition)
 
- **100% 純 Rust 原生全平台 Markdown 閱讀器與編輯器**
+ **以 Rust 原生核心打造的跨平台 Markdown 閱讀器與編輯器**
 
  長文件語意分頁 · 顯示層非破壞修正 · Office/PDF/網頁轉 MD · 離线 OCR · LaTeX 學術增強 · MCP 整合 · 零 Python 相依
 
@@ -34,24 +34,24 @@
 | 文件超過約 8,000 行或 500KB | 啟用語義分頁，目錄與 Ctrl+F 搜尋跨頁可用 |
 | 表格缺少分隔線或公式未閉合 | 僅在顯示層修復預覽，原始檔不會被改寫 |
 | 手上有 DOCX / PPTX / XLSX / PDF / HTML | 轉換為 Markdown，減少重新排版時間 |
-| 需要擷取圖片文字 | 在支援平台使用原生 OCR，可維持離線工作流 |
+| 需要擷取圖片文字 | 在有對應 OCR 能力套件的平台離線辨識，套件依需求安裝 |
 | 撰寫論文或技術文件 | 提供 BibTeX 引用卡片、定理與證明區塊 |
 | 想要桌面伴讀或角色互動 | CC0 Arch-Chan Live2D 與 73 款微呼吸精靈圖，全端台詞同步 |
-| 需要高保真修復 PDF 文字 | 內建向量 PDF 編輯器，零污染質檢與一鍵復原 |
-| 想接入 AI 工作流 | 提供 VS Code 擴充套件與 FastMCP stdio Server (21 項工具) |
-| 多語言團隊跨國協作 | 46 國語言 100% 字典對齊 (1563 詞條)，零英文照搬，母語級體驗 |
+| 需要編輯 PDF | 在支援的平台安裝 PDFium 功能套件，編輯後儲存為 PDF；支援範圍見功能狀態 |
+| 想接入 AI 工作流 | 提供 VS Code 擴充套件與 Rust stdio MCP Server |
+| 希望使用自己的介面語言 | 提供 46 種介面語言，持續檢查詞條、預留位置及長文版面 |
 
 ## 直接下載
 
-[Windows 安裝版](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) ·
-[Windows 免安裝版](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) ·
-[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) ·
-[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) ·
-[麒麟 V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt)
+[Windows 安裝版](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) ·
+[Windows 免安裝版](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) ·
+[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) ·
+[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
+[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
+[UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
+[VS Code 擴充套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) ·
+[MCP 設定套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) ·
+[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
 
 ## 三步開始
 
@@ -85,20 +85,24 @@ ReadMD 處理長期資料庫裡的實際問題：大型文件能繼續閱讀，�
 
 ## 全平台直接下載矩陣 (Release Assets)
 
+提供下載檔案不代表所有平台均已完成原生驗收；實際支援範圍與證據請見 `release/platform-matrix.json`。Windows 7/8、HarmonyOS/OpenHarmony 與未發行架構不在 V0.0.5 發行範圍。
+
 | 作業系統 / 平台 | 架構 / 格式 | 直接下載連結 (GitHub Release) | 說明 |
 | :--- | :--- | :--- | :--- |
-| **Windows** | x64 (安裝版) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) | 具備安裝精靈，自動註冊 `.md` 檔案關聯 |
-| **Windows** | x64 (免安裝便攜版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) | 單一執行檔，解壓縮即用，隨身攜帶 |
-| **macOS** | Apple Silicon (M系列) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) | M1 / M2 / M3 / M4 原生建置（含 Vision 離線 OCR） |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) | Intel 處理器 Mac 原生建置（含 Vision 離線 OCR） |
-| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) | Linux 通用免安裝 AppImage，賦予執行權限後即可開啟 |
-| **國產信創系統** | 統信 UOS / 銀河麒麟 / Deepin / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) | Deb 原生安裝套件，整合應用程式圖示、MIME 關聯與 UKUI/DDE 適配 |
-| **SHA-256 驗證** | 雜湊清單 | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt) | 發行檔案 SHA-256 完整性雜湊清單 |
+| **Windows** | x64 (安裝版) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) | Windows x64 安裝套件；預設開啟方式由系統設定選擇 |
+| **Windows** | x64 (免安裝便攜版) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) | 完整解壓縮 ZIP，保留 assets 與執行階段程式庫，再執行 ReadMD.exe |
+| **macOS** | Apple Silicon (M系列) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) | Apple Silicon Mac 應用程式套件；原生驗收狀態請見平台矩陣 |
+| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) | Intel Mac 應用程式套件；原生驗收狀態請見平台矩陣 |
+| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) | 解壓縮後執行 ReadMD；需要系統 GTK / WebKitGTK |
+| **國產信創系統** | 統信 UOS / 銀河麒麟 / Deepin / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) | x86_64 Deb 套件；相容性以各系統的原生驗收記錄為準 |
+| **SHA-256 驗證** | 雜湊清單 | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt) | 發行檔案 SHA-256 完整性雜湊清單 |
+
+Windows ZIP 必須完整解壓縮並保留目錄結構。桌面啟動需要 Windows WebView2、macOS 系統 WebKit 或 Linux GTK / WebKitGTK。OCR、PDFium、Typst 與出版字型為選用能力套件，不包含在基本安裝套件或 ZIP 中；目前引擎套件僅 Windows x64 已準備並實測，其他平台以實際套件目錄為準。Linux ARM64 / 麒麟 ARM64 目前僅有建置指令碼，未發行 V0.0.5 安裝套件。
 
 ---
 
 <div align="center">
 
-**ReadMD** · 純本機優先，全平台自由閱讀寫作。
+**ReadMD** · 純本機優先，在已驗證的支援平台閱讀寫作。
 
 </div>

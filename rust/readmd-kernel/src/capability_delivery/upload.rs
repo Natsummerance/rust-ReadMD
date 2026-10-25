@@ -694,22 +694,35 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let app = make_app(data.path());
         let (id, _, _) = register(&app, State::create(data.path(), 7).unwrap());
-        {
+        let worker_state = {
             let mut map = jobs().lock().unwrap();
             let job = map.get_mut(&id).unwrap();
             job.phase = "extracting";
             // The real worker owns the stage after upload_finish; the job's
             // transport identity and reservation survive until it terminates.
-            job.upload.take();
-        }
-        let body = json!({"action":"upload_start","id":"ocr","format":"stream-v2",
+            job.upload.take().unwrap()
+        };
+        // Catalog selection precedes budget checks. OCR is Windows-only;
+        // universal fonts reach the same admission path on every CI platform.
+        assert_eq!(checked_entry(&app.paths.assets_dir, "fonts").unwrap()["platform"], "universal");
+        let body = json!({"action":"upload_start","id":"fonts","format":"stream-v2",
             "total":crate::capability_archive::MAX_DOWNLOAD-6,
             "request_key":uuid::Uuid::new_v4().to_string()});
         assert_eq!(
             endpoint(&app, &body).err().unwrap().code,
             "capability_install_busy"
         );
-        jobs().lock().unwrap().get_mut(&id).unwrap().phase = "ready";
+        assert_eq!(
+            crate::capability_process::reserve_transfer(data.path(), crate::capability_archive::MAX_DOWNLOAD).err().unwrap().code,
+            "capability_install_busy"
+        );
+        // complete() drops its worker state before finish() publishes terminal
+        // status. The still-active job must cover this intervening handoff too.
+        drop(worker_state);
+        drop(crate::capability_process::reserve_transfer(data.path(), crate::capability_archive::MAX_DOWNLOAD).unwrap());
+        assert_eq!(endpoint(&app, &body).err().unwrap().code, "capability_install_busy");
+        finish(&id, Ok(()));
+        assert_eq!(jobs().lock().unwrap().get(&id).unwrap().phase, "ready");
         assert!(endpoint(&app, &body).is_ok());
         let retired = {
             let mut map = jobs().lock().unwrap();
@@ -723,6 +736,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         drop(retired);
+        drop(crate::capability_process::reserve_transfer(data.path(), crate::capability_archive::MAX_DOWNLOAD).unwrap());
     }
     #[test]
     fn ordered_chunks_digest_duplicate_and_incomplete_finish_are_enforced() {

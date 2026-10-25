@@ -11,7 +11,7 @@
 
  # ReadMD (Pure Rust Edition)
 
- **100% Pure Rust Native Cross-Platform Markdown Reader & Editor**
+ **Cross-platform Markdown reader and editor with a native Rust core**
 
  Semantic pagination for massive files · Non-destructive display repair · Office/PDF/Web to MD · Offline OCR · LaTeX academic suite · MCP agent integration · Zero Python dependencies
 
@@ -34,24 +34,24 @@
 | A file exceeds 8,000 lines or 500 KB | Semantic pagination keeps the outline and Ctrl+F search usable |
 | A table lacks separators or math is unclosed | Rendering repairs the display in memory while the original stays unchanged |
 | You have DOCX / PPTX / XLSX / PDF / HTML | Convert it to Markdown instead of rebuilding formatting by hand |
-| An image contains text you need | Use native OS OCR in an offline workflow where supported |
+| An image contains text you need | Install the matching OCR capability pack for offline recognition where available |
 | You write papers or technical documents | Use BibTeX cards, theorem/proof boxes and LaTeX export |
 | You want desktop companion & interaction | CC0 Arch-Chan Live2D & 73 micro-breathing sprites with full-stack bubble sync |
-| You need lossless PDF text repair | Built-in vector PDF editor with zero-contamination gate and one-click rollback |
-| You want an AI-assisted workflow | Use the VS Code extension and FastMCP stdio server (21 tools) |
-| Multilingual team collaboration | 46 languages 100% dictionary parity (1563 keys) with zero English copy leaks |
+| You need PDF editing | Install the PDFium capability pack on a supported platform; capability status describes the available operations |
+| You want an AI-assisted workflow | Use the VS Code extension and Rust stdio MCP server |
+| You prefer your own interface language | Choose from 46 interface languages, with key, placeholder and long-text layout checks |
 
 ## Direct downloads
 
-[Windows Setup](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) ·
-[Windows Portable](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) ·
-[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) ·
-[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) ·
-[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) ·
-[Linux ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[Deb for UOS/Kylin](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) ·
-[Kylin V10 ARM64](https://github.com/Natsummerance/rust-ReadMD/tree/main/scripts/linux) ·
-[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt)
+[Windows Setup](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) ·
+[Windows Portable](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) ·
+[macOS Apple Silicon](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) ·
+[macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
+[Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
+[Deb for UOS/Kylin](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
+[VS Code extension](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) ·
+[MCP configuration kit](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) ·
+[SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
 
 ## Start in three steps
 
@@ -89,32 +89,34 @@ ReadMD solves the unglamorous problems in a long-lived document library: large f
 
 ## Official Downloads & Platforms Matrix (Release Assets)
 
-Only platforms with release evidence belong in this matrix. Windows 7 is a separate legacy-runtime build and is not bundled with the Windows 10/11 package; HarmonyOS/OpenHarmony and unevidenced architectures are outside the V0.0.1 support promise.
+Download assets do not imply completed native validation on every platform; see `release/platform-matrix.json` for scope and evidence. Windows 7/8, HarmonyOS/OpenHarmony and unpublished architectures are outside the V0.0.5 release scope.
 
 | OS / Platform | Architecture / Format | Direct Download Link (GitHub Release) | Description |
 | :--- | :--- | :--- | :--- |
-| **Windows** | x64 (Installer) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMDSetup-windows-x64.exe) | Setup wizard with automatic `.md` file associations |
-| **Windows** | x64 (Portable) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-windows-x64.zip) | Standalone single executable, no installation needed |
-| **macOS** | Apple Silicon (M-Series) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-arm64.zip) | Native build for Apple Silicon Macs with Vision OCR |
-| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-macos-x64.zip) | Native build for Intel Macs with Vision OCR |
-| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz) | Portable Linux tar.gz for the tested Ubuntu/Debian matrix |
-| **Domestic OS / Linux** | UOS / Kylin / Deepin / Debian / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) | Native Deb package with desktop entry & MIME association |
-| **SHA-256 Hashes** | Checksum List | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/SHA256SUMS.txt) | Complete SHA-256 integrity verification list |
+| **Windows** | x64 (Installer) | [⬇️ **ReadMDSetup-windows-x64.exe**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMDSetup-windows-x64.exe) | Windows x64 installer; select default apps in system settings |
+| **Windows** | x64 (Portable) | [⬇️ **ReadMD-windows-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-windows-x64.zip) | Extract the complete ZIP, retaining assets and runtime libraries, then run ReadMD.exe |
+| **macOS** | Apple Silicon (M-Series) | [⬇️ **ReadMD-macos-arm64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-arm64.zip) | Apple Silicon Mac app package; see the platform matrix for native validation |
+| **macOS** | Intel x86_64 | [⬇️ **ReadMD-macos-x64.zip**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) | Intel Mac app package; see the platform matrix for native validation |
+| **Linux** | x86_64 (tar.gz) | [⬇️ **ReadMD-linux-x86_64.tar.gz**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) | Extract and run ReadMD; requires system GTK / WebKitGTK |
+| **Domestic OS / Linux** | UOS / Kylin / Deepin / Debian / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) | x86_64 Deb package; compatibility depends on native evidence for each system |
+| **SHA-256 Hashes** | Checksum List | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt) | Complete SHA-256 integrity verification list |
+
+Extract the complete Windows ZIP and keep its directory structure. Desktop startup requires Windows WebView2, macOS system WebKit, or Linux GTK / WebKitGTK. OCR, PDFium, Typst and publishing fonts are optional capability packs, separate from the base installer or ZIP; engine packs are currently prepared and tested only for Windows x64, with other platforms subject to the actual pack catalog. Linux ARM64 / Kylin ARM64 currently have build scripts only, with no V0.0.5 installer published.
 
 ---
 
 ## Multi-System & Native OS Integration
 
 ### 1. Linux & Chinese Domestic OS (KylinOS / UOS / Deepin)
-- **Direct Installation**: Download [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.deb) to install directly, or run [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.4/ReadMD-linux-x86_64.tar.gz).
+- **Direct Installation**: Install [`ReadMD-linux-x86_64.deb`](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb), or extract [`ReadMD-linux-x86_64.tar.gz`](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) and run `ReadMD`. ARM64 build scripts are in [`scripts/linux`](scripts/linux); they do not represent published installers.
 - **Environment Detection**: 100% pure native Rust kernel (`native_system`) detects OS distributions and dynamically adapts Wayland / X11 display backends.
 - **Desktop Themes**: Probes DDE, UKUI, GNOME, and KDE dark mode settings via `gsettings`.
 - **Desktop Entry**: Includes FreeDesktop launcher and MIME XML declaration.
 - **Support boundary**: openEuler, Linglong and other unevidenced distributions are not claimed as fully supported in this release.
 
 ### 2. Windows & macOS
-- **Windows**: Native WinRT OCR, Edge WebView2 hardware-accelerated rendering, single-instance tray daemon.
-- **macOS**: Apple Vision offline OCR framework, native WebKit window, Touch Bar shortcuts.
+- **Windows**: Uses WebView2 windows and the system tray; the OCR engine is installed as an optional capability pack.
+- **macOS**: Uses system WebKit windows; app builds and native feature validation are recorded separately.
 
 ---
 
