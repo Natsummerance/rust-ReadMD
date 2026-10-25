@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF 엔진이 예기치 않게 중지되었습니다. 기존 파일은 손상되지 않습니다.",
   "error.preset_name_conflict": "기본 제공 프리셋에서 이미 이 이름을 사용하고 있습니다.",
   "error.publication_baseline_unsupported": "이 출력 형식이나 내용은 기준선 이동을 지원하지 않습니다. 이 설정을 지우고 다시 시도하세요.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "중국어 출판 글꼴 설치",
   "error.publication_layout_geometry": "콘텐츠가 요청된 페이지 또는 문단 레이아웃에 맞지 않습니다. 여백, 단 또는 줄 간격을 조정하세요.",
   "error.publication_line_spacing_unsupported": "이 출력 또는 미리보기는 요청된 줄 간격을 지원하지 않습니다. 지원되는 출력을 선택하거나 이 줄 간격 설정을 제거하세요.",

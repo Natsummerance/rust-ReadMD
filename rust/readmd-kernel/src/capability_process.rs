@@ -607,6 +607,72 @@ mod tests {
         assert!(try_acquire(root.path(),"latex",Mode::Exclusive).unwrap().is_some());
     }
     #[test]
+    fn cross_process_typst_ocr_crash_releases_only_owner_slots_and_keeps_sibling_leases() {
+        if let Some(root)=std::env::var_os("READMD_FAULT_OWNER_ROOT") {
+            let root=PathBuf::from(root);
+            let name=std::env::var("READMD_FAULT_OWNER_NAME").unwrap();
+            let engine=std::env::var("READMD_FAULT_OWNER_ENGINE").unwrap();
+            assert!(matches!(name.as_str(),"first"|"second"));
+            assert!(matches!(engine.as_str(),"typst"|"ocr"));
+            // Same lease shape as the real matrix observers: the engine's own
+            // Shared resource lease plus one of its two worker slots.
+            let _lease=try_acquire(&root,&engine,Mode::Shared).unwrap().unwrap();
+            let _slot=try_worker_slot(&root,&engine).unwrap().unwrap();
+            fs::write(root.join(format!("{engine}.{name}.ready")),b"ready").unwrap();
+            let until=Instant::now()+Duration::from_secs(20);
+            while !root.join(format!("{engine}.{name}.stop")).is_file() {
+                assert!(Instant::now()<until,"Parent did not release fault owner child");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            return;
+        }
+        fn fault_owner(root:&Path,engine:&str,name:&str)->OwnedChild {
+            let mut child=OwnedChild(Command::new(std::env::current_exe().unwrap())
+                .args(["--exact","capability_process::tests::cross_process_typst_ocr_crash_releases_only_owner_slots_and_keeps_sibling_leases","--test-threads=1"])
+                .env("READMD_FAULT_OWNER_ROOT",root).env("READMD_FAULT_OWNER_NAME",name).env("READMD_FAULT_OWNER_ENGINE",engine)
+                .stdout(Stdio::null()).stderr(Stdio::inherit()).spawn().unwrap());
+            let until=Instant::now()+Duration::from_secs(20);
+            while !root.join(format!("{engine}.{name}.ready")).is_file() {
+                if let Some(status)=child.0.try_wait().unwrap() { panic!("Fault owner child exited: {status}"); }
+                assert!(Instant::now()<until,"Fault owner child did not become ready");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            child
+        }
+        let root=tempfile::tempdir().unwrap();
+        for engine in ["typst","ocr"] {
+            let other=if engine=="typst" {"ocr"} else {"typst"};
+            let busy=worker_busy(engine).unwrap();
+            let mut first=fault_owner(root.path(),engine,"first");
+            let mut second=fault_owner(root.path(),engine,"second");
+            assert_eq!(check_worker_capacity(root.path(),engine).unwrap_err().code,busy);
+            assert!(try_worker_slot(root.path(),engine).unwrap().is_none());
+            // Both holders keep the engine resource lease Shared, and the
+            // other engine keeps its own independent capacity and lease space.
+            assert!(try_acquire(root.path(),engine,Mode::Exclusive).unwrap().is_none());
+            check_worker_capacity(root.path(),other).unwrap();
+            let other_slot=try_worker_slot(root.path(),other).unwrap().unwrap();
+            first.0.kill().unwrap();assert!(!first.0.wait().unwrap().success());drop(first);
+            // Killing one owner recovers exactly its own slot; the survivor
+            // keeps its slot and its Shared lease still blocks Exclusive.
+            check_worker_capacity(root.path(),engine).unwrap();
+            let replacement=try_worker_slot(root.path(),engine).unwrap().unwrap();
+            assert!(try_worker_slot(root.path(),engine).unwrap().is_none());
+            assert!(try_acquire(root.path(),engine,Mode::Exclusive).unwrap().is_none());
+            drop(replacement);
+            fs::write(root.path().join(format!("{engine}.second.stop")),b"stop").unwrap();
+            assert!(second.0.wait().unwrap().success());drop(second);
+            drop(other_slot);
+            for index in 0..WORKER_SLOTS {
+                assert_eq!(fs::metadata(root.path().join(format!("capabilities/managed-v2/.locks/{engine}.worker-{index}.lock"))).unwrap().len(),0);
+            }
+            assert!(try_acquire(root.path(),engine,Mode::Exclusive).unwrap().is_some());
+        }
+        for engine in ["typst","ocr"] {
+            assert_eq!(fs::metadata(root.path().join(format!("capabilities/managed-v2/.locks/{engine}.lock"))).unwrap().len(),0);
+        }
+    }
+    #[test]
     fn worker_slots_fail_closed_for_unknown_engines_and_corrupt_files() {
         let root=tempfile::tempdir().unwrap();
         for id in ["fonts","pdfium","../outside","latex.worker-2"] {

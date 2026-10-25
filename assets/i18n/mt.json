@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Il-magna PDF waqfet b'mod mhux mistenni. Il-fajl oriġinali jinsab intatt.",
   "error.preset_name_conflict": "Preset inkorporat diġà qed juża dan is-isem.",
   "error.publication_baseline_unsupported": "Dan il-format tal-ħruġ jew dan il-kontenut ma jappoġġjax iċ-ċaqliq tal-linja bażi. Neħħi dan l-issettjar u erġa’ pprova.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Installa Tipi għall-pubblikazzjoni biċ-Ċiniż",
   "error.publication_layout_geometry": "Il-kontenut ma joqgħodx fit-tqassim tal-paġna jew tal-paragrafu magħżul. Aġġusta l-marġini, il-kolonni jew l-ispazjar bejn il-linji.",
   "error.publication_line_spacing_unsupported": "Dan il-format tal-ħruġ jew din il-previżjoni ma jappoġġjax l-ispazjar bejn il-linji magħżul. Agħżel format li jappoġġjah jew neħħi dan l-issettjar tal-ispazjar.",

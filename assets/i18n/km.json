@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "ម៉ាស៊ីន PDF បានឈប់ដោយមិននឹកស្មានដល់។ ឯកសារដើមនៅដដែល។",
   "error.preset_name_conflict": "ការកំណត់ជាមុនស្រាប់កំពុងប្រើឈ្មោះនេះរួចហើយ។",
   "error.publication_baseline_unsupported": "ទម្រង់លទ្ធផល ឬមាតិកានេះមិនគាំទ្រការផ្លាស់ទីបន្ទាត់គោលទេ។ សូមសម្អាតការកំណត់នេះ រួចព្យាយាមម្តងទៀត។",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "ដំឡើង ពុម្ពអក្សរបោះពុម្ពភាសាចិន",
   "error.publication_layout_geometry": "ខ្លឹមសារមិនសមនឹងទំព័រ ឬប្លង់កថាខណ្ឌដែលបានស្នើសុំទេ។ លៃតម្រូវរឹម ជួរឈរ ឬគម្លាតបន្ទាត់។",
   "error.publication_line_spacing_unsupported": "លទ្ធផល ឬការមើលជាមុននេះមិនគាំទ្រគម្លាតបន្ទាត់ដែលបានស្នើសុំទេ។ ជ្រើសរើសលទ្ធផលដែលគាំទ្រ ឬលុបការកំណត់គម្លាតបន្ទាត់នេះចេញ។",

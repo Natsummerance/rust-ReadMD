@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "The PDF engine stopped unexpectedly. The original file is intact.",
   "error.preset_name_conflict": "A built-in preset already uses this name.",
   "error.publication_baseline_unsupported": "This output format or content does not support baseline shifting. Clear this setting and try again.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Install Chinese publication fonts",
   "error.publication_layout_geometry": "The content does not fit the requested page or paragraph layout. Adjust margins, columns or line spacing.",
   "error.publication_line_spacing_unsupported": "This output or preview does not support the requested line spacing. Choose a supported output or remove this line-spacing setting.",

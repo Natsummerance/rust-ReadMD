@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "מנוע ה-PDF הפסיק לפעול באופן בלתי צפוי. הקובץ הקיים שלם.",
   "error.preset_name_conflict": "הגדרה מראש מובנית כבר משתמשת בשם זה.",
   "error.publication_baseline_unsupported": "פורמט הפלט או התוכן הזה אינו תומך בהזזת קו הבסיס. יש לנקות הגדרה זו ולנסות שוב.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "התקנת גופנים לפרסום בסינית",
   "error.publication_layout_geometry": "התוכן אינו מתאים לפריסת העמוד או הפסקה המבוקשת. התאם את השוליים, העמודות או המרווח בין השורות.",
   "error.publication_line_spacing_unsupported": "פלט או תצוגה מקדימה זו אינם תומכים במרווח השורות המבוקש. בחר פלט נתמך או הסר הגדרת מרווח שורות זו.",

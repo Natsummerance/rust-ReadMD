@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Chuir an t-inneall PDF stad go tobann. Tá an comhad bunaidh slán.",
   "error.preset_name_conflict": "Tá réamhshocrú ionsuite ann cheana féin leis an ainm seo.",
   "error.publication_baseline_unsupported": "Ní thacaíonn an fhormáid aschuir ná an t-inneachar seo le haistriú na bunlíne. Glan an socrú seo agus bain triail eile as.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Suiteáil Clónna d’fhoilseacháin Shínise",
   "error.publication_layout_geometry": "Ní oireann an t-ábhar do leagan amach an leathanaigh nó na míre a roghnaíodh. Athraigh na himill, na colúin nó an spásáil idir línte.",
   "error.publication_line_spacing_unsupported": "Ní thacaíonn an t-aschur nó an réamhamharc seo leis an spásáil línte a iarradh. Roghnaigh aschur a thacaíonn leis nó bain an socrú spásála línte seo.",

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF motoru beklenmedik şekilde durdu. Orijinal dosya sağlam duruyor.",
   "error.preset_name_conflict": "Bu adı kullanan yerleşik bir ön ayar zaten var.",
   "error.publication_baseline_unsupported": "Bu çıktı biçimi veya içerik, taban çizgisi kaydırmayı desteklemiyor. Bu ayarı temizleyip yeniden deneyin.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Çince yayın yazı tipleri Kur",
   "error.publication_layout_geometry": "İçerik, istenen sayfa veya paragraf düzenine sığmıyor. Kenar boşluklarını, sütunları veya satır aralığını ayarlayın.",
   "error.publication_line_spacing_unsupported": "Bu çıktı veya önizleme, istenen satır aralığını desteklemiyor. Desteklenen bir çıktı seçin veya bu satır aralığı ayarını kaldırın.",

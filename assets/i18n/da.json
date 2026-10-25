@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF-motoren stoppede uventet. Den oprindelige fil er intakt.",
   "error.preset_name_conflict": "En indbygget forudindstilling bruger allerede dette navn.",
   "error.publication_baseline_unsupported": "Dette outputformat eller indhold understøtter ikke grundlinjeforskydning. Ryd denne indstilling, og prøv igen.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Installer Skrifttyper til kinesiske publikationer",
   "error.publication_layout_geometry": "Indholdet passer ikke til det anmodede side- eller afsnitslayout. Juster margener, kolonner eller linjeafstand.",
   "error.publication_line_spacing_unsupported": "Dette output eller eksempel understøtter ikke den anmodede linjeafstand. Vælg et understøttet output, eller fjern denne linjeafstandsindstilling.",

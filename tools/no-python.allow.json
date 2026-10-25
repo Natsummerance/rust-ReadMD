@@ -48,6 +48,28 @@
     "requirement": "R053"
   },
   {
+    "path": "tools/test/inspect-windows-faults.py",
+    "reason": "Development-only independent Windows fault-lane material derivation (PyMuPDF tiling of the locked OCR probe) and OCR text token inspection for owned fault tests. Never shipped, installed or called by ReadMD; production resource management and OCR remain Rust.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/inspect-windows-faults.test.py",
+    "reason": "Pure adversarial controls for the development fault-lane inspector. No product or engine execution and no production Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-windows-faults.cjs",
+    "pattern": "inspect-windows-faults\\.py|inspect-windows-resource-wait\\.py|inspect-math-section-roundtrip\\.py|ORACLE\\.replace\\('\\.py'|PDF_ORACLE",
+    "reason": "Candidate-bound development cross-transport owner fault lane invokes two explicit source-hashed independent Windows inspectors (material/OCR and PDF) and records its existing HTTP broker dependency. Restricted to these literal QA source references; no application or normal-build Python dependency.",
+    "requirement": "R053"
+  },
+  {
+    "path": "tools/test/batch3-windows-faults.test.cjs",
+    "pattern": "inspect-windows-faults\\.py",
+    "reason": "Pure structural/adversarial controls for the development cross-transport owner fault lane; the only Python reference is the literal locked-file list it must assert. No product or engine execution.",
+    "requirement": "R053"
+  },
+  {
     "path": "tools/test/inspect-math-native-defaults.py",
     "reason": "Development-only independent ZIP/XML inspection of real DOCX mathematical document defaults, sparse direct declarations and current inherited values. Never shipped, installed or called by ReadMD; all production parsing and export remain Rust.",
     "requirement": "R053"

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Модуль PDF неожиданно остановился. Существующий файл не поврежден.",
   "error.preset_name_conflict": "Встроенный пресет уже использует это имя.",
   "error.publication_baseline_unsupported": "Этот формат вывода или содержимое не поддерживает смещение базовой линии. Очистите эту настройку и повторите попытку.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Установить Шрифты для публикаций на китайском",
   "error.publication_layout_geometry": "Содержимое не помещается в заданный макет страницы или абзаца. Настройте поля, колонки или межстрочный интервал.",
   "error.publication_line_spacing_unsupported": "Этот вывод или предварительный просмотр не поддерживают запрошенный межстрочный интервал. Выберите поддерживаемый вывод или удалите эту настройку межстрочного интервала.",

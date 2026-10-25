@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Huminto nang hindi inaasahan ang PDF engine. Buo pa rin ang orihinal na file.",
   "error.preset_name_conflict": "Gumagamit na ang isang built-in preset ng pangalang ito.",
   "error.publication_baseline_unsupported": "Hindi sinusuportahan ng format ng output o nilalamang ito ang paglipat ng baseline. I-clear ang setting na ito at subukang muli.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "I-install ang Mga font para sa publikasyong Tsino",
   "error.publication_layout_geometry": "Ang nilalaman ay hindi kasya sa hiniling na layout ng pahina o talata. Ayusin ang mga margin, kolumna, o espasyo ng linya.",
   "error.publication_line_spacing_unsupported": "Ang output o preview na ito ay hindi suportado ang hiniling na espasyo ng linya. Pumili ng suportadong output o alisin ang setting na ito sa espasyo ng linya.",

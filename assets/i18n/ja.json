@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDFエンジンが予期せぬ停止をしました。既存のファイルはそのまま残ります。",
   "error.preset_name_conflict": "この名前は組み込みプリセットと重複しています。",
   "error.publication_baseline_unsupported": "この出力形式または内容はベースラインの移動に対応していません。この設定を解除してから再試行してください。",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "中国語出版フォント をインストール",
   "error.publication_layout_geometry": "コンテンツが要求されたページまたは段落のレイアウトに収まりません。余白、段組み、または行間を調整してください。",
   "error.publication_line_spacing_unsupported": "この出力またはプレビューは、要求された行間をサポートしていません。サポートされている出力形式を選択するか、この行間の設定を削除してください。",

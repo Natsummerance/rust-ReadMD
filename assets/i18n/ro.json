@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Motorul PDF s-a oprit neașteptat. Fișierul original este intact.",
   "error.preset_name_conflict": "O presetare încorporată folosește deja acest nume.",
   "error.publication_baseline_unsupported": "Acest format de ieșire sau conținut nu acceptă deplasarea liniei de bază. Ștergeți această setare și încercați din nou.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instalare Fonturi pentru publicații în chineză",
   "error.publication_layout_geometry": "Conținutul nu încape în aspectul de pagină sau de paragraf ales. Ajustați marginile, coloanele sau spațierea dintre rânduri.",
   "error.publication_line_spacing_unsupported": "Acest format de ieșire sau această previzualizare nu acceptă spațierea dintre rânduri aleasă. Alegeți un format compatibil sau eliminați această setare de spațiere.",

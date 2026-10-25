@@ -5,6 +5,8 @@ use serde_json::Value;
 pub(crate) mod tracking;
 #[path = "publication_baseline.rs"]
 pub(crate) mod baseline;
+#[path = "publication_decoration.rs"]
+pub(crate) mod decoration;
 
 // Reuse the existing invalid-style code; a distinct capability error keeps
 // unsupported output from being mistaken for a lossy successful projection.
@@ -162,8 +164,10 @@ pub fn validate_input(source: &str, options: &Value) -> Result<bool, &'static st
     let mut used = global_line_spacing(options)?.is_some();
     if source.contains(crate::publication_blocks::PREFIX) {
         crate::publication_blocks::validate_source(source)?;
-        used |= crate::publication_blocks::analyze(source)?.nodes.iter()
-            .any(|node| node.style["paragraph"].get("lineSpacing").is_some());
+        for node in &crate::publication_blocks::analyze(source)?.nodes {
+            used |= node.style["paragraph"].get("lineSpacing").is_some();
+            used |= decoration::parse(&node.style["paragraph"])?.is_some();
+        }
     }
     Ok(used)
 }
@@ -183,6 +187,11 @@ pub(crate) fn validate_consumer(consumer: Consumer, source: &str, options: &Valu
         Consumer::Typst => baseline::Consumer::Typst,
         _ => baseline::Consumer::Unsupported,
     })?;
+    decoration::validate_source_consumer(match consumer {
+        Consumer::Docx => decoration::Consumer::Docx,
+        Consumer::RustPdf => decoration::Consumer::RustPdf,
+        _ => decoration::Consumer::Unsupported,
+    }, source)?;
     if !validate_input(source, options)? { return Ok(()); }
     match consumer {
         Consumer::Docx => Ok(()),
@@ -451,6 +460,10 @@ pub fn validate_reader_view(source: &str, options: &Value) -> Result<(), &'stati
     crate::publication_blocks::validate_author_render_consumer(source)?;
     tracking::validate_reader(source, options)?;
     baseline::validate_source(source, options, baseline::Consumer::Reader)?;
+    // In-app reading projects CSS only; a decorated paragraph would silently
+    // lose its fill/borders there. Reject under the decoration code before
+    // the generic typed-layout gate can answer with a different family.
+    if decoration::used(source)? { return Err(decoration::UNSUPPORTED); }
     if validate_input(source, options)? { return Err(UNSUPPORTED); }
     Ok(())
 }
@@ -461,6 +474,9 @@ pub fn validate_preview(source: &str, options: &Value) -> Result<(), &'static st
     crate::publication_blocks::validate_author_render_consumer(source)?;
     tracking::validate_consumer(source, options, false)?;
     baseline::validate_source(source, options, baseline::Consumer::Unsupported)?;
+    // HTML-flow previews cannot carry paragraph decoration; refuse with the
+    // dedicated code rather than dropping the keys into a success page.
+    if decoration::used(source)? { return Err(decoration::UNSUPPORTED); }
     if validate_input(source, options)? { return Err(UNSUPPORTED); }
     Ok(())
 }

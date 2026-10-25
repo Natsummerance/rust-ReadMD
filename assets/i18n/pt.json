@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "O motor de PDF parou inesperadamente. O ficheiro existente está intacto.",
   "error.preset_name_conflict": "Já existe uma predefinição integrada com este nome.",
   "error.publication_baseline_unsupported": "Este formato de saída ou conteúdo não suporta o deslocamento da linha de base. Limpe esta definição e tente novamente.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instalar Fontes para publicação em chinês",
   "error.publication_layout_geometry": "O conteúdo não cabe no layout de página ou parágrafo solicitado. Ajuste as margens, as colunas ou o espaçamento entre linhas.",
   "error.publication_line_spacing_unsupported": "Esta saída ou pré-visualização não suporta o espaçamento entre linhas solicitado. Escolha uma saída suportada ou remova esta definição de espaçamento entre linhas.",

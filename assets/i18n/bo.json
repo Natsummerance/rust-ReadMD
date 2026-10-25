@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF འཕྲུལ་ཆས་གློ་བུར་དུ་བཀག་འདུག ད་ཡོད་ཀྱི་ཡིག་ཆ་ཉེན་མེད་ཡིན།",
   "error.preset_name_conflict": "ནང་འཇུག་སྔོན་སྒྲིག་ཅིག་གིས་མིང་འདི་སྤྱད་ཟིན་འདུག",
   "error.publication_baseline_unsupported": "ཕྱིར་འདོན་རྣམ་གཞག་འདི་དང་ཡང་ན་ནང་དོན་འདིས་གཞི་ཐིག་སྤོ་བར་རྒྱབ་སྐྱོར་མི་བྱེད། སྒྲིག་འགོད་འདི་བསུབས་ནས་ཡང་བསྐྱར་ཚོད་ལྟ་བྱོས།",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "རྒྱ་ཡིག་དཔེ་སྐྲུན་ཡིག་གཟུགས། སྒྲིག་འཇུག་བྱེད་པ།",
   "error.publication_layout_geometry": "ནང་དོན་འདི་བཀོད་སྒྲིག་བྱས་པའི་ཤོག་ངོས་སམ་དུམ་ཚན་ནང་མི་ཤོང་། མཐའ་བར་དང་། ཀ་ཐིག ཡང་ན་ཕྲེང་བར་བཅས་བཟོ་བཅོས་གནང་།",
   "error.publication_line_spacing_unsupported": "ཕྱིར་འདོན་ནམ་སྔོན་ལྟ་འདིས་བཀོད་པའི་ཕྲེང་བར་ལ་རྒྱབ་སྐྱོར་མི་བྱེད། རྒྱབ་སྐྱོར་ཡོད་པའི་ཕྱིར་འདོན་ཞིག་འདེམས་པའམ་ཕྲེང་བར་གྱི་སྒྲིག་འགོད་འདི་མེད་པར་བཟོ་རོགས།",

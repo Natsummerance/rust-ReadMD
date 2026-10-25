@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF suliarinnissaa maqaasivoq. Fiili pisoq allannguuteqanngilaq.",
   "error.preset_name_conflict": "Preset-i nammineq pigineqartoq atia taanna atorpaa.",
   "error.publication_baseline_unsupported": "Annerusassatut ilusiliussaq imaluunniit imarisaq manna tunngaviusumik titarnerup nuutsinnissaanut tapersersuinngilaq. Aaqqissuussineq manna peeriarlugu misileqqiguk.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Kineserisut saqqummersitsinermut naqinnerit ikkuguk",
   "error.publication_layout_geometry": "Imaqarnera quppernami imaluunniit immikkoortumi ilusissarititaasumut tulluartuunngilaq. Killingit, kolonnit imaluunniit linjiit akornat allanngakkit.",
   "error.publication_line_spacing_unsupported": "Naqiterneqartoq imaluunniit takkutissatut siulersuutitut saqqummiussaq linjiit akornata pisariaqartinneqartup tapersersorsinnaanngilaq. Naqiterneqartoq tapersersorneqartoq toqqaruk imaluunniit linjiit akornata aaqqissuussaa una peeruk.",

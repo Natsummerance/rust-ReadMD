@@ -248,6 +248,11 @@ pub fn apply(fragment: &str, style: &Resolved, attributes: &Value, global: &Valu
                 let explicit_indent = ["left", "right", "firstLine", "hanging"].iter()
                     .any(|key| attributes["paragraph"].get(*key).is_some());
                 let mut updates = p.clone();
+                // Ordinary-paragraph decoration: native pBdr/shd, ordered by
+                // P_ORDER (pBdr before shd, both before spacing/ind/jc). Non-
+                // ordinary contexts were already refused at the consumer gate.
+                updates.push_str(&crate::publication_typography::decoration::parse(&attributes["paragraph"])?
+                    .map(|decoration| decoration.docx_pPr()).unwrap_or_default());
                 if scoped && !explicit_indent {
                     if let Some(start) = updates.find("<w:ind ") {
                         if let Some(end) = updates[start..].find("/>") {

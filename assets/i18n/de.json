@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Die PDF-Engine wurde unerwartet angehalten. Die vorhandene Datei ist intakt.",
   "error.preset_name_conflict": "Eine integrierte Voreinstellung verwendet diesen Namen bereits.",
   "error.publication_baseline_unsupported": "Dieses Ausgabeformat oder dieser Inhalt unterstützt keinen Grundlinienversatz. Löschen Sie diese Einstellung und versuchen Sie es erneut.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Chinesische Publikationsschriften installieren",
   "error.publication_layout_geometry": "Der Inhalt passt nicht in das angeforderte Seiten- oder Absatzlayout. Passen Sie Ränder, Spalten oder den Zeilenabstand an.",
   "error.publication_line_spacing_unsupported": "Diese Ausgabe oder Vorschau unterstützt den angeforderten Zeilenabstand nicht. Wählen Sie eine unterstützte Ausgabe oder entfernen Sie diese Zeilenabstandseinstellung.",

@@ -18,6 +18,10 @@ pub(crate) use paragraph::WordParagraphOrigin;
 #[path = "math_word/capture_tests.rs"]
 mod paragraph_capture_tests;
 
+#[cfg(test)]
+#[path = "math_word_revision_tests.rs"]
+mod revision_tests;
+
 type Result<T> = std::result::Result<T, &'static str>;
 fn word(n: &XmlNode, local: &str) -> bool { n.namespace == WORD_NS && n.local() == local }
 fn child<'a>(n: &'a XmlNode, local: &str) -> Option<&'a XmlNode> { n.children().find(|n| word(n, local)) }
@@ -158,7 +162,10 @@ fn bind_attribute(n:&mut XmlNode, preferred:&str, namespace:&str)->String {
 }
 fn apply(properties: &mut Properties, pr: Option<&XmlNode>, toggle: bool) -> Result<()> {
     let Some(pr) = pr else { return Ok(()); };
-    for n in pr.children().filter(|n| n.namespace == WORD_NS && n.local() != "rStyle") {
+    // rPrChange is a review fact (author, date, the pre-revision rPr), not a
+    // current format property. It never enters the merged effective copy; the
+    // author source and any untouched rPr container keep it verbatim.
+    for n in pr.children().filter(|n| n.namespace == WORD_NS && n.local() != "rStyle" && n.local() != "rPrChange") {
         let mut n = n.clone(); bind_used_namespaces(&mut n);
         let key = n.local().to_string();
         if matches!(key.as_str(), "b" | "bCs" | "i" | "iCs" | "caps" | "smallCaps" | "strike" | "dstrike" | "outline" | "shadow" | "emboss" | "imprint" | "vanish") {

@@ -1498,6 +1498,7 @@ pub struct PStyle {
     pub right_indent: f64,
     pub line_spacing: Option<crate::publication_typography::LineSpacing>,
     pub(crate) baseline_shift: Option<crate::publication_typography::baseline::BaselineShiftPt>,
+    pub(crate) decoration: Option<crate::publication_typography::decoration::Decoration>,
     pub(crate) author_text: Option<crate::publication_inline_text::ResolvedTextStyle>,
     pub publication_block: Option<(usize, Option<String>)>,
     pub page_break_before: bool,
@@ -1523,6 +1524,7 @@ impl PStyle {
             right_indent: 0.0,
             line_spacing: None,
             baseline_shift: None,
+            decoration: None,
             author_text: None,
             publication_block: None,
             page_break_before: false,
@@ -4619,7 +4621,7 @@ impl<'a> Sheet<'a> {
             Flowable::PageBreak => 0.0,
             Flowable::Spacer(h) => *h,
             Flowable::Error(_) => 0.,
-            Flowable::Paragraph { runs, st, .. } => if st.line_spacing.is_some() || st.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) {
+            Flowable::Paragraph { runs, st, .. } => if st.line_spacing.is_some() || st.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) || st.decoration.is_some() {
                 publication_paragraph::plan(runs,st,self.avail(),self.top()-self.limit()).ok()
                     .and_then(|p| p.bounds.first().map(|b| b.upper+b.lower+st.space_before)).unwrap_or(st.leading+st.space_before)
             } else {st.leading + st.space_before},
@@ -4666,7 +4668,7 @@ pub fn paginate(
                 } else {
                     0.0
                 };
-                if p.line_spacing.is_some() || p.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) {s.add_typed_paragraph(runs,p,keep_min,anchor.as_deref())?;}
+                if p.line_spacing.is_some() || p.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) || p.decoration.is_some() {s.add_typed_paragraph(runs,p,keep_min,anchor.as_deref())?;}
                 else {s.add_paragraph(runs, p, keep_min, anchor.as_deref());}
             }
             Flowable::Table(tf) => s.add_table(tf),
@@ -4890,7 +4892,7 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
         check_flow_spacing_geometry(flow,&geom)?;
         if let Flowable::Error(error) = flow {return Err(error.clone());}
         if let Flowable::Paragraph { runs, st, .. } = flow {
-            if st.line_spacing.is_some() || st.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) { publication_paragraph::plan(runs,st,geom.avail,geom.height-2.*FRAME_PAD)?; }
+            if st.line_spacing.is_some() || st.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) || st.decoration.is_some() { publication_paragraph::plan(runs,st,geom.avail,geom.height-2.*FRAME_PAD)?; }
         }
         if let Flowable::RichBibliographyEntry { rows: Err(error), .. } = flow {
             return Err(error.clone());

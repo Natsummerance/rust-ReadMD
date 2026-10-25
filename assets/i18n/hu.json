@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "A PDF-motor váratlanul leállt. A meglévő fájl sértetlen.",
   "error.preset_name_conflict": "Egy beépített előbeállítás már használja ezt a nevet.",
   "error.publication_baseline_unsupported": "Ez a kimeneti formátum vagy tartalom nem támogatja az alapvonal eltolását. Törölje ezt a beállítást, majd próbálja újra.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Kínai kiadványbetűkészletek telepítése",
   "error.publication_layout_geometry": "A tartalom nem fér bele a kért oldal- vagy bekezdéselrendezésbe. Igazítsa a margókat, oszlopokat vagy a sorközöket.",
   "error.publication_line_spacing_unsupported": "Ez a kimenet vagy előnézet nem támogatja a kért sorközt. Válasszon egy támogatott kimenetet, vagy távolítsa el ezt a sorközbeállítást.",

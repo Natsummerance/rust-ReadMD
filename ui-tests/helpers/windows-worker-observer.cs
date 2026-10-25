@@ -39,9 +39,14 @@ public sealed class ReadMDWorkerObserver : IDisposable {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern uint GetFinalPathNameByHandleW(IntPtr handle, StringBuilder name, uint size, uint flags);
     [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr handle, out FileInfo info);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateJobObjectW(IntPtr security, string name);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job, int type, out AccountingInformation information, int length, IntPtr returnLength);
+    [StructLayout(LayoutKind.Sequential)]
+    struct AccountingInformation { public long user, kernel, periodUser, periodKernel; public uint faults, total, active, terminated; }
 
     sealed class State {
-        public IntPtr owner, process;
+        public IntPtr owner, process, job;
         public uint ownerPid, pid;
         public string program, kind, sha;
         public readonly Dictionary<uint,IntPtr> threads = new Dictionary<uint,IntPtr>();
@@ -76,19 +81,47 @@ public sealed class ReadMDWorkerObserver : IDisposable {
         } finally { CloseHandle(snapshot); }
     }
     void Owned(string path) { Require(path.StartsWith(root+"\\",StringComparison.OrdinalIgnoreCase),"Engine/slot must be inside owned test profile"); }
-    public ReadMDWorkerObserver(string qaRoot, uint testNodePid, string qaBase) {
-        root=Canonical(qaRoot);nodePid=testNodePid;Require(Same(Parent(root),Canonical(qaBase))&&root.Substring(root.LastIndexOf('\\')+1).StartsWith("engine-mcp-native-",StringComparison.Ordinal),"Observer root is not a dedicated owned QA profile");
+    public ReadMDWorkerObserver(string qaRoot, uint testNodePid, string qaBase) : this(qaRoot,testNodePid,qaBase,"engine-mcp-native-") { }
+    public ReadMDWorkerObserver(string qaRoot, uint testNodePid, string qaBase, string prefix) {
+        root=Canonical(qaRoot);nodePid=testNodePid;
+        // Second explicit narrow-extension prefix for the batch3 fault lane.
+        // The default keeps every existing matrix invocation unchanged.
+        Require(prefix=="engine-mcp-native-"||prefix=="batch3-faults-native-","Unknown owned QA root prefix");
+        Require(Same(Parent(root),Canonical(qaBase))&&root.Substring(root.LastIndexOf('\\')+1).StartsWith(prefix,StringComparison.Ordinal),"Observer root is not a dedicated owned QA profile");
     }
     public object Ready(string echo) {
         var parents=Rows(true); uint current=(uint)Process.GetCurrentProcess().Id;
         for(int i=0;i<8;i++){if(!parents.TryGetValue(current,out current))break;if(current==nodePid){Require(Rows(false).ContainsValue((uint)Process.GetCurrentProcess().Id),"Native thread snapshot cannot see observer");validated=true;return Result("nodeAncestor",true,"echo",echo);}}
         throw new InvalidOperationException("Declared test Node process is not an observer ancestor");
     }
-    public object Arm(uint ownerPid, string program, string ownerProgram, string kind, string sha) {
-        Require(validated,"Observer ancestry must be checked first");Require(kind=="typst"||kind=="ocr","Unknown engine kind");string expected=Canonical(program);Owned(expected);Require(Same(Digest(expected),sha),"Engine bytes changed");uint parent;Require(Rows(true).TryGetValue(ownerPid,out parent)&&parent==nodePid,"Owner is not this test child");
-        IntPtr owner=OpenProcess(0x101001,false,ownerPid);if(owner==IntPtr.Zero)throw NativeError("Cannot observe owner");
-        try{Require(Same(Image(owner),Canonical(ownerProgram)),"Owner image mismatch");Require(Alive(owner),"Owner has already exited");Require(Rows(true).TryGetValue(ownerPid,out parent)&&parent==nodePid,"Owner ancestry changed");string key=Guid.NewGuid().ToString();states.Add(key,new State{owner=owner,ownerPid=ownerPid,program=expected,kind=kind,sha=sha});owner=IntPtr.Zero;return Result("key",key,"armed",true);}
-        finally{if(owner!=IntPtr.Zero)CloseHandle(owner);}
+    bool OwnerChain(uint ownerPid, uint ownerParentPid) {
+        uint parent;
+        if(!Rows(true).TryGetValue(ownerPid,out parent))return false;
+        if(ownerParentPid==0)return parent==nodePid;
+        // Exact two-level chain: Node -> declared parent (broker) -> owner.
+        return parent==ownerParentPid&&Rows(true).TryGetValue(ownerParentPid,out parent)&&parent==nodePid;
+    }
+    public object Arm(uint ownerPid, string program, string ownerProgram, string kind, string sha, uint ownerParentPid) {
+        Require(validated,"Observer ancestry must be checked first");Require(kind=="typst"||kind=="ocr","Unknown engine kind");string expected=Canonical(program);Owned(expected);Require(Same(Digest(expected),sha),"Engine bytes changed");Require(OwnerChain(ownerPid,ownerParentPid),ownerParentPid==0?"Owner is not this test child":"Owner is not this declared two-level test child");
+        IntPtr owner=OpenProcess(0x101101,false,ownerPid);if(owner==IntPtr.Zero)throw NativeError("Cannot observe owner");
+        IntPtr job=IntPtr.Zero;
+        try{Require(Same(Image(owner),Canonical(ownerProgram)),"Owner image mismatch");Require(Alive(owner),"Owner has already exited");Require(OwnerChain(ownerPid,ownerParentPid),"Owner ancestry changed");
+            // Accounting-only private Job: no kill-on-close, so an existing
+            // matrix run keeps its exact process lifetime semantics. The open
+            // above adds PROCESS_SET_QUOTA, which AssignProcessToJobObject
+            // requires on top of the observation rights (matching the step1
+            // Python observer's documented mask).
+            job=CreateJobObjectW(IntPtr.Zero,null);if(job==IntPtr.Zero||job==Invalid)throw NativeError("Cannot create accounting job");
+            if(!AssignProcessToJobObject(job,owner))throw NativeError("Cannot assign owner to accounting job");
+            string key=Guid.NewGuid().ToString();states.Add(key,new State{owner=owner,ownerPid=ownerPid,program=expected,kind=kind,sha=sha,job=job});owner=IntPtr.Zero;job=IntPtr.Zero;return Result("key",key,"armed",true,"jobAccounting",true);}
+        finally{if(job!=IntPtr.Zero)CloseHandle(job);if(owner!=IntPtr.Zero)CloseHandle(owner);}
+    }
+    public object JobAccounting(string key) {
+        State state=Find(key);Require(state.job!=IntPtr.Zero,"This observation has no accounting job");
+        AccountingInformation information;
+        if(!QueryInformationJobObject(state.job,1,out information,Marshal.SizeOf(typeof(AccountingInformation)),IntPtr.Zero))throw NativeError("Cannot query accounting job");
+        Require(information.total>=information.active,"Accounting totals are inconsistent");
+        return Result("totalProcesses",information.total,"activeProcesses",information.active,"terminatedProcesses",information.terminated,"cumulativeJobObservation",true,"killOnJobClose",false,"ownerAlive",Alive(state.owner));
     }
     static void ReleaseThreads(State state) {
         foreach(var thread in state.threads.Values)try{if(state.process!=IntPtr.Zero&&Alive(state.process))ResumeThread(thread);}finally{CloseHandle(thread);}state.threads.Clear();
@@ -148,6 +181,35 @@ public sealed class ReadMDWorkerObserver : IDisposable {
         return Result("free",free,"total",2,"readOnlyObservation",true);
     }
     public object IsAlive(string key) { return Result("alive",Alive(Find(key).process)); }
+    public object Lease(string key, string resource) {
+        // Exclusive probe of one engine resource lease in the owned profile.
+        // A Shared holder must deny it with ERROR_SHARING_VIOLATION (32) while
+        // the permissive identity reader still opens, proving Shared mode.
+        State state=Find(key);Require(resource=="typst"||resource=="fonts"||resource=="ocr","Unknown lease resource");
+        string directory=state.program;for(int i=0;i<4;i++)directory=Parent(directory);directory=Canonical(directory+"\\.locks");Owned(directory);
+        string path=Extended(directory+"\\"+resource+".lock");
+        IntPtr exclusive=CreateFileW(path,0xC0000000,0,IntPtr.Zero,4,0x200000,IntPtr.Zero);
+        bool held=exclusive==IntPtr.Zero||exclusive==Invalid;int exclusiveError=held?Marshal.GetLastWin32Error():0;
+        if(!held)CloseHandle(exclusive); // observation only; never retain a lease
+        IntPtr reader=CreateFileW(path,0x80000000,7,IntPtr.Zero,3,0x200000,IntPtr.Zero);
+        if(reader==IntPtr.Zero||reader==Invalid)throw NativeError("Cannot observe lease identity");
+        try{
+            FileInfo info;if(!GetFileInformationByHandle(reader,out info))throw NativeError("Cannot inspect lease file");
+            Require((info.attributes&(0x400|0x10))==0&&info.high==0&&info.low==0,"Unexpected lease file");
+            Require(held&&exclusiveError==32,"Resource lease is not held in Shared mode");
+            ulong index=(((ulong)info.indexHigh)<<32)|((ulong)info.indexLow),created=(((ulong)((uint)info.created.dwHighDateTime))<<32)|((ulong)((uint)info.created.dwLowDateTime));
+            return Result("resource",resource,"held",true,"exclusiveWinError",exclusiveError,"identityBytes",0,
+                "identity",Result("volume",info.volume.ToString("x8"),"index",index.ToString("x16"),"created",created.ToString("x16"),"bytes",(long)((((ulong)info.high)<<32)|((ulong)info.low))));
+        }finally{CloseHandle(reader);}
+    }
+    public object Resume(string key) {
+        // Release only the threads this observer itself suspended and keep the
+        // pinned worker handle so stopped/alive keep working after resumption.
+        State state=Find(key);Require(state.process!=IntPtr.Zero,"No frozen worker to resume");
+        int resumed=state.threads.Count;ReleaseThreads(state);
+        Require(state.process!=IntPtr.Zero,"Resume must keep the pinned worker handle");
+        return Result("key",key,"resumed",resumed,"processHandleKept",true);
+    }
     public object Stopped(string key, int timeoutMs) { var clock=Stopwatch.StartNew();uint result=WaitForSingleObject(Find(key).process,(uint)Math.Max(0,Math.Min(timeoutMs,2000)));if(result==Failed)throw NativeError("Cannot wait for owned worker");return Result("stopped",result==0,"waitMs",clock.ElapsedMilliseconds); }
     public void Dispose() {
         if(disposed)return;disposed=true;var handles=new List<IntPtr>();foreach(var state in states.Values){if(state.owner!=IntPtr.Zero)handles.Add(state.owner);if(state.process!=IntPtr.Zero)handles.Add(state.process);}var clock=Stopwatch.StartNew();
@@ -155,6 +217,6 @@ public sealed class ReadMDWorkerObserver : IDisposable {
             foreach(var handle in handles)if(Alive(handle))WaitForSingleObject(handle,(uint)Math.Max(0,2000-clock.ElapsedMilliseconds));
             foreach(var state in states.Values){if(state.owner!=IntPtr.Zero&&Alive(state.owner)){Console.Error.WriteLine("{\"rescue\":\"owned-owner\",\"key\":"+state.pid+"}");if(!TerminateProcess(state.owner,1))throw NativeError("Owned owner rescue failed");}if(state.process!=IntPtr.Zero&&Alive(state.process)){Console.Error.WriteLine("{\"rescue\":\"owned-process\",\"key\":"+state.pid+"}");if(!TerminateProcess(state.process,1))throw NativeError("Owned worker rescue failed");}}
             clock.Restart();foreach(var handle in handles)if(Alive(handle))WaitForSingleObject(handle,(uint)Math.Max(0,2000-clock.ElapsedMilliseconds));
-        }finally{foreach(var state in states.Values){ReleaseThreads(state);if(state.owner!=IntPtr.Zero)CloseHandle(state.owner);if(state.process!=IntPtr.Zero)CloseHandle(state.process);}states.Clear();}
+        }finally{foreach(var state in states.Values){ReleaseThreads(state);if(state.owner!=IntPtr.Zero)CloseHandle(state.owner);if(state.process!=IntPtr.Zero)CloseHandle(state.process);if(state.job!=IntPtr.Zero)CloseHandle(state.job);}states.Clear();}
     }
 }

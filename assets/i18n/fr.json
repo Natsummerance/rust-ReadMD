@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Le moteur PDF s'est arrêté de manière inattendue. Le fichier existant est intact.",
   "error.preset_name_conflict": "Un préréglage intégré utilise déjà ce nom.",
   "error.publication_baseline_unsupported": "Ce format de sortie ou ce contenu ne prend pas en charge le décalage de la ligne de base. Effacez ce réglage et réessayez.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Installer Polices de publication chinoises",
   "error.publication_layout_geometry": "Le contenu ne tient pas dans la mise en page ou la disposition du paragraphe choisie. Ajustez les marges, les colonnes ou l’interligne.",
   "error.publication_line_spacing_unsupported": "Cette sortie ou cet aperçu ne prend pas en charge l'interligne demandé. Choisissez une sortie prise en charge ou supprimez ce paramètre d'interligne.",

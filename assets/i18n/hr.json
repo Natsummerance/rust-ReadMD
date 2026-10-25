@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF mehanizam neočekivano je stao. Izvorna datoteka je netaknuta.",
   "error.preset_name_conflict": "Ugrađeni predložak već koristi ovaj naziv.",
   "error.publication_baseline_unsupported": "Ovaj izlazni format ili sadržaj ne podržava pomicanje osnovne crte. Izbrišite ovu postavku i pokušajte ponovno.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instaliraj Fontovi za kineske publikacije",
   "error.publication_layout_geometry": "Sadržaj ne stane u zadani raspored stranice ili odlomka. Prilagodite margine, stupce ili prored.",
   "error.publication_line_spacing_unsupported": "Ovaj izlaz ili pretpregled ne podržava zadani prored. Odaberite podržani izlaz ili uklonite ovu postavku proreda.",

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF 引擎意外停止。現有檔案完好無缺。",
   "error.preset_name_conflict": "此名稱與內建預設重複。",
   "error.publication_baseline_unsupported": "此輸出格式或內容不支援基線偏移。請清除此設定後重試。",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "安裝 中文出版字型",
   "error.publication_layout_geometry": "內容無法放入設定的頁面或段落版面。請調整頁邊距、分欄或行距。",
   "error.publication_line_spacing_unsupported": "此輸出或預覽暫不支援要求的行距。請選擇支援的輸出方式，或移除此行距設定。",

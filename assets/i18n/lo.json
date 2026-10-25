@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "ເຄື່ອງຈັກ PDF ຢຸດເຮັດວຽກກະທັນຫັນ. ໄຟລ໌ຕົ້ນສະບັບແມ່ນຍັງຢູ່ຄົບຖ້ວນ.",
   "error.preset_name_conflict": "ມີຄ່າຕັ້ງລ່ວງໜ້າໃນຕົວທີ່ໃຊ້ຊື່ນີ້ແລ້ວ.",
   "error.publication_baseline_unsupported": "ຮູບແບບຜົນອອກ ຫຼື ເນື້ອຫານີ້ບໍ່ຮອງຮັບການເລື່ອນເສັ້ນຖານ. ລ້າງການຕັ້ງຄ່ານີ້ແລ້ວລອງອີກຄັ້ງ.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "ຕິດຕັ້ງ ຟອນສຳລັບສິ່ງພິມພາສາຈີນ",
   "error.publication_layout_geometry": "ເນື້ອໃນບໍ່ພໍດີກັບຮູບແບບໜ້າ ຫຼື ວັກທີ່ກຳນົດ. ກະລຸນາປັບຂອບໜ້າ, ຖັນ ຫຼື ໄລຍະຫ່າງລະຫວ່າງແຖວ.",
   "error.publication_line_spacing_unsupported": "ຜົນຜະລິດ ຫຼື ການສະແດງຕົວຢ່າງນີ້ບໍ່ຮອງຮັບໄລຍະຫ່າງລະຫວ່າງແຖວທີ່ຮ້ອງຂໍ. ເລືອກຜົນຜະລິດທີ່ຮອງຮັບ ຫຼື ເອົາການຕັ້ງຄ່າໄລຍະຫ່າງລະຫວ່າງແຖວນີ້ອອກ.",

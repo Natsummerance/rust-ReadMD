@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF အင်ဂျင် ရုတ်တရက် ရပ်သွားသည်။ မူရင်းဖိုင်မှာ အကောင်းအတိုင်း ရှိနေသည်။",
   "error.preset_name_conflict": "ပါဝင်ပြီးသား ကြိုတင်သတ်မှတ်ချက်တစ်ခုက ဤအမည်ကို အသုံးပြုနေနှင့်ပါပြီ။",
   "error.publication_baseline_unsupported": "ဤထုတ်ယူမည့် ပုံစံ သို့မဟုတ် အကြောင်းအရာသည် အခြေခံမျဉ်းရွှေ့ခြင်းကို မပံ့ပိုးပါ။ ဤဆက်တင်ကို ရှင်းပြီး ထပ်စမ်းကြည့်ပါ။",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "တရုတ်စာထုတ်ဝေရေး ဖောင့်များ ကို ထည့်သွင်းရန်",
   "error.publication_layout_geometry": "အကြောင်းအရာသည် တောင်းဆိုထားသော စာမျက်နှာ သို့မဟုတ် စာပိုဒ် အပြင်အဆင်နှင့် မကိုက်ညီပါ။ အနားသတ်များ၊ ကော်လံများ သို့မဟုတ် လိုင်းကြားအကွာအဝေးကို ချိန်ညှိပါ။",
   "error.publication_line_spacing_unsupported": "ဤ အထွက် သို့မဟုတ် အစမ်းကြည့်ရှုမှုသည် တောင်းဆိုထားသော လိုင်းကြားအကွာအဝေးကို မထောက်ပံ့ပါ။ ထောက်ပံ့ထားသော အထွက်ကို ရွေးချယ်ပါ သို့မဟုတ် ဤလိုင်းကြားအကွာအဝေး ဆက်တင်ကို ဖယ်ရှားပါ။",

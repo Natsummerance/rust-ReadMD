@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "توقف محرك PDF بشكل غير متوقع. الملف الموجود سليماً.",
   "error.preset_name_conflict": "هناك إعداد مسبق مدمج يستخدم هذا الاسم بالفعل.",
   "error.publication_baseline_unsupported": "لا يدعم تنسيق الإخراج هذا أو هذا المحتوى إزاحة خط الأساس. امسح هذا الإعداد وحاول مرة أخرى.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "تثبيت خطوط النشر الصينية",
   "error.publication_layout_geometry": "لا يتناسب المحتوى مع تخطيط الصفحة أو الفقرة المطلوبة. اضبط الهوامش أو الأعمدة أو المسافة بين الأسطر.",
   "error.publication_line_spacing_unsupported": "لا يدعم هذا الإخراج أو المعاينة المسافة بين الأسطر المطلوبة. اختر إخراجاً مدعوماً أو أزل إعداد المسافة بين الأسطر هذا.",

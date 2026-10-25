@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF ماتورى تاسادىپىي توختاپ قالды. مەۋجۇت ھۆججەت پۈتۈن.",
   "error.preset_name_conflict": "ئۆزىگە تەۋە ئالدىن بەلگىلەنگەن سەپلىمە بۇ ئاتنى ئاللىقاچان ئىشلىتىۋاتىدۇ.",
   "error.publication_baseline_unsupported": "بۇ چىقىرىش فورماتى ياكى مەزمۇن ئاساسىي سىزىقنى يۆتكەشنى قوللىمايدۇ. بۇ تەڭشەكنى تازىلاپ قايتا سىناڭ.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "خەنزۇچە نەشر خەت نۇسخىلىرى نى ئورنىتىش",
   "error.publication_layout_geometry": "مەزمۇن تاللانغان بەت ياكى ئابزاس ئورۇنلاشتۇرۇشىغا سىغمايدۇ. بەت گىرۋىكى، ستون ياكى قۇر ئارىلىقىنى تەڭشەڭ.",
   "error.publication_line_spacing_unsupported": "بۇ چىقىرىش ياكى ئالدىن كۆرسىتىش تەلەپ قىلىنغان قۇر ئارىلىقىنى قوللىمايدۇ. قوللايدىغان چىقىرىشنى تاللاڭ ياكى بۇ قۇر ئارىلىقى تەڭشىكىنى ئۆچۈرۈۋېتىڭ.",

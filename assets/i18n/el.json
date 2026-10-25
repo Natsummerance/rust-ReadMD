@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Η μηχανή PDF σταμάτησε απροσδόκητα. Το υπάρχον αρχείο παραμένει άθικτο.",
   "error.preset_name_conflict": "Μια ενσωματωμένη προεπιλογή χρησιμοποιεί ήδη αυτό το όνομα.",
   "error.publication_baseline_unsupported": "Αυτή η μορφή εξόδου ή το περιεχόμενο δεν υποστηρίζει μετατόπιση της γραμμής βάσης. Εκκαθαρίστε αυτή τη ρύθμιση και δοκιμάστε ξανά.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Εγκατάσταση Γραμματοσειρές κινεζικών εκδόσεων",
   "error.publication_layout_geometry": "Το περιεχόμενο δεν χωράει στην επιλεγμένη διάταξη σελίδας ή παραγράφου. Προσαρμόστε τα περιθώρια, τις στήλες ή το διάστιχο.",
   "error.publication_line_spacing_unsupported": "Αυτή η έξοδος ή προεπισκόπηση δεν υποστηρίζει το ζητούμενο διάστημα γραμμών. Επιλέξτε μια υποστηριζόμενη έξοδο ή καταργήστε αυτή τη ρύθμιση διαστήματος γραμμών.",

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF-moottori pysähtyi odottamatta. Alkuperäinen tiedosto on ehjä.",
   "error.preset_name_conflict": "Valmis esiasetus käyttää jo tätä nimeä.",
   "error.publication_baseline_unsupported": "Tämä tulostusmuoto tai sisältö ei tue perusviivan siirtämistä. Tyhjennä tämä asetus ja yritä uudelleen.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Asenna Kiinalaisten julkaisujen fontit",
   "error.publication_layout_geometry": "Sisältö ei sovi pyydetylle sivu- tai kappaleasettelulle. Säädä marginaaleja, palstoja tai riviväliä.",
   "error.publication_line_spacing_unsupported": "Tämä tuloste tai esikatselu ei tue pyydettyä riviväliä. Valitse tuettu tuloste tai poista tämä riviväliasetus.",

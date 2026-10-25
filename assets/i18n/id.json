@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Mesin PDF berhenti secara tiba-tiba. File asli tetap utuh.",
   "error.preset_name_conflict": "Un ajuste preestablecido integrado ya usa este nombre.",
   "error.publication_baseline_unsupported": "Format keluaran atau konten ini tidak mendukung pergeseran garis dasar. Hapus pengaturan ini lalu coba lagi.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instal Font penerbitan bahasa Tionghoa",
   "error.publication_layout_geometry": "Konten tidak muat dalam tata letak halaman atau paragraf yang dipilih. Sesuaikan margin, kolom, atau jarak antarbaris.",
   "error.publication_line_spacing_unsupported": "Keluaran atau pratinjau ini tidak mendukung jarak antarbaris yang dipilih. Pilih keluaran yang mendukungnya atau hapus pengaturan jarak antarbaris ini.",

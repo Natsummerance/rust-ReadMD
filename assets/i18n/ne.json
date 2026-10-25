@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF इन्जिन अचानक रोकियो। मूल फाइल अक्षुण्ण छ।",
   "error.preset_name_conflict": "एक निर्मित प्रिसेटले यो नाम पहिल्यै प्रयोग गरिरहेको छ।",
   "error.publication_baseline_unsupported": "यो आउटपुट ढाँचा वा सामग्रीले आधाररेखा सार्न समर्थन गर्दैन। यो सेटिङ हटाएर फेरि प्रयास गर्नुहोस्।",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "चिनियाँ प्रकाशन फन्ट स्थापना गर्नुहोस्",
   "error.publication_layout_geometry": "सामग्री चयन गरिएको पृष्ठ वा अनुच्छेदको ढाँचामा अटाउँदैन। मार्जिन, स्तम्भ वा हरफबीचको दूरी मिलाउनुहोस्।",
   "error.publication_line_spacing_unsupported": "यो निर्यात वा पूर्वावलोकनले चयन गरिएको हरफबीचको दूरी समर्थन गर्दैन। समर्थन गर्ने निर्यात विकल्प छान्नुहोस् वा यो दूरीको सेटिङ हटाउनुहोस्।",

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "El motor de PDF se detuvo inesperadamente. El archivo existente está intacto.",
   "error.preset_name_conflict": "Un ajuste preestablecido integrado ya usa este nombre.",
   "error.publication_baseline_unsupported": "Este formato de salida o contenido no admite el desplazamiento de la línea base. Borre este ajuste e inténtelo de nuevo.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instalar Fuentes de publicación en chino",
   "error.publication_layout_geometry": "El contenido no cabe en el diseño de página o párrafo solicitado. Ajusta los márgenes, las columnas o el interlineado.",
   "error.publication_line_spacing_unsupported": "Esta salida o vista previa no es compatible con el interlineado solicitado. Elige una salida compatible o elimina esta configuración de interlineado.",

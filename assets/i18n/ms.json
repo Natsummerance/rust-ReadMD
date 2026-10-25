@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Enjin PDF berhenti secara tiba-tiba. Fail asal kekal utuh.",
   "error.preset_name_conflict": "Pratetap terbina dalam sudah menggunakan nama ini.",
   "error.publication_baseline_unsupported": "Format output atau kandungan ini tidak menyokong anjakan garis dasar. Kosongkan tetapan ini dan cuba lagi.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Pasang Fon penerbitan bahasa Cina",
   "error.publication_layout_geometry": "Kandungan tidak muat dengan susun atur halaman atau perenggan yang diminta. Laraskan margin, kolum atau jarak baris.",
   "error.publication_line_spacing_unsupported": "Output atau pratonton ini tidak menyokong jarak baris yang diminta. Pilih output yang disokong atau alih keluar tetapan jarak baris ini.",

@@ -180,6 +180,19 @@ pub(super) fn validate(blocks: &Value, style: &Value) -> Result<(), PdfError> {
                 if block["type"]=="paragraph" && block["text"].as_array().is_some_and(|text|
                     text.len()==1&&text[0]["t"]=="image") {return Err(invalid(typography::UNSUPPORTED));}
             }
+            // Direct-JSON decoration passes the same value/context contract as
+            // a source declaration: values via the shared single parser, then
+            // the ordinary-paragraph rule plus the image-only exclusion that
+            // the story adapter cannot paint.
+            if typography::decoration::parse(&attributes["paragraph"]).map_err(invalid)?.is_some() {
+                declarations += 1;
+                if declarations > crate::publication_blocks::MAX_NODES { return Err(invalid(typography::INVALID)); }
+                if block["type"] != "paragraph" || !ordinary {
+                    return Err(invalid(typography::decoration::UNSUPPORTED));
+                }
+                if block["text"].as_array().is_some_and(|text|
+                    text.len()==1&&text[0]["t"]=="image") {return Err(invalid(typography::decoration::UNSUPPORTED));}
+            }
         }
         caption_author_text(block,ordinary,style,&mut author_text_nodes)?;
     }
@@ -252,6 +265,9 @@ pub(super) fn style(block: &Value, index: usize, mut st: PStyle, options: &Value
             warns.push("publication_pdf_italic_font_unavailable".into());
         }
         if let Some(align) = paragraph.get("align") { st.align = ta_of(align, st.align); }
+        if let Some(decoration) = typography::decoration::parse(paragraph).map_err(invalid)? {
+            st.decoration = Some(decoration);
+        }
         if let Some(value) = paragraph["before"].as_f64() { st.space_before = value; }
         if let Some(value) = paragraph["after"].as_f64() { st.space_after = value; }
         if let Some(value) = paragraph["left"].as_f64() { st.left_indent = value * MM; }
@@ -383,7 +399,9 @@ fn geometry(st: &PStyle, line: usize, required: f64, width: f64, height: f64) ->
 
 pub(super) fn plan(runs: &[Run], st: &PStyle, width: f64, height: f64) -> Result<Plan, PdfError> {
     let physical = st.baseline_shift.is_some_and(|value| value.requested_pt()!=0.);
-    if st.line_spacing.is_none() && !physical { return Err(invalid(typography::INVALID)); }
+    // A decoration-only paragraph enters the typed lane for painting, with the
+    // legacy leading/size multiple as its default spacing derivation.
+    if st.line_spacing.is_none() && !physical && st.decoration.is_none() { return Err(invalid(typography::INVALID)); }
     let spacing = st.line_spacing.unwrap_or(LineSpacing::Multiple(st.leading/st.size));
     let request = match spacing { LineSpacing::Multiple(v) => st.size * v,
         LineSpacing::ExactPt(v) | LineSpacing::AtLeastPt(v) => v };
@@ -458,6 +476,13 @@ impl Sheet<'_> {
         self.y -= st.space_before;
         let mut last_baseline: Option<f64> = None;
         let mut first_page=self.doc.current_page;
+        // Decoration bookkeeping per page segment: (first item index, line-box
+        // top, line-box bottom). Shapes are spliced in front of the segment so
+        // the fill/border bars paint below the glyphs (paint_back precedent).
+        let mut segment_at = self.items.len();
+        let mut segment_top = 0.;
+        let mut segment_bottom = 0.;
+        let mut segment_fresh = true;
         for (index,line) in plan.lines.iter().enumerate() {
             if crate::speech::cancelled() {return Err(invalid("cancelled"));}
             let bound=plan.bounds[index];
@@ -465,8 +490,13 @@ impl Sheet<'_> {
                 else {self.y-plan.anchor_uppers[index]};
             let tail = if index+1==plan.lines.len() {plan.tail} else {bound.lower};
             if baseline-tail < self.limit()-1e-9 && (self.placed>0 || index>0) {
+                self.paint_decoration(segment_at,segment_top,segment_bottom,st);
                 self.end(); self.begin(); baseline=self.y-plan.anchor_uppers[index];
+                segment_at = self.items.len();
+                segment_fresh = true;
             }
+            if segment_fresh { segment_top = baseline+bound.upper; segment_fresh = false; }
+            segment_bottom = baseline-bound.lower;
             if st.baseline_shift.is_some_and(|value|value.requested_pt()!=0.) {
                 if let Some(floor)=self.paint_floor {
                     let overlap=baseline+bound.upper-floor;
@@ -492,9 +522,48 @@ impl Sheet<'_> {
             self.texts.push(line.text.clone()); self.y=baseline-tail;
             last_baseline=Some(baseline);
         }
+        self.paint_decoration(segment_at,segment_top,segment_bottom,st);
         self.y-=st.space_after; self.placed+=1;
         self.doc.after_flowable_at(st,&runs_plain_text(runs),first_page);
         Ok(())
+    }
+
+    /// Paint one page segment's paragraph decoration: a fill rectangle over
+    /// the whole line-box extent at the paragraph's available text width, plus
+    /// one solid bar per declared edge (width = widthPt, offset spacePt outward
+    /// from the text area, declared colour). Fill first, then borders, then
+    /// the already-buffered text of the segment.
+    fn paint_decoration(&mut self, at: usize, top: f64, bottom: f64, st: &PStyle) {
+        let Some(decoration) = &st.decoration else { return };
+        if bottom >= top { return; }
+        let left = self.x0() + st.left_indent;
+        let width = self.avail() - st.left_indent - st.right_indent;
+        if width <= 0. { return; }
+        let right = left + width;
+        let height = top - bottom;
+        let mut shapes: Vec<DrawItem> = Vec::new();
+        if let Some(fill) = &decoration.fill {
+            if let Some(color) = hex_parse(&format!("#{fill}")) {
+                shapes.push(DrawItem::FillRect { x: left, y: bottom, w: width, h: height, color });
+            }
+        }
+        for (side, edge) in
+            [("top", &decoration.top), ("bottom", &decoration.bottom),
+             ("left", &decoration.left), ("right", &decoration.right)]
+        {
+            let Some(edge) = edge else { continue };
+            let Some(color) = hex_parse(&format!("#{}", edge.color)) else { continue };
+            let (x, y, w, h) = match side {
+                "top" => (left, top + edge.space_pt as f64, width, edge.width_pt),
+                "bottom" => (left, bottom - edge.space_pt as f64 - edge.width_pt, width, edge.width_pt),
+                "left" => (left - edge.space_pt as f64 - edge.width_pt, bottom, edge.width_pt, height),
+                _ => (right + edge.space_pt as f64, bottom, edge.width_pt, height),
+            };
+            shapes.push(DrawItem::FillRect { x, y, w, h, color });
+        }
+        for (offset, shape) in shapes.into_iter().enumerate() {
+            self.items.insert(at + offset, shape);
+        }
     }
 }
 

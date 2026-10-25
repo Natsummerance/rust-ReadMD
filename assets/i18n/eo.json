@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "La PDF-motoro neatendite haltiĝis. La originala dosiero estas netuŝita.",
   "error.preset_name_conflict": "Enkonstruita antaŭagordo jam uzas ĉi tiun nomon.",
   "error.publication_baseline_unsupported": "Ĉi tiu eliga formato aŭ enhavo ne subtenas ŝovon de la bazlinio. Forigu ĉi tiun agordon kaj reprovu.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Instali Tiparoj por ĉinaj publikaĵoj",
   "error.publication_layout_geometry": "La enhavo ne konvenas al la petita paĝa aŭ paragrafa aranĝo. Ĝustigu la marĝenojn, kolumnojn aŭ liniinterspacon.",
   "error.publication_line_spacing_unsupported": "Ĉi tiu eligo aŭ antaŭvido ne subtenas la petitan liniinterspacon. Elektu subtenatan eligon aŭ forigu ĉi tiun liniinterspacan agordon.",

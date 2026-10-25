@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF-motorn stoppades oväntat. Originalfilen är intakt.",
   "error.preset_name_conflict": "En inbyggd förinställning använder redan detta namn.",
   "error.publication_baseline_unsupported": "Det här utdataformatet eller innehållet stöder inte baslinjeförskjutning. Rensa den här inställningen och försök igen.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Installera Typsnitt för kinesisk publicering",
   "error.publication_layout_geometry": "Innehållet får inte plats i den begärda sidan eller styckets layout. Justera marginaler, kolumner eller radavstånd.",
   "error.publication_line_spacing_unsupported": "Detta utdata eller förhandsgranskning stöder inte det begärda radavståndet. Välj ett utdata som stöds eller ta bort denna radavståndsinställning.",

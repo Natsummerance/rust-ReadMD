@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "PDF 引擎意外停止，原文件保持完整。",
   "error.preset_name_conflict": "该名称与内置预设重名。",
   "error.publication_baseline_unsupported": "此输出格式或内容不支持基线偏移。请清除此设置后重试。",
+  "error.publication_paragraph_decoration_unsupported": "此输出格式或视图不支持段落底纹或边框。请移除该装饰，或改用支持的输出方式。",
   "error.publication_fonts_unavailable": "安装中文出版字体",
   "error.publication_layout_geometry": "内容无法放入所设的页面或段落布局。请调整页边距、分栏或行距。",
   "error.publication_line_spacing_unsupported": "此输出或预览暂不支持所请求的行距。请选择支持的输出方式，或移除该行距设置。",

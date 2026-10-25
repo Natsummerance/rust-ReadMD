@@ -83,6 +83,7 @@ pub fn validate_style(style: &Value) -> Result<(), &'static str> {
                 }
                 ("paragraph", "lineHeight") => bounded(value, 1., 3.),
                 ("paragraph", "lineSpacing") => crate::publication_typography::parse_line_spacing(value, crate::publication_typography::Scope::LocalBlock).is_ok(),
+                ("paragraph", "shading" | "border") => crate::publication_typography::decoration::parse_key(key, value).is_ok(),
                 _ => false,
             };
             if !valid {
@@ -107,6 +108,11 @@ fn bounded(v: &Value, min: f64, max: f64) -> bool {
 }
 fn validate_target(kind: &str, style: &Value) -> Result<(), &'static str> {
     if style["text"].get("author").is_some()&&kind!="caption"{return Err(crate::publication_inline_text::INVALID);}
+    // Paragraph decoration is an ordinary-body attribute: headings, captions
+    // and math blocks never accept it (attach's own allowed-kind set).
+    if kind != "paragraph"
+        && (style["paragraph"].get("shading").is_some() || style["paragraph"].get("border").is_some())
+    { return Err(crate::publication_typography::INVALID); }
     if kind == "math"
         && (style["text"]
             .as_object()

@@ -643,6 +643,7 @@
   "error.pdf_worker_failed": "Moteri ya PDF yahagaze gitunguranye. Dosiye y'umwimerere irinzwe.",
   "error.preset_name_conflict": "Uburyo bwateguwe mbere bukoresha iri zina.",
   "error.publication_baseline_unsupported": "Iyi miterere y’ibisohoka cyangwa ibi bikubiyemo ntibishyigikira kwimura umurongo fatizo. Siba iri genamiterere wongere ugerageze.",
+  "error.publication_paragraph_decoration_unsupported": "This output or view does not support paragraph shading or borders. Remove this decoration or choose a supported output.",
   "error.publication_fonts_unavailable": "Shyiramo Imyandikire y’ibitabo mu Gishinwa",
   "error.publication_layout_geometry": "Ibirimo ntibikwira mu miterere y’urupapuro cyangwa y’igika wahisemo. Hindura imyanya yo ku mpande, inkingi cyangwa intera hagati y’imirongo.",
   "error.publication_line_spacing_unsupported": "Iyi nyandiko isohorwa cyangwa iri garagazambere ntibishyigikira intera hagati y’imirongo wahisemo. Hitamo uburyo bwo gusohora buyishyigikira cyangwa ukureho iri genamiterere.",

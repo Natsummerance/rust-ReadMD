@@ -3725,7 +3725,10 @@
         "tools/test/inspect-math-native-defaults.py",
         "tools/test/inspect-math-native-runs-render.py",
         "docs/design/v005-batch3-native-defaults-typst-ink-2026-10-24.md",
-        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md"
+        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md",
+        "rust/readmd-kernel/src/math_font_managed_tests.rs",
+        "rust/readmd-kernel/src/math_word_revision_tests.rs",
+        "docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md"
       ],
       "evidence": [
         {
@@ -4131,6 +4134,24 @@
           "platform": "windows-x64",
           "recordedAt": "2026-10-24T06:37:50.911Z",
           "scope": "C73有限显式rPrDefault完整树相容性、稀疏原生继承和当前默认语言/字体/szCs消费；四个相容来源完成两代DOCX与新PID重开，direct遮盖和两种Missing回归保留。6组/61输出/311工具/115独立核对。无实际Office/阅读器GUI，不认证任意主题、全M07、第三批或发布。"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-24/batch3-m07-managed-font-revision-unit-a/verification-summary.md",
+          "sha256": "329caef83513e5c88cdb40b77548a5651aa1b7b821ab5cf96d5383920a248a0b",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "C95 finite managed mathFont consumption via explicit family predicate (STIX Two Math/Cambria Math accepted without fallback, any other name exactly one real fallback with actual=STIX Two Math) and math-run w:rPrChange isolation (rewrite projection strips, untouched container preserves verbatim, DSL round-trip keeps author/date); real stdio recheck PIDs 6096/36388, seven mathFont SVG-ink variants byte-identical b03f9247561aaa95. Full M07/M09, real Word review behaviour and I-domain visual parity remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "50ef0d15f73fce494198ac0a4861f5143e48869785f197e94bb179ee7d07e28c"
+        },
+        {
+          "path": "docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md",
+          "sha256": "7736e6ce0d492cf1a9dad1aa85cfa6a746af110e6b79cba17131b7c754e7cbd4",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "C95 finite managed mathFont consumption via explicit family predicate (STIX Two Math/Cambria Math accepted without fallback, any other name exactly one real fallback with actual=STIX Two Math) and math-run w:rPrChange isolation (rewrite projection strips, untouched container preserves verbatim, DSL round-trip keeps author/date); real stdio recheck PIDs 6096/36388, seven mathFont SVG-ink variants byte-identical b03f9247561aaa95. Full M07/M09, real Word review behaviour and I-domain visual parity remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "50ef0d15f73fce494198ac0a4861f5143e48869785f197e94bb179ee7d07e28c"
         }
       ],
       "remaining": [
@@ -4143,7 +4164,8 @@
         "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
         "2026-10-20显式函数及可表达列对齐限定流程已验证，不再视为未实现；完整UTN28、复杂跨格/张量/Content MathML、完整源映射与Word/独立阅读器和界面原生仍开放。",
         "2026-10-21本次mathPr三态/有效默认隔离、载体模式与旧目标保护已有证据；仍缺完整段落继承、可替换MATH字体、TeX原生OfficeMath及实际应用，不以拒绝代替可编辑支持。",
-        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。"
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。",
+        "2026-10-25 C95有限增量已封存（candidate-95）：mathFont 显式谓词消费（STIX Two Math/Cambria Math 等价名零告警、其它名恰一条真实回退且 actual 恒为 STIX Two Math）与 math run rPrChange 隔离（投影改写即剥离、未改写容器原文保留、作者源与可读 DSL 往返保真 author/date）经真实 stdio 与独立验证通过；同函数 run 字体分支谓词未动。真实 Word/WPS 审阅行为、Cambria/捆绑 STIX 视觉等价（I 域）、字体换入真实几何与完整 M07/M09 仍欠。"
       ]
     },
     {
@@ -5046,7 +5068,8 @@
         "tools/test/publication-context-mcp.cjs",
         "tools/test/publication-layout-native.cjs",
         "tools/test/inspect-publication-batch3.py",
-        "tools/test/publication-smallcaps-proof.py"
+        "tools/test/publication-smallcaps-proof.py",
+        "rust/readmd-kernel/src/math_font_managed_tests.rs"
       ],
       "evidence": [
         {
@@ -5232,13 +5255,23 @@
           "scope": "原版DejaVu补充平面实际glyph/双解析器，Typst/XeLaTeX所列四字面小型大写和真斜体实际证据；RustPDF小型大写仍声明合成，不认证所有文字/字体。",
           "platform": "windows-x64",
           "recordedAt": "2026-10-14T01:46:36.322Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md",
+          "sha256": "7736e6ce0d492cf1a9dad1aa85cfa6a746af110e6b79cba17131b7c754e7cbd4",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "C95 finite managed mathFont consumption via explicit family predicate (STIX Two Math/Cambria Math accepted without fallback, any other name exactly one real fallback with actual=STIX Two Math) and math-run w:rPrChange isolation (rewrite projection strips, untouched container preserves verbatim, DSL round-trip keeps author/date); real stdio recheck PIDs 6096/36388, seven mathFont SVG-ink variants byte-identical b03f9247561aaa95. Full M07/M09, real Word review behaviour and I-domain visual parity remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "129c845d514843a89f9171e8f27ec0b051b4dc465e84520fd54f5cffba1f8d1b"
         }
       ],
       "remaining": [
         "STIX核心数学与中文私有静态常规/粗体包已交付，Windows原生和Typst PDF不查系统字体；任意Unicode缺字逐节点定位、全部文字体系及替代目录仍待实现。",
         "完整数学结构/字体属性、Office真实往返、非Windows原生、性能和长期压力仍待验收。",
         "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
-        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。"
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-25 C95有限增量已封存（candidate-95）：mathPr mathFont 受管理数学族显式谓词消费与真实回退诊断已验证，声明值不虚假换字体；run 字体分支谓词保持原样。宿主字体真实换入、换入后几何与完整字体属性仍欠。"
       ]
     },
     {
@@ -8337,7 +8370,13 @@
         "rust/readmd-kernel/src/convert/docx_text_style.rs",
         "rust/readmd-kernel/src/convert/docx_text_style_tests.rs",
         "rust/readmd-kernel/src/rust_pdf_notes.rs",
-        "rust/readmd-kernel/src/rust_pdf_notes_tests.rs"
+        "rust/readmd-kernel/src/rust_pdf_notes_tests.rs",
+        "rust/readmd-kernel/src/publication_decoration.rs",
+        "rust/readmd-kernel/src/publication_decoration_tests.rs",
+        "rust/readmd-kernel/src/publication_decoration_docx_tests.rs",
+        "rust/readmd-kernel/src/publication_decoration_pdf_tests.rs",
+        "rust/readmd-kernel/src/publication_pdf_paragraph.rs",
+        "docs/reviews/readmd-v005-batch3-p04-paragraph-decoration-2026-10-24.md"
       ],
       "evidence": [
         {
@@ -8996,6 +9035,24 @@
           "scope": "C90 finite Rust PDF continuous first-use note display, 5 formats/start7, true superscripts and exact per-reference GoTo; 20 checks/15 outputs/43 tools/24 independent checks, two native generations and 3 normal new PIDs. Full P06/P07 and all publication parameters remain open.",
           "recordedAt": "2026-10-24T12:13:56.414Z",
           "sourceDigest": "0f44bad9be8fa96f60f0c4129b529986ef63733029fd7151327b0ebff9f819a0"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-24/batch3-p04-paragraph-decoration-scoped/manifest.json",
+          "sha256": "c0fec61ac96cd3060d8f783938026a52f9b346da2121778f2db557c73070c3f4",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "C96 finite P04 paragraph shading/border minimum slice: ordinary-paragraph shading.fill plus four-edge border color/widthPt/spacePt materialized to native DOCX w:pBdr/w:shd and core PDF fill/border geometry; typst/tex/epub/html/reader/preview explicit refusal with old-target byte protection; 46 locales keyed (en/zh-CN accurate, 44 English placeholders). Global presets, other format output, real Word rendering and the full P04 item remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "6ef41eb28b58ed2b296bf72784a518080ad9312a6348c520313ecfa610072266"
+        },
+        {
+          "path": "docs/reviews/readmd-v005-batch3-p04-paragraph-decoration-2026-10-24.md",
+          "sha256": "5792a12e2a3f238f33085ec9fcd24ca9002e8723442f4fe90136e36693c10c44",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "C96 finite P04 paragraph shading/border minimum slice: ordinary-paragraph shading.fill plus four-edge border color/widthPt/spacePt materialized to native DOCX w:pBdr/w:shd and core PDF fill/border geometry; typst/tex/epub/html/reader/preview explicit refusal with old-target byte protection; 46 locales keyed (en/zh-CN accurate, 44 English placeholders). Global presets, other format output, real Word rendering and the full P04 item remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "6ef41eb28b58ed2b296bf72784a518080ad9312a6348c520313ecfa610072266"
         }
       ],
       "remaining": [
@@ -9010,7 +9067,8 @@
         "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。",
         "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。",
         "2026-10-24 C84有限证据已封存：C84 current note-template and author-size preservation across two native generations plus HTML/EPUB and same-engine PDF controls. Rust PDF raw note IDs/display numbering remain unimplemented; no full style certification. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
-        "2026-10-24 C90有限增量已封存：C90 finite Rust PDF continuous first-use note display, 5 formats/start7, true superscripts and exact per-reference GoTo; 20 checks/15 outputs/43 tools/24 independent checks, two native generations and 3 normal new PIDs. Full P06/P07 and all publication parameters remain open. 以docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md为最新有限范围；本段替代Rust PDF显示编号未实现的旧结论，整项余条件不变。"
+        "2026-10-24 C90有限增量已封存：C90 finite Rust PDF continuous first-use note display, 5 formats/start7, true superscripts and exact per-reference GoTo; 20 checks/15 outputs/43 tools/24 independent checks, two native generations and 3 normal new PIDs. Full P06/P07 and all publication parameters remain open. 以docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md为最新有限范围；本段替代Rust PDF显示编号未实现的旧结论，整项余条件不变。",
+        "2026-10-25 C96有限增量已封存（candidate-96）：P04\"边框底纹\"最小子项完成——ordinary 段落 shading.fill 与四边 border 到 DOCX 原生 pBdr/shd（CT_PPrBase 元素序、1/8pt 取整）与 core PDF 真实绘制几何（背景先于文本、spacePt 偏移、跨页分段），typst/tex/epub/html/reader/preview 显式拒绝且旧目标字节逐字节保护，46 locale 键已登记（en/zh-CN 准确、44 英文兜底，语义审校沿账本另账）；全局预设入口、其余 stories 与格式的真实装饰输出、Word/WPS/LibreOffice 实际渲染与两引擎视觉一致认证仍欠，P04 整项未完成。"
       ]
     },
     {
@@ -10995,8 +11053,12 @@
       "requirement": "Word revision review",
       "workflow": "Import edited Word → inspect differences → accept",
       "acceptance": "No silent replacement; unknown formatting explicitly retained/reported",
-      "status": "pending",
-      "implementation": [],
+      "status": "in_progress",
+      "implementation": [
+        "rust/readmd-kernel/src/math_word.rs",
+        "rust/readmd-kernel/src/math_word_revision_tests.rs",
+        "docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md"
+      ],
       "evidence": [
         {
           "path": "docs/evidence/capability-upgrade/2026-10-08/word-native-environment.json",
@@ -11007,10 +11069,20 @@
           "scope": "Word安装存在，但COM启动失败；仅记录环境检查，未认证Word往返",
           "recordedAt": "2026-10-08T05:56:42.092Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md",
+          "sha256": "7736e6ce0d492cf1a9dad1aa85cfa6a746af110e6b79cba17131b7c754e7cbd4",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "C95 finite managed mathFont consumption via explicit family predicate (STIX Two Math/Cambria Math accepted without fallback, any other name exactly one real fallback with actual=STIX Two Math) and math-run w:rPrChange isolation (rewrite projection strips, untouched container preserves verbatim, DSL round-trip keeps author/date); real stdio recheck PIDs 6096/36388, seven mathFont SVG-ink variants byte-identical b03f9247561aaa95. Full M07/M09, real Word review behaviour and I-domain visual parity remain open.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "203025b28ed2997445a97b2aa462e430595b24d33a192512e747b0f6e94776d2"
         }
       ],
       "remaining": [
-        "Word修订导入差异、未知格式报告和选择接受的完整UI及保存重开"
+        "Word修订导入差异、未知格式报告和选择接受的完整UI及保存重开",
+        "2026-10-25 math run w:rPrChange 源保真与投影隔离已限定实测（candidate-95）：作者源与可读 DSL 往返原样保留 author/date，投影改写型不携带修订记录、未改写容器原文保留，native 导出替换分支剥离、保留分支恢复原文；Word 修订导入差异报告、未知格式报告、接受/拒绝完整 UI、保存重开与真实 Word 审阅互操作仍欠。"
       ]
     },
     {
@@ -13265,7 +13337,16 @@
         "rust/readmd-kernel/src/export_preview.rs",
         "rust/readmd-kernel/src/server.rs",
         "rust/readmd-kernel/src/typst_compile.rs",
-        "rust/readmd-kernel/src/latex_compile.rs"
+        "rust/readmd-kernel/src/latex_compile.rs",
+        "rust/readmd-kernel/src/capability_process.rs",
+        "tools/test/batch3-windows-faults.cjs",
+        "tools/test/batch3-windows-faults.test.cjs",
+        "tools/test/inspect-windows-faults.py",
+        "tools/test/inspect-windows-faults.test.py",
+        "ui-tests/helpers/windows-worker-observer.cs",
+        "ui-tests/helpers/windows-worker-observer.ps1",
+        "tools/no-python.allow.json",
+        "docs/reviews/readmd-v005-batch3-windows-faults-cross-owner-2026-10-24.md"
       ],
       "evidence": [
         {
@@ -13450,12 +13531,31 @@
           "scope": "C84 five actual Windows resource-lock fault cases, cumulative no-engine observation, old-target protection and three new-owner actual PDFs; cross-transport worker owners, remaining faults, ENOSPC and eight hours remain open.",
           "recordedAt": "2026-10-24T10:22:41.160Z",
           "sourceDigest": "b0f125e08355617a610ebebd18c0fa0cda4b290a34cf7e988e3156c4d4687cb0"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-24/unitC/README.md",
+          "sha256": "b1bd0cfd60e8ea3ad2aacaf588b8b2b36d17de45ed7d1bf73621a3ebc17efe24",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "Windows fault step-2 cross-transport owner harness (candidate-94) blocked by product defect: capability_packs/space.rs capacity() fails GetDiskFreeSpaceExW 0x80070003 on the 421-char pack_root (422 space_query, runid-05/06 reproduced, full-manifest probe excluded SxS); harness, C# observer narrow extension, standalone controls (node 20, python 10, --plan, check-no-python) and the targeted Rust test verified real; matrix busy/cancel/crash-finish/recovery-uninstall stages untested.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "234e8f3757622f055c7ba7838be5bfc2babdc323ece705f60ad2e0fad40dcf61"
+        },
+        {
+          "path": "docs/reviews/readmd-v005-batch3-windows-faults-cross-owner-2026-10-24.md",
+          "sha256": "add15e88c00e620be65660d110d9a50760d37ac39f28604bc10ba8d6fae34e75",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "Windows fault step-2 cross-transport owner harness (candidate-94) blocked by product defect: capability_packs/space.rs capacity() fails GetDiskFreeSpaceExW 0x80070003 on the 421-char pack_root (422 space_query, runid-05/06 reproduced, full-manifest probe excluded SxS); harness, C# observer narrow extension, standalone controls (node 20, python 10, --plan, check-no-python) and the targeted Rust test verified real; matrix busy/cancel/crash-finish/recovery-uninstall stages untested.",
+          "recordedAt": "2026-10-25T01:46:40.378Z",
+          "sourceDigest": "234e8f3757622f055c7ba7838be5bfc2babdc323ece705f60ad2e0fad40dcf61"
         }
       ],
       "remaining": [
         "已有并发3/10/50内核测试；千页PDF/小时媒体/百万字、平台性能基线及8小时混合操作尚未验收",
         "B3-52当前Windows证据已覆盖Typst/OCR实际进程/MCP和持久暂存、旧OCR兼容、创建五边界、预留预算与公平恢复及4客户端并发；仍须首条持久头前无归属标记的处置、完整启动/任务审阅引用、TeX暂存/AppContainer配置/DOS映射、全部引擎/桌面/MCP/VS Code传输、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。",
-        "2026-10-24 C84有限证据已封存：C84 five actual Windows resource-lock fault cases, cumulative no-engine observation, old-target protection and three new-owner actual PDFs; cross-transport worker owners, remaining faults, ENOSPC and eight hours remain open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
+        "2026-10-24 C84有限证据已封存：C84 five actual Windows resource-lock fault cases, cumulative no-engine observation, old-target protection and three new-owner actual PDFs; cross-transport worker owners, remaining faults, ENOSPC and eight hours remain open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
+        "2026-10-25 跨传输拥有者矩阵（candidate-94）保持阻塞：capability_packs/space.rs capacity()（:61-72）对 421 字符深长 pack_root 在 readmd.exe 进程内 GetDiskFreeSpaceExW 失败 0x80070003 → 422 space_query，runid-05/06 双重复现，嵌入完整 manifest 的独立探针成功排除 SxS 假设；四阶段 harness、C# 观察器窄扩、node 20 项/python 10 项独立控制、--plan 与定向 Rust 测试已真实验证，矩阵 busy/取消/崩溃收尾/善后卸载阶段未测即未证。space.rs 加 \\\\?\\ 前缀规范化修复落盘并重建门禁后，可用现有候选冻结直接重跑（needs_code_change=true，首败原样保留）。"
       ]
     },
     {
@@ -16668,11 +16768,12 @@
         "46语言完整语义审校、八小时压力和完整网络矩阵未完成。",
         "代码块 Node/Python/R/Go/Rust/C/C++ 解释器或编译器仍有宿主查找，须明确迁移为受管理离线运行包，不能计为软件自带。",
         "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。",
-        "2026-10-20安装新增空间估算与profile串行准入（含迁移）、真实字体包取消/重复/修复已完成限定验证；跨profile同卷竞争、真实小卷磁盘满/硬配额、完整引擎故障和正式TeX材料仍开放。"
+        "2026-10-20安装新增空间估算与profile串行准入（含迁移）、真实字体包取消/重复/修复已完成限定验证；跨profile同卷竞争、真实小卷磁盘满/硬配额、完整引擎故障和正式TeX材料仍开放。",
+        "2026-10-25 长路径空间查询缺陷写实：capability_packs/space.rs capacity() 对超过 MAX_PATH 的普通 pack_root 裸 Win32 三连查询失败（0x80070003 → 422 space_query，candidate-94 矩阵 runid-05/06 与 replay 双重复现），阻塞上下文安装真实矩阵与既有 23 项引擎矩阵回归；\\\\?\\ 前缀规范化修复待落盘，未修复前深长 profile 的安装准入不可用。"
       ]
     }
   ],
-  "updated": "2026-10-24T12:13:56.414Z",
+  "updated": "2026-10-25T01:46:40.378Z",
   "platformEvidence": [
     {
       "id": "windows-x64",
