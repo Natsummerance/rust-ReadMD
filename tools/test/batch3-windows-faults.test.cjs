@@ -42,7 +42,9 @@ test('three pinned packs and the frozen file list are declared completely',()=>{
  for(const name of ['tools/test/batch3-windows-faults.cjs','tools/test/inspect-windows-faults.py','rust/readmd-kernel/src/capability_process.rs'])assert(p.lockedFiles.includes(name),'Frozen list missing '+name);
  // The C# observer helpers are outside every existing candidate freeze
  // pattern; they are recorded as byte digests, not as frozen sources.
- assert(!p.lockedFiles.some(name=>name.startsWith('ui-tests/')));
+ assert.deepEqual(p.lockedFiles.filter(name=>name.startsWith('ui-tests/')),
+  ['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1']);
+ assert(p.lockedFiles.includes('rust/readmd-kernel/src/capability_packs/space.rs'));
  assert.deepEqual(qa.OBSERVER_FILES,['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1']);
  assert.equal(qa.planFor().observer.qaRootPrefix,'batch3-faults-native-');
 });
