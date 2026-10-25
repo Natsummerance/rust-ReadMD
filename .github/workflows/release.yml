@@ -81,6 +81,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform.target }}
+      - name: Remap native build paths
+        run: node tools/native-build-env.mjs --github-env
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
@@ -118,6 +120,7 @@ jobs:
             *) platform=macos; arch=x86_64 ;;
           esac
           cargo run --offline --locked --manifest-path rust/Cargo.toml -p xtask -- pet-package --platform "$platform" --arch "$arch" --output dist/pet
+          node tools/privacy-scan.mjs dist/pet
 
       - name: Install Windows Installer Tools (NSIS)
         if: runner.os == 'Windows'
@@ -136,6 +139,8 @@ jobs:
           Copy-Item "LICENSE" -Destination "$pkgDir\LICENSE"
           Copy-Item "README.md" -Destination "$pkgDir\README.md"
           Copy-Item "dist\pet\ReadMD-Pet-Rust.zip" -Destination "$pkgDir\ReadMD-Pet-Rust.zip" -ErrorAction Stop
+          node tools/privacy-scan.mjs "$pkgDir"
+          if ($LASTEXITCODE -ne 0) { throw "Native package privacy validation failed" }
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "dist\${{ matrix.platform.asset_name }}.zip"
           & "C:\Program Files (x86)\NSIS\makensis.exe" "/DAPP_VERSION=$env:APP_VERSION" ReadMD.nsi
           if ($LASTEXITCODE -ne 0) { throw "NSIS packaging failed" }
@@ -149,6 +154,7 @@ jobs:
           cp -r assets "$PKG_DIR/assets"
           cp LICENSE README.md "$PKG_DIR/"
           cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$PKG_DIR/"
+          node tools/privacy-scan.mjs "$PKG_DIR"
           tar -czvf "dist/${{ matrix.platform.asset_name }}.tar.gz" -C dist/ReadMD-linux-x86_64 .
 
           # Build Debian / Ubuntu / UOS / Kylin .deb package
@@ -236,6 +242,7 @@ jobs:
           </dict>
           </plist>
           PLIST
+          node tools/privacy-scan.mjs "$APP_DIR"
           cd dist
           zip -r "${{ matrix.platform.asset_name }}.zip" ReadMD.app
           hdiutil create -volname "ReadMD" -srcfolder ReadMD.app -ov -format UDZO "${{ matrix.platform.asset_name }}.dmg"

@@ -60,6 +60,23 @@ test('release workflow builds every desktop target from the Rust workspace', () 
   assert.ok(exists('RELEASE_NOTES.md'));
 });
 
+test('native release packages remap build roots and pass privacy validation before archiving',()=>{
+  const workflow=read('.github/workflows/release.yml');
+  const build=workflow.slice(workflow.indexOf('\n  build:'),workflow.indexOf('\n  release:'));
+  const remap=build.indexOf('node tools/native-build-env.mjs --github-env');
+  assert(remap>=0&&remap<build.indexOf('Build release binary with Cargo'));
+  assert(build.indexOf('node tools/privacy-scan.mjs dist/pet')>build.indexOf('-- pet-package --platform'));
+  assert(build.indexOf('node tools/privacy-scan.mjs dist/pet')<build.indexOf('Package Windows Artifacts'));
+  for(const [gate,archive] of [
+    ['node tools/privacy-scan.mjs "$pkgDir"','Compress-Archive -Path'],
+    ['node tools/privacy-scan.mjs "$PKG_DIR"','tar -czvf'],
+    ['node tools/privacy-scan.mjs "$APP_DIR"','zip -r "${{ matrix.platform.asset_name }}.zip"'],
+  ])assert(build.indexOf(gate)>=0&&build.indexOf(gate)<build.indexOf(archive),gate);
+  const sources=read('tools/test/freeze-longtail-candidate.cjs');
+  assert(sources.includes('tools/native-build-env.mjs'));
+  assert(sources.includes('tools/build-svg-renderer.mjs'));
+});
+
 test('HarmonyOS scaffold stays structurally buildable', () => {
   const h = 'packages/harmonyos-app/';
   for (const rel of [

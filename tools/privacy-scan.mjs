@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -45,11 +46,79 @@ const SKIP_EXT = [
 
 const under = (label, dir) => label.startsWith(dir + '/') || label.includes('/' + dir + '/');
 
+const NATIVE_EXT = /\.(?:exe|dll|pyd|dylib|so(?:\.\d+)*|node|a|lib|rlib|o|obj)$/i;
+const NATIVE_MAGIC = new Set([
+  0x7f454c46, // ELF, including extensionless Linux executables.
+  0xfeedface, 0xcefaedfe, 0xfeedfacf, 0xcffaedfe, // Mach-O.
+  0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca, // Universal Mach-O.
+]);
+function nativeBinary(label, data) {
+  return NATIVE_EXT.test(label) || (data.length >= 2 && data[0] === 0x4d && data[1] === 0x5a) ||
+    (data.length >= 4 && NATIVE_MAGIC.has(data.readUInt32BE(0))) ||
+    (data.length >= 8 && ['!<arch>\n', '!<thin>\n'].includes(data.toString('ascii', 0, 8)));
+}
+
+function normalizeBuildRoot(value) {
+  if (typeof value !== 'string' || value.length < 4 || value !== value.trim() || /[\x00-\x1f\x7f]/.test(value)) return null;
+  let normalized = value.replaceAll('\\', '/').replace(/^\/\/\?\/UNC\//i, '//').replace(/^\/\/\?\//, '');
+  if (/^[a-z]:\//i.test(normalized)) normalized = path.win32.normalize(normalized).replaceAll('\\', '/');
+  else if (normalized.startsWith('//')) {
+    if (!/^\/\/[^/]+\/[^/]+(?:\/|$)/.test(normalized)) return null;
+    normalized = path.win32.normalize(normalized).replaceAll('\\', '/');
+  } else if (normalized.startsWith('/')) normalized = path.posix.normalize(normalized);
+  else return null;
+  normalized = normalized.replace(/\/+$/, '');
+  return normalized.length >= 4 ? normalized : null;
+}
+
+function defaultBuildRoots() {
+  const values = [root, os.homedir(), process.env.CARGO_HOME, process.env.RUSTUP_HOME, process.env.GITHUB_WORKSPACE];
+  return values.flatMap(value => {
+    if (!normalizeBuildRoot(value)) return [];
+    const variants = [value];
+    if (path.isAbsolute(value)) {
+      variants.push(path.resolve(value));
+      try { variants.push(fs.realpathSync.native(value)); } catch { /* An absent configured root still has its lexical form. */ }
+    }
+    return variants;
+  });
+}
+
+function buildRootPatterns(values) {
+  const roots = new Set((Array.isArray(values) ? values : []).map(normalizeBuildRoot).filter(Boolean));
+  return [...roots].map(value => {
+    let body = value.split('/').map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\\\/]+');
+    if (/^[a-z]:\//i.test(value)) body = String.raw`(?:[\\/]{2}\?[\\/])?` + body;
+    // Match a directory boundary, not a similarly named directory or an
+    // identifier containing the root. Neither patterns nor matches are logged.
+    return new RegExp('(?:^|[^a-z0-9_./\\\\:-])' + body + '(?=$|[\\\\/\\s\\x00\"\'<>():;,\\[\\]{}=])', 'i');
+  });
+}
+
+/** Inspect only native executables/libraries; never echo matched binary bytes. */
+export function scanNativePaths(label, data, { buildRoots } = {}) {
+  if (!nativeBinary(label, data)) return [];
+  const failure = [`embedded developer absolute path in native binary ${label}`];
+  const roots = buildRootPatterns(buildRoots === undefined ? defaultBuildRoots() : buildRoots);
+  const matches = text => LOCAL_PATH_PATTERNS.some(pattern => pattern.test(text)) || roots.some(pattern => pattern.test(text));
+  if (matches(data.toString('latin1'))) return failure;
+  // Embedded wide strings can start at either byte alignment. Check both byte
+  // orders without stripping NULs, which would manufacture paths in image data.
+  const bigEndian = new TextDecoder('utf-16be');
+  for (const offset of [0, 1]) {
+    if (matches(data.toString('utf16le', offset)) || matches(bigEndian.decode(data.subarray(offset)))) return failure;
+  }
+  return [];
+}
+
 /** Scan one file's bytes. Returns a list of failure strings. */
-export function scanBuffer(label, data, { sourceTree = true } = {}) {
+export function scanBuffer(label, data, { sourceTree = true, buildRoots } = {}) {
   label = label.replace(/\\/g, '/');
   const failures = [];
   if (SENSITIVE_NAME_PATTERNS.some(re => re.test(label))) return [`sensitive real-document name in ${label}`];
+  // Native artifacts must be checked even in dist, vendored directories and
+  // macOS Contents/Frameworks, or when an external artifact is being scanned.
+  failures.push(...scanNativePaths(label, data, { buildRoots }));
   if (['assets/vendor', 'assets/upstream', 'tests', 'ui-tests', 'showcase'].some(d => under(label, d))) return failures;
   if (label.includes('verify-macos') || under(label, 'Contents') || label.startsWith('Contents/') || under(label, 'Frameworks')) return failures;
   const lower = label.toLowerCase();
