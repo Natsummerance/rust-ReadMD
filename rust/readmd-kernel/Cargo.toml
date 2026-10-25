@@ -85,6 +85,11 @@ cbc = "=0.1.2"
 ttf-parser = "=0.25.1"
 pdfium-render = { version = "=0.9.4", default-features = false, features = ["pdfium_7881"], optional = true }
 
+# O_NOFOLLOW protects document resources and export sources on Unix. Use the
+# exact libc already in Cargo.lock; do not depend on another crate's imports.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.189"
+
 # Windows.Media.Ocr / Windows.Data.Pdf for native OCR; the same version wry
 # already pulls in, so Cargo.lock gains no new package.
 [target.'cfg(windows)'.dependencies]

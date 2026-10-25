@@ -3,6 +3,15 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),os=requir
 const qa=require('./batch3-windows-faults.cjs');
 const upgrade=path.resolve(__dirname,'../..','.cache/capability-upgrade');
 
+test('QA Python uses separate scratch without changing the product environment or PATH',()=>{
+ const engine={PATH:'C:\\Windows\\System32',TEMP:'long-product-temp',TMP:'long-product-temp',TMPDIR:'long-product-temp',READMD_DATA_DIR:'long-product-profile'};
+ const before={...engine},temporary=path.join(upgrade,'batch3-faults-native-test','oracle-temp');
+ const oracle=qa.oracleEnvironment(engine,temporary);
+ assert.deepEqual(engine,before);
+ assert.deepEqual(oracle,{...before,TEMP:temporary,TMP:temporary,TMPDIR:temporary});
+ assert.throws(()=>qa.oracleEnvironment(engine,'relative'));
+});
+
 test('plan is detached, bounded and advertises the exact four serial phases',()=>{
  const p=qa.planFor();
  assert.equal(p.noProcessesStarted,true);assert.equal(p.noFilesWritten,true);
@@ -40,8 +49,7 @@ test('three pinned packs and the frozen file list are declared completely',()=>{
  assert(p.packs.reduce((n,row)=>n+row.bytes,0)<p.limits.installedBytes,'Compressed packs already exceed the install cap');
  assert.equal(p.installedBytesLimit,128*1024*1024);assert.equal(p.installedBytesMeasuredAtInstall,true);
  for(const name of ['tools/test/batch3-windows-faults.cjs','tools/test/inspect-windows-faults.py','rust/readmd-kernel/src/capability_process.rs'])assert(p.lockedFiles.includes(name),'Frozen list missing '+name);
- // The C# observer helpers are outside every existing candidate freeze
- // pattern; they are recorded as byte digests, not as frozen sources.
+ // Both observers are frozen inputs as well as individually recorded digests.
  assert.deepEqual(p.lockedFiles.filter(name=>name.startsWith('ui-tests/')),
   ['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1']);
  assert(p.lockedFiles.includes('rust/readmd-kernel/src/capability_packs/space.rs'));

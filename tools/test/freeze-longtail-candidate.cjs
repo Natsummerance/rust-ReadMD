@@ -64,14 +64,17 @@ function verify(candidateFile) {
   }
   return {candidate: relative(candidateFile), verified: manifest.sources.length, binarySha256: candidate.binarySha256, bootSha256: candidate.bootSha256};
 }
+function candidateNumber(label) {
+  assert(typeof label === 'string' && /^candidate-(0[9]|[1-9]\d{1,5})$/.test(label), 'Use candidate-09 or a later unused label');
+  return Number(label.slice('candidate-'.length));
+}
 function freeze(label) {
-  assert(/^candidate-\d{2}$/.test(label), 'Use candidate-09 or a later unused label');
-  assert(Number(label.slice(-2)) >= 9, 'Historical candidate labels are reserved');
+  candidateNumber(label);
   fs.mkdirSync(parent, {recursive: true});
   const base = path.join(parent, label); fs.mkdirSync(base, {recursive: false});
   const previous = new Map();
   for (const directory of [previousRoot, parent]) {
-    for (const name of fs.readdirSync(directory).filter(name => /^candidate-\d{2}$/.test(name)).sort()) {
+    for (const name of fs.readdirSync(directory).filter(name => /^candidate-\d{2,6}$/.test(name)).sort((a, b) => Number(a.slice(10)) - Number(b.slice(10)))) {
       const file = path.join(directory, name, 'source-freeze/manifest.json');
       if (fs.existsSync(file)) for (const row of JSON.parse(fs.readFileSync(file, 'utf8')).sources) previous.set(row.path, row);
     }
@@ -104,4 +107,4 @@ if (require.main === module) {
   else if (process.argv[2] === '--list') console.log(JSON.stringify({files: sources().length, toolbarIncluded: sources().includes('tests/frontend/toolbar.test.mjs'), nativeExecuted: false}));
   else console.log(JSON.stringify(freeze(process.argv[2])));
 }
-module.exports = {sources, verify, resolveLiteralInclude, literalRustInputs};
+module.exports = {sources, verify, resolveLiteralInclude, literalRustInputs, candidateNumber};

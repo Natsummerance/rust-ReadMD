@@ -4,6 +4,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const freeze=require('./freeze-longtail-candidate.cjs');
 const reader=require('./batch3-author-inline-reader-http.cjs');
+
+test('candidate identities continue past 99 without aliasing historical labels or paths',()=>{
+ for(const [label,number] of [['candidate-09',9],['candidate-99',99],['candidate-100',100],['candidate-1000',1000]])assert.equal(freeze.candidateNumber(label),number);
+ for(const label of ['candidate-08','candidate-9','candidate-009','candidate-0100','candidate-100/../99','candidate-1000000',null])assert.throws(()=>freeze.candidateNumber(label));
+});
 test('release candidates bind native observers and the package admission implementation',()=>{
  const sources=new Set(freeze.sources());
  for(const file of ['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1',
