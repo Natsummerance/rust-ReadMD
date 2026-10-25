@@ -75,8 +75,8 @@ function seal(base){const rows=[];let total=0;const walk=(dir,rel)=>{for(const n
  walk(base,'');
  return {rows,totalBytes:total};}
 function bindingFor(options){require('./freeze-longtail-candidate.cjs').verify(options.candidate);const candidate=JSON.parse(fs.readFileSync(options.candidate)),sourceFreeze=inside(ROOT,path.resolve(ROOT,candidate.sourceFreeze));assert.equal(hash(sourceFreeze),candidate.sourceFreezeSha256);const manifest=JSON.parse(fs.readFileSync(sourceFreeze)),boundFiles={};for(const name of FILES){const row=manifest.sources.find(row=>row.path===name);assert(row,'Candidate did not freeze '+name);boundFiles[name]={file:inside(ROOT,path.join(ROOT,name)),copy:inside(ROOT,path.join(ROOT,row.copy)),sha256:row.sha256};}const value={candidate:options.candidate,candidateSha256:hash(options.candidate),binary:candidate.binary,binarySha256:candidate.binarySha256,assets:path.dirname(candidate.boot),boot:candidate.boot,bootSha256:candidate.bootSha256,sourceFreeze,sourceFreezeSha256:candidate.sourceFreezeSha256,boundFiles};verifyBinding(value);return value;}
-// The external QA Python launcher cannot start with an overlong TEMP. Keep
-// its scratch separate while the actual product and engines retain long paths.
+// External QA Python and Windows PowerShell/Add-Type cannot reliably start
+// with overlong TEMP. Product hosts and engines retain their long-path scratch.
 function oracleEnvironment(engineEnv, temporary){
  assert(typeof temporary==='string'&&path.isAbsolute(temporary));
  return {...engineEnv,TMP:temporary,TEMP:temporary,TMPDIR:temporary};
@@ -84,16 +84,25 @@ function oracleEnvironment(engineEnv, temporary){
 module.exports={argumentsFor,planFor,caseFor,PHASES,PACKS,FILES,OBSERVER_FILES,LIMITS,CRASH_DIRECTION,PROBE_PNG,PROBE_PNG_SHA256,transportsFor,leaseResourcesFor,validateLease,validateObserve,validateAccountingUnchanged,validateAccountingGrowth,validateMcpBusy,validateHttpBusy,validateCancelAck,validateCancelledFinal,validateCrashReport,validateResume,validateStopped,sourceFor,longSource,optionsFor,exportArgs,httpBody,CancellableClient,inside,requestHttp,sha,until,oracleEnvironment};
 
 class PsObserver{
- constructor(spawnOptions){this.seq=0;this.pending=new Map();this.buffer='';this.rescue='';this.failure=null;
-  this.child=spawn(path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(ROOT,'ui-tests/helpers/windows-worker-observer.ps1'),'-QaRoot',spawnOptions.evidence,'-NodeProcessId',String(process.pid),'-QaRootPrefix','batch3-faults-native-'],{windowsHide:true,stdio:['pipe','pipe','pipe'],env:spawnOptions.env});
-  this.closed=new Promise(resolve=>this.child.once('close',(code,signal)=>{this.exit={code,signal};resolve();}));
-  this.child.on('error',error=>{this.failure=error;for(const waiter of this.pending.values())waiter.reject(error);this.pending.clear();});
-  this.child.stderr.on('data',chunk=>{this.rescue+=chunk.toString();});
-  this.child.stdout.on('data',chunk=>{try{this.buffer+=chunk.toString();for(;;){const at=this.buffer.indexOf('\n');if(at<0)break;const line=this.buffer.slice(0,at);this.buffer=this.buffer.slice(at+1);if(!line.trim())continue;const message=JSON.parse(line);const waiter=this.pending.get(message.id);assert(waiter,'Uncorrelated observer receipt');this.pending.delete(message.id);clearTimeout(waiter.timer);message.error?waiter.reject(Error(message.error)):waiter.resolve(message.result);}}catch(error){this.failure=error;for(const waiter of this.pending.values())waiter.reject(error);this.pending.clear();}});}
- request(action,params={},timeout=80000){assert(!this.exit,'Observer already exited');if(this.failure)throw this.failure;const id=++this.seq;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(Error('Observer deadline '+action));},timeout);this.pending.set(id,{resolve,reject,timer});this.child.stdin.write(JSON.stringify({id,action,params})+'\n');});}
- async finish(){this.child.stdin.end();await Promise.race([this.closed,delay(10000).then(()=>{throw Error('Observer EOF deadline');})]);assert.equal(this.exit.code,0,'Observer exited with '+this.exit.code);assert.equal(this.rescue.trim(),'','Observer needed rescue');assert(!this.buffer.trim(),'Observer stdout ended mid-frame');}
- async abort(){if(!this.exit){this.child.kill();await Promise.race([this.closed,delay(3000)]);}}
+ constructor(spawnOptions,spawnProcess=spawn){this.seq=0;this.pending=new Map();this.buffer='';this.output='';this.rescue='';this.outputChunks=[];this.rescueChunks=[];this.failure=null;
+  this.child=spawnProcess(path.join(process.env.SystemRoot||'C:\\Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(ROOT,'ui-tests/helpers/windows-worker-observer.ps1'),'-QaRoot',spawnOptions.evidence,'-NodeProcessId',String(process.pid),'-QaRootPrefix','batch3-faults-native-'],{windowsHide:true,stdio:['pipe','pipe','pipe'],env:spawnOptions.env});
+  this.closed=new Promise(resolve=>this.child.once('close',(code,signal)=>{this.recordExit(code,signal);resolve();}));
+  this.child.once('exit',(code,signal)=>this.recordExit(code,signal));
+  this.child.on('error',error=>this.fail(error,'spawn'));
+  this.child.stdin.on('error',error=>this.fail(error,'stdin'));
+  this.child.stderr.on('data',chunk=>{this.rescueChunks.push(Buffer.from(chunk));this.rescue+=chunk.toString();});
+  this.child.stdout.on('data',chunk=>{this.outputChunks.push(Buffer.from(chunk));this.output+=chunk.toString();try{this.buffer+=chunk.toString();for(;;){const at=this.buffer.indexOf('\n');if(at<0)break;const line=this.buffer.slice(0,at);this.buffer=this.buffer.slice(at+1);if(!line.trim())continue;const message=JSON.parse(line);const waiter=this.pending.get(message.id);assert(waiter,'Uncorrelated observer receipt');this.pending.delete(message.id);clearTimeout(waiter.timer);message.error?waiter.reject(Error(message.error)):waiter.resolve(message.result);}}catch(error){this.fail(error,'protocol');}});}
+ fail(error,kind){if(!this.failure){this.failure=error;this.failureKind=kind;}for(const waiter of this.pending.values()){clearTimeout(waiter.timer);waiter.reject(this.failure);}this.pending.clear();}
+ recordExit(code,signal){this.exit={code,signal};if(this.pending.size||code!==0)this.fail(Error('Observer exited before completion: code='+code+' signal='+signal+'; stderr: '+this.rescue),'exit');}
+ rawStdout(){return Buffer.concat(this.outputChunks);}
+ rawStderr(){return Buffer.concat(this.rescueChunks);}
+ diagnostics(){return {pid:this.child.pid??null,exit:this.exit??null,failure:this.failure?String(this.failure.stack||this.failure):null,failureKind:this.failureKind??null,stdoutBytes:this.rawStdout().length,stderrBytes:this.rawStderr().length};}
+ request(action,params={},timeout=80000){if(this.failure)throw this.failure;assert(!this.exit,'Observer already exited');const id=++this.seq;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>this.fail(Error('Observer deadline '+action),'deadline'),timeout);this.pending.set(id,{resolve,reject,timer});try{this.child.stdin.write(JSON.stringify({id,action,params})+'\n');}catch(error){this.fail(error,'stdin');}});}
+ async waitClosed(ms,label){let timer;try{await Promise.race([this.closed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),ms);})]);}finally{clearTimeout(timer);}}
+ async finish(){this.child.stdin.end();await this.waitClosed(10000,'Observer EOF deadline');if(this.failure)throw this.failure;assert.equal(this.exit.code,0,'Observer exited with '+this.exit.code);assert.equal(this.rescue.trim(),'','Observer needed rescue');assert(!this.buffer.trim(),'Observer stdout ended mid-frame');}
+ async abort(){if(!this.exit)this.child.kill();await this.waitClosed(3000,'Observer abort deadline');}
 }
+module.exports.PsObserver=PsObserver;
 
 async function main(){
  const options=argumentsFor(process.argv.slice(2));
@@ -112,7 +121,8 @@ async function main(){
  const oracleEnv=oracleEnvironment(engineEnv,path.join(evidence,'oracle-temp'));
  const retain=(name,value)=>{const file=inside(evidence,path.join(evidence,name));fs.writeFileSync(file,Buffer.isBuffer(value)||typeof value==='string'?value:JSON.stringify(value,null,2)+'\n',{flag:'wx'});return {path:name.replaceAll(path.sep,'/'),sha256:hash(file),bytes:fs.statSync(file).size};};
  const report={schemaVersion:1,scope:planFor().scope,passed:false,startedUtc:new Date().toISOString(),candidateBinding:binding,python:{path:options.python,sha256:hash(options.python)},packs,phases:[],sessions:[],checks:[],calls:[],http:[],limitations:planFor().limitations};
- let host=null,observer=null;const clients=new Set();const cleanupFns={};
+ let host=null,observer=null,observerRetained=false;const clients=new Set();const cleanupFns={};
+ const retainObserver=()=>{if(!observer||observerRetained)return;observerRetained=true;report.observer??={};report.observer.process=observer.diagnostics();report.observer.stdout=retain('inspection/observer.stdout.jsonl',observer.rawStdout());report.observer.stderr=retain('inspection/observer.stderr.log',observer.rawStderr());};
  let stage='prepare',watchdog=false;const started=performance.now();
  const timer=setTimeout(()=>{watchdog=true;for(const client of clients)client.forceStop();if(host){try{host.child.stdin.end('shutdown\n');}catch{}}if(observer){try{observer.child.kill();}catch{}}},LIMITS.totalMs);
  try{
@@ -153,8 +163,8 @@ async function main(){
   assert(performance.now()-prepareStart<=LIMITS.prepareMs,'Preparation exceeded 90s');report.prepareMs=performance.now()-prepareStart;
   const protectedPdf=path.join(outputs,'protected.pdf'),protectedBefore=protectTarget(protectedPdf);
   const sentinel=path.join(documents,'unknown-sentinel.txt');fs.writeFileSync(sentinel,'Do not remove this unrelated owned sentinel.\r\n',{flag:'wx'});const sentinelBefore=snapshotBytes(sentinel);const tileBefore=snapshotBytes(tile);
-  stage='observer';observer=new PsObserver({evidence,env:engineEnv});assert.equal((await observer.request('ready',{echo:'故障'})).nodeAncestor,true);
- report.observer={helpers:OBSERVER_FILES.map(name=>({path:name,sha256:hash(path.join(ROOT,name)),bytes:fs.statSync(path.join(ROOT,name)).size})),qaRootPrefix:'batch3-faults-native-'};
+  stage='observer';report.observer={helpers:OBSERVER_FILES.map(name=>({path:name,sha256:hash(path.join(ROOT,name)),bytes:fs.statSync(path.join(ROOT,name)).size})),qaRootPrefix:'batch3-faults-native-',qaTemporary:oracleEnv.TEMP,productTemporary:scratch};
+  observer=new PsObserver({evidence,env:oracleEnv});assert.equal((await observer.request('ready',{echo:'故障'})).nodeAncestor,true);
 
   for(let index=0;index<PHASES.length;index++){
    const entry=PHASES[index],engine=entry.engine,typst=engine==='typst',program=engineProgram(engine),programSha=hash(program);
@@ -265,7 +275,7 @@ async function main(){
   report.cleanup.instanceJsonFinalResidue=fs.existsSync(path.join(profile,'instance.json'));
   report.cleanup.instanceJsonDeletedByHarness=false;report.cleanup.journalsRemaining=journals.map(row=>row.id);
   assert(performance.now()-cleanupStart<=LIMITS.cleanupMs,'Cleanup exceeded 30s');
-  await observer.finish();observer=null;
+  await observer.finish();retainObserver();observer=null;
   assertUnchanged(protectedPdf,protectedBefore);assertUnchanged(sentinel,sentinelBefore);assertUnchanged(tile,tileBefore);
   assert(!watchdog,'Total watchdog fired');verifyBinding(binding);for(const pack of packs)assert.equal(hash(pack.path),pack.sha256);
   const scope=(()=>{let total=0;for(const dir of [scratch,documents]){(function walk(d){for(const name of fs.readdirSync(d)){const file=path.join(d,name),info=fs.lstatSync(file);if(info.isDirectory())walk(file);else total+=info.size;}})(dir);}return total;})()+seal(evidence).totalBytes;
@@ -277,6 +287,7 @@ async function main(){
   for(const client of [...clients])try{await cleanupFns.stopMcp(client);}catch(error){report.passed=false;report.mcpShutdownFailure??=String(error.stack||error);process.exitCode=1;}
   if(host)try{await cleanupFns.stopHttp();}catch(error){report.passed=false;report.httpShutdownFailure??=String(error.stack||error);process.exitCode=1;}
   if(observer)try{await observer.abort();report.observerAborted=true;}catch(error){report.observerShutdownFailure=String(error);}
+  try{retainObserver();}catch(error){report.observerEvidenceFailure=String(error);report.passed=false;process.exitCode=1;}
   report.watchdogFired=watchdog;report.finishedUtc=new Date().toISOString();report.elapsedMs=performance.now()-started;
   try{report.evidenceArtifacts=seal(evidence).rows;}catch(error){report.sealFailure=String(error);report.passed=false;process.exitCode=1;}
   try{retain('report.json',report);}catch{}

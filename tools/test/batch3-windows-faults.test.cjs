@@ -1,15 +1,90 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),os=require('node:os'),path=require('node:path');
+const {EventEmitter}=require('node:events'),{PassThrough}=require('node:stream');
 const qa=require('./batch3-windows-faults.cjs');
 const upgrade=path.resolve(__dirname,'../..','.cache/capability-upgrade');
 
-test('QA Python uses separate scratch without changing the product environment or PATH',()=>{
+test('QA Python and observer use separate scratch without changing the product environment or PATH',()=>{
  const engine={PATH:'C:\\Windows\\System32',TEMP:'long-product-temp',TMP:'long-product-temp',TMPDIR:'long-product-temp',READMD_DATA_DIR:'long-product-profile'};
  const before={...engine},temporary=path.join(upgrade,'batch3-faults-native-test','oracle-temp');
  const oracle=qa.oracleEnvironment(engine,temporary);
  assert.deepEqual(engine,before);
  assert.deepEqual(oracle,{...before,TEMP:temporary,TMP:temporary,TMPDIR:temporary});
  assert.throws(()=>qa.oracleEnvironment(engine,'relative'));
+});
+
+// Protocol/error controls only. Actual PowerShell launch A/B evidence is kept
+// separately; these deterministic children never claim native observation.
+function observerFixture(env={}){
+ const child=new EventEmitter();child.pid=12345;
+ for(const name of ['stdin','stdout','stderr'])child[name]=new PassThrough();
+ child.kill=()=>{child.emit('close',1,null);return true;};
+ let invocation;
+ const observer=new qa.PsObserver({evidence:path.join(upgrade,'batch3-faults-native-test'),env},(...args)=>{invocation=args;return child;});
+ return {child,observer,invocation};
+}
+
+test('observer gets the QA environment and declares the true test Node ancestor',()=>{
+ const engine={PATH:'system32-only',TEMP:'long-engine-temp',TMP:'long-engine-temp',TMPDIR:'long-engine-temp'};
+ const env=qa.oracleEnvironment(engine,path.join(upgrade,'batch3-faults-native-test','oracle-temp'));
+ const {child,observer,invocation}=observerFixture(env);
+ assert.equal(invocation[2].env,env);assert.equal(invocation[2].windowsHide,true);
+ const args=invocation[1];assert.equal(args[args.indexOf('-NodeProcessId')+1],String(process.pid));
+ assert.equal(args[args.indexOf('-QaRootPrefix')+1],'batch3-faults-native-');
+ assert.equal(engine.TEMP,'long-engine-temp');child.emit('close',0,null);
+ assert.deepEqual(observer.diagnostics().exit,{code:0,signal:null});
+});
+
+test('observer early exit rejects pending ready immediately and retains full stderr and exit',async()=>{
+ for(const code of [0,3]){
+  const {child,observer}=observerFixture();
+  const ready=observer.request('ready');
+  const rejected=assert.rejects(ready,/Observer exited before completion/);
+  child.stderr.write('QA Add-Type startup failure\r\n');child.emit('exit',code,null);
+  await rejected;assert.equal(observer.pending.size,0);
+  assert.equal(observer.rescue,'QA Add-Type startup failure\r\n');
+  const diagnostic=observer.diagnostics();assert.deepEqual(diagnostic.exit,{code,signal:null});
+  assert.equal(diagnostic.failureKind,'exit');assert(diagnostic.failure.includes('QA Add-Type startup failure'));
+  assert.throws(()=>observer.request('ready'),/Observer exited before completion/);
+  child.emit('close',code,null);await observer.closed;
+ }
+});
+
+test('observer spawn and stdin failures reject all pending requests without deadline wait',async()=>{
+ for(const kind of ['spawn','stdin']){
+  const {child,observer}=observerFixture();
+  const ready=observer.request('ready'),other=observer.request('alive');
+  const rejected=Promise.all([assert.rejects(ready,/owned startup failure/),assert.rejects(other,/owned startup failure/)]);
+  (kind==='spawn'?child:child.stdin).emit('error',Error('owned startup failure'));
+  await rejected;assert.equal(observer.pending.size,0);assert.equal(observer.diagnostics().failureKind,kind);
+  child.emit('close',1,null);
+ }
+});
+
+test('observer preserves malformed stdout and refuses to treat it as a ready response',async()=>{
+ const {child,observer}=observerFixture();
+ const rejected=assert.rejects(observer.request('ready'),SyntaxError);
+ child.stdout.write('not-json\n');await rejected;
+ assert.equal(observer.output,'not-json\n');assert.equal(observer.diagnostics().failureKind,'protocol');
+ assert.equal(observer.pending.size,0);child.emit('close',1,null);
+});
+
+test('observer normal ready and EOF preserve the raw receipt and require clean exit',async()=>{
+ const {child,observer}=observerFixture();const ready=observer.request('ready');
+ const raw=JSON.stringify({id:1,result:{nodeAncestor:true,echo:'owned'}})+'\n';child.stdout.write(raw);
+ assert.deepEqual(await ready,{nodeAncestor:true,echo:'owned'});
+ child.stdin.on('finish',()=>child.emit('close',0,null));await observer.finish();
+ assert.equal(observer.output,raw);assert.equal(observer.diagnostics().failure,null);
+ assert.equal(observer.diagnostics().stderrBytes,0);assert.equal(observer.pending.size,0);
+});
+
+test('observer raw evidence preserves fragmented non-ASCII bytes exactly',()=>{
+ const {child,observer}=observerFixture();const bytes=Buffer.from('故障');
+ child.stdout.write(bytes.subarray(0,1));child.stdout.write(bytes.subarray(1));
+ child.stderr.write(bytes.subarray(0,2));child.stderr.write(bytes.subarray(2));
+ assert.deepEqual(observer.rawStdout(),bytes);assert.deepEqual(observer.rawStderr(),bytes);
+ assert.equal(observer.diagnostics().stdoutBytes,bytes.length);assert.equal(observer.diagnostics().stderrBytes,bytes.length);
+ child.emit('close',0,null);
 });
 
 test('plan is detached, bounded and advertises the exact four serial phases',()=>{

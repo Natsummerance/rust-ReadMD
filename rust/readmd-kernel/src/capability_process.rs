@@ -1,13 +1,31 @@
 //! Cross-process read/use versus install/remove exclusion for managed packs.
 //! The empty lock files are stable names, never PID files and never unlinked.
-//! Closing the non-inherited handle (including process termination) releases
-//! exclusion. No new dependency or MSRV increase is needed.
+//! Normal owners explicitly unlock before closing; process termination also
+//! releases exclusion after inherited descriptors close. Handles stay CLOEXEC.
+//! No new dependency or MSRV increase is needed.
 use crate::{ApiError,ApiResult};
 use std::{fs,path::{Path,PathBuf},sync::atomic::{AtomicUsize,Ordering}};
 
 #[derive(Clone,Copy)]
 pub(crate) enum Mode { Shared, Exclusive }
 pub(crate) struct Guard { _file:fs::File }
+#[cfg(any(target_os="linux",target_os="macos"))]
+impl Drop for Guard {
+    fn drop(&mut self) {
+        use std::os::fd::AsRawFd;
+        // flock belongs to the open file description, including fork's copies.
+        // CLOEXEC only closes those copies at exec, so close alone can retain a
+        // dropped owner's lock in an unrelated child before its exec. Each
+        // Guard opens independently: unlocking one Shared owner cannot release
+        // another Shared owner's lock. Fork children must exec or _exit, never
+        // run the parent's Rust destructors.
+        loop {
+            if unsafe { libc::flock(self._file.as_raw_fd(),libc::LOCK_UN) }==0 { break; }
+            if std::io::Error::last_os_error().kind()!=std::io::ErrorKind::Interrupted { break; }
+        }
+        // File::drop still closes on every path, including an unlock failure.
+    }
+}
 /// One profile's installation writers share the same quota observation. This
 /// gate is held through staging and commit, never by ordinary resource readers.
 pub(crate) fn install_admission(data:&Path)->ApiResult<Guard> {
@@ -149,7 +167,8 @@ pub(crate) fn check_worker_capacity(data:&Path,id:&str)->ApiResult<()> {
             SlotProbe::Missing=>return Ok(()),
             SlotProbe::Busy=>(),
             SlotProbe::Available(file)=>{
-                check_file(&file)?;
+                let guard=Guard{_file:file};
+                check_file(&guard._file)?;
                 real_directory(&parent)?;
                 real_directory(parent.parent().ok_or_else(invalid)?)?;
                 if parent.canonicalize().map_err(|_|invalid())?!=parent { return Err(invalid()); }
@@ -215,12 +234,14 @@ pub(crate) fn try_worker_slot(data:&Path,id:&str)->ApiResult<Option<Guard>> {
 fn try_key(data:&Path,id:&str,key:Key,mode:Mode)->ApiResult<Option<Guard>> {
     let (path,parent)=location(data,id,key)?;
     let Some(file)=open(&path,mode)? else { return Ok(None); };
-    check_file(&file)?;
+    // Own the lock before fallible validation, so rejection releases it too.
+    let guard=Guard{_file:file};
+    check_file(&guard._file)?;
     real_directory(&parent)?;
     real_directory(parent.parent().ok_or_else(invalid)?)?;
     // Check that an intermediate directory was not redirected while opening.
     if parent.canonicalize().map_err(|_|invalid())?!=parent { return Err(invalid()); }
-    Ok(Some(Guard{_file:file}))
+    Ok(Some(guard))
 }
 
 #[cfg(windows)]
@@ -301,6 +322,134 @@ mod tests {
     struct OwnedChild(Child);
     impl Drop for OwnedChild {
         fn drop(&mut self) { let _=self.0.kill();let _=self.0.wait(); }
+    }
+    // Fork in a dedicated single-test process: the main parallel test harness
+    // must not lend unrelated tests' descriptors to our deliberately idle child.
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    fn isolated_fork_test(name:&str)->bool {
+        const KEY:&str="READMD_FLOCK_FORK_TEST";
+        if std::env::var_os(KEY).as_deref()==Some(std::ffi::OsStr::new(name)) { return false; }
+        let mut child=OwnedChild(Command::new(std::env::current_exe().unwrap())
+            .args(["--exact",name,"--test-threads=1"]).env(KEY,name)
+            .stdout(Stdio::null()).stderr(Stdio::inherit()).spawn().unwrap());
+        let deadline=Instant::now()+Duration::from_secs(20);
+        loop {
+            if let Some(status)=child.0.try_wait().unwrap() {
+                assert!(status.success(),"Isolated fork regression failed: {status}");
+                return true;
+            }
+            assert!(Instant::now()<deadline,"Isolated fork regression did not finish");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    struct ForkedDescriptorHolder { pid:libc::pid_t,channel:std::os::unix::net::UnixStream }
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    impl ForkedDescriptorHolder {
+        fn spawn()->Self {
+            use std::{io::Read,os::fd::AsRawFd};
+            let (channel,child_channel)=std::os::unix::net::UnixStream::pair().unwrap();
+            let parent_fd=channel.as_raw_fd();let child_fd=child_channel.as_raw_fd();
+            let pid=unsafe { libc::fork() };
+            if pid==0 {
+                // Only async-signal-safe POSIX calls and stack data after fork.
+                // Never return, allocate, lock Rust IO, or drop inherited Guards.
+                unsafe {
+                    libc::close(parent_fd);
+                    let ready=[1u8];
+                    if libc::write(child_fd,ready.as_ptr().cast(),1)!=1 { libc::_exit(10); }
+                    let mut stop=[0u8];
+                    let received=libc::read(child_fd,stop.as_mut_ptr().cast(),1);
+                    libc::close(child_fd);
+                    libc::_exit(if received==1 {0} else {11});
+                }
+            }
+            assert!(pid>0,"fork failed: {}",std::io::Error::last_os_error());
+            let mut holder=Self{pid,channel};
+            drop(child_channel);
+            holder.channel.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            holder.channel.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut ready=[0u8];holder.channel.read_exact(&mut ready).unwrap();
+            assert_eq!(ready,[1]);
+            holder
+        }
+        fn finish(mut self) {
+            use std::io::Write;
+            self.channel.write_all(&[1]).unwrap();
+            let mut status=0;
+            loop {
+                let waited=unsafe { libc::waitpid(self.pid,&mut status,0) };
+                if waited==self.pid { self.pid=0;break; }
+                assert!(waited<0&&std::io::Error::last_os_error().kind()==std::io::ErrorKind::Interrupted,
+                    "waitpid failed: {}",std::io::Error::last_os_error());
+            }
+            assert!(libc::WIFEXITED(status));assert_eq!(libc::WEXITSTATUS(status),0);
+        }
+    }
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    impl Drop for ForkedDescriptorHolder {
+        fn drop(&mut self) {
+            if self.pid<=0 { return; }
+            // Also reap on any parent assertion/IO failure. No child can keep
+            // inherited descriptors alive after this test unwinds.
+            unsafe { libc::kill(self.pid,libc::SIGKILL); }
+            let mut status=0;
+            loop {
+                let waited=unsafe { libc::waitpid(self.pid,&mut status,0) };
+                if waited>=0||std::io::Error::last_os_error().kind()!=std::io::ErrorKind::Interrupted { break; }
+            }
+        }
+    }
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    fn assert_cloexec(file:&fs::File) {
+        use std::os::fd::AsRawFd;
+        let flags=unsafe { libc::fcntl(file.as_raw_fd(),libc::F_GETFD) };
+        assert!(flags>=0);assert_ne!(flags&libc::FD_CLOEXEC,0);
+    }
+    #[test]
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    fn unix_guard_drop_releases_inherited_transfer_locks_before_child_exec() {
+        if isolated_fork_test("capability_process::tests::unix_guard_drop_releases_inherited_transfer_locks_before_child_exec") { return; }
+        let root=tempfile::tempdir().unwrap();
+        let reservation=reserve_transfer(root.path(),crate::capability_archive::MAX_DOWNLOAD).unwrap();
+        let gate=try_key(root.path(),"transfers",Key::TransferGate,Mode::Exclusive).unwrap().unwrap();
+        assert_cloexec(&gate._file);assert_cloexec(&reservation._count._file);
+        for bytes in &reservation._bytes { assert_cloexec(&bytes._file); }
+        // A raw File is the negative control for the old close-only lifetime.
+        let (control_path,_)=location(root.path(),"fonts",Key::Resource).unwrap();
+        let control=open(&control_path,Mode::Exclusive).unwrap().unwrap();assert_cloexec(&control);
+        let child=ForkedDescriptorHolder::spawn();
+        drop(control);
+        assert!(try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().is_none(),
+            "The live fork child must actually retain the raw inherited description");
+        drop(gate);
+        drop(try_key(root.path(),"transfers",Key::TransferGate,Mode::Exclusive).unwrap().unwrap());
+        assert_eq!(reserve_transfer(root.path(),1).err().unwrap().code,"capability_install_busy");
+        drop(reservation);
+        // No retry or exec: gate, count and every byte lock must release now.
+        let replacement=reserve_transfer(root.path(),crate::capability_archive::MAX_DOWNLOAD).unwrap();
+        assert_eq!(reserve_transfer(root.path(),1).err().unwrap().code,"capability_install_busy");
+        assert!(try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().is_none());
+        drop(replacement);child.finish();
+        drop(try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().unwrap());
+    }
+    #[test]
+    #[cfg(any(target_os="linux",target_os="macos"))]
+    fn unix_guard_drop_preserves_independent_shared_owners_with_inherited_fds() {
+        if isolated_fork_test("capability_process::tests::unix_guard_drop_preserves_independent_shared_owners_with_inherited_fds") { return; }
+        let root=tempfile::tempdir().unwrap();
+        let first=try_acquire(root.path(),"fonts",Mode::Shared).unwrap().unwrap();
+        let second=try_acquire(root.path(),"fonts",Mode::Shared).unwrap().unwrap();
+        assert_cloexec(&first._file);assert_cloexec(&second._file);
+        let child=ForkedDescriptorHolder::spawn();
+        assert!(try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().is_none());
+        drop(first);
+        assert!(try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().is_none(),
+            "Another independently opened Shared owner must keep exclusion");
+        drop(second);
+        let exclusive=try_acquire(root.path(),"fonts",Mode::Exclusive).unwrap().unwrap();
+        assert!(try_acquire(root.path(),"fonts",Mode::Shared).unwrap().is_none());
+        drop(exclusive);child.finish();
     }
     #[test]
     fn install_admission_is_profile_wide_and_keeps_resource_leases_independent() {
