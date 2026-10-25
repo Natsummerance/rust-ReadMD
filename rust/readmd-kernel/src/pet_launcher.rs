@@ -3786,9 +3786,12 @@ mod tests {
         let launcher = launcher_with(scratch.path(), Some(&external));
         assert_eq!(resolve_path_str(&launcher.adapter_dir()), resolve_path_str(&external));
         let bundled = launcher_with(scratch.path(), None);
+        // The launcher resolves its existing root before appending an absent
+        // bundled path. macOS's /var alias therefore has /private spelling.
+        let root = scratch.path().canonicalize().expect("canonical adapter root");
         assert_eq!(
             resolve_path_str(&bundled.adapter_dir()),
-            resolve_path_str(&scratch.path().join("assets/pet/hermes-adapter"))
+            resolve_path_str(&root.join("assets/pet/hermes-adapter"))
         );
     }
 

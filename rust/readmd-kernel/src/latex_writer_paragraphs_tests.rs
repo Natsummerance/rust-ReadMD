@@ -163,6 +163,71 @@ fn tex_typed_paragraph_worker_alias_is_canonical_but_untrusted_log_paths_are_not
 }
 
 #[test]
+fn tex_typed_paragraph_trusted_worker_spellings_remove_curdir_but_keep_parentdir() {
+    // Synthetic trusted aliases make the lexical regression deterministic even
+    // when the host temp path happens to equal its canonical spelling.
+    let bare = Path::new(if cfg!(windows) { r"C:\ReadMD~1\worker" } else { "/var/readmd-alias/worker" });
+    let alias = bare.join(".");
+    let paths = trusted_worker_source_paths(&alias);
+    // Path equality ignores CurDir itself; compare exact OS spellings instead.
+    assert_eq!(paths[0].as_os_str(), alias.join("document.tex").as_os_str());
+    assert_eq!(paths[1].as_os_str(), bare.join("document.tex").as_os_str());
+    assert_ne!(paths[0].as_os_str(), paths[1].as_os_str());
+
+    let parent_alias = bare.join("child").join("..").join(".");
+    let paths = trusted_worker_source_paths(&parent_alias);
+    let expected = parent_alias.join("document.tex");
+    assert_eq!(paths[1].as_os_str(), expected.as_os_str());
+    assert_ne!(paths[1].as_os_str(), bare.join("document.tex").as_os_str());
+}
+
+#[cfg(unix)]
+#[test]
+fn tex_typed_paragraph_bound_symlink_alias_accepts_its_bare_spelling_only() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(fixture.path()).unwrap();
+    let worker = root.join("worker");
+    std::fs::create_dir(&worker).unwrap();
+    let alias = root.join("bound-alias");
+    std::os::unix::fs::symlink(&worker, &alias).unwrap();
+    let (source, mut context) = render("BODY", json!({"mode":"exact","pt":18}));
+    std::fs::write(worker.join("document.tex"), &source).unwrap();
+    let bound = alias.join(".");
+    context.bind_worker_directory(&bound).unwrap();
+    for directory in [worker.as_path(), alias.as_path(), bound.as_path()] {
+        let log = packet(&context, 18., 30., 493., 340., &directory.join("document.tex").to_string_lossy());
+        assert!(context.diagnostic(&log, &source, &bound).is_some(), "{log}");
+    }
+    let unbound = root.join("unbound-alias");
+    std::os::unix::fs::symlink(&worker, &unbound).unwrap();
+    let log = packet(&context, 18., 30., 493., 340., &unbound.join("document.tex").to_string_lossy());
+    assert!(context.diagnostic(&log, &source, &bound).is_none(), "A log alias is never resolved to the bound worker");
+}
+
+#[test]
+fn tex_typed_paragraph_equivalent_and_network_log_paths_remain_untrusted() {
+    let (source, mut context) = render("BODY", json!({"mode":"exact","pt":18}));
+    let worker = tempfile::tempdir().unwrap();
+    context.bind_worker_directory(worker.path()).unwrap();
+    std::fs::write(worker.path().join("document.tex"), &source).unwrap();
+    std::fs::create_dir(worker.path().join("child")).unwrap();
+    // These on-disk paths reach the generated file, but were never supplied as
+    // trusted worker spellings. Neither filesystem nor lexical log resolution
+    // may make them eligible for geometry promotion.
+    let paths = [
+        worker.path().join("child").join("..").join("document.tex").to_string_lossy().into_owned(),
+        worker.path().join(".").join(".").join("document.tex").to_string_lossy().into_owned(),
+        r"\\readmd-path-must-not-be-resolved.invalid\share\document.tex".into(),
+        r"\\?\UNC\readmd-path-must-not-be-resolved.invalid\share\document.tex".into(),
+        "//readmd-path-must-not-be-resolved.invalid/share/document.tex".into(),
+    ];
+    for path in paths {
+        let log = packet(&context, 18., 30., 493., 340., &path);
+        assert!(context.diagnostic(&log, &source, worker.path()).is_none(), "{path}");
+    }
+}
+
+#[test]
 fn tex_typed_paragraph_nonce_packet_is_bound_to_source_worker_and_registered_request() {
     let (source,mut context)=render("BODY",json!({"mode":"exact","pt":18}));
     let worker=tempfile::tempdir().unwrap();context.bind_worker_directory(worker.path()).unwrap();

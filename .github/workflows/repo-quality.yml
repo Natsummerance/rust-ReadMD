@@ -124,7 +124,7 @@ jobs:
           READMD_MOTION_CHANNEL: chrome
           READMD_AI_SITE_CHANNEL: chrome
         run: |
-          node --test website/tools/published-release.test.mjs website/tools/ai-pages.test.mjs
+          node --test website/tools/published-release.test.mjs website/tools/ai-pages.test.mjs website/tools/showcase-history.test.mjs
           npm run verify:release --prefix website
           node website/tools/motion-smoke.cjs
           node website/tools/ai-smoke.cjs

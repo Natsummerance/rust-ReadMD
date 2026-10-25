@@ -2202,8 +2202,8 @@ mod tests {
         }
     }
 
-    /// probe_authority.py 里真实录到的 CPython 子进程 env 键（本机快照，14 个）。
-    const CPYTHON_CHILD_ENV_KEYS: [&str; 14] = [
+    /// Windows 的 14 键实测快照，加上同一白名单在 macOS/Unix 使用的 TMPDIR。
+    const CPYTHON_CHILD_ENV_KEYS: [&str; 15] = [
         "COMSPEC",
         "HOME",
         "LANG",
@@ -2217,6 +2217,7 @@ mod tests {
         "SYSTEMROOT",
         "TEMP",
         "TMP",
+        "TMPDIR",
         "USERPROFILE",
     ];
 

@@ -2796,9 +2796,10 @@ mod tests {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
         assert_eq!(detect_app_flavor(), detect_app_flavor_from(host_platform, true, &host_exe));
-        // ... and a *source* checkout on the same box really does answer `source`
-        // in the authority, so this is a modelling choice, not Python's own.
-        assert_eq!(detect_app_flavor_from(host_platform, false, &host_exe), if host_platform == "win32" { "source" } else { "linux" });
+        // A Windows source checkout reports source; Darwin's platform branch
+        // precedes the frozen flag and continues to report macos.
+        let source_flavor = match host_platform { "win32" => "source", "darwin" => "macos", _ => "linux" };
+        assert_eq!(detect_app_flavor_from(host_platform, false, &host_exe), source_flavor);
     }
 
     // --------------------------------------------------- release_check_payload

@@ -6,6 +6,20 @@ use std::path::Path;
 
 pub(super) const MACROS: &str = include_str!("latex_writer_paragraphs.tex");
 
+fn trusted_worker_source_paths(directory: &Path) -> [std::path::PathBuf; 2] {
+    // Derive spellings only from a trusted, bound/call-time directory. Path
+    // components remove CurDir/repeated separators. Do not derive another
+    // spelling when ParentDir occurs: PathBuf construction can collapse it
+    // for a Windows verbatim prefix, and symlink/`..` semantics are not lexical.
+    let lexical: std::path::PathBuf = if directory.components()
+        .any(|part| matches!(part, std::path::Component::ParentDir)) {
+        directory.to_owned()
+    } else {
+        directory.components().collect()
+    };
+    [directory.join("document.tex"), lexical.join("document.tex")]
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ParagraphRequest {
     pub index: usize,
@@ -64,10 +78,12 @@ impl GeometryContext {
         let actual_worker = dunce::canonicalize(worker_dir).ok()?;
         if normalize(actual_worker.to_str()?) != normalize(bound.to_str()?) { return None; }
         // Temp paths may be a junction, an 8.3 alias or /var on macOS. Only
-        // accept the exact private spellings supplied at bind/call time and
-        // their canonical directory, never resolve a path supplied by a log.
+        // accept the private spellings supplied at bind/call time, their
+        // lexical CurDir-free spelling and their canonical directory. Never
+        // resolve or lexically simplify a path supplied by a log.
         let expected = [bound.as_path(), self.worker_directory_alias.as_ref()?.as_path(), worker_dir]
-            .iter().map(|directory| directory.join("document.tex").to_str().map(&normalize))
+            .iter().flat_map(|directory| trusted_worker_source_paths(directory))
+            .map(|path| path.to_str().map(&normalize))
             .collect::<Option<Vec<_>>>()?;
         let mut fields = Vec::new();
         let mut began = false;

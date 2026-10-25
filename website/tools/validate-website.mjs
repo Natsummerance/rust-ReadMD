@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import { publishedRelease } from '../public/assets/release-contract.mjs';
 import { aiIllustrationProblems } from './build-ai-pages.mjs';
+import { CURRENT_INVENTORY, RECORDED_INVENTORY, validateShowcaseHistory } from './showcase-history-contract.mjs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -293,30 +294,14 @@ function validateLanguageCrosslinks() {
 
 function validateShowcase() {
   const errors=[];
-  const inventoryPath=path.join(ROOT,'docs/reviews/ui-function-inventory-2026-10-02/inventory.json');
-  const inventory=JSON.parse(read(inventoryPath));
-  const manifest=JSON.parse(read(path.join(ROOT,'showcase/manifest.json')));
-  const catalog=JSON.parse(read(P('showcase/catalog.json')));
-  const digest=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
-  if(manifest.inventory_sha256!==digest(inventoryPath))errors.push('showcase inventory changed: recordings must be reviewed');
-  if(JSON.stringify(manifest.features.map(f=>f.id))!==JSON.stringify(inventory.features.map(f=>f.id)))errors.push('showcase does not cover the current inventory');
-  if(catalog.features.length!==inventory.features.length)errors.push('public gallery omits inventory features');
-  for(const f of manifest.features){
-    const r=f.recording;
-    if(r?.status!=='recorded'){errors.push(f.id+': genuine recording is missing');continue;}
-    if(!r.evidence?.length||!r.steps?.length||!r.duration||!r.bytes)errors.push(f.id+': missing operation evidence');
-    for(const name of ['video','poster','captions']){
-      const local=path.join(ROOT,'showcase',r[name]||'');const published=P('showcase',r[name]||'');
-      if(!isFile(local)||!isFile(published))errors.push(f.id+': missing '+name);
-      else if(digest(local)!==digest(published))errors.push(f.id+': published '+name+' differs from recording');
-    }
-    const v=path.join(ROOT,'showcase',r.video);
-    if(isFile(v)&&digest(v)!==r.sha256)errors.push(f.id+': video checksum mismatch');
-    const c=catalog.features.find(c=>c.id===f.id);
-    if(c?.recording.sha256!==r.sha256)errors.push(f.id+': public catalog is stale');
-  }
+  const bytes=relative=>{try{return fs.readFileSync(path.join(ROOT,relative));}catch{return null;}};
+  let history;try{history=JSON.parse(read(P('showcase/history.json')));}catch{errors.push('historical showcase contract is missing or invalid');}
+  errors.push(...validateShowcaseHistory({history,inventoryBytes:bytes(RECORDED_INVENTORY),
+    manifestBytes:bytes('showcase/manifest.json'),catalogBytes:bytes('website/public/showcase/catalog.json'),
+    verificationBytes:bytes('showcase/checks/verification.json'),currentBytes:bytes(CURRENT_INVENTORY),readMedia:bytes}));
   const html=read(P('showcase/index.html')),js=read(P('assets/showcase.js'));
   for(const marker of ['id="search"','id="categories"','id="player"','<video','/assets/showcase.js'])if(!html.includes(marker))errors.push('gallery missing '+marker);
+  if(!js.includes('/showcase/history.json')||!js.includes('historyMessage'))errors.push('gallery omits historical recording disclosure');
   if(html.includes('autoplay')||html.includes('journey-frames')||js.includes('cinema-frames'))errors.push('gallery contains the retired automatic playback pipeline');
   return errors;
 }

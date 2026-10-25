@@ -9,7 +9,7 @@
 //!
 //! Side effects are explicit: exports, network fetches, code execution and
 //! PDF rollback require a literal `confirm: true`, output paths must be
-//! absolute, never symlinks, and an existing file is only replaced with
+//! absolute, never user symlinks, and an existing file is only replaced with
 //! `overwrite: true`.
 
 use std::collections::HashMap;
@@ -313,22 +313,61 @@ fn existing_file(raw: &str) -> Result<PathBuf, Value> {
     Ok(p.to_path_buf())
 }
 
+#[cfg(target_os = "macos")]
+fn macos_output_root_alias(path: &Path, metadata: &std::fs::Metadata) -> Option<&'static str> {
+    use std::os::unix::fs::MetadataExt;
+    let (relative, physical) = match path.to_str()? {
+        "/var" => ("private/var", "/private/var"),
+        "/tmp" => ("private/tmp", "/private/tmp"),
+        "/etc" => ("private/etc", "/private/etc"),
+        _ => return None,
+    };
+    if metadata.uid() != 0 { return None; }
+    let target = std::fs::read_link(path).ok()?;
+    (target == Path::new(relative) || target == Path::new(physical)).then_some(physical)
+}
+
+/// Resolve only macOS's fixed, root-owned system aliases. Never canonicalize
+/// an arbitrary output parent: that would silently admit user-created links.
+fn output_path_without_symlinks(requested: &Path) -> Result<PathBuf, &'static str> {
+    if requested.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        return Err("output_target_symlink_denied");
+    }
+    #[cfg(target_os = "macos")]
+    let mut path = requested.to_path_buf();
+    #[cfg(not(target_os = "macos"))]
+    let path = requested.to_path_buf();
+    for ancestor in requested.ancestors() {
+        if std::fs::symlink_metadata(ancestor).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            if ancestor == requested { return Err("output_target_symlink_denied"); }
+            #[cfg(target_os = "macos")]
+            if let Ok(metadata) = std::fs::symlink_metadata(ancestor) {
+                if let Some(physical) = macos_output_root_alias(ancestor, &metadata) {
+                    path = Path::new(physical).join(requested.strip_prefix(ancestor).map_err(|_| "output_target_symlink_denied")?);
+                    continue;
+                }
+            }
+            return Err("output_target_symlink_denied");
+        }
+    }
+    // The fixed replacement must itself have a link-free path. This also
+    // refuses a replaced /private component or any descendant/leaf link.
+    for ancestor in path.ancestors() {
+        if std::fs::symlink_metadata(ancestor).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+            return Err("output_target_symlink_denied");
+        }
+    }
+    Ok(path)
+}
+
 /// Validate an explicit output target before any write: absolute, the right
-/// extension, an existing parent directory, no symlink anywhere on the path,
-/// and no silent replacement.
+/// extension, an existing parent, no user symlinks or parent traversal, and no
+/// silent replacement. macOS system aliases return the equivalent physical path.
 pub fn output_target(raw: &str, suffix: &str, overwrite: bool) -> Result<PathBuf, &'static str> {
     if raw.is_empty() || raw.contains('\0') || !Path::new(raw).is_absolute() {
         return Err("output_path_must_be_absolute");
     }
-    let path = PathBuf::from(raw);
-    for anc in path.ancestors() {
-        if anc.as_os_str().is_empty() {
-            break;
-        }
-        if std::fs::symlink_metadata(anc).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
-            return Err("output_target_symlink_denied");
-        }
-    }
+    let path = output_path_without_symlinks(Path::new(raw))?;
     if !raw.to_lowercase().ends_with(&suffix.to_lowercase()) {
         return Err("invalid_output_extension");
     }
@@ -1114,6 +1153,100 @@ pub fn run_stdio(app: Arc<App>) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn output_target_retains_extension_parent_traversal_and_old_target_guards() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("Protected.pdf");
+        std::fs::write(&target, b"ORIGINAL OUTPUT").unwrap();
+        let raw = target.to_str().unwrap();
+        assert_eq!(output_target(raw, ".pdf", false), Err("output_exists"));
+        let validated = output_target(raw, ".pdf", true).unwrap();
+        assert_eq!(std::fs::read(&validated).unwrap(), b"ORIGINAL OUTPUT");
+        assert_eq!(write_output(&validated, b"Not authorized to replace", false), Err("output_exists"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"ORIGINAL OUTPUT");
+        std::fs::create_dir(fixture.path().join("nested")).unwrap();
+        let traversal = fixture.path().join("nested/../Protected.pdf");
+        for overwrite in [false, true] {
+            assert_eq!(output_target(traversal.to_str().unwrap(), ".pdf", overwrite), Err("output_target_symlink_denied"));
+        }
+        assert_eq!(std::fs::read(&target).unwrap(), b"ORIGINAL OUTPUT");
+        assert_eq!(output_target("relative.pdf", ".pdf", true), Err("output_path_must_be_absolute"));
+        assert_eq!(output_target(fixture.path().join("wrong.txt").to_str().unwrap(), ".pdf", true), Err("invalid_output_extension"));
+        assert_eq!(output_target(fixture.path().join("missing/out.pdf").to_str().unwrap(), ".pdf", true), Err("output_directory_not_found"));
+        let directory = fixture.path().join("Directory.pdf");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(output_target(directory.to_str().unwrap(), ".pdf", true), Err("output_target_not_regular"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_target_rejects_leaf_descendant_broken_and_pseudo_system_symlinks() {
+        use std::os::unix::fs::symlink;
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().canonicalize().unwrap();
+        let outside = root.join("foreign");
+        std::fs::create_dir(&outside).unwrap();
+        let original = outside.join("Protected.pdf");
+        std::fs::write(&original, b"FOREIGN ORIGINAL").unwrap();
+        let leaf = root.join("leaf.pdf");
+        symlink(&original, &leaf).unwrap();
+        let broken = root.join("broken.pdf");
+        symlink(outside.join("absent.pdf"), &broken).unwrap();
+        let descendant = root.join("linked-directory");
+        symlink(&outside, &descendant).unwrap();
+        // A user directory named var/tmp/etc never becomes a trusted root alias.
+        for alias in ["var", "tmp", "etc"] {
+            symlink(&outside, root.join(alias)).unwrap();
+        }
+        for target in [leaf, broken, descendant.join("Protected.pdf"), root.join("var/Protected.pdf"), root.join("tmp/Protected.pdf"), root.join("etc/Protected.pdf")] {
+            for overwrite in [false, true] {
+                assert_eq!(output_target(target.to_str().unwrap(), ".pdf", overwrite), Err("output_target_symlink_denied"), "{target:?}");
+            }
+        }
+        assert_eq!(std::fs::read(original).unwrap(), b"FOREIGN ORIGINAL");
+        assert!(!outside.join("absent.pdf").exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_system_temp_alias_exports_to_private_path_without_admitting_user_links() {
+        use std::os::unix::fs::symlink;
+        // Keep the actual /var spelling in the MCP request. Changing global
+        // TMPDIR or canonicalizing every actor fixture would hide this defect.
+        let fixture = tempfile::Builder::new().prefix("readmd-mcp-alias-").tempdir_in("/var/tmp").unwrap();
+        let physical = fixture.path().canonicalize().unwrap();
+        assert!(physical.starts_with("/private/var/tmp"));
+        let target = fixture.path().join("Alias.html");
+        let expected = physical.join("Alias.html");
+        std::fs::write(&target, b"ORIGINAL ALIAS OUTPUT").unwrap();
+        assert_eq!(output_target(target.to_str().unwrap(), ".html", true).unwrap(), expected);
+        let (app, _, _, _, _) = harness("macos-system-output-alias");
+        let request = json!({"markdown_content":"# Physical alias output","output_path":target,
+            "output_format":"html","confirm":true});
+        let denied = call_tool(&app, "readmd_export_document", &request);
+        assert_eq!(denied["structuredContent"]["error_code"], "output_exists");
+        assert_eq!(std::fs::read(&target).unwrap(), b"ORIGINAL ALIAS OUTPUT");
+        let mut replace = request.clone(); replace["overwrite"] = json!(true);
+        let result = call_tool(&app, "readmd_export_document", &replace);
+        assert_ne!(result["isError"], true, "{result}");
+        assert_eq!(result["structuredContent"]["output_path"], expected.to_str().unwrap());
+        assert!(std::fs::read_to_string(&target).unwrap().contains("Physical alias output"));
+
+        let foreign = physical.join("foreign.html");
+        std::fs::write(&foreign, b"FOREIGN ALIAS OUTPUT").unwrap();
+        let leaf = fixture.path().join("leaf.html");
+        symlink(&foreign, &leaf).unwrap();
+        let child = fixture.path().join("user-link");
+        symlink(&physical, &child).unwrap();
+        std::fs::create_dir(fixture.path().join("nested")).unwrap();
+        for path in [leaf, child.join("foreign.html"), fixture.path().join("nested/../foreign.html")] {
+            let rejected = call_tool(&app, "readmd_export_document", &json!({"markdown_content":"Do not overwrite",
+                "output_path":path,"output_format":"html","overwrite":true,"confirm":true}));
+            assert_eq!(rejected["structuredContent"]["error_code"], "output_target_symlink_denied");
+        }
+        assert_eq!(std::fs::read(foreign).unwrap(), b"FOREIGN ALIAS OUTPUT");
+    }
+
     #[test]
     fn tex_author_guard_preserves_only_validated_details_in_both_mcp_channels(){
         let code=crate::api_codes::AUTHOR_INLINE_TEXT_UNSUPPORTED;

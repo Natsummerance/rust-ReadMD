@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "kind": "historical-recordings",
+  "recorded_date": "2026-10-04",
+  "software_version": {
+    "status": "unverified",
+    "value": null
+  },
+  "claims": {
+    "current_ui_recorded": false,
+    "current_semantics_recorded": false
+  },
+  "recorded_inventory": {
+    "path": "showcase/checks/recorded-inventory-2026-10-04.json",
+    "sha256": "ac252662d8a951ad7ab03a2fb5e0a54f797266b9e19c22bb547830822f55f539"
+  },
+  "current_inventory": {
+    "path": "docs/reviews/ui-function-inventory-2026-10-02/inventory.json",
+    "sha256": "2e4e257d329bf67686901ef289044a1ecf47e2b9bd42157f08dcf320b5789ca4"
+  },
+  "manifest_sha256": "5151f4a7651308fbc862c0c2c4c84cf28280c463cecb9b3f1209aabe2ddb0979",
+  "catalog_sha256": "a6a013dc0ab097e70597d14c235c41adf0fc87bf5f568d54eb0e71cce478b71f",
+  "verification_sha256": "80b24e4b5cc0eb4f9b4d8024fa1b2a6ac03b30f28b54fab2921a46922b8519d4",
+  "ui_source_sha256": "00c6774216e1177d60f936c2d7792b56ce0472788d5e1749189cb287da97963c",
+  "unrecorded_feature_ids": [
+    "F006",
+    "F009",
+    "F016",
+    "F018",
+    "F032",
+    "F042",
+    "F104"
+  ],
+  "provenance": {
+    "inventory_commit": "5f9b1af77d2520d5c6feb0e7b1de0075326066db",
+    "inventory_git_blob": "b778ee015ddaab8e54564f053a626758e15124c1",
+    "inventory_path": "docs/reviews/ui-function-inventory-2026-10-02/inventory.json",
+    "manifest_commit": "262a57b5a026bdac24e826367e049c8b66175c98",
+    "inventory_byte_policy": "original-git-blob-no-redaction",
+    "privacy_check": "scanBuffer-neutral-label-no-findings"
+  }
+}
