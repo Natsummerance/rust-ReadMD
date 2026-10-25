@@ -160,16 +160,22 @@ pub fn merge_layers(base: &Value, over: &Value) -> Result<(Value, Value), &'stat
 }
 
 pub fn validate_input(source: &str, options: &Value) -> Result<bool, &'static str> {
+    let (line_spacing, decoration) = validate_input_usage(source, options)?;
+    Ok(line_spacing || decoration)
+}
+
+fn validate_input_usage(source: &str, options: &Value) -> Result<(bool, bool), &'static str> {
     validate_request(options)?;
-    let mut used = global_line_spacing(options)?.is_some();
+    let mut line_spacing = global_line_spacing(options)?.is_some();
+    let mut decoration = false;
     if source.contains(crate::publication_blocks::PREFIX) {
         crate::publication_blocks::validate_source(source)?;
         for node in &crate::publication_blocks::analyze(source)?.nodes {
-            used |= node.style["paragraph"].get("lineSpacing").is_some();
-            used |= decoration::parse(&node.style["paragraph"])?.is_some();
+            line_spacing |= node.style["paragraph"].get("lineSpacing").is_some();
+            decoration |= decoration::parse(&node.style["paragraph"])?.is_some();
         }
     }
-    Ok(used)
+    Ok((line_spacing, decoration))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -454,17 +460,14 @@ fn tex_metric_math_is_pure(value: &str) -> bool {
 }
 
 /// Reader-only CSS is a different consumer from exported HTML or a physical
-/// PDF preview. It permits bounded local ordinary-body tracking, never a
-/// global Word request or typed physical line spacing.
+/// PDF preview. It permits bounded local ordinary-body tracking and paragraph
+/// decoration, never a global Word request or typed physical line spacing.
 pub fn validate_reader_view(source: &str, options: &Value) -> Result<(), &'static str> {
     crate::publication_blocks::validate_author_render_consumer(source)?;
     tracking::validate_reader(source, options)?;
     baseline::validate_source(source, options, baseline::Consumer::Reader)?;
-    // In-app reading projects CSS only; a decorated paragraph would silently
-    // lose its fill/borders there. Reject under the decoration code before
-    // the generic typed-layout gate can answer with a different family.
-    if decoration::used(source)? { return Err(decoration::UNSUPPORTED); }
-    if validate_input(source, options)? { return Err(UNSUPPORTED); }
+    decoration::validate_source_consumer(decoration::Consumer::Reader, source)?;
+    if validate_input_usage(source, options)?.0 { return Err(UNSUPPORTED); }
     Ok(())
 }
 

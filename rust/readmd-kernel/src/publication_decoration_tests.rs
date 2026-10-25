@@ -1,6 +1,6 @@
 //! P04 decoration validation contract: value matrix, target whitelist,
 //! ordinary-paragraph context, consumer rejections with protected old
-//! targets, reader/preview refusals and unchanged behaviour for prior keys.
+//! targets, reader/preview separation and unchanged behaviour for prior keys.
 use super::*;
 use serde_json::json;
 
@@ -151,11 +151,11 @@ fn decoration_rejecting_exports_preserve_old_targets_without_assets() {
 }
 
 #[test]
-fn decoration_reader_and_preview_explicitly_refuse_with_family_code() {
-    assert_eq!(crate::publication_typography::validate_reader_view(DECORATED, &json!({})), Err(UNSUPPORTED));
+fn decoration_reader_accepts_without_weakening_preview_and_export_guards() {
+    assert_eq!(crate::publication_typography::validate_reader_view(DECORATED, &json!({})), Ok(()));
     assert_eq!(crate::publication_typography::validate_preview(DECORATED, &json!({})), Err(UNSUPPORTED));
-    // The reader projection surface refuses too — no silent key dropping.
-    assert_eq!(crate::publication_blocks::view(DECORATED).unwrap_err(), UNSUPPORTED);
+    let (_, rules) = crate::publication_blocks::view(DECORATED).unwrap();
+    assert_eq!(rules.as_object().unwrap().values().next().unwrap()["background-color"], "#DCE6F1");
     // Rust PDF preview accepts exactly like its export; typst/xelatex previews
     // refuse exactly like their exports.
     crate::publication_typography::validate_pdf_preview("pdf", DECORATED, &json!({"pdf":{"engine":"rust"}})).unwrap();

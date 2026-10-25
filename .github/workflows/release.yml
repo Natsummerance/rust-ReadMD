@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the release after all checks and builds pass
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -251,7 +257,7 @@ jobs:
     concurrency:
       group: readmd-release-downloads-${{ github.repository }}
       cancel-in-progress: false
-    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V') || github.event_name == 'workflow_dispatch'
+    if: (github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V'))) || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true)
     needs: [build, quality]
     runs-on: ubuntu-latest
     steps:

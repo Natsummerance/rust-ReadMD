@@ -35,7 +35,7 @@ P07 原生 14 组全部通过，3 个实际输出；独立 oracle 20 必需通�
 
 ## 2. 锁版扩展路径、许可与体积门槛
 
-锁定 `hayagriva = 0.10.1`（默认 biblatex/archive 加 csl-json）及 `citationberg = 0.7.0`。本机 registry 原件在 `C:/Users/Natsumer/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`；Hayagriva VCS 基线为 `e51299ecd1a9f62b2f069af2f554ae4e84d50527`。只复制此已缓存版本至拟议 `rust/vendor/hayagriva`，由 root 在 workspace `rust/Cargo.toml` 设置 patch；不升级版本、改全局 registry、添加第二引擎/依赖或生成新 target。
+锁定 `hayagriva = 0.10.1`（默认 biblatex/archive 加 csl-json）及 `citationberg = 0.7.0`。本机 registry 原件在 `$CARGO_HOME/registry/src/index.crates.io-1949cf8c6b5b557f/`；Hayagriva VCS 基线为 `e51299ecd1a9f62b2f069af2f554ae4e84d50527`。只复制此已缓存版本至拟议 `rust/vendor/hayagriva`，由 root 在 workspace `rust/Cargo.toml` 设置 patch；不升级版本、改全局 registry、添加第二引擎/依赖或生成新 target。
 
 已核实 public `CitationItem` **没有** prefix/suffix；`CitationRequest::prefix/suffix` 是 CSL layout 的外围符号；`CitePurpose` 只有 Author/Year/Full/Prose，私有 `SpecialForm::SuppressAuthor` 才是正确隐藏作者逻辑。`Year` 会丢非年份内容，不能替用。citationberg 的 JSON CitationItem 已有 prefix/suffix/suppress_author/label，可复用其合同，但它本身不是渲染入口。
 

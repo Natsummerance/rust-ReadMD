@@ -1,8 +1,7 @@
 //! `w:rPrChange` is a Word review fact (author, date and the pre-revision
 //! rPr), never a current format property. It stays verbatim in the author
-//! source and in any rPr container the projection does not rewrite; whenever
-//! the projection rebuilds an rPr from effective properties, the stale
-//! revision record is stripped instead of forging history.
+//! source. Independent direct history also survives a rebuilt rPr, while
+//! history that depends on a flattened context is reported as export loss.
 use super::*;
 use crate::math_document::xml_semantics;
 
@@ -42,7 +41,7 @@ fn first_run_style(xml: &str) -> crate::omml::RunStyle {
     let parsed = crate::omml::parse(xml).unwrap();
     crate::omml::run_style(find(&parsed).expect("a run"))
 }
-fn docx_body(markdown: &str) -> (String, String) {
+fn docx_body(markdown: &str) -> (String, String, Vec<String>) {
     let document = crate::md_ast::parse(markdown);
     let mut omml = String::new();
     for block in &document.blocks {
@@ -60,7 +59,7 @@ fn docx_body(markdown: &str) -> (String, String) {
         package.parts.iter().find(|(path, _)| path == "word/document.xml")
             .unwrap_or_else(|| panic!("missing document.xml: {:?}", package.warns)).1.clone(),
     ).unwrap();
-    (body, omml)
+    (body, omml, package.warns)
 }
 
 #[test]
@@ -80,13 +79,13 @@ fn rpr_change_roundtrips_through_readable_dsl_with_author_and_date() {
 }
 
 #[test]
-fn rpr_change_form_a_replacement_projection_strips_revision_and_keeps_axes() {
+fn rpr_change_form_a_replacement_preserves_independent_history_and_keeps_axes() {
     let xml = form_a_with_revision();
     let doc = crate::math_document::parse(&xml, "omml", false).unwrap();
     let original = doc.root.xml();
     let out = materialized(&xml);
     assert_eq!(doc.root.xml(), original, "materialize never mutates the author source");
-    assert!(!out.contains("rPrChange") && !out.contains(AUTHOR) && !out.contains(DATE), "{out}");
+    assert!(out.contains("rPrChange") && out.contains(AUTHOR) && out.contains(DATE), "{out}");
     assert!(out.contains("w:b"), "the effective bold value survives: {out}");
     // The four visible axes are bit-identical to the revision-free twin.
     let plain = materialized(&form_a_without_revision());
@@ -95,9 +94,9 @@ fn rpr_change_form_a_replacement_projection_strips_revision_and_keeps_axes() {
 }
 
 #[test]
-fn rpr_change_form_a_docx_fragment_has_no_revision_or_author() {
+fn rpr_change_form_a_docx_fragment_keeps_independent_revision_and_author() {
     let (fragment, _) = crate::omml::docx_math_fragment(&form_a_with_revision(), false).unwrap();
-    assert!(!fragment.contains("rPrChange") && !fragment.contains(AUTHOR) && !fragment.contains(DATE), "{fragment}");
+    assert!(fragment.contains("rPrChange") && fragment.contains(AUTHOR) && fragment.contains(DATE), "{fragment}");
     assert!(fragment.contains("w:b"), "{fragment}");
     let (plain, _) = crate::omml::docx_math_fragment(&form_a_without_revision(), false).unwrap();
     assert_eq!(first_run_style(&fragment), first_run_style(&plain));
@@ -136,12 +135,13 @@ fn rpr_change_form_a_native_docx_projection_strips_revision_source_keeps_it() {
         A = AUTHOR, D = DATE
     );
     let markdown = format!("```readmd-math v1\n{dsl}\n```\n\n");
-    let (body, omml) = docx_body(&markdown);
+    let (body, omml, warns) = docx_body(&markdown);
     // The persistent anchor keeps the revision fact in the author source.
     assert!(omml.contains("rPrChange") && omml.contains(AUTHOR) && omml.contains(DATE), "{omml}");
     // The exported native projection follows the replacement branch.
     assert!(!body.contains("rPrChange") && !body.contains(AUTHOR) && !body.contains(DATE), "{body}");
     assert!(body.contains("w:b"), "the projected bold axis survives: {body}");
+    assert_eq!(warns.iter().filter(|code|code.as_str()==WARN_REVISION_NOT_PRESERVED).count(),1,"{warns:?}");
 }
 
 #[test]
@@ -164,9 +164,10 @@ fn rpr_change_form_b_preserves_revision_verbatim_in_projection_and_native_export
         A = AUTHOR, D = DATE
     );
     let markdown = format!("```readmd-math v1\n{dsl}\n```\n\n");
-    let (body, omml) = docx_body(&markdown);
+    let (body, omml, warns) = docx_body(&markdown);
     assert!(omml.contains("rPrChange") && omml.contains(AUTHOR), "{omml}");
     assert!(body.contains("rPrChange") && body.contains(AUTHOR) && body.contains(DATE), "{body}");
+    assert!(!warns.iter().any(|code|code==WARN_REVISION_NOT_PRESERVED),"{warns:?}");
 }
 
 

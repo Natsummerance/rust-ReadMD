@@ -1,7 +1,5 @@
-//! Managed consumption of the document-level Office math font. `m:mathFont`
-//! names that the publication catalogue already maps onto the managed math
-//! family are accepted requests; every other name keeps one honest fallback
-//! diagnostic while the layout continues on the bundled face.
+//! Document-level font diagnostics describe the actual bundled face. A
+//! catalogue alias does not make Cambria Math the STIX asset that is painted.
 use super::font_warnings;
 
 fn formula(math_font: Option<&str>) -> String {
@@ -25,16 +23,14 @@ fn ink(math_font: Option<&str>) -> String {
 }
 
 #[test]
-fn managed_math_font_family_names_are_accepted_without_fallback_diagnostics() {
-    for name in ["STIX Two Math", "Cambria Math"] {
-        assert!(fallbacks(name).is_empty(), "{name} must not warn: {:?}", fallbacks(name));
-        assert_eq!(ink(Some(name)), ink(None), "ink must match the default formula for {name}");
-    }
+fn bundled_math_font_is_accepted_without_fallback_diagnostics() {
+    assert!(fallbacks("STIX Two Math").is_empty());
+    assert_eq!(ink(Some("STIX Two Math")), ink(None));
 }
 
 #[test]
-fn unmanaged_math_font_names_report_exactly_one_real_fallback() {
-    for name in ["Foo Math", "Times New Roman"] {
+fn substituted_math_font_names_including_aliases_report_one_real_fallback() {
+    for name in ["Cambria Math", "Foo Math", "Times New Roman"] {
         let warnings = fallbacks(name);
         assert_eq!(warnings.len(), 1, "{name}: {warnings:?}");
         assert_eq!(warnings[0]["font"], name, "the diagnostic keeps the requested spelling");

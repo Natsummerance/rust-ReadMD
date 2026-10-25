@@ -5446,12 +5446,15 @@ window.ReadMDAuthorText = (() => {
 // always retains the original citation keys and author-controlled metadata.
 window.ReadMDPublication=(()=>{
   let cached=null,pending=null,styleSession=null,rangeCache=null,paged=null,epoch=0,cacheGeneration=0,citationNavigation=0;
-  const layouts=[],projections=[];
+  const projections=[];
   const citationBindings=new WeakMap(),citationContainers=new WeakSet();
   const bibliographyMeasurements=new Map();
   const authorSurfaces=new Map();
   const trackingBindings=new WeakMap();
   const baselineBindings=new WeakMap();
+  const decorationBindings=new Map();
+  const decorationSides=['top','left','bottom','right'];
+  const decorationProperties=new Set(['background-color',...decorationSides.flatMap(side=>[`border-${side}-color`,`border-${side}-style`,`border-${side}-width`,`padding-${side}`])]);
   const headingNumberBindings=new WeakMap();
   const pagedHeadingBindings=new WeakMap();
   const untrackedSelector='code,pre,.readmd-citation,.rd-fnref,mjx-container,.readmd-dsl-math,[data-readmd-math-renderer],math';
@@ -5468,6 +5471,15 @@ window.ReadMDPublication=(()=>{
   function origin(){return {tab:state.activeTabId,document:activeTab(),file:state.file||'',view:state.editing?editorView():null,editing:Boolean(state.editing)};}
   function sameDocument(session){return state.activeTabId===session.tab&&activeTab()===session.document&&(state.file||'')===session.file;}
   function currentOrigin(session,source){return sameDocument(session)&&Boolean(state.editing)===session.editing&&(!session.editing||editorView()===session.view)&&currentSource()===source;}
+  function projectionOrigin(session,source){return sameDocument(session)&&Boolean(state.editing)===session.editing&&(!session.editing||editorView()===session.view)&&normalizeSource(currentSource())===normalizeSource(source);}
+  function discardPrepared(){
+    ++cacheGeneration;++citationNavigation;
+    for(const record of bibliographyMeasurements.values())record.stop();
+    for(const container of authorSurfaces.keys())window.ReadMDAuthorText?.apply(container,null);
+    authorSurfaces.clear();
+    for(const target of decorationBindings.keys())restoreDecoration(target);
+    cached=null;pending=null;projections.length=0;rangeCache=null;
+  }
   function editableSource(owner){return owner.document?.isDirty?owner.document.content:state.original;}
   function readerOriginal(source,owner){
     if(owner.editing||source!==currentSource())return null;
@@ -5481,11 +5493,14 @@ window.ReadMDPublication=(()=>{
     return {source,epoch:request.epoch,generation:request.generation,owner:request.owner,source_citations:data.source_citations||[],projection:data.projection||null,revision:data.projection?.revision||data.revision||'',numbering:data.source_numbering||null};
   }
   async function prepare(source,file=''){
+    const base=String(file||'').replace(/[\\/][^\\/]*$/,'');
+    const owner=origin(),navigationSource=readerOriginal(source,owner),previous=pending||cached||projections.at(-1);
+    // Preserved CRLF preview and LF completion may share one document. Every
+    // other source/view change invalidates its previous projection authority.
+    if(previous&&(!projectionOrigin(previous.owner,source)||normalizeSource(previous.source)!==normalizeSource(source)))discardPrepared();
     const front=/^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source)?.[1]||'';
     const hasProfile=/(?:^|[\s{,])(?:readmd|"readmd"|'readmd')\s*:/.test(front);
-    if(!hasProfile&&!/:label\[|:ref\[|readmd-math|data-readmd-text|<!-- readmd:layout |<!-- readmd-section:|<!-- readmd-numbering:|<!--readmd-numbering-import:|<!--readmd:citation-(?:resources|import):/i.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^(?:bibliography|citation-resources)\s*:/m.test(source))return source;
-    const base=String(file||'').replace(/[\\/][^\\/]*$/,'');
-    const owner=origin(),navigationSource=readerOriginal(source,owner);
+    if(!hasProfile&&!/:label\[|:ref\[|readmd-math|data-readmd-text|<!-- readmd:layout |<!-- readmd-section:|<!-- readmd-numbering:|<!--readmd-numbering-import:|<!--readmd:citation-(?:resources|import):/i.test(source)&&!/^\uFEFF?---[ \t]*\r?\n[\s\S]*?^(?:bibliography|citation-resources)\s*:/m.test(source)){++epoch;discardPrepared();return source;}
     if(cached?.source===source&&cached.base===base&&cached.navigationSource===navigationSource&&cached.epoch===epoch&&Date.now()-cached.time<2000){cached.owner=owner;return cached.content;}
     if(pending?.source===source&&pending.base===base&&pending.navigationSource===navigationSource){pending.owner=owner;return pending.promise;}
     const request={source,base,owner,navigationSource,epoch:++epoch,generation:cacheGeneration};request.promise=(async()=>{
@@ -5494,21 +5509,22 @@ window.ReadMDPublication=(()=>{
         // that Rust-rendered display, and obtain a second authoritative Rust
         // projection for the exact original opened by the editor.
         const [data,navigationData]=await Promise.all([preparedDocument(source,base),navigationSource===null?null:preparedDocument(navigationSource,base)]);
+        if(request.generation!==cacheGeneration||!projectionOrigin(request.owner,source)){
+          if(request.generation===cacheGeneration&&request.epoch===epoch)discardPrepared();
+          return source;
+        }
         const content=typeof data.reader_content==='string'?data.reader_content:data.content;
         if(typeof content!=='string')throw new Error('publication');
         const record={...projectionRecord(source,data,request),base,content,time:Date.now(),navigationSource,navigation:null,diagnostics:data.diagnostics||[],labels:data.source_labels||[],layout:data.layout||{},authorText:data.author_text||null};
         if(navigationData){const original=projectionRecord(navigationSource,navigationData,request);if(sameCitations(record,original))record.navigation=original;}
-        if(request.generation===cacheGeneration){
-          projections.push(record);if(projections.length>4)projections.shift();
-          if(data.layout){layouts.push(data.layout);if(layouts.length>8)layouts.shift();}
-        }
+        projections.push(record);if(projections.length>4)projections.shift();
         if(request.epoch===epoch){
           cached=record;
           const warns=(data.warnings||[]).map(text=>{const at=text.indexOf(': '),code=at<0?text:text.slice(0,at),key=at<0?'':text.slice(at+2),label=i18n.t('warn.'+code,{key});if(label!=='warn.'+code)return label;const error=i18n.t('error.'+code,{key});return error==='error.'+code?i18n.t('academic.prepareFailed'):error;});
           if(warns.length&&currentOrigin(request.owner,source))showToast(warns.join('\n'),6000);
         }
         return content;
-      }catch(error){if(request.epoch===epoch&&currentOrigin(request.owner,source))showToast(apiMessage(error.response,'academic.prepareFailed'));return source;}
+      }catch(error){if(request.generation===cacheGeneration&&request.epoch===epoch){discardPrepared();if(currentOrigin(request.owner,source))showToast(apiMessage(error.response,'academic.prepareFailed'));}return source;}
       finally{if(pending===request)pending=null;}
     })();pending=request;return request.promise;
   }
@@ -5516,6 +5532,37 @@ window.ReadMDPublication=(()=>{
     await prepare(source,file);
     const base=String(file||'').replace(/[\\/][^\\/]*$/,'');
     return cached?.source===source&&cached.base===base?cached.labels:[];
+  }
+  function decorationValues(rule){
+    if(!rule)return null;
+    const values={},fill=rule['background-color'];
+    if(fill!==undefined){if(typeof fill!=='string'||!/^#[a-f0-9]{6}$/i.test(fill))return null;values['background-color']=fill;}
+    for(const side of decorationSides){
+      const color=rule[`border-${side}-color`],style=rule[`border-${side}-style`],width=rule[`border-${side}-width`],space=rule[`padding-${side}`];
+      if([color,style,width,space].every(value=>value===undefined))continue;
+      if(typeof color!=='string'||!/^#[a-f0-9]{6}$/i.test(color)||style!=='solid'||typeof width!=='string'||!/^(?:\d+(?:\.\d*)?|\.\d+)pt$/.test(width)||typeof space!=='string'||!/^(?:0|[1-9]\d*)pt$/.test(space))return null;
+      const pt=Number(width.slice(0,-2)),gap=Number(space.slice(0,-2));
+      if(!Number.isFinite(pt)||pt<0.25||pt>12||!Number.isSafeInteger(gap)||gap>31)return null;
+      values[`border-${side}-color`]=color;values[`border-${side}-style`]=style;values[`border-${side}-width`]=width;values[`padding-${side}`]=space;
+    }
+    return Object.keys(values).length?values:null;
+  }
+  function restoreDecoration(target){
+    const binding=decorationBindings.get(target);if(!binding)return;
+    for(const [property,value,priority]of binding.saved){if(value)target.style.setProperty(property,value,priority);else target.style.removeProperty(property);}
+    delete target.dataset.readmdDecoration;decorationBindings.delete(target);
+  }
+  function applyDecoration(target,key,rule){
+    if(target?.tagName!=='P'||target.closest?.('blockquote,li,td,th,pre,figcaption,.rd-footnotes,.footnotes,.readmd-bibliography,[data-readmd-footnote],[role="doc-endnotes"]'))return;
+    const values=decorationValues(rule);if(!values)return;
+    const signature=JSON.stringify(values),old=decorationBindings.get(target);
+    if(old?.key===key&&old.signature===signature)return;if(old)restoreDecoration(target);
+    const saved=[];
+    for(const [property,value]of Object.entries(values)){
+      saved.push([property,target.style.getPropertyValue(property),target.style.getPropertyPriority(property)]);
+      target.style.setProperty(property,value);
+    }
+    target.dataset.readmdDecoration=key;decorationBindings.set(target,{key,signature,saved});
   }
   function restoreTracking(target){
     const binding=trackingBindings.get(target);if(!binding)return;
@@ -5649,15 +5696,19 @@ window.ReadMDPublication=(()=>{
     // unchanged paragraph DOM. Restore that paragraph's exact prior CSS.
     for(const target of container.querySelectorAll('[data-readmd-tracking]')){const binding=trackingBindings.get(target);if(binding&&(!activeLayout||!Object.hasOwn(activeLayout,binding.key)))restoreTracking(target);}
     for(const target of container.querySelectorAll('[data-readmd-baseline]')){const binding=baselineBindings.get(target);if(binding&&activeLayout?.[binding.key]?.['--readmd-baseline-shift']!==binding.value)restoreBaseline(target);}
+    for(const [target,binding]of decorationBindings){if(target.isConnected===false||container.contains?.(target)&&JSON.stringify(decorationValues(activeLayout?.[binding.key]))!==binding.signature)restoreDecoration(target);}
     for(const marker of container.querySelectorAll('[data-readmd-layout]')){
       const inline=marker.dataset.readmdLayoutInline==='true';
-      const rule=[...layouts].reverse().map(r=>r[marker.dataset.readmdLayout]).find(Boolean),target=inline?marker:marker.nextElementSibling;
+      // A marker can consume only the current source map, including ordinary
+      // local CSS; a map retained from a previous document is never a fallback.
+      const rule=activeLayout?.[marker.dataset.readmdLayout],target=inline?marker:marker.nextElementSibling;
       if(!rule||!target)continue;
       for(const [key,value]of Object.entries(rule)){
         if(key==='letter-spacing'){if(activeLayout?.[marker.dataset.readmdLayout]?.['letter-spacing']===value)applyTracking(target,marker.dataset.readmdLayout,value);}
         else if(key==='--readmd-baseline-shift'){if(activeLayout?.[marker.dataset.readmdLayout]?.['--readmd-baseline-shift']===value)applyBaseline(target,marker.dataset.readmdLayout,value);}
-        else target.style.setProperty(key,value);
+        else if(!decorationProperties.has(key))target.style.setProperty(key,value);
       }
+      applyDecoration(inline?marker.closest?.('p'):target,marker.dataset.readmdLayout,rule);
       if(inline)target.style.display='block';else marker.remove();
     }
     // The sanitizer drops style strings. Restore only bounded numeric CSL
@@ -6116,7 +6167,7 @@ window.ReadMDPublication=(()=>{
       if(!current)authorSurfaces.delete(container);
     }
   }
-  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,preparePagedHeadings,applyLayout,refreshBaseline,refreshLayout,bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;++cacheGeneration;++citationNavigation;for(const record of bibliographyMeasurements.values())record.stop();for(const container of authorSurfaces.keys())window.ReadMDAuthorText?.apply(container,null);authorSurfaces.clear();cached=null;pending=null;projections.length=0;rangeCache=null;stopPaged();}};
+  return {lineSpacing:lineSpacingControls,tracking:trackingControls,baseline:baselineControls,prepare,labels,preparePagedHeadings,applyLayout,refreshBaseline,refreshLayout,bindCitations,locateCitation,openStyle,metadataRanges,noteDefinitions,renderPaged,stopPaged,diagnostics:()=>cached?.diagnostics||[],projection:()=>cached?.projection||null,sourceCitations:()=>cached?.source_citations||[],revision:()=>cached?.revision||'',clear:()=>{++epoch;discardPrepared();stopPaged();}};
 })();
 
 ;

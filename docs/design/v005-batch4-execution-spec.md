@@ -1,6 +1,6 @@
 # V0.0.5 第四批执行规格
 
-状态：2026-10-15 的待实施执行方案，基于[路径研究](Z:/Natsumer/.codex/worktrees/b2bb/readmd/docs/design/v005-batch4-path-research-2026-10-15.md)与[五批归属](Z:/Natsumer/.codex/worktrees/b2bb/readmd/docs/design/v005-five-batch-spec.md:329)。本文不是实现或验收记录，不调整第三批、总账本或发布状态；第三批未完成的原生、互操作及交付门槛继续单列。下面的切片退出条件不能替代 B4-01–09 的完整出口。
+状态：2026-10-15 的待实施执行方案，基于[路径研究](<repository>/docs/design/v005-batch4-path-research-2026-10-15.md)与[五批归属](<repository>/docs/design/v005-five-batch-spec.md:329)。本文不是实现或验收记录，不调整第三批、总账本或发布状态；第三批未完成的原生、互操作及交付门槛继续单列。下面的切片退出条件不能替代 B4-01–09 的完整出口。
 
 ## 1. 依赖与可并行边界
 

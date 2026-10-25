@@ -510,6 +510,7 @@
   "warn.math_glyph_missing": "公式字体缺少这些字符：{chars}",
   "warn.math_manual_alignment_fallback": "MathML 保留手动换行，但按运算符对齐的位置可能不同。请检查导出的公式排版。",
   "warn.math_paragraph_style_materialized": "部分公式段落已改用直接格式，未保留原样式继承。",
+  "warn.math_revision_not_preserved": "部分公式的 Word 格式修订记录未保留在此导出文件中，源文档保持不变。",
   "warn.math_run_style_materialized": "部分公式字符已改用直接格式，未保留原样式继承。",
   "warn.math_script_spacing_fallback": "MathML 阅读器的上下标字距可能与 Word 不同。请检查导出的电子书公式。",
   "warn.math_unsupported_version": "暂不支持此公式语法版本，原始源码已保留。",

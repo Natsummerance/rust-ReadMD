@@ -453,12 +453,10 @@ pub(crate) fn needs_managed_fonts(root:&Node)->bool{
 pub(crate) fn font_warnings(root:&Node)->Vec<serde_json::Value>{
     fn visit(n:&Node,out:&mut BTreeSet<(String,String)>){
         if n.is_math()&&n.name=="r"&&omml::run_style(n).normal_text{let slots=omml::run_fonts(n);for c in n.run_text().chars(){if let Some(requested)=slots.family(c){let family=crate::publication_fonts::family(requested);let available=family=="STIX Two Math"||crate::publication_fonts::current().is_some()&&matches!(family,"ReadMD Sans SC"|"ReadMD Serif SC");if !available||family!=requested{out.insert((requested.into(),if available{family.into()}else{"STIX Two Math".into()}));}}}}
-        // The document-level math font is managed as a family, not by exact
-        // spelling: every name the publication catalogue maps onto the managed
-        // math family is an accepted request. Anything else falls back to the
-        // bundled face with one honest diagnostic. Run-level font requests in
-        // the branch above deliberately keep their own stricter predicate.
-        if n.is_math()&&n.name=="mathFont"{if let Some(f)=n.attr("val").filter(|v|crate::publication_fonts::family(v)!="STIX Two Math"){out.insert((f.into(),"STIX Two Math".into()));}}
+        // The math face is the bundled STIX asset. A catalogue alias such as
+        // Cambria Math still replaces the requested face and must say so.
+        // Run-level font requests above keep their separate availability rule.
+        if n.is_math()&&n.name=="mathFont"{if let Some(f)=n.attr("val").filter(|v|*v!="STIX Two Math"){out.insert((f.into(),"STIX Two Math".into()));}}
         for c in &n.children{visit(c,out);}
     }
     let mut out=BTreeSet::new();visit(root,&mut out);let mut warnings=out.into_iter().map(|(font,actual)|serde_json::json!({"code":"font_fallback","font":font,"actual":actual})).collect::<Vec<_>>();

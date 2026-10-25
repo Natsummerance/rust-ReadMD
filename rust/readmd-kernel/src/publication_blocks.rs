@@ -722,6 +722,9 @@ pub fn view(source: &str) -> Result<(String, Value), &'static str> {
             let mut css = serde_json::Map::new();
             let text = &node.style["text"];
             let p = &node.style["paragraph"];
+            if let Some(decoration) = crate::publication_typography::decoration::parse(p)? {
+                css.extend(decoration.reader_css());
+            }
             if let Some(value) = crate::publication_typography::baseline::local(text)? {
                 css.insert("--readmd-baseline-shift".into(), json!(format!("{}pt", value.requested_pt())));
             }

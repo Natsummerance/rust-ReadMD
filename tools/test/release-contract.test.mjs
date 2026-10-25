@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
@@ -18,7 +19,18 @@ test('platform matrix distinguishes native evidence from HarmonyOS source integr
   assert.equal(matrix.release, read('VERSION').trim());
   assert.ok(matrix.experimental_support.some(p=>p.id==='harmonyos-arm64' && p.status==='source-integrated-sdk-device-unverified' && p.artifacts.length===0));
   assert.ok(matrix.formal_support.every(p=>p.status));
-  assert.equal(matrix.evidence_policy.release_blocked_until_complete, true);
+  assert.equal(matrix.evidence_policy.release_blocked_until_complete, false);
+  assert.equal(matrix.evidence_policy.full_capability_certification_blocked_until_complete, true);
+  assert.deepEqual(matrix.evidence_policy.scoped_release, {
+    version: '0.0.5',
+    scope: 'docs/design/v005-release-scope-2026-10-25.md',
+    candidate_evidence_required: true,
+    native_evidence_not_inferred_from_build: true,
+    deferred_version: '0.0.6',
+    targets: ['windows-x64', 'linux-x64', 'macos-x64', 'macos-arm64'],
+  });
+  assert.equal(matrix.evidence_policy.scoped_release.version, matrix.release);
+  assert.ok(exists(matrix.evidence_policy.scoped_release.scope));
   assert.ok(matrix.formal_support.every(item => item.native_backend));
   assert.equal(matrix.feature_matrix.no_implicit_empty_cells, true);
   assert.equal(matrix.feature_matrix.default_status, 'pending-native-evidence');
@@ -85,6 +97,63 @@ test('formal release waits for shared quality checks and every build', () => {
   assert.match(quality, /node tools\/package-integrations.mjs dist\/integrations/);
   assert.match(quality, /name: ReadMD-integrations/);
   assert.match(quality, /packages\/mcp-server\/test\/stdio.mjs/);
+});
+
+test('manual release runs build candidates by default and publish only with explicit consent', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const dispatch = workflow.slice(workflow.indexOf('\n  workflow_dispatch:'), workflow.indexOf('\npermissions:'));
+  const input = /^      publish_release:\r?\n((?:        [^\r\n]*\r?\n?)+)/m.exec(dispatch)?.[1];
+  assert.ok(input, 'publish_release input is required');
+  assert.match(input, /^        type: boolean\s*$/m);
+  assert.match(input, /^        default: false\s*$/m);
+  assert.match(input, /^        required: false\s*$/m);
+  const quality = workflow.slice(workflow.indexOf('\n  quality:'), workflow.indexOf('\n  build:'));
+  const build = workflow.slice(workflow.indexOf('\n  build:'), workflow.indexOf('\n  release:'));
+  const publishing = workflow.slice(workflow.indexOf('\n  release:'));
+  assert.ok(!/^    if:/m.test(build), 'all build matrix entries run for manual candidates');
+  const condition = section => /^    if:\s*(.+)$/m.exec(section)?.[1].trim();
+  const evaluate = (expression, event, ref, requested) => runInNewContext(expression, {
+    github: { event_name: event, ref },
+    inputs: requested === undefined ? {} : { publish_release: requested },
+    startsWith: (value, prefix) => value.startsWith(prefix),
+  }, { timeout: 100 });
+  for (const [event, ref, requested, expected] of [
+    ['workflow_dispatch', 'refs/heads/main', undefined, false],
+    ['workflow_dispatch', 'refs/heads/main', false, false],
+    ['workflow_dispatch', 'refs/heads/main', true, true],
+    ['workflow_dispatch', 'refs/tags/V0.0.5', false, false],
+    ['workflow_dispatch', 'refs/tags/V0.0.5', true, true],
+    ['push', 'refs/tags/v0.0.5', undefined, true],
+    ['push', 'refs/tags/V0.0.5', false, true],
+    ['push', 'refs/heads/main', true, false],
+    ['pull_request', 'refs/tags/V0.0.5', true, false],
+  ]) assert.equal(evaluate(condition(publishing), event, ref, requested), expected, `${event} ${ref} publish=${requested}`);
+  for (const ref of ['refs/heads/main', 'refs/tags/V0.0.5']) {
+    assert.equal(evaluate(condition(quality), 'workflow_dispatch', ref, false), true, 'manual candidates keep quality checks');
+  }
+});
+
+test('candidate runs retain every existing desktop artifact and integrations', () => {
+  const workflow = read('.github/workflows/release.yml');
+  const build = workflow.slice(workflow.indexOf('\n  build:'), workflow.indexOf('\n  release:'));
+  assert.deepEqual([...build.matchAll(/^            target:\s*(\S+)\s*$/gm)].map(match => match[1]).sort(), [
+    'aarch64-apple-darwin', 'x86_64-apple-darwin', 'x86_64-pc-windows-msvc', 'x86_64-unknown-linux-gnu',
+  ]);
+  const upload = build.slice(build.indexOf('      - name: Upload build artifact'));
+  assert.match(upload, /uses: actions\/upload-artifact@v4/);
+  assert.match(upload, /name: \$\{\{ matrix\.platform\.asset_name \}\}/);
+  assert.match(upload, /if-no-files-found: error/);
+  for (const glob of ['dist/*.zip', 'dist/*.tar.gz', 'dist/*.deb', 'dist/*.dmg', 'dist/*Setup*.exe']) {
+    assert.ok(upload.includes(glob), glob);
+  }
+  const quality = read('.github/workflows/repo-quality.yml');
+  const integrations = quality.slice(quality.indexOf('      - name: Upload integration packages'), quality.indexOf('\n  ui:'));
+  assert.match(integrations, /uses: actions\/upload-artifact@v4/);
+  assert.match(integrations, /name: ReadMD-integrations/);
+  assert.match(integrations, /if-no-files-found: error/);
+  for (const glob of ['dist/integrations/*.vsix', 'dist/integrations/*.zip']) assert.ok(integrations.includes(glob), glob);
+  const publishing = workflow.slice(workflow.indexOf('\n  release:'));
+  assert.match(publishing, /uses: actions\/download-artifact@v4\s+with:\s+path: release-assets\s+merge-multiple: true/);
 });
 
 test('release packages require the current pet runtime and aligned versions', () => {

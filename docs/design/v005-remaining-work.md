@@ -1,5 +1,9 @@
 # ReadMD V0.0.5 未完成清单与执行计划
 
+<!-- v005-scoped-release-20261025:start -->
+**2026-10-25 用户最新版本约定：** 先修复现有成果的发布阻断，验收发布 V0.0.5；第四批和第三批剩余深化转入 V0.0.6。见 [发布范围及接续顺序](v005-release-scope-2026-10-25.md)。本轮优先长路径能力包安装、数学替换／修订损失提示、装饰阅读投影、多语言及最终候选／安装升级／发布链路，不再扩新的公式语义、出版参数或第四批功能。以下历史“下一步／第三批整项未验收”保持原证据含义，不能继续作为必须全做完才发布当前有限版本的条件；也不能把版本范围调整算作整项通过。
+<!-- v005-scoped-release-20261025:end -->
+
 <!-- batch3-math-font-p04-faults-20261025:start -->
 **2026-10-25 数学字体消费收口、P04段落底纹边框与Windows故障第2步：** A/B 两单元经独立验证通过并绑定 **candidate-95/candidate-96**（同一重建门禁二进制 `b73aab39…7a30a8`，1189 源冻结、--verify 通过，冻结实测复用 candidate-94 全部 blob 即工作区零漂移；协调者本轮重跑全库 Rust **3887通过/0失败/3既有忽略**（169.98s）与账本检查器 0 problems；本轮三单元产品前端零改动、boot 摘要未变，前端回归未由本协调员重跑，沿用协调者门禁记录 1234/0）。**A**：mathFont 显式谓词消费（STIX Two Math/Cambria Math 等价名零告警、其它名恰一条真实回退且 actual 恒为 STIX Two Math）与 math run rPrChange 隔离（投影改写即剥离、未改写容器原文保留、作者源全程保真）记入 R009/R012/R031；**B**：P04“边框底纹”最小子项（ordinary 段落 shading.fill+四边 border→DOCX 原生 pBdr/shd 与 core PDF 真实几何、typst/tex/epub/html/reader/preview 显式拒绝+旧目标字节保护、46 locale 键登记）记入 R028。**C（Windows 故障第2步跨传输拥有者）保持 blocked**：产品 `capability_packs/space.rs` 容量查询对深长 pack_root 422 space_query（runid-05/06 双重复现，探针排除 SxS 假设），harness/C#观察器窄扩/独立控制与定向 Rust 测试已真实验证、矩阵 busy/取消/崩溃收尾/善后卸载未测即未证，记入 R055/R075；待 space.rs `\\?\` 前缀修复落盘并重建门禁后用现有候选冻结重跑。完整 M07/M09/P04、真实 Word/WPS 审阅与渲染（I 域）、46 语言语义审校、故障第3~5步/ENOSPC/八小时仍欠。75整项仍60进行中/15待办/0整项验收；第三批及发布未结项。见[数学字体与修订](../reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md)、[P04段落底纹边框](../reviews/readmd-v005-batch3-p04-paragraph-decoration-2026-10-24.md)、[Windows故障第2步](../reviews/readmd-v005-batch3-windows-faults-cross-owner-2026-10-24.md)。
 <!-- batch3-math-font-p04-faults-20261025:end -->

@@ -8,6 +8,8 @@ const relative = file => path.relative(root, file).split(path.sep).join('/');
 const parent = path.join(root, '.cache/capability-upgrade/longtail-step12-20261018');
 const previousRoot = path.join(root, '.cache/capability-upgrade/batch3-closeout-20261018');
 const sourcePattern = /^(assets\/(js\/|css\/|i18n\/|vendor\/|data\/|capabilities\/|fonts\/|licenses\/|math-catalog\.json$|index\.html$|style\.css$|app\.js$|readmd\.boot\.js$)|rust\/(readmd-kernel\/(src\/|Cargo\.toml$|build\.rs$)|Cargo\.(toml|lock)$|xtask\/|\.cargo\/)|tests\/(frontend\/|fixtures\/)|tools\/(test\/|lib\/|check-[^/]+\.mjs$|plan-tex-material-closure\.mjs$|no-python\.allow\.json$|i18n-add\.mjs$|i18n-batch3-(?:docx-settings|math-section|author-inline)\.json$|prepare-batch3-author-inline-i18n\.cjs$|.*lock\.json$)|docs\/design\/office-math-coverage\.json$|ui-tests\/[^/]+\.(cjs|mjs|js|json)$|packages\/(mcp-server|vscode-readmd|vscode-extension)\/(src\/|test\/|package(-lock)?\.json$))/;
+// QA observers and packaging inputs are part of the release identity too.
+const supplementalInputs = new Set(["ui-tests/helpers/windows-worker-observer.cs","ui-tests/helpers/windows-worker-observer.ps1","tools/i18n-v005-release-closeout.json","VERSION","ReadMD.nsi","release/platform-matrix.json",".github/workflows/release.yml",".github/workflows/repo-quality.yml","tools/publish-release.mjs","tools/stage-windows-runtime.mjs","tools/package-integrations.mjs","docs/design/v005-release-scope-2026-10-25.md","assets/readmd.ico","assets/runtimes/windows-x64/runtime.lock.json","assets/runtimes/windows-x64/vcruntime140.dll","assets/runtimes/windows-x64/vcruntime140_1.dll","docs/design/capability-upgrade-acceptance.json","README.md","README.en.md","README.ja.md","README.zh-TW.md","RELEASE_NOTES.md","release/release_notes.md","tools/privacy-scan.mjs"]);
 function contained(base, file) {
   const name = path.relative(base, file);
   return name && name !== '..' && !name.startsWith('..' + path.sep) && !path.isAbsolute(name);
@@ -44,7 +46,7 @@ function literalRustInputs(files, base = root) {
 }
 function sources() {
   const curated = [...new Set(execFileSync('git', ['ls-files', '-co', '--exclude-standard', '-z'], {cwd: root}).toString('utf8').split('\0'))]
-    .filter(file => file && sourcePattern.test(file) && !file.split('/').includes('node_modules') && fs.existsSync(path.join(root, file)))
+    .filter(file => file && (sourcePattern.test(file) || supplementalInputs.has(file)) && !file.split('/').includes('node_modules') && fs.existsSync(path.join(root, file)))
     .sort();
   return [...new Set([...curated, ...literalRustInputs(curated)])].sort();
 }

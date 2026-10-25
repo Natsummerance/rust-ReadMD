@@ -58,7 +58,7 @@ ResolvedSection { /* existing fields */
 
 固定 SDK schema commit `b424997c2c81410d375a72bf68837b87b7b807e8`，本地文件：
 
-`Z:/Natsumer/.codex/worktrees/b2bb/readmd/.cache/capability-upgrade/publication-structure-inputs-20261015/p04-tracking-docx-draft-20261016/primary-schema/wordprocessingml-fixed.json`
+`<repository>/.cache/capability-upgrade/publication-structure-inputs-20261015/p04-tracking-docx-draft-20261016/primary-schema/wordprocessingml-fixed.json`
 
 SHA256 `05a5be64625cd79e756b27606587c3a2868f2e42ade196bfca2d6f647e74fdb5`。本轮逐项检查，现 WORD_NUMBER_FORMATS 与固定 ST_NumberFormat 表一致；具体枚举保留 JSON 内。不得修改该 schema 迁就夹具。
 

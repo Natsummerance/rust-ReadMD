@@ -478,11 +478,26 @@ impl<'a> Ctx<'a> {
     fn office_math(&mut self, xml: &str, display: bool) -> String {
         if self.math_failure.is_some() { return String::new(); }
         match self.math_defaults.accept(xml, display) {
-            Ok(content) => content,
+            Ok(content) => if self.note_math_revision_loss(xml,&content) { content } else { String::new() },
             Err(error) => { self.math_failure = Some(error.message()); String::new() }
         }
     }
+    fn note_math_revision_loss(&mut self, source: &str, projected: &str) -> bool {
+        match crate::math_word::revision_not_preserved(source,projected) {
+            Ok(lost) => {
+                let code=crate::math_word::WARN_REVISION_NOT_PRESERVED;
+                if lost && !self.warns.iter().any(|warning|warning==code) { self.warns.push(code.into()); }
+                true
+            },
+            Err(code) => { self.math_failure=Some(code.into()); false },
+        }
+    }
     fn office_math_paragraph(&mut self,xml:&str,sc:&Scope)->(String,String){
+        let (ppr,content)=self.office_math_paragraph_projected(xml,sc);
+        if !content.is_empty() && !self.note_math_revision_loss(xml,&content) { return (String::new(),String::new()); }
+        (ppr,content)
+    }
+    fn office_math_paragraph_projected(&mut self,xml:&str,sc:&Scope)->(String,String){
         if self.math_failure.is_some(){return (String::new(),String::new());}
         match self.math_defaults.accept_native_projected(xml,true){
             Ok((mut content,paragraph,source))=>{

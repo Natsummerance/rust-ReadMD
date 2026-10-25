@@ -510,6 +510,7 @@
   "warn.math_glyph_missing": "Formula fonts lack these characters: {chars}",
   "warn.math_manual_alignment_fallback": "MathML keeps manual line breaks, but operator alignment may differ. Check the exported equations.",
   "warn.math_paragraph_style_materialized": "Some equation paragraphs use direct formatting; their original style inheritance was not retained.",
+  "warn.math_revision_not_preserved": "Word formatting revision history in some equations could not be retained in this export. The source document is unchanged.",
   "warn.math_run_style_materialized": "Some equation characters use direct formatting; their original style inheritance was not retained.",
   "warn.math_script_spacing_fallback": "MathML readers may space subscripts and superscripts differently from Word. Check the exported ebook equations.",
   "warn.math_unsupported_version": "Unsupported equation syntax version. The source is preserved.",

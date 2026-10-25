@@ -4,6 +4,14 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const freeze=require('./freeze-longtail-candidate.cjs');
 const reader=require('./batch3-author-inline-reader-http.cjs');
+test('release candidates bind native observers and the package admission implementation',()=>{
+ const sources=new Set(freeze.sources());
+ for(const file of ['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1',
+  'rust/readmd-kernel/src/capability_packs/space.rs','tools/test/batch3-windows-faults.cjs',
+  'tools/i18n-v005-release-closeout.json','.github/workflows/release.yml','release/platform-matrix.json']){
+  assert(sources.has(file),'Unbound release verification input: '+file);
+ }
+});
 const evidence=path.join(reader.ROOT,'.cache/capability-upgrade/batch3-author-inline-20261021/docx/qa-freeze-includes-01');
 fs.mkdirSync(evidence,{recursive:true});
 const fixture=fs.mkdtempSync(path.join(evidence,'pure-paths-')),repo=path.join(fixture,'repo');

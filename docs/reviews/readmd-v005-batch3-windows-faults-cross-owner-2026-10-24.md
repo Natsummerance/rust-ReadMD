@@ -66,8 +66,8 @@ space.rs 为空（重建未包含修复），replay 与 runid-06 双重复现。
 
 ## 本轮定向检查（全部实跑）
 
-- `CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="Z:/Natsumer/.codex/worktrees/b2bb/readmd/.cache/community-upgrade/build" cargo check --locked --offline -p readmd-kernel`：退出0（统一配方）。
-- `CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="Z:/Natsumer/.codex/worktrees/b2bb/readmd/.cache/community-upgrade/build" cargo test --locked --offline -p readmd-kernel --lib cross_process_typst_ocr_crash_releases_only_owner_slots_and_keeps_sibling_leases -- --quiet`：
+- `CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="<repository>/.cache/community-upgrade/build" cargo check --locked --offline -p readmd-kernel`：退出0（统一配方）。
+- `CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="<repository>/.cache/community-upgrade/build" cargo test --locked --offline -p readmd-kernel --lib cross_process_typst_ocr_crash_releases_only_owner_slots_and_keeps_sibling_leases -- --quiet`：
   **1通过/0失败**（其余套件按过滤排除，0.29s）。
 - `node --test tools/test/batch3-windows-faults.test.cjs`：**20通过/0失败**。
 - `python -I -B tools/test/inspect-windows-faults.test.py`：**10通过/0失败**（直接脚本方式，
@@ -102,7 +102,7 @@ space.rs 为空（重建未包含修复），replay 与 runid-06 双重复现。
   binary b73aab39d6a907a0453ebf1520cf8d0c777edf5c6349bcc080ea488ffc7a30a8（83,841,024 字节），
   boot 627ac1119a3c9c2a5375da5fe3d17e328aff95f6fac6242428ef211d10760199。
 - `node tools/test/batch3-windows-faults.cjs --candidate …/candidate-94/candidate.json
-  --python T:/programming/project/Hermes/hermes-agent/venv/Scripts/python.exe
+  --python $READMD_TEST_PYTHON
   --output .cache/capability-upgrade/batch3-faults-native-20261025-05`：退出1，
   failedStage=install pinned packages through a real HTTP owner，firstFailure=422 space_query
   （report.json 已归档 evidence/unitC/）。prepare 阶段的 HttpHost 就绪、broker 宿主 spawn、

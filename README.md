@@ -18,7 +18,7 @@
  官网地址：[https://rust.readmd.asia](https://rust.readmd.asia) ｜ 赞助支持（爱发电）：[https://ifdian.net/a/natsummerance](https://ifdian.net/a/natsummerance)
 
 > [!IMPORTANT]
-> **100% Pure Rust 原生架构版 (`rust-ReadMD`)**：本项目由全新纯 Rust 内核（`readmd-kernel`）独立驱动，彻底移除了所有历史 Python 运行时与虚拟环境依赖。体积仅约 11.8MB，冷启动毫秒级秒开，常驻内存下降 80%+。支持 Windows (WebView2 + Win32)、macOS (WKWebView + Cocoa) 与 Linux (WebKitGTK + XDG) 全平台原生运行，零外部依赖，安全纯粹。
+> **Rust 原生架构版（`rust-ReadMD`）**：阅读、编辑、保存及格式适配由 Rust 内核管理，运行软件不需要 Python 或 Office。桌面界面使用系统 WebView；重型排版、OCR 等能力采用独立、可离线导入的受管理能力包。Windows 为当前主要实测平台；其他平台的构建产物与完整原生验收分别记录，见 `release/platform-matrix.json`。
 
  [![platform](https://img.shields.io/badge/Windows%2010%2F11%20%7C%20macOS%2013%2B%20%7C%20Linux%20%7C%20UOS%20%7C%20Kylin-blue)](#正式下载矩阵-release-assets)
  [![i18n](https://img.shields.io/badge/languages-46-orange)](#全球-46-语种-i18n-全量母语化)

@@ -18,7 +18,7 @@
  Official Site: [https://rust.readmd.asia](https://rust.readmd.asia) ｜ Sponsor via Afdian: [https://ifdian.net/a/natsummerance](https://ifdian.net/a/natsummerance)
 
 > [!IMPORTANT]
-> **100% Pure Rust Native Edition (`rust-ReadMD`)**: Powered by an ultra-fast native Rust kernel (`readmd-kernel`), completely free from Python runtimes or virtual environments. Compact binary (~11.8MB), sub-50ms cold boots, and 80%+ memory reduction. Native windowing on Windows (WebView2 + Win32), Linux (WebKitGTK + XDG), and macOS (WKWebView + Cocoa).
+> **Rust Native Edition (`rust-ReadMD`)**: The Rust kernel manages reading, editing, saving and format adapters. Running ReadMD requires neither Python nor Office. Desktop windows use the system WebView; larger typesetting and OCR engines are managed capability packs that support offline import. Windows is the primary tested platform. Build artifacts and full native validation for other platforms are recorded separately in `release/platform-matrix.json`.
 
  [![platform](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20KylinOS%20%7C%20UOS-blue)](#direct-downloads-platforms-matrix-release-assets)
  [![i18n](https://img.shields.io/badge/languages-46-orange)](docs/i18n-language-reference.md)

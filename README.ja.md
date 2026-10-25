@@ -18,7 +18,7 @@
  公式サイト：[https://rust.readmd.asia](https://rust.readmd.asia) ｜ 開発支援（Afdian）：[https://ifdian.net/a/natsummerance](https://ifdian.net/a/natsummerance)
 
 > [!IMPORTANT]
-> **100% Pure Rust ネイティブ版 (`rust-ReadMD`)**：高速な新 Rust コア（`readmd-kernel`）を搭載し、従来の Python 実行環境への依存を完全排除。約 11.8MB の軽量バイナリ、50ms 未満の超高速起動、メモリ消費を 80% 以上削減。Windows、macOS、Linux で完全ネイティブ動作します。
+> **Rust ネイティブ版（`rust-ReadMD`）**：閲覧、編集、保存、形式変換を Rust コアが管理し、Python や Office のインストールは不要です。デスクトップ画面にはシステムの WebView を使用し、大規模な組版や OCR はオフラインで導入できる管理対象の機能パックとして提供します。現在の主な実機検証環境は Windows です。他のプラットフォームではビルド成果物とネイティブ動作の検証を区別して記録します。詳細は `release/platform-matrix.json` を参照してください。
 
  [![platform](https://img.shields.io/badge/Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20KylinOS%20%7C%20UOS-blue)](#プラットフォーム別ダウンロード-release-assets)
  [![i18n](https://img.shields.io/badge/languages-46-orange)](docs/i18n-language-reference.md)

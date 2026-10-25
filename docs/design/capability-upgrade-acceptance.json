@@ -22,7 +22,9 @@
     "scientificFigures": "Original data/specification; editable print profiles; vector SVG and actual Typst PDF text; Canvas explicitly raster; no universal journal certification",
     "capabilityDelivery": "Small runtime support bundled; owned tool-ReadMD immutable release catalog; contextual install and resume; informed optional setup components; only actually prepared/probed platform packs are available.",
     "batch3Priority": "2026-10-12 用户要求先保证第三批 MVP，不因深层兼容与环境缺口停住其他流程；原完整第三批验收继续保留。",
-    "completionEvidence": "可实现的流程须验证真实结果与恢复；无法等价的格式和缺少环境的项目明确报告，不以替代效果或静态存在冒充完成。"
+    "completionEvidence": "可实现的流程须验证真实结果与恢复；无法等价的格式和缺少环境的项目明确报告，不以替代效果或静态存在冒充完成。",
+    "releaseCadence": "2026-10-25 用户明确授权直接修复发布阻断并发布V0.0.5；第四批和第三批剩余深化进入V0.0.6。版本范围不等于整项验收。",
+    "releaseScope": "docs/design/v005-release-scope-2026-10-25.md"
   },
   "requirements": [
     {
@@ -13543,12 +13545,13 @@
         },
         {
           "path": "docs/reviews/readmd-v005-batch3-windows-faults-cross-owner-2026-10-24.md",
-          "sha256": "add15e88c00e620be65660d110d9a50760d37ac39f28604bc10ba8d6fae34e75",
+          "sha256": "6a3f4ac94b85a3fd3254d881ff2382ba5f975808c673e14743cd711156ec7342",
           "kind": "inspection",
           "outcome": "partial",
           "scope": "Windows fault step-2 cross-transport owner harness (candidate-94) blocked by product defect: capability_packs/space.rs capacity() fails GetDiskFreeSpaceExW 0x80070003 on the 421-char pack_root (422 space_query, runid-05/06 reproduced, full-manifest probe excluded SxS); harness, C# observer narrow extension, standalone controls (node 20, python 10, --plan, check-no-python) and the targeted Rust test verified real; matrix busy/cancel/crash-finish/recovery-uninstall stages untested.",
           "recordedAt": "2026-10-25T01:46:40.378Z",
-          "sourceDigest": "234e8f3757622f055c7ba7838be5bfc2babdc323ece705f60ad2e0fad40dcf61"
+          "sourceDigest": "234e8f3757622f055c7ba7838be5bfc2babdc323ece705f60ad2e0fad40dcf61",
+          "redaction": "2026-10-25: local development paths replaced by portable placeholders; original raw evidence unchanged"
         }
       ],
       "remaining": [
@@ -16773,7 +16776,7 @@
       ]
     }
   ],
-  "updated": "2026-10-25T01:46:40.378Z",
+  "updated": "2026-10-25",
   "platformEvidence": [
     {
       "id": "windows-x64",

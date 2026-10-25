@@ -1,8 +1,9 @@
 //! Opt-in shading and per-side borders for ordinary body paragraphs.
 //! DOCX writes native `w:pBdr`/`w:shd` inside `w:pPr`; the built-in PDF paints
 //! a fill rectangle and border bars *under* the paragraph's line boxes. Every
-//! other consumer (Typst/TeX/EPUB/HTML, reader view, HTML preview) rejects a
-//! decorated source before any resource, staging or output byte is touched.
+//! The in-app reader projects the same bounded values as local paragraph CSS.
+//! Other consumers (Typst/TeX/EPUB/HTML, HTML preview) reject a decorated source
+//! before any resource, staging or output byte is touched.
 use serde_json::Value;
 
 pub(crate) const INVALID: &str = super::INVALID;
@@ -35,6 +36,25 @@ impl Decoration {
         self.fill.is_none()
             && self.top.is_none() && self.left.is_none()
             && self.bottom.is_none() && self.right.is_none()
+    }
+    /// Reader-only paragraph box CSS. Keep the author's point values exact;
+    /// exported HTML remains a separate, unsupported decoration consumer.
+    pub(crate) fn reader_css(&self) -> serde_json::Map<String, Value> {
+        let mut css = serde_json::Map::new();
+        if let Some(fill) = &self.fill {
+            css.insert("background-color".into(), Value::String(format!("#{fill}")));
+        }
+        for (side, edge) in [("top", &self.top), ("left", &self.left), ("bottom", &self.bottom), ("right", &self.right)] {
+            if let Some(edge) = edge {
+                for (property, value) in [
+                    (format!("border-{side}-color"), format!("#{}", edge.color)),
+                    (format!("border-{side}-style"), "solid".into()),
+                    (format!("border-{side}-width"), format!("{}pt", edge.width_pt)),
+                    (format!("padding-{side}"), format!("{}pt", edge.space_pt)),
+                ] { css.insert(property, Value::String(value)); }
+            }
+        }
+        css
     }
     /// `w:pPr` fragment in CT_PPrBase order (`pBdr` precedes `shd`) with the
     /// CT_PBdr edge sequence top/left/bottom/right. `w:shd` keeps Word's
@@ -144,7 +164,7 @@ pub(crate) fn used(source: &str) -> Result<bool, &'static str> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Consumer { Docx, RustPdf, Unsupported }
+pub(crate) enum Consumer { Docx, RustPdf, Reader, Unsupported }
 
 /// Source preflight shares the md_ast the writers will consume. The context
 /// rule is the `warnings()` ordinary/container semantics: a decoration lives on
@@ -202,3 +222,7 @@ mod docx_tests;
 #[cfg(test)]
 #[path = "publication_decoration_pdf_tests.rs"]
 mod pdf_tests;
+
+#[cfg(test)]
+#[path = "publication_decoration_reader_tests.rs"]
+mod reader_tests;

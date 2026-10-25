@@ -22,6 +22,14 @@ mod paragraph_capture_tests;
 #[path = "math_word_revision_tests.rs"]
 mod revision_tests;
 
+#[path = "math_word/revisions.rs"]
+mod revisions;
+pub(crate) use revisions::{revision_not_preserved, WARN_REVISION_NOT_PRESERVED};
+
+#[cfg(test)]
+#[path = "math_word/revision_export_tests.rs"]
+mod revision_export_tests;
+
 type Result<T> = std::result::Result<T, &'static str>;
 fn word(n: &XmlNode, local: &str) -> bool { n.namespace == WORD_NS && n.local() == local }
 fn child<'a>(n: &'a XmlNode, local: &str) -> Option<&'a XmlNode> { n.children().find(|n| word(n, local)) }
@@ -164,7 +172,8 @@ fn apply(properties: &mut Properties, pr: Option<&XmlNode>, toggle: bool) -> Res
     let Some(pr) = pr else { return Ok(()); };
     // rPrChange is a review fact (author, date, the pre-revision rPr), not a
     // current format property. It never enters the merged effective copy; the
-    // author source and any untouched rPr container keep it verbatim.
+    // author source keeps it verbatim. The output copy preserves direct
+    // history separately only when its removed context is irrelevant.
     for n in pr.children().filter(|n| n.namespace == WORD_NS && n.local() != "rStyle" && n.local() != "rPrChange") {
         let mut n = n.clone(); bind_used_namespaces(&mut n);
         let key = n.local().to_string();
@@ -257,6 +266,15 @@ pub(crate) fn materialize(root: &mut XmlNode) -> Result<()> {
             let direct = child(n,"rPr").cloned();
             let mut effective = base.clone();
             let character = direct.as_ref().and_then(|r|child(r,"rStyle")).and_then(|r|attr(r,"val")).or(styles.character_default.as_deref());
+            // An inherited/style/theme cascade would also be needed to
+            // interpret the old rPr. Do not keep a dangling history record
+            // after flattening that context. Concrete direct histories in an
+            // otherwise independent run can stay byte-for-byte meaningful.
+            let independent = base.is_empty() && character.is_none() && theme.is_empty() && fonts.is_empty();
+            let revisions = direct.as_ref().into_iter().flat_map(|pr| pr.children())
+                .filter(|node| independent && word(node,"rPrChange") && revisions::independent_history(node))
+                .map(|node| { let mut node = node.clone(); bind_used_namespaces(&mut node); XmlPart::Element(node) })
+                .collect::<Vec<_>>();
             if let Some(id) = character { for style in styles.chain(id,"character")? { apply(&mut effective,child(style,"rPr"),true)?; } }
             apply(&mut effective,direct.as_ref(),false)?;
             if let Some(color)=effective.get_mut("color"){theme.resolve_run_color(color)?;}
@@ -267,7 +285,9 @@ pub(crate) fn materialize(root: &mut XmlNode) -> Result<()> {
                 // Replacing direct formatting must not reorder adjacent author
                 // extensions, comments or local math properties.
                 let at = direct_position.unwrap_or_else(||n.content.iter().position(|p|matches!(p,XmlPart::Element(c) if c.namespace==MATH_NS && matches!(c.local(),"t"|"break"))).unwrap_or(n.content.len()));
-                n.content.insert(at,XmlPart::Element(properties_node(effective)));
+                let mut properties = properties_node(effective);
+                properties.content.extend(revisions);
+                n.content.insert(at,XmlPart::Element(properties));
             } else if let Some(pr) = n.content.iter_mut().find_map(|part| match part {
                 XmlPart::Element(pr) if word(pr,"rPr") => Some(pr), _ => None,
             }) {
@@ -275,7 +295,9 @@ pub(crate) fn materialize(root: &mut XmlNode) -> Result<()> {
                 // Its catalogue is removed below, so a materialized copy must
                 // not retain that now-dangling rStyle. Keep the original empty
                 // container, comments and foreign children in this case.
-                pr.content.retain(|part|!matches!(part,XmlPart::Element(reference) if word(reference,"rStyle")));
+                pr.content.retain(|part|!matches!(part,XmlPart::Element(reference)
+                    if word(reference,"rStyle") || word(reference,"rPrChange")
+                        && !(independent && revisions::independent_history(reference))));
             }
         }
         for p in &mut n.content { if let XmlPart::Element(c)=p { if !is_context(c) { walk(c,base,styles,theme,fonts)?; } } }

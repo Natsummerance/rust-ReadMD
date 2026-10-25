@@ -13,10 +13,10 @@ const SELF='tools/test/batch3-windows-faults.cjs',ORACLE='tools/test/inspect-win
 const FILES=[SELF,SELF.replace('.cjs','.test.cjs'),ORACLE,ORACLE.replace('.py','.test.py'),
  'tools/test/batch3-semantics-stdio.cjs','tools/test/batch3-math-section-stdio.cjs','tools/test/inspect-math-section-roundtrip.py',
  'tools/test/batch3-windows-resource-wait-stdio.cjs','tools/test/inspect-windows-resource-wait.py',
- 'rust/readmd-kernel/src/capability_process.rs'];
-// The C# observer helpers live outside the candidate freeze pattern
-// (ui-tests/<file>.cjs|json only, as in every existing candidate manifest),
-// so their exact bytes are recorded into the run report instead of bound.
+ 'rust/readmd-kernel/src/capability_process.rs','rust/readmd-kernel/src/capability_packs/space.rs',
+ 'ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1'];
+// Observers are frozen with the candidate and their exact bytes are also
+// recorded in the run report for standalone inspection.
 const OBSERVER_FILES=['ui-tests/helpers/windows-worker-observer.cs','ui-tests/helpers/windows-worker-observer.ps1'];
 const PROBE_PNG='assets/engines/ocr-probe.png',PROBE_PNG_SHA256='b978c564d7f48e172d6bf3fa52f18cb81938f69348dbf531165ca68ca6150b29';
 const PACKS=[{id:'fonts',name:'readmd-fonts-2026.10.10-universal.readmd-pack',sha256:'037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69',bytes:39944763},

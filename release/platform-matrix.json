@@ -193,7 +193,21 @@
       "privacy_scan"
     ],
     "status": "pending-native-runner-evidence",
-    "release_blocked_until_complete": true
+    "release_blocked_until_complete": false,
+    "full_capability_certification_blocked_until_complete": true,
+    "scoped_release": {
+      "version": "0.0.5",
+      "scope": "docs/design/v005-release-scope-2026-10-25.md",
+      "candidate_evidence_required": true,
+      "native_evidence_not_inferred_from_build": true,
+      "deferred_version": "0.0.6",
+      "targets": [
+        "windows-x64",
+        "linux-x64",
+        "macos-x64",
+        "macos-arm64"
+      ]
+    }
   },
   "out_of_scope": [
     "Windows 7/8",

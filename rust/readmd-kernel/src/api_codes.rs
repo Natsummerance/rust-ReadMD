@@ -243,6 +243,7 @@ pub const WARN_ACADEMIC_PROJECTION: &str = "academic_style_projection_limited";
 pub const WARN_MATH_DOCUMENT_DEFAULTS: &str = "math_document_defaults_conflict";
 pub const WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED: &str = "math_paragraph_style_materialized";
 pub const WARN_MATH_RUN_STYLE_MATERIALIZED: &str = "math_run_style_materialized";
+pub const WARN_MATH_REVISION_NOT_PRESERVED: &str = "math_revision_not_preserved";
 pub const WARN_MATHML_ALIGNMENT: &str = "math_manual_alignment_fallback";
 pub const WARN_MATHML_SCRIPT_SPACING: &str = "math_script_spacing_fallback";
 pub const WARN_MATH_EQARR_INVALID_GEOMETRY: &str = "math_equation_array_invalid_geometry";
@@ -340,6 +341,7 @@ pub const WARN_CODES: &[&str] = &[
     WARN_MATH_DOCUMENT_DEFAULTS,
     WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,
     WARN_MATH_RUN_STYLE_MATERIALIZED,
+    WARN_MATH_REVISION_NOT_PRESERVED,
     WARN_MATHML_ALIGNMENT,
     WARN_MATHML_SCRIPT_SPACING,
     WARN_MATH_EQARR_INVALID_GEOMETRY,WARN_MATH_EQARR_LITERAL_ALIGNMENT,
@@ -415,7 +417,7 @@ const WARN_PREFIXES: &[(&str, &str, &str)] = &[
 pub fn warn_item(text: &str) -> Value {
     // Exact machine codes only. A lookalike suffix must not be accepted as a
     // known warning or interpolate arbitrary source into a translated message.
-    if [WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,WARN_MATH_RUN_STYLE_MATERIALIZED].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
+    if [WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,WARN_MATH_RUN_STYLE_MATERIALIZED,WARN_MATH_REVISION_NOT_PRESERVED].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
     for (prefix, code, param) in WARN_PREFIXES {
         if let Some(rest) = text.strip_prefix(prefix) {
             let mut params = serde_json::Map::new();
@@ -487,6 +489,19 @@ mod tests {
         for code in EQUATION_ARRAY_WARNINGS {
             assert!(WARN_CODES.contains(code));assert_eq!(warn_item(code)["code"],*code);
             assert_eq!(warn_item(&format!("{code}_lookalike"))["code"],WARN_OTHER);
+        }
+    }
+
+    #[test]
+    fn math_revision_loss_warning_is_structured_and_does_not_accept_source_suffixes() {
+        let code = WARN_MATH_REVISION_NOT_PRESERVED;
+        assert!(WARN_CODES.contains(&code));
+        assert_eq!(warn_item(code)["code"], code);
+        let mut body = json!({"warns": [code]});
+        attach_warn_items(&mut body);
+        assert_eq!(body["warn_items"][0]["code"], code);
+        for suffix in ["_lookalike", ": private source", "/file.docx"] {
+            assert_eq!(warn_item(&format!("{code}{suffix}"))["code"], WARN_OTHER);
         }
     }
 
