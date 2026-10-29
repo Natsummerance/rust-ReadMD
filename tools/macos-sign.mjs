@@ -1,11 +1,14 @@
-// Explicit inside-out signing. Development signatures never satisfy the
-// distribution gate. Credentials and tool diagnostics are not echoed.
+// Explicit inside-out signing. The free development mode creates an ad-hoc
+// signature; users must allow the trusted app in macOS Privacy & Security.
+// It never claims Developer ID identity or notarization. Credentials stay private.
 import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import crypto from 'node:crypto';
 
 const MACH_O = new Set([0xfeedface,0xcefaedfe,0xfeedfacf,0xcffaedfe,0xcafebabe,0xbebafeca,0xcafebabf,0xbfbafeca]);
+const digest=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 function command(program,args) {
   const result=spawnSync(program,args,{encoding:'utf8',maxBuffer:4*1024*1024});
   if(result.error||result.status!==0)throw Error(path.basename(program)+' failed (diagnostics withheld; inspect the owned artifact locally)');
@@ -63,7 +66,23 @@ export function signTarget(target,{env=process.env}={}) {
   }
   const items=inventory(target);
   if(!items.binaries.length)throw Error('No Mach-O code found');
+  // Signing changes executable bytes. Validate each managed worker's incoming
+  // manifest before signing anything, then seal the new bytes in its manifest
+  // before the outer app resource signature is generated.
+  const workers=items.binaries.filter(file=>/\/engines\/resvg\/macos-(arm64|x64)\/resvg$/.test(file)).map(file=>{
+    const manifest=path.join(path.dirname(file),'lock.json');
+    const lock=JSON.parse(fs.readFileSync(manifest,'utf8'));
+    if(lock.id!=='resvg'||lock.version!=='0.48.1'||lock.sha256!==digest(file)||lock.size!==fs.statSync(file).size)throw Error('Managed SVG worker failed integrity before signing');
+    return {file,manifest,lock};
+  });
   for(const binary of items.binaries)signOne(binary,options);
+  for(const worker of workers){
+    worker.lock.sha256=digest(worker.file);worker.lock.size=fs.statSync(worker.file).size;
+    worker.lock.codeSignatureMode=options.mode;
+    const temporary=worker.manifest+'.sign-'+crypto.randomUUID()+'.tmp';
+    try{fs.writeFileSync(temporary,JSON.stringify(worker.lock,null,2)+'\n',{flag:'wx'});fs.renameSync(temporary,worker.manifest);}
+    finally{if(fs.existsSync(temporary))fs.unlinkSync(temporary);}
+  }
   for(const bundle of items.bundles)signOne(bundle,options);
   if(target.endsWith('.app')) {
     command('/usr/bin/plutil',['-lint',path.join(target,'Contents/Info.plist')]);
