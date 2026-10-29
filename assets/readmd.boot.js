@@ -9824,8 +9824,15 @@ window.launchPresentationMode = launchPresentationMode;
 
 function resolvePath(baseDir, rel) {
   try {
-    const url = new URL(rel, 'file:///' + String(baseDir || '').replace(/\\/g, '/') + '/');
-    return decodeURIComponent(url.pathname.replace(/^\//, ''));
+    const base = String(baseDir || '').replace(/\\/g, '/');
+    if (!base) return rel;
+    const windows = /^[A-Za-z]:\//.test(base);
+    const absolute = windows ? '/' + base : base.startsWith('/') ? base : '/' + base;
+    const encoded = encodeURI(absolute).replace(/#/g, '%23').replace(/\?/g, '%3F');
+    const url = new URL(rel, 'file://' + encoded + (base.endsWith('/') ? '' : '/'));
+    const pathname = decodeURIComponent(url.pathname);
+    if (url.hostname) return '//' + url.hostname + pathname;
+    return /^\/[A-Za-z]:\//.test(pathname) ? pathname.slice(1) : pathname;
   } catch (e) {
     return rel;
   }
