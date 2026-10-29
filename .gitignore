@@ -137,3 +137,6 @@ ReadMD.exe
 /website/public/showcase/updates/
 /website/public/media/v005-ai-autocomplete.mp4
 /website/public/media/v005-ai-autocomplete.webp
+
+# Generated local collaboration tooling.
+/tools/collaboration-bundle/node_modules/

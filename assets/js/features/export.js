@@ -340,7 +340,7 @@ async function openExportModal() {
   if(await prepareExportProfile(epoch))renderExportModal();
 }
 
-function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); void discardPreparedExport(exportSnapshotCache); exportSnapshotCache=null; }
 
 function mountExportNumbering(host) {
   if(!window.ReadMDPublicationNumbering)return null;
@@ -943,20 +943,27 @@ function cancelNativeExportPreview() {
 
 const exportFigureCache=new Map();
 async function prepareExportFigures(content,options,signal) {
-  if(!/(?:`{3,}|~{3,})\s*(?:vega(?:-lite)?|mermaid|chart(?:js|\.js)?|graphviz|viz|dot|tikz|wavedrom|bitfield)\b/i.test(content))return options;
+  if(!/(?:`{3,}|~{3,})\s*(?:vega(?:-lite)?|mermaid|chart(?:js|\.js)?|graphviz|viz|dot|tikz|plantuml|puml|wavedrom|bitfield)\b/i.test(content))return options;
   const figures={...(options.figures||{})};delete figures.rendered;
   const request=await apiFetch('/api/diagram/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'fences',content,figures}),signal});
   const parsed=await request.json();if(!parsed.ok)throw new Error(apiMessage(parsed,'reader.diagramRenderFailed'));
   const snapshots=[];let bytes=0;
   for(const item of parsed.fences||[]){
-    if(!['vega','vega-lite','mermaid','chart','chartjs','chart.js','graphviz','viz','dot','tikz','wavedrom','bitfield'].includes(item.engine))continue;
+    if(!['vega','vega-lite','mermaid','chart','chartjs','chart.js','graphviz','viz','dot','tikz','plantuml','puml','wavedrom','bitfield'].includes(item.engine))continue;
     if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
     let svg=exportFigureCache.get(item.key);
     if(!svg){
       const holder=document.createElement('div');holder.style.cssText='position:fixed;left:-10000px;top:0;width:960px;pointer-events:none;visibility:hidden';document.body.append(holder);
       let canvas;
       try{
-        const rendered=await renderLocalDiagram(item.engine,item.code,holder,{...figures,export:true});
+        let rendered;
+        if (item.engine === 'plantuml' || item.engine === 'puml') {
+          const response = await apiFetch('/api/diagram/render', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'render', engine: item.engine, code: item.code, figures, allow_remote: false }), signal });
+          const data = await response.json();
+          if (!response.ok || !data.ok || typeof data.svg !== 'string') throw exportSnapshotFailure(data.error_code || 'diagram_render_failed');
+          rendered = diagramOutputMarkup(data.svg);
+        } else rendered=await renderLocalDiagram(item.engine,item.code,holder,{...figures,export:true});
         if(rendered instanceof Element)holder.replaceChildren(rendered);else holder.innerHTML=rendered;
         canvas=holder.querySelector('canvas');
         if(canvas){
@@ -1014,6 +1021,7 @@ function renderNativeExportCapabilityRequired(generation) {
 }
 function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
   const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
+  const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
   const signature = JSON.stringify(payload);
   if (nativeExportPreview.signature === signature) {
     if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
@@ -1040,9 +1048,21 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     const controller = new AbortController(); nativeExportPreview.controller = controller;
     const taskId=crypto.randomUUID();nativeExportPreview.taskId=taskId;
     try {
-      payload.options=await prepareExportFigures(content,options,controller.signal);
+      let previewPayload;
+      const legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
+      if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
+        const frozen = await prepareReviewExport(fmt, options, suggestedName, originTab, true);
+        if (!frozen || frozen.stamp.content !== window.ReadMDReview.lf(content)) throw exportSnapshotFailure('review_stale_generation');
+        await bindSnapshotRuntime(frozen);
+        await prepareSnapshotFigures(frozen);
+        await bindSnapshotRuntime(frozen);
+        previewPayload = { snapshot_id: frozen.snapshot_id, task_id: taskId };
+      } else {
+        payload.options=await prepareExportFigures(content,options,controller.signal);
+        previewPayload = {...payload, ...legacyIdentity, task_id:taskId};
+      }
       if(generation!==nativeExportPreview.generation)return;
-      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...payload,task_id:taskId}), signal: controller.signal });
+      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewPayload), signal: controller.signal });
       const data = await response.json();
       if (generation !== nativeExportPreview.generation) return;
       if (!response.ok || !data.ok) {
@@ -1061,7 +1081,12 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
       renderNativeExportPreview(presetName, options);
     } catch (error) {
       if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
-      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + error.message; mini.setAttribute('aria-busy', 'false'); }
+      const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex'}[error.code];
+      if (capability) {
+        nativeExportPreview.missingCapability = { id: capability, code: error.code }; renderNativeExportCapabilityRequired(generation); return;
+      }
+      const reason = error.code ? apiMessage({ error_code: error.code }, 'export.previewFailed') : error.message;
+      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + reason; mini.setAttribute('aria-busy', 'false'); }
       const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
       if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }
       nativeExportPreview.signature = '';
@@ -1233,7 +1258,7 @@ function updateExportLivePreview() {
   let content = currentExportContent();
   if(!exportProfileIsCurrent(content)){
     cancelNativeExportPreview();
-    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('error.transaction_conflict');target.setAttribute('aria-busy','false');}}
+    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('export.inputsChanged');target.setAttribute('aria-busy','false');}}
     return;
   }
   if(state.editing&&state.pvPublication)schedulePreview();
@@ -1776,11 +1801,147 @@ function renderExportPresetCards() {
 }
 
 
+let exportSnapshotCache = null, exportSnapshotPreparing = null, exportInFlight = null;
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex']);
+function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
+function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
+function usesExportSnapshot(fmt, tab) {
+  return SNAPSHOT_EXPORT_FORMATS.has(fmt) && (window.READMD_ENGINE === 'rust' || Boolean(window.ReadMDReview?.snapshot(tab)));
+}
+async function oversizedUntrackedExport(fmt, tab, content) {
+  if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
+  if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
+  const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
+  // This read does not create a review database. Only an explicit absence can
+  // permit the compatibility route for an oversized, untracked document.
+  const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resume', path }) });
+  const data = await response.json();
+  if (!response.ok || data.ok === false || data.error || data.error_code) throw exportSnapshotFailure(data.error_code || 'review_persistence_failed');
+  if (data.found !== false || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
+  return { source_path: path, source_identity: { tab_id: tab.id, path, edit_generation: tab.editGeneration || 0 } };
+}
+async function exportSnapshotRequest(action, payload = {}) {
+  const response = await apiFetch('/api/export/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) });
+  const data = await response.json();
+  if (!response.ok || data.ok === false || data.error_code || data.error) throw exportSnapshotFailure(data.error_code || 'export_failed');
+  return data;
+}
+async function discardPreparedExport(frozen) {
+  // Once commit has been sent, only status/reconcile may decide its outcome.
+  if (!frozen || !['prepared', 'reserved'].includes(frozen.phase)) return;
+  frozen.phase = 'discarded';
+  frozen.figuresAborter?.abort();
+  if (exportSnapshotCache === frozen) exportSnapshotCache = null;
+  try { await exportSnapshotRequest('discard', { snapshot_id: frozen.snapshot_id, call_id: exportSnapshotId() }); } catch (_) {}
+}
+async function prepareReviewExport(fmt, options, suggestedName, tab, preview = false) {
+  if (!tab || !window.ReadMDReview) throw exportSnapshotFailure('review_persistence_failed');
+  const stamp = await window.ReadMDReview.capture(tab);
+  if (!stamp) throw exportSnapshotFailure('review_persistence_failed');
+  const key = JSON.stringify([stamp.document_id, stamp.generation, stamp.review_revision, fmt, options, suggestedName]);
+  let frozen = exportSnapshotCache;
+  if (!frozen || frozen.key !== key || frozen.phase !== 'prepared') {
+    if (exportSnapshotPreparing?.key !== key) {
+      const epoch = exportOpenEpoch;
+      const work = (async () => {
+        const prepared = await exportSnapshotRequest('prepare', { doc_id: stamp.document_id, generation: stamp.generation,
+          review_revision: stamp.review_revision, format: fmt, options, suggestedName, call_id: exportSnapshotId() });
+        if (!prepared.snapshot_id || !Number.isInteger(prepared.pending_count) || !Array.isArray(prepared.pending_ids)) throw exportSnapshotFailure('review_persistence_failed');
+        const next = { ...prepared, key, tab, stamp, content: prepared.content ?? stamp.content, options: prepared.options || options,
+          phase: 'prepared', commitCallId: exportSnapshotId() };
+        if (epoch !== exportOpenEpoch) { await discardPreparedExport(next); throw exportSnapshotFailure('cancelled'); }
+        await discardPreparedExport(exportSnapshotCache);
+        exportSnapshotCache = next;
+        return next;
+      })();
+      exportSnapshotPreparing = { key, work };
+      work.finally(() => { if (exportSnapshotPreparing?.work === work) exportSnapshotPreparing = null; }).catch(() => {});
+    }
+    frozen = await exportSnapshotPreparing.work;
+  }
+  if (!preview) {
+    frozen.phase = 'reserved';
+    if (exportSnapshotCache === frozen) exportSnapshotCache = null;
+  }
+  return frozen;
+}
+async function bindSnapshotRuntime(frozen) {
+  // Preparation already owns the body and resource bytes. Installation can
+  // fill only missing runtime identities on that same prepared snapshot.
+  const runtime = await exportSnapshotRequest('runtime', { snapshot_id: frozen.snapshot_id });
+  if (runtime.runtime_ready !== true) throw exportSnapshotFailure('export_snapshot_runtime_unavailable');
+  frozen.runtime_ready = true;
+}
+function snapshotPublicationOptions(frozen, options) {
+  const projection = frozen?.engine_identity?.projection?.engine;
+  return { ...options, pdf: { ...(options.pdf || {}), engine: ['rust', 'typst'].includes(projection) ? projection : 'rust' } };
+}
+async function prepareSnapshotFigures(frozen) {
+  if (!frozen.figuresPromise) frozen.figuresPromise = (async () => {
+    // The authoritative body and file bytes already belong to the snapshot.
+    // Browser-rendered SVGs are bound once to that snapshot's exact fence keys.
+    // Cancelling a preview must not abort the same prepared SVG work after an
+    // export has reserved it. Discard owns this snapshot's resource lifetime.
+    frozen.figuresAborter = new AbortController();
+    const renderedOptions = await prepareExportFigures(frozen.content, frozen.options, frozen.figuresAborter.signal);
+    if (renderedOptions.figures?.rendered?.length) await exportSnapshotRequest('figures', {
+      snapshot_id: frozen.snapshot_id, rendered: renderedOptions.figures.rendered, call_id: exportSnapshotId() });
+    return renderedOptions;
+  })().catch(error => { frozen.figuresPromise = null; throw error; });
+  return frozen.figuresPromise;
+}
+async function viewExportChanges(tab) {
+  closeExportModal();
+  if (!tab || !state.tabs?.includes(tab)) return;
+  if (typeof getActiveTab === 'function' && getActiveTab() !== tab && typeof switchTab === 'function') await switchTab(tab.id);
+  if (typeof getActiveTab === 'function' && getActiveTab() !== tab) return;
+  if (!state.editing && typeof toggleEdit === 'function') await toggleEdit();
+  window.ReadMDReview?.navigate(1, tab);
+}
+async function confirmReviewExport(frozen) {
+  if (!frozen.pending_count) return true;
+  const choice = await askChoice(i18n.t('export.reviewTitle'), i18n.t('export.reviewDescription', { count: frozen.pending_count }), [
+    { id: 'export', label: i18n.t('export.acceptAllAndExport'), kind: 'accent' },
+    { id: 'review', label: i18n.t('export.viewChanges') },
+    { id: 'cancel', label: i18n.t('dialog.cancel') },
+  ]);
+  if (choice === 'export') { frozen.acceptPending = true; return true; }
+  await discardPreparedExport(frozen);
+  if (choice === 'review') await viewExportChanges(frozen.tab);
+  return false;
+}
+async function commitReviewExport(frozen, taskId) {
+  frozen.phase = 'committing';
+  const payload = { snapshot_id: frozen.snapshot_id, call_id: frozen.commitCallId, task_id: taskId || exportSnapshotId(), accept_pending: Boolean(frozen.acceptPending) };
+  let result;
+  try { result = await exportSnapshotRequest('commit', payload); }
+  catch (error) {
+    // The writer may already have committed despite a lost acknowledgement.
+    // Reconciliation never starts another export or broadens review consent.
+    if (!error.code) {
+      try { result = await exportSnapshotRequest('reconcile', { snapshot_id: frozen.snapshot_id, call_id: frozen.commitCallId }); } catch (_) {}
+    }
+    if (!result) return { ok: false, error_code: error.code || 'export_failed' };
+  }
+  if (result.receipt) result = result.receipt;
+  if (result.ok !== true || typeof result.path !== 'string' || !result.path) return { ok: false, error_code: result.error_code || 'export_failed' };
+  frozen.phase = 'complete';
+  if (result.ok !== false && window.ReadMDReview) {
+    if (result.review) await window.ReadMDReview.adopt(result.review, frozen.tab);
+    else if (result.finalization_pending) await window.ReadMDReview.adopt(null, frozen.tab, frozen.stamp.document_id);
+  }
+  return result;
+}
+
 /* Single flight: a double click (or Enter + click) never sends two exports. */
 function runExport() {
+  if (exportInFlight) return exportInFlight;
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
-  if (!window.ReadMDTask) return runExportOnce();
+  if (!window.ReadMDTask) {
+    exportInFlight = Promise.resolve(runExportOnce()).finally(() => { exportInFlight = null; });
+    return exportInFlight;
+  }
   if (window.ReadMDTask.isRunning('export')) return;
   cancelNativeExportPreview();
   const res = $('export-result');
@@ -1790,14 +1951,15 @@ function runExport() {
   renderExportWarns([]);
   // EPUB and the browser-only presentation preview have their own routes and
   // are not cancellable; everything through /api/export is.
-  const cancellable = state.export.fmt !== 'epub';
+  const cancellable = state.export.fmt !== 'epub' || usesExportSnapshot(state.export.fmt, typeof getActiveTab === 'function' ? getActiveTab() : null);
   const taskId = cancellable ? window.ReadMDTask.newTaskId('export') : '';
-  return window.ReadMDTask.run('export', () => runExportOnce(taskId), {
+  exportInFlight = Promise.resolve(window.ReadMDTask.run('export', () => runExportOnce(taskId), {
     trigger: ['export-run'],
     status: res,
     label: (window.i18n ? window.i18n.t('task.exporting') : '') || '',
     cancel: cancellable ? { id: taskId, button: 'export-cancel' } : null,
-  });
+  })).finally(() => { exportInFlight = null; });
+  return exportInFlight;
 }
 
 async function runExportOnce(taskId) {
@@ -1808,17 +1970,44 @@ async function runExportOnce(taskId) {
   let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
   const spacingError=window.ReadMDPublication?.lineSpacing.issue(options,fmt,options.pdf?.engine)||window.ReadMDPublication?.tracking.issue(options,fmt)||window.ReadMDPublication?.baseline.issue(options,fmt,options.pdf?.engine);if(spacingError){showToast(i18n.t(spacingError));return false;}
-  const content = currentExportContent();
-  if(!exportProfileIsCurrent(content)){showToast(i18n.t('error.transaction_conflict'));return false;}
+  let content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){showToast(i18n.t('export.inputsChanged'));return false;}
   const baseDir = state.dir || '';
   const suggestedName = currentExportName();
   const preset = ($('exp-preset') || {}).value || '__custom__';
+  const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  let frozen = null, legacyIdentity = null;
+  try {
+    legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
+    if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
+      // Flush and freeze before confirmation, capability installation, image
+      // work or the native chooser. Everything after this uses this identity.
+      frozen = await prepareReviewExport(fmt, options, suggestedName, originTab);
+      content = frozen.content;
+      options = frozen.options;
+      if (!await confirmReviewExport(frozen)) return false;
+    } else if (originTab && window.ReadMDReview) {
+      if (!await window.ReadMDReview.flush(originTab)) return false;
+      const mark = window.ReadMDReview.snapshot(originTab);
+      if (mark?.changes.some(change => change.decision === 'pending' || change.conflict || change.decision === 'conflict')) {
+        const action = await askChoice(i18n.t('export.reviewTitle'), i18n.t('export.reviewRequired'), [
+          { id: 'review', label: i18n.t('export.viewChanges'), kind: 'accent' }, { id: 'cancel', label: i18n.t('dialog.cancel') },
+        ]);
+        if (action === 'review') await viewExportChanges(originTab);
+        return false;
+      }
+    }
+  } catch (error) {
+    await discardPreparedExport(frozen);
+    showToast(apiMessage({ error_code: error.code || 'export_failed' }, 'toast.unknownError'));
+    return false;
+  }
   const engineCapability={typst:'typst',xelatex:'latex',pdflatex:'latex'}[options.pdf?.engine];
   if(fmt==='pdf'&&engineCapability){
     const epoch=exportOpenEpoch;
-    if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch)return false;
+    if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if(fmt==='pdf'&&!await ReadMDCapabilities.ensurePublication(content,options))return false;
+  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -1829,6 +2018,18 @@ async function runExportOnce(taskId) {
   };
 
   try {
+    if (frozen) {
+      await bindSnapshotRuntime(frozen);
+      options = await prepareSnapshotFigures(frozen);
+      // Rendered labels can introduce CJK glyphs absent from the diagram
+      // source. Install against the frozen SVGs, then bind missing fonts on
+      // this same snapshot before committing its output.
+      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options)) {
+        await discardPreparedExport(frozen); busy(false); return false;
+      }
+      await bindSnapshotRuntime(frozen);
+      r = await commitReviewExport(frozen, taskId);
+    } else {
     options=await prepareExportFigures(content,options);
     if (fmt === 'epub') {
       const epubOpts = options.epub || options.meta || {};
@@ -1848,12 +2049,12 @@ async function runExportOnce(taskId) {
       // Keep the backend's legacy fallback for documents without a declaration.
       const fullPayload = { ...options, epub: epubPayload };
       if (hasPy && py.export_epub) {
-        r = await py.export_epub(content, '', epubPayload, fullPayload, baseDir);
+        r = await py.export_epub(content, '', epubPayload, fullPayload, baseDir, legacyIdentity || undefined);
       } else {
         const resp = await apiFetch('/api/export/epub', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: content, meta: epubPayload, epub: epubPayload, options: fullPayload, baseDir: baseDir, confirm: true })
+          body: JSON.stringify({ content: content, meta: epubPayload, epub: epubPayload, options: fullPayload, baseDir: baseDir, confirm: true, ...legacyIdentity })
         });
         r = await resp.json();
       }
@@ -1871,6 +2072,7 @@ async function runExportOnce(taskId) {
         baseDir: baseDir,
         suggestedName: suggestedName,
         options: options,
+        ...legacyIdentity,
       };
       if (taskId) payload.task_id = taskId;
       if (hasPy && py && typeof py.export_doc === 'function') {
@@ -1884,8 +2086,10 @@ async function runExportOnce(taskId) {
         r = await resp.json();
       }
     }
+    }
   } catch (e) {
-    failedResult(e.message || _t('toast.unknownError'));
+    await discardPreparedExport(frozen);
+    failedResult(apiMessage({ error_code: e.code || 'export_failed' }, 'toast.unknownError'));
     busy(false);
     return;
   }
@@ -1906,6 +2110,8 @@ async function runExportOnce(taskId) {
   res.textContent = (_t('toast.exportedPrefix') || '') + (r.path || _t('toast.exportSuccess') || '');
   res.className = 'export-result ok';
   const warnList = warnMessages(r);
+  if (r.finalization_pending) warnList.push(_t('export.finalizationPending'));
+  else if (r.review_conflicts?.length) warnList.push(_t('review.conflict'));
   if(options.figures?.rendered){options={...options,figures:{...options.figures}};delete options.figures.rendered;}
   state.export.last = { fmt, options:rememberedOptions, preset };
   try {

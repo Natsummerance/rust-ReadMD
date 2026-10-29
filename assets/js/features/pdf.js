@@ -2,8 +2,12 @@
 /* Contextual PDF editor. The reader's toolbar stays unchanged. */
 (function () {
   const t=(key,params)=>window.i18n.t(key,params);
-  let modal,session=null,selected=null,working=false,task=null,opener=null,openedPath=null,listKind=null;
+  let modal,session=null,selected=null,working=false,closing=false,task=null,opener=null,openedPath=null,listKind=null;
   let navigation=[];
+  let imageSelectionEpoch=0;
+  let deleteConfirmation=null;
+  let taskCancellation=null;
+  const closeSavePermit=Symbol('pdf-close-save');
   const $pdf=id=>document.getElementById('pdf-'+id);
   function button(id,key,action){const b=document.createElement('button');b.id='pdf-'+id;b.type='button';b.className='tb-btn';b.dataset.i18n=key;b.textContent=t(key);b.onclick=()=>Promise.resolve(action()).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});return b;}
   function label(key,input){const el=document.createElement('label'),text=document.createElement('span');text.dataset.i18n=key;text.textContent=t(key);el.append(input,text);return el;}
@@ -20,7 +24,7 @@
     const total=document.createElement('span');total.id='pdf-pages';header.append(total,button('next','pdf.next',()=>page(1)),button('undo','editor.undo',()=>run('undo')),button('redo','editor.redo',()=>run('redo')));
     for(const[id,symbol]of[['previous','‹'],['next','›'],['undo','↶'],['redo','↷']]){const b=$pdf(id)||header.querySelector('#pdf-'+id);b.dataset.i18nTitle=b.dataset.i18n;b.dataset.i18nAria=b.dataset.i18n;delete b.dataset.i18n;b.title=b.textContent;b.setAttribute('aria-label',b.textContent);b.textContent=symbol;}
     const more=document.createElement('details');more.className='pdf-more';const summary=document.createElement('summary');summary.textContent='…';summary.dataset.i18nAria='toolbar.more';summary.dataset.i18nTitle='toolbar.more';summary.setAttribute('aria-label',t('toolbar.more'));summary.title=t('toolbar.more');more.append(summary);
-    const options=document.createElement('div');options.className='pdf-more-items';options.append(button('rotate','pdf.rotate',()=>session&&edit({kind:'rotate',page:session.page,turns:(session.rotation+1)%4})),button('delete-page','pdf.deletePage',async()=>{if(session&&await confirmAction({title:t('pdf.deletePage'),message:t('pdf.deletePageConfirm'),confirmText:t('ai.delete'),cancelText:t('common.cancel'),danger:true}))await edit({kind:'delete_page',page:session.page});}));
+    const options=document.createElement('div');options.className='pdf-more-items';options.append(button('rotate','pdf.rotate',()=>session&&edit({kind:'rotate',page:session.page,turns:(session.rotation+1)%4})),button('delete-page','pdf.deletePage',deletePage));
     const signed=document.createElement('input');signed.type='checkbox';signed.id='pdf-signatures';options.append(label('pdf.allowSignatures',signed));
     const password=document.createElement('input');password.id='pdf-password';password.type='password';password.autocomplete='off';password.dataset.i18nAria='pdf.password';password.setAttribute('aria-label',t('pdf.password'));options.append(label('pdf.password',password),button('retry','audit.retryLoad',()=>openedPath&&open(openedPath)));
     options.append(button('back','pdf.back',navigateBack),button('drafts','pdf.drafts',loadDrafts),button('history','storage.history',loadHistory));const drafts=document.createElement('div');drafts.id='pdf-drafts';options.append(drafts);more.append(options);header.append(more);
@@ -41,6 +45,7 @@
     window.ReadMDModal?.setGuard?.('pdf-modal',()=>{if(selected)select(null);else close();return false;});
   }
   function select(item){
+    imageSelectionEpoch++;
     selected=item;$pdf('context').hidden=!item;
     if(!item)return;
     $pdf('text').value=item.text||'';$pdf('text').readOnly=!!item.readonly||item.kind==='image'||item.kind==='checkbox';
@@ -122,8 +127,9 @@
     const response=await apiFetch('/api/pdf/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,task_id:task,allow_signatures:!!$pdf('signatures')?.checked})});
     const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error_code||'pdf_operation_failed');return data;
   }
-  async function run(action,extra={}){
-    if(working||!session)return false;
+  async function run(action,extra={},permit=null){
+    if(working||!session||(closing&&permit!==closeSavePermit))return false;
+    cancelDeleteConfirmation();
     const old=session,selection=selected,draft=selection?{text:$pdf('text').value,font:$pdf('font').value,overflow:$pdf('overflow').checked}:null;
     working=true;if(action!=='save')setLoading(true);
     try{
@@ -143,6 +149,17 @@
   }
   const refresh=number=>run('render',{page:number});const page=delta=>session&&refresh(Math.max(0,Math.min(session.pages-1,session.page+delta)));
   const edit=operation=>run('edit',{operation});
+  function cancelDeleteConfirmation(){if(deleteConfirmation){deleteConfirmation.abort();deleteConfirmation=null;}}
+  async function deletePage(){
+    if(!session||working||closing)return;
+    const current=session,revision=current.revision,page=current.page;
+    cancelDeleteConfirmation();const controller=new AbortController();deleteConfirmation=controller;
+    let confirmed=false;
+    try{confirmed=await confirmAction({title:t('pdf.deletePage'),message:t('pdf.deletePageConfirm'),confirmText:t('ai.delete'),cancelText:t('common.cancel'),danger:true,signal:controller.signal});}
+    finally{if(deleteConfirmation===controller)deleteConfirmation=null;}
+    if(!confirmed||controller.signal.aborted||working||closing||session!==current||current.revision!==revision||current.page!==page)return;
+    await edit({kind:'delete_page',page});
+  }
   async function apply(){
     if(!selected||working)return;
     const current=session,target=selected;
@@ -155,19 +172,35 @@
     await edit(op);
   }
   async function replaceImage(){
-    if(!selected||selected.kind!=='image')return;const target={id:selected.id,page:session.page};
+    if(!session||!selected||selected.kind!=='image'||working||closing)return;
+    const current=session,target=selected,revision=current.revision,page=current.page,object=target.id,epoch=++imageSelectionEpoch;
+    // A file picker and image decoder outlive their click. Only that exact
+    // selection may commit; a newer picker also permanently cancels this one.
+    const currentTarget=()=>session===current&&selected===target&&imageSelectionEpoch===epoch&&current.revision===revision&&current.page===page&&target.id===object&&!working&&!closing;
     const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';
-    input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{
-      const bitmap=await createImageBitmap(file);try{if(bitmap.width*bitmap.height>4000000)throw Error('pdf_limit');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);const bytes=context.getImageData(0,0,bitmap.width,bitmap.height).data;
-      let raw='';for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));await edit({kind:'image',page:target.page,object:target.id,width:bitmap.width,height:bitmap.height,rgba:btoa(raw)});
+    input.onchange=async()=>{const file=input.files?.[0];if(!file||!currentTarget())return;try{
+      const bitmap=await createImageBitmap(file);try{if(!currentTarget())return;if(bitmap.width*bitmap.height>4000000)throw Error('pdf_limit');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);const bytes=context.getImageData(0,0,bitmap.width,bitmap.height).data;
+      let raw='';for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));if(!currentTarget())return;await edit({kind:'image',page,object,width:bitmap.width,height:bitmap.height,rgba:btoa(raw)});
       }finally{bitmap.close();}
-    }catch(error){$pdf('status').textContent=t('error.'+(error.message==='pdf_limit'?'pdf_limit':'pdf_operation_failed'));}};input.click();
+    }catch(error){if(currentTarget())$pdf('status').textContent=t('error.'+(error.message==='pdf_limit'?'pdf_limit':'pdf_operation_failed'));}};input.click();
+  }
+  async function cancelWorkingTask(){
+    if(!task)return;
+    if(taskCancellation?.id===task){await taskCancellation.promise;return;}
+    const id=task,promise=apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    taskCancellation={id,promise};
+    try{await promise;}finally{if(taskCancellation?.promise===promise)taskCancellation=null;}
   }
   async function close(){
-    if(working){$pdf('status').textContent=t('task.cancelling');if(task)await apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})});return false;}
-    if(session?.dirty){const answer=await promptDirtyClose((openedPath||t('pdf.title')).split(/[\\/]/).pop());if(answer==='cancel')return false;if(answer==='save'&&!await run('save'))return false;}
-    if(session){try{await request({action:'close',session:session.session,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
-    if(modal){modal.classList.add('hidden');$pdf('password').value='';}opener?.focus?.();return true;
+    if(closing){if(working){$pdf('status').textContent=t('task.cancelling');await cancelWorkingTask();}return false;}
+    closing=true;
+    try{
+      cancelDeleteConfirmation();
+      if(working){$pdf('status').textContent=t('task.cancelling');await cancelWorkingTask();return false;}
+      if(session?.dirty){const answer=await promptDirtyClose((openedPath||t('pdf.title')).split(/[\\/]/).pop());if(answer==='cancel')return false;if(answer==='save'&&!await run('save',{},closeSavePermit))return false;}
+      if(session){try{await request({action:'close',session:session.session,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
+      if(modal){modal.classList.add('hidden');$pdf('password').value='';}opener?.focus?.();return true;
+    }finally{closing=false;}
   }
   async function open(path){
     if(!await window.ReadMDCapabilities.ensure('pdfium'))return false;
@@ -183,12 +216,12 @@
     const input=document.createElement('input');input.type='file';input.accept='.pdf';input.onchange=async()=>{const file=input.files?.[0];if(file){const path=await uploadFile(file);if(path)await open(path);}};input.click();
   }
   async function loadDrafts(){
-    if(working)return;listKind='drafts';const result=await request({action:'drafts'}),list=$pdf('drafts');list.replaceChildren();
+    if(working||closing)return;listKind='drafts';const result=await request({action:'drafts'}),list=$pdf('drafts');list.replaceChildren();
     if(!result.drafts.length){list.textContent=t('pdf.noDrafts');return;}
     for(const draft of result.drafts){const b=button('resume-'+draft.id,'pdf.drafts',async()=>{const password=$pdf('password').value;if(!await close())return;window.ReadMDModal.open(modal);working=true;setLoading(true);try{await paint(await request({action:'resume',draft:draft.id,password,width:1600}));}catch(error){$pdf('status').textContent=t('error.'+error.message);}finally{working=false;setLoading(false);}});delete b.dataset.i18n;b.textContent=draft.name+' · '+new Date(draft.created).toLocaleDateString(window.i18n.currentLang);list.append(b);}
   }
   async function loadHistory(){
-    if(working||!session)return;listKind='history';const result=await request({action:'history',path:session.path}),list=$pdf('drafts');list.replaceChildren();if(!result.history.length){list.textContent=t('storage.empty');return;}
+    if(working||closing||!session)return;listKind='history';const result=await request({action:'history',path:session.path}),list=$pdf('drafts');list.replaceChildren();if(!result.history.length){list.textContent=t('storage.empty');return;}
     const path=session.path;
     for(const entry of result.history){const date=new Date(entry.created).toLocaleString(window.i18n.currentLang),b=button('restore-'+entry.id,'storage.history',async()=>{
       if(!await confirmAction({title:t('pdf.restoreHistory'),message:t('pdf.restoreHistoryConfirm',{date}),confirmText:t('pdf.restoreHistory'),cancelText:t('common.cancel')}))return;

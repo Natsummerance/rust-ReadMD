@@ -138,12 +138,16 @@ readmd-collaboration --data-dir D:\ReadMD-Service\data --assets D:\ReadMD-Servic
 
 公网部署由 HTTPS 反向代理转发到该回环地址，保留原始 `Host`；例如 Caddy 的 `reverse_proxy 127.0.0.1:27941`。创建会话使用 `POST /sessions` 和管理 Bearer 凭证；参加者使用会话凭证，不能用参加者凭证创建会话。接口只提供会话资源，不能访问桌面文件 API。读写权限、附件和成员撤销在服务端执行。
 
+同一协作数据库只允许运行一个可写服务，重复拥有者以 `collaboration_busy` 拒绝打开。系统持有稳定的空锁文件，正常关闭或进程终止后释放租约；不要手工删除锁文件来启动第二个服务。旧版本不识别新租约，升级必须先停止旧进程，再启动新版本；当前不支持多个可写服务共用一个资料目录。限定规格与实测见[协作安全规格](v006-batch3-collaboration-safety-spec.md)。
+
 备份使用一致的 SQLite 快照，包含已经确认但尚在 WAL 中的操作，可在服务运行时执行：
 
 ```powershell
 readmd-collaboration --data-dir D:\ReadMD-Service\data --backup D:\ReadMD-Backups\before-upgrade.sqlite
 readmd-collaboration --data-dir D:\ReadMD-Service\restored --restore D:\ReadMD-Backups\before-upgrade.sqlite
 ```
+
+`--backup` 使用独立只读 SQLite 连接，不取得可写服务的租约；保持现有服务运行即可在线备份。
 
 备份和恢复都拒绝覆盖已有文件。恢复会检查完整性与数据库结构；始终恢复到新目录，确认正文、评论、附件及成员权限后再切换服务。不能仅复制正在运行的 `collaboration.sqlite` 而漏掉 WAL。备份包含正文、附件及凭证摘要，按文档资料保管。升级前生成备份，停止旧进程，再成套替换二进制与资源；回退时使用旧程序和对应的备份恢复目录，不让旧程序直接改写新结构数据库。
 

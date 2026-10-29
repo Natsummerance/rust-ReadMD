@@ -24,6 +24,53 @@ pub const PATH_NOT_FOUND: &str = "path_not_found";
 pub const OPEN_FAILED: &str = "open_failed";
 pub const PRESET_NAME_CONFLICT: &str = "preset_name_conflict";
 pub const INTERNAL_ERROR: &str = "internal_error";
+pub const REVIEW_INVALID_REQUEST: &str = "review_invalid_request";
+pub const REVIEW_NOT_FOUND: &str = "review_not_found";
+pub const REVIEW_STALE_GENERATION: &str = "review_stale_generation";
+pub const REVIEW_STALE_REVISION: &str = "review_stale_revision";
+pub const REVIEW_CALL_CONFLICT: &str = "review_call_conflict";
+pub const REVIEW_CONFLICT: &str = "review_conflict";
+pub const REVIEW_BUDGET: &str = "review_budget";
+pub const REVIEW_PERSISTENCE_FAILED: &str = "review_persistence_failed";
+pub const REVIEW_UNSUPPORTED_SCHEMA: &str = "review_unsupported_schema";
+pub const REVIEW_SAVE_IN_PROGRESS: &str = "review_save_in_progress";
+pub const REVIEW_SAVE_CONFLICT: &str = "review_save_conflict";
+pub const REVIEW_NEEDS_RECOVERY: &str = "review_needs_recovery";
+pub const REVIEW_UNDO_UNAVAILABLE: &str = "review_undo_unavailable";
+pub const REVIEW_REDO_UNAVAILABLE: &str = "review_redo_unavailable";
+pub const REVIEW_NOT_AUTHORIZED: &str = "review_not_authorized";
+pub const REVIEW_AI_UNSUPPORTED: &str = "review_ai_unsupported";
+pub const REVIEW_AI_INVALID_TOOL: &str = "review_ai_invalid_tool";
+pub const REVIEW_AI_NO_CHANGES: &str = "review_ai_no_changes";
+pub const REVIEW_AI_BUDGET: &str = "review_ai_budget";
+pub const REVIEW_ASSET_RELOCATION_REQUIRED: &str = "review_asset_relocation_required";
+pub const AI_TASK_FAILED: &str = "ai_task_failed";
+pub const EXPORT_SNAPSHOT_BUDGET: &str = "export_snapshot_budget";
+pub const EXPORT_SNAPSHOT_CALL_CONFLICT: &str = "export_snapshot_call_conflict";
+pub const EXPORT_SNAPSHOT_COMMIT_CONFLICT: &str = "export_snapshot_commit_conflict";
+pub const EXPORT_SNAPSHOT_COMMIT_IN_PROGRESS: &str = "export_snapshot_commit_in_progress";
+pub const EXPORT_SNAPSHOT_CONSENT_REQUIRED: &str = "export_snapshot_consent_required";
+pub const EXPORT_SNAPSHOT_DYNAMIC_RESOURCE: &str = "export_snapshot_dynamic_resource";
+pub const EXPORT_SNAPSHOT_FIGURES_CONFLICT: &str = "export_snapshot_figures_conflict";
+pub const EXPORT_SNAPSHOT_INVALID_REQUEST: &str = "export_snapshot_invalid_request";
+pub const EXPORT_SNAPSHOT_NO_COMMIT_INTENT: &str = "export_snapshot_no_commit_intent";
+pub const EXPORT_SNAPSHOT_NOT_FOUND: &str = "export_snapshot_not_found";
+pub const EXPORT_SNAPSHOT_OUTPUT_IS_SOURCE: &str = "export_snapshot_output_is_source";
+pub const EXPORT_SNAPSHOT_OUTPUT_UNVERIFIED: &str = "export_snapshot_output_unverified";
+pub const EXPORT_SNAPSHOT_PERSISTENCE_FAILED: &str = "export_snapshot_persistence_failed";
+pub const EXPORT_SNAPSHOT_RENDER_FAILED: &str = "export_snapshot_render_failed";
+pub const EXPORT_SNAPSHOT_RESOURCE_CHANGED: &str = "export_snapshot_resource_changed";
+pub const EXPORT_SNAPSHOT_RESOURCE_MISSING: &str = "export_snapshot_resource_missing";
+pub const EXPORT_SNAPSHOT_RESOURCE_PATH: &str = "export_snapshot_resource_path";
+pub const EXPORT_SNAPSHOT_RUNTIME_CHANGED: &str = "export_snapshot_runtime_changed";
+pub const EXPORT_SNAPSHOT_RUNTIME_UNAVAILABLE: &str = "export_snapshot_runtime_unavailable";
+pub const EXPORT_SNAPSHOT_UNAVAILABLE: &str = "export_snapshot_unavailable";
+pub const EXPORT_SNAPSHOT_UNSUPPORTED_SCHEMA: &str = "export_snapshot_unsupported_schema";
+pub const REVIEW_AI_INTERRUPTED: &str = "review_ai_interrupted";
+pub const AI_NOT_CONFIGURED: &str = "ai_not_configured";
+pub const AI_HTTP_ERROR: &str = "ai_http_error";
+pub const AI_NETWORK_ERROR: &str = "ai_network_error";
+pub const AI_INVALID_RESPONSE: &str = "ai_invalid_response";
 pub const ZIP_CORRUPT: &str = "zip_corrupt";
 pub const ZIP_TOO_LARGE: &str = "zip_too_large";
 pub const ZIP_UNSUPPORTED: &str = "zip_unsupported";
@@ -272,6 +319,14 @@ pub const ERROR_CODES: &[&str] = &[
     OCR_NO_ENGINE, ENCODING_UNREPRESENTABLE, ENCODING_UNKNOWN, DIALOG_UNAVAILABLE, PATH_NOT_FOUND,
     OPEN_FAILED, PRESET_NAME_CONFLICT, INTERNAL_ERROR, ZIP_CORRUPT, ZIP_TOO_LARGE, ZIP_UNSUPPORTED,
     CANCELLED,
+    REVIEW_INVALID_REQUEST,REVIEW_NOT_FOUND,REVIEW_STALE_GENERATION,REVIEW_STALE_REVISION,
+    REVIEW_CALL_CONFLICT,REVIEW_CONFLICT,REVIEW_BUDGET,REVIEW_PERSISTENCE_FAILED,
+    REVIEW_UNSUPPORTED_SCHEMA,REVIEW_SAVE_IN_PROGRESS,REVIEW_SAVE_CONFLICT,REVIEW_NEEDS_RECOVERY,
+    REVIEW_UNDO_UNAVAILABLE,REVIEW_REDO_UNAVAILABLE,REVIEW_NOT_AUTHORIZED,
+    REVIEW_AI_UNSUPPORTED,REVIEW_AI_INVALID_TOOL,REVIEW_AI_NO_CHANGES,REVIEW_AI_BUDGET,
+    REVIEW_ASSET_RELOCATION_REQUIRED,
+    AI_TASK_FAILED,EXPORT_SNAPSHOT_BUDGET,EXPORT_SNAPSHOT_CALL_CONFLICT,EXPORT_SNAPSHOT_COMMIT_CONFLICT,EXPORT_SNAPSHOT_COMMIT_IN_PROGRESS,EXPORT_SNAPSHOT_CONSENT_REQUIRED,EXPORT_SNAPSHOT_DYNAMIC_RESOURCE,EXPORT_SNAPSHOT_FIGURES_CONFLICT,EXPORT_SNAPSHOT_INVALID_REQUEST,EXPORT_SNAPSHOT_NO_COMMIT_INTENT,EXPORT_SNAPSHOT_NOT_FOUND,EXPORT_SNAPSHOT_OUTPUT_IS_SOURCE,EXPORT_SNAPSHOT_OUTPUT_UNVERIFIED,EXPORT_SNAPSHOT_PERSISTENCE_FAILED,EXPORT_SNAPSHOT_RENDER_FAILED,EXPORT_SNAPSHOT_RESOURCE_CHANGED,EXPORT_SNAPSHOT_RESOURCE_MISSING,EXPORT_SNAPSHOT_RESOURCE_PATH,EXPORT_SNAPSHOT_RUNTIME_CHANGED,EXPORT_SNAPSHOT_RUNTIME_UNAVAILABLE,EXPORT_SNAPSHOT_UNAVAILABLE,EXPORT_SNAPSHOT_UNSUPPORTED_SCHEMA,REVIEW_AI_INTERRUPTED,
+    AI_NOT_CONFIGURED,AI_HTTP_ERROR,AI_NETWORK_ERROR,AI_INVALID_RESPONSE,
     DOCX_CITATION_INVALID,DOCX_CITATION_CONFLICT,DOCX_CITATION_RESOURCES_INVALID,
     PUBLICATION_NUMBERING_INVALID,PUBLICATION_NUMBERING_BUDGET,PUBLICATION_NUMBERING_HIERARCHY,PUBLICATION_NUMBERING_CHAPTER_MISSING,
     DOCX_NUMBERING_INVALID,DOCX_NUMBERING_BUDGET,DOCX_NUMBERING_UNREPRESENTABLE,DOCX_NUMBERING_IMPORT_CONFLICT,

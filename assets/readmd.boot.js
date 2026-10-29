@@ -564,8 +564,10 @@ function bindPy() {
   return hasPy;
 }
 
-const LAN_TOKEN = window.LAN_TOKEN || null;
 const APP_TOKEN = document.querySelector('meta[name="readmd-app-token"]')?.content || null;
+// The local strict-mode API uses the same process token as the app gate.
+// Read the CSP-safe meta bootstrap; an explicit LAN token still takes priority.
+const LAN_TOKEN = window.LAN_TOKEN || APP_TOKEN || null;
 const IS_STARTUP_PROBE = document.querySelector('meta[name="readmd-startup-probe"]')?.content === '1' || !!window.__STARTUP_PROBE__;
 window.__STARTUP_PROBE__ = IS_STARTUP_PROBE;
 
@@ -682,6 +684,21 @@ function apiMessage(d, fallbackKey) {
     if(String(d.error_code).startsWith('diagram_')&&typeof diagramErrorKey==='function')return tr(diagramErrorKey(d.error_code))||tr(fallbackKey);
   }
   if (d.note_code) { const s = tr('note.' + d.note_code); if (s) return s; }
+  const documentOperationErrors = {
+    document_operation_busy: 'error.review_save_in_progress',
+    document_operation_missing: 'error.file_not_found',
+    document_operation_identity_changed: 'error.review_save_conflict',
+    document_operation_revision_changed: 'error.review_save_conflict',
+    document_operation_target_exists: 'convert.existsTitle',
+    rename_revision_conflict: 'error.review_save_conflict',
+    rename_unsaved_review: 'toast.renameBlockedEdit',
+    rename_recovery_pending: 'error.review_needs_recovery',
+    document_operation_unsupported: 'review.persistenceFailed',
+    document_operation_lock: 'review.persistenceFailed',
+    document_operation_storage: 'review.persistenceFailed',
+  };
+  const documentKey = documentOperationErrors[d.error_code || d.code];
+  if (documentKey) return tr(documentKey) || tr(fallbackKey);
   const svgErrors={svg_unsafe:'reader.diagramInvalidInput',svg_invalid:'reader.diagramInvalidInput',svg_budget:'reader.diagramInputTooLarge',svg_engine_unavailable:'reader.diagramDependencyMissing',svg_render_failed:'reader.diagramRenderFailed'};
   const svgKey=svgErrors[d.error_code||d.error];if(svgKey)return tr(svgKey)||tr(fallbackKey);
   // Keep export/preview failures actionable as well as inline validation.
@@ -1203,9 +1220,9 @@ document.addEventListener('keydown', event => {
 
 let activeConfirmFinish = null;
 
-function confirmAction({ title, message = '', confirmText, cancelText, danger = false } = {}) {
+function confirmAction({ title, message = '', confirmText, cancelText, danger = false, signal } = {}) {
   const modal = $('confirm-modal');
-  if (!modal) return Promise.resolve(false);
+  if (!modal || signal?.aborted) return Promise.resolve(false);
   if (activeConfirmFinish) activeConfirmFinish(false);
 
   return new Promise(resolve => {
@@ -1221,6 +1238,7 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
       cancelButton.removeEventListener('click', onCancel);
       modal.removeEventListener('keydown', onKeyDown);
       modal.removeEventListener('click', onClick);
+      signal?.removeEventListener('abort', onAbort);
       modal.classList.add('hidden');
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
       resolve(value);
@@ -1233,6 +1251,7 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
     };
     const onConfirm = () => finish(true);
     const onCancel = () => finish(false);
+    const onAbort = () => finish(false);
     const onClick = event => {
       if (event.target === modal) finish(false);
     };
@@ -1249,8 +1268,11 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
     cancelButton.addEventListener('click', onCancel);
     modal.addEventListener('keydown', onKeyDown);
     modal.addEventListener('click', onClick);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    // An abort may have been triggered while another confirmation was closed.
+    if (signal?.aborted) { finish(false); return; }
     modal.classList.remove('hidden');
-    setTimeout(() => cancelButton.focus({ preventScroll: true }), 0);
+    setTimeout(() => { if (!finished) cancelButton.focus({ preventScroll: true }); }, 0);
   });
 }
 
@@ -2005,6 +2027,8 @@ function moveTabFocus(activeTabId, key) {
 }
 
 function startTabInlineRename(tab, titleSpan, tabEl) {
+  if (tab?._renamePending) { void recoverPendingRename(tab); return; }
+  if (renameBlocked(tab)) return;
   if (tabEl.querySelector('.tab-title-input') || tabEl.querySelector('.tab-rename-wrap')) return;
   const currentTitle = tab.title || tab.name || '';
   const dot = currentTitle.lastIndexOf('.');
@@ -2061,33 +2085,182 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
 }
 
 
+function renameBlocked(tab) {
+  if (!tab) return true;
+  const t = key => window.i18n?.t(key) || key;
+  if (window.ReadMDSession?.busy?.() || tab._renameInFlight || tab._reviewRestorePending) { showToast(t('review.busy')); return true; }
+  if (tab.mode === 'file' && (tab.isDirty || (state.editing && state.activeTabId === tab.id))) {
+    showToast(t('toast.renameBlockedEdit')); return true;
+  }
+  return false;
+}
+
+function renameFailureMessage(result) {
+  const t = key => window.i18n?.t(key) || key;
+  const code = result?.error_code || result?.code || '';
+  if (/target_exists/.test(code)) return t('convert.existsTitle');
+  if (/not_found|operation_missing/.test(code)) return t('error.file_not_found');
+  if (/not_authorized/.test(code)) return t('error.review_not_authorized');
+  if (/unsaved/.test(code)) return t('toast.renameBlockedEdit');
+  if (/busy|in_progress/.test(code)) return t('error.review_save_in_progress');
+  if (/identity_changed|revision|conflict/.test(code)) return t('error.review_save_conflict');
+  return t('toast.unknownError');
+}
+
+function renameRecoveryMessage(result) {
+  const t = (key, params) => window.i18n?.t(key, params) || key;
+  const target = result?.target_path || result?.path || '';
+  const moved = result?.moved === true && target ? t('toast.renamedTo', { name: target.split(/[\\/]/).pop() }) + ' · ' : '';
+  return moved + t('error.review_needs_recovery');
+}
+
+async function finishRenameReceipt(tab, receipt) {
+  const pending = tab?._renamePending;
+  if (!pending || !receipt || receipt.operation_id !== pending.operation_id) return false;
+  if (!['committed', 'cancelled'].includes(receipt.state) || !receipt.path || !receipt.review ||
+      normalizePath(receipt.review.path || '') !== normalizePath(receipt.path) ||
+      (pending.review_session && receipt.review.document_id !== pending.review_session.document_id)) return false;
+  // A receipt by itself never grants access. Reopen the actual destination and
+  // refuse to rebind a tab if another actor changed the saved document.
+  const response = await apiFetch('/api/file?p=' + encodeURIComponent(receipt.path));
+  if (!response.ok) return false;
+  const file = await response.json();
+  if (file.revision !== pending.expected_revision || file.disk_revision !== pending.expected_disk_revision || tab.isDirty || tab._reviewRestorePending) return false;
+  if (tab.isVirtual && tab._recoveryContent === undefined) {
+    tab.original = file.original ?? file.content; tab.content = tab.fixed = file.content;
+  }
+  if (!window.ReadMDReview?.renamed(tab, receipt.review)) return false;
+  const oldPath = tab.path || pending.old_path;
+  Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
+    name: file.name, title: file.name, revision: file.revision, mtime: file.mtime || 0, encoding: file.encoding || tab.encoding });
+  if (tab.originPath && normalizePath(tab.originPath) === normalizePath(oldPath)) tab.originPath = file.path;
+  if (state.activeTabId === tab.id) {
+    state.file = file.path; state.sourceName = file.name; state.revision = file.revision; state.mtime = file.mtime || 0;
+    document.title = file.name + ' - ReadMD'; setFileTitle(file.name, true, file.path);
+  }
+  delete tab._renamePending;
+  // Do not permit another edit until the resolved path is durably recorded.
+  // Otherwise a crash after a later save would restore an obsolete receipt.
+  if (!window.ReadMDSession || !await window.ReadMDSession.flush()) {
+    tab._renamePending = pending; window.ReadMDSession?.persist(); return false;
+  }
+  window.ReadMDReview.endRename(tab); window.ReadMDAiHarness?.releaseTab(tab);
+  renderTabsBar();
+  return true;
+}
+
+async function finishAbandonedRename(tab, receipt) {
+  const pending = tab?._renamePending;
+  if (!pending || receipt?.state !== 'abandoned' || receipt.operation_id !== pending.operation_id) return false;
+  const response = await apiFetch('/api/file?p=' + encodeURIComponent(pending.old_path));
+  if (!response.ok) return false;
+  const file = await response.json();
+  if (file.revision !== pending.expected_revision || file.disk_revision !== pending.expected_disk_revision || tab.isDirty || tab._reviewRestorePending) return false;
+  if (tab.isVirtual && tab._recoveryContent === undefined) {
+    tab.original = file.original ?? file.content; tab.content = tab.fixed = file.content;
+  }
+  Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
+    name: file.name, title: file.name, revision: file.revision, mtime: file.mtime || 0, encoding: file.encoding || tab.encoding });
+  if (state.activeTabId === tab.id) {
+    state.file = file.path; state.sourceName = file.name; state.revision = file.revision; state.mtime = file.mtime || 0;
+    document.title = file.name + ' - ReadMD'; setFileTitle(file.name, true, file.path);
+  }
+  delete tab._renamePending;
+  if (!window.ReadMDSession || !await window.ReadMDSession.flush()) {
+    tab._renamePending = pending; window.ReadMDSession?.persist(); return false;
+  }
+  window.ReadMDReview?.endRename(tab); window.ReadMDAiHarness?.releaseTab(tab);
+  renderTabsBar();
+  return true;
+}
+
+async function settleUnstartedRename(pending, receipt) {
+  if ((receipt?.state === 'not_started' || receipt?.state === 'not_found') && py.rename_abandon)
+    return await py.rename_abandon(pending.operation_id);
+  return receipt;
+}
+
+async function recoverPendingRename(tab) {
+  const pending = tab?._renamePending;
+  if (!pending || tab._renameInFlight || !hasPy || !py.rename_status) return false;
+  tab._renameInFlight = true;
+  try {
+    if (window.ReadMDSession?.uncertainRename?.(pending.operation_id) && !await window.ReadMDSession.flush()) {
+      showToast(window.i18n?.t('review.persistenceFailed') || 'review.persistenceFailed'); return false;
+    }
+    let receipt = await py.rename_status(pending.operation_id);
+    if (receipt?.state === 'not_found') {
+      // If the request never reached the server, retry the very same intent
+      // only after the normal file-open flow re-establishes authorization.
+      const response = await apiFetch('/api/file?p=' + encodeURIComponent(pending.old_path));
+      const file = response.ok ? await response.json() : null;
+      if (file?.revision === pending.expected_revision && file?.disk_revision === pending.expected_disk_revision) {
+        receipt = await py.rename_file(pending.old_path, pending.new_stem, pending);
+      }
+    }
+    receipt = await settleUnstartedRename(pending, receipt);
+    if (await finishAbandonedRename(tab, receipt)) return true;
+    if (await finishRenameReceipt(tab, receipt)) return true;
+    showToast(renameRecoveryMessage(receipt));
+    return false;
+  } catch (_) {
+    showToast(window.i18n?.t('review.busy') || 'review.busy'); return false;
+  } finally { delete tab._renameInFlight; }
+}
+
 async function renameTab(tabId, newTitle) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const tab = state.tabs.find(t => t.id === tabId);
-  if (!tab || !newTitle) return;
-  if (tab.mode === 'file' && tab.path && hasPy && py.rename_file) {
+  if (!tab || !newTitle || newTitle === (tab.title || tab.name)) return;
+  if (tab.mode === 'file' && tab.path) {
+    if (!hasPy || !py.rename_file) { showToast(_t('review.persistenceFailed')); return; }
+    if (tab._renamePending) {
+      if (tab._renamePending.refactor) await window.ReadMDRefactor?.recover(tab);
+      else await recoverPendingRename(tab);
+      return;
+    }
+    if (renameBlocked(tab)) return;
+    if (state.folder && /\.(md|markdown|mdown)$/i.test(tab.path) && window.ReadMDRefactor) { await window.ReadMDRefactor.rename(tab, newTitle); return; }
+    tab._renameInFlight = true;
     busy(true);
+    let reserved = false, reviewBegun = false, sent = false;
     try {
       const ext = (tab.path.match(/\.[^\\/.]+$/) || [''])[0];
       const stem = ext && newTitle.toLowerCase().endsWith(ext.toLowerCase()) ? newTitle.slice(0, -ext.length) : newTitle;
-      const r = await py.rename_file(tab.path, stem);
-      if (r && r.ok) {
-        tab.path = r.path;
-        tab.name = r.name;
-        tab.title = r.name;
-        if (state.activeTabId === tab.id) {
-            state.file = r.path;
-            state.sourceName = r.name;
-          document.title = r.name + ' - ReadMD';
-          setFileTitle(r.name, true, r.path);
-        }
-        showToast(_t('toast.renamedTo', { name: r.name }) || ('已重命名为 ' + r.name));
-      } else {
-        showToast((_t('toast.renameFailed') || '重命名失败：') + ((r && r.error) || ''));
+      const oldPath = tab.path;
+      if (window.ReadMDAiHarness && !(reserved = await window.ReadMDAiHarness.reserveTabForRename(tab))) throw new Error('busy');
+      const review = await window.ReadMDReview?.beginRename(tab);
+      if (!review) throw new Error('busy');
+      reviewBegun = true;
+      const response = await apiFetch('/api/file?meta=1&p=' + encodeURIComponent(oldPath));
+      const file = response.ok ? await response.json() : null;
+      if (!file || file.revision !== tab.revision || !/^[0-9a-f]{64}$/.test(file.disk_revision || '') ||
+          tab.path !== oldPath || tab.isDirty || (state.editing && state.activeTabId === tab.id)) throw new Error('conflict');
+      const pending = { operation_id: 'rename-' + crypto.randomUUID(), old_path: oldPath, new_stem: stem,
+        expected_revision: file.revision, expected_disk_revision: file.disk_revision, ...(review.review_session ? { review_session: review.review_session } : {}) };
+      if (!window.ReadMDSession?.prepareRename || !await window.ReadMDSession.prepareRename(tab, pending)) throw new Error('persistence');
+      sent = true;
+      let receipt = await py.rename_file(oldPath, stem, pending);
+      if (receipt?.state === 'not_started') {
+        const failure = receipt;
+        receipt = await settleUnstartedRename(pending, receipt);
+        if (await finishAbandonedRename(tab, receipt)) { showToast(_t('toast.renameFailed') + renameFailureMessage(failure)); return; }
       }
+      if (!['committed', 'cancelled'].includes(receipt?.state) && py.rename_status) receipt = await py.rename_status(pending.operation_id);
+      if (await finishRenameReceipt(tab, receipt)) {
+        if (receipt.state === 'committed') showToast(_t('toast.renamedTo', { name: tab.name }));
+        else showToast(_t('toast.renameFailed') + renameFailureMessage(receipt));
+      } else showToast(renameRecoveryMessage(receipt));
     } catch (e) {
-      showToast((_t('toast.renameFailed') || '重命名失败：') + e.message);
+      if (!sent && !window.ReadMDSession?.uncertainRename?.(tab._renamePending?.operation_id)) delete tab._renamePending;
+      showToast(_t(e.message === 'busy' ? 'review.busy' : e.message === 'persistence' ? 'review.persistenceFailed' : 'review.conflict'));
     } finally {
+      if (!tab._renamePending) {
+        if (reviewBegun) window.ReadMDReview?.endRename(tab);
+        if (reserved) window.ReadMDAiHarness?.releaseTab(tab);
+        window.ReadMDSession?.persist();
+      }
+      delete tab._renameInFlight;
       busy(false);
     }
   } else {
@@ -2103,6 +2276,7 @@ async function renameTab(tabId, newTitle) {
 }
 
 function reorderTabs(srcId, destId, insertAfter = false) {
+  if (window.ReadMDSession?.busy?.()) return;
   const srcIdx = state.tabs.findIndex(t => t.id === srcId);
   if (srcIdx < 0) return;
   const [removed] = state.tabs.splice(srcIdx, 1);
@@ -2143,6 +2317,9 @@ function closeTabContextMenu({ restoreFocus = false } = {}) {
 async function renderActiveTab({ restoreScroll = false } = {}) {
   const nextTab = getActiveTab();
   if (!nextTab) return;
+  await window.ReadMDReview?.restore(nextTab);
+  if (getActiveTab() !== nextTab) return;
+  syncStateFromActiveTab();
   const scrollKey = normalizePath(nextTab.title || nextTab.name || nextTab.path || '');
   if (scrollKey && typeof nextTab.scrollPos === 'number') {
     state.scrollPos[scrollKey] = nextTab.scrollPos;
@@ -2178,8 +2355,10 @@ function syncActiveTabDirty() {
 }
 
 async function activateTabForSave(tabId) {
+  if (window.ReadMDSession?.busy?.()) return false;
   if (state.activeTabId !== tabId) {
     const previousTab = getActiveTab();
+    if (previousTab && window.ReadMDReview && !await window.ReadMDReview.flush(previousTab)) return false;
     if (previousTab && state.editing) {
       if (hasUnsavedEditorChanges()) {
         previousTab.content = getEditContent();
@@ -2202,11 +2381,13 @@ async function activateTabForSave(tabId) {
   }
 }
 
-async function switchTab(tabId) {
+async function switchTab(tabId, { _sessionQueued = false } = {}) {
+  if (window.ReadMDSession?.busy?.()) return;
   if (state.activeTabId === tabId) return;
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   window.invalidateDocumentLoads?.();
   const prevTab = getActiveTab();
+  if (prevTab && window.ReadMDReview && !await window.ReadMDReview.flush(prevTab)) return;
   if (prevTab) {
     if (state.editing) {
       if (hasUnsavedEditorChanges()) {
@@ -2217,6 +2398,7 @@ async function switchTab(tabId) {
           await saveEdit({ exitAfterSave: true });
           if (state.editing) return;
         } else {
+          if (window.ReadMDRecovery && !await window.ReadMDRecovery.discard(prevTab)) return;
           await window.ReadMDCollaborationShare?.detach(prevTab,true);
           exitEdit();
           prevTab.content = prevTab.original;
@@ -2238,7 +2420,7 @@ async function switchTab(tabId) {
   renderTabsBar();
   if (nextTabState?.externalChanged && nextTabState.path && !nextTabState.isDirty) {
     nextTabState.externalChanged = false;
-    await loadFile(nextTabState.path, { force: true });
+    await loadFile(nextTabState.path, { force: true, _sessionQueued });
     return;
   }
   const preferredPage = Number(nextTabState?.readerPage || 0);
@@ -2358,15 +2540,17 @@ function askChoice(title, desc, choices) {
 
 
 async function closeTab(tabId, force = false) {
+  if (window.ReadMDSession?.busy?.()) return;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
     const action = await promptDirtyClose(tab.title || tab.name);
     if (action === 'cancel') return;
-    if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(tab)) return;
     discardShared=action==='discard';
     if (action === 'save') {
       await activateTabForSave(tabId);
@@ -2376,32 +2560,50 @@ async function closeTab(tabId, force = false) {
   }
   const idx = state.tabs.findIndex(t => t.id === tabId);
   if (idx < 0) return;
-  await window.ReadMDCollaborationShare?.detach(tab,discardShared);
+  const accepted = new Map([[tab, state.editing && getActiveTab() === tab ? getEditContent() : tab.content]]);
+  if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseTab(tab)) return;
+  try {
   const focusedTabId = document.activeElement instanceof Element ? document.activeElement.dataset.tabId : null;
-  state.tabs.splice(idx, 1);
-  if (state.activeTabId === tabId) {
-    exitEdit();
-    state.activeTabId = null;
-    if (state.tabs.length > 0) {
-      const nextIdx = Math.min(idx, state.tabs.length - 1);
-      const nextTabId = state.tabs[nextIdx].id;
-      switchTab(nextTabId).then(() => focusVisibleTab(nextTabId));
-    } else {
-      state.activeTabId = null;
-      await goHome({ discardConfirmed: true });
+  let closedIndex = -1, wasActive = false;
+  const remove = () => {
+    closedIndex = state.tabs.indexOf(tab);
+    if (closedIndex < 0) return;
+    state.tabs.splice(closedIndex, 1);
+    wasActive = state.activeTabId === tabId;
+    if (wasActive) {
+      exitEdit();
+      const next = state.tabs[Math.min(closedIndex, state.tabs.length - 1)];
+      state.activeTabId = next?.id || null;
+      if (next) syncStateFromActiveTab();
+      else resetHome();
     }
+  };
+  if (window.ReadMDSession?.closeTabs) {
+    if (!await window.ReadMDSession.closeTabs([tab], remove, accepted)) return;
+  } else remove();
+  // The confirmed session no longer references this page. Until that ACK,
+  // its only draft and visible source must survive a failed close.
+  if (discardShared && window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
+  await window.ReadMDCollaborationShare?.detach(tab,discardShared);
+  if (wasActive) {
+    await renderActiveTab({ restoreScroll: true });
+    focusVisibleTab(state.activeTabId);
   }
   renderTabsBar();
   if (focusedTabId === tabId) {
     const fallbackTab = state.tabs[Math.min(idx, state.tabs.length - 1)];
     focusVisibleTab(fallbackTab ? fallbackTab.id : state.activeTabId);
   }
+  } finally { window.ReadMDAiHarness?.releaseTab(tab); }
 }
 
 async function closeOtherTabs(keepTabId) {
+  if (window.ReadMDSession?.busy?.()) return;
   const keepTab = state.tabs.find(t => t.id === keepTabId);
   if (!keepTab) return;
+  if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight))) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -2410,7 +2612,6 @@ async function closeOtherTabs(keepTabId) {
       if (t.isDirty) {
         const action = await promptDirtyClose(t.title || t.name);
         if (action === 'cancel') return;
-        if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
         if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
         await activateTabForSave(t.id);
@@ -2422,17 +2623,33 @@ async function closeOtherTabs(keepTabId) {
     }
   }
   if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
+  const pausedTabs = [];
+  try {
+  for (const tab of candidates) if (tab !== keepTab && window.ReadMDAiHarness) {
+    if (!await window.ReadMDAiHarness.pauseTab(tab)) return;
+    pausedTabs.push(tab);
+  }
+  const remove = () => {
+    state.tabs = [keepTab];
+    window.invalidateDocumentLoads?.();
+    if (state.activeTabId !== keepTabId) exitEdit();
+    state.activeTabId = keepTabId;
+    syncStateFromActiveTab();
+  };
+  if (window.ReadMDSession?.closeTabs) {
+    if (!await window.ReadMDSession.closeTabs(candidates.filter(tab => tab !== keepTab), remove, accepted)) return;
+  } else remove();
+  for (const tab of discardedShared) if (window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
   for (const tab of candidates) if (tab !== keepTab) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
-  state.tabs = [keepTab];
-  window.invalidateDocumentLoads?.();
-  if (state.activeTabId !== keepTabId) exitEdit();
-  state.activeTabId = keepTabId;
-  syncStateFromActiveTab();
   renderTabsBar();
+  } finally { for (const tab of pausedTabs) window.ReadMDAiHarness?.releaseTab(tab); }
 }
 
 async function closeAllTabs() {
+  if (window.ReadMDSession?.busy?.()) return;
+  if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -2440,7 +2657,6 @@ async function closeAllTabs() {
     if (t.isDirty) {
       const action = await promptDirtyClose(t.title || t.name);
       if (action === 'cancel') return;
-      if (action === 'discard' && window.ReadMDRecovery && !await window.ReadMDRecovery.discard(t)) return;
       if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
         await activateTabForSave(t.id);
@@ -2451,11 +2667,20 @@ async function closeAllTabs() {
     accepted.set(t, text(t));
   }
   if (state.tabs.length !== candidates.length || candidates.some(tab => !state.tabs.includes(tab)) || [...accepted].some(([tab, content]) => text(tab) !== content)) return;
+  const pausedTabs = [];
+  try {
+  for (const tab of candidates) if (window.ReadMDAiHarness) {
+    if (!await window.ReadMDAiHarness.pauseTab(tab)) return;
+    pausedTabs.push(tab);
+  }
+  const remove = () => { exitEdit(); state.tabs = []; state.activeTabId = null; resetHome(); };
+  if (window.ReadMDSession?.closeTabs) {
+    if (!await window.ReadMDSession.closeTabs(candidates, remove, accepted)) return;
+  } else remove();
+  for (const tab of discardedShared) if (window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
   for (const tab of candidates) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
-  state.tabs = [];
-  state.activeTabId = null;
-  await goHome({ discardConfirmed: true });
   renderTabsBar();
+  } finally { for (const tab of pausedTabs) window.ReadMDAiHarness?.releaseTab(tab); }
 }
 
 /* Persist the open page set, never the recent-file list. Document bodies stay
@@ -2463,6 +2688,27 @@ async function closeAllTabs() {
 (function () {
   const storageKey = 'readmd-session';
   let ready = false, timer, pending, lastSaved = '', notified = false;
+  let sessionVersion = null, eligible = false, conflicted = false, unconfirmed = null;
+  let fence = 0, closing = false;
+  const confirmedRenames = new Set();
+  function rememberRenames(value) {
+    for (const tab of Array.isArray(value?.tabs) ? value.tabs : []) if (tab?.renamePending?.operation_id) confirmedRenames.add(tab.renamePending.operation_id);
+  }
+  const idleWaiters = new Set();
+  async function whenIdle() {
+    if (closing) await new Promise(resolve => idleWaiters.add(resolve));
+    await window.ReadMDRefactor?.whenIdle?.();
+  }
+  const nativeCas = () => hasPy && window.READMD_ENGINE === 'rust';
+  const version = value => value && typeof value.epoch === 'string' && /^[a-f0-9-]{36}$/i.test(value.epoch) &&
+    typeof value.generation === 'string' && /^(0|[1-9][0-9]{0,31})$/.test(value.generation)
+    ? { epoch: value.epoch, generation: value.generation } : null;
+  const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+  function failed() {
+    if (!notified) { notified = true; showToast(window.i18n.t('storage.recoveryFailed', { error: window.i18n.t('review.persistenceFailed') })); }
+    return false;
+  }
   function bounded(value) {
     if (!value || value.version !== 1 || !Array.isArray(value.tabs) || value.tabs.length > 100) return null;
     const seen = new Set(), tabs = [];
@@ -2473,85 +2719,292 @@ async function closeAllTabs() {
       const key = text(item.key), path = text(item.path), name = text(item.name, 512);
       if (!key || seen.has(path ? normalizePath(path) : key)) continue;
       seen.add(path ? normalizePath(path) : key);
-      tabs.push({ key, path, name, dir: text(item.dir), source: text(item.source, 64), originPath: text(item.originPath),
+      const rawRename = item.renamePending;
+      let renamePending = null;
+      if (rawRename && typeof rawRename === 'object' && /^[a-zA-Z0-9_:-]{1,128}$/.test(rawRename.operation_id || '') &&
+          /^[0-9a-f]{64}$/.test(rawRename.expected_disk_revision || '') && /^[0-9a-f]{64}$/.test(rawRename.expected_revision || '') &&
+          text(rawRename.old_path) && text(rawRename.new_stem, 512) && !/[\\/]/.test(rawRename.new_stem)) {
+        if (rawRename.refactor === true && (!/^[0-9a-f]{64}$/.test(rawRename.plan_hash || '') || !text(rawRename.workspace_root))) return null;
+        const review = rawRename.review_session;
+        renamePending = { operation_id: rawRename.operation_id, old_path: rawRename.old_path, new_stem: rawRename.new_stem,
+          expected_disk_revision: rawRename.expected_disk_revision, expected_revision: rawRename.expected_revision };
+        if (rawRename.refactor === true) Object.assign(renamePending, { refactor: true, plan_hash: rawRename.plan_hash, workspace_root: rawRename.workspace_root });
+        if (review && typeof review.document_id === 'string' && review.document_id.length <= 180 &&
+            Number.isSafeInteger(review.generation) && review.generation >= 0 && Number.isSafeInteger(review.review_revision) && review.review_revision >= 0 &&
+            typeof review.call_id === 'string' && review.call_id.length <= 128) {
+          renamePending.review_session = { document_id: review.document_id, generation: review.generation,
+            review_revision: review.review_revision, call_id: review.call_id };
+        }
+      }
+      tabs.push({ key, path, name, dir: text(item.dir), source: text(item.source, 64), originPath: text(item.originPath), renamePending,
+        reviewPath: /^draft:[A-Za-z0-9_.-]{1,180}$/.test(item.reviewPath || '') ? item.reviewPath : '',
         revision: text(item.revision, 256), dirty: item.dirty === true, unsavedCreation: item.unsavedCreation === true,
         readerMode: item.readerMode === 'continuous' ? 'continuous' : 'paged',
         readerPage: number(item.readerPage), scrollPos: number(item.scrollPos) });
     }
     return { version: 1, tabs, active: text(value.active), folder: text(value.folder) };
   }
-  function snapshot() {
-    const tabs = state.tabs.map(tab => ({ key: tab.recoveryKey ||= (tab.path || 'draft:' + tab.id), path: tab.path || '',
+  function snapshot(excluded = new Set(), activeKey) {
+    // Recovery belongs to a tab/document identity, not its current pathname.
+    // A newly created file at an old renamed path must never share its drafts.
+    const tabs = state.tabs.filter(tab => !excluded.has(tab)).map(tab => ({ key: tab.recoveryKey ||= ((tab.path || tab._renamePending?.old_path ? 'file:' : 'draft:') + tab.id), path: tab.path || tab._renamePending?.old_path || '',
       name: tab.name || tab.title, dir: tab.dir, source: tab.source, originPath: tab.originPath, revision: tab.revision,
+      reviewPath: tab.reviewPath || '',
       dirty: !!tab.isDirty, unsavedCreation: !!tab.unsavedCreation, readerMode: tab.readerMode,
-      readerPage: tab.readerPage, scrollPos: tab.scrollPos }));
-    return bounded({ version: 1, tabs, active: getActiveTab()?.recoveryKey || '', folder: state.folder || '' });
+      readerPage: tab.readerPage, scrollPos: tab.scrollPos, renamePending: tab._renamePending || null }));
+    return bounded({ version: 1, tabs, active: activeKey ?? getActiveTab()?.recoveryKey ?? '', folder: state.folder || '' });
   }
   function persist() {
-    if (!ready) return;
+    if (!ready || closing) return;
     const value = snapshot();
     if (!value) return;
     const encoded = JSON.stringify(value);
     try { localStorage.setItem(storageKey, encoded); } catch (_) { /* Native settings remain authoritative. */ }
-    if (encoded === lastSaved) return;
-    pending = { value, encoded };
+    if (nativeCas() && (!eligible || conflicted)) return;
+    if (encoded === lastSaved) { pending = null; clearTimeout(timer); return; }
+    pending = { value, encoded, fence };
     clearTimeout(timer);
     timer = setTimeout(write, 120);
   }
-  function write() {
+  async function sendCas(request) {
+    const response = await apiFetch('/api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+    const result = await response.json();
+    const acknowledged = version(result?.session_version), expected = version(request.expected_session_version);
+    // A durable receipt certifies this exact request, not merely some valid
+    // session/version returned with HTTP 200. Decimal strings stay exact even
+    // beyond Number.MAX_SAFE_INTEGER; JSON object ordering is immaterial.
+    const bound = result?.protocol === 'readmd-session-cas-v1' && result.call_id === request.call_id &&
+      acknowledged && expected && acknowledged.epoch === expected.epoch &&
+      BigInt(acknowledged.generation) === BigInt(expected.generation) + 1n &&
+      JSON.stringify(canonical(result.session)) === JSON.stringify(canonical(request.session));
+    if (!response.ok || result?.ok !== true || result.persisted !== true || !bound) {
+      if (response.status === 409) conflicted = true;
+      throw new Error('session_save_failed');
+    }
+    sessionVersion = acknowledged;
+    rememberRenames(request.session);
+    lastSaved = JSON.stringify(request.session);
+    unconfirmed = null;
+    return true;
+  }
+  async function save(next, force) {
+    if (nativeCas()) {
+      if (!eligible || conflicted || !sessionVersion) return failed();
+      // An uncertain acknowledgement must settle its exact request first.
+      // A new strict CAS afterwards proves this head is still current; an old
+      // idempotent receipt alone is not a lease over another process's writes.
+      if (unconfirmed) await sendCas(unconfirmed);
+      if (!force && next.encoded === lastSaved) return true;
+      unconfirmed = { session: next.value, expected_session_version: { ...sessionVersion }, call_id: 'session-' + crypto.randomUUID() };
+      return sendCas(unconfirmed);
+    }
+    if (hasPy) {
+      const result = await py.save_settings({ session: next.value });
+      if (result === false || result?.ok === false) throw new Error('session_save_failed');
+    } else localStorage.setItem(storageKey, next.encoded);
+    lastSaved = next.encoded;
+    return true;
+  }
+  function write(force = false, explicit) {
     clearTimeout(timer);
-    if (!pending) return settingsSaveQueue;
-    const next = pending; pending = null;
-    settingsSaveQueue = settingsSaveQueue.then(async () => {
+    const next = explicit ? { value: explicit, encoded: JSON.stringify(explicit), fence } : pending;
+    pending = null;
+    if (!next) return settingsSaveQueue;
+    settingsSaveQueue = settingsSaveQueue.catch(() => false).then(async () => {
+      if (next.fence !== fence) return false;
       try {
-        if (hasPy) {
-          const result = await py.save_settings({ session: next.value });
-          if (result === false || result?.ok === false) throw new Error(result?.error || 'session_save_failed');
-        }
-        lastSaved = next.encoded;
+        return await save(next, force);
       } catch (error) {
-        if (!notified) { notified = true; showToast(window.i18n.t('storage.recoveryFailed', { error: error.message })); }
+        return failed();
       }
     });
     return settingsSaveQueue;
   }
-  async function flush() {
+  async function recoveryBarrier(allowClose = false) {
     if (!ready) await window.__readmdSessionReady;
-    await window.ReadMDRecovery?.flush();
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (await window.ReadMDRecovery?.flush() === false) return false;
     captureReaderState(getActiveTab());
-    persist();
-    await write();
+    return !closing || allowClose;
+  }
+  async function flush(allowClose = false) {
+    if (!await recoveryBarrier(allowClose)) return false;
+    const value = snapshot();
+    if (!value) return false;
+    try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
+    return (await write(true, value)) === true;
+  }
+  async function prepareRename(tab, intent) {
+    // Do not expose an intent to snapshot()/autosave while recovery is still
+    // pending. Otherwise a successful timer can publish it even when this
+    // barrier later refuses the rename before its bridge request is sent.
+    if (!await recoveryBarrier()) return false;
+    if (closing || !state.tabs.includes(tab) || tab.path !== intent.old_path || tab._renamePending || tab.isDirty ||
+        (state.editing && state.activeTabId === tab.id)) return false;
+    tab._renamePending = intent;
+    const value = snapshot();
+    try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
+    // No await separates publishing the local intent and queueing its CAS.
+    return (await write(true, value)) === true;
+  }
+  async function closeTabs(tabs, apply, accepted) {
+    if (closing || window.ReadMDRefactor?.busy?.() || tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending || tab._renameInFlight)) return false;
+    closing = true; fence++; clearTimeout(timer); pending = null;
+    const reserved = [], flags = new Map();
+    const body = document.body, inert = body?.inert;
+    try {
+      if (!await flush(true)) return false;
+      const owners = [...state.tabs];
+      for (const tab of owners) { flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
+      if (body) body.inert = true;
+      // Existing review reservations defer completed AI receipts as well as
+      // writes. A large/unseen reader without a review snapshot needs no CAS.
+      for (const tab of owners) if (window.ReadMDReview?.snapshot(tab)) {
+        if (!await window.ReadMDReview.beginRename(tab)) return false;
+        reserved.push(tab);
+      }
+      if (tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending)) return false;
+      if (accepted && [...accepted].some(([tab, text]) =>
+        (state.editing && getActiveTab() === tab ? getEditContent() : tab.content) !== text)) return false;
+      if (await window.ReadMDRecovery?.flush() === false) return false;
+      const excluded = new Set(tabs), remaining = state.tabs.filter(tab => !excluded.has(tab));
+      const active = getActiveTab();
+      const next = excluded.has(active) ? remaining[Math.min(state.tabs.indexOf(active), remaining.length - 1)] : active;
+      const value = snapshot(excluded, next?.recoveryKey || '');
+      const stamp = () => JSON.stringify({ session: snapshot(), load: documentLoadEpoch,
+        text: state.tabs.map(tab => [tab.id, tab.editGeneration || 0, state.editing && getActiveTab() === tab ? getEditContent() : tab.content]) });
+      const before = stamp();
+      if (!value || !await write(true, value)) return false;
+      if (stamp() !== before) {
+        // An external open or programmatic edit can outlive the UI fence.
+        // Retain the actual current pages and drafts, and compensate only
+        // against our acknowledged version, never a newly fetched version.
+        await window.ReadMDRecovery?.flush();
+        await write(true, snapshot());
+        return failed();
+      }
+      apply(); // No await between the verified acknowledgement and UI removal.
+      fence++;
+      try { localStorage.setItem(storageKey, JSON.stringify(snapshot())); } catch (_) {}
+      return true;
+    } catch (_) { return failed(); }
+    finally {
+      for (const tab of reserved) window.ReadMDReview.endRename(tab);
+      for (const [tab, previous] of flags) {
+        if (previous === undefined) delete tab._renameInFlight;
+        else tab._renameInFlight = previous;
+      }
+      if (body) body.inert = inert;
+      closing = false;
+      for (const resolve of idleWaiters) resolve();
+      idleWaiters.clear();
+      persist();
+    }
   }
   async function restore(initialFile) {
     const epoch = documentLoadEpoch;
     const untouched = () => epoch === documentLoadEpoch && state.tabs.length === 0 && state.mode === 'welcome';
+    let nativeRead = false, applied = false, faithful = false;
     try {
-      let stored, nativeRead = false;
-      if (hasPy) {
-        try { const settings = await py.get_settings(); stored = settings?.session; nativeRead = true; }
+      let stored;
+      if (nativeCas()) {
+        try {
+          const response = await apiFetch('/api/session');
+          const result = await response.json();
+          const current = version(result?.session_version);
+          if (response.ok && result?.ok === true && result.protocol === 'readmd-session-cas-v1' && current && Object.hasOwn(result, 'session')) {
+            stored = result.session; sessionVersion = current; nativeRead = true;
+            rememberRenames(result.session);
+          }
+        } catch (_) { /* The mirror can restore a view, never native write eligibility. */ }
+      } else if (hasPy) {
+        try { const settings = await py.get_settings(); if (settings && typeof settings === 'object' && !Array.isArray(settings)) { stored = settings.session; nativeRead = true; } }
         catch (_) { /* The same-origin mirror can recover a transient settings failure. */ }
       }
       if (!nativeRead) {
         try { stored = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (_) {}
       }
       const session = bounded(stored);
-      if (!untouched()) return;
+      faithful = stored == null || Boolean(session && session.tabs.length === stored.tabs.length &&
+        ['active', 'folder'].every(key => stored[key] === undefined || typeof stored[key] === 'string' && stored[key].length <= 32768) &&
+        new Set(session.tabs.map(tab => tab.key)).size === session.tabs.length &&
+        session.tabs.every((tab, index) => {
+          const raw = stored.tabs[index];
+          return ['key', 'path', 'name', 'dir', 'source', 'originPath', 'revision', 'reviewPath'].every(key => raw[key] === undefined ||
+            typeof raw[key] === 'string' && raw[key].length <= (key === 'name' ? 512 : key === 'source' ? 64 : key === 'revision' ? 256 : 32768)) &&
+            ['dirty', 'unsavedCreation'].every(key => raw[key] === undefined || typeof raw[key] === 'boolean') &&
+            (!raw.renamePending || JSON.stringify(canonical(tab.renamePending)) === JSON.stringify(canonical(raw.renamePending)));
+        }));
+      if (!untouched()) {
+        // A genuinely empty native snapshot grants no older descriptors to
+        // preserve. A user-opened page must not overwrite an interrupted restore.
+        applied = stored == null;
+        return;
+      }
+      if (!session?.tabs.length) applied = faithful;
       if (session?.tabs.length) {
         let drafts = new Map();
-        try { drafts = await window.ReadMDRecovery.sessionDrafts(session.tabs.map(tab => tab.key)); } catch (_) {}
+        let recoveryComplete = true;
+        try { drafts = await window.ReadMDRecovery.sessionDrafts(session.tabs.map(tab => tab.key)); }
+        catch (_) { recoveryComplete = !session.tabs.some(tab => tab.dirty || tab.unsavedCreation || tab.renamePending); }
         if (!untouched()) return;
         const restored = [];
+        // Reconcile each group before ANY member is opened. Parallel source /
+        // reference reads could otherwise drop a descriptor while rollback owns it.
+        const refactors = new Map();
+        for (const descriptor of session.tabs.filter(item => item.renamePending?.refactor)) {
+          let result;
+          do {
+            result = await window.ReadMDRefactor?.restoreDescriptor(descriptor);
+            if (result?.settled) break;
+            const retry = typeof askChoice === 'function' && await askChoice(window.i18n.t('cmd.rename'), window.i18n.t('error.review_needs_recovery'), [
+              { id: 'retry', label: window.i18n.t('reader.refresh') }, { id: 'cancel', label: window.i18n.t('common.cancel') }]);
+            if (retry !== 'retry') { eligible = false; window.ReadMDRefactor?.suspendRestore?.(); return; }
+          } while (untouched());
+          if (!untouched() || !result?.settled) { eligible = false; window.ReadMDRefactor?.suspendRestore?.(); return; }
+          refactors.set(descriptor.key, result);
+        }
         // Limit concurrent disk reads; a missing document must not block the rest.
         for (let offset = 0; offset < session.tabs.length; offset += 4) {
           const group = await Promise.all(session.tabs.slice(offset, offset + 4).map(async descriptor => {
-            let file;
-            if (descriptor.path) {
-              try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(descriptor.path)); if (response.ok) file = await response.json(); } catch (_) {}
+            let file, receipt, pending = descriptor.renamePending;
+            const open = async path => {
+              try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(path)); return response.ok ? await response.json() : null; }
+              catch (_) { return null; }
+            };
+            if (pending?.refactor) {
+              const result = refactors.get(descriptor.key);
+              if (result?.settled) { file = result.file; receipt = result.receipt; pending = null; }
+            } else if (pending && hasPy && py.rename_status) {
+              try {
+                receipt = await py.rename_status(pending.operation_id);
+                if (receipt?.state === 'not_found') {
+                  const oldFile = await open(pending.old_path);
+                  if (oldFile?.revision === pending.expected_revision && oldFile?.disk_revision === pending.expected_disk_revision)
+                    receipt = await py.rename_file(pending.old_path, pending.new_stem, pending);
+                }
+                receipt = await settleUnstartedRename(pending, receipt);
+                if (receipt?.state === 'abandoned' && receipt.operation_id === pending.operation_id) {
+                  const reopened = await open(pending.old_path);
+                  if (reopened?.revision === pending.expected_revision && reopened?.disk_revision === pending.expected_disk_revision) { file = reopened; pending = null; }
+                }
+                if (pending && receipt?.operation_id === pending.operation_id && ['committed', 'cancelled'].includes(receipt.state)) {
+                  const reopened = await open(receipt.path);
+                  const review = receipt.review;
+                  const sameReview = review?.document_id && (!pending.review_session || review.document_id === pending.review_session.document_id) &&
+                    normalizePath(review.path || '') === normalizePath(receipt.path || '') &&
+                    window.ReadMDReview?.lf(review.content) === window.ReadMDReview?.lf(reopened?.original ?? reopened?.content);
+                  if (reopened?.revision === pending.expected_revision && reopened?.disk_revision === pending.expected_disk_revision && sameReview) { file = reopened; pending = null; }
+                }
+              } catch (_) { /* Keep the pending receipt and any saved draft. */ }
+            } else if (descriptor.path) {
+              file = await open(descriptor.path);
             }
             const draft = drafts.get(descriptor.key);
-            if (!file && !draft) return null;
+            if ((descriptor.dirty || descriptor.unsavedCreation) && !draft) recoveryComplete = false;
+            if (!file && !draft && !pending) return null;
             const dirty = descriptor.dirty && !!draft;
-            const content = (!file || dirty) ? draft.content : file.content;
+            const content = (!file || dirty) ? (draft?.content ?? receipt?.review?.content ?? '') : file.content;
             return { id: 'tab_' + crypto.randomUUID(), mode: file ? 'file' : 'virtual', source: file ? 'file' : (descriptor.source || 'recovery'),
               path: file?.path || null, dir: file?.dir || draft?.entry.context?.dir || descriptor.dir,
               name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
@@ -2561,7 +3014,13 @@ async function closeAllTabs() {
               is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
               isVirtual: !file, isDirty: dirty, unsavedCreation: !file && descriptor.unsavedCreation,
               originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
-              _recoveryContent: draft?.content, webAssets: Array.isArray(draft?.entry.context?.assets) ? draft.entry.context.assets : [],
+              reviewPath: descriptor.reviewPath || (/^draft:[A-Za-z0-9_.-]{1,180}$/.test(descriptor.key) ? descriptor.key : ''),
+              _recoveryContent: draft?.content, _recoveryReview: draft?.entry.context?.review,
+              _reviewRestorePending: Boolean(window.ReadMDReview && draft),
+              _renamePending: pending || undefined,
+              _renameSettlement: descriptor.renamePending && !pending ? descriptor.renamePending : undefined,
+              _renameInFlight: Boolean(descriptor.renamePending && !pending),
+              webAssets: Array.isArray(draft?.entry.context?.assets) ? draft.entry.context.assets : [],
               externalChanged: dirty && !!file && descriptor.revision !== file.revision,
               readerMode: descriptor.readerMode, readerPage: descriptor.readerPage, scrollPos: descriptor.scrollPos,
               continuousScroll: descriptor.scrollPos };
@@ -2570,6 +3029,9 @@ async function closeAllTabs() {
           restored.push(...group.filter(Boolean));
         }
         state.tabs = restored;
+        applied = recoveryComplete;
+        if (window.ReadMDReview) for (const tab of restored) if (!tab._renamePending) await window.ReadMDReview.restore(tab);
+        if (epoch !== documentLoadEpoch) return;
         state.folder = session.folder;
         const active = restored.find(tab => tab.recoveryKey === session.active) || (session.active ? restored.at(-1) : null);
         state.activeTabId = active?.id || null;
@@ -2584,13 +3046,33 @@ async function closeAllTabs() {
         } else resetHome();
       }
       // An explicit OS/file URL open becomes active after restoring older pages.
-      if (initialFile && epoch === documentLoadEpoch) await openInitialFile(initialFile);
+      if (initialFile && epoch === documentLoadEpoch) {
+        if (window.ReadMDRefactor?.busy?.()) {
+          void window.ReadMDRefactor.whenIdle().then(() => openInitialFile(initialFile)).catch(() => failed());
+        } else await openInitialFile(initialFile);
+      }
     } finally {
       ready = true;
+      eligible = !nativeCas() || (nativeRead && applied && faithful);
+      const settled = state.tabs.filter(tab => tab._renameSettlement);
+      if (settled.length) {
+        persist();
+        const saved = await write(true, snapshot());
+        for (const tab of settled) {
+          if (saved === false) tab._renamePending = tab._renameSettlement;
+          delete tab._renameSettlement; delete tab._renameInFlight;
+        }
+        if (saved === false) persist();
+        window.ReadMDRefactor?.finishRestore?.(saved !== false);
+      }
       renderTabsBar();
     }
   }
-  window.ReadMDSession = { persist, flush, restore };
+  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
+    uncertainRename: id => Boolean(id && (confirmedRenames.has(id) ||
+      // A replay conflict cannot prove the original request was rejected: its
+      // ACK may have been lost before another window adopted this intent.
+      unconfirmed?.session?.tabs.some(tab => tab.renamePending?.operation_id === id))) };
   window.addEventListener('pagehide', () => { captureReaderState(getActiveTab()); persist(); write(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { captureReaderState(getActiveTab()); persist(); write(); } });
 })();
@@ -6219,6 +6701,9 @@ function openFileRename() {
       if (titleSpan) { startTabInlineRename(activeTab, titleSpan, tabEl); return; }
     }
   }
+  // A physical rename needs a durable tab identity and session receipt. Do
+  // not fall through to the legacy title-only path when that identity is absent.
+  if (state.file && hasPy) { showToast(_t('review.persistenceFailed')); return; }
   const title = $('file-title');
   if (!title) return;
   const current = state.file || title.textContent || '';
@@ -6256,24 +6741,7 @@ function openFileRename() {
     committed = true;
     const nextStem = input.value.trim();
     if (!nextStem || nextStem === stem) { cancelFileRename(); return; }
-    if (hasPy && py.rename_file && state.file) {
-      try {
-        const res = await py.rename_file(state.file, nextStem);
-        if (res && res.ok) {
-          state.file = res.path;
-          state.sourceName = res.name;
-          setFileTitle(res.name, true, res.path);
-          addRecent(res.path);
-          showToast(_t('toast.renamedTo', { name: res.name }) || ('已重命名为：' + res.name));
-        } else {
-          showToast((_t('toast.renameFailed') || '重命名失败：') + ((res && res.error) || (_t('toast.unknownError') || '未知错误')));
-        }
-      } catch (e) {
-        showToast((_t('toast.renameFailed') || '重命名失败：') + e.message);
-      }
-    } else {
-      setFileTitle(nextStem + ext, true, nextStem + ext);
-    }
+    setFileTitle(nextStem + ext, true, nextStem + ext);
     cancelFileRename();
   }
 
@@ -6285,14 +6753,56 @@ function openFileRename() {
 }
 
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null } = {}) {
+// A close transaction publishes the next session before it removes tabs.
+// Defer external opens and completed imports until that transition finishes;
+// simply dropping an OS open request would lose the user's action.
+async function waitForSessionTransition() {
+  const session = window.ReadMDSession;
+  while (session?.busy?.()) {
+    if (typeof session.whenIdle !== 'function') return false;
+    await session.whenIdle();
+  }
+  return true;
+}
+
+// Several OS opens or completed imports can arrive while a close is in flight.
+// Deliver them sequentially after the transaction, otherwise later document
+// epochs would cancel earlier requests when all waiters wake at once.
+let deferredSessionOperations = Promise.resolve();
+let deferredSessionOperationCount = 0;
+function deferSessionOperation(action, alreadyQueued) {
+  if (alreadyQueued) return action();
+  deferredSessionOperationCount++;
+  const task = deferredSessionOperations.then(action, action);
+  deferredSessionOperations = task.then(
+    () => { deferredSessionOperationCount--; },
+    () => { deferredSessionOperationCount--; },
+  );
+  return task;
+}
+
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  const defer = () => deferSessionOperation(async () => {
+    if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true });
+  }, _sessionQueued);
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  const renameReserved = () => state.tabs.some(tab => {
+    const pendingPath = tab._renamePending?.old_path;
+    return (tab._renameInFlight || tab._renamePending) &&
+      ((tab.path && normalizePath(tab.path) === normalizePath(path)) ||
+       (pendingPath && normalizePath(pendingPath) === normalizePath(path)));
+  });
+  if (renameReserved()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
   const existingTab = findTabByPath(path);
   const refreshRevision = existingTab?.revision;
-  const refreshAllowed = () => !backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
-    && state.activeTabId === existingTab.id && existingTab.path === path && !state.editing && !existingTab.isDirty && existingTab.revision === refreshRevision);
+  const refreshAllowed = () => !renameReserved() && (!existingTab || (state.tabs.includes(existingTab)
+    && normalizePath(existingTab.path || '') === normalizePath(path))) && (!backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
+    && state.activeTabId === existingTab.id && existingTab.path === path && !state.editing && !existingTab.isDirty && existingTab.revision === refreshRevision));
   if (!refreshAllowed()) return;
   const activeEditing = !!(existingTab && state.activeTabId === existingTab.id && state.editing);
   const activeDirty = activeEditing && hasUnsavedEditorChanges();
@@ -6305,9 +6815,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
   // a stale CodeMirror instance.
   if (activeEditing) exitEdit();
   if (existingTab && !force && state.activeTabId !== existingTab.id) {
-    await switchTab(existingTab.id);
+    // If switchTab refreshes an externally changed target, its nested load is
+    // part of this same queued action and must not wait behind itself.
+    await switchTab(existingTab.id, { _sessionQueued });
+    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
     if (state.activeTabId !== existingTab.id) return;
   }
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   // Opening an already-open clean path is an explicit refresh request.  Start
   // the load only after tab switching, because switching invalidates older
   // document epochs by design.
@@ -6322,8 +6836,24 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       return;
     }
     const d = await r.json();
+    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) {
+      setProgress(0);
+      return defer();
+    }
     if (!isDocumentLoadCurrent(loadEpoch)) return;
     if (!refreshAllowed()) { setProgress(0); return; }
+    if (d.conversion_error) {
+      showToast(_t('toast.convertFailed'));
+      setProgress(0);
+      return;
+    }
+    // The extracted Markdown is an unsaved document, not the source binary.
+    // Its staged images are committed by the normal explicit Save As flow.
+    if (d.converted) {
+      await renderVirtual('convert', d.name, d.dir, d.content, d.fixes,
+        { assets: d.assets, originPath: d.path }, _sessionQueued);
+      return;
+    }
     const isBrowserCopy = force && browserCopy === null
       ? (existingTab ? existingTab.browserCopy === true : false)
       : browserCopy === true;
@@ -6358,14 +6888,16 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
       Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
+      await window.ReadMDReview?.restore(existingTab);
+      if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (wasActive) syncStateFromActiveTab();
       if (!wasActive) existingTab.scrollPos = previousScroll;
 
       if (wasActive) {
-        await prepareDocCitations(d.path, d.content);
+        await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         setFixes(d.fixes || [], d.stats || {});
-        await renderContent(d.content, d.name);
+        await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
           renderPage(previousPage, null, true);
@@ -6388,11 +6920,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       };
       state.tabs.push(newTab);
       state.activeTabId = newTab.id;
+      await window.ReadMDReview?.restore(newTab);
+      if (!isDocumentLoadCurrent(loadEpoch)) return;
       syncStateFromActiveTab();
-      await prepareDocCitations(d.path, d.content);
+      await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       setFixes(d.fixes || [], d.stats || {});
-      await renderContent(d.content, d.name);
+      await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
         showToast(_t('toast.openedPages', { name: d.name, count: state.pagination.totalPages }), 4000);
@@ -9402,9 +9936,15 @@ function openPath(p) {
 
 /* ---------------- 虚拟文档（转换/网页/OCR） ---------------- */
 
-async function renderVirtual(source, name, dir, content, fixes, extras) {
+async function renderVirtual(source, name, dir, content, fixes, extras, _sessionQueued = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const defer = () => deferSessionOperation(async () => {
+    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
+    return renderVirtual(source, name, dir, content, fixes, extras, true);
+  }, _sessionQueued);
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();
@@ -10102,6 +10642,10 @@ function applyPvUi() {
 
 async function toggleEdit() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  if (typeof getActiveTab === 'function' && (getActiveTab()?._renamePending || getActiveTab()?._renameInFlight)) {
+    showToast(_t('review.busy'));
+    return;
+  }
   if (state.editing) {
     if (!await confirmExitEdit()) return;
     applyPvUi();
@@ -10153,12 +10697,18 @@ async function toggleEdit() {
   }
   applyPvUi();
   syncSearchMode();
+  if (window.ReadMDReview) {
+    if (!cmMounted) ReadMDReview.mount(null, activeTab, editorContent);
+    await ReadMDReview.ensure(activeTab, editorContent);
+    if (epoch !== editorOpenEpoch || !state.editing || state.activeTabId !== tabId) return;
+  }
   if(window.ReadMDInlineMath)await ReadMDInlineMath.restore();
   if (epoch === editorOpenEpoch && state.activeTabId === tabId) measureEditorLayout();
 }
 
 async function confirmExitEdit() {
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
+  if(window.ReadMDReview&&!await ReadMDReview.flush())return false;
   if (!hasUnsavedEditorChanges()) {
     exitEdit();
     return true;
@@ -10222,10 +10772,11 @@ function exitEdit() {
 
 function documentSaveSnapshot(contentOverride = null) {
   const tab = getActiveTab();
+  const recoveryKey = tab ? (tab.recoveryKey ||= ((tab.path ? 'file:' : 'draft:') + tab.id)) : '';
   return { tab, id: tab?.id, started: Date.now(), path: tab?.path || state.file, content: contentOverride ?? (state.editing ? getEditContent() : (tab?.content ?? state.fixed ?? state.original ?? '')),
     original: tab?.original ?? state.original ?? '', name: tab?.name || state.sourceName || 'document.md',
     encoding: tab?.encoding || state.encoding || 'utf-8', mtime: tab?.mtime || state.mtime || null,
-    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey: tab?.recoveryKey || tab?.path || ('draft:' + tab?.id) };
+    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey };
 }
 
 async function commitDocumentSave(snapshot, path, result, options = {}) {
@@ -10234,6 +10785,10 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
   const active = getActiveTab() === tab;
   let draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
   const unchanged = draft === snapshot.content;
+  if (result.review && window.ReadMDReview) {
+    ReadMDReview.saved(tab, result.review, snapshot.content, result.save_edits || result.asset_edits, result.review_edit_steps);
+    draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
+  }
   const savedContent = typeof result.saved_content === 'string' ? result.saved_content : snapshot.content;
   if (unchanged && savedContent !== draft) {
     draft = savedContent;
@@ -10270,7 +10825,7 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
         // documented composition event coalesces across asynchronous save I/O;
         // addToHistory:false would leave replaced paths behind during undo.
         cmView.dispatch({ changes: localized ? editorEdits : { from: 0, to: cmView.state.doc.length, insert: draft },
-          annotations: CM.Transaction.userEvent.of(localized ? 'input.type.compose' : 'save') });
+          annotations: result.review ? [CM.Transaction.userEvent.of('review.remote'), CM.Transaction.addToHistory.of(false)] : CM.Transaction.userEvent.of(localized ? 'input.type.compose' : 'save') });
       }
       else $('edit-area').value = draft;
     }
@@ -10315,13 +10870,22 @@ async function saveEdit(options = {}) {
 }
 
 async function saveEditOnce(options = {}) {
+  const tab = getActiveTab();
+  const reviewSession = window.ReadMDReview ? await ReadMDReview.prepareSave(tab) : null;
+  if (reviewSession === false) return false;
+  if (getActiveTab() !== tab || !state.editing) { window.ReadMDReview?.finishSave(tab); return false; }
   const snapshot = documentSaveSnapshot();
-  if (!snapshot.path) return saveAsSnapshot(snapshot, options);
+  snapshot.review_session = reviewSession; snapshot.reviewPrepared = true;
+  if (!snapshot.path) {
+    try { return await saveAsSnapshot(snapshot, options); }
+    finally { window.ReadMDReview?.finishSave(tab); }
+  }
   const write = async () => {
     // Use one acknowledgement shape for native and browser editing. The API is the Rust writer in both.
     const response = await apiFetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding,
-        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null, assets: snapshot.assets }) });
+        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null, assets: snapshot.assets,
+        review_session: snapshot.review_session || undefined }) });
     const result = await response.json();
     if (!response.ok && !result.conflict && result.error_code !== 'encoding_unrepresentable') throw new Error(result.error || 'HTTP ' + response.status);
     return result;
@@ -10333,11 +10897,11 @@ async function saveEditOnce(options = {}) {
         confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) return false;
       snapshot.encoding = 'utf-8'; result = await write();
     }
-    if (result.ok === true) return commitDocumentSave(snapshot, snapshot.path, result, options);
+    if (result.ok === true) return await commitDocumentSave(snapshot, snapshot.path, result, options);
     if (result.conflict) {
       if (getActiveTab() !== snapshot.tab) { showToast(window.i18n.t('storage.conflictBackground')); return false; }
       const action = await promptSaveConflict();
-      if (action === 'save-as') return saveAsSnapshot(snapshot, options);
+      if (action === 'save-as') return await saveAsSnapshot(snapshot, options);
       if (action === 'reload' && getActiveTab() === snapshot.tab) {
         // Preserve the draft before an explicit destructive reload.
         const view = cmView, latest = getEditContent();
@@ -10349,6 +10913,7 @@ async function saveEditOnce(options = {}) {
     }
     throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
   } catch (error) { showToast(window.i18n.t('toast.saveFailed') + error.message); return false; }
+  finally { window.ReadMDReview?.finishSave(tab); }
 }
 
 function promptSaveConflict() {
@@ -10405,6 +10970,11 @@ async function saveAs(contentOverride = null) {
 }
 
 async function saveAsSnapshot(snapshot, options = {}) {
+  if (!snapshot.reviewPrepared && window.ReadMDReview) {
+    const reviewSession = await ReadMDReview.prepareSave(snapshot.tab, snapshot.content);
+    if (reviewSession === false) return false;
+    snapshot.review_session = reviewSession; snapshot.reviewPrepared = true;
+  }
   const suggested = String(snapshot.name || 'document.md').replace(/[\\/]/g, '_');
   if (!hasPy) {
     const blob = new Blob([snapshot.content], { type: 'text/markdown;charset=utf-8' });
@@ -10413,12 +10983,14 @@ async function saveAsSnapshot(snapshot, options = {}) {
     await window.ReadMDRecovery?.flush();
     showToast(window.i18n.t('storage.downloadDraft'));
     // A download request is not proof that a file was written. Keep the dirty document and its recovery copy.
+    window.ReadMDReview?.finishSave(snapshot.tab);
     return !options.exitAfterSave;
   }
   try {
     const outcome = await py.save_as(snapshot.content, suggested, snapshot.assets, { result: true,
       dir: snapshot.tab?.dir || '', base_dir: snapshot.tab?.dir || '', encoding: snapshot.path ? snapshot.encoding : 'utf-8',
-      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path) });
+      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path),
+      review_session: snapshot.review_session || undefined });
     if (!outcome || outcome.canceled) return false;
     const result = typeof outcome === 'string' ? { ok: true, path: outcome } : outcome;
     if (result.ok !== true || !result.path) throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
@@ -10434,13 +11006,13 @@ async function saveAsSnapshot(snapshot, options = {}) {
     if (error.details?.error_code === 'encoding_unrepresentable' && snapshot.encoding !== 'utf-8') {
       if (await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: error.details.char || '' }),
         confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) {
-        snapshot.encoding = 'utf-8'; return saveAsSnapshot(snapshot, options);
+        snapshot.encoding = 'utf-8'; return await saveAsSnapshot(snapshot, options);
       }
       return false;
     }
     const message = error.message === 'target_open_in_another_tab' ? window.i18n.t('storage.targetOpen') : error.message;
     showToast(window.i18n.t('toast.saveFailed') + message); return false;
-  }
+  } finally { window.ReadMDReview?.finishSave(snapshot.tab); }
 }
 
 // Older callers use this name. AI copies now use the same explicit Save As workflow as any unsaved document.
@@ -12373,6 +12945,867 @@ window.ReadMDPublicationInlineText = (() => {
 
 ;
 'use strict';
+/* Durable review is owned by Rust. This adapter only orders editor operations
+   and projects acknowledged ranges into the current, possibly newer, draft. */
+window.ReadMDReview = (() => {
+  const records = new WeakMap(), views = new WeakMap(), effects = new WeakMap(), restores = new WeakMap();
+  const MAX_BYTES = 4 * 1024 * 1024;
+  let serial = 0;
+  const lf = text => String(text ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const activeTab = () => typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const activeView = () => window.cmView || null;
+  const callId = () => 'review-' + (window.crypto?.randomUUID?.() || (Date.now().toString(36) + '-' + (++serial).toString(36)));
+  const t = key => window.i18n?.t(key) || key;
+  function failure(code, message) { const error = new Error(message || code); error.code = code; return error; }
+  function message(error) {
+    const code = error?.code || '';
+    const key='error.'+code, localized=t(key);
+    if (code && localized !== key) return localized;
+    if (code === 'cancelled') return t('ai.stopped');
+    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
+  }
+  function notifyError(error) { if (typeof showToast === 'function') showToast(message(error), 6000); }
+  function source(tab) {
+    if (tab === activeTab() && typeof state !== 'undefined' && state.editing) {
+      const view = activeView();
+      if (view && views.get(view)?.tab === tab) return view.state.doc.toString();
+      const area = document.getElementById('edit-area');
+      if (area && !view) return lf(area.value);
+    }
+    return lf(tab?.isDirty ? tab.content : (tab?.original ?? tab?.content ?? ''));
+  }
+  function persistedText(tab, text) {
+    const original = tab.original || '';
+    if (original.includes('\r\n') && !/(^|[^\r])\n/.test(original)) return text.replace(/\n/g, '\r\n');
+    if (original.includes('\r') && !original.includes('\n')) return text.replace(/\n/g, '\r');
+    return text;
+  }
+  function record(tab, initial) {
+    if (!tab) return null;
+    let rec = records.get(tab);
+    if (!rec) {
+      const text = lf(initial ?? source(tab));
+      const identity = tab.path || tab.reviewPath || ('draft:' + tab.id);
+      if (!tab.path) tab.reviewPath = identity;
+      rec = { tab, path: identity, local: text, base: text, snapshot: null,
+        queue: [], processing: null, opening: null, error: null, view: null, saving: false, renameEpoch: 0,
+        recoveryDraft: typeof tab._recoveryContent === 'string' ? { content: tab._recoveryContent, review: tab._recoveryReview } : null,
+        unsupported: new TextEncoder().encode(text).byteLength > MAX_BYTES };
+      records.set(tab, rec);
+    }
+    return rec;
+  }
+  async function request(url, body) {
+    const response = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false || data.error) throw failure(data.error_code || data.code || 'review_persistence_failed', data.error || ('HTTP ' + response.status));
+    const snapshot = data.snapshot || data.review || data;
+    if (!snapshot.document_id || typeof snapshot.content !== 'string' || !Number.isInteger(snapshot.generation) || !Number.isInteger(snapshot.review_revision) || !Array.isArray(snapshot.changes)) throw failure('review_persistence_failed');
+    if (lf(snapshot.content) !== snapshot.content) throw failure('review_persistence_failed');
+    return snapshot;
+  }
+  function apply(text, edits) {
+    let cursor = 0, result = '';
+    for (const edit of edits) {
+      if (!Number.isInteger(edit.from) || !Number.isInteger(edit.to) || edit.from < cursor || edit.to < edit.from || edit.to > text.length || typeof edit.insert !== 'string') throw failure('review_conflict');
+      result += text.slice(cursor, edit.from) + edit.insert; cursor = edit.to;
+    }
+    return result + text.slice(cursor);
+  }
+  // A boundary diff never searches/rebinds source text. Expand surrogate
+  // boundaries so the Rust UTF-16 validator receives complete characters.
+  function diff(before, after) {
+    if (before === after) return [];
+    let from = 0, to = before.length, end = after.length;
+    while (from < to && from < end && before.charCodeAt(from) === after.charCodeAt(from)) from++;
+    while (to > from && end > from && before.charCodeAt(to - 1) === after.charCodeAt(end - 1)) { to--; end--; }
+    if (from > 0 && /[\uDC00-\uDFFF]/.test(before[from] || after[from] || '')) from--;
+    if (to < before.length && /[\uDC00-\uDFFF]/.test(before[to])) { to++; end++; }
+    return [{ from, to, insert: after.slice(from, end) }];
+  }
+  function documentEdits(before, candidate) {
+    before = lf(before); candidate = lf(candidate);
+    const boundary = diff(before, candidate);
+    if (!boundary.length) return [];
+    const part = boundary[0], a = before.slice(part.from, part.to).match(/[^\n]*\n|[^\n]+$/g) || [], b = part.insert.match(/[^\n]*\n|[^\n]+$/g) || [];
+    if ((a.length + 1) * (b.length + 1) > 262144) throw failure('review_budget');
+    const width = b.length + 1, scores = new Uint32Array((a.length + 1) * width);
+    for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) scores[i * width + j] = a[i] === b[j] ? 1 + scores[(i + 1) * width + j + 1] : Math.max(scores[(i + 1) * width + j], scores[i * width + j + 1]);
+    let i = 0, j = 0, position = part.from, pending = null;
+    const edits = [], commit = () => { if (pending) { edits.push(pending); pending = null; } };
+    while (i < a.length || j < b.length) {
+      if (i < a.length && j < b.length && a[i] === b[j]) { commit(); position += a[i++].length; j++; continue; }
+      if (!pending) pending = { from: position, to: position, insert: '' };
+      if (j < b.length && (i === a.length || scores[i * width + j + 1] >= scores[(i + 1) * width + j])) pending.insert += b[j++];
+      else { position += a[i++].length; pending.to = position; }
+    }
+    commit();
+    if (edits.length > 4096 || apply(lf(before), edits) !== lf(candidate)) throw failure('review_conflict');
+    return edits;
+  }
+  function mapPosition(position, edits, assoc = 1) {
+    let delta = 0;
+    for (const edit of edits) {
+      if (position < edit.from) break;
+      if (edit.from === edit.to && position === edit.from) return position + delta + (assoc > 0 ? edit.insert.length : 0);
+      if (position >= edit.to) { delta += edit.insert.length - (edit.to - edit.from); continue; }
+      return edit.from + delta + (position === edit.from ? 0 : assoc > 0 ? edit.insert.length : 0);
+    }
+    return position + delta;
+  }
+  function documentTransaction(rec, before, after, edits, origin) {
+    if (before === after || typeof window.dispatchEvent !== 'function') return;
+    // Consumers receive only immutable source coordinates. They cannot change
+    // the FIFO queue or bind a selection to an equal string elsewhere.
+    const changes = Object.freeze(edits.map(edit => Object.freeze({ from: edit.from, to: edit.to, insert: edit.insert })));
+    const detail = Object.freeze({ tabId: rec.tab.id, before, after, edits: changes, origin,
+      mapPosition: (position, assoc = 1) => mapPosition(position, changes, assoc) });
+    window.dispatchEvent(new CustomEvent('readmd:document-transaction', { detail }));
+  }
+  function overlaps(a, b) {
+    if (a.from === a.to) return b.from < a.from && a.from < b.to;
+    if (b.from === b.to) return a.from < b.from && b.from < a.to;
+    return Math.max(a.from, b.from) < Math.min(a.to, b.to);
+  }
+  function mappedEdits(edits, through, remote = false) {
+    return edits.map(edit => {
+      if (edit.from === edit.to) {
+        const sameInsert = through.some(other => other.from === other.to && other.from === edit.from);
+        const at = mapPosition(edit.from, through, remote && sameInsert ? -1 : 1);
+        return { from: at, to: at, insert: edit.insert };
+      }
+      return { from: mapPosition(edit.from, through, 1), to: mapPosition(edit.to, through, -1), insert: edit.insert };
+    });
+  }
+  function remoteEdits(before, snapshot, op) {
+    if (before === snapshot.content) return [];
+    if (op?.edits && apply(before, op.edits) === snapshot.content) return op.edits;
+    if (op?.kind === 'resolve' && op.previous) {
+      const edits = op.previous.changes.filter(change => op.ids.includes(change.id)).flatMap(change => {
+        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.original }];
+        if (op.decision === 'accept' && change.application === 'proposed') return [{ from: change.from, to: change.to, insert: change.replacement }];
+        return [];
+      }).sort((a, b) => a.from - b.from);
+      if (apply(before, edits) === snapshot.content) return edits;
+    }
+    // New acknowledged proposals carry both original and resulting ranges.
+    const oldIds = new Set(op?.previous?.changes.map(change => change.id) || []);
+    const additions = snapshot.changes.filter(change => !oldIds.has(change.id) && change.application === 'applied' && change.decision !== 'withdrawn').sort((a, b) => a.from - b.from);
+    let delta = 0;
+    const edits = additions.map(change => {
+      const from = change.from - delta, to = from + change.original.length;
+      delta += change.replacement.length - change.original.length;
+      return { from, to, insert: change.replacement };
+    });
+    try { if (edits.length && apply(before, edits) === snapshot.content) return edits; } catch (_) {}
+    return diff(before, snapshot.content);
+  }
+  function refresh(rec) {
+    if (!rec) return;
+    if (activeTab() === rec.tab) statusContext(rec);
+    const view = rec.view, CM = window.ReadMDCodeMirror;
+    if (view && view === activeView() && activeTab() === rec.tab && effects.has(CM)) view.dispatch({ effects: effects.get(CM).of(null) });
+    if (activeTab() === rec.tab && typeof state !== 'undefined' && state.editing) {
+      let status = document.getElementById('review-persistence-status');
+      if (rec.error && !status) {
+        status = document.createElement('button'); status.id = 'review-persistence-status'; status.type = 'button';
+        status.className = 'review-persistence-status'; status.setAttribute('role', 'status');
+        status.addEventListener('click', () => { void retry(activeTab()); });
+        document.getElementById('edit-wrap')?.appendChild(status);
+      }
+      if (status) {
+        status.hidden = !rec.error;
+        status.textContent = rec.error ? message(rec.error) : '';
+        status.title = t('reader.refresh'); status.setAttribute('aria-label', status.textContent + ' · ' + t('reader.refresh'));
+      }
+    }
+    if (typeof window.dispatchEvent === 'function') window.dispatchEvent(new CustomEvent('readmd:review-state', { detail: { tabId: rec.tab.id, snapshot: rec.snapshot, busy: Boolean(rec.processing || rec.saving), error: rec.error?.code || null } }));
+  }
+  function writeVisible(rec, before, edits, after) {
+    if (!edits.length) return;
+    const view = rec.view;
+    if (view && view === activeView() && activeTab() === rec.tab && view.state.doc.toString() === before) {
+      const CM = window.ReadMDCodeMirror;
+      view.dispatch({ changes: edits, annotations: [CM.Transaction.userEvent.of('review.remote'), CM.Transaction.addToHistory.of(false)] });
+    } else if (rec.tab === activeTab() && typeof state !== 'undefined' && state.editing && !activeView()) {
+      const area = document.getElementById('edit-area');
+      if (area && lf(area.value) === before) area.value = after;
+    }
+    rec.tab.content = persistedText(rec.tab, after); rec.tab.fixed = rec.tab.content;
+    rec.tab.isDirty = rec.tab.content !== (rec.tab.original || '') || Boolean(rec.tab.unsavedCreation);
+    if (rec.tab === activeTab() && typeof state !== 'undefined') {
+      state.fixed = rec.tab.content;
+      if (typeof syncActiveTabDirty === 'function' && state.editing) syncActiveTabDirty();
+      if (typeof schedulePreview === 'function' && state.editing) schedulePreview();
+    }
+    if (typeof renderTabsBar === 'function') renderTabsBar();
+    if (typeof updateUnloadGuard === 'function') updateUnloadGuard();
+    documentTransaction(rec, before, after, edits, 'review');
+  }
+  function acknowledge(rec, snapshot) {
+    rec.snapshot = snapshot; rec.path = snapshot.path || rec.path;
+    rec.tab.reviewSession = { document_id: snapshot.document_id, generation: snapshot.generation, review_revision: snapshot.review_revision };
+  }
+  function receive(rec, snapshot, before, op = {}) {
+    const next = remoteEdits(before, snapshot, op), oldLocal = rec.local;
+    let projected = next;
+    const rebased = [];
+    let conflict = false;
+    for (const pending of rec.queue) {
+      // History commands carry no source coordinates. Keep their FIFO place
+      // while an earlier edit is acknowledged; pump binds CAS when sent.
+      if (pending.kind === 'undo' || pending.kind === 'redo') continue;
+      if (pending.kind !== 'edit' || projected.some(a => pending.edits.some(b => overlaps(a, b)))) { conflict = true; break; }
+      const previousEdits = pending.edits;
+      const pendingBefore = apply(pending.before, projected);
+      const pendingEdits = mappedEdits(previousEdits, projected);
+      const pendingAfter = apply(pendingBefore, pendingEdits);
+      projected = mappedEdits(projected, previousEdits, true);
+      rebased.push({ pending, before: pendingBefore, edits: pendingEdits, after: pendingAfter });
+    }
+    acknowledge(rec, snapshot);
+    if (conflict) {
+      // Keep every keystroke. Sending this exact compensation as a manual edit
+      // lets Rust mark touched proposals as conflict/taken_over and retain the
+      // candidate and original for comparison; it never relocates by text.
+      rec.queue = [{ kind: 'edit', before: snapshot.content, after: oldLocal,
+        edits: diff(snapshot.content, oldLocal), origin: 'editor', call_id: callId() }];
+      notifyError(failure('review_conflict'));
+    } else {
+      for (const item of rebased) Object.assign(item.pending, { before: item.before, edits: item.edits, after: item.after });
+      const after = apply(oldLocal, projected);
+      rec.local = after;
+      writeVisible(rec, oldLocal, projected, after);
+    }
+    if (snapshot.recovery || snapshot.status === 'needs_recovery') {
+      rec.error = failure('review_recovery_required'); notifyError(rec.error);
+    }
+    refresh(rec);
+  }
+  function sameWatermark(mark, snapshot) {
+    return Boolean(mark && typeof mark.revision === 'string' && mark.revision &&
+      mark.document_id === snapshot.document_id && mark.generation === snapshot.generation &&
+      mark.review_revision === snapshot.review_revision && mark.revision === snapshot.revision);
+  }
+  async function hydrate(rec, snapshot, initial) {
+    const tab = rec.tab, stored = rec.recoveryDraft?.content, mark = rec.recoveryDraft?.review;
+    if (!rec.recoveryResolved && typeof stored === 'string' && lf(stored) !== snapshot.content) {
+      const draft = lf(stored);
+      tab._reviewRestorePending = true;
+      // A clean session descriptor can lag a durable generic draft. Keep that
+      // body visible too while deciding which acknowledged view it descends from.
+      if (!rec.queue.length && rec.local === initial && rec.local !== draft) {
+        const before = rec.local; rec.local = rec.base = draft;
+        writeVisible(rec, before, diff(before, draft), draft);
+      }
+      tab.isDirty = true;
+      if (sameWatermark(mark, snapshot) && rec.base === draft) {
+        const edits = documentEdits(snapshot.content, draft);
+        acknowledge(rec, snapshot);
+        rec.queue.unshift({ kind: 'edit', before: snapshot.content, after: draft, edits, origin: 'editor', call_id: callId() });
+        rec.recoveryResolved = true; tab._reviewRestorePending = false;
+        refresh(rec); return snapshot;
+      }
+      // No clock establishes whether an old generic draft or SQLite is newer.
+      // Preserve the generic body through the existing durable history API
+      // before choosing SQLite, including typing made while a prior copy failed.
+      const local = rec.local, preserve = window.ReadMDRecovery?.preserveReviewDraft;
+      if (!preserve || !await preserve(tab, stored, mark)) throw failure('review_persistence_failed');
+      if (local !== draft && !await preserve(tab, persistedText(tab, local), mark)) throw failure('review_persistence_failed');
+      if (rec.local !== local) throw failure('review_conflict');
+      rec.queue = []; rec.recoveryResolved = true; tab._reviewRestorePending = false;
+      receive(rec, snapshot, local); notifyError(failure('review_conflict'));
+      return snapshot;
+    }
+    rec.recoveryResolved = true; tab._reviewRestorePending = false;
+    receive(rec, snapshot, initial); return snapshot;
+  }
+  async function open(rec) {
+    if (rec.unsupported || rec.snapshot) return rec.snapshot;
+    if (!rec.opening) {
+      const initial = rec.base;
+      rec.opening = request('/api/review', { action: 'open', path: rec.path, content: initial,
+        encoding: rec.tab.encoding || 'utf-8' }).then(snapshot => hydrate(rec, snapshot, initial))
+        .catch(error => { rec.error = error; refresh(rec); notifyError(error); return null; });
+    }
+    return rec.opening;
+  }
+  function cas(rec, id) { return { document_id: rec.snapshot.document_id, generation: rec.snapshot.generation, review_revision: rec.snapshot.review_revision, call_id: id || callId() }; }
+  // _renameInFlight also spans preflight and outlives endRename. The review
+  // reservation starts after flush settles; that reservation and durable
+  // pending metadata are the fences for reads and queued writes here.
+  const renameReserved = rec => Boolean(rec.renaming || rec.tab._renamePending);
+  function pump(rec) {
+    if (rec.processing || rec.saving || rec.adopting || renameReserved(rec) || rec.error || rec.unsupported) return rec.processing;
+    rec.processing = (async () => {
+      if (!await open(rec)) return;
+      while (rec.queue.length && !rec.saving && !rec.adopting && !renameReserved(rec) && !rec.error) {
+        const op = rec.queue.shift();
+        const before = rec.snapshot.content;
+        let cancelListener;
+        try {
+          if (op.signal?.aborted) throw failure('cancelled');
+          if (op.kind === 'edit' && op.before !== before) throw failure('review_conflict');
+          op.previous = rec.snapshot;
+          if (!op.payload) {
+            op.payload = { ...cas(rec, op.call_id), ...(op.body || {}), ...(op.kind === 'ai' ? {} : { action: op.kind }) };
+            if (op.edits) Object.assign(op.payload, { edits: op.edits, origin: op.origin || 'editor' });
+            if (op.kind === 'resolve') {
+              Object.assign(op.payload, { ids: op.ids, decision: op.decision });
+              if (op.resolution) op.payload.resolution = op.resolution;
+            }
+          }
+          if (op.kind === 'ai' && op.signal) {
+            cancelListener = () => { void cancelAi(op.payload.task_id, () => !op.finished); };
+            op.signal.addEventListener('abort', cancelListener, { once: true });
+          }
+          const snapshot = await request(op.kind === 'ai' ? '/api/review/ai' : '/api/review', op.payload);
+          if (op.kind === 'edit' && snapshot.content !== op.after) throw failure('review_conflict');
+          receive(rec, snapshot, op.kind === 'edit' ? op.after : before, op);
+          op.resolve?.(snapshot);
+        } catch (error) {
+          // Retain the same id and exact payload: an explicit retry can recover
+          // a committed operation whose network acknowledgement was lost.
+          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
+          if (!rejected) { rec.queue.unshift(op); rec.error = error; }
+          op.reject?.(error); delete op.resolve; delete op.reject;
+          notifyError(error); refresh(rec);
+        } finally {
+          op.finished = true;
+          if (cancelListener) op.signal.removeEventListener('abort', cancelListener);
+        }
+      }
+    })().finally(() => { rec.processing = null; refresh(rec); });
+    return rec.processing;
+  }
+  function enqueueEdit(rec, before, after, edits, origin) {
+    if (before === after) return;
+    if (rec.local !== before) { rec.error = failure('review_conflict'); notifyError(rec.error); return; }
+    rec.local = after;
+    documentTransaction(rec, before, after, edits, origin);
+    if (!rec.unsupported) {
+      const tail = rec.queue[rec.queue.length - 1]; let combined = false;
+      if (rec.processing && origin === 'editor' && tail?.kind === 'edit' && tail.origin === 'editor' && !tail.payload && !tail.resolve && tail.after === before) {
+        try {
+          const composed = saveStageEdits(tail.before, [{ edits: tail.edits, content: tail.after }, { edits, content: after }], after);
+          if (composed.length) { tail.edits = composed; tail.after = after; combined = true; }
+        } catch (_) { /* A composition limit keeps these as ordered edits. */ }
+      }
+      if (!combined) rec.queue.push({ kind: 'edit', before, after, edits, origin, call_id: callId() });
+      pump(rec);
+    }
+  }
+  async function flush(tab = activeTab()) {
+    // Closing/switching an unseen reader is not an editing operation. Explicit
+    // capture/mutation/save create their own record before flushing instead.
+    const rec = tab && records.get(tab); if (!rec || rec.unsupported) return true;
+    if (renameReserved(rec) && (rec.queue.length || rec.processing)) return false;
+    if (rec.adoption && !await rec.adoption) return false;
+    // The textarea fallback has no CodeMirror transaction log.
+    const current = source(tab);
+    if (current !== rec.local && !rec.view) {
+      if (renameReserved(rec)) return false;
+      enqueueEdit(rec, rec.local, current, diff(rec.local, current), 'editor');
+    }
+    if (!await open(rec) || rec.error || rec.saving) return false;
+    while (rec.queue.length || rec.processing) {
+      if (renameReserved(rec)) return false;
+      if (rec.adoption) { if (!await rec.adoption) return false; continue; }
+      await (pump(rec) || rec.processing);
+      if (rec.error || rec.saving) return false;
+    }
+    return rec.snapshot.content === rec.local;
+  }
+  async function flushAll() {
+    const tabs = typeof state !== 'undefined' && Array.isArray(state.tabs) ? [...state.tabs] : [activeTab()].filter(Boolean);
+    for (const tab of tabs) if (!await flush(tab)) return false;
+    return true;
+  }
+  async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
+  async function restore(tab = activeTab()) {
+    if (!tab) return null;
+    const existing = records.get(tab);
+    if (existing) { refresh(existing); return existing.snapshot || existing.opening; }
+    if (!restores.has(tab)) {
+      const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
+      const work = (async () => {
+        const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resume', path }) });
+        const data = await response.json();
+        if (!response.ok || data.ok === false || data.error) throw failure(data.error_code || data.code || 'review_persistence_failed');
+        if (!data.found) { tab._reviewRestorePending = false; if (tab === activeTab()) statusContext(null); return null; }
+        // Entering Edit can race this read. Its initial text and queued input
+        // then belong to that record and must win over this hydration callback.
+        const live = records.get(tab);
+        if (live) return live.snapshot || live.opening || open(live);
+        const snapshot = data.snapshot;
+        if (!snapshot?.document_id || typeof snapshot.content !== 'string' || lf(snapshot.content) !== snapshot.content || !Number.isInteger(snapshot.generation) || !Number.isInteger(snapshot.review_revision) || !Array.isArray(snapshot.changes)) throw failure('review_persistence_failed');
+        const rec = record(tab, tab.isDirty ? tab.content : (tab.original ?? tab.content));
+        rec.opening = hydrate(rec, snapshot, rec.base).catch(error => { rec.error = error; refresh(rec); notifyError(error); return null; });
+        if (!await rec.opening) return null;
+        if (rec.queue.length) await pump(rec);
+        return rec.snapshot;
+      })().catch(error => { notifyError(error); return null; }).finally(() => { restores.delete(tab); });
+      restores.set(tab, work);
+    }
+    return restores.get(tab);
+  }
+  function mount(view, tab, initial) {
+    const rec = record(tab, initial); if (!rec) return;
+    rec.view = view; if (view) views.set(view, rec);
+    if (rec.snapshot && rec.local === lf(initial) && rec.snapshot.content === rec.local) refresh(rec);
+    void open(rec).then(() => pump(rec));
+  }
+  function detach(view) { const rec = views.get(view); if (rec?.view === view) rec.view = null; }
+  function onEditorUpdate(update) {
+    const rec = views.get(update.view); if (!rec) return;
+    for (const transaction of update.transactions) {
+      if (!transaction.docChanged || transaction.isUserEvent('review.remote')) continue;
+      const edits = [];
+      transaction.changes.iterChanges((from, to, _fromB, _toB, inserted) => edits.push({ from, to, insert: inserted.toString() }));
+      enqueueEdit(rec, transaction.startState.doc.toString(), transaction.newDoc.toString(), edits,
+        transaction.isUserEvent('undo') ? 'undo' : transaction.isUserEvent('redo') ? 'redo' : 'editor');
+    }
+  }
+  async function capture(tab = activeTab()) {
+    if (tab?._renamePending || tab?._renameInFlight) return null;
+    const rec = record(tab);
+    if (!await flush(tab)) return null;
+    if (!rec?.snapshot || rec.unsupported) return null;
+    return { tabId: tab.id, document_id: rec.snapshot.document_id, generation: rec.snapshot.generation,
+      review_revision: rec.snapshot.review_revision, content: rec.local, editGeneration: tab.editGeneration || 0 };
+  }
+  function isCurrent(rec, stamp) {
+    return Boolean(stamp && stamp.tabId === rec.tab.id && stamp.document_id === rec.snapshot?.document_id &&
+      stamp.generation === rec.snapshot.generation && stamp.review_revision === rec.snapshot.review_revision && stamp.content === rec.local && (rec.tab.editGeneration || 0) === stamp.editGeneration && !rec.queue.length);
+  }
+  async function mutate(kind, options = {}, tab = activeTab(), stamp) {
+    if (tab?._renamePending || tab?._renameInFlight) throw failure('review_busy');
+    const rec = record(tab);
+    if (!await flush(tab)) throw rec?.error || failure('review_persistence_failed');
+    if (!rec?.snapshot || rec.unsupported) throw failure('review_budget');
+    if (stamp && !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    if (options.signal?.aborted) throw failure('cancelled');
+    return new Promise((resolve, reject) => { rec.queue.push({ kind, ...options, call_id: callId(), resolve, reject }); pump(rec); });
+  }
+  async function propose(edits, stamp, tab = activeTab()) {
+    const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
+    return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
+  }
+  function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
+  async function discard(tab = activeTab()) {
+    const rec = record(tab); if (!rec || rec.unsupported) return true;
+    try {
+      const snapshot = await mutate('discard', {}, tab);
+      // New typing after the explicit discard request remains a live draft.
+      // Callers must leave that editor open instead of clearing it on exit.
+      return rec.local === snapshot.content;
+    } catch (_) { return false; }
+  }
+  function history(redo = false) {
+    const tab = activeTab(), rec = tab && records.get(tab);
+    if (tab?._renamePending || tab?._renameInFlight) { notifyError(failure('review_busy')); return true; }
+    if (!rec || rec.unsupported) return false;
+    if (!rec.queue.length && !rec.processing && rec.snapshot && rec.snapshot[redo ? 'can_redo' : 'can_undo'] === false) return true;
+    rec.queue.push({ kind: redo ? 'redo' : 'undo', call_id: callId(), reject: notifyError });
+    pump(rec); return true;
+  }
+  // Export receipts and durable AI jobs arrive outside the editor FIFO. Read
+  // the current authoritative head after any in-flight editor write, then
+  // project it through unsent edits using the same scoped rebase as mutations.
+  // A delayed receipt can never replace a newer server head or another tab.
+  function deferAdoption(rec, documentId) {
+    // Receipts only signal that the durable head should be read. Coalesce
+    // arrivals during rename instead of losing a completed job's result or
+    // putting a promise that awaits rename into the flush/rename barrier.
+    rec.deferredAdoption = documentId;
+    return false;
+  }
+  function resumeAdoption(rec) {
+    if (renameReserved(rec) || rec.adoption || rec.error || !rec.deferredAdoption) return;
+    const documentId = rec.deferredAdoption; rec.deferredAdoption = null;
+    void adopt(null, rec.tab, documentId);
+  }
+  function adopt(snapshot, tab = activeTab(), documentId = snapshot?.document_id) {
+    const rec = tab && records.get(tab);
+    if (!rec?.snapshot || !documentId || documentId !== rec.snapshot.document_id) return Promise.resolve(false);
+    if (renameReserved(rec)) return Promise.resolve(deferAdoption(rec, documentId));
+    const renameEpoch = rec.renameEpoch;
+    const previous = rec.adoption || Promise.resolve(true);
+    const work = previous.catch(() => false).then(async () => {
+      if (typeof state !== 'undefined' && Array.isArray(state.tabs) && !state.tabs.includes(tab)) return false;
+      if (renameReserved(rec) || rec.renameEpoch !== renameEpoch) return deferAdoption(rec, documentId);
+      rec.adopting = true;
+      const current = source(tab);
+      if (current !== rec.local && !rec.view) enqueueEdit(rec, rec.local, current, diff(rec.local, current), 'editor');
+      await rec.processing;
+      if (renameReserved(rec) || rec.renameEpoch !== renameEpoch) return deferAdoption(rec, documentId);
+      // An ambiguous transport failure keeps its original idempotent payload
+      // for Retry. Only a definitively rejected CAS is safe to rebase/reissue.
+      if (rec.error && !/^review_(?:stale_generation|stale_revision|conflict)$/.test(rec.error.code || '')) return deferAdoption(rec, documentId);
+      const latest = await request('/api/review', { action: 'read', document_id: documentId });
+      if (renameReserved(rec) || rec.renameEpoch !== renameEpoch) return deferAdoption(rec, documentId);
+      if (latest.document_id !== documentId || latest.generation < rec.snapshot.generation || latest.review_revision < rec.snapshot.review_revision) throw failure('review_stale_generation');
+      for (const pending of rec.queue) if (pending.kind === 'edit' && pending.payload) {
+        pending.call_id = callId(); delete pending.payload;
+      }
+      rec.error = null;
+      receive(rec, latest, rec.snapshot.content, { previous: rec.snapshot });
+      return !rec.error;
+    }).catch(error => {
+      deferAdoption(rec, documentId);
+      if (renameReserved(rec) || rec.renameEpoch !== renameEpoch) return false;
+      rec.error = error; notifyError(error); refresh(rec); return false;
+    }).finally(() => {
+      rec.adopting = false;
+      if (rec.adoption === work) rec.adoption = null;
+      resumeAdoption(rec);
+      pump(rec);
+    });
+    rec.adoption = work;
+    return work;
+  }
+  async function runAi(options, stamp, tab = activeTab()) {
+    if (window.ReadMDAiHarness && window.READMD_ENGINE === 'rust') {
+      const task = await window.ReadMDAiHarness.start(options, stamp, tab);
+      return window.ReadMDAiHarness.wait(task.id);
+    }
+    // Provider configuration is resolved privately by Rust. The browser sends
+    // opaque connection identities, never connection headers or credentials.
+    const body = { request: options.request || '', provider: options.provider, credential_id: options.credential_id,
+      model: options.model, stream: options.stream, skill_id: options.skill_id, ranges: options.ranges, task_id: options.task_id || callId() };
+    return mutate('ai', { body, signal: options.signal }, tab, stamp);
+  }
+  async function cancelAi(taskId, stillRunning = () => true) {
+    if (!taskId) return 'unknown';
+    for (let attempt = 0; attempt < 5 && stillRunning(); attempt++) {
+      let status = 'unknown';
+      try {
+        if (window.ReadMDTask?.requestCancel) status = await window.ReadMDTask.requestCancel(taskId);
+        else {
+          const response = await apiFetch('/api/task/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: taskId }) });
+          const data = await response.json(); if (response.ok && data.ok !== false) status = data.state || 'unknown';
+        }
+      } catch (_) {}
+      if (status !== 'unknown') return status;
+      // A close can race registration. Retry only the cancellation request;
+      // the original mutation keeps its id and remains awaiting its receipt.
+      if (attempt < 4 && stillRunning()) await new Promise(done => setTimeout(done, 100 * (attempt + 1)));
+    }
+    return 'unknown';
+  }
+  async function prepareSave(tab = activeTab(), expected) {
+    if (tab?._renamePending || tab?._renameInFlight) return false;
+    const rec = record(tab);
+    if (!await flush(tab)) return false;
+    if (expected != null && lf(expected) !== rec?.local) return false;
+    if (!rec?.snapshot || rec.unsupported) return null;
+    rec.saving = true; refresh(rec);
+    return cas(rec);
+  }
+  function saveStageEdits(before, stages, finalContent) {
+    // Compose a piece table, retaining original source spans. Inserted text is
+    // never rebound to an equal substring elsewhere in the original document.
+    let pieces = [{ from: 0, to: before.length }], content = before;
+    const length = piece => piece.insert === undefined ? piece.to - piece.from : piece.insert.length;
+    const slice = (input, from, to) => {
+      let offset = 0; const selected = [];
+      for (const piece of input) {
+        const size = length(piece), start = Math.max(from, offset), end = Math.min(to, offset + size);
+        if (end > start) selected.push(piece.insert === undefined
+          ? { from: piece.from + start - offset, to: piece.from + end - offset }
+          : { insert: piece.insert.slice(start - offset, end - offset) });
+        offset += size; if (offset >= to) break;
+      }
+      return selected;
+    };
+    for (const stage of stages) {
+      if (!Array.isArray(stage.edits) || typeof stage.content !== 'string' || lf(stage.content) !== stage.content) throw failure('review_conflict');
+      const expected = apply(content, stage.edits);
+      if (expected !== stage.content) throw failure('review_conflict');
+      let cursor = 0; const next = [];
+      for (const edit of stage.edits) {
+        next.push(...slice(pieces, cursor, edit.from));
+        if (edit.insert) next.push({ insert: edit.insert });
+        cursor = edit.to;
+      }
+      next.push(...slice(pieces, cursor, content.length)); pieces = next; content = expected;
+    }
+    if (content !== finalContent) throw failure('review_conflict');
+    const composed = []; let cursor = 0, insert = '';
+    for (const piece of pieces) {
+      if (piece.insert !== undefined) { insert += piece.insert; continue; }
+      if (piece.from !== cursor || insert) composed.push({ from: cursor, to: piece.from, insert });
+      cursor = piece.to; insert = '';
+    }
+    if (cursor !== before.length || insert) composed.push({ from: cursor, to: before.length, insert });
+    if (composed.length > 4096 || apply(before, composed) !== finalContent) throw failure('review_conflict');
+    return composed;
+  }
+  function saved(tab, snapshot, before, edits, stages) {
+    const rec = records.get(tab); if (!rec || !snapshot?.document_id) return;
+    let normalized;
+    if (Array.isArray(stages)) normalized = saveStageEdits(lf(before), stages, snapshot.content);
+    else if (Array.isArray(edits) && edits.length) {
+      let cursor = 0, removed = 0;
+      const position = at => {
+        while (cursor < at) { if (before[cursor] === '\r' && before[cursor + 1] === '\n') { removed++; cursor++; } cursor++; }
+        return at - removed;
+      };
+      normalized = edits.map(edit => ({ from: position(edit.from), to: position(edit.to), insert: lf(edit.insert) }));
+    }
+    receive(rec, snapshot, lf(before), { previous: rec.snapshot, edits: normalized });
+    rec.path = snapshot.path || tab.path || rec.path;
+  }
+  function finishSave(tab) { const rec = records.get(tab); if (rec) { rec.saving = false; pump(rec); refresh(rec); } }
+  // A rename moves the durable identity, not the text. Lock the local queue
+  // while its CAS is in flight and only adopt a matching server receipt.
+  async function beginRename(tab) {
+    if (!tab) return null;
+    const restoring = restores.get(tab);
+    if (restoring) await restoring;
+    if (!await flush(tab)) return null;
+    const rec = records.get(tab);
+    if (rec?.unsupported || rec?.renaming || rec?.error || rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
+    if (rec) { rec.renaming = true; rec.renameEpoch++; }
+    return { review_session: rec?.snapshot ? cas(rec) : undefined };
+  }
+  function renamed(tab, snapshot) {
+    if (!tab || !snapshot?.document_id || typeof snapshot.content !== 'string' ||
+        !Number.isInteger(snapshot.generation) || !Number.isInteger(snapshot.review_revision) || !Array.isArray(snapshot.changes)) return false;
+    const rec = record(tab, tab.original ?? tab.content);
+    if (!rec || rec.unsupported || rec.error || rec.processing || rec.saving || rec.adopting || rec.adoption || rec.queue.length ||
+        rec.local !== snapshot.content || (rec.snapshot && (rec.snapshot.document_id !== snapshot.document_id ||
+        rec.snapshot.generation !== snapshot.generation || rec.snapshot.review_revision !== snapshot.review_revision))) return false;
+    rec.renameEpoch++;
+    acknowledge(rec, snapshot); rec.opening = Promise.resolve(snapshot); refresh(rec); return true;
+  }
+  // Refactors can change several saved bodies at once. Capture each local
+  // head while reserved, then validate the entire group before publishing any
+  // snapshot or editor transaction. Generic adopt() deliberately defers here.
+  function refactorState(tab) {
+    if (!tab) return null;
+    const rec = records.get(tab);
+    if (rec && (rec.unsupported || rec.error || rec.processing || rec.saving || rec.adopting || rec.adoption || rec.queue.length)) return null;
+    return Object.freeze({ path: tab.path || '', revision: tab.revision || '', content: source(tab),
+      editGeneration: tab.editGeneration || 0, recorded: Boolean(rec),
+      document_id: rec?.snapshot?.document_id || null, generation: rec?.snapshot?.generation ?? null,
+      review_revision: rec?.snapshot?.review_revision ?? null });
+  }
+  function refactorPath(value) {
+    if (typeof normalizePath === 'function') return normalizePath(value);
+    const path = String(value || '').replace(/\\/g, '/');
+    return /^(?:[a-z]:\/|\/\/)/i.test(path) ? path.toLowerCase() : path;
+  }
+  function prepareRefactorGroup(entries) {
+    if (!Array.isArray(entries) || !entries.length || entries.length > 100) return null;
+    const seen = new Set(), prepared = [];
+    try {
+      for (const item of entries) {
+        const tab = item?.tab, before = item?.before, snapshot = item?.snapshot;
+        if (!tab || seen.has(tab) || !before || typeof before.content !== 'string' ||
+            !snapshot?.document_id || typeof snapshot.path !== 'string' || !snapshot.path ||
+            typeof snapshot.content !== 'string' || lf(snapshot.content) !== snapshot.content ||
+            !Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 ||
+            !Number.isSafeInteger(snapshot.review_revision) || snapshot.review_revision < 0 || !Array.isArray(snapshot.changes) ||
+            snapshot.recovery || snapshot.status === 'needs_recovery' || tab.isDirty || tab.unsavedCreation || tab._reviewRestorePending ||
+            (typeof state !== 'undefined' && Array.isArray(state.tabs) && !state.tabs.includes(tab))) return null;
+        seen.add(tab);
+        const rec = records.get(tab), current = source(tab), head = rec?.snapshot;
+        if (rec && (rec.unsupported || rec.error || rec.processing || rec.saving || rec.adopting || rec.adoption || rec.queue.length)) return null;
+        if (new TextEncoder().encode(snapshot.content).byteLength > MAX_BYTES) return null;
+        const already = Boolean(head && head.document_id === snapshot.document_id && head.generation === snapshot.generation &&
+          head.review_revision === snapshot.review_revision && head.content === snapshot.content && current === snapshot.content &&
+          refactorPath(tab.path) === refactorPath(snapshot.path) && tab.revision === (item.file_revision ?? snapshot.revision));
+        if (!already && (current !== before.content || (tab.editGeneration || 0) !== before.editGeneration ||
+            refactorPath(tab.path) !== refactorPath(before.path) || (tab.revision || '') !== before.revision ||
+            Boolean(rec) !== before.recorded || (head?.document_id || null) !== before.document_id ||
+            (head?.generation ?? null) !== before.generation || (head?.review_revision ?? null) !== before.review_revision ||
+            (before.document_id && snapshot.document_id !== before.document_id))) return null;
+        if (rec?.view && rec.view === activeView() && activeTab() === tab && rec.view.state.doc.toString() !== current) return null;
+        const edits = already ? [] : Array.isArray(item.edits) ? item.edits.map(edit => ({ from: edit.from, to: edit.to, insert: edit.insert })) : documentEdits(current, snapshot.content);
+        if (apply(current, edits) !== snapshot.content) return null;
+        const cached = !already && tab.editorState?.doc?.toString() === current && typeof tab.editorState.update === 'function'
+          ? tab.editorState.update({ changes: edits, annotations: [window.ReadMDCodeMirror.Transaction.userEvent.of('review.remote'), window.ReadMDCodeMirror.Transaction.addToHistory.of(false)] }).state : null;
+        prepared.push({ tab, rec, snapshot, before: current, edits, already, cached });
+      }
+    } catch (_) { return null; }
+    return prepared;
+  }
+  function validateRefactorGroup(entries) { return Boolean(prepareRefactorGroup(entries)); }
+  function applyRefactorGroup(entries, applyTabs) {
+    if (applyTabs && (typeof applyTabs !== 'function' || applyTabs.constructor?.name === 'AsyncFunction')) return false;
+    const prepared = prepareRefactorGroup(entries); if (!prepared) return false;
+    // Publish every durable head before callbacks/events can observe the group.
+    for (const item of prepared) {
+      const rec = item.rec || record(item.tab, item.before); item.rec = rec;
+      rec.renameEpoch++; rec.renaming = true; rec.local = rec.base = item.snapshot.content;
+      acknowledge(rec, item.snapshot); rec.opening = Promise.resolve(item.snapshot);
+      if (item.cached) item.tab.editorState = item.cached;
+    }
+    if (applyTabs) applyTabs();
+    for (const item of prepared) {
+      const { rec, tab, before, edits, snapshot } = item, view = rec.view;
+      if (edits.length && view && view === activeView() && activeTab() === tab && view.state.doc.toString() === before) {
+        const CM = window.ReadMDCodeMirror;
+        view.dispatch({ changes: edits, annotations: [CM.Transaction.userEvent.of('review.remote'), CM.Transaction.addToHistory.of(false)] });
+      } else if (edits.length && tab === activeTab() && typeof state !== 'undefined' && state.editing && !activeView()) {
+        const area = document.getElementById('edit-area');
+        if (area && lf(area.value) === before) {
+          const start = area.selectionStart, end = area.selectionEnd, direction = area.selectionDirection;
+          area.value = snapshot.content;
+          if (typeof area.setSelectionRange === 'function') area.setSelectionRange(mapPosition(start, edits, 1), mapPosition(end, edits, -1), direction);
+        }
+      }
+    }
+    for (const item of prepared) {
+      documentTransaction(item.rec, item.before, item.snapshot.content, item.edits, 'refactor');
+      refresh(item.rec);
+    }
+    return true;
+  }
+  function endRename(tab) { const rec = tab && records.get(tab); if (rec) { rec.renaming = false; resumeAdoption(rec); pump(rec); refresh(rec); } }
+  function retry(tab = activeTab()) {
+    const rec = tab && records.get(tab); if (!rec) return Promise.resolve(true);
+    rec.error = null;
+    if (!rec.snapshot) rec.opening = null;
+    resumeAdoption(rec);
+    return flush(tab);
+  }
+  function projectedChanges(rec) {
+    if (!rec?.snapshot) return [];
+    return rec.snapshot.changes.filter(change => change.decision !== 'withdrawn').map(change => {
+      let from = change.from, to = change.to, canCompare = change.decision === 'conflict' || Boolean(change.taken_over);
+      let conflict = canCompare && change.decision !== 'accepted';
+      for (const pending of rec.queue) {
+        if (pending.kind !== 'edit') continue;
+        if (pending.edits.some(edit => overlaps({ from, to }, edit))) { conflict = true; canCompare = true; }
+        from = mapPosition(from, pending.edits, 1); to = mapPosition(to, pending.edits, -1);
+      }
+      return { ...change, from, to: Math.max(from, to), conflict, canCompare };
+    });
+  }
+  function button(label, action, id, icon) {
+    const el = document.createElement('button'); el.type = 'button'; el.className = 'review-action';
+    el.title = t(label); el.setAttribute('aria-label', t(label));
+    el.dataset.reviewAction = action; if (id) el.dataset.reviewChangeId = id;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', icon); svg.appendChild(path); el.appendChild(svg);
+    return el;
+  }
+  function controls(rec, change) {
+    const panel = document.createElement('span'); panel.className = 'review-block-actions'; panel.contentEditable = 'false';
+    panel.dataset.reviewChangeId = change.id; panel.dataset.rdChrome = 'review'; panel.setAttribute('role', 'group');
+    const contextLabel = t(change.conflict ? 'review.conflict' : change.decision === 'pending' ? 'review.pending' : 'review.accept');
+    panel.setAttribute('aria-label', contextLabel);
+    if (change.decision === 'pending' && !change.conflict) panel.appendChild(button('review.accept', 'accept', change.id, 'M5 12l4 4L19 6'));
+    panel.appendChild(button('review.withdraw', 'withdraw', change.id, 'M9 5l-6 6 6 6M3 11h11a6 6 0 0 1 6 6'));
+    const more = document.createElement('details'); more.className = 'review-more';
+    const summary = document.createElement('summary'); summary.title = contextLabel; summary.setAttribute('aria-label', contextLabel); summary.textContent = '⋯'; more.appendChild(summary);
+    const menu = document.createElement('span'); menu.className = 'review-context-menu';
+    for (const [key, action] of [['review.previous', 'previous'], ['review.next', 'next'], ['review.acceptAll', 'accept-all'], ['review.withdrawAll', 'withdraw-all']]) {
+      const el = document.createElement('button'); el.type = 'button'; el.textContent = t(key); el.dataset.reviewAction = action; menu.appendChild(el);
+    }
+    let keepCurrent;
+    if (change.conflict) {
+      keepCurrent = document.createElement('button'); keepCurrent.type = 'button'; keepCurrent.textContent = t('review.keepCurrent');
+      keepCurrent.dataset.reviewAction = 'keep-current'; keepCurrent.dataset.reviewChangeId = change.id; menu.appendChild(keepCurrent);
+    }
+    if (change.canCompare) {
+      const compare = document.createElement('div'); compare.className = 'review-comparison';
+      for (const [key, text] of [['review.withdraw', change.original], ['review.aiEdit', change.replacement], ['review.conflict', rec.local.slice(change.from, change.to)]]) {
+        const label = document.createElement('strong'); label.textContent = t(key);
+        const value = document.createElement('pre'); value.textContent = text; compare.append(label, value);
+      }
+      menu.appendChild(compare);
+    }
+    more.appendChild(menu); panel.appendChild(more);
+    panel.addEventListener('mousedown', event => { if (event.target.closest('button')) event.preventDefault(); });
+    panel.addEventListener('click', event => {
+      const target = event.target.closest('[data-review-action]'); if (!target) return;
+      event.preventDefault(); event.stopPropagation();
+      const action = target.dataset.reviewAction;
+      if (action === 'next' || action === 'previous') { navigate(action === 'next' ? 1 : -1, rec.tab, change.id); return; }
+      if (action === 'withdraw' && change.canCompare) { more.open = true; keepCurrent?.focus(); return; }
+      const ids = action.endsWith('-all') ? projectedChanges(rec).filter(item => item.decision === 'pending' && !item.conflict).map(item => item.id) : [target.dataset.reviewChangeId];
+      if (!ids.length) return;
+      panel.setAttribute('aria-busy', 'true'); panel.querySelectorAll('button').forEach(el => { el.disabled = true; });
+      void resolve(ids, action === 'keep-current' || action.startsWith('accept') ? 'accept' : 'withdraw', rec.tab, action === 'keep-current' ? 'keep_current' : undefined).catch(notifyError).finally(() => {
+        panel.removeAttribute('aria-busy'); panel.querySelectorAll('button').forEach(el => { el.disabled = false; });
+      });
+    });
+    return panel;
+  }
+  function navigate(direction, tab = activeTab(), changeId) {
+    const rec = tab && records.get(tab), view = rec?.view; if (!view || view !== activeView() || tab !== activeTab()) return;
+    const changes = projectedChanges(rec).filter(change => change.decision === 'pending' || change.conflict).sort((a, b) => a.from - b.from);
+    if (!changes.length) return;
+    let index = changeId ? changes.findIndex(change => change.id === changeId) : changes.findIndex(change => change.from >= view.state.selection.main.head);
+    if (changeId) index += direction;
+    else if (index < 0) index = 0;
+    else if (direction < 0) index--;
+    const change = changes[(index + changes.length) % changes.length];
+    view.dispatch({ selection: { anchor: change.from, head: change.to }, scrollIntoView: true }); view.focus();
+  }
+  function statusContext(rec) {
+    const footer = document.getElementById('statusbar'); if (!footer) return;
+    let marker = document.getElementById('status-review');
+    const changes = rec?.snapshot?.changes || [], pending = changes.filter(change => change.decision === 'pending').length;
+    const conflict = Boolean(rec?.snapshot?.recovery || changes.some(change => change.decision !== 'accepted' && (change.decision === 'conflict' || change.taken_over)));
+    if (!marker && (pending || conflict)) {
+      marker = document.createElement('button'); marker.id = 'status-review'; marker.type = 'button'; marker.className = 'status-review';
+      marker.addEventListener('click', async () => {
+        const tab = activeTab(); if (!tab) return;
+        if (typeof state !== 'undefined' && !state.editing && typeof toggleEdit === 'function') await toggleEdit();
+        if (activeTab() === tab) navigate(1, tab);
+      });
+      footer.insertBefore(marker, document.getElementById('status-mods'));
+    }
+    if (marker) {
+      marker.hidden = !(pending || conflict);
+      marker.textContent = conflict ? t('review.conflict') : t('review.pending') + ' · ' + pending;
+      marker.title = marker.textContent; marker.setAttribute('aria-label', marker.textContent);
+      marker.dataset.reviewDocumentId = rec?.snapshot?.document_id || '';
+    }
+  }
+  function extension(CM, tab) {
+    if (!CM.ViewPlugin || !CM.Decoration || !CM.WidgetType || !tab) return [];
+    const rec = record(tab), effect = effects.get(CM) || CM.StateEffect.define(); effects.set(CM, effect);
+    class Actions extends CM.WidgetType {
+      constructor(change) { super(); this.change = change; }
+      eq(other) { return this.change.id === other.change.id && this.change.version === other.change.version && this.change.decision === other.change.decision && this.change.conflict === other.change.conflict && this.change.canCompare === other.change.canCompare && this.change.from === other.change.from && this.change.to === other.change.to; }
+      toDOM() { return controls(rec, this.change); }
+      ignoreEvent() { return true; }
+    }
+    function decorations(view) {
+      const ranges = [], length = view.state.doc.length;
+      for (const change of projectedChanges(rec)) {
+        if (change.from < 0 || change.to > length) continue;
+        const attrs = { 'data-review-change-id': change.id, 'data-review-decision': change.decision, title: t(change.conflict ? 'review.conflict' : change.decision === 'pending' ? 'review.pending' : 'review.accept') };
+        if (change.to > change.from) ranges.push(CM.Decoration.mark({ class: 'cm-review-block' + (change.conflict ? ' is-conflict' : change.decision === 'accepted' ? ' is-accepted' : ''), attributes: attrs }).range(change.from, change.to));
+        ranges.push(CM.Decoration.widget({ widget: new Actions(change), side: 1 }).range(change.to));
+      }
+      return CM.Decoration.set(ranges, true);
+    }
+    return [CM.ViewPlugin.fromClass(class {
+      constructor(view) { this.decorations = decorations(view); }
+      update(update) { if (update.docChanged || update.selectionSet || update.transactions.some(transaction => transaction.effects.some(item => item.is(effect)))) this.decorations = decorations(update.view); }
+    }, { decorations: plugin => plugin.decorations }), CM.Prec.highest(CM.keymap.of([
+      { key: 'Mod-z', run: () => history(false), preventDefault: true },
+      { key: 'Mod-Shift-z', run: () => history(true), preventDefault: true },
+      { key: 'Mod-y', run: () => history(true), preventDefault: true },
+      { key: 'Alt-ArrowDown', run: () => { navigate(1, tab); return true; } },
+      { key: 'Alt-ArrowUp', run: () => { navigate(-1, tab); return true; } },
+    ]))];
+  }
+  document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
+  window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, resolve, discard, history, runAi, cancelAi,
+    prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
+    busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
+})();
+
+;
+'use strict';
 /* ============================================================
    ReadMD Editor - CodeMirror 6 & Command Palette
    ============================================================ */
@@ -12481,7 +13914,7 @@ function createEditor(doc) {
       CM.bracketMatching(),
       CM.indentOnInput(),
       CM.history(),
-      CM.EditorState.transactionFilter.of(transaction => transaction.docChanged && !transaction.isUserEvent('collaboration.remote') && window.ReadMDCollaborationShare?.canEdit() === false ? [] : transaction),
+      CM.EditorState.transactionFilter.of(transaction => transaction.docChanged && !transaction.isUserEvent('collaboration.remote') && !transaction.isUserEvent('review.remote') && window.ReadMDCollaborationShare?.canEdit() === false ? [] : transaction),
       CM.markdown({ base: CM.markdownLanguage, codeLanguages: CM.languages }),
       // Markdown prose: pair brackets, double quotes, backticks and CJK brackets
       // (single quotes stay unpaired: they are apostrophes in prose).
@@ -12489,6 +13922,7 @@ function createEditor(doc) {
       CM.syntaxHighlighting(cmHighlightStyle()),
       cmMarkdownDecorations(),
       cmMathMetadataDecorations(CM),
+      window.ReadMDReview?.extension(CM, tab) || [],
       C.focus.of(editorPrefs.focus ? cmFocusExtension() : []),
       C.typewriter.of(editorPrefs.typewriter ? cmTypewriterExtension() : []),
       CM.autocompletion({ override: [cmMarkdownCompletions()], activateOnTyping: false, interactionDelay: 0, icons: false }),
@@ -12527,6 +13961,7 @@ function createEditor(doc) {
       CM.Prec.highest(CM.EditorView.domEventHandlers({ paste: cmHandlePaste })),
       CM.EditorView.domEventHandlers({ mousedown: cmTaskMarkerClick }),
       CM.EditorView.updateListener.of(u => {
+        window.ReadMDReview?.onEditorUpdate(u);
         window.ReadMDCollaborationShare?.onEditorUpdate(u);
         if (u.docChanged) {
           const tab = getActiveTab(); if (tab) tab.editGeneration = (tab.editGeneration || 0) + 1;
@@ -12548,6 +13983,7 @@ function createEditor(doc) {
   if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
     C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
+  window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
   cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
@@ -12581,6 +14017,7 @@ function cmHistoryCommand(key) {
 
 function cmUndo() {
   if (window.ReadMDCollaborationShare?.history(false)) return;
+  if (window.ReadMDReview?.history(false)) return;
   const run = cmView && cmHistoryCommand('undo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('undo');
@@ -12588,6 +14025,7 @@ function cmUndo() {
 
 function cmRedo() {
   if (window.ReadMDCollaborationShare?.history(true)) return;
+  if (window.ReadMDReview?.history(true)) return;
   const run = cmView && cmHistoryCommand('redo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('redo');
@@ -12786,6 +14224,7 @@ function destroyEditor() {
   hideCmSelectionToolbar();
   closeSlashMenu();
   if (cmView) {
+    window.ReadMDReview?.detach(cmView);
     try { cmView.destroy(); } catch (e) { /* ignore */ }
     cmView = null;
   }
@@ -13810,9 +15249,72 @@ function updateDocStatistics() {
 }
 
 
+/* Delimited clipboard records, including Excel's quoted tabs/newlines. A final
+   record separator terminates its row; additional empty records remain rows.
+   Plain comma prose is ambiguous, so CSV requires an explicit text/csv type. */
+const CLIPBOARD_TABLE_LIMITS = { bytes: 1024 * 1024, rows: 1000, columns: 100, cells: 20000 };
+
+function clipboardTableRows(text, delimiter) {
+  text = String(text || '');
+  if (text.length > CLIPBOARD_TABLE_LIMITS.bytes) return null;
+  // Count UTF-8 without allocating an encoded copy of a large clipboard.
+  let bytes = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0);
+    bytes += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (bytes > CLIPBOARD_TABLE_LIMITS.bytes) return null;
+  }
+  text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  if (!text.includes(delimiter)) return null;
+  const rows = [];
+  let row = [], cell = '', quoted = false, closed = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') cell += ch;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else { quoted = false; closed = true; }
+    } else if (ch === delimiter || ch === '\n') {
+      if (row.length >= CLIPBOARD_TABLE_LIMITS.columns) return null;
+      row.push(cell); cell = ''; closed = false;
+      if (ch === '\n') {
+        if (rows.length >= CLIPBOARD_TABLE_LIMITS.rows) return null;
+        rows.push(row); row = [];
+      }
+    } else {
+      // Unexpected text after a closing quote or broken CSV is left to normal
+      // paste. Quotes within an unquoted TSV value are ordinary cell text.
+      if (closed || ch === '"' && cell && delimiter === ',') return null;
+      if (ch === '"' && !cell) quoted = true;
+      else cell += ch;
+    }
+  }
+  if (quoted) return null;
+  if (!text.endsWith('\n') || row.length) {
+    if (row.length >= CLIPBOARD_TABLE_LIMITS.columns || rows.length >= CLIPBOARD_TABLE_LIMITS.rows) return null;
+    row.push(cell); rows.push(row);
+  }
+  if (rows.length < 2 || rows[0].length < 2) return null;
+  let columns = rows[0].length;
+  for (const record of rows) {
+    if (delimiter === ',' && record.length !== columns) return null;
+    columns = Math.max(columns, record.length);
+  }
+  if (rows.length * columns > CLIPBOARD_TABLE_LIMITS.cells) return null;
+  return { rows, columns };
+}
+
+function clipboardTableCell(text) {
+  // Office cells are text, not Markdown/HTML. Entities also avoid GFM's
+  // backslash/pipe parity trap and survive subsequent table Tab/Enter edits.
+  return text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
+    .replace(/\n/g, '<br>')
+    .replace(/^ +| +$/g, spaces => '&#32;'.repeat(spaces.length));
+}
+
 /* 智能 Excel / CSV 粘贴转 Markdown 表格 */
 function handleSmartExcelPaste(e) {
-  if (!e.clipboardData) return;
+  if (!e.clipboardData || e.defaultPrevented) return;
 
   // 0. 剪贴板图片粘贴 -> 自动上传并插入 Markdown 语法
   const items = e.clipboardData.items;
@@ -13871,31 +15373,18 @@ function handleSmartExcelPaste(e) {
     return;
   }
 
-  const text = e.clipboardData.getData('text/plain');
-  if (!text || !text.includes('\t') || !text.includes('\n')) return;
+  if (!state.editing || window.ReadMDCollaborationShare?.canEdit() === false) return;
+  if (cmView) {
+    const ranges = cmView.state.selection.ranges;
+    if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;
+  } else if (!$('edit-area') || e.target !== $('edit-area')) return;
 
-  const lines = text.trim().split(/\r?\n/).map(l => l.split('\t'));
-  if (lines.length < 2 || lines[0].length < 2) return;
-
-  // 确认为多行多列表格数据
-  e.preventDefault();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const colCount = Math.max(...lines.map(r => r.length));
-  const mdRows = [];
-
-  // 表头
-  const defaultCol = _t('editor.table') || '';
-  const headers = lines[0].map(c => c.trim().replace(/\|/g, '\\|') || defaultCol);
-  while (headers.length < colCount) headers.push(defaultCol + (headers.length + 1));
-  mdRows.push('| ' + headers.join(' | ') + ' |');
-  mdRows.push('| ' + headers.map(() => '---').join(' | ') + ' |');
-
-  // 表体
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i].map(c => c.trim().replace(/\|/g, '\\|'));
-    while (row.length < colCount) row.push('');
-    mdRows.push('| ' + row.join(' | ') + ' |');
-  }
+  const csv = e.clipboardData.getData('text/csv');
+  const text = csv || e.clipboardData.getData('text/tab-separated-values') || e.clipboardData.getData('text/plain');
+  const table = clipboardTableRows(text, csv ? ',' : '\t');
+  if (!table) return;
+  const mdRows = table.rows.map(record => '| ' + Array.from({ length: table.columns }, (_, i) => clipboardTableCell(record[i] || '')).join(' | ') + ' |');
+  mdRows.splice(1, 0, '| ' + Array(table.columns).fill('---').join(' | ') + ' |');
 
   const tableMd = '\n' + mdRows.join('\n') + '\n';
   if (cmView) {
@@ -13906,23 +15395,118 @@ function handleSmartExcelPaste(e) {
       userEvent: 'input.paste'
     });
     cmView.focus();
-  } else if ($('edit-area')) {
-    document.execCommand('insertText', false, tableMd);
+  } else {
+    // Preserve the textarea's native undo stack. If insertion is unavailable,
+    // leave the clipboard event unconsumed so ordinary paste can still run.
+    try { if (!document.execCommand('insertText', false, tableMd)) return; }
+    catch (_) { return; }
   }
-  showToast(_t('toast.tableConverted', { count: lines.length }) || `已将剪贴板中 ${lines.length} 行表格转为 Markdown 表格`, 2000);
+  e.preventDefault();
+  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  showToast(_t('toast.tableConverted', { count: table.rows.length }) || `已将剪贴板中 ${table.rows.length} 行表格转为 Markdown 表格`, 2000);
 }
+
+document.addEventListener('paste', e => {
+  if (!cmView && state.editing && e.target === $('edit-area')) handleSmartExcelPaste(e);
+});
 
 /* 交互式表格设计器 */
 let selectedRows = 3;
 let selectedCols = 3;
+
+/* Column alignment edits only the delimiter token. Cell Markdown and spacing
+   never pass through the table formatter or an HTML round trip. */
+function cmTableRowSegments(text) {
+  if (text.length > 65536) return null;
+  const pipes = [];
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\\') { escaped = !escaped; continue; }
+    if (ch === '|' && !escaped) pipes.push(i);
+    escaped = false;
+  }
+  let from = 0, to = text.length;
+  const first = text.search(/\S/), last = text.search(/\s*$/) - 1;
+  if (pipes[0] === first) from = pipes.shift() + 1;
+  if (pipes[pipes.length - 1] === last) to = pipes.pop();
+  const cells = [];
+  for (const pipe of pipes) {
+    cells.push({ from, to: pipe }); from = pipe + 1;
+    if (cells.length >= 100) return null;
+  }
+  cells.push({ from, to });
+  return cells;
+}
+
+function cmTableAlignmentContext(view) {
+  const CM = window.ReadMDCodeMirror;
+  if (!view || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  const hit = cmSingleCursorLine(view);
+  if (!hit || cmInCode(view.state, hit.range.from) || cmInCode(view.state, hit.range.to)) return null;
+  let table = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
+  while (table && table.name !== 'Table') table = table.parent;
+  if (!table || table.to - table.from > 1024 * 1024) return null;
+  const doc = view.state.doc, header = doc.lineAt(table.from), last = doc.lineAt(table.to);
+  // Nested list/quote prefixes need their own source-coordinate model.
+  if (!/^ {0,3}$/.test(header.text.slice(0, table.from - header.from)) || last.number - header.number + 1 > 1000 || header.number === doc.lines) return null;
+  const delimiter = doc.line(header.number + 1);
+  if (hit.line.number === delimiter.number) return null;
+  const headers = cmTableRowSegments(header.text), cells = cmTableRowSegments(hit.line.text), delimiters = cmTableRowSegments(delimiter.text);
+  if (!headers || !cells || !delimiters || headers.length !== delimiters.length || cells.length !== headers.length) return null;
+  const column = cells.findIndex(cell => hit.range.from >= hit.line.from + cell.from && hit.range.to <= hit.line.from + cell.to);
+  if (column < 0) return null;
+  const segment = delimiters[column], token = delimiter.text.slice(segment.from, segment.to).match(/^([ \t]*)(:?)(-+)(:?)([ \t]*)$/);
+  if (!token) return null;
+  const from = delimiter.from + segment.from + token[1].length;
+  return { column, from, to: from + token[2].length + token[3].length + token[4].length, dashes: token[3],
+    alignment: token[2] && token[4] ? 'center' : token[4] ? 'right' : token[2] ? 'left' : '', range: hit.range };
+}
+
+function cmAlignTableColumn(view, alignment) {
+  if (!['left', 'center', 'right'].includes(alignment)) return false;
+  const hit = cmTableAlignmentContext(view);
+  if (!hit || hit.alignment === alignment) return false;
+  const insert = (alignment !== 'right' ? ':' : '') + hit.dashes + (alignment !== 'left' ? ':' : '');
+  const delta = insert.length - (hit.to - hit.from), map = pos => pos < hit.to ? pos : pos + delta;
+  view.dispatch({ changes: { from: hit.from, to: hit.to, insert }, selection: { anchor: map(hit.range.anchor), head: map(hit.range.head) },
+    scrollIntoView: true, userEvent: 'input.table.align' });
+  view.focus();
+  return true;
+}
 
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
   const modal = $('table-modal');
   if (!modal) return;
+  const _t = key => window.i18n ? window.i18n.t(key) : key;
+  const picker = $('table-grid-picker'), label = $('table-grid-label');
+  $('table-align-controls')?.remove();
+  const view = cmView, hit = cmTableAlignmentContext(view);
+  if (hit && picker) {
+    const snapshot = view.state, tab = getActiveTab();
+    picker.classList.add('hidden');
+    if (label) label.textContent = _t('formula.column') + ' ' + (hit.column + 1);
+    const controls = document.createElement('div'); controls.id = 'table-align-controls'; controls.className = 'panel-feedback-row';
+    controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', _t('dialog.tableAlign'));
+    for (const alignment of ['left', 'center', 'right']) {
+      const key = 'dialog.tableAlign' + alignment[0].toUpperCase() + alignment.slice(1), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.dataset.tableAlign = alignment; button.dataset.i18n = key; button.textContent = _t(key);
+      button.setAttribute('aria-pressed', String(hit.alignment === alignment));
+      if (hit.alignment === alignment) button.dataset.modalInitial = '';
+      button.addEventListener('click', () => {
+        if (cmView === view && view.state.doc === snapshot.doc && view.state.selection.eq(snapshot.selection) && getActiveTab() === tab) cmAlignTableColumn(view, alignment);
+        closeTableModal();
+      });
+      controls.append(button);
+    }
+    picker.before(controls);
+  } else {
+    picker?.classList.remove('hidden');
+    initTableGridPicker();
+  }
   modal.classList.remove('hidden');
-  initTableGridPicker();
 }
 
 function closeTableModal() {
@@ -14073,144 +15657,51 @@ function switchEditAiToChatPanel() {
 window.switchEditAiToChatPanel = switchEditAiToChatPanel;
 
 async function runEditAiAction(act, customPrompt = '') {
-  if (editAiRunning || !state.editing || !cmView) return;
-  editAiRunning = true;
-  const epoch = ++editAiRequestEpoch;
+  if (editAiRunning || !state.editing || !cmView || !window.ReadMDReview) return;
+  const tab = getActiveTab(), view = cmView, epoch = ++editAiRequestEpoch;
   const aborter = editAiAborter = new AbortController();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const preview = $('edit-ai-preview');
-  const previewContent = $('edit-ai-preview-content');
-  const statusEl = $('edit-ai-status');
-  if (preview) preview.classList.remove('hidden');
-  if (previewContent) previewContent.innerHTML = '';
-  if (statusEl) statusEl.textContent = _t('editai.generating') || '';
-  const submitBtn = $('edit-ai-submit');
+  const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
+  editAiRunning = true;
+  const preview = $('edit-ai-preview'), previewContent = $('edit-ai-preview-content'), statusEl = $('edit-ai-status');
+  preview?.classList.remove('hidden');
+  if (previewContent) previewContent.textContent = '';
+  if (statusEl) statusEl.textContent = window.i18n.t('review.busy');
+  const submit = $('edit-ai-submit');
+  if (submit) { submit.disabled = true; submit.classList.add('btn-loading'); }
   const chips = document.querySelectorAll('.edit-ai-act-chip');
+  chips.forEach(chip => { chip.disabled = true; });
   ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = true; });
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); }
-  chips.forEach(c => { c.disabled = true; });
-
-  const currentDocStr = cmView ? cmView.state.doc.toString() : '';
-  const range = editAiSelectionRange || {
-    from: cmView ? cmView.state.selection.main.from : 0,
-    to: cmView ? cmView.state.selection.main.to : 0,
-    text: cmView ? cmView.state.sliceDoc(cmView.state.selection.main.from, cmView.state.selection.main.to) : ''
-  };
-  editAiSnapshot = {
-    tabId: state.activeTabId, name: state.sourceName, path: state.file, dir: state.dir,
-    docText: currentDocStr,
-    range: { ...range },
-    hadSelection: range.from !== range.to && Boolean(range.text)
-  };
-  const skillByAction = { complete: 'readmd-continue', polish: 'readmd-polish', fix: 'readmd-format-fix', translate: 'readmd-translate' };
-  const skillId = skillByAction[act] || 'readmd-polish';
-  let userMessage = '';
-  const sourceText = range.text || currentDocStr;
-
-  if (act === 'complete') {
-    userMessage = customPrompt || '';
-  } else if (act === 'polish') {
-    userMessage = customPrompt || '';
-  } else if (act === 'fix') {
-    userMessage = customPrompt || '';
-  } else if (act === 'translate') {
-    userMessage = customPrompt || '';
-  } else {
-    userMessage = customPrompt || '';
-  }
-
   editAiCurrentResult = '';
-
   try {
-    const connection = typeof ensureAiConfigured === 'function'
-      ? await ensureAiConfigured()
-      : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
-    if (!connection) {
-      if (statusEl) statusEl.textContent = _t('toast.noApiKeyNotice');
-      return;
+    const stamp = await ReadMDReview.capture(tab);
+    if (!stamp || epoch !== editAiRequestEpoch || getActiveTab() !== tab || cmView !== view) return;
+    const range = editAiSelectionRange || { from: view.state.selection.main.from, to: view.state.selection.main.to, text: '' };
+    if (range.from < 0 || range.to > stamp.content.length || (range.text && stamp.content.slice(range.from, range.to) !== range.text)) throw new Error(window.i18n.t('review.conflict'));
+    editAiSnapshot = { tabId: tab.id, name: tab.name, path: tab.path, dir: tab.dir, docText: stamp.content,
+      reviewStamp: stamp, range: { ...range }, hadSelection: range.from !== range.to && Boolean(range.text) };
+    const connection = typeof ensureAiConfigured === 'function' ? await ensureAiConfigured() : await resolveSharedAiConnection();
+    if (!connection || epoch !== editAiRequestEpoch || getActiveTab() !== tab || cmView !== view) return;
+    const skills = { complete: 'readmd-continue', polish: 'readmd-polish', fix: 'readmd-format-fix', translate: 'readmd-translate' };
+    const labels = { complete: 'editai.actComplete', polish: 'editai.actPolish', fix: 'editai.actFix', translate: 'editai.actTranslate' };
+    await ReadMDReview.runAi({ request: customPrompt || window.i18n.t(labels[act] || 'ai.polish'),
+      skill_id: skills[act] || 'readmd-polish', provider: connection.provider, credential_id: connection.credential_id,
+      model: connection.model, task_id: taskId, signal: aborter.signal,
+      ranges: range.from !== range.to ? [{ from: range.from, to: range.to }] : undefined }, stamp, tab);
+    if (epoch === editAiRequestEpoch && getActiveTab() === tab && cmView === view) {
+      closeEditAiBar(); showToast(window.i18n.t('review.pending'));
     }
-    if (epoch !== editAiRequestEpoch) return;
-    const res = await apiFetch('/api/ai/chat', {
-      signal: aborter.signal,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: connection.provider,
-        credential_id: connection.credential_id,
-        model: connection.model,
-        base_url: connection.base_url,
-        mode: connection.mode,
-        endpoint_mode: connection.endpoint_mode,
-        headers: connection.headers,
-        skill_id: skillId,
-        skill_variables: {
-          document: range.context || sourceText,
-          selection: sourceText,
-          request: userMessage,
-          language: (window.i18n && window.i18n.locale) || document.documentElement.lang || 'en',
-          context: range.context || '',
-          output_format: 'Markdown'
-        },
-        messages: [{ role: 'user', content: userMessage || 'Apply the requested editing action to the supplied Markdown.' }],
-        stream: false
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      let errMsg = 'HTTP ' + res.status;
-      try {
-        const errJson = JSON.parse(errText);
-        if (errJson.error) errMsg = errJson.error;
-      } catch (e) {
-        if (errText) errMsg = errText.slice(0, 100);
-      }
-      throw new Error(errMsg);
+  } catch (error) {
+    if (epoch === editAiRequestEpoch && getActiveTab() === tab && cmView === view) {
+      if (statusEl) statusEl.textContent = window.i18n.t(error.code === 'cancelled' ? 'ai.stopped' : /conflict|stale/.test(error.code || '') ? 'review.conflict' : 'review.persistenceFailed');
+      const errorKey = 'error.' + error.code, localized = window.i18n.t(errorKey);
+      if (previewContent) previewContent.textContent = error.code && localized !== errorKey ? localized : (error.message || window.i18n.t('review.aiFailed'));
     }
-
-    let resultText = '';
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-      if (data.ok === false) throw new Error(data.error || _t('audit.invalidResponse'));
-      resultText = data.content || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-    } else {
-      const rawText = await res.text();
-      const lines = rawText.split('\n');
-      const chunks = [];
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const jsonStr = line.slice(5).trim();
-          if (jsonStr && jsonStr !== '[DONE]') {
-            try {
-              const d = JSON.parse(jsonStr);
-              if (d.d) chunks.push(d.d);
-              else if (d.content) chunks.push(d.content);
-            } catch (e) {}
-          }
-        }
-      }
-      resultText = chunks.length ? chunks.join('') : rawText;
-    }
-
-    if (epoch !== editAiRequestEpoch) return;
-    if (!resultText.trim()) throw new Error(_t('audit.emptyAiResult'));
-    editAiCurrentResult = resultText;
-    ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = false; });
-    if (previewContent) {
-      previewContent.textContent = resultText;
-    }
-    if (statusEl) statusEl.textContent = _t('editai.title') || '';
-  } catch (err) {
-    if (epoch !== editAiRequestEpoch || err.name === 'AbortError') return;
-    if (statusEl) statusEl.textContent = (_t('ai.reqFailMsg') || '') + err.message;
-    if (previewContent) previewContent.textContent = err.message;
   } finally {
     if (epoch === editAiRequestEpoch) {
       editAiRunning = false;
       editAiAborter = null;
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
-      chips.forEach(c => { c.disabled = false; });
+      if (submit) { submit.disabled = false; submit.classList.remove('btn-loading'); }
+      chips.forEach(chip => { chip.disabled = false; });
     }
   }
 }
@@ -14219,77 +15710,40 @@ function preserveEditAiCopy() {
   const result = editAiCurrentResult;
   const origin = editAiSnapshot || {};
   closeEditAiBar();
-  showToast(window.i18n.t('toast.appliedSelectionFallback'));
+  showToast(window.i18n.t('storage.aiSafeCopy'));
   return renderVirtual('ai', getNextAiCopyTabName(origin.name || state.sourceName), origin.dir || '', result, [], { originPath: origin.path });
 }
 
 async function applyEditAiResult() {
-  if (editAiRunning) return;
-  if (!cmView || !editAiCurrentResult) {
-    closeEditAiBar();
-    return;
+  if (editAiRunning || !editAiCurrentResult) return;
+  const origin = editAiSnapshot, view = cmView, tab = getActiveTab();
+  if (!view || !origin?.reviewStamp || origin.tabId !== tab?.id || !window.ReadMDReview) return preserveEditAiCopy();
+  const from = origin.range.from, to = origin.range.to;
+  if (view.state.doc.toString() !== origin.docText || view.state.sliceDoc(from, to) !== (origin.range.text || '')) return preserveEditAiCopy();
+  try {
+    await ReadMDReview.propose([{ from, to, insert: editAiCurrentResult }], origin.reviewStamp, tab);
+    if (getActiveTab() === tab && cmView === view) closeEditAiBar();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return preserveEditAiCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
-  const currentDoc = cmView.state.doc.toString();
-  let from = 0, to = 0;
-
-  if (editAiSnapshot && editAiSnapshot.hadSelection) {
-    const origText = editAiSnapshot.range.text;
-    const snapFrom = editAiSnapshot.range.from;
-    const snapTo = editAiSnapshot.range.to;
-    if (snapFrom >= 0 && snapTo <= currentDoc.length && cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
-      from = snapFrom;
-      to = snapTo;
-    } else {
-      const firstIdx = currentDoc.indexOf(origText);
-      const secondIdx = firstIdx >= 0 ? currentDoc.indexOf(origText, firstIdx + 1) : -1;
-      if (firstIdx >= 0 && secondIdx < 0) {
-        from = firstIdx;
-        to = firstIdx + origText.length;
-      } else {
-        return preserveEditAiCopy();
-      }
-    }
-  } else {
-    const curSel = cmView.state.selection.main;
-    from = curSel ? curSel.from : 0;
-    to = curSel ? curSel.to : 0;
-  }
-
-  const view = cmView, tabId = state.activeTabId;
-  if (!await window.ReadMDRecovery?.checkpoint('ai_replace')) return;
-  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== currentDoc) return preserveEditAiCopy();
-  cmView.dispatch({
-    changes: { from, to, insert: editAiCurrentResult },
-    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
-    selection: { anchor: from + editAiCurrentResult.length },
-    scrollIntoView: true
-  });
-  closeEditAiBar();
-  showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
 }
 
 async function insertEditAiResult() {
-  if (editAiRunning) return;
-  if (!cmView || !editAiCurrentResult) {
-    closeEditAiBar();
-    return;
+  if (editAiRunning || !editAiCurrentResult) return;
+  const origin = editAiSnapshot, tab = getActiveTab(), view = cmView;
+  if (!view || !origin?.reviewStamp || origin.tabId !== tab?.id || view.state.doc.toString() !== origin.docText) return preserveEditAiCopy();
+  const pos = origin.range.to;
+  try {
+    await ReadMDReview.propose([{ from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' }], origin.reviewStamp, tab);
+    if (getActiveTab() === tab && cmView === view) closeEditAiBar();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return preserveEditAiCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
-  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
-  const sel = cmView.state.selection.main;
-  const pos = sel ? sel.to : cmView.state.doc.length;
-  const view = cmView, tabId = state.activeTabId, before = cmView.state.doc.toString();
-  if (!await window.ReadMDRecovery?.checkpoint('ai_insert')) return;
-  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== before) return preserveEditAiCopy();
-  cmView.dispatch({
-    changes: { from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' },
-    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.insert'),
-    selection: { anchor: pos + editAiCurrentResult.length + 2 }
-  });
-  closeEditAiBar();
 }
-
 function discardEditAiResult() {
   closeEditAiBar();
 }
@@ -14566,8 +16020,8 @@ function cmBacktickInput(view, from) {
   return true;
 }
 
-/* Paste: images are saved next to the document, tab-separated cells become
-   a table (both via handleSmartExcelPaste); a URL pasted over a selection
+/* Paste: images are saved next to the document, TSV / explicitly typed CSV
+   becomes a table (both via handleSmartExcelPaste); a URL over a selection
    becomes a link (CodeMirror's pasteURLAsLink handles that next). */
 function cmHandlePaste(event, view) {
   if (view !== cmView) return false;
@@ -16552,6 +18006,929 @@ window.ReadMDMathMetadata=(()=>{
 
 ;
 'use strict';
+/* Exact ordinary-prose selection projection. Token locations come from the
+   parser's remaining-input cursor; equal strings never identify source. */
+(function (root, factory) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(
+    () => require('../../vendor/marked.min.js'), null, require('../../vendor/html5-character-references.json'),
+    () => require('../reader/heading-identity.js'));
+  else root.ReadMDAiSelection = factory(() => root.marked, root.document, null, () => root.ReadMDHeadings);
+})(typeof window === 'undefined' ? null : window, (getMarked, document, entities, getHeadings) => {
+  const normalize = source => String(source ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const CHROME = '[data-rd-chrome],button,input,textarea,select,mjx-assistive-mml,.rd-anchor,.review-block-actions';
+  const UNSAFE = 'pre,code,table,math,mjx-container,mjx-assistive-mml,svg,.diagram-card,.code-chunk-card,.rd-footnotes,.rd-callout,.academic-callout,[data-readmd-footnote]';
+  const LEAF = 'p,h1,h2,h3,h4,h5,h6,li';
+  const numeric = { 128:8364,130:8218,131:402,132:8222,133:8230,134:8224,135:8225,136:710,137:8240,138:352,139:8249,140:338,142:381,145:8216,146:8217,147:8220,148:8221,149:8226,150:8211,151:8212,152:732,153:8482,154:353,155:8250,156:339,158:382,159:376 };
+  let decoder, cached;
+  const origin = (view, at) => view.positions ? view.positions[at] : view.offset + at;
+  const sub = (view, from, to) => ({ text: view.text.slice(from, to), offset: view.positions ? 0 : view.offset + from, positions: view.positions?.slice(from, to) });
+  const span = (view, from, to) => ({ from: origin(view, from), to: origin(view, to - 1) + 1 });
+  function decode(reference) {
+    if (document) {
+      decoder ||= document.createElement('textarea'); decoder.innerHTML = reference; return decoder.textContent;
+    }
+    const key = reference.slice(1);
+    if (key[0] !== '#') return entities[key] ?? reference;
+    const hex = /^#[xX]/.test(key); let code = parseInt(key.slice(hex ? 2 : 1), hex ? 16 : 10);
+    if (!code || code > 0x10ffff || code >= 0xd800 && code <= 0xdfff) code = 0xfffd;
+    return String.fromCodePoint(numeric[code] || code);
+  }
+  function inline(view, tokens) {
+    const result = { text: '', spans: [], containers: [] };
+    const append = (text, range) => { result.text += text; for (let i = 0; i < text.length; i++) result.spans.push(range); };
+    function literal(mapped) {
+      for (let at = 0; at < mapped.text.length;) {
+        const reference = mapped.text[at] === '&' ? /^&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|\w+);/.exec(mapped.text.slice(at))?.[0] : null;
+        const raw = reference || String.fromCodePoint(mapped.text.codePointAt(at));
+        append(reference ? decode(reference) : raw, span(mapped, at, at + raw.length)); at += raw.length;
+      }
+    }
+    function walk(mapped, parts) {
+      let cursor = 0;
+      for (const token of parts || []) {
+        const raw = token.raw || '';
+        if (!raw || mapped.text.slice(cursor, cursor + raw.length) !== raw) return false;
+        const part = sub(mapped, cursor, cursor + raw.length); cursor += raw.length;
+        if (token.type === 'text') {
+          if (token.tokens) { if (!walk(part, token.tokens)) return false; }
+          else literal(part);
+        } else if (token.type === 'escape') append(token.text, span(part, 0, raw.length));
+        else if (token.type === 'br') append('\n', span(part, 0, raw.length));
+        else if (['strong', 'em', 'del', 'link'].includes(token.type)) {
+          let from, to;
+          if (token.type === 'link') {
+            if (raw[0] === '[') {
+              let depth = 1; from = 1;
+              for (let i = 1; i < raw.length; i++) {
+                if (raw[i] === '\\') { i++; continue; }
+                if (raw[i] === '[') depth++;
+                if (raw[i] === ']' && --depth === 0) { to = i; break; }
+              }
+            } else if (raw[0] === '<' && raw.endsWith('>')) { from = 1; to = raw.length - 1; }
+            else if (raw === token.text) { from = 0; to = raw.length; }
+          } else {
+            const size = token.type === 'em' ? 1 : 2, mark = raw[0].repeat(size);
+            if (raw.startsWith(mark) && raw.endsWith(mark)) { from = size; to = raw.length - size; }
+          }
+          if (!Number.isInteger(from) || !Number.isInteger(to) || to < from || raw.slice(from, to) !== token.text) return false;
+          const outFrom = result.text.length;
+          if (!walk(sub(part, from, to), token.tokens)) return false;
+          result.containers.push({ ...span(part, 0, raw.length), outFrom, outTo: result.text.length });
+        } else return false; // Code, images, HTML and extensions are read-only.
+      }
+      return cursor === mapped.text.length;
+    }
+    return walk(view, tokens) ? result : null;
+  }
+  function stripLines(view, strip, expected) {
+    let text = '', positions = [], cursor = 0, row = 0;
+    for (const line of view.text.match(/[^\n]*\n|[^\n]+$/g) || []) {
+      const count = strip(line, row++); if (!Number.isInteger(count) || count < 0 || count > line.length) return null;
+      for (let i = count; i < line.length; i++) { text += line[i]; positions.push(origin(view, cursor + i)); }
+      cursor += line.length;
+    }
+    if (!text.startsWith(expected) || !/^\n*$/.test(text.slice(expected.length))) return null;
+    return { text: expected, positions: positions.slice(0, expected.length), offset: 0 };
+  }
+  function lexer(view, links, breaks) {
+    const marked = getMarked(); if (!marked?.Tokenizer || !marked?.Lexer) return null;
+    const tokenizer = new marked.Tokenizer();
+    for (const name of ['space','code','fences','heading','hr','blockquote','list','html','def','table','lheading','paragraph','text']) {
+      const parse = tokenizer[name];
+      if (typeof parse === 'function') tokenizer[name] = function (remaining, ...args) {
+        const token = parse.call(this, remaining, ...args);
+        if (token) token.readmdOffset = view.text.length - remaining.length;
+        return token;
+      };
+    }
+    const parser = new marked.Lexer({ gfm: true, breaks, tokenizer });
+    if (links) parser.tokens.links = { ...links };
+    return { parser, tokens: parser.lex(view.text) };
+  }
+  function blocks(source, options = {}) {
+    source = normalize(source); const breaks = Boolean(options.breaks);
+    if (cached?.source === source && cached.breaks === breaks) return cached;
+    const lineStarts = [0]; for (let i = 0; i < source.length; i++) if (source[i] === '\n') lineStarts.push(i + 1);
+    function lineOf(at) { let low = 0, high = lineStarts.length; while (low + 1 < high) { const middle = (low + high) >> 1; if (lineStarts[middle] <= at) low = middle; else high = middle; } return low + 1; }
+    // Mirror the reader's line-preserving metadata omission, retaining original
+    // offsets by replacing metadata characters with spaces rather than deleting.
+    const prepared = source.replace(/^---\n([\s\S]*?)\n---(?:\n|$)/, (raw, fields) => /^[ \t]*[A-Za-z_][\w-]*[ \t]*:/m.test(fields) ? raw.replace(/[^\n]/g, ' ') : raw);
+    function parse(view, inheritedLinks) {
+      const lexed = lexer(view, inheritedLinks, breaks); if (!lexed) return [];
+      const { parser, tokens } = lexed, tree = [];
+      for (const token of tokens) {
+        if (token.type === 'space' || token.type === 'def') continue;
+        const at = token.readmdOffset, raw = token.raw || '';
+        if (!Number.isInteger(at) || at < 0 || view.text.slice(at, at + raw.length) !== raw) { tree.push({ tag: null }); continue; }
+        const mapped = sub(view, at, at + raw.length), location = span(mapped, 0, raw.length);
+        const node = { ...location, line: lineOf(location.from), tag: null, inline: null, children: [] };
+        if (token.type === 'paragraph' || token.type === 'heading' || token.type === 'text') {
+          node.tag = token.type === 'heading' ? 'H' + token.depth : 'P';
+          let from = 0, text = token.text || '';
+          if (token.type === 'heading') {
+            const opening = /^ {0,3}#{1,6}(?:[ \t]+|$)/.exec(raw); from = opening?.[0].length || 0;
+            const headings = getHeadings?.(); if (headings?.attributes) text = headings.attributes(text).text;
+          }
+          if (raw.slice(from, from + text.length) === text && !/(^|[^\\])\$|\\[([]|<!--readmd:math:/.test(text)) {
+            const contents = sub(mapped, from, from + text.length);
+            node.inline = inline(contents, parser.inlineTokens(text));
+          }
+        } else if (token.type === 'blockquote') {
+          node.tag = 'BLOCKQUOTE';
+          const content = stripLines(mapped, line => /^ {0,3}>[ \t]?/.exec(line)?.[0].length || 0, token.text);
+          if (content) node.children = parse(content, tokens.links);
+        } else if (token.type === 'list') {
+          node.tag = token.ordered ? 'OL' : 'UL'; let cursor = 0;
+          for (const item of token.items) {
+            const itemRaw = item.raw || '', itemView = sub(mapped, cursor, cursor + itemRaw.length); cursor += itemRaw.length;
+            const child = { tag: 'LI', inline: null, children: [], task: Boolean(item.task) };
+            if (itemView.text === itemRaw) {
+              const marker = /^ {0,3}(?:[*+-]|\d{1,9}[.)])[ ]+/.exec(itemRaw), indent = marker?.[0].length;
+              if (indent && !itemRaw.includes('\t')) {
+                const content = stripLines(itemView, (line, row) => row === 0 ? indent + (item.task ? /^\[[ xX]\][ ]+/.exec(line.slice(indent))?.[0].length || 0 : 0) : Math.min(indent, /^ */.exec(line)[0].length), item.text);
+                if (content) { child.children = parse(content, tokens.links); if (child.children.length === 1 && child.children[0].tag === 'P') child.inline = child.children[0].inline; }
+              }
+            }
+            node.children.push(child);
+          }
+        } else if (token.type === 'code') node.tag = 'PRE';
+        else if (token.type === 'table') node.tag = 'TABLE';
+        else if (token.type === 'hr') node.tag = 'HR';
+        tree.push(node);
+      }
+      return tree;
+    }
+    cached = { source, breaks, tree: parse({ text: prepared, offset: 0, positions: null }) };
+    return cached;
+  }
+  function mapInline(source, projection, from, to) {
+    if (!projection || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from >= to || to > projection.text.length) return null;
+    const first = projection.spans[from], last = projection.spans[to - 1]; if (!first || !last) return null;
+    if (from && projection.spans[from - 1]?.to > first.from || to < projection.spans.length && projection.spans[to]?.from < last.to) return null;
+    let start = first.from, end = last.to;
+    for (const container of projection.containers) {
+      if (to <= container.outFrom || from >= container.outTo || from >= container.outFrom && to <= container.outTo) continue;
+      if (from <= container.outFrom && to >= container.outTo) { start = Math.min(start, container.from); end = Math.max(end, container.to); }
+      else return null;
+    }
+    // Removed container prefixes between text lines cannot be silently eaten by
+    // an inline replacement. Keep those cross-line projections read-only.
+    if (/\n[ \t]*(?:>|[*+-] |\d+[.)] )/.test(source.slice(start, end))) return null;
+    return { from: start, to: end, text: source.slice(start, end), displayText: projection.text.slice(from, to), exact: true };
+  }
+  function mapText(source, path, from, to, options = {}) {
+    const indexed = blocks(source, options); let node = { children: indexed.tree };
+    for (const index of path) node = node?.children?.[index];
+    return mapInline(indexed.source, node?.inline, from, to);
+  }
+  function element(node) { return node?.nodeType === 1 ? node : node?.parentElement; }
+  function visibleChildren(node) { return Array.from(node?.children || []).filter(child => !child.matches(CHROME)); }
+  function topNode(indexed, root, top, partial) {
+    const line = Number(top.dataset?.sourceLine);
+    if (Number.isInteger(line) && line > 0) return indexed.tree.find(node => node.line === line && node.tag === top.tagName) || null;
+    const siblings = visibleChildren(root), target = siblings.indexOf(top); if (target < 0) return null;
+    for (let i = target - 1; i >= 0; i--) {
+      const anchorLine = Number(siblings[i].dataset?.sourceLine); if (!anchorLine) continue;
+      const anchor = indexed.tree.findIndex(node => node.line === anchorLine && node.tag === siblings[i].tagName); if (anchor < 0) return null;
+      for (let k = i + 1; k <= target; k++) if (indexed.tree[anchor + k - i]?.tag !== siblings[k].tagName) return null;
+      return indexed.tree[anchor + target - i];
+    }
+    if (partial || siblings.length !== indexed.tree.length || siblings.some((child, i) => child.tagName !== indexed.tree[i].tag)) return null;
+    return indexed.tree[target];
+  }
+  function leafProjection(node, dom, target) {
+    if (!node || node.tag !== dom.tagName) return null;
+    if (dom === target) return node.inline;
+    const children = visibleChildren(dom), index = children.findIndex(child => child === target || child.contains(target));
+    if (index < 0 || children.length !== node.children.length || children.some((child, i) => child.tagName !== node.children[i]?.tag)) return null;
+    return leafProjection(node.children[index], children[index], target);
+  }
+  function domText(root) {
+    let text = ''; const positions = new WeakMap();
+    function visit(node) {
+      const start = text.length;
+      if (node.nodeType === 3) { text += node.nodeValue || ''; positions.set(node, { start, end: text.length }); return; }
+      if (node.nodeType !== 1 || node.matches(CHROME)) return;
+      if (node.tagName === 'BR') { text += '\n'; positions.set(node, { start, end: text.length, boundaries: [start] }); return; }
+      const boundaries = [start]; for (const child of node.childNodes || []) { visit(child); boundaries.push(text.length); }
+      positions.set(node, { start, end: text.length, boundaries });
+    }
+    visit(root);
+    return { text, at(node, offset) { const entry = positions.get(node); if (!entry || !Number.isInteger(offset) || offset < 0) return null; return node.nodeType === 3 ? offset <= (node.nodeValue || '').length ? entry.start + offset : null : entry.boundaries?.[offset] ?? null; } };
+  }
+  function mapRange(source, root, range, options = {}) {
+    try {
+      const start = element(range.startContainer), end = element(range.endContainer);
+      if (!start || !end || !root.contains(start) || !root.contains(end) || start.closest(CHROME + ',' + UNSAFE) || end.closest(CHROME + ',' + UNSAFE)) return null;
+      const leaf = start.closest(LEAF); if (!leaf || !leaf.contains(range.endContainer) || leaf.querySelector(UNSAFE)) return null;
+      const container = leaf.closest('.markdown-body') || root; if (!root.contains(container)) return null;
+      let top = leaf; while (top.parentElement && top.parentElement !== container) top = top.parentElement;
+      if (top.parentElement !== container) return null;
+      const indexed = blocks(source, options), node = topNode(indexed, container, top, Boolean(options.partial));
+      let projection = leafProjection(node, top, leaf); if (!projection) return null;
+      const dom = domText(leaf);
+      // Marked inserts one display space after a task checkbox. It has no
+      // editable source counterpart, while the task's actual text still maps.
+      if (leaf.querySelector('input[type="checkbox"]') && dom.text === ' ' + projection.text) projection = {
+        text: ' ' + projection.text, spans: [null, ...projection.spans], containers: projection.containers.map(item => ({ ...item, outFrom: item.outFrom + 1, outTo: item.outTo + 1 })) };
+      if (dom.text !== projection.text) return null;
+      const from = dom.at(range.startContainer, range.startOffset), to = dom.at(range.endContainer, range.endOffset);
+      return mapInline(indexed.source, projection, from, to);
+    } catch (_) { return null; }
+  }
+  function readonlyTarget(target, source) {
+    return { ...target, source, isSelection: true, exact: false, from: -1, to: -1, conflict: true };
+  }
+  function exactTarget(target, source) {
+    const boundary = at => at === 0 || at === source.length || !(/[\uD800-\uDBFF]/.test(source[at - 1]) && /[\uDC00-\uDFFF]/.test(source[at]));
+    return target.exact !== false && target.source === source && Number.isInteger(target.from) && Number.isInteger(target.to) &&
+      target.from >= 0 && target.to > target.from && target.to <= source.length && boundary(target.from) && boundary(target.to) &&
+      target.text === source.slice(target.from, target.to);
+  }
+  function currentTarget(target, source) {
+    if (!target.isSelection) return { ...target, source, text: source, from: 0, to: source.length };
+    return exactTarget(target, source) ? { ...target, exact: true } : readonlyTarget(target, source);
+  }
+  function remapTarget(target, transaction) {
+    if (!target || target.tabId !== transaction?.tabId) return target;
+    const { before, after, edits, mapPosition } = transaction;
+    if (typeof after !== 'string') return readonlyTarget(target, target.source);
+    if (!target.isSelection) return currentTarget(target, after);
+    if (typeof before !== 'string' || !exactTarget(target, before) || !Array.isArray(edits) || typeof mapPosition !== 'function') return readonlyTarget(target, after);
+    let cursor = 0, content = '';
+    for (const edit of edits) {
+      if (!Number.isInteger(edit.from) || !Number.isInteger(edit.to) || edit.from < cursor || edit.to < edit.from || edit.to > before.length || typeof edit.insert !== 'string') return readonlyTarget(target, after);
+      // A replacement crossing a selection edge cannot prove which part of
+      // its inserted text belongs to that selection. Never widen its grant.
+      if (edit.from < target.from && edit.to > target.from || edit.from < target.to && edit.to > target.to) return readonlyTarget(target, after);
+      content += before.slice(cursor, edit.from) + edit.insert; cursor = edit.to;
+    }
+    if (content + before.slice(cursor) !== after) return readonlyTarget(target, after);
+    const from = mapPosition(target.from, 1), to = mapPosition(target.to, -1);
+    const mapped = { ...target, source: after, from, to, text: after.slice(from, to), displayText: after.slice(from, to), exact: true, conflict: false };
+    return exactTarget(mapped, after) ? mapped : readonlyTarget(target, after);
+  }
+  return { blocks, mapText, mapRange, currentTarget, remapTarget };
+});
+
+;
+'use strict';
+/* Durable AI jobs belong to the document, independently of panel visibility.
+   The service owns tool execution, budgets and provider/Skill resolution. */
+window.ReadMDAiHarness = (() => {
+  const tasks = new Map(), bindings = new Map(), timers = new Map(), polls = new Map(), actions = new Map(), waiters = new Map();
+  const starting = new Set(), startedHere = new Set(), closingTabs = new WeakSet();
+  const activeStates = new Set(['queued', 'running']);
+  const states = new Set(['queued', 'running', 'paused', 'needs_user_resume', 'budget_exhausted', 'completed', 'failed']);
+  let initialization = null;
+  const t = (key, params) => window.i18n?.t(key, params) || key;
+  const activeTab = () => typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const allTabs = () => typeof state !== 'undefined' && Array.isArray(state.tabs) ? state.tabs : [];
+  const id = () => 'ai-task-' + window.crypto.randomUUID();
+  function failure(code) { const error = new Error(code); error.code = code; return error; }
+  function notify(error) {
+    const key = 'error.' + (error?.code || ''), localized = t(key);
+    if (typeof showToast === 'function') showToast(localized !== key ? localized : t(/conflict|stale/.test(error?.code || '') ? 'review.conflict' : 'review.aiFailed'));
+  }
+  async function request(action, payload = {}) {
+    const response = await apiFetch('/api/ai/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) });
+    const data = await response.json();
+    if (!response.ok || data.ok === false || data.error_code || data.error) throw failure(data.error_code || 'ai_task_failed');
+    return data;
+  }
+  function tabFor(documentId) {
+    return allTabs().find(tab => (window.ReadMDReview?.snapshot(tab)?.document_id || tab.reviewSession?.document_id) === documentId) || null;
+  }
+  function publicTask(value) {
+    if (!value || typeof value.id !== 'string' || typeof value.document_id !== 'string' || !states.has(value.state)) throw failure('ai_task_failed');
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    return { id: value.id, document_id: value.document_id, state: value.state, rounds: count(value.rounds),
+      elapsed_ms: count(value.elapsed_ms), last_event_id: count(value.last_event_id), owned_here: value.owned_here === true,
+      error_code: typeof value.error_code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(value.error_code) ? value.error_code : null };
+  }
+  function settle(task, snapshot) {
+    if (activeStates.has(task.state)) return;
+    const pending = waiters.get(task.id) || [];
+    waiters.delete(task.id);
+    for (const waiter of pending) {
+      if (task.state === 'completed') waiter.resolve(snapshot || window.ReadMDReview?.snapshot(bindings.get(task.id)?.tab) || null);
+      else waiter.reject(failure(task.state === 'failed' ? 'ai_task_failed' : 'cancelled'));
+    }
+  }
+  function schedule(task) {
+    clearTimeout(timers.get(task.id)); timers.delete(task.id);
+    if (!activeStates.has(task.state)) return;
+    timers.set(task.id, setTimeout(() => { timers.delete(task.id); void status(task.id).catch(() => {}); }, 1000));
+  }
+  async function ingest(data, tab) {
+    const task = publicTask(data.task), previous = tasks.get(task.id);
+    // A status poll started before Pause/Resume cannot roll back its receipt.
+    if (previous && task.last_event_id < previous.last_event_id) return previous;
+    tasks.set(task.id, task);
+    const bound = bindings.get(task.id)?.tab;
+    const owner = tab && allTabs().includes(tab) ? tab : bound && allTabs().includes(bound) ? bound : tabFor(task.document_id);
+    if (owner) bindings.set(task.id, { tab: owner, document_id: task.document_id });
+    const receipt = data.snapshot;
+    if (receipt && receipt.document_id === task.document_id && owner && allTabs().includes(owner)) await window.ReadMDReview?.adopt(receipt, owner);
+    settle(task, receipt);
+    schedule(task); render();
+    if (typeof window.dispatchEvent === 'function') window.dispatchEvent(new CustomEvent('readmd:ai-task-state', { detail: { task: { ...task } } }));
+    return task;
+  }
+  function init() {
+    if (window.READMD_ENGINE !== 'rust') return Promise.resolve(true);
+    if (initialization) return initialization;
+    initialization = request('list').then(async data => {
+      if (!Array.isArray(data.tasks)) throw failure('ai_task_failed');
+      for (const task of [...data.tasks].reverse()) await ingest({ task });
+      return true;
+    }).catch(() => { initialization = null; return false; });
+    return initialization;
+  }
+  async function start(options, stamp, tab = activeTab()) {
+    if (!tab || closingTabs.has(tab) || !allTabs().includes(tab) || !stamp) throw failure('review_stale_generation');
+    if (options.signal?.aborted) throw failure('cancelled');
+    const work = (async () => {
+      const latest = await window.ReadMDReview?.capture(tab);
+      if (!latest || latest.document_id !== stamp.document_id || latest.generation !== stamp.generation || latest.review_revision !== stamp.review_revision ||
+          latest.content !== stamp.content || latest.editGeneration !== stamp.editGeneration || closingTabs.has(tab) || !allTabs().includes(tab)) throw failure('review_stale_generation');
+      const data = await request('start', { doc_id: stamp.document_id, generation: stamp.generation, review_revision: stamp.review_revision,
+        request: options.request || '', provider: options.provider, credential_id: options.credential_id, model: options.model, stream: options.stream,
+        skill_id: options.skill_id, ranges: options.ranges, language: window.i18n?.currentLang || 'en', call_id: options.task_id || id() });
+      // Deliberately do not attach the panel/inline-bar AbortSignal to a
+      // durable job. Explicit Pause and document/app close own that lifecycle.
+      const task = await ingest(data, tab);
+      startedHere.add(task.id);
+      return task;
+    })();
+    const pending = { tab, work }; starting.add(pending);
+    try { return await work; } finally { starting.delete(pending); }
+  }
+  function status(taskId) {
+    if (polls.has(taskId)) return polls.get(taskId);
+    const task = tasks.get(taskId);
+    if (!task) return Promise.reject(failure('ai_task_failed'));
+    const work = request('status', { task_id: taskId, after_event_id: task.last_event_id }).then(data => ingest(data)).catch(error => {
+      schedule(tasks.get(taskId) || task);
+      throw error;
+    }).finally(() => { if (polls.get(taskId) === work) polls.delete(taskId); });
+    polls.set(taskId, work);
+    return work;
+  }
+  function action(kind, taskId) {
+    const prior = actions.get(taskId) || Promise.resolve();
+    const work = prior.catch(() => {}).then(async () => {
+      const task = tasks.get(taskId);
+      if (!task) throw failure('ai_task_failed');
+      if (kind === 'resume' && (window.ReadMDRefactor?.busy?.() || allTabs().some(tab => closingTabs.has(tab) &&
+          (bindings.get(task.id)?.tab === tab || (window.ReadMDReview?.snapshot(tab)?.document_id || tab.reviewSession?.document_id) === task.document_id))))
+        throw failure('review_stale_generation');
+      if (kind === 'pause' && !activeStates.has(task.state)) return task;
+      if (kind === 'resume' && (activeStates.has(task.state) || task.state === 'completed')) return task;
+      clearTimeout(timers.get(taskId)); timers.delete(taskId);
+      // A resume always comes from an explicit control. Listing and polling
+      // can report a paused job but never invoke a provider to continue it.
+      return ingest(await request(kind, { task_id: taskId, call_id: id() }));
+    }).finally(() => { if (actions.get(taskId) === work) actions.delete(taskId); });
+    actions.set(taskId, work);
+    return work;
+  }
+  async function pauseTab(tab) {
+    closingTabs.add(tab);
+    const documentId = window.ReadMDReview?.snapshot(tab)?.document_id || tab.reviewSession?.document_id;
+    if (!await init()) {
+      const known = [...starting].some(pending => pending.tab === tab) || [...tasks.values()].some(task =>
+        (bindings.get(task.id)?.tab === tab || task.document_id === documentId) && activeStates.has(task.state));
+      if (!known) return true;
+      closingTabs.delete(tab); notify(failure('ai_task_failed')); return false;
+    }
+    await Promise.allSettled([...starting].filter(pending => pending.tab === tab).map(pending => pending.work));
+    try {
+      for (const task of tasks.values()) if ((bindings.get(task.id)?.tab === tab || task.document_id === documentId) && activeStates.has(task.state)) await action('pause', task.id);
+      return true;
+    } catch (error) { closingTabs.delete(tab); notify(error); return false; }
+  }
+  // A rename must not silently stop a running task or allow a new one to
+  // capture the old path while the durable review identity is moving.
+  async function reserveTabForRename(tab) {
+    if (!tab || closingTabs.has(tab)) return false;
+    closingTabs.add(tab);
+    let reserved = false;
+    try {
+      if (!await init()) return false;
+      await Promise.allSettled([...starting].filter(pending => pending.tab === tab).map(pending => pending.work));
+      const documentId = window.ReadMDReview?.snapshot(tab)?.document_id || tab.reviewSession?.document_id;
+      if ([...tasks.values()].some(task => (bindings.get(task.id)?.tab === tab || task.document_id === documentId) && activeStates.has(task.state))) return false;
+      reserved = true; return true;
+    } finally {
+      if (!reserved) closingTabs.delete(tab);
+    }
+  }
+  async function pauseAll() {
+    // Optional task discovery cannot block an otherwise ordinary quit. Any
+    // already known jobs owned here must still persist an explicit pause.
+    await init();
+    await Promise.allSettled([...starting].map(pending => pending.work));
+    try {
+      for (const task of tasks.values()) if (activeStates.has(task.state) && (task.owned_here || startedHere.has(task.id))) await action('pause', task.id);
+      return true;
+    } catch (error) { notify(error); return false; }
+  }
+  function wait(taskId) {
+    const task = tasks.get(taskId);
+    if (!task) return Promise.reject(failure('ai_task_failed'));
+    if (task.state === 'completed') return Promise.resolve(window.ReadMDReview?.snapshot(bindings.get(taskId)?.tab) || null);
+    if (!activeStates.has(task.state)) return Promise.reject(failure(task.state === 'failed' ? 'ai_task_failed' : 'cancelled'));
+    return new Promise((resolve, reject) => { if (!waiters.has(taskId)) waiters.set(taskId, []); waiters.get(taskId).push({ resolve, reject }); });
+  }
+  function render() {
+    if (typeof document === 'undefined') return;
+    let host = document.getElementById('ai-task-status');
+    const output = document.getElementById('ai-output');
+    if (!host && output) {
+      host = document.createElement('div'); host.id = 'ai-task-status'; host.className = 'ai-task-status';
+      host.setAttribute('role', 'status'); output.insertAdjacentElement('beforebegin', host);
+    }
+    if (!host) return;
+    host.replaceChildren();
+    const tab = activeTab(), documentId = window.ReadMDReview?.snapshot(tab)?.document_id || tab?.reviewSession?.document_id;
+    const visible = [...tasks.values()].filter(task => task.document_id === documentId || bindings.get(task.id)?.tab === tab).reverse();
+    host.hidden = !visible.length;
+    const resumable = visible.filter(task => task.state !== 'completed');
+    const terminal = visible.find(task => task.state === 'completed');
+    function rowFor(task) {
+      const row = document.createElement('div'); row.className = 'ai-task-row';
+      const label = document.createElement('span');
+      const key = activeStates.has(task.state) ? 'ai.taskRunning' : task.state === 'completed' ? 'ai.taskCompleted' : task.state === 'failed' ? 'ai.taskFailed' : 'ai.taskPaused';
+      const parts = [t(key), t('ai.taskRounds', { count: task.rounds }), t('ai.taskElapsed', { seconds: Math.floor(task.elapsed_ms / 1000) })];
+      if (!activeStates.has(task.state) && task.error_code) {
+        const reasonKey = 'error.' + task.error_code, localized = t(reasonKey);
+        const reason = localized !== reasonKey ? localized : /budget|limit/.test(task.error_code) ? t('review.limit') : /stale|conflict/.test(task.error_code) ? t('review.conflict') : task.error_code === 'review_ai_interrupted' ? t('ai.taskInterrupted') : '';
+        if (reason) parts.push(reason);
+      }
+      label.textContent = parts.join(' · ');
+      row.appendChild(label);
+      if (task.state !== 'completed') {
+        const control = document.createElement('button'); control.type = 'button'; control.className = 'tb-btn';
+        const kind = activeStates.has(task.state) ? 'pause' : 'resume';
+        control.textContent = t(kind === 'pause' ? 'ai.taskCancel' : 'ai.taskResume');
+        control.addEventListener('click', async () => {
+          control.disabled = true;
+          try { await action(kind, task.id); } catch (error) { notify(error); render(); }
+        });
+        row.appendChild(control);
+      }
+      return row;
+    }
+    for (const task of resumable.slice(0, 3)) host.appendChild(rowFor(task));
+    if (terminal) host.appendChild(rowFor(terminal));
+    if (resumable.length > 3) {
+      const history = document.createElement('details'); history.className = 'ai-task-history';
+      const summary = document.createElement('summary'); summary.textContent = t('ai.history') + ' · ' + (resumable.length - 3);
+      history.appendChild(summary);
+      for (const task of resumable.slice(3)) history.appendChild(rowFor(task));
+      host.appendChild(history);
+    }
+  }
+  function attachDocument() {
+    const tab = activeTab(), documentId = window.ReadMDReview?.snapshot(tab)?.document_id || tab?.reviewSession?.document_id;
+    for (const task of tasks.values()) if (tab && task.document_id === documentId && bindings.get(task.id)?.tab !== tab) {
+      bindings.set(task.id, { tab, document_id: documentId });
+      // Restoring a document can finish after its last background poll. A
+      // status read retrieves that receipt without resuming the provider.
+      if (task.state === 'completed') void status(task.id).catch(() => {});
+    }
+    render();
+  }
+  document.addEventListener?.('readmd:document-loaded', attachDocument);
+  window.addEventListener?.('readmd:review-state', attachDocument);
+  window.addEventListener?.('readmd:language-changed', render);
+  const launch = () => { if (window.READMD_ENGINE === 'rust' && !window.__STARTUP_PROBE__) void init(); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', launch); else setTimeout(launch, 0);
+  return { init, start, status, pause: taskId => action('pause', taskId), resume: taskId => action('resume', taskId), pauseTab, reserveTabForRename, releaseTab: tab => closingTabs.delete(tab), pauseAll, wait, render,
+    hasTask: tab => [...tasks.values()].some(task => bindings.get(task.id)?.tab === tab || task.document_id === (window.ReadMDReview?.snapshot(tab)?.document_id || tab?.reviewSession?.document_id)),
+    list: () => [...tasks.values()].map(task => ({ ...task })) };
+})();
+
+;
+'use strict';
+/* One confirmed plan owns the rename, reference edits, and local adoption.
+   Preview/receipts are data, never authority to open an enclosing directory. */
+window.ReadMDRefactor = (() => {
+  const MAX_FILES = 512, MAX_EDITS = 8192, MAX_TEXT = 16 * 1024 * 1024, MAX_DIFF = 2 * 1024 * 1024;
+  const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  const lf = value => window.ReadMDReview?.lf(value) ?? String(value ?? '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const key = value => typeof normalizePath === 'function' ? normalizePath(value) : String(value || '').replace(/\\/g, '/');
+  const tabs = () => typeof state !== 'undefined' && Array.isArray(state.tabs) ? state.tabs : [];
+  const t = (name, params) => window.i18n?.t(name, params) || name;
+  const waiters = new Set();
+  let current = null;
+  function failure(code) { const error = new Error(code); error.code = code; return error; }
+  function notify(code = 'conflict') {
+    const unsupported = /unsupported|read_?only|metadata|permission|access_denied/.test(code);
+    const specificKey = 'error.' + code, specific = t(specificKey);
+    const name = unsupported ? 'rename.safeUnsupported' : /recovery|unknown/.test(code) ? 'error.review_needs_recovery' : /persist/.test(code) ? 'review.persistenceFailed'
+      : /busy/.test(code) ? 'review.busy' : /target/.test(code) ? 'storage.targetOpen' : /limit|budget/.test(code) ? 'review.limit' : 'review.conflict';
+    if (typeof showToast === 'function') showToast(!unsupported && specific !== specificKey ? specific : t(name));
+  }
+  async function request(ctx, action, extra = {}) {
+    const body = { action, operation_id: ctx.operation_id, ...(ctx.plan_hash ? { plan_hash: ctx.plan_hash } : {}), ...extra };
+    let response, data;
+    try {
+      response = await apiFetch('/api/rename/refactor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      data = await response.json();
+    } catch (_) { throw failure('unknown'); }
+    const rejectedCode = typeof data?.error_code === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(data.error_code) ? data.error_code : null;
+    // Standard ApiError rejections need not contain an operation receipt.
+    // Preview cannot mutate files. Commit still reconciles its exact durable
+    // outcome before a rejected code may be reported as a settled failure.
+    if (action === 'preview' && (!response.ok || data?.ok === false)) throw failure(rejectedCode || 'conflict');
+    if (action === 'commit' && !response.ok && rejectedCode) ctx.failureCode = rejectedCode;
+    // Non-2xx terminal receipts still carry the durable operation outcome.
+    if (!data || data.operation_id !== ctx.operation_id || (ctx.plan_hash && action !== 'preview' && data.plan_hash !== ctx.plan_hash)) throw failure('unknown');
+    if (action === 'preview' && (!response.ok || data.ok !== true)) throw failure(data.error_code || 'conflict');
+    return data;
+  }
+  function applyEdits(before, edits) {
+    let position = 0, after = '';
+    for (const edit of edits) {
+      if (!Number.isSafeInteger(edit.from) || !Number.isSafeInteger(edit.to) || edit.from < position || edit.to < edit.from || edit.to > before.length ||
+          typeof edit.insert !== 'string' || lf(edit.insert) !== edit.insert) throw failure('conflict');
+      after += before.slice(position, edit.from) + edit.insert; position = edit.to;
+    }
+    return after + before.slice(position);
+  }
+  function planData(ctx, value) {
+    if (value?.ok !== true || value.operation_id !== ctx.operation_id || !hash(value.plan_hash) || key(value.source_path) !== key(ctx.old_path) ||
+        typeof value.target_path !== 'string' || !value.target_path || value.target_path.length > 32768 || !Array.isArray(value.files) || !value.files.length || value.files.length > MAX_FILES ||
+        (value.diagnostics !== undefined && (!Array.isArray(value.diagnostics) || value.diagnostics.length))) throw failure('conflict');
+    let bytes = 0, editCount = 0, diffBytes = 0;
+    const sources = new Set(), destinations = new Set(), encoder = new TextEncoder();
+    for (const file of value.files) {
+      if (!file || typeof file.source_path !== 'string' || !file.source_path || file.source_path.length > 32768 ||
+          typeof file.target_path !== 'string' || !file.target_path || file.target_path.length > 32768 ||
+          typeof file.before !== 'string' || typeof file.after !== 'string' || !hash(file.before_disk_revision) || !hash(file.after_disk_revision) || !Array.isArray(file.edits) ||
+          sources.has(key(file.source_path)) || destinations.has(key(file.target_path))) throw failure('conflict');
+      sources.add(key(file.source_path)); destinations.add(key(file.target_path));
+      bytes += encoder.encode(file.before).length + encoder.encode(file.after).length;
+      editCount += file.edits.length;
+      if (bytes > MAX_TEXT || editCount > MAX_EDITS || applyEdits(lf(file.before), file.edits) !== lf(file.after)) throw failure('limit');
+      for (const edit of file.edits) diffBytes += encoder.encode(lf(file.before).slice(edit.from, edit.to)).length + encoder.encode(edit.insert).length;
+      if (diffBytes > MAX_DIFF) throw failure('limit');
+    }
+    const source = value.files.find(file => key(file.source_path) === key(ctx.old_path));
+    if (!source || key(source.target_path) !== key(value.target_path)) throw failure('conflict');
+    return value;
+  }
+  const roster = plan => plan.files.map(file => [key(file.source_path), key(file.target_path)]).sort((a, b) => a[0].localeCompare(b[0]));
+  function openOwners(files, source) {
+    const owners = [];
+    for (const tab of tabs()) {
+      const path = tab.path || (tab === source ? tab._renamePending?.old_path : '');
+      if (!path) continue;
+      const file = files.find(file => key(file.source_path || file.old_path) === key(path));
+      const destination = files.find(file => key(file.target_path || file.path) === key(path));
+      if (!file && destination) {
+        // A previously adopted owner is legitimate on an idempotent retry.
+        if (tab === source && source?._renamePending) owners.push({ tab, file: destination });
+        else throw failure('target');
+      } else if (file) owners.push({ tab, file });
+    }
+    if (source && !owners.some(owner => owner.tab === source)) {
+      const file = files.find(file => key(file.source_path || file.old_path) === key(source._renamePending?.old_path));
+      if (!file) throw failure('conflict');
+      owners.push({ tab: source, file });
+    }
+    return owners;
+  }
+  function clean(tab, ctx) {
+    const snapshot = window.ReadMDReview?.snapshot(tab);
+    const recoverable = tab === ctx.source && tab._renamePending?.operation_id === ctx.operation_id && tab.isVirtual && tab._recoveryContent === undefined;
+    return tabs().includes(tab) && (tab.mode === 'file' || recoverable) && !tab.isDirty && !tab.unsavedCreation && !tab.externalChanged && !tab._reviewRestorePending &&
+      (!tab._renamePending || tab === ctx.source && tab._renamePending.operation_id === ctx.operation_id) &&
+      !(typeof state !== 'undefined' && state.editing && state.activeTabId === tab.id) && !snapshot?.recovery &&
+      !snapshot?.changes?.some(change => change.decision === 'conflict' || change.taken_over);
+  }
+  function freeze(ctx, tab) {
+    if (!ctx.flags.has(tab)) { ctx.flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
+  }
+  async function reserve(ctx, files) {
+    const owners = openOwners(files, ctx.source);
+    if (owners.some(owner => !clean(owner.tab, ctx))) throw failure('busy');
+    ctx.owners = owners;
+    for (const { tab } of owners) freeze(ctx, tab);
+    for (const { tab } of owners) {
+      if (window.ReadMDAiHarness) {
+        if (!await window.ReadMDAiHarness.reserveTabForRename(tab)) throw failure('busy');
+        ctx.ai.push(tab);
+      }
+      const mark = await window.ReadMDReview?.beginRename(tab);
+      if (!mark) throw failure('busy');
+      ctx.review.push(tab);
+      const before = window.ReadMDReview.refactorState(tab);
+      if (!before || !clean(tab, ctx)) throw failure('conflict');
+      ctx.before.set(tab, before);
+      if (tab === ctx.source) ctx.review_session = mark.review_session;
+    }
+    return owners;
+  }
+  function stableOwners(ctx, files) {
+    const latest = openOwners(files, ctx.source);
+    if (latest.length !== ctx.owners.length || latest.some(owner => !ctx.before.has(owner.tab))) return false;
+    return ctx.owners.every(({ tab }) => {
+      if (!clean(tab, ctx)) return false;
+      const before = ctx.before.get(tab), now = window.ReadMDReview?.refactorState(tab);
+      return now && JSON.stringify(now) === JSON.stringify(before);
+    });
+  }
+  function release(ctx) {
+    if (current !== ctx) return;
+    for (const tab of ctx.review) window.ReadMDReview?.endRename(tab);
+    for (const tab of ctx.ai) window.ReadMDAiHarness?.releaseTab(tab);
+    for (const [tab, previous] of ctx.flags) {
+      if (previous === undefined) delete tab._renameInFlight; else tab._renameInFlight = previous;
+    }
+    current = null;
+    for (const resolve of waiters) resolve();
+    waiters.clear();
+    window.ReadMDSession?.persist();
+  }
+  function context(source, pending = {}) {
+    return { source, operation_id: pending.operation_id || 'refactor-' + window.crypto.randomUUID(), old_path: pending.old_path || source?.path,
+      workspace_root: pending.workspace_root, plan_hash: pending.plan_hash || '', pending: source?._renamePending || null,
+      owners: [], flags: new Map(), before: new Map(), ai: [], review: [], sent: false, applied: false, restoring: false };
+  }
+  async function preview(ctx, newStem) {
+    return planData(ctx, await request(ctx, 'preview', { path: ctx.old_path, new_stem: newStem, workspace_root: ctx.workspace_root }));
+  }
+  async function confirmPlan(plan) {
+    if (!window.ReadMDModal || !document.body) return false;
+    const modal = document.createElement('div');
+    modal.id = 'document-refactor-modal'; modal.className = 'modal hidden'; modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'document-refactor-title'); modal.dataset.backdrop = 'static';
+    const box = document.createElement('section'); box.className = 'document-refactor-box';
+    const title = document.createElement('h2'); title.id = 'document-refactor-title'; title.textContent = t('cmd.rename');
+    const source = document.createElement('p'); source.className = 'document-refactor-source'; source.textContent = plan.source_path + ' → ' + plan.target_path;
+    const list = document.createElement('div'); list.className = 'document-refactor-files';
+    for (const file of plan.files) {
+      const details = document.createElement('details'); details.open = true;
+      const summary = document.createElement('summary'); summary.textContent = file.source_path + (key(file.source_path) === key(file.target_path) ? '' : ' → ' + file.target_path);
+      details.appendChild(summary);
+      const before = lf(file.before);
+      for (const edit of file.edits) {
+        const row = document.createElement('div'); row.className = 'document-refactor-edit';
+        const line = document.createElement('span'); line.textContent = t('inspection.atLine', { line: before.slice(0, edit.from).split('\n').length });
+        const original = document.createElement('code'), arrow = document.createElement('span'), replacement = document.createElement('code');
+        original.textContent = before.slice(edit.from, edit.to); arrow.textContent = ' → '; replacement.textContent = edit.insert;
+        row.append(line, original, arrow, replacement); details.appendChild(row);
+      }
+      list.appendChild(details);
+    }
+    const actions = document.createElement('div'); actions.className = 'document-refactor-actions';
+    const cancel = document.createElement('button'), confirm = document.createElement('button');
+    cancel.type = confirm.type = 'button'; cancel.className = 'tb-btn'; confirm.className = 'tb-btn accent';
+    cancel.textContent = t('common.cancel'); cancel.setAttribute('data-modal-initial', ''); cancel.setAttribute('data-modal-close', ''); confirm.textContent = t('dialog.confirm');
+    actions.append(cancel, confirm); box.append(title, source, list, actions); modal.appendChild(box); document.body.appendChild(modal);
+    return new Promise(resolve => {
+      let finished = false;
+      const finish = value => {
+        if (finished) return; finished = true;
+        window.ReadMDModal.setGuard(modal.id, null); window.ReadMDModal.close(modal); modal.remove(); resolve(value);
+      };
+      cancel.addEventListener('click', () => finish(false)); confirm.addEventListener('click', () => finish(true));
+      window.ReadMDModal.setGuard(modal.id, () => { finish(false); return false; });
+      window.ReadMDModal.open(modal);
+    });
+  }
+  async function openFile(path) {
+    const response = await apiFetch('/api/file?p=' + encodeURIComponent(path));
+    if (!response.ok) throw failure('recovery');
+    const file = await response.json();
+    if (key(file?.path) !== key(path) || !hash(file.revision) || !hash(file.disk_revision) || typeof file.content !== 'string' ||
+        typeof (file.original ?? file.content) !== 'string' || typeof file.name !== 'string' || !file.name || typeof file.dir !== 'string') throw failure('recovery');
+    return file;
+  }
+  function receiptFiles(ctx, receipt) {
+    if (receipt?.operation_id !== ctx.operation_id || receipt.plan_hash !== ctx.plan_hash || !['committed', 'rolled_back'].includes(receipt.state) ||
+        !Array.isArray(receipt.files) || !receipt.files.length || receipt.files.length > MAX_FILES) throw failure('recovery');
+    const seen = new Set(), paths = new Set();
+    for (const row of receipt.files) {
+      const review = row?.review;
+      if (typeof row?.old_path !== 'string' || !row.old_path || typeof row.path !== 'string' || !row.path || !hash(row.before_disk_revision) || !hash(row.disk_revision) ||
+          seen.has(key(row.old_path)) || paths.has(key(row.path)) ||
+          (row.identity !== undefined && (typeof row.identity !== 'string' || !row.identity || row.identity.length > 512)) ||
+          !review?.document_id || key(review.path) !== key(row.path) ||
+          typeof review.content !== 'string' || lf(review.content) !== review.content || !hash(review.revision) || review.disk_revision !== row.disk_revision ||
+          !Number.isSafeInteger(review.generation) || !Number.isSafeInteger(review.review_revision) || !Array.isArray(review.changes)) throw failure('recovery');
+      seen.add(key(row.old_path)); paths.add(key(row.path));
+    }
+    const source = receipt.files.find(row => key(row.old_path) === key(ctx.old_path));
+    if (!source || source.before_disk_revision !== ctx.pending?.expected_disk_revision ||
+        (ctx.pending?.review_session && source.review.document_id !== ctx.pending.review_session.document_id) ||
+        (receipt.path && key(receipt.path) !== key(source.path))) throw failure('recovery');
+    if (ctx.plan && (receipt.files.length !== ctx.plan.files.length || receipt.files.some(row => {
+      const planned = ctx.plan.files.find(file => key(file.source_path) === key(row.old_path));
+      return !planned || planned.before_disk_revision !== row.before_disk_revision || key(row.path) !== key(receipt.state === 'committed' ? planned.target_path : planned.source_path) ||
+        row.disk_revision !== (receipt.state === 'committed' ? planned.after_disk_revision : planned.before_disk_revision);
+    }))) throw failure('recovery');
+    return receipt.files;
+  }
+  async function verifiedFiles(ctx, receipt) {
+    const rows = receiptFiles(ctx, receipt), files = [];
+    for (const row of rows) {
+      const file = await openFile(row.path);
+      // File revisions include decoded original line endings; review revisions
+      // hash LF text. Raw-byte SHA and exact normalized text bind the two.
+      const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(row.review.content));
+      const normalizedRevision = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+      if (file.disk_revision !== row.disk_revision || (row.identity !== undefined && file.identity !== row.identity) ||
+          normalizedRevision !== row.review.revision || lf(file.original ?? file.content) !== row.review.content) throw failure('recovery');
+      files.push({ row, file });
+    }
+    return files;
+  }
+  function updateTabs(ctx, items) {
+    for (const { tab, row, file } of items) {
+      const oldPath = tab.path || row.old_path;
+      Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
+        name: file.name, title: file.name, original: file.original ?? file.content, content: file.content, fixed: file.content,
+        revision: file.revision, mtime: file.mtime || 0, size: file.size || 0, encoding: file.encoding || tab.encoding,
+        fixes: file.fixes || [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
+      if (tab.originPath && key(tab.originPath) === key(oldPath)) tab.originPath = file.path;
+    }
+    if (typeof state !== 'undefined' && Array.isArray(state.folderFiles)) {
+      // Map only verified receipt paths. Do not reopen the folder or steal the
+      // user's current sidebar selection while reconciling a background task.
+      const paths = new Map(items.map(({ row, file }) => [key(row.old_path), file.path]));
+      state.folderFiles = state.folderFiles.map(path => paths.get(key(path)) || path);
+    }
+    const active = typeof getActiveTab === 'function' ? getActiveTab() : null;
+    if (active && items.some(item => item.tab === active)) {
+      if (typeof syncStateFromActiveTab === 'function') syncStateFromActiveTab();
+      document.title = active.name + ' - ReadMD';
+      if (typeof setFileTitle === 'function') setFileTitle(active.name, true, active.path);
+    }
+  }
+  async function publishSettlement(ctx) {
+    delete ctx.source._renamePending;
+    let saved = false;
+    try { saved = await window.ReadMDSession?.flush() === true; } catch (_) { /* Keep the same durable intent for reconciliation. */ }
+    if (!saved) {
+      ctx.source._renamePending = ctx.pending; window.ReadMDSession?.persist(); throw failure('persistence');
+    }
+    if (ctx.owners.some(owner => typeof getActiveTab === 'function' && owner.tab === getActiveTab()) && typeof state !== 'undefined' && !state.editing && typeof renderActiveTab === 'function') {
+      try { await renderActiveTab({ restoreScroll: true }); } catch (_) { if (typeof renderTabsBar === 'function') renderTabsBar(); notify('recovery'); }
+    } else if (typeof renderTabsBar === 'function') renderTabsBar();
+    if (typeof renderFolderList === 'function') {
+      try { renderFolderList(); } catch (_) { notify('recovery'); }
+    }
+    release(ctx);
+    return true;
+  }
+  async function adoptReceipt(ctx, receipt) {
+    const verified = await verifiedFiles(ctx, receipt);
+    if (!ctx.owners.length) await reserve(ctx, receipt.files);
+    const currentOwners = openOwners(receipt.files, ctx.source);
+    if (currentOwners.length !== ctx.owners.length || currentOwners.some(owner => !ctx.before.has(owner.tab))) throw failure('recovery');
+    const items = ctx.owners.map(({ tab, file: original }) => {
+      const found = verified.find(item => key(item.row.old_path) === key(original.source_path || original.old_path));
+      if (!found || !clean(tab, ctx)) throw failure('recovery');
+      const before = ctx.before.get(tab), planned = ctx.plan?.files.find(file => key(file.source_path) === key(found.row.old_path));
+      const edits = receipt.state === 'committed' && planned ? planned.edits : undefined;
+      return { tab, before, snapshot: found.row.review, file_revision: found.file.revision, edits, row: found.row, file: found.file };
+    });
+    if (!window.ReadMDReview?.validateRefactorGroup(items)) throw failure('recovery');
+    if (!window.ReadMDReview.applyRefactorGroup(items, () => updateTabs(ctx, items))) throw failure('recovery');
+    ctx.applied = true;
+    return publishSettlement(ctx);
+  }
+  async function settle(ctx, receipt) {
+    if (receipt?.operation_id !== ctx.operation_id || receipt.plan_hash !== ctx.plan_hash) throw failure('unknown');
+    if (receipt.state === 'not_started' || receipt.state === 'not_found') receipt = await request(ctx, 'abandon');
+    if (receipt?.operation_id !== ctx.operation_id || receipt.plan_hash !== ctx.plan_hash) throw failure('unknown');
+    if (receipt.state === 'abandoned') {
+      const source = await openFile(ctx.old_path);
+      if (source.revision !== ctx.pending.expected_revision || source.disk_revision !== ctx.pending.expected_disk_revision ||
+          !stableOwners(ctx, ctx.plan?.files || ctx.owners.map(owner => owner.file))) throw failure('recovery');
+      if (ctx.source.isVirtual && ctx.source._recoveryContent === undefined) updateTabs(ctx, [{ tab: ctx.source, row: { old_path: ctx.old_path }, file: source }]);
+      ctx.outcome = receipt.state;
+      const saved = await publishSettlement(ctx);
+      if (saved) notify(receipt.error_code || ctx.failureCode || 'conflict');
+      return saved;
+    }
+    if (receipt.state === 'committed' || receipt.state === 'rolled_back') {
+      ctx.outcome = receipt.state;
+      const saved = await adoptReceipt(ctx, receipt);
+      if (saved && receipt.state === 'rolled_back') notify(receipt.error_code || ctx.failureCode || 'conflict');
+      return saved;
+    }
+    throw failure('recovery');
+  }
+  async function rename(tab, newTitle) {
+    if (current) { notify('busy'); return false; }
+    const root = typeof state !== 'undefined' ? state.folder : '';
+    if (!tab?.path || tab.mode !== 'file' || typeof root !== 'string' || !root || !window.ReadMDSession?.prepareRename) { notify('conflict'); return false; }
+    const ctx = context(tab, { workspace_root: root }); current = ctx; freeze(ctx, tab);
+    const ext = (tab.path.match(/\.[^\\/.]+$/) || [''])[0];
+    const stem = ext && String(newTitle).toLowerCase().endsWith(ext.toLowerCase()) ? String(newTitle).slice(0, -ext.length) : String(newTitle || '');
+    let keep = false;
+    try {
+      if (!stem || /[\\/]/.test(stem) || !clean(tab, ctx)) throw failure('busy');
+      const first = await preview(ctx, stem);
+      await reserve(ctx, first.files);
+      const second = await preview(ctx, stem);
+      if (JSON.stringify(roster(first)) !== JSON.stringify(roster(second)) || !stableOwners(ctx, second.files)) throw failure('conflict');
+      for (const { tab: owner } of ctx.owners) {
+        const planned = second.files.find(file => key(file.source_path) === key(owner.path)), before = ctx.before.get(owner);
+        if (!planned || lf(planned.before) !== before.content || (before.document_id && (!planned.review_head ||
+            planned.review_head.document_id !== before.document_id || planned.review_head.generation !== before.generation || planned.review_head.review_revision !== before.review_revision))) throw failure('conflict');
+      }
+      const response = await apiFetch('/api/file?meta=1&p=' + encodeURIComponent(ctx.old_path));
+      const metadata = response.ok ? await response.json() : null, source = second.files.find(file => key(file.source_path) === key(ctx.old_path));
+      if (!metadata || metadata.revision !== tab.revision || metadata.disk_revision !== source.before_disk_revision || state.folder !== root) throw failure('conflict');
+      ctx.plan = second; ctx.plan_hash = second.plan_hash;
+      if (!await confirmPlan(second)) return false;
+      if (state.folder !== root || !stableOwners(ctx, second.files)) throw failure('conflict');
+      const pending = { operation_id: ctx.operation_id, old_path: ctx.old_path, new_stem: stem,
+        expected_revision: metadata.revision, expected_disk_revision: metadata.disk_revision,
+        refactor: true, plan_hash: ctx.plan_hash, workspace_root: root, ...(ctx.review_session ? { review_session: ctx.review_session } : {}) };
+      ctx.pending = pending;
+      const prepared = await window.ReadMDSession.prepareRename(tab, pending);
+      keep = prepared || window.ReadMDSession.uncertainRename?.(pending.operation_id) === true;
+      if (!prepared) throw failure('persistence');
+      ctx.sent = true;
+      let receipt;
+      try { receipt = await request(ctx, 'commit', { path: ctx.old_path, new_stem: stem, workspace_root: root, confirmed: true }); }
+      catch (_) { receipt = await request(ctx, 'status'); }
+      if (!['committed', 'rolled_back', 'not_started', 'abandoned'].includes(receipt.state)) receipt = await request(ctx, 'status');
+      const saved = await settle(ctx, receipt);
+      if (saved && ctx.outcome === 'committed' && typeof showToast === 'function') showToast(t('toast.renamedTo', { name: tab.name }));
+      return saved && ctx.outcome === 'committed';
+    } catch (error) {
+      if (ctx.pending && tab._renamePending?.operation_id === ctx.operation_id && window.ReadMDSession?.uncertainRename?.(ctx.operation_id) === true) keep = true;
+      if (ctx.sent || keep) { keep = true; if (ctx.pending) tab._renamePending = ctx.pending; }
+      notify(ctx.sent && error.code !== 'persistence' ? 'recovery' : error.code || 'conflict');
+      return false;
+    } finally {
+      if (!keep && current === ctx) { if (tab._renamePending?.operation_id === ctx.operation_id) delete tab._renamePending; release(ctx); }
+    }
+  }
+  async function recover(tab) {
+    const pending = tab?._renamePending;
+    if (!pending?.refactor || !hash(pending.plan_hash)) return false;
+    if (current && current.operation_id !== pending.operation_id) { notify('busy'); return false; }
+    const ctx = current || context(tab, pending); current = ctx; ctx.source = tab; ctx.pending = pending; freeze(ctx, tab);
+    try {
+      if (window.ReadMDSession?.uncertainRename?.(pending.operation_id) && !await window.ReadMDSession.flush()) throw failure('persistence');
+      if (!ctx.owners.length && ctx.plan) await reserve(ctx, ctx.plan.files);
+      let receipt = await request(ctx, 'status');
+      if (receipt.state === 'not_started' || receipt.state === 'not_found') {
+        if (!ctx.owners.length) await reserve(ctx, [{ source_path: pending.old_path, target_path: pending.old_path }]);
+      }
+      return await settle(ctx, receipt);
+    } catch (error) { notify(error.code === 'persistence' ? 'persistence' : 'recovery'); return false; }
+  }
+  async function restoreDescriptor(item) {
+    const pending = item?.renamePending;
+    if (!pending?.refactor || !hash(pending.plan_hash)) return { descriptor: item, file: null, settled: false };
+    if (current && current.operation_id !== pending.operation_id) return { descriptor: item, file: null, settled: false };
+    const ctx = current || context(null, pending); current = ctx; ctx.pending = pending; ctx.restoring = true;
+    ctx.restoreReads = (ctx.restoreReads || 0) + 1;
+    let receipt;
+    try {
+      receipt = await request(ctx, 'status');
+      if (receipt.state === 'not_started' || receipt.state === 'not_found') receipt = await request(ctx, 'abandon');
+      let file;
+      if (receipt.state === 'abandoned') {
+        file = await openFile(pending.old_path);
+        if (file.revision !== pending.expected_revision || file.disk_revision !== pending.expected_disk_revision) throw failure('recovery');
+      } else {
+        const verified = await verifiedFiles(ctx, receipt);
+        file = verified.find(item => key(item.row.old_path) === key(pending.old_path))?.file;
+      }
+      if (!file) throw failure('recovery');
+      ctx.receipt = receipt;
+      return { descriptor: { ...item, path: file.path, name: file.name, dir: file.dir, revision: file.revision, renamePending: null }, file, receipt, settled: true };
+    } catch (_) { return { descriptor: item, file: null, receipt, settled: false }; }
+    finally { ctx.restoreReads--; }
+  }
+  function finishRestore(saved) {
+    if (!current?.restoring) return;
+    if (saved === true) {
+      const ctx = current; release(ctx);
+      if (ctx.receipt?.state === 'rolled_back') notify(ctx.receipt.error_code || 'conflict');
+    }
+  }
+  function suspendRestore() {
+    if (!current?.restoring || current.source || current.owners.length || current.restoreReads) return false;
+    release(current); return true;
+  }
+  return { rename, recover, restoreDescriptor, finishRestore, suspendRestore, busy: () => Boolean(current),
+    whenIdle: () => current ? new Promise(resolve => waiters.add(resolve)) : Promise.resolve() };
+})();
+
+;
+'use strict';
 /* ============================================================
    ReadMD Features - AI Assistant & Dialog Import
    ============================================================ */
@@ -16697,6 +19074,7 @@ function renderAiEmptyState() {
 }
 window.addEventListener('readmd:ai-config-changed', () => renderAiEmptyState());
 window.addEventListener('readmd:language-changed', () => updateAiContextStrip());
+window.addEventListener('readmd:document-transaction', remapAiTargets);
 
 function updateAiContextStrip() {
   const label = $('ai-context-file');
@@ -16705,11 +19083,22 @@ function updateAiContextStrip() {
   const target = getAiTargetText();
   label.textContent = name ? name + ' · ' + i18n.t(target.isSelection ? 'ai.scopeSelection' : 'ai.scopeFull') : i18n.t('ux.noDocument');
   label.title = typeof state !== 'undefined' ? (state.file || '') : '';
+  const reviewEdit = $('ai-review-edit');
+  if (reviewEdit) { reviewEdit.hidden = !getActiveTab(); reviewEdit.disabled = Boolean(state.ai.busy); }
+  window.ReadMDAiHarness?.render();
 }
 
 function initAiComposerUx() {
   const input = $('ai-prompt'), out = $('ai-output'), latest = $('ai-jump-latest');
   if (!input || !out || !latest) return;
+  const send = $('ai-run');
+  if (send && !$('ai-review-edit')) {
+    const reviewEdit = document.createElement('button');
+    reviewEdit.id = 'ai-review-edit'; reviewEdit.type = 'button'; reviewEdit.className = 'new-chat-btn';
+    reviewEdit.textContent = window.i18n.t('review.aiEdit'); reviewEdit.dataset.i18n = 'review.aiEdit';
+    reviewEdit.addEventListener('click', () => runAi('modify'));
+    send.before(reviewEdit);
+  }
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(180, input.scrollHeight) + 'px'; });
   // The connection pill doubles as the shortcut to connection settings.
   const conn = document.querySelector('#ai-panel .ai-connection-summary');
@@ -16733,7 +19122,9 @@ function initAiComposerUx() {
   });
   input.addEventListener('focus', () => { captureAiSelection(); updateAiContextStrip(); });
   document.addEventListener('readmd:document-loaded', () => {
-    state.ai.capturedTarget = null; state.ai.conversationTarget = null;
+    for (const key of ['capturedTarget', 'conversationTarget']) {
+      if (state.ai[key]?.tabId !== state.activeTabId) state.ai[key] = null;
+    }
     updateAiContextStrip();
   });
 }
@@ -18495,9 +20886,8 @@ function getCurrentDocumentText() {
     }
     if ($('edit-area')) return $('edit-area').value;
   }
-  return state.mode === 'file'
-    ? (state.original || state.fixed || '')
-    : (state.fixed || state.original || '');
+  const tab = getActiveTab();
+  return String(tab?.isDirty ? tab.content : (tab?.original ?? state.original ?? tab?.content ?? state.fixed ?? '')).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 }
 
 function captureAiSelection() {
@@ -18505,35 +20895,17 @@ function captureAiSelection() {
   const selection = window.getSelection?.();
   if (selection?.rangeCount && !selection.isCollapsed) {
     const range = selection.getRangeAt(0);
-    const root = [$('content'), $('preview-pane')].find(el => el?.contains(range.startContainer) && el.contains(range.endContainer));
+    const root = [state.editing ? null : $('content'), $('preview-pane')].find(el => el?.contains(range.startContainer) && el.contains(range.endContainer));
     if (root) {
       const fragment = range.cloneContents();
       fragment.querySelectorAll('[data-rd-chrome], button, input, mjx-assistive-mml').forEach(el => el.remove());
       const text = fragment.textContent || '';
       if (text.trim()) {
         const source = getCurrentDocumentText();
-        let from = -1, to = -1;
-        const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
-        const block = start?.closest('[data-source-line]');
-        // Plain rendered blocks map through their source line and DOM offset.
-        // This distinguishes identical paragraphs and repeated words inside a
-        // paragraph. Rich projections without a precise map stay read-only:
-        // applying their answer uses the existing safe-copy path.
-        if (block && root.contains(block) && block.contains(range.endContainer)) {
-          const line = Number(block.dataset.sourceLine);
-          const lines = source.split('\n');
-          const begin = lines.slice(0, line - 1).reduce((n, s) => n + s.length + 1, 0);
-          const next = [...root.querySelectorAll('[data-source-line]')].map(el => Number(el.dataset.sourceLine)).filter(n => n > line).sort((a,b) => a-b)[0];
-          const end = next ? lines.slice(0, next - 1).reduce((n, s) => n + s.length + 1, 0) : source.length;
-          const raw = source.slice(begin, end), rendered = block.textContent;
-          const offset = raw.indexOf(rendered);
-          if (Number.isInteger(line) && line > 0 && rendered && offset >= 0 && raw.indexOf(rendered, offset + 1) < 0) {
-            const prefix = document.createRange(); prefix.selectNodeContents(block); prefix.setEnd(range.startContainer, range.startOffset);
-            const position = begin + offset + prefix.toString().length;
-            if (source.slice(position, position + text.length) === text) { from = position; to = position + text.length; }
-          }
-        }
-        state.ai.capturedTarget = { text, isSelection:true, from, to, source, tabId };
+        const mapped = window.ReadMDAiSelection?.mapRange(source, root, range, {
+          breaks: Boolean(state.breakOnSingleNewline), partial: root.id === 'content' && Boolean(state.pagination?.enabled) });
+        state.ai.capturedTarget = mapped ? { ...mapped, isSelection: true, source, tabId } :
+          { text, displayText: text, isSelection: true, from: -1, to: -1, exact: false, source, tabId };
         return true;
       }
     }
@@ -18544,7 +20916,7 @@ function captureAiSelection() {
       const text = cmView.state.sliceDoc(range.from, range.to);
       if (text.trim()) {
         const source = getCurrentDocumentText();
-        state.ai.capturedTarget = { text, isSelection:true, from:range.from, to:range.to, source, tabId };
+        state.ai.capturedTarget = { text, isSelection:true, exact:true, from:range.from, to:range.to, source, tabId };
         return true;
       }
     }
@@ -18552,10 +20924,24 @@ function captureAiSelection() {
   return false;
 }
 
+function remapAiTargets(event) {
+  const transaction = event.detail;
+  if (!transaction || !state.ai) return;
+  for (const key of ['capturedTarget', 'conversationTarget']) {
+    const target = state.ai[key];
+    if (target?.tabId !== transaction.tabId) continue;
+    state.ai[key] = window.ReadMDAiSelection?.remapTarget(target, transaction) ||
+      { ...target, source: transaction.after, isSelection: true, exact: false, from: -1, to: -1, conflict: true };
+  }
+  if (transaction.tabId === state.activeTabId) updateAiContextStrip();
+}
+
 function getAiTargetText() {
   const source = getCurrentDocumentText();
   for (const target of [state.ai.capturedTarget, state.ai.conversationTarget]) {
-    if (target?.tabId === state.activeTabId && target.source === source) return { ...target };
+    if (target?.tabId !== state.activeTabId) continue;
+    return window.ReadMDAiSelection?.currentTarget(target, source) ||
+      { ...target, source, isSelection: true, exact: false, from: -1, to: -1, conflict: true };
   }
   return { text:source, isSelection:false, from:0, to:source.length, source, tabId:state.activeTabId };
 }
@@ -18563,6 +20949,7 @@ function getAiTargetText() {
 function setAiBusy(b) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   state.ai.busy = b;
+  if ($('ai-review-edit')) $('ai-review-edit').disabled = b;
   const runBtn = $('ai-run');
   const stopBtn = $('ai-stop');
   if (runBtn) {
@@ -18714,10 +21101,14 @@ async function runAiRequest(action) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   state.ai.lastAction = action || (currentAiTemplate() && currentAiTemplate().action) || '';
   captureAiSelection();
+  const reviewTab = getActiveTab();
+  const reviewStamp = reviewTab && window.ReadMDReview ? await ReadMDReview.capture(reviewTab) : null;
+  if (reviewTab && getActiveTab() !== reviewTab) return;
   const target = state.ai.targetOverride;
   const targetInfo = target != null
-    ? { text: target, isSelection: true, from: -1, to: -1 }
+    ? { text: target, isSelection: true, exact: false, from: -1, to: -1, source: getCurrentDocumentText(), tabId: state.activeTabId }
     : getAiTargetText();
+  if (target != null) state.ai.capturedTarget = targetInfo;
   state.ai.targetOverride = null;
   const origin = { tabId:state.activeTabId, name:state.sourceName, path:state.file, dir:state.dir,
     generation:getActiveTab()?.editGeneration || 0, isEditMode:Boolean(state.editing && window.cmView) };
@@ -18740,7 +21131,7 @@ async function runAiRequest(action) {
     text: text,
     from: targetInfo.from,
     to: targetInfo.to,
-    exact: targetInfo.from >= 0 && targetInfo.to >= targetInfo.from,
+    exact: targetInfo.exact !== false && targetInfo.from >= 0 && targetInfo.to > targetInfo.from,
     isContinue: isContinueAction,
     isEditMode: origin.isEditMode
   } : (isContinueAction ? {
@@ -18751,7 +21142,7 @@ async function runAiRequest(action) {
     isEditMode: origin.isEditMode
   } : { text:'', from:0, to:targetInfo.to, isSelection:false, isEditMode:origin.isEditMode });
 
-  Object.assign(currentSelectionSnapshot, origin);
+  Object.assign(currentSelectionSnapshot, origin, { reviewStamp, source: reviewStamp?.content || targetInfo.source || getCurrentDocumentText() });
   state.ai.lastSelection = currentSelectionSnapshot;
   const isIncognito = $('ai-incognito').checked;
   const model = $('ai-model').value.trim() || (p.models || [''])[0] || '';
@@ -18768,6 +21159,48 @@ async function runAiRequest(action) {
   try { requestHeaders = readAiCustomHeaders(); } catch (e) { return; }
 
   const skillId = (tpl && tpl.skill_id) || 'readmd-ask';
+  if (action === 'modify') {
+    if (!reviewTab || !reviewStamp || (isSelection && !currentSelectionSnapshot.exact)) { showToast(_t('review.conflict')); return; }
+    if (!state.editing) await toggleEdit();
+    if (getActiveTab() !== reviewTab || !state.editing) return;
+    setAiBusy(true);
+    const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
+    if (window.ReadMDAiHarness && window.READMD_ENGINE === 'rust') {
+      state.ai.raw = ''; updateAiRawButtons();
+      try {
+        await window.ReadMDAiHarness.start({ request: prompt || _t('review.aiEdit'), skill_id: skillId,
+          provider: activeProvider.id, credential_id: activeProvider.credential_id, model, stream, task_id: taskId,
+          ranges: isSelection ? [{ from: targetInfo.from, to: targetInfo.to }] : undefined }, reviewStamp, reviewTab);
+      } catch (error) {
+        const key = 'error.' + (error.code || ''), localized = _t(key);
+        showToast(localized !== key ? localized : _t(/conflict|stale/.test(error.code || '') ? 'review.conflict' : 'review.aiFailed'));
+      } finally { setAiBusy(false); state.ai.aborter = null; window.ReadMDAiHarness.render(); }
+      return;
+    }
+    const controller = new AbortController();
+    state.ai.aborter = { abort: () => {
+      if (controller.signal.aborted) { void ReadMDReview.cancelAi(taskId); return; }
+      controller.abort(); if ($('ai-status')) $('ai-status').textContent = _t('task.cancelling');
+    } };
+    state.ai.raw = ''; updateAiRawButtons();
+    try {
+      await ReadMDReview.runAi({ request: prompt || _t('review.aiEdit'), skill_id: skillId,
+        provider: activeProvider.id, credential_id: activeProvider.credential_id, model, stream,
+        task_id: taskId, signal: controller.signal,
+        ranges: isSelection ? [{ from: targetInfo.from, to: targetInfo.to }] : undefined }, reviewStamp, reviewTab);
+      if (getActiveTab() === reviewTab) {
+        const out = $('ai-output'); out.querySelector('.ai-empty-state')?.remove();
+        const receipt = document.createElement('p'); receipt.className = 'ai-review-receipt'; receipt.textContent = _t('review.pending');
+        receipt.dataset.reviewDocumentId = reviewStamp.document_id; out.appendChild(receipt);
+        showToast(_t('review.pending'));
+      }
+    } catch (error) {
+      const key='error.'+(error.code||''), localized=_t(key);
+      showToast(error.code==='cancelled' ? _t('ai.stopped') : localized!==key ? localized : _t('review.aiFailed'));
+    }
+    finally { setAiBusy(false); state.ai.aborter = null; }
+    return;
+  }
   const docs = text.length > 120000 ? text.slice(0, 120000) + '\n\n' + (_t('ai.contentTruncated') || '') : text;
   const fill = s => String(s || '').replace(/\{doc\}/g, docs).replace(/\{prompt\}/g, prompt || '');
   let userMsg;
@@ -19183,204 +21616,48 @@ async function copyAi() {
 }
 
 async function applyAi(targetResult, selectionContext) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const raw = targetResult || state.ai.raw;
   if (!raw) return;
-
-  const ctx = selectionContext || state.ai.lastSelection || null;
-  if (ctx && 'tabId' in ctx && (ctx.tabId !== state.activeTabId || (ctx.isContinue && ctx.generation !== (getActiveTab()?.editGeneration || 0)))) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-  const tpl = currentAiTemplate();
-  const act = (tpl && tpl.action) || state.ai.lastAction || '';
-  const tplId = (tpl && tpl.id) || '';
-  const tplName = (tpl && tpl.name) || '';
-  const prompt = ($('ai-prompt') && $('ai-prompt').value) || '';
-  const isContinue = Boolean((ctx && ctx.isContinue) || act === 'continue' || act === 'complete' || tplId.includes('continue') || tplName.includes('续写') || /续写|接着写|继续写/i.test(prompt));
-  const hasSelection = Boolean(ctx && ctx.text && ctx.text.trim());
-  const applyTabId = state.activeTabId;
-  if (hasSelection && ctx.exact === false) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-
-  if (!hasSelection && !isContinue) {
-    const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-
-    if (typeof renderVirtual === 'function') {
-      await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-    } else {
-      const newTab = {
-        id: 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        mode: 'virtual',
-        source: 'ai',
-        path: null,
-        dir: state.dir || '',
-        name: cleanName,
-        title: cleanName,
-        content: raw,
-        originPath: state.file || null,
-        original: raw,
-        fixed: raw,
-        fixes: [],
-        stats: {},
-        size: 0,
-        mtime: 0,
-        encoding: 'utf-8',
-        webAssets: [],
-        isDirty: true,
-        scrollPos: 0,
-        isVirtual: true,
-      };
-      state.tabs.push(newTab);
-      state.activeTabId = newTab.id;
-      syncStateFromActiveTab();
-      renderContent(raw, cleanName);
-      renderTabsBar();
-    }
-    showToast(_t('toast.appliedVirtualNotice') || ('已创建副本标签页：' + cleanName));
-    return;
-  }
-
-  // 【选区和续写：直接插入/替换到正文，可撤销 (Ctrl+Z)，未保存状态，按 Ctrl+S 保存】
-  // 自动切换到编辑模式，且绝对不能开启预览（setPvLayout('none')），防止画面挤压变形
+  const ctx = selectionContext || state.ai.lastSelection;
+  const tab = getActiveTab(), stamp = ctx?.reviewStamp;
+  const safeCopy = async () => {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || tab?.name), ctx?.dir || tab?.dir || '', raw, [], { originPath: ctx?.path || tab?.path });
+    showToast(window.i18n.t('storage.aiSafeCopy'));
+  };
+  if (!tab || !window.ReadMDReview || !stamp || ctx.tabId !== tab.id || (ctx.text && ctx.exact === false)) return safeCopy();
+  if (!await ReadMDReview.flush(tab) || getActiveTab() !== tab) return safeCopy();
+  const latest = ReadMDReview.snapshot(tab);
+  if (!latest || latest.generation !== stamp.generation || (tab.editGeneration || 0) !== stamp.editGeneration) return safeCopy();
   if (!state.editing) {
-    if (state.pvLayout && state.pvLayout !== 'none') {
-      state._pvLayoutBeforeAi = state.pvLayout;
-    }
-    state.pvLayout = 'none';
-    if (typeof toggleEdit === 'function') {
-      await toggleEdit();
-    }
-    if (typeof setPvLayout === 'function') setPvLayout('none');
+    await toggleEdit();
+    if (getActiveTab() !== tab || !state.editing) return safeCopy();
+  }
+  const current = window.cmView ? cmView.state.doc.toString() : ReadMDReview.lf($('edit-area')?.value);
+  if (current !== stamp.content) return safeCopy();
+  let edits;
+  const replacement = ReadMDReview.lf(raw);
+  if (ctx.text) {
+    if (!Number.isInteger(ctx.from) || !Number.isInteger(ctx.to) || ctx.from < 0 || ctx.to > current.length || current.slice(ctx.from, ctx.to) !== ctx.text) return safeCopy();
+    const at = ctx.isContinue ? ctx.to : ctx.from;
+    const separator = ctx.isContinue && !ctx.text.endsWith('\n') && !replacement.startsWith('\n') ? '\n\n' : '';
+    edits = [{ from: at, to: ctx.to, insert: separator + replacement }];
+  } else if (ctx.isContinue) {
+    const separator = current ? (current.endsWith('\n') ? '\n' : '\n\n') : '';
+    edits = [{ from: current.length, to: current.length, insert: separator + replacement }];
   } else {
-    if (state.pvLayout && state.pvLayout !== 'none') {
-      state._pvLayoutBeforeAi = state.pvLayout;
-      if (typeof setPvLayout === 'function') setPvLayout('none');
-    }
+    try { edits = ReadMDReview.documentEdits(current, replacement); }
+    catch (_) { return safeCopy(); }
   }
-
-  // 等待 CodeMirror 初始化就绪
-  if (!cmView && window.ReadMDCodeMirror) {
-    for (let retry = 0; retry < 12 && !cmView; retry++) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-  }
-  if (state.activeTabId !== applyTabId) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx?.name), ctx?.dir || '', raw, [], { originPath: ctx?.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-
-  if (cmView) {
-    const doc = cmView.state.doc;
-    const docLen = doc.length;
-    let insertFrom = -1;
-    let insertTo = -1;
-    let insertText = raw;
-
-    if (hasSelection) {
-      const selText = ctx.text;
-      if (typeof ctx.from === 'number' && typeof ctx.to === 'number' && ctx.from >= 0 && ctx.to <= docLen && doc.sliceString(ctx.from, ctx.to) === selText) {
-        insertFrom = ctx.from;
-        insertTo = ctx.to;
-      } else {
-        const fullDoc = doc.toString();
-        const firstIdx = fullDoc.indexOf(selText);
-        const secondIdx = fullDoc.indexOf(selText, firstIdx + 1);
-        if (firstIdx >= 0 && secondIdx < 0) {
-          // 仅当全文中唯一定位匹配时才允许重绑
-          insertFrom = firstIdx;
-          insertTo = firstIdx + selText.length;
-        } else {
-          // 存在多次重复出现或原内容已变动，无法唯一定位，拒绝替换第一处！
-          insertFrom = -1;
-          insertTo = -1;
-        }
-      }
-
-      if (insertFrom < 0 || insertTo < 0) {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-        if (typeof renderVirtual === 'function') {
-          await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-        }
-        return;
-      }
-
-      if (isContinue) {
-        const sep = (selText.endsWith('\n') || raw.startsWith('\n')) ? '' : '\n\n';
-        insertFrom = insertTo;
-        insertText = sep + raw;
-      } else {
-        insertText = raw;
-      }
-    } else if (isContinue) {
-      insertFrom = docLen;
-      insertTo = docLen;
-      const lastChar = docLen > 0 ? doc.sliceString(docLen - 1, docLen) : '';
-      const sep = lastChar === '\n' ? '\n' : '\n\n';
-      insertText = (docLen > 0 ? sep : '') + raw;
-    }
-
-    const view = cmView, tabId = state.activeTabId, previous = doc.toString();
-    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
-    if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== previous) {
-      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
-    }
-    // A bulk AI application is one independently undoable edit and never writes the source file.
-    cmView.dispatch({
-      changes: { from: insertFrom, to: insertTo, insert: insertText },
-      annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
-      selection: { anchor: insertFrom + insertText.length },
-      scrollIntoView: true
-    });
-    cmView.focus();
-    showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
-  } else if ($('edit-area')) {
-    const ta = $('edit-area');
-    const val = ta.value;
-    let from = val.length, to = val.length, insert = raw;
-    if (hasSelection) {
-      const exact = Number.isInteger(ctx.from) && Number.isInteger(ctx.to) && ctx.from >= 0 && ctx.to <= val.length && val.slice(ctx.from, ctx.to) === ctx.text;
-      const first = val.indexOf(ctx.text);
-      const idx = exact ? ctx.from : first >= 0 && val.indexOf(ctx.text, first + 1) < 0 ? first : -1;
-      if (idx >= 0) {
-        if (isContinue) {
-          const sep = (ctx.text.endsWith('\n') || raw.startsWith('\n')) ? '' : '\n\n';
-          from = idx + ctx.text.length;
-          to = from;
-          insert = sep + raw;
-        } else {
-          from = idx;
-          to = idx + ctx.text.length;
-          insert = raw;
-        }
-      } else {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-        if (typeof renderVirtual === 'function') {
-          await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-        }
-        return;
-      }
-    } else if (isContinue) {
-      const sep = val.endsWith('\n') ? '\n' : '\n\n';
-      from = val.length;
-      to = val.length;
-      insert = (val ? sep : '') + raw;
-    }
-    const tabId = state.activeTabId;
-    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
-    if (state.activeTabId !== tabId || !state.editing || cmView || ta.value !== val) {
-      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
-    }
-    ta.setRangeText(insert, from, to, 'end');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+S 保存）');
+  if (!edits.length) return;
+  try {
+    await ReadMDReview.propose(edits, stamp, tab);
+    if (getActiveTab() === tab) window.cmView?.focus();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return safeCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
 }
-
 async function saveAiAs() {
   if (!state.ai.raw) return;
   const content = state.ai.raw, origin = getActiveTab();
@@ -19409,9 +21686,17 @@ window.addEventListener('readmd:language-changed', () => {
 (function () {
   let queue = Promise.resolve(), timer, initialized = false, lastFailure = 0, listEpoch = 0, flushing = false, flushPromise, closing = false, lastFeedback, recoveryCount = 0;
   const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
-  const keyFor = tab => tab.recoveryKey ||= (tab.path || 'draft:' + tab.id);
+  // Keep restored legacy keys, but give newly opened files an identity that
+  // cannot collide when a different document later reuses their old filename.
+  const keyFor = tab => tab.recoveryKey ||= ((tab.path ? 'file:' : 'draft:') + tab.id);
+  function reviewContext(tab) {
+    const mark = window.ReadMDReview?.snapshot(tab) || tab._recoveryReview;
+    return mark && typeof mark.document_id === 'string' && Number.isInteger(mark.generation) && Number.isInteger(mark.review_revision) &&
+      typeof mark.revision === 'string' && mark.revision ? { document_id: mark.document_id, generation: mark.generation, review_revision: mark.review_revision, revision: mark.revision } : undefined;
+  }
+  const sameReview = (left, right) => JSON.stringify(left || null) === JSON.stringify(right || null);
   const capture = tab => ({ tab, key: keyFor(tab), path: tab.path || '', name: tab.name || tab.title || 'document.md',
-    context: { dir: tab.dir || '', assets: tab.webAssets || [] },
+    context: { dir: tab.dir || '', assets: tab.webAssets || [], review: reviewContext(tab) },
     content: state.activeTabId === tab.id && state.editing ? getEditContent() : (tab.content ?? '') });
   async function request(body) {
     const response = await apiFetch('/api/documents/history', body ? {
@@ -19453,28 +21738,37 @@ window.addEventListener('readmd:language-changed', () => {
   async function flushDrafts() {
     flushing = true;
     try {
+    let complete = true;
     clearTimeout(timer);
     if (window.ReadMDInlineMath && !await ReadMDInlineMath.flush()) return false;
     if (state.editing) syncActiveTabDirty();
-    for (const tab of state.tabs.filter(tab => tab.path && !tab.isDirty && tab._recoveryContent !== undefined)) {
-      try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; }
+    for (const tab of state.tabs.filter(tab => tab.path && !tab.isDirty && tab._recoveryContent !== undefined && !tab._reviewRestorePending)) {
+      try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; tab._recoveryReview = undefined; }
       catch (_) { /* Retry during maintenance. */ }
     }
-    const pending = state.tabs.filter(tab => (tab.isDirty || !tab.path) && !tab._recoveryDiscarding);
+    const pending = state.tabs.filter(tab => (tab.isDirty || !tab.path || tab._reviewRestorePending) && !tab._recoveryDiscarding);
     for (const tab of pending) {
+      if (tab._reviewRestorePending) { complete = false; continue; }
       const snapshot = capture(tab);
-      if (tab._recoveryContent === snapshot.content) continue;
+      if (tab._recoveryContent === snapshot.content && sameReview(tab._recoveryReview, snapshot.context.review)) continue;
       if (await record(snapshot, 'draft', 'edit')) {
-        tab._recoveryContent = snapshot.content;
+        tab._recoveryContent = snapshot.content; tab._recoveryReview = snapshot.context.review;
         if (capture(tab).content !== snapshot.content) setTimeout(schedule, 0);
-      }
+      } else complete = false;
     }
+    return complete;
     } finally { flushing = false; window.ReadMDSession?.persist(); }
   }
   function schedule() { if (flushing) return; clearTimeout(timer); timer = setTimeout(flush, 1500); }
   async function checkpoint(reason = 'ai', tab = getActiveTab()) {
     if (!tab) return null;
     return record(capture(tab), 'checkpoint', reason);
+  }
+  async function preserveReviewDraft(tab, content, review) {
+    if (!tab || typeof content !== 'string') return false;
+    const snapshot = capture(tab); snapshot.content = content;
+    snapshot.context.review = review;
+    return Boolean(await record(snapshot, 'checkpoint', 'review_recovery_conflict'));
   }
   async function saved(snapshot, tab) {
     // The queued clear follows earlier autosaves. A newer draft is then queued again.
@@ -19490,6 +21784,7 @@ window.addEventListener('readmd:language-changed', () => {
     const entry = await record(snapshot, 'discarded', 'discard');
     if (!entry) { tab._recoveryDiscarding = false; return false; }
     if (capture(tab).content !== snapshot.content) { tab._recoveryDiscarding = false; showToast(t('storage.savedEarlier')); return false; }
+    if (window.ReadMDReview && !await window.ReadMDReview.discard(tab)) { tab._recoveryDiscarding = false; return false; }
     try { await enqueue({ op: 'clear_draft', key: keyFor(tab) }); } catch (_) { /* stored discarded copy remains */ }
     tab._recoveryDiscarding = false;
     return true;
@@ -19611,12 +21906,17 @@ window.addEventListener('readmd:language-changed', () => {
     try {
       if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
       if (await flush() === false) return false;
       if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
       if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
       if (!await confirmExitChanges()) return false;
-      await window.ReadMDSession?.flush();
+      if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
+      const unchanged=closeStamp();
+      if (await window.ReadMDSession?.flush() === false) return false;
       await queue;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (!unchanged()) return false;
       window.ipc?.postMessage('readmd:quit');
       return true;
     } finally { closing = false; }
@@ -19624,13 +21924,22 @@ window.addEventListener('readmd:language-changed', () => {
   async function prepareInstall() {
     if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
     if (state.editing) syncActiveTabDirty();
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (await flush() === false) return false;
     if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
     if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
     if (!await confirmExitChanges()) return false;
-    await window.ReadMDSession?.flush();
+    if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
+    const unchanged=closeStamp();
+    if (await window.ReadMDSession?.flush() === false) return false;
     await queue;
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (!unchanged()) return false;
     return true;
+  }
+  function closeStamp() {
+    const tabs=[...state.tabs], expected=tabs.map(tab=>({tab,path:tab.path,content:capture(tab).content}));
+    return ()=>state.tabs.length===tabs.length&&expected.every(item=>state.tabs.includes(item.tab)&&item.tab.path===item.path&&capture(item.tab).content===item.content);
   }
   // App exit is not the same operation as explicitly closing every page.
   async function confirmExitChanges() {
@@ -19701,7 +22010,7 @@ window.addEventListener('readmd:language-changed', () => {
       return true;
     }catch(error){feedback('storage.recoveryFailed',{error:error.message},true);return false;}
   }
-  window.ReadMDRecovery = { init, schedule, flush, checkpoint, saved, discard, open, createCopy, prepareClose, prepareInstall, sessionDrafts,
+  window.ReadMDRecovery = { init, schedule, flush, checkpoint, preserveReviewDraft, saved, discard, open, createCopy, prepareClose, prepareInstall, sessionDrafts,
     mathDrafts, saveMathDraft, removeMathDraft, mathKept:()=>feedback('storage.draftKept') };
   window.addEventListener('readmd:language-changed', () => {
     if (lastFeedback) feedback(lastFeedback.key, lastFeedback.params, lastFeedback.failed);
@@ -20195,7 +22504,7 @@ async function uploadFile(file) {
     const qs = '?ext=' + encodeURIComponent(ext) + '&name=' + encodeURIComponent(fileName);
     const r = await apiFetch('/api/upload' + qs, { method: 'POST', body: file });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(apiMessage(d) || `HTTP ${r.status}`);
     return d.path || null;
   } catch (e) {
     showToast((_t('toast.uploadFailed') || '上传失败：') + (e.message || e));
@@ -24105,7 +26414,7 @@ async function openExportModal() {
   if(await prepareExportProfile(epoch))renderExportModal();
 }
 
-function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); }
+function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); void discardPreparedExport(exportSnapshotCache); exportSnapshotCache=null; }
 
 function mountExportNumbering(host) {
   if(!window.ReadMDPublicationNumbering)return null;
@@ -24708,20 +27017,27 @@ function cancelNativeExportPreview() {
 
 const exportFigureCache=new Map();
 async function prepareExportFigures(content,options,signal) {
-  if(!/(?:`{3,}|~{3,})\s*(?:vega(?:-lite)?|mermaid|chart(?:js|\.js)?|graphviz|viz|dot|tikz|wavedrom|bitfield)\b/i.test(content))return options;
+  if(!/(?:`{3,}|~{3,})\s*(?:vega(?:-lite)?|mermaid|chart(?:js|\.js)?|graphviz|viz|dot|tikz|plantuml|puml|wavedrom|bitfield)\b/i.test(content))return options;
   const figures={...(options.figures||{})};delete figures.rendered;
   const request=await apiFetch('/api/diagram/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'fences',content,figures}),signal});
   const parsed=await request.json();if(!parsed.ok)throw new Error(apiMessage(parsed,'reader.diagramRenderFailed'));
   const snapshots=[];let bytes=0;
   for(const item of parsed.fences||[]){
-    if(!['vega','vega-lite','mermaid','chart','chartjs','chart.js','graphviz','viz','dot','tikz','wavedrom','bitfield'].includes(item.engine))continue;
+    if(!['vega','vega-lite','mermaid','chart','chartjs','chart.js','graphviz','viz','dot','tikz','plantuml','puml','wavedrom','bitfield'].includes(item.engine))continue;
     if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
     let svg=exportFigureCache.get(item.key);
     if(!svg){
       const holder=document.createElement('div');holder.style.cssText='position:fixed;left:-10000px;top:0;width:960px;pointer-events:none;visibility:hidden';document.body.append(holder);
       let canvas;
       try{
-        const rendered=await renderLocalDiagram(item.engine,item.code,holder,{...figures,export:true});
+        let rendered;
+        if (item.engine === 'plantuml' || item.engine === 'puml') {
+          const response = await apiFetch('/api/diagram/render', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'render', engine: item.engine, code: item.code, figures, allow_remote: false }), signal });
+          const data = await response.json();
+          if (!response.ok || !data.ok || typeof data.svg !== 'string') throw exportSnapshotFailure(data.error_code || 'diagram_render_failed');
+          rendered = diagramOutputMarkup(data.svg);
+        } else rendered=await renderLocalDiagram(item.engine,item.code,holder,{...figures,export:true});
         if(rendered instanceof Element)holder.replaceChildren(rendered);else holder.innerHTML=rendered;
         canvas=holder.querySelector('canvas');
         if(canvas){
@@ -24779,6 +27095,7 @@ function renderNativeExportCapabilityRequired(generation) {
 }
 function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
   const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
+  const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
   const signature = JSON.stringify(payload);
   if (nativeExportPreview.signature === signature) {
     if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
@@ -24805,9 +27122,21 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     const controller = new AbortController(); nativeExportPreview.controller = controller;
     const taskId=crypto.randomUUID();nativeExportPreview.taskId=taskId;
     try {
-      payload.options=await prepareExportFigures(content,options,controller.signal);
+      let previewPayload;
+      const legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
+      if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
+        const frozen = await prepareReviewExport(fmt, options, suggestedName, originTab, true);
+        if (!frozen || frozen.stamp.content !== window.ReadMDReview.lf(content)) throw exportSnapshotFailure('review_stale_generation');
+        await bindSnapshotRuntime(frozen);
+        await prepareSnapshotFigures(frozen);
+        await bindSnapshotRuntime(frozen);
+        previewPayload = { snapshot_id: frozen.snapshot_id, task_id: taskId };
+      } else {
+        payload.options=await prepareExportFigures(content,options,controller.signal);
+        previewPayload = {...payload, ...legacyIdentity, task_id:taskId};
+      }
       if(generation!==nativeExportPreview.generation)return;
-      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({...payload,task_id:taskId}), signal: controller.signal });
+      const response = await apiFetch('/api/export/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewPayload), signal: controller.signal });
       const data = await response.json();
       if (generation !== nativeExportPreview.generation) return;
       if (!response.ok || !data.ok) {
@@ -24826,7 +27155,12 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
       renderNativeExportPreview(presetName, options);
     } catch (error) {
       if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
-      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + error.message; mini.setAttribute('aria-busy', 'false'); }
+      const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex'}[error.code];
+      if (capability) {
+        nativeExportPreview.missingCapability = { id: capability, code: error.code }; renderNativeExportCapabilityRequired(generation); return;
+      }
+      const reason = error.code ? apiMessage({ error_code: error.code }, 'export.previewFailed') : error.message;
+      if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + reason; mini.setAttribute('aria-busy', 'false'); }
       const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
       if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }
       nativeExportPreview.signature = '';
@@ -24998,7 +27332,7 @@ function updateExportLivePreview() {
   let content = currentExportContent();
   if(!exportProfileIsCurrent(content)){
     cancelNativeExportPreview();
-    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('error.transaction_conflict');target.setAttribute('aria-busy','false');}}
+    for(const id of ['export-preview-mini-content','export-preview-paper-meta']){const target=$(id);if(target){target.textContent=_t('export.inputsChanged');target.setAttribute('aria-busy','false');}}
     return;
   }
   if(state.editing&&state.pvPublication)schedulePreview();
@@ -25541,11 +27875,147 @@ function renderExportPresetCards() {
 }
 
 
+let exportSnapshotCache = null, exportSnapshotPreparing = null, exportInFlight = null;
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex']);
+function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
+function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
+function usesExportSnapshot(fmt, tab) {
+  return SNAPSHOT_EXPORT_FORMATS.has(fmt) && (window.READMD_ENGINE === 'rust' || Boolean(window.ReadMDReview?.snapshot(tab)));
+}
+async function oversizedUntrackedExport(fmt, tab, content) {
+  if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
+  if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
+  const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
+  // This read does not create a review database. Only an explicit absence can
+  // permit the compatibility route for an oversized, untracked document.
+  const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resume', path }) });
+  const data = await response.json();
+  if (!response.ok || data.ok === false || data.error || data.error_code) throw exportSnapshotFailure(data.error_code || 'review_persistence_failed');
+  if (data.found !== false || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
+  return { source_path: path, source_identity: { tab_id: tab.id, path, edit_generation: tab.editGeneration || 0 } };
+}
+async function exportSnapshotRequest(action, payload = {}) {
+  const response = await apiFetch('/api/export/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...payload }) });
+  const data = await response.json();
+  if (!response.ok || data.ok === false || data.error_code || data.error) throw exportSnapshotFailure(data.error_code || 'export_failed');
+  return data;
+}
+async function discardPreparedExport(frozen) {
+  // Once commit has been sent, only status/reconcile may decide its outcome.
+  if (!frozen || !['prepared', 'reserved'].includes(frozen.phase)) return;
+  frozen.phase = 'discarded';
+  frozen.figuresAborter?.abort();
+  if (exportSnapshotCache === frozen) exportSnapshotCache = null;
+  try { await exportSnapshotRequest('discard', { snapshot_id: frozen.snapshot_id, call_id: exportSnapshotId() }); } catch (_) {}
+}
+async function prepareReviewExport(fmt, options, suggestedName, tab, preview = false) {
+  if (!tab || !window.ReadMDReview) throw exportSnapshotFailure('review_persistence_failed');
+  const stamp = await window.ReadMDReview.capture(tab);
+  if (!stamp) throw exportSnapshotFailure('review_persistence_failed');
+  const key = JSON.stringify([stamp.document_id, stamp.generation, stamp.review_revision, fmt, options, suggestedName]);
+  let frozen = exportSnapshotCache;
+  if (!frozen || frozen.key !== key || frozen.phase !== 'prepared') {
+    if (exportSnapshotPreparing?.key !== key) {
+      const epoch = exportOpenEpoch;
+      const work = (async () => {
+        const prepared = await exportSnapshotRequest('prepare', { doc_id: stamp.document_id, generation: stamp.generation,
+          review_revision: stamp.review_revision, format: fmt, options, suggestedName, call_id: exportSnapshotId() });
+        if (!prepared.snapshot_id || !Number.isInteger(prepared.pending_count) || !Array.isArray(prepared.pending_ids)) throw exportSnapshotFailure('review_persistence_failed');
+        const next = { ...prepared, key, tab, stamp, content: prepared.content ?? stamp.content, options: prepared.options || options,
+          phase: 'prepared', commitCallId: exportSnapshotId() };
+        if (epoch !== exportOpenEpoch) { await discardPreparedExport(next); throw exportSnapshotFailure('cancelled'); }
+        await discardPreparedExport(exportSnapshotCache);
+        exportSnapshotCache = next;
+        return next;
+      })();
+      exportSnapshotPreparing = { key, work };
+      work.finally(() => { if (exportSnapshotPreparing?.work === work) exportSnapshotPreparing = null; }).catch(() => {});
+    }
+    frozen = await exportSnapshotPreparing.work;
+  }
+  if (!preview) {
+    frozen.phase = 'reserved';
+    if (exportSnapshotCache === frozen) exportSnapshotCache = null;
+  }
+  return frozen;
+}
+async function bindSnapshotRuntime(frozen) {
+  // Preparation already owns the body and resource bytes. Installation can
+  // fill only missing runtime identities on that same prepared snapshot.
+  const runtime = await exportSnapshotRequest('runtime', { snapshot_id: frozen.snapshot_id });
+  if (runtime.runtime_ready !== true) throw exportSnapshotFailure('export_snapshot_runtime_unavailable');
+  frozen.runtime_ready = true;
+}
+function snapshotPublicationOptions(frozen, options) {
+  const projection = frozen?.engine_identity?.projection?.engine;
+  return { ...options, pdf: { ...(options.pdf || {}), engine: ['rust', 'typst'].includes(projection) ? projection : 'rust' } };
+}
+async function prepareSnapshotFigures(frozen) {
+  if (!frozen.figuresPromise) frozen.figuresPromise = (async () => {
+    // The authoritative body and file bytes already belong to the snapshot.
+    // Browser-rendered SVGs are bound once to that snapshot's exact fence keys.
+    // Cancelling a preview must not abort the same prepared SVG work after an
+    // export has reserved it. Discard owns this snapshot's resource lifetime.
+    frozen.figuresAborter = new AbortController();
+    const renderedOptions = await prepareExportFigures(frozen.content, frozen.options, frozen.figuresAborter.signal);
+    if (renderedOptions.figures?.rendered?.length) await exportSnapshotRequest('figures', {
+      snapshot_id: frozen.snapshot_id, rendered: renderedOptions.figures.rendered, call_id: exportSnapshotId() });
+    return renderedOptions;
+  })().catch(error => { frozen.figuresPromise = null; throw error; });
+  return frozen.figuresPromise;
+}
+async function viewExportChanges(tab) {
+  closeExportModal();
+  if (!tab || !state.tabs?.includes(tab)) return;
+  if (typeof getActiveTab === 'function' && getActiveTab() !== tab && typeof switchTab === 'function') await switchTab(tab.id);
+  if (typeof getActiveTab === 'function' && getActiveTab() !== tab) return;
+  if (!state.editing && typeof toggleEdit === 'function') await toggleEdit();
+  window.ReadMDReview?.navigate(1, tab);
+}
+async function confirmReviewExport(frozen) {
+  if (!frozen.pending_count) return true;
+  const choice = await askChoice(i18n.t('export.reviewTitle'), i18n.t('export.reviewDescription', { count: frozen.pending_count }), [
+    { id: 'export', label: i18n.t('export.acceptAllAndExport'), kind: 'accent' },
+    { id: 'review', label: i18n.t('export.viewChanges') },
+    { id: 'cancel', label: i18n.t('dialog.cancel') },
+  ]);
+  if (choice === 'export') { frozen.acceptPending = true; return true; }
+  await discardPreparedExport(frozen);
+  if (choice === 'review') await viewExportChanges(frozen.tab);
+  return false;
+}
+async function commitReviewExport(frozen, taskId) {
+  frozen.phase = 'committing';
+  const payload = { snapshot_id: frozen.snapshot_id, call_id: frozen.commitCallId, task_id: taskId || exportSnapshotId(), accept_pending: Boolean(frozen.acceptPending) };
+  let result;
+  try { result = await exportSnapshotRequest('commit', payload); }
+  catch (error) {
+    // The writer may already have committed despite a lost acknowledgement.
+    // Reconciliation never starts another export or broadens review consent.
+    if (!error.code) {
+      try { result = await exportSnapshotRequest('reconcile', { snapshot_id: frozen.snapshot_id, call_id: frozen.commitCallId }); } catch (_) {}
+    }
+    if (!result) return { ok: false, error_code: error.code || 'export_failed' };
+  }
+  if (result.receipt) result = result.receipt;
+  if (result.ok !== true || typeof result.path !== 'string' || !result.path) return { ok: false, error_code: result.error_code || 'export_failed' };
+  frozen.phase = 'complete';
+  if (result.ok !== false && window.ReadMDReview) {
+    if (result.review) await window.ReadMDReview.adopt(result.review, frozen.tab);
+    else if (result.finalization_pending) await window.ReadMDReview.adopt(null, frozen.tab, frozen.stamp.document_id);
+  }
+  return result;
+}
+
 /* Single flight: a double click (or Enter + click) never sends two exports. */
 function runExport() {
+  if (exportInFlight) return exportInFlight;
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
-  if (!window.ReadMDTask) return runExportOnce();
+  if (!window.ReadMDTask) {
+    exportInFlight = Promise.resolve(runExportOnce()).finally(() => { exportInFlight = null; });
+    return exportInFlight;
+  }
   if (window.ReadMDTask.isRunning('export')) return;
   cancelNativeExportPreview();
   const res = $('export-result');
@@ -25555,14 +28025,15 @@ function runExport() {
   renderExportWarns([]);
   // EPUB and the browser-only presentation preview have their own routes and
   // are not cancellable; everything through /api/export is.
-  const cancellable = state.export.fmt !== 'epub';
+  const cancellable = state.export.fmt !== 'epub' || usesExportSnapshot(state.export.fmt, typeof getActiveTab === 'function' ? getActiveTab() : null);
   const taskId = cancellable ? window.ReadMDTask.newTaskId('export') : '';
-  return window.ReadMDTask.run('export', () => runExportOnce(taskId), {
+  exportInFlight = Promise.resolve(window.ReadMDTask.run('export', () => runExportOnce(taskId), {
     trigger: ['export-run'],
     status: res,
     label: (window.i18n ? window.i18n.t('task.exporting') : '') || '',
     cancel: cancellable ? { id: taskId, button: 'export-cancel' } : null,
-  });
+  })).finally(() => { exportInFlight = null; });
+  return exportInFlight;
 }
 
 async function runExportOnce(taskId) {
@@ -25573,17 +28044,44 @@ async function runExportOnce(taskId) {
   let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
   const spacingError=window.ReadMDPublication?.lineSpacing.issue(options,fmt,options.pdf?.engine)||window.ReadMDPublication?.tracking.issue(options,fmt)||window.ReadMDPublication?.baseline.issue(options,fmt,options.pdf?.engine);if(spacingError){showToast(i18n.t(spacingError));return false;}
-  const content = currentExportContent();
-  if(!exportProfileIsCurrent(content)){showToast(i18n.t('error.transaction_conflict'));return false;}
+  let content = currentExportContent();
+  if(!exportProfileIsCurrent(content)){showToast(i18n.t('export.inputsChanged'));return false;}
   const baseDir = state.dir || '';
   const suggestedName = currentExportName();
   const preset = ($('exp-preset') || {}).value || '__custom__';
+  const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  let frozen = null, legacyIdentity = null;
+  try {
+    legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
+    if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
+      // Flush and freeze before confirmation, capability installation, image
+      // work or the native chooser. Everything after this uses this identity.
+      frozen = await prepareReviewExport(fmt, options, suggestedName, originTab);
+      content = frozen.content;
+      options = frozen.options;
+      if (!await confirmReviewExport(frozen)) return false;
+    } else if (originTab && window.ReadMDReview) {
+      if (!await window.ReadMDReview.flush(originTab)) return false;
+      const mark = window.ReadMDReview.snapshot(originTab);
+      if (mark?.changes.some(change => change.decision === 'pending' || change.conflict || change.decision === 'conflict')) {
+        const action = await askChoice(i18n.t('export.reviewTitle'), i18n.t('export.reviewRequired'), [
+          { id: 'review', label: i18n.t('export.viewChanges'), kind: 'accent' }, { id: 'cancel', label: i18n.t('dialog.cancel') },
+        ]);
+        if (action === 'review') await viewExportChanges(originTab);
+        return false;
+      }
+    }
+  } catch (error) {
+    await discardPreparedExport(frozen);
+    showToast(apiMessage({ error_code: error.code || 'export_failed' }, 'toast.unknownError'));
+    return false;
+  }
   const engineCapability={typst:'typst',xelatex:'latex',pdflatex:'latex'}[options.pdf?.engine];
   if(fmt==='pdf'&&engineCapability){
     const epoch=exportOpenEpoch;
-    if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch)return false;
+    if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if(fmt==='pdf'&&!await ReadMDCapabilities.ensurePublication(content,options))return false;
+  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -25594,6 +28092,18 @@ async function runExportOnce(taskId) {
   };
 
   try {
+    if (frozen) {
+      await bindSnapshotRuntime(frozen);
+      options = await prepareSnapshotFigures(frozen);
+      // Rendered labels can introduce CJK glyphs absent from the diagram
+      // source. Install against the frozen SVGs, then bind missing fonts on
+      // this same snapshot before committing its output.
+      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options)) {
+        await discardPreparedExport(frozen); busy(false); return false;
+      }
+      await bindSnapshotRuntime(frozen);
+      r = await commitReviewExport(frozen, taskId);
+    } else {
     options=await prepareExportFigures(content,options);
     if (fmt === 'epub') {
       const epubOpts = options.epub || options.meta || {};
@@ -25613,12 +28123,12 @@ async function runExportOnce(taskId) {
       // Keep the backend's legacy fallback for documents without a declaration.
       const fullPayload = { ...options, epub: epubPayload };
       if (hasPy && py.export_epub) {
-        r = await py.export_epub(content, '', epubPayload, fullPayload, baseDir);
+        r = await py.export_epub(content, '', epubPayload, fullPayload, baseDir, legacyIdentity || undefined);
       } else {
         const resp = await apiFetch('/api/export/epub', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: content, meta: epubPayload, epub: epubPayload, options: fullPayload, baseDir: baseDir, confirm: true })
+          body: JSON.stringify({ content: content, meta: epubPayload, epub: epubPayload, options: fullPayload, baseDir: baseDir, confirm: true, ...legacyIdentity })
         });
         r = await resp.json();
       }
@@ -25636,6 +28146,7 @@ async function runExportOnce(taskId) {
         baseDir: baseDir,
         suggestedName: suggestedName,
         options: options,
+        ...legacyIdentity,
       };
       if (taskId) payload.task_id = taskId;
       if (hasPy && py && typeof py.export_doc === 'function') {
@@ -25649,8 +28160,10 @@ async function runExportOnce(taskId) {
         r = await resp.json();
       }
     }
+    }
   } catch (e) {
-    failedResult(e.message || _t('toast.unknownError'));
+    await discardPreparedExport(frozen);
+    failedResult(apiMessage({ error_code: e.code || 'export_failed' }, 'toast.unknownError'));
     busy(false);
     return;
   }
@@ -25671,6 +28184,8 @@ async function runExportOnce(taskId) {
   res.textContent = (_t('toast.exportedPrefix') || '') + (r.path || _t('toast.exportSuccess') || '');
   res.className = 'export-result ok';
   const warnList = warnMessages(r);
+  if (r.finalization_pending) warnList.push(_t('export.finalizationPending'));
+  else if (r.review_conflicts?.length) warnList.push(_t('review.conflict'));
   if(options.figures?.rendered){options={...options,figures:{...options.figures}};delete options.figures.rendered;}
   state.export.last = { fmt, options:rememberedOptions, preset };
   try {
@@ -25936,8 +28451,12 @@ function exportPaperSize(page) {
 /* Contextual PDF editor. The reader's toolbar stays unchanged. */
 (function () {
   const t=(key,params)=>window.i18n.t(key,params);
-  let modal,session=null,selected=null,working=false,task=null,opener=null,openedPath=null,listKind=null;
+  let modal,session=null,selected=null,working=false,closing=false,task=null,opener=null,openedPath=null,listKind=null;
   let navigation=[];
+  let imageSelectionEpoch=0;
+  let deleteConfirmation=null;
+  let taskCancellation=null;
+  const closeSavePermit=Symbol('pdf-close-save');
   const $pdf=id=>document.getElementById('pdf-'+id);
   function button(id,key,action){const b=document.createElement('button');b.id='pdf-'+id;b.type='button';b.className='tb-btn';b.dataset.i18n=key;b.textContent=t(key);b.onclick=()=>Promise.resolve(action()).catch(()=>{$pdf('status').textContent=t('error.pdf_operation_failed');});return b;}
   function label(key,input){const el=document.createElement('label'),text=document.createElement('span');text.dataset.i18n=key;text.textContent=t(key);el.append(input,text);return el;}
@@ -25954,7 +28473,7 @@ function exportPaperSize(page) {
     const total=document.createElement('span');total.id='pdf-pages';header.append(total,button('next','pdf.next',()=>page(1)),button('undo','editor.undo',()=>run('undo')),button('redo','editor.redo',()=>run('redo')));
     for(const[id,symbol]of[['previous','‹'],['next','›'],['undo','↶'],['redo','↷']]){const b=$pdf(id)||header.querySelector('#pdf-'+id);b.dataset.i18nTitle=b.dataset.i18n;b.dataset.i18nAria=b.dataset.i18n;delete b.dataset.i18n;b.title=b.textContent;b.setAttribute('aria-label',b.textContent);b.textContent=symbol;}
     const more=document.createElement('details');more.className='pdf-more';const summary=document.createElement('summary');summary.textContent='…';summary.dataset.i18nAria='toolbar.more';summary.dataset.i18nTitle='toolbar.more';summary.setAttribute('aria-label',t('toolbar.more'));summary.title=t('toolbar.more');more.append(summary);
-    const options=document.createElement('div');options.className='pdf-more-items';options.append(button('rotate','pdf.rotate',()=>session&&edit({kind:'rotate',page:session.page,turns:(session.rotation+1)%4})),button('delete-page','pdf.deletePage',async()=>{if(session&&await confirmAction({title:t('pdf.deletePage'),message:t('pdf.deletePageConfirm'),confirmText:t('ai.delete'),cancelText:t('common.cancel'),danger:true}))await edit({kind:'delete_page',page:session.page});}));
+    const options=document.createElement('div');options.className='pdf-more-items';options.append(button('rotate','pdf.rotate',()=>session&&edit({kind:'rotate',page:session.page,turns:(session.rotation+1)%4})),button('delete-page','pdf.deletePage',deletePage));
     const signed=document.createElement('input');signed.type='checkbox';signed.id='pdf-signatures';options.append(label('pdf.allowSignatures',signed));
     const password=document.createElement('input');password.id='pdf-password';password.type='password';password.autocomplete='off';password.dataset.i18nAria='pdf.password';password.setAttribute('aria-label',t('pdf.password'));options.append(label('pdf.password',password),button('retry','audit.retryLoad',()=>openedPath&&open(openedPath)));
     options.append(button('back','pdf.back',navigateBack),button('drafts','pdf.drafts',loadDrafts),button('history','storage.history',loadHistory));const drafts=document.createElement('div');drafts.id='pdf-drafts';options.append(drafts);more.append(options);header.append(more);
@@ -25975,6 +28494,7 @@ function exportPaperSize(page) {
     window.ReadMDModal?.setGuard?.('pdf-modal',()=>{if(selected)select(null);else close();return false;});
   }
   function select(item){
+    imageSelectionEpoch++;
     selected=item;$pdf('context').hidden=!item;
     if(!item)return;
     $pdf('text').value=item.text||'';$pdf('text').readOnly=!!item.readonly||item.kind==='image'||item.kind==='checkbox';
@@ -26056,8 +28576,9 @@ function exportPaperSize(page) {
     const response=await apiFetch('/api/pdf/workspace',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,task_id:task,allow_signatures:!!$pdf('signatures')?.checked})});
     const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error_code||'pdf_operation_failed');return data;
   }
-  async function run(action,extra={}){
-    if(working||!session)return false;
+  async function run(action,extra={},permit=null){
+    if(working||!session||(closing&&permit!==closeSavePermit))return false;
+    cancelDeleteConfirmation();
     const old=session,selection=selected,draft=selection?{text:$pdf('text').value,font:$pdf('font').value,overflow:$pdf('overflow').checked}:null;
     working=true;if(action!=='save')setLoading(true);
     try{
@@ -26077,6 +28598,17 @@ function exportPaperSize(page) {
   }
   const refresh=number=>run('render',{page:number});const page=delta=>session&&refresh(Math.max(0,Math.min(session.pages-1,session.page+delta)));
   const edit=operation=>run('edit',{operation});
+  function cancelDeleteConfirmation(){if(deleteConfirmation){deleteConfirmation.abort();deleteConfirmation=null;}}
+  async function deletePage(){
+    if(!session||working||closing)return;
+    const current=session,revision=current.revision,page=current.page;
+    cancelDeleteConfirmation();const controller=new AbortController();deleteConfirmation=controller;
+    let confirmed=false;
+    try{confirmed=await confirmAction({title:t('pdf.deletePage'),message:t('pdf.deletePageConfirm'),confirmText:t('ai.delete'),cancelText:t('common.cancel'),danger:true,signal:controller.signal});}
+    finally{if(deleteConfirmation===controller)deleteConfirmation=null;}
+    if(!confirmed||controller.signal.aborted||working||closing||session!==current||current.revision!==revision||current.page!==page)return;
+    await edit({kind:'delete_page',page});
+  }
   async function apply(){
     if(!selected||working)return;
     const current=session,target=selected;
@@ -26089,19 +28621,35 @@ function exportPaperSize(page) {
     await edit(op);
   }
   async function replaceImage(){
-    if(!selected||selected.kind!=='image')return;const target={id:selected.id,page:session.page};
+    if(!session||!selected||selected.kind!=='image'||working||closing)return;
+    const current=session,target=selected,revision=current.revision,page=current.page,object=target.id,epoch=++imageSelectionEpoch;
+    // A file picker and image decoder outlive their click. Only that exact
+    // selection may commit; a newer picker also permanently cancels this one.
+    const currentTarget=()=>session===current&&selected===target&&imageSelectionEpoch===epoch&&current.revision===revision&&current.page===page&&target.id===object&&!working&&!closing;
     const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';
-    input.onchange=async()=>{const file=input.files?.[0];if(!file)return;try{
-      const bitmap=await createImageBitmap(file);try{if(bitmap.width*bitmap.height>4000000)throw Error('pdf_limit');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);const bytes=context.getImageData(0,0,bitmap.width,bitmap.height).data;
-      let raw='';for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));await edit({kind:'image',page:target.page,object:target.id,width:bitmap.width,height:bitmap.height,rgba:btoa(raw)});
+    input.onchange=async()=>{const file=input.files?.[0];if(!file||!currentTarget())return;try{
+      const bitmap=await createImageBitmap(file);try{if(!currentTarget())return;if(bitmap.width*bitmap.height>4000000)throw Error('pdf_limit');const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);const bytes=context.getImageData(0,0,bitmap.width,bitmap.height).data;
+      let raw='';for(let i=0;i<bytes.length;i+=32768)raw+=String.fromCharCode(...bytes.subarray(i,i+32768));if(!currentTarget())return;await edit({kind:'image',page,object,width:bitmap.width,height:bitmap.height,rgba:btoa(raw)});
       }finally{bitmap.close();}
-    }catch(error){$pdf('status').textContent=t('error.'+(error.message==='pdf_limit'?'pdf_limit':'pdf_operation_failed'));}};input.click();
+    }catch(error){if(currentTarget())$pdf('status').textContent=t('error.'+(error.message==='pdf_limit'?'pdf_limit':'pdf_operation_failed'));}};input.click();
+  }
+  async function cancelWorkingTask(){
+    if(!task)return;
+    if(taskCancellation?.id===task){await taskCancellation.promise;return;}
+    const id=task,promise=apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+    taskCancellation={id,promise};
+    try{await promise;}finally{if(taskCancellation?.promise===promise)taskCancellation=null;}
   }
   async function close(){
-    if(working){$pdf('status').textContent=t('task.cancelling');if(task)await apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})});return false;}
-    if(session?.dirty){const answer=await promptDirtyClose((openedPath||t('pdf.title')).split(/[\\/]/).pop());if(answer==='cancel')return false;if(answer==='save'&&!await run('save'))return false;}
-    if(session){try{await request({action:'close',session:session.session,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
-    if(modal){modal.classList.add('hidden');$pdf('password').value='';}opener?.focus?.();return true;
+    if(closing){if(working){$pdf('status').textContent=t('task.cancelling');await cancelWorkingTask();}return false;}
+    closing=true;
+    try{
+      cancelDeleteConfirmation();
+      if(working){$pdf('status').textContent=t('task.cancelling');await cancelWorkingTask();return false;}
+      if(session?.dirty){const answer=await promptDirtyClose((openedPath||t('pdf.title')).split(/[\\/]/).pop());if(answer==='cancel')return false;if(answer==='save'&&!await run('save',{},closeSavePermit))return false;}
+      if(session){try{await request({action:'close',session:session.session,discard:true});}catch(error){$pdf('status').textContent=t('error.'+error.message);return false;}session=null;updateUnloadGuard();}
+      if(modal){modal.classList.add('hidden');$pdf('password').value='';}opener?.focus?.();return true;
+    }finally{closing=false;}
   }
   async function open(path){
     if(!await window.ReadMDCapabilities.ensure('pdfium'))return false;
@@ -26117,12 +28665,12 @@ function exportPaperSize(page) {
     const input=document.createElement('input');input.type='file';input.accept='.pdf';input.onchange=async()=>{const file=input.files?.[0];if(file){const path=await uploadFile(file);if(path)await open(path);}};input.click();
   }
   async function loadDrafts(){
-    if(working)return;listKind='drafts';const result=await request({action:'drafts'}),list=$pdf('drafts');list.replaceChildren();
+    if(working||closing)return;listKind='drafts';const result=await request({action:'drafts'}),list=$pdf('drafts');list.replaceChildren();
     if(!result.drafts.length){list.textContent=t('pdf.noDrafts');return;}
     for(const draft of result.drafts){const b=button('resume-'+draft.id,'pdf.drafts',async()=>{const password=$pdf('password').value;if(!await close())return;window.ReadMDModal.open(modal);working=true;setLoading(true);try{await paint(await request({action:'resume',draft:draft.id,password,width:1600}));}catch(error){$pdf('status').textContent=t('error.'+error.message);}finally{working=false;setLoading(false);}});delete b.dataset.i18n;b.textContent=draft.name+' · '+new Date(draft.created).toLocaleDateString(window.i18n.currentLang);list.append(b);}
   }
   async function loadHistory(){
-    if(working||!session)return;listKind='history';const result=await request({action:'history',path:session.path}),list=$pdf('drafts');list.replaceChildren();if(!result.history.length){list.textContent=t('storage.empty');return;}
+    if(working||closing||!session)return;listKind='history';const result=await request({action:'history',path:session.path}),list=$pdf('drafts');list.replaceChildren();if(!result.history.length){list.textContent=t('storage.empty');return;}
     const path=session.path;
     for(const entry of result.history){const date=new Date(entry.created).toLocaleString(window.i18n.currentLang),b=button('restore-'+entry.id,'storage.history',async()=>{
       if(!await confirmAction({title:t('pdf.restoreHistory'),message:t('pdf.restoreHistoryConfirm',{date}),confirmText:t('pdf.restoreHistory'),cancelText:t('common.cancel')}))return;
@@ -26184,6 +28732,12 @@ function exportPaperSize(page) {
 // A contextual import/review flow; no extra toolbar, files, or execution on open.
 (function () {
   const t=(key,params)=>window.i18n.t(key,params);
+  function errorText(error){
+    // A reviewed specification or its target can change while the dialog is
+    // open. Use the existing translated stale-review guidance in every locale.
+    const key=error.message==='transaction_conflict'?'error.review_stale_generation':'error.'+error.message;
+    const translated=t(key);return translated===key?t('toast.unknownError'):translated;
+  }
   let review=null,epoch=0,modal,pending=null;
   const activeContent=()=>{const tab=getActiveTab();return state.editing&&cmView?cmView.state.doc.toString():((tab?.isDirty?tab.content:tab?.original)??state.original??'').replace(/\r\n?/g,'\n');};
   const revision=async text=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');
@@ -26236,7 +28790,7 @@ function exportPaperSize(page) {
       const data=await request('/api/developer/openapi',{file_path:file,content,base_revision,locale:i18n.currentLang,task_id:job.id});
       if(token!==epoch||state.activeTabId!==tabId||content!==(state.mode==='welcome'?'':activeContent()))throw Error('transaction_conflict');
       review={data,content,tabId,file,locale:i18n.currentLang};paint();ReadMDModal.open(modal);return true;
-    }catch(error){if(token===epoch)$('openapi-review-status').textContent=t('error.'+error.message);return false;}
+    }catch(error){if(token===epoch)$('openapi-review-status').textContent=errorText(error);return false;}
     finally{if(pending===job)pending=null;}
   }
   async function accept(){
@@ -26258,7 +28812,7 @@ function exportPaperSize(page) {
       if(!valid()||!cmView)throw Error('transaction_conflict');
       const changes=current.data.transaction.edits.map(edit=>({from:edit.from,to:edit.to,insert:edit.insert}));
       cmView.dispatch({changes,userEvent:'input.openapi'});close();cmView.focus();return true;
-    }catch(error){$('openapi-review-status').textContent=t('error.'+error.message);return false;}
+    }catch(error){$('openapi-review-status').textContent=errorText(error);return false;}
     finally{if(review===current)button.disabled=false;}
   }
   async function choose(){
@@ -29248,7 +31802,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 function updateUnloadGuard() {
-  const dirty = state.tabs.some(tab => tab.isDirty) || window.ReadMDPdf?.dirty || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
+  const dirty = state.tabs.some(tab => tab.isDirty || window.ReadMDReview?.busy(tab)) || window.ReadMDPdf?.dirty || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
   window.onbeforeunload = dirty ? event => {
     event.preventDefault();
     event.returnValue = '';

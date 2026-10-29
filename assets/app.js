@@ -1393,7 +1393,7 @@ window.addEventListener('beforeunload', () => {
   }
 });
 function updateUnloadGuard() {
-  const dirty = state.tabs.some(tab => tab.isDirty) || window.ReadMDPdf?.dirty || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
+  const dirty = state.tabs.some(tab => tab.isDirty || window.ReadMDReview?.busy(tab)) || window.ReadMDPdf?.dirty || (typeof hasUnsavedEditorChanges === 'function' && hasUnsavedEditorChanges());
   window.onbeforeunload = dirty ? event => {
     event.preventDefault();
     event.returnValue = '';

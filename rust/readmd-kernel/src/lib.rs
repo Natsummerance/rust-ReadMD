@@ -41,6 +41,21 @@ pub mod codecs;
 pub mod content;
 pub mod document_history;
 pub mod document_transaction;
+pub mod document_operations;
+pub mod document_refactor_links;
+pub mod document_refactor;
+mod settings_persistence;
+pub mod review;
+mod review_store;
+pub mod review_api;
+pub mod ai_review;
+pub mod ai_harness;
+mod ai_task_store;
+pub mod ai_task_api;
+pub mod export_snapshot;
+pub mod export_snapshot_api;
+mod review_route;
+mod review_transport;
 pub mod document_assets;
 pub mod openapi_document;
 pub mod collaboration;
@@ -841,31 +856,6 @@ pub mod settings {
             Settings { path: path.clone(), value }
         }
 
-        fn object(&self) -> Map<String, Value> {
-            match self.value.as_object() {
-                Some(o) => o.clone(),
-                None => Map::new(),
-            }
-        }
-
-        fn save(&mut self) -> std::io::Result<()> {
-            if let Some(parent) = self.path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let text = serde_json::to_string_pretty(&self.value).unwrap_or_else(|_| "{}".into());
-            let tmp = self.path.with_extension("json.tmp");
-            std::fs::write(&tmp, text.as_bytes())?;
-            match std::fs::rename(&tmp, &self.path) {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                    std::fs::copy(&tmp, &self.path)?;
-                    let _ = std::fs::remove_file(&tmp);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        }
-
         pub fn all(&self) -> Value {
             self.value.clone()
         }
@@ -877,19 +867,30 @@ pub mod settings {
         /// Shallow merge; an explicit null removes the key, matching the legacy
         /// settings writer used by the UI.
         pub fn merge(&mut self, patch: &Value) -> Value {
-            let mut obj = self.object();
-            if let Some(src) = patch.as_object() {
-                for (k, v) in src {
-                    if v.is_null() {
-                        obj.remove(k);
-                    } else {
-                        obj.insert(k.clone(), v.clone());
-                    }
-                }
-            }
-            self.value = Value::Object(obj);
-            let _ = self.save();
+            let _ = self.merge_checked(patch);
             self.value.clone()
+        }
+
+        /// A persistence acknowledgement for callers that must not proceed
+        /// after a failed or uncertain write. Legacy merge keeps its Value API.
+        pub fn merge_checked(&mut self, patch: &Value) -> std::io::Result<Value> {
+            let committed = crate::settings_persistence::merge(&self.path, patch, &defaults())?;
+            self.value = committed;
+            Ok(self.value.clone())
+        }
+
+        /// Session versions always come from the locked disk object, never a
+        /// possibly stale Settings instance. Failed/uncertain I/O keeps memory.
+        pub(crate) fn read_session_checked(&mut self) -> Result<Value, crate::settings_persistence::SessionError> {
+            let committed = crate::settings_persistence::read_session(&self.path, &defaults())?;
+            self.value = committed.settings;
+            Ok(committed.response)
+        }
+
+        pub(crate) fn write_session_checked(&mut self, request: &Value) -> Result<Value, crate::settings_persistence::SessionError> {
+            let committed = crate::settings_persistence::write_session(&self.path, request, &defaults())?;
+            self.value = committed.settings;
+            Ok(committed.response)
         }
 
         pub fn set(&mut self, key: &str, value: Value) -> Value {
@@ -935,6 +936,8 @@ pub struct App {
     pub completion: ai_completion::Runtime,
     pub collaboration: collaboration_host::Runtime,
     pub(crate) math_context: math_context::Runtime,
+    pub review: review::Service,
+    pub ai_tasks: ai_harness::Service,
 }
 
 /// Mirrors `readmd.py`'s `_CONTROL` dictionary: every entry is a queue that a
@@ -1064,9 +1067,16 @@ impl App {
             completion: ai_completion::Runtime::default(),
             collaboration: collaboration_host::Runtime::default(),
             math_context: math_context::Runtime::default(),
+            review: review::Service::new(&paths.data_dir),
+            ai_tasks: ai_harness::Service::new(&paths.data_dir),
             paths,
         };
         capability_delivery::cleanup_uploads(&app.paths.data_dir);
+        if app.paths.data_dir.join("ai-tasks.sqlite3").is_file() {
+            // A damaged/full optional task journal must not prevent basic
+            // reading. Task APIs retain their explicit recovery error.
+            let _ = app.ai_tasks.recover_running();
+        }
         task_workspace::recover_background(&app.paths.data_dir);
         let _ = content::index_workspace_at_startup(&app, BOOT_INDEX_LIMIT);
         Ok(app)
@@ -1085,6 +1095,23 @@ impl App {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .merge(patch)
+    }
+
+    /// The settings mutex and independent settings file lock never acquire a
+    /// document-operation gate, so callers already holding that gate may use it.
+    pub fn update_settings_checked(&self, patch: &serde_json::Value) -> std::io::Result<serde_json::Value> {
+        self.settings
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .merge_checked(patch)
+    }
+
+    pub(crate) fn read_session_checked(&self) -> std::result::Result<serde_json::Value, settings_persistence::SessionError> {
+        self.settings.lock().unwrap_or_else(|e| e.into_inner()).read_session_checked()
+    }
+
+    pub(crate) fn write_session_checked(&self, request: &serde_json::Value) -> std::result::Result<serde_json::Value, settings_persistence::SessionError> {
+        self.settings.lock().unwrap_or_else(|e| e.into_inner()).write_session_checked(request)
     }
 }
 

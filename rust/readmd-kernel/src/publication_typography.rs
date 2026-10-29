@@ -83,7 +83,7 @@ pub fn validate_request(options: &Value) -> Result<(), &'static str> {
     Ok(())
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct LineContext { legacy_multiple: f64 }
 impl Default for LineContext { fn default() -> Self { Self { legacy_multiple: 1.6 } } }
 impl LineContext { pub(crate) fn legacy_multiple(self) -> f64 { self.legacy_multiple } }
@@ -91,7 +91,7 @@ impl LineContext { pub(crate) fn legacy_multiple(self) -> f64 { self.legacy_mult
 /// Internal normalization structure: provenance never travels in client JSON.
 /// Canonical fields are still validated at every consumer; this is not a
 /// validation bypass or an authority flag.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ResolvedOptions { canonical: Value, line: LineContext }
 impl ResolvedOptions {
     pub(crate) fn from_request(raw: &Value) -> Result<Self, &'static str> {

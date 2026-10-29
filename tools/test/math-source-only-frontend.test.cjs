@@ -147,10 +147,17 @@ test('studio does not treat a late source-only response as the replacement draft
   const replacement={tex:'replacement',valid:false};f.context.__studio.setDraft(replacement);resolve({ok:true,json:async()=>unavailable()});await task;
   assert.equal(f.context.__studio.getDraft(),replacement);assert.equal(replacement.valid,false);assert.equal(f.context.document.getElementById('formula-preview').children.length,0);assert.equal(f.calls.mathjax,0);assert.equal(f.changes.length,0);
 });
-test('protected frontend bytes remain unchanged outside the authorized formula context hook',()=>{
+test('approved review integration keeps frontend bytes fixed outside the formula context hook',()=>{
+  // V006 batch 1 changes review/editor/save integration; batch 3 also fixes
+  // clipboard and column alignment tables. Advance only the reviewed editor
+  // baseline after real CSP editing, undo, save and reopen checks. Other guards stay unchanged.
+  // The two advanced baselines use canonical CRLF, independent of checkout
+  // EOL. The preview baseline includes the rename/recovery fence validated by
+  // the separate real-browser edit, undo/redo, save and restart regression.
+  // Leave the three pre-existing exact-byte protection pins untouched.
   const protectedFiles=[
-    {path:'assets/js/editor/editor.js',sha256:'43ccae1ac979c86290624a611b90761d03eae76e999f3d6fb5a9beb89af06139'},
-    {path:'assets/js/editor/preview.js',sha256:'b6b9e1727f888d54cabb43b4d2de01139f62cfe17bdcbaa07979e75cc9ea26f5'},
+    {path:'assets/js/editor/editor.js',sha256:'4eeb5bf5a071299820c692d46ca3ef01cff171be46f9bf6b37b41a5189a61fdf'},
+    {path:'assets/js/editor/preview.js',sha256:'c417cfc69977d7961d5f5745b25991fbf9636d68a9d512fcfdea158ddce34635'},
     {path:'assets/js/core/settings.js',sha256:'5a8939d0f721b0740565a1725a974fc3b6d46c6815e8b79166f40e757c725aae'},
     {path:'assets/css/panels.css',sha256:'bea3c2046704118937afc0eeddb13b68584ace5c79216cb5611b157ef619d146'},
     {path:'tests/frontend/toolbar.test.mjs',sha256:'218d6e854ea8368d3bc888515977297fd27fe4c65b61accea9b12141da08f0e2'},
@@ -165,12 +172,23 @@ test('protected frontend bytes remain unchanged outside the authorized formula c
       }
     }
     if(row.path==='assets/css/panels.css'){
-      const text=bytes.toString('utf8'),begin='/* READMD_CONTEXT_SOURCE_BEGIN */',end='/* READMD_CONTEXT_SOURCE_END */\n';
+      let text=bytes.toString('utf8');
+      const refactor='\n/* READMD_DOCUMENT_REFACTOR_BEGIN */',refactorAt=text.indexOf(refactor);
+      if(refactorAt>=0){
+        assert.equal(text.split(refactor).length,2);const suffix=text.slice(refactorAt);
+        assert.ok(suffix.endsWith('/* READMD_DOCUMENT_REFACTOR_END */\n'));
+        for(const match of suffix.replace(/\/\*[\s\S]*?\*\//g,'').matchAll(/([^{}]+)\{/g))assert.match(match[1].trim(),/^\.document-refactor-/);
+        text=text.slice(0,refactorAt);
+      }
+      const tasks='\n/* READMD_AI_TASK_STATUS_BEGIN */',taskAt=text.indexOf(tasks);
+      if(taskAt>=0){assert.equal(text.split(tasks).length,2);assert.ok(text.endsWith('/* READMD_AI_TASK_STATUS_END */\n'));text=text.slice(0,taskAt);}
+      const begin='/* READMD_CONTEXT_SOURCE_BEGIN */',end='/* READMD_CONTEXT_SOURCE_END */\n';
       if(text.includes(begin)){
         assert.equal(text.split(begin).length,2);assert.equal(text.split(end).length,2);assert(text.endsWith(end));
         bytes=Buffer.from(text.slice(0,text.indexOf(begin)));
       }
     }
+    if(row.path==='assets/js/editor/editor.js'||row.path==='assets/js/editor/preview.js')bytes=Buffer.from(bytes.toString('utf8').replace(/\r\n?/g,'\n').replace(/\n/g,'\r\n'));
     assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),row.sha256,row.path);
   }
 });

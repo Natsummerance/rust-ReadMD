@@ -15,7 +15,7 @@ fn run()->Result<(),String>{
     }}
     if backup.is_some()&&restore.is_some(){return Err("Choose backup or restore".into());}
     if let Some(source)=restore{std::fs::create_dir_all(&data).map_err(|_|"Cannot create data directory")?;Service::restore_backup(&source,&data.join("collaboration.sqlite")).map_err(|e|e.code)?;println!("Collaboration backup restored into a new profile");return Ok(());}
-    if let Some(destination)=backup{let db=data.join("collaboration.sqlite");if !db.is_file(){return Err("Collaboration database not found".into());}Service::open(&db).map_err(|e|e.code)?.backup(&destination).map_err(|e|e.code)?;println!("Collaboration backup created");return Ok(());}
+    if let Some(destination)=backup{let db=data.join("collaboration.sqlite");if !db.is_file(){return Err("Collaboration database not found".into());}Service::backup_file(&db,&destination).map_err(|e|e.code)?;println!("Collaboration backup created");return Ok(());}
     let socket:std::net::SocketAddr=address.parse().map_err(|_|"Listen address must be IP:PORT")?;
     if !socket.ip().is_loopback()&&!origin.starts_with("https://"){return Err("A public listener requires --public-origin https://HOST and an HTTPS reverse proxy".into());}
     let admin=std::env::var("READMD_COLLAB_ADMIN_TOKEN").map_err(|_|"READMD_COLLAB_ADMIN_TOKEN is required")?;

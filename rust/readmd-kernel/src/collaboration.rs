@@ -78,6 +78,9 @@ struct State {
 }
 pub struct Service {
     state: Mutex<State>,
+    // Rust drops fields in declaration order: close SQLite before allowing a
+    // replacement owner to load the journal and build its own room cache.
+    _owner: owner::Guard,
 }
 
 fn now() -> i64 {
@@ -222,19 +225,24 @@ impl Service {
         let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         backup_connection(&state.db, destination)
     }
-    /// Restore into a new profile only; never replace an active database/WAL.
-    pub fn restore_backup(source: &Path, destination: &Path) -> ApiResult<()> {
-        let db = Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(database)?;
-        db.busy_timeout(std::time::Duration::from_secs(3)).map_err(database)?;
-        let check: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(database)?;
-        if check != "ok" { return Err(err(422, "collaboration_backup_invalid")); }
-        // Reject unrelated SQLite files rather than silently creating empty rooms.
-        db.prepare("SELECT r.id,r.snapshot,m.digest,u.bytes,a.bytes,v.body FROM rooms r LEFT JOIN members m ON m.room=r.id LEFT JOIN updates u ON u.room=r.id LEFT JOIN attachments a ON a.room=r.id LEFT JOIN reviews v ON v.room=r.id LIMIT 0").map_err(database)?;
+    /// A running service owns the writer lease. The administrator's separate
+    /// backup process opens SQLite read-only and never joins that ownership.
+    pub fn backup_file(source: &Path, destination: &Path) -> ApiResult<()> {
+        let db = backup_source(source)?;
         backup_connection(&db, destination)
     }
+    /// Restore into a new profile only; never replace an active database/WAL.
+    pub fn restore_backup(source: &Path, destination: &Path) -> ApiResult<()> {
+        if destination.exists() { return Err(err(409, "collaboration_backup_exists")); }
+        let (destination, _owner) = owner::acquire(destination)?;
+        let db = backup_source(source)?;
+        backup_connection(&db, &destination)
+    }
     pub fn open(path: &Path) -> ApiResult<Self> {
-        let db = Connection::open(path).map_err(database)?;
+        // No schema change, retention cleanup or cached room may be opened by
+        // a second writer. Independent caches cannot safely compact one WAL.
+        let (path, owner) = owner::acquire(path)?;
+        let db = Connection::open(&path).map_err(database)?;
         db.busy_timeout(std::time::Duration::from_secs(3))
             .map_err(database)?;
         db.execute_batch("PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;
@@ -256,6 +264,7 @@ impl Service {
         prune(&mut state)?;
         Ok(Self {
             state: Mutex::new(state),
+            _owner: owner,
         })
     }
     pub fn create(&self, title: &str, text: &str, name: &str) -> ApiResult<Credential> {
@@ -718,6 +727,126 @@ impl Service {
     }
 }
 
+/// Stable, empty OS-owned lock files follow the repository's managed-pack and
+/// AI-task lease contract. Never infer ownership from a PID or unlink a name.
+mod owner {
+    use super::{err, ApiResult};
+    use std::{fs, path::{Path, PathBuf}};
+
+    pub(super) struct Guard { file: fs::File }
+
+    #[cfg(unix)]
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            use std::os::fd::AsRawFd;
+            // Explicit unlock also releases the parent's lock when a forked
+            // child has inherited this description but has not exec'd yet.
+            loop {
+                if unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) } == 0 { break; }
+                if std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted { break; }
+            }
+        }
+    }
+
+    fn failure() -> crate::ApiError { err(503, "collaboration_storage") }
+    fn redirected(metadata: &fs::Metadata) -> bool {
+        if metadata.file_type().is_symlink() { return true; }
+        #[cfg(windows)] {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x400 != 0 { return true; }
+        }
+        false
+    }
+    fn directory(path: &Path) -> ApiResult<()> {
+        let metadata = fs::symlink_metadata(path).map_err(|_| failure())?;
+        if !metadata.is_dir() || redirected(&metadata) { return Err(failure()); }
+        Ok(())
+    }
+    fn database_file(path: &Path) -> ApiResult<()> {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err(failure()),
+        };
+        if !metadata.is_file() || redirected(&metadata) { return Err(failure()); }
+        // SQLite WAL sidecars also make hard-linked database aliases unsafe.
+        #[cfg(unix)] {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.nlink() != 1 { return Err(failure()); }
+        }
+        #[cfg(windows)] {
+            use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+            use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION}};
+            let file = fs::OpenOptions::new().read(true).custom_flags(0x00200000).open(path).map_err(|_| failure())?;
+            let mut info = BY_HANDLE_FILE_INFORMATION::default();
+            unsafe { GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &mut info) }.map_err(|_| failure())?;
+            if info.nNumberOfLinks != 1 || info.dwFileAttributes & (0x400 | 0x10) != 0 { return Err(failure()); }
+        }
+        Ok(())
+    }
+    pub(super) fn acquire(path: &Path) -> ApiResult<(PathBuf, Guard)> {
+        let name = path.file_name().ok_or_else(failure)?;
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let parent = parent.canonicalize().map_err(|_| failure())?;
+        directory(&parent)?;
+        let path = parent.join(name);
+        database_file(&path)?;
+        // Canonicalize an existing database too, including Windows short names.
+        let path = match path.canonicalize() {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => path,
+            Err(_) => return Err(failure()),
+        };
+        let parent = path.parent().ok_or_else(failure)?;
+        directory(parent)?;
+        let mut name = path.file_name().ok_or_else(failure)?.to_os_string();
+        name.push(".owner.lock");
+        let guard = Guard { file: open(&parent.join(name))? };
+        // Inspect the acquired handle, not only path metadata. OPEN_REPARSE_POINT
+        // on Windows opens a redirect itself so this check rejects it.
+        let metadata = guard.file.metadata().map_err(|_| failure())?;
+        if !metadata.is_file() || metadata.len() != 0 || redirected(&metadata) { return Err(failure()); }
+        directory(parent)?;
+        if parent.canonicalize().map_err(|_| failure())?.as_path() != parent { return Err(failure()); }
+        database_file(&path)?;
+        Ok((path, guard))
+    }
+    #[cfg(windows)]
+    fn open(path: &Path) -> ApiResult<fs::File> {
+        use std::os::windows::fs::OpenOptionsExt;
+        match fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).share_mode(0).custom_flags(0x00200000).open(path) {
+            Ok(file) => Ok(file),
+            Err(error) if matches!(error.raw_os_error(), Some(32 | 33)) => Err(err(409, "collaboration_busy")),
+            Err(_) => Err(failure()),
+        }
+    }
+    #[cfg(unix)]
+    fn open(path: &Path) -> ApiResult<fs::File> {
+        use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+        let file = fs::OpenOptions::new().read(true).write(true).create(true).truncate(false)
+            .mode(0o600).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).open(path).map_err(|_| failure())?;
+        loop {
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 { return Ok(file); }
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted { continue; }
+            if error.kind() == std::io::ErrorKind::WouldBlock { return Err(err(409, "collaboration_busy")); }
+            return Err(failure());
+        }
+    }
+    #[cfg(not(any(windows, unix)))]
+    fn open(_: &Path) -> ApiResult<fs::File> { Err(failure()) }
+}
+
+fn backup_source(source: &Path) -> ApiResult<Connection> {
+    let db = Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(database)?;
+    db.busy_timeout(std::time::Duration::from_secs(3)).map_err(database)?;
+    let check: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(database)?;
+    if check != "ok" { return Err(err(422, "collaboration_backup_invalid")); }
+    // Reject unrelated SQLite files without creating or migrating any schema.
+    db.prepare("SELECT r.id,r.snapshot,m.digest,u.bytes,a.bytes,v.body FROM rooms r LEFT JOIN members m ON m.room=r.id LEFT JOIN updates u ON u.room=r.id LEFT JOIN attachments a ON a.room=r.id LEFT JOIN reviews v ON v.room=r.id LIMIT 0").map_err(database)?;
+    Ok(db)
+}
+
 fn backup_connection(db: &Connection, destination: &Path) -> ApiResult<()> {
     if destination.exists() { return Err(err(409, "collaboration_backup_exists")); }
     let parent = destination.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
@@ -1105,3 +1234,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "collaboration_lease_tests.rs"]
+mod lease_tests;

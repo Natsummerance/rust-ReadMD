@@ -566,6 +566,10 @@ function applyPvUi() {
 
 async function toggleEdit() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  if (typeof getActiveTab === 'function' && (getActiveTab()?._renamePending || getActiveTab()?._renameInFlight)) {
+    showToast(_t('review.busy'));
+    return;
+  }
   if (state.editing) {
     if (!await confirmExitEdit()) return;
     applyPvUi();
@@ -617,12 +621,18 @@ async function toggleEdit() {
   }
   applyPvUi();
   syncSearchMode();
+  if (window.ReadMDReview) {
+    if (!cmMounted) ReadMDReview.mount(null, activeTab, editorContent);
+    await ReadMDReview.ensure(activeTab, editorContent);
+    if (epoch !== editorOpenEpoch || !state.editing || state.activeTabId !== tabId) return;
+  }
   if(window.ReadMDInlineMath)await ReadMDInlineMath.restore();
   if (epoch === editorOpenEpoch && state.activeTabId === tabId) measureEditorLayout();
 }
 
 async function confirmExitEdit() {
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
+  if(window.ReadMDReview&&!await ReadMDReview.flush())return false;
   if (!hasUnsavedEditorChanges()) {
     exitEdit();
     return true;
@@ -686,10 +696,11 @@ function exitEdit() {
 
 function documentSaveSnapshot(contentOverride = null) {
   const tab = getActiveTab();
+  const recoveryKey = tab ? (tab.recoveryKey ||= ((tab.path ? 'file:' : 'draft:') + tab.id)) : '';
   return { tab, id: tab?.id, started: Date.now(), path: tab?.path || state.file, content: contentOverride ?? (state.editing ? getEditContent() : (tab?.content ?? state.fixed ?? state.original ?? '')),
     original: tab?.original ?? state.original ?? '', name: tab?.name || state.sourceName || 'document.md',
     encoding: tab?.encoding || state.encoding || 'utf-8', mtime: tab?.mtime || state.mtime || null,
-    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey: tab?.recoveryKey || tab?.path || ('draft:' + tab?.id) };
+    revision: tab?.revision || '', assets: tab?.webAssets || state.webAssets || [], recoveryKey };
 }
 
 async function commitDocumentSave(snapshot, path, result, options = {}) {
@@ -698,6 +709,10 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
   const active = getActiveTab() === tab;
   let draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
   const unchanged = draft === snapshot.content;
+  if (result.review && window.ReadMDReview) {
+    ReadMDReview.saved(tab, result.review, snapshot.content, result.save_edits || result.asset_edits, result.review_edit_steps);
+    draft = active && state.editing ? getEditContent() : (tab.content ?? snapshot.content);
+  }
   const savedContent = typeof result.saved_content === 'string' ? result.saved_content : snapshot.content;
   if (unchanged && savedContent !== draft) {
     draft = savedContent;
@@ -734,7 +749,7 @@ async function commitDocumentSave(snapshot, path, result, options = {}) {
         // documented composition event coalesces across asynchronous save I/O;
         // addToHistory:false would leave replaced paths behind during undo.
         cmView.dispatch({ changes: localized ? editorEdits : { from: 0, to: cmView.state.doc.length, insert: draft },
-          annotations: CM.Transaction.userEvent.of(localized ? 'input.type.compose' : 'save') });
+          annotations: result.review ? [CM.Transaction.userEvent.of('review.remote'), CM.Transaction.addToHistory.of(false)] : CM.Transaction.userEvent.of(localized ? 'input.type.compose' : 'save') });
       }
       else $('edit-area').value = draft;
     }
@@ -779,13 +794,22 @@ async function saveEdit(options = {}) {
 }
 
 async function saveEditOnce(options = {}) {
+  const tab = getActiveTab();
+  const reviewSession = window.ReadMDReview ? await ReadMDReview.prepareSave(tab) : null;
+  if (reviewSession === false) return false;
+  if (getActiveTab() !== tab || !state.editing) { window.ReadMDReview?.finishSave(tab); return false; }
   const snapshot = documentSaveSnapshot();
-  if (!snapshot.path) return saveAsSnapshot(snapshot, options);
+  snapshot.review_session = reviewSession; snapshot.reviewPrepared = true;
+  if (!snapshot.path) {
+    try { return await saveAsSnapshot(snapshot, options); }
+    finally { window.ReadMDReview?.finishSave(tab); }
+  }
   const write = async () => {
     // Use one acknowledgement shape for native and browser editing. The API is the Rust writer in both.
     const response = await apiFetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: snapshot.path, content: snapshot.content, encoding: snapshot.encoding,
-        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null, assets: snapshot.assets }) });
+        expected_mtime: snapshot.mtime, expected_revision: snapshot.revision || null, assets: snapshot.assets,
+        review_session: snapshot.review_session || undefined }) });
     const result = await response.json();
     if (!response.ok && !result.conflict && result.error_code !== 'encoding_unrepresentable') throw new Error(result.error || 'HTTP ' + response.status);
     return result;
@@ -797,11 +821,11 @@ async function saveEditOnce(options = {}) {
         confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) return false;
       snapshot.encoding = 'utf-8'; result = await write();
     }
-    if (result.ok === true) return commitDocumentSave(snapshot, snapshot.path, result, options);
+    if (result.ok === true) return await commitDocumentSave(snapshot, snapshot.path, result, options);
     if (result.conflict) {
       if (getActiveTab() !== snapshot.tab) { showToast(window.i18n.t('storage.conflictBackground')); return false; }
       const action = await promptSaveConflict();
-      if (action === 'save-as') return saveAsSnapshot(snapshot, options);
+      if (action === 'save-as') return await saveAsSnapshot(snapshot, options);
       if (action === 'reload' && getActiveTab() === snapshot.tab) {
         // Preserve the draft before an explicit destructive reload.
         const view = cmView, latest = getEditContent();
@@ -813,6 +837,7 @@ async function saveEditOnce(options = {}) {
     }
     throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
   } catch (error) { showToast(window.i18n.t('toast.saveFailed') + error.message); return false; }
+  finally { window.ReadMDReview?.finishSave(tab); }
 }
 
 function promptSaveConflict() {
@@ -869,6 +894,11 @@ async function saveAs(contentOverride = null) {
 }
 
 async function saveAsSnapshot(snapshot, options = {}) {
+  if (!snapshot.reviewPrepared && window.ReadMDReview) {
+    const reviewSession = await ReadMDReview.prepareSave(snapshot.tab, snapshot.content);
+    if (reviewSession === false) return false;
+    snapshot.review_session = reviewSession; snapshot.reviewPrepared = true;
+  }
   const suggested = String(snapshot.name || 'document.md').replace(/[\\/]/g, '_');
   if (!hasPy) {
     const blob = new Blob([snapshot.content], { type: 'text/markdown;charset=utf-8' });
@@ -877,12 +907,14 @@ async function saveAsSnapshot(snapshot, options = {}) {
     await window.ReadMDRecovery?.flush();
     showToast(window.i18n.t('storage.downloadDraft'));
     // A download request is not proof that a file was written. Keep the dirty document and its recovery copy.
+    window.ReadMDReview?.finishSave(snapshot.tab);
     return !options.exitAfterSave;
   }
   try {
     const outcome = await py.save_as(snapshot.content, suggested, snapshot.assets, { result: true,
       dir: snapshot.tab?.dir || '', base_dir: snapshot.tab?.dir || '', encoding: snapshot.path ? snapshot.encoding : 'utf-8',
-      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path) });
+      blocked_paths: state.tabs.filter(tab => tab !== snapshot.tab && tab.path).map(tab => tab.path),
+      review_session: snapshot.review_session || undefined });
     if (!outcome || outcome.canceled) return false;
     const result = typeof outcome === 'string' ? { ok: true, path: outcome } : outcome;
     if (result.ok !== true || !result.path) throw new Error(result.error || window.i18n.t('audit.invalidResponse'));
@@ -898,13 +930,13 @@ async function saveAsSnapshot(snapshot, options = {}) {
     if (error.details?.error_code === 'encoding_unrepresentable' && snapshot.encoding !== 'utf-8') {
       if (await confirmAction({ title: window.i18n.t('dialog.encodingTitle'), message: window.i18n.t('dialog.encodingMessage', { encoding: snapshot.encoding, char: error.details.char || '' }),
         confirmText: window.i18n.t('dialog.encodingUseUtf8'), cancelText: window.i18n.t('common.cancel') })) {
-        snapshot.encoding = 'utf-8'; return saveAsSnapshot(snapshot, options);
+        snapshot.encoding = 'utf-8'; return await saveAsSnapshot(snapshot, options);
       }
       return false;
     }
     const message = error.message === 'target_open_in_another_tab' ? window.i18n.t('storage.targetOpen') : error.message;
     showToast(window.i18n.t('toast.saveFailed') + message); return false;
-  }
+  } finally { window.ReadMDReview?.finishSave(snapshot.tab); }
 }
 
 // Older callers use this name. AI copies now use the same explicit Save As workflow as any unsaved document.

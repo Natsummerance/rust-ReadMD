@@ -1,0 +1,668 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-28T06:47:47.090Z",
+  "status": "passed_scoped",
+  "platform": "windows-x64",
+  "candidate": "v006-batch3-rename-refactor-20261028-final",
+  "scope": "Explicit selected workspace; same-directory same-extension .md/.markdown/.mdown; bounded reference planning, journaled group commit, conservative rollback and restart recovery.",
+  "formalVersion": "0.0.5",
+  "releaseAccepted": false,
+  "fullBatchAccepted": false,
+  "nativeGuiTested": false,
+  "candidateHashes": {
+    "binarySha256": "cf09d1ec466f67df692ff8b9fe4ddbfdf6679b4b25cd6e161879ce41c9c61e52",
+    "bootSha256": "8bf3b28ca9dfcd4c220a0864c80600c3edcbefd7e99b11faa25f4a2376cfd8bd",
+    "sourceDigest": "9b0c17f30a61384319793f24c7a0059eab698f8a4d95b81fa62885fabd4db0af"
+  },
+  "sourceDigestAlgorithm": "tools/check-capability-upgrade.mjs sourceDigest: sorted path + NUL + SHA256(file bytes) + LF",
+  "sourceFiles": [
+    {
+      "path": "assets/css/panels.css",
+      "sha256": "9af8536eb19d63c47cfac544bfd806430ab523ffb0f2e0082ca70384e2fbd948"
+    },
+    {
+      "path": "assets/i18n/ar.json",
+      "sha256": "caaff9fd2cc5309c9f8629ddcbb85746b6c8c0b0bda366c58cfdf3fe68c1bd6c"
+    },
+    {
+      "path": "assets/i18n/bn.json",
+      "sha256": "a295ce84772567b5850d00e1d621817eb6cf404927312d1d5f18455c2b7cf1cf"
+    },
+    {
+      "path": "assets/i18n/bo.json",
+      "sha256": "5305e682f19dc6b16ce0da4cb8878b103f34a268382b40363b350da05ca58719"
+    },
+    {
+      "path": "assets/i18n/da.json",
+      "sha256": "81f6e8840f68308a6258c8e27f4cd2e88a2e302ee64fe68e3c30e65f69f3b651"
+    },
+    {
+      "path": "assets/i18n/de.json",
+      "sha256": "c41cfba2cd145e2ce71eef211f11a4b5b5ffabd6c2abe42cd271963ea381a7bf"
+    },
+    {
+      "path": "assets/i18n/el.json",
+      "sha256": "93706ff4a2bb10203c8ad0c4152eebbf87c734810baeea5166b94db72c3579fa"
+    },
+    {
+      "path": "assets/i18n/en.json",
+      "sha256": "81cf8af6f1f320befa0ebcf9c4a56c14613500c07678920de4bed40ccade8227"
+    },
+    {
+      "path": "assets/i18n/eo.json",
+      "sha256": "699971e202a4678d34bc706bca7e384d8cb62602c4de6f3594e72f5b9f166b54"
+    },
+    {
+      "path": "assets/i18n/es.json",
+      "sha256": "b52f115f6c0ecc6ac2c6eed3ab4591ac4fef7523c4efa76944e78611414f1c02"
+    },
+    {
+      "path": "assets/i18n/fi.json",
+      "sha256": "48b613ef1b56d6db4e6d48e2e0d6ab9466a18f131d1d541c981f2fb2a5edaeb6"
+    },
+    {
+      "path": "assets/i18n/fr.json",
+      "sha256": "81a58a96842718afd4917207a9e6309b40716d036a9129b2900ec7cda2d0268e"
+    },
+    {
+      "path": "assets/i18n/ga.json",
+      "sha256": "939ec6ba69eb09341823d169e50e2860661da5fd81287af33afb975243494dfd"
+    },
+    {
+      "path": "assets/i18n/he.json",
+      "sha256": "ff5b3c94e1193fc3eeac934da05c80e1c61f03c3599e7d8529eef60631f081a6"
+    },
+    {
+      "path": "assets/i18n/hi.json",
+      "sha256": "52a1d3852bf85ac8375de51884ed96959c036cad0f298e7e82b620d8474c68d5"
+    },
+    {
+      "path": "assets/i18n/hr.json",
+      "sha256": "4e4765ae1341ab979ab16ecabd36d75424032dc89b1d073b60a6789945f4653c"
+    },
+    {
+      "path": "assets/i18n/hu.json",
+      "sha256": "c49e3929c4c587eb38abc0cdb33394628f195e3b10493ae2f8efca8385ef4721"
+    },
+    {
+      "path": "assets/i18n/id.json",
+      "sha256": "0e1a3553a7cb26d55f58f6959ff4897b063894e9e7eaf1d99ffc05c0fffac4c0"
+    },
+    {
+      "path": "assets/i18n/it.json",
+      "sha256": "558315b92a36632eb41eae3fbed8e7749391e79900223c42f0bd19dc3c6f1401"
+    },
+    {
+      "path": "assets/i18n/ja.json",
+      "sha256": "95200f56c23263f305b66feb7a09ec59bae2c02d77329007618dc58efcd10308"
+    },
+    {
+      "path": "assets/i18n/kg.json",
+      "sha256": "f2c2ccc417133c7dfb950399bd8e435933bf4ced5c8ddca1a9a10549c6882078"
+    },
+    {
+      "path": "assets/i18n/kl.json",
+      "sha256": "9cd6c9a5592189637108f4e57ebf3c76fe9d719ec2dac66f8d27e8a3ca22bd2c"
+    },
+    {
+      "path": "assets/i18n/km.json",
+      "sha256": "e6ce4ecfc89f74c3580781d63d1ee5c65965d7ab5ef6650857319018106fe6dc"
+    },
+    {
+      "path": "assets/i18n/ko.json",
+      "sha256": "eb40acaf3960c7ea76d423509eb023252d0c017fd44816903e8f64de8dc8eead"
+    },
+    {
+      "path": "assets/i18n/lo.json",
+      "sha256": "7116e7ae9c73f4e485c76b966dc235715a12589d5d5e3339eb851590ad995f29"
+    },
+    {
+      "path": "assets/i18n/meta.json",
+      "sha256": "b4e89975c960c76ceb6e1676ff8c33af1486b996f1c5cbd05a7bdae58733c9a1"
+    },
+    {
+      "path": "assets/i18n/mn.json",
+      "sha256": "1bfb335fb37440603aeb56ba37c004d533b541535db22fe6c531f63c56c9403e"
+    },
+    {
+      "path": "assets/i18n/ms.json",
+      "sha256": "11bc5df23d0b0338ca72287c79e2780e7f612e0e69ca5985e98b2c2c03b3456e"
+    },
+    {
+      "path": "assets/i18n/mt.json",
+      "sha256": "e0e1c51f7bf4ea795bd4e99a917806c08931534fd8657529052f46b2c530a157"
+    },
+    {
+      "path": "assets/i18n/my.json",
+      "sha256": "e00f3404e2729edcd177301e4594da17495e31cff2cc589e8bc764f2e3aacf99"
+    },
+    {
+      "path": "assets/i18n/ne.json",
+      "sha256": "c379ed92f2e38a04756e8eb402037f9b4cd1d495a8ca1ca8c6ce7f3b35098ad5"
+    },
+    {
+      "path": "assets/i18n/nl.json",
+      "sha256": "0e9ee274b1004cb4f25e35732af5fa86b04b30ac7e0c911d4fbff65879e40be7"
+    },
+    {
+      "path": "assets/i18n/no.json",
+      "sha256": "0b1170ddd2d94eead9059978a62f8397a856926a8fc90f39e9ed72bf9aeb60ea"
+    },
+    {
+      "path": "assets/i18n/pt.json",
+      "sha256": "272cb81cd40e3ad23970de3454834c69b139b2cb84bed7c482d47a303bb2bc6c"
+    },
+    {
+      "path": "assets/i18n/ro.json",
+      "sha256": "c9fceb994d3474bf2ce53ca98de0dfaf33b3281bdb12b29d41dbf12c24b0af1a"
+    },
+    {
+      "path": "assets/i18n/ru.json",
+      "sha256": "4d522f63513e4c232b177c4d324026eb0684ed32379eb0cdfdd5de3c3ad8f487"
+    },
+    {
+      "path": "assets/i18n/rw.json",
+      "sha256": "3fde368f5ce94defceea6b60957f1e15b1b006f33bc059ca4cad6ae33fff4dfe"
+    },
+    {
+      "path": "assets/i18n/sl.json",
+      "sha256": "164f3108d9008762b0a5597aca7f7a0403ab2409eeee928e3dbbdb9fab948ced"
+    },
+    {
+      "path": "assets/i18n/sv.json",
+      "sha256": "95e9c91a718ac814eb65b4936b5a7e0a296922bbff2a4ec50d7dd8b3d31532ea"
+    },
+    {
+      "path": "assets/i18n/th.json",
+      "sha256": "c0e2d5f103a7f5cceed7a2ead16ce1ab6674fe311307cfcce8a717b2f235bb09"
+    },
+    {
+      "path": "assets/i18n/tl.json",
+      "sha256": "b6510d47500627d7ee2b7a3ca7e976be899d4bf41cab730fa44b2fd183bb3b1c"
+    },
+    {
+      "path": "assets/i18n/tr.json",
+      "sha256": "dc62af3e9c7cfb1cdca5a20ebde12989cd2d36d96d555298f39c5fcd0c783c08"
+    },
+    {
+      "path": "assets/i18n/ug.json",
+      "sha256": "e2f755af3fd3b3a3ced5fbf3c834a635852c4e7cd89652c342b57999762593e2"
+    },
+    {
+      "path": "assets/i18n/uk.json",
+      "sha256": "171060849fb8e760738da1b4203fb45b5e43946c296820cad8e3ec74f3f7a631"
+    },
+    {
+      "path": "assets/i18n/vi.json",
+      "sha256": "7ff730f183760abac0bb2f0be7f01b37357ba17d8615b5fc825917f3b4578d8d"
+    },
+    {
+      "path": "assets/i18n/zh-CN.json",
+      "sha256": "daebb6389dbc65314aaaea60df1a0b507e9b4065c2922c34901c219350b9e257"
+    },
+    {
+      "path": "assets/i18n/zh-HK.json",
+      "sha256": "8a13d9d938a755cacfab0038a79dfa8286d58d5ce99bc0bb28ee46d5bed06726"
+    },
+    {
+      "path": "assets/i18n/zh-TW.json",
+      "sha256": "d9603279cc29abd456f8f1e8329a138b986d6f02eda73148c3c68d760ced7bf9"
+    },
+    {
+      "path": "assets/js/core/state.js",
+      "sha256": "4394cf08f2224a6fb47745090e90b9d8a29e8686b51cbfeeec23d4dda1cf35fa"
+    },
+    {
+      "path": "assets/js/core/tabs.js",
+      "sha256": "8d2ca8ddece1bf8a3503e34ab0142ae3e4af4e11913bc49fd46b24052cd68588"
+    },
+    {
+      "path": "assets/js/editor/review.js",
+      "sha256": "fb7e07960c2631d9ac42abefd0513943cab8815e341f86696eab0595cd705e38"
+    },
+    {
+      "path": "assets/js/features/ai-harness.js",
+      "sha256": "42db1425e599b5cebf27edd904475d4eca1323dddc7b3a3e77c3cf3ac7367c5b"
+    },
+    {
+      "path": "assets/js/features/document-refactor.js",
+      "sha256": "301823e6ccc57aaa2a59442dceac6fcd64712dc39c94a0bdf76128fe6a327704"
+    },
+    {
+      "path": "assets/js/features/graph.js",
+      "sha256": "a0904f865cf65956903af046ae6b37fa79040faec0afacbd8b6ef563cbe19c62"
+    },
+    {
+      "path": "assets/js/reader/heading-identity.js",
+      "sha256": "27ed2378a6adb631dbec27298dfe65ea0d98ae1b64a316e5a79a34231b312554"
+    },
+    {
+      "path": "assets/js/reader/render.js",
+      "sha256": "2dd985c03fb7a76284b34d776fc9e045e932d11276b137b30202af41e18b59ba"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "sha256": "8bf3b28ca9dfcd4c220a0864c80600c3edcbefd7e99b11faa25f4a2376cfd8bd"
+    },
+    {
+      "path": "docs/design/v006-batch3-rename-refactor-safety-spec.md",
+      "sha256": "5ef38ccc4abca62dbbf29e1a151146ac5daf6f6b8282417fb39318929cab8981"
+    },
+    {
+      "path": "docs/design/v006-batch3-rename-safety-spec.md",
+      "sha256": "d01cd9008753e86984edfec3ee103e05594980069a05d7e084f7e9e74ab8f1ef"
+    },
+    {
+      "path": "docs/design/v006-batch3-session-cas-safety-spec.md",
+      "sha256": "f53236d28645366d05ec7be5b9092f7b24f4afe4da00312f19348f55cf96932d"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_intelligence.rs",
+      "sha256": "c10da1c1f5e09585869704491e881756c611446b8bf0500c716dde9ad12ecbab"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_knowledge.rs",
+      "sha256": "2486cf5f337b994214efff0725d56167eb0cd070dfdd34697f9add0e20c050e8"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations.rs",
+      "sha256": "b40eb3d1185e97656c52954be46a0fdae03fd4848c221c710c5e77b959048c48"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations/refactor_metadata.rs",
+      "sha256": "4488edf5e42a6415819e6ce5a8d3db930841883db87cfd897a0ade7cdc52a8dd"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations/refactor_path_checks.rs",
+      "sha256": "5a3f69059e98af940839cb8a4508a7a37b2a5341d251e7313bf2fa79422c36df"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations/refactor_windows.rs",
+      "sha256": "266849b0174982995f710bb6b21615a98282c36aa92839805653324f177710cd"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations/windows.rs",
+      "sha256": "77b5d7ba17c38fe6e77a7153cc63c7200c14f5d38ca008f119b7f361aa709f90"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor.rs",
+      "sha256": "522a637576b03d322b219b370a5d71d0a074a7cbadb2aae2ef941edfd31680fb"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_fs.rs",
+      "sha256": "6257470f1854e29629fad7a3bf4fb48f671cc80af59098ac9d9e356217daa717"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_fs_tests.rs",
+      "sha256": "dcd3a71f89be89dd0a482a54c8ce8e1aa5cb72c0092dcae0539bc07b8bcd74bf"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_links.rs",
+      "sha256": "f8d816e11eb50176f466c631fc69b30a322bf84b99859f3f025897b6e072e61d"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_links_tests.rs",
+      "sha256": "470396db28956a55ada8ffb817e84314f8f9a6c6117ba9780274610fbaf5a5a5"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_scope_tests.rs",
+      "sha256": "744de13c87860a0c6811fd4b5036617d07495e943a40cca0a4658e181137bd92"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_tests.rs",
+      "sha256": "9514d76afc516d719f382d6e513e7f6c9fb58be51cdb070e42eed9fd291e962e"
+    },
+    {
+      "path": "rust/readmd-kernel/src/lib.rs",
+      "sha256": "1e6f19a0790069e9c9d0c942b06cc98120a9c02c081d337702f526209e88bb05"
+    },
+    {
+      "path": "rust/readmd-kernel/src/main.rs",
+      "sha256": "8cb318796dec9ed49b1ef00328137023876a00b4f579c193770cf98beff6b2d4"
+    },
+    {
+      "path": "rust/readmd-kernel/src/readmd_fix.rs",
+      "sha256": "b5a628d4d750beb56a66f95acefcac6e46642bf660b802187b40d0e178a27145"
+    },
+    {
+      "path": "rust/readmd-kernel/src/review.rs",
+      "sha256": "f95ab84cf8cf662eae74b5e6bc99700f75894a30ea461d413cccb578288a2d9d"
+    },
+    {
+      "path": "rust/readmd-kernel/src/review_api.rs",
+      "sha256": "6ef8a0aca066eba7d479d394a228fdf5c580029886c36876bb8ab99fed789190"
+    },
+    {
+      "path": "rust/readmd-kernel/src/review_refactor.rs",
+      "sha256": "68ad060a6e4f024784112729f8bc3d4f2f3edfa1c7518ac303bcfd440b25af52"
+    },
+    {
+      "path": "rust/readmd-kernel/src/review_refactor_tests.rs",
+      "sha256": "df9c2b21a54bb5c338ca29405e3791dd26b678442ab3ca28a5c9c08da8109cbf"
+    },
+    {
+      "path": "rust/readmd-kernel/src/review_store.rs",
+      "sha256": "36f7be7d67d654d1d3b3977436d6dab962aba50443836e863e1364e97aa26c49"
+    },
+    {
+      "path": "rust/readmd-kernel/src/server.rs",
+      "sha256": "96d58929242157f630bfa7d73083866b2a1eb5a1921a94e4bf0a32d0c5514024"
+    },
+    {
+      "path": "rust/readmd-kernel/src/settings_persistence.rs",
+      "sha256": "e481f0242257ed9e88ba32872b678eeadd1758d306a57c064b5938977c1858a3"
+    },
+    {
+      "path": "rust/xtask/src/bundle.rs",
+      "sha256": "46f2a13c15e7672d599cfaa23ab34f1fe602eeaf24f503623d87f0d7eff76af8"
+    },
+    {
+      "path": "tools/i18n-v006-rename.json",
+      "sha256": "b5a90b3f3f8e924e74eb0b72f918f199eea663dc87fa3188ef394f528dfcc9e4"
+    },
+    {
+      "path": "tools/test/math-document-context-frontend.test.cjs",
+      "sha256": "1bb20f3f99d3ec208a3683a64fbc5e34baefb93d1bbaf59e0569d30ff2468917"
+    },
+    {
+      "path": "tools/test/math-source-only-frontend.test.cjs",
+      "sha256": "d8a714f911302c0838149cd7ae126ac08a4fd80679f24028f79f2e75e9e8edc6"
+    },
+    {
+      "path": "tools/test/v006-refactor-browser.cjs",
+      "sha256": "b79f986fb711e85986e7c118e388fbc333d554d013261bb8bdcb292cdc054286"
+    },
+    {
+      "path": "tools/test/v006-refactor-host.cjs",
+      "sha256": "e644273f78c177697551f4b77daac36499e9283379fb35aa37e391153dc49bea"
+    },
+    {
+      "path": "tools/test/v006-refactor-http.cjs",
+      "sha256": "2f1a813763232c072260675270fb409ff606c7ad5f6959a934e295bc677c29d0"
+    },
+    {
+      "path": "ui-tests/ai-harness-adapter.test.cjs",
+      "sha256": "3aa3a830424dc3cb4fc5210e76bbce9ce9006414737bd100a1b4e751cdb22af5"
+    },
+    {
+      "path": "ui-tests/document-refactor-adapter.test.cjs",
+      "sha256": "74e1388a52ca4a8a1ce2d3612cb65727f41a2dc6e122a26d442a67008576a781"
+    },
+    {
+      "path": "ui-tests/native-auth-bootstrap.test.cjs",
+      "sha256": "e26fb9c32db22947db78efab3672df0cd31f9aeda4532295b716bbfe748c5be3"
+    },
+    {
+      "path": "ui-tests/session-refactor-adapter.test.cjs",
+      "sha256": "84483c91d6b9931d6948ffad9e370412df0a8e506e3a289d834140540fd59e2c"
+    }
+  ],
+  "validation": {
+    "rust": {
+      "passed": 4286,
+      "failed": 0,
+      "historicalIgnored": 7,
+      "seconds": 260.74,
+      "command": "cargo test --locked --offline -p readmd-kernel --lib (cwd rust/)"
+    },
+    "node": {
+      "files": 113,
+      "passed": 1653,
+      "failed": 0,
+      "skipped": 0,
+      "discovery": "rg --files tools/test ui-tests packages/vscode-extension -g '*.test.cjs' -g '*.test.mjs' -g '*.test.js' -g '!**/node_modules/**'"
+    },
+    "http": {
+      "checks": [
+        "Preview is read-only and adding a new referencing document invalidates confirmation",
+        "Source self-reference, inline links, reference definitions, UTF16 BOM and CRLF update exactly; code and URLs stay unchanged",
+        "Durable idempotence, intent conflict and stale second-process source authorization are enforced",
+        "The same review document can edit and save immediately after path and inode changes",
+        "A new real kernel process retains the terminal receipt and saved review identity",
+        "A durable abandon tombstone prevents a delayed commit from beginning"
+      ],
+      "realProcess": true,
+      "controlledRuntimeFaultApi": false
+    },
+    "browser": {
+      "checks": [
+        "A chooser action selects the owned workspace; source and two saved references obtain real durable review identities",
+        "The actual diff fits 1160×820 and 1024×680 with visible actions and trapped focus; Cancel preserves every byte/sidebar name and force-close is fenced",
+        "Confirm updates self-links, inline references, nested reference definitions and the Files sidebar; CRLF, tab/recovery identities and durable review IDs remain correct",
+        "A reference edits, undoes/redoes, saves, closes and reopens immediately after adoption using its same durable review identity",
+        "A fresh owned kernel and headless Edge restore all three settled files, saved reference text and the same review identities"
+      ],
+      "browser": "installed headless msedge",
+      "strictTokenMode": true,
+      "productionCsp": true,
+      "fetchAuthShim": false,
+      "nativeBridge": "minimal synthetic chooser/bridge shim; production apiFetch authentication",
+      "pageErrors": [],
+      "modalFit": [
+        {
+          "viewport": {
+            "width": 1160,
+            "height": 820
+          },
+          "box": {
+            "left": 200,
+            "right": 960,
+            "top": 114.5,
+            "bottom": 705.5,
+            "width": 760,
+            "height": 591
+          },
+          "horizontalOverflow": false
+        },
+        {
+          "viewport": {
+            "width": 1024,
+            "height": 680
+          },
+          "box": {
+            "left": 132,
+            "right": 892,
+            "top": 44.5,
+            "bottom": 635.5,
+            "width": 760,
+            "height": 591
+          },
+          "horizontalOverflow": false
+        }
+      ],
+      "backgroundFailures": [
+        {
+          "route": "/api/update/check",
+          "status": 403
+        }
+      ],
+      "backgroundFailureExplanation": "Minimal chooser/native shim omits check_update, selecting updater raw fetch fallback; native bridge source uses bridgeHeaders. Automatic update was not accepted by this workflow."
+    },
+    "processCrash": {
+      "actualChildExit": 77,
+      "newOwnerRecovery": true,
+      "scope": "process exit without destructors; not hardware power loss"
+    },
+    "controlledFailures": [
+      "after each publication step",
+      "foreign destination occupant",
+      "stale manifest",
+      "locked original",
+      "metadata refusal",
+      "bounded storage exhaustion",
+      "lost session acknowledgement"
+    ],
+    "repositoryChecks": [
+      "assets",
+      "styles",
+      "wiring",
+      "i18n",
+      "no-python"
+    ],
+    "capabilityLedgerCheck": "Run after binding this evidence; retained in local check-capability-upgrade-final.log."
+  },
+  "build": {
+    "locked": true,
+    "offline": true,
+    "incremental": false,
+    "targetDir": ".cache/community-upgrade/build",
+    "newDependencies": 0,
+    "cache": {
+      "scope": "sharedCargoTarget",
+      "bytes": 7753441893,
+      "GiB": 7.22,
+      "files": 4681,
+      "linksSkipped": 0,
+      "warnGiB": 8,
+      "stopGiB": 12
+    }
+  },
+  "privacy": {
+    "syntheticDocumentsOnly": true,
+    "realAiCalled": false,
+    "configurationCopied": false,
+    "privateProfileUsed": false,
+    "pushed": false,
+    "screenshotsArePublicAssets": false,
+    "screenshotsContainOwnedWorkspacePaths": true,
+    "scope": "Exact private values/index and protected-asset audit plus candidate-source audit retained locally; not a complete repository-history privacy certification."
+  },
+  "firstFailures": {
+    "preserved": true,
+    "artifacts": [
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/first-failure/report.json",
+        "sha256": "9f9546cc82640602f802f2ce07d61341b2b535c901ec2c1268f67eb9e6e9df7d"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/rust-focused-01.log",
+        "sha256": "5ea1bbd3b94e621156ae8d8768ff94dea2b8232f5dbd20c916815622918d81e6"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/native-leases-01.log",
+        "sha256": "d46f9f9a8451bec7d089b1f44a6d987cbcabeb6879296da612cef8cce66c1a58"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/full-node-01.log",
+        "sha256": "1937fcb0d72fe68ee5a98b098911ac5ea6b49c8d7b7cdebb1b818e1d4fde7973"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/math-prefix-02.log",
+        "sha256": "7fa202ce7a797d73d4c1e431703dd6c209309d97b16449e4c3e0f812498765fe"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/http-01/report.json",
+        "sha256": "38d418a149994c5981a0b32ce32c5e315b655ee4d99faad5bce19cbb4d63b125"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-01/report.json",
+        "sha256": "a1529ce729b56a2d32f58d6b9742456acc8550b0f30861e3d3eb8d8d95ab2e0c"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-02/report.json",
+        "sha256": "36090dccaf8966fb30a4fad7911fe0bd181252bfaebf4488f2bccdd9b2a1174c"
+      },
+      {
+        "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-03/report.json",
+        "sha256": "1b549a0cc9d7a6ffcfab13f895924699d4e6dd840363788d1cfb99503f24bffc"
+      }
+    ],
+    "bootstrapFirstFailure": "Observed 4/6 only in tool transcript; no original on-disk log is claimed.",
+    "cssProtection": "Only a bounded document-refactor selector block is excluded; old protected-byte hash unchanged."
+  },
+  "limitations": [
+    "Only selected supported Markdown scope; no complete all-format reference claim.",
+    "Windows supported identity/security metadata; hard links, reparse paths, case aliases and unsupported streams/metadata fail closed.",
+    "Files publish separately; a nonparticipating external reader can see intermediate paths.",
+    "External edits adding a reference in a nonparticipant after the final manifest snapshot are outside the group lease.",
+    "Unknown occupant or metadata leaves recovery_pending; unregistered power-loss stage files are not deleted by name.",
+    "Real hardware power loss, disk-full fault, full permission matrix, native multi-window and non-Windows group leases remain pending.",
+    "46 locale structure passed; full semantic native-language review remains pending."
+  ],
+  "artifacts": [
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/build-final.log",
+      "sha256": "ec683b070ebb5d9c3a202b8e91d555e52e85f8235ad648b6dfa6d5d5a41681e0"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/full-rust-final.log",
+      "sha256": "4e9b813358e58f8ccf26a2acf24375e8d932c8a65533b29ae64d9673cabc104b"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/full-node-final.log",
+      "sha256": "5e3c5e2d320e4ca5f2baccc5c6e47fc0e74608062768358a45b3d5e60e66d958"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/http-final/report.json",
+      "sha256": "a2f7de9fb3f9272e29526505d559ebdd736ffcdbbd025503854ba9ddbb7c6370"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-final/report.json",
+      "sha256": "207df69620e5ebf1d32ad19c03c53902327f2b8ed0a36c23e3e14691ac29b0ae"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-final.log",
+      "sha256": "3a88ca77a95cbea356a9d899b18936b1d46a29728bb956dd2581218e0a99d1bd"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/first-failure/report.json",
+      "sha256": "9f9546cc82640602f802f2ce07d61341b2b535c901ec2c1268f67eb9e6e9df7d"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/rust-focused-01.log",
+      "sha256": "5ea1bbd3b94e621156ae8d8768ff94dea2b8232f5dbd20c916815622918d81e6"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/native-leases-01.log",
+      "sha256": "d46f9f9a8451bec7d089b1f44a6d987cbcabeb6879296da612cef8cce66c1a58"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/full-node-01.log",
+      "sha256": "1937fcb0d72fe68ee5a98b098911ac5ea6b49c8d7b7cdebb1b818e1d4fde7973"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/math-prefix-02.log",
+      "sha256": "7fa202ce7a797d73d4c1e431703dd6c209309d97b16449e4c3e0f812498765fe"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/math-prefix-03.log",
+      "sha256": "5851a387271d9e620ede7841590e7772b7fa9ae72bc031a1d3ba2ce72aa71313"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/http-01/report.json",
+      "sha256": "38d418a149994c5981a0b32ce32c5e315b655ee4d99faad5bce19cbb4d63b125"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-01/report.json",
+      "sha256": "a1529ce729b56a2d32f58d6b9742456acc8550b0f30861e3d3eb8d8d95ab2e0c"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-02/report.json",
+      "sha256": "36090dccaf8966fb30a4fad7911fe0bd181252bfaebf4488f2bccdd9b2a1174c"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/browser-03/report.json",
+      "sha256": "1b549a0cc9d7a6ffcfab13f895924699d4e6dd840363788d1cfb99503f24bffc"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/check-assets-final.log",
+      "sha256": "7d6eb37ad148ba851ce514a3b39be8a0494bb993481fa6978ac848c3362c415e"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/check-styles-final.log",
+      "sha256": "1162a257dc11200fda4a04b41804169a32032a1fa724015007c5b591a068e800"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/check-wiring-final.log",
+      "sha256": "8dec089b7dfe63e203735832630437f876bbaa5303166ae11718452a68fe3f9b"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/check-i18n-final.log",
+      "sha256": "a0ef402d471eb5763fa76c749aadd8ae47c5e8217fca3152f8b787180e798879"
+    },
+    {
+      "path": ".cache/capability-upgrade/v006-rename-refactor-20261028/check-no-python-final.log",
+      "sha256": "407f08caff48e5072a11e4e1aa222876fbb1d927052e6ce30199cf5d140299e8"
+    }
+  ]
+}

@@ -1,0 +1,267 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-27T09:43:23.424Z",
+  "baseCommit": "4e8e4e5868efc0e3ce8032ea3af658f55dfb1367",
+  "candidate": {
+    "kernel": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+    "collaboration": "f4ddc478c18d7219fb296ec07375f168d5c6464b1db48147491db2675c256379",
+    "boot": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+  },
+  "platform": "windows-x64",
+  "syntheticMaterials": true,
+  "scope": "Scoped Windows real kernel/HTTP/MCP/PDFium and production-CSP headless Edge evidence; not a native visible window, real Office interoperability, 50 human clients, eight-hour run, or non-Windows certification.",
+  "build": {
+    "locked": true,
+    "offline": true,
+    "incremental": false,
+    "sharedTarget": true,
+    "rust": {
+      "passed": 4102,
+      "failed": 0,
+      "ignored": 3,
+      "logSha256": "b4f33eddaf3a379ed6f9adb9e729bbbf9cfe1aea310cc4ab51de7cb99d7ffcdd"
+    },
+    "node": {
+      "files": 107,
+      "passed": 1455,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "d5e2f4a875a82bcc3509bd1f206e4eab854a00a5634e33d43052a07174225043"
+    },
+    "bootCheck": true
+  },
+  "limitations": [
+    "The rename failure is unresolved and references the earlier candidate; source implementation is unchanged.",
+    "Existing media recognition uses the installed Windows engine and may depend on host FFmpeg; no managed Whisper pack was certified.",
+    "Regional restriction on the configured AI connection remains pending; no private connection configuration is included.",
+    "Kikongo locale contains Cyrillic script signals, including a demonstrably mismatched existing key; 46-language semantic review remains open."
+  ],
+  "sources": [
+    {
+      "path": "assets/js/editor/editor.js",
+      "sha256": "27390a0df6d2546e7a89d17c73c7ea2e4c3e852a9c5fc3bd9e6850e9cada9b2c"
+    },
+    {
+      "path": "assets/js/features/export.js",
+      "sha256": "3fc8ef4a5f7e4e4f14ac8aacb9d07b715dc842361ef4d6906fe78e650d7f79df"
+    },
+    {
+      "path": "assets/js/features/openapi.js",
+      "sha256": "e1e98a0c8dc09579ca543ed67abdbc451e154047dc2b6e996fc5c39843757675"
+    },
+    {
+      "path": "assets/js/features/pdf.js",
+      "sha256": "c95f586b97408caeff4f103585bb7b7be0fe42ea9ff672060671b1c8f252761b"
+    },
+    {
+      "path": "assets/js/reader/render.js",
+      "sha256": "826a6070c33181044d71c9eeca89c17a8661c3978929be3f4632a2b0c3167c01"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "sha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "path": "rust/readmd-kernel/src/content.rs",
+      "sha256": "e7c6c1d78468d146cdc161c9f153a87cf7f7d49d8937d94ac65765ff14ecd08d"
+    },
+    {
+      "path": "rust/readmd-kernel/src/server.rs",
+      "sha256": "7456ef6c93fefd5cab006e439abfac55722c99175ae8bafe7c1a0ad51e97b6c8"
+    },
+    {
+      "path": "rust/readmd-kernel/src/openapi_document.rs",
+      "sha256": "efe388d11f413da60f94a57b069fe94126735c92fd9f758447c8478539338904"
+    },
+    {
+      "path": "rust/readmd-kernel/src/openapi_local_refs_tests.rs",
+      "sha256": "a14394ee191c5230d17058b83dc43d9b57471a518bc43193b002c19a5aed3595"
+    },
+    {
+      "path": "rust/readmd-kernel/src/mcp.rs",
+      "sha256": "3fd775c9c5718b2f4b76e13f126b9894f175c9f6937711bdec9c938477d7d052"
+    },
+    {
+      "path": "rust/readmd-kernel/src/collaboration.rs",
+      "sha256": "600f70453236d56b02ef40bd1fb3b60b3f306774b841651a9d13dab532ba5557"
+    },
+    {
+      "path": "rust/readmd-kernel/src/collaboration_host.rs",
+      "sha256": "b3aa4be851d05371fe60081fd7a35807245bec0c90ad54418fee8e4fe3f22e56"
+    },
+    {
+      "path": "rust/readmd-kernel/src/bin/readmd-collaboration.rs",
+      "sha256": "2738ba9c6f6f8410954a96c51b1c1e7b9c0db867d61633ae4dbd8ec125f7d0d1"
+    },
+    {
+      "path": "rust/readmd-kernel/src/speech.rs",
+      "sha256": "540c21504bad6ecc9e1e418fae7d230375752eb950efb7c6a9383345c3777e14"
+    },
+    {
+      "path": "rust/readmd-kernel/src/speech_duration_tests.rs",
+      "sha256": "d0605f7052e4adc0876180a82eab2180e25dd4a79c5f92cd24d7c02f769572a5"
+    }
+  ],
+  "reports": [
+    {
+      "name": "openapi-http-mcp",
+      "path": ".cache/capability-upgrade/v006-batch3-openapi/run-9m4gyv/report.json",
+      "sha256": "7495329ee97e229d224714207422ce4a7da4c88365389ce52ff16d69a8234272",
+      "checks": 10,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "openapi-interface",
+      "path": ".cache/capability-upgrade/v006-batch3-20261027/openapi-browser-JvCLsi/report.json",
+      "sha256": "147bdf9e5b92ee9ad3e505fd79003aefa6ee65c7ac171f1c8fa805427e20fa3e",
+      "checks": 3,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "table-interface",
+      "path": ".cache/v006-table-clipboard/candidate-3e9eaf4746834490a76a7ddb270de34d/report.json",
+      "sha256": "03bbcf4bef30a1507842372d6e10434bd1add986a29d33b686f5e65ceea79de4",
+      "checks": 5,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "table-http",
+      "path": ".cache/v006-table-clipboard/http-candidate-e85aefc95012444a8447d105ce49ac50/report.json",
+      "sha256": "252a9ac37299a701bc6b095a535e64ce09a9de919241c4be010ffbc19959141d",
+      "checks": 2,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff"
+    },
+    {
+      "name": "collaboration-desktop",
+      "path": ".cache/capability-upgrade/collaboration-contract-O92n28/report.json",
+      "sha256": "e8d871e44a1778a3059591e5064b8d76c39720935daf5491d240f20b1b2bcd82",
+      "checks": 65,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff"
+    },
+    {
+      "name": "collaboration-standalone",
+      "path": ".cache/capability-upgrade/collaboration-contract-5PkM81/report.json",
+      "sha256": "5fd91fc7223277130c41e1cb68466e8964685643a08236b94a0804702a65732e",
+      "checks": 43,
+      "binarySha256": "f4ddc478c18d7219fb296ec07375f168d5c6464b1db48147491db2675c256379"
+    },
+    {
+      "name": "collaboration-owner",
+      "path": ".cache/capability-upgrade/collaboration-owner-S47do0/report.json",
+      "sha256": "64f07be765266679fd8c2b0252105f1eda0804de1ffa0bfe15fe179eb372a00a",
+      "checks": 23,
+      "binarySha256": "f4ddc478c18d7219fb296ec07375f168d5c6464b1db48147491db2675c256379"
+    },
+    {
+      "name": "collaboration-backup",
+      "path": ".cache/capability-upgrade/selfhost-lVfG2R/report.json",
+      "sha256": "f3302e4ca86c90cdfe9378349fa3e981c8b88cdf3ef8e89089d3561d2f6d1416",
+      "checks": 5,
+      "binarySha256": "f4ddc478c18d7219fb296ec07375f168d5c6464b1db48147491db2675c256379"
+    },
+    {
+      "name": "collaboration-clients",
+      "path": ".cache/capability-upgrade/collab-http-7TB3mX/report.json",
+      "sha256": "0513a672e2599d3953f35a52336e40925b3bc0a7c17a86957d932a112343fdb4",
+      "checks": 3,
+      "binarySha256": "f4ddc478c18d7219fb296ec07375f168d5c6464b1db48147491db2675c256379"
+    },
+    {
+      "name": "conversion-interface",
+      "path": ".cache/capability-upgrade/v006-batch3-20261027/conversion-JPkxED/report.json",
+      "sha256": "803ebab35ba333f99bb72bcfbb175e26ab602d049117fda886f2048992345662",
+      "checks": 6,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "pdf-interface",
+      "path": ".cache/v006-pdf-image-target/candidate-e274fda39d944996956c3d8887619eef/report.json",
+      "sha256": "4d8552dc3f6580723e7dfed511b6997cc5b2fccd2ca0b34c8fa12f5870bfce0e",
+      "checks": 7,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "media-service",
+      "path": ".cache/capability-upgrade/v006-media-duration/service-wDQYIt/report.json",
+      "sha256": "ac90de25aed811f91e513199ca9b6c723334e0f5fd9a966d0fd9a6c87042666b",
+      "checks": 9,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    },
+    {
+      "name": "media-interface",
+      "path": ".cache/capability-upgrade/v006-media-duration/browser-yJxPUV/report.json",
+      "sha256": "71d13fff3bff4afe71ae3f03c5ddcf2a0b2c7f012e99da19232d7fbd8cf50368",
+      "checks": 3,
+      "binarySha256": "61442176f01797c01caed9d9504c8b5b5a85214053ca6a580ad3a5a3976c47ff",
+      "bootSha256": "e7d0b2a10d18f73adb6730751ecabe479c3ff18c4054625d33dee509c7ca4a55"
+    }
+  ],
+  "firstFailures": [
+    {
+      "name": "openapi-old",
+      "path": ".cache/capability-upgrade/v006-batch3-openapi/run-iFq0hB/report.json",
+      "sha256": "319df2bc8adba1dc458e72351c82cfdd3935962d3e15721c9f0d9c78b67f413c",
+      "category": "product"
+    },
+    {
+      "name": "table-old",
+      "path": ".cache/v006-table-clipboard/browser-before-boot-final/report.json",
+      "sha256": "ce1ab14feb83ee0101bffc702c83c3474c956f61a15e8069f5cda5c8c7c59c62",
+      "category": "product"
+    },
+    {
+      "name": "collaboration-contract-old",
+      "path": ".cache/capability-upgrade/collaboration-contract-s6cUef/report.json",
+      "sha256": "bf033896991c6eabfdea78171be10b2ba8d608a7754c3e5848e0080a5a2a5a85",
+      "category": "product"
+    },
+    {
+      "name": "collaboration-two-writers-old",
+      "path": ".cache/capability-upgrade/collaboration-shared-profile-J6yPPx/report.json",
+      "sha256": "fe8a5d2d95da42c5390aaea7754b45c2c22fbfe2ae4c4322943c51fee8e68c3b",
+      "category": "product"
+    },
+    {
+      "name": "conversion-source-assets-old",
+      "path": ".cache/capability-upgrade/v006-batch3-20261027/conversion-Kdo9Ep/report.json",
+      "sha256": "1b408ecf9ea12d4cf13aa6a1d7853909a5ebe3df0ab028cec5bd9dfe252df0a6",
+      "category": "product"
+    },
+    {
+      "name": "conversion-overwrite-old",
+      "path": ".cache/capability-upgrade/v006-batch3-20261027/conversion-JGjCXa/report.json",
+      "sha256": "a210f59e37c151bfd804f0bd9082c0d11ee54ea2729d92f637e94066d19cacd9",
+      "category": "product"
+    },
+    {
+      "name": "pdf-cross-document-old",
+      "path": ".cache/v006-pdf-image-target/browser-first-failure/report.json",
+      "sha256": "6eeae429dca25846445f0b719abb51f2cba58d76feaaffdf9f5fd114e57808a3",
+      "category": "product"
+    },
+    {
+      "name": "media-duration-old",
+      "path": ".cache/capability-upgrade/v006-media-duration/service-3rnyyo/report.json",
+      "sha256": "7033cafedc806220c18ae0103c5353085c812b4c352ded1f33a2561a953b07ba",
+      "category": "product"
+    },
+    {
+      "name": "media-assertion-new",
+      "path": ".cache/capability-upgrade/v006-media-duration/service-iCjKRg/report.json",
+      "sha256": "194849c57c16871b9b21fd9b5da3cc0018e228de4b3c15135f029a6c53cee6d8",
+      "category": "test-harness"
+    },
+    {
+      "name": "rename-open-and-review",
+      "path": ".cache/capability-upgrade/rename-lifecycle-firstfail-Dgd7f8/report.json",
+      "sha256": "a2f029440b95d3c9a13835c6c8c20aa62f85f2ecd7d889f269e7488a710c8c7b",
+      "category": "product-unresolved"
+    }
+  ]
+}

@@ -52,14 +52,34 @@ fn engine()->Result<(PathBuf,String)> {
     Ok((file,digest))
 }
 pub fn rasterize(bytes:&[u8])->Result<Vec<u8>> {
-    validate(bytes)?;let(program,engine)=engine()?;let key=format!("{engine}:{}",hash(bytes));
+    validate(bytes)?;let(program,engine)=engine()?;
+    let fonts=crate::publication_fonts::current();
+    if fonts.is_none()&&crate::publication_fonts::needs_cjk(std::str::from_utf8(bytes).map_err(|_|"svg_invalid")?){return Err("publication_fonts_unavailable");}
+    let identity=font_identity(fonts.as_deref());
+    let key=format!("{engine}:{identity}:{}",hash(bytes));
     static CACHE:OnceLock<Mutex<VecDeque<(String,Vec<u8>)>>>=OnceLock::new();
     // Serialize workers and bound cached decoded resources. No persistent images.
     let mut cache=CACHE.get_or_init(||Mutex::new(VecDeque::new())).lock().unwrap_or_else(|e|e.into_inner());
     if let Some((_,result))=cache.iter().find(|(id,_)|id==&key){return Ok(result.clone());}
     let dir=tempfile::Builder::new().prefix("readmd-svg-").tempdir().map_err(|_|"svg_render_failed")?;
     let source=dir.path().join("input.svg");let target=dir.path().join("output.png");fs::write(&source,bytes).map_err(|_|"svg_render_failed")?;
-    let mut child=crate::silent_command(program).args(["--width","2400","--height","2400","--resources-dir"]).arg(dir.path()).arg(&source).arg(&target)
+    // Host fonts are neither versioned nor part of the export snapshot.
+    // Pass only reviewed core faces and the leased publication resource set.
+    let mut command=crate::silent_command(program);
+    command.args(["--width","2400","--height","2400","--skip-system-fonts","--font-family","DejaVu Sans",
+        "--serif-family","DejaVu Sans","--sans-serif-family","DejaVu Sans","--monospace-family","DejaVu Sans",
+        "--cursive-family","DejaVu Sans","--fantasy-family","DejaVu Sans","--resources-dir"]).arg(dir.path());
+    for (name,data) in [("text.ttf",crate::publication_fonts::CORE_TEXT_FALLBACK),("math.ttf",crate::publication_fonts::MATH),("thai.otf",crate::publication_fonts::CORE_THAI_FALLBACK)]{
+        let file=dir.path().join(name);fs::write(&file,data).map_err(|_|"svg_render_failed")?;command.arg("--use-font-file").arg(file);
+    }
+    if let Some(fonts)=fonts{
+        for file in [&fonts.sans,&fonts.serif]{
+            command.arg("--use-font-file").arg(file);
+            let bold=file.with_file_name(file.file_name().and_then(|s|s.to_str()).unwrap_or("").replace("-Regular.","-Bold."));
+            if bold!=*file&&bold.is_file(){command.arg("--use-font-file").arg(bold);}
+        }
+    }
+    let mut child=command.arg(&source).arg(&target)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|_|"svg_render_failed")?;
     let deadline=Instant::now()+Duration::from_secs(15);
     loop {match child.try_wait(){Ok(Some(status))=>{if !status.success(){return Err("svg_render_failed");}break;},Ok(None)if Instant::now()<deadline=>std::thread::sleep(Duration::from_millis(15)),_=>{let _=child.kill();let _=child.wait();return Err("svg_render_failed");}}}
@@ -71,11 +91,23 @@ pub fn rasterize(bytes:&[u8])->Result<Vec<u8>> {
     while (cache.len()>=32||cache.iter().map(|(_,v)|v.len()).sum::<usize>()+result.len()>16*1024*1024)&&!cache.is_empty(){cache.pop_front();}
     if result.len()<=16*1024*1024{cache.push_back((key,result.clone()));}Ok(result)
 }
+fn font_identity(fonts:Option<&crate::publication_fonts::Resources>)->String{
+    let mut digest=Sha256::new();
+    for bytes in [crate::publication_fonts::CORE_TEXT_FALLBACK,crate::publication_fonts::MATH,crate::publication_fonts::CORE_THAI_FALLBACK]{digest.update((bytes.len()as u64).to_le_bytes());digest.update(bytes);}
+    if let Some(fonts)=fonts{digest.update(fonts.fingerprint.as_bytes());}
+    format!("{:x}",digest.finalize())
+}
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn svg_is_self_contained_bounded_and_cannot_read_external_resources(){
         assert!(validate(br##"<svg xmlns="http://www.w3.org/2000/svg"><style>.a{fill:url(#gradient)}</style><rect fill="url(#gradient)"/></svg>"##).is_ok());
         assert!(validate(br#"<svg><text aria-label="a@b.test">a@b.test, \alpha, url(file:///example)</text></svg>"#).is_ok());
         for source in [r#"<svg><image href="file:///private"/></svg>"#,r#"<svg><image href="https://example.test/private"/></svg>"#,r#"<svg><style>@import 'file:///private';</style></svg>"#,r#"<svg><rect style="fill:url(file:///private)"/></svg>"#,r#"<svg><image href="data:image/svg+xml;base64,PHN2Zz4="/></svg>"#,r#"<!DOCTYPE svg><svg/>"#,r#"<svg onload="alert(1)"/>"#,r#"<svg><foreignObject/></svg>"#,r#"<svg/><svg/>"#] {assert!(validate(source.as_bytes()).is_err(),"{source}");}
+    }
+    #[test]fn renderer_uses_real_core_font_outlines_without_host_fonts(){
+        let png=rasterize(br#"<svg xmlns="http://www.w3.org/2000/svg" width="200" height="40"><text x="5" y="30" font-size="26" font-family="sans-serif">ReadMD 123</text></svg>"#).unwrap();
+        let pixels=image::load_from_memory(&png).unwrap().to_rgba8();assert!(pixels.pixels().filter(|pixel|pixel[3]>128&&pixel[0]<128).count()>100);
+        let fake=crate::publication_fonts::Resources{sans:PathBuf::from("unused-sans"),serif:PathBuf::from("unused-serif"),fingerprint:"different-managed-fonts".into()};
+        assert_ne!(font_identity(None),font_identity(Some(&fake)));
     }
 }

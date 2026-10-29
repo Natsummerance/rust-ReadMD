@@ -3021,7 +3021,7 @@ fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,res
     crate::math_word_projection::validate_source_with_style(content,math_target,&math_style)?;
     let managed_pdf=fmt=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust"|"typst"));
     let budget=crate::publication_budget::capture();let checked=||budget.api();
-    let _fonts=if managed_pdf||matches!(fmt.as_str(),"epub"|"html"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
+    let _fonts=if managed_pdf||matches!(fmt.as_str(),"docx"|"epub"|"html"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
     if managed_pdf{crate::publication_fonts::require_cjk(&format!("{content}{}",options))?;}
     let (prepared,warnings)=prepare_export_source(&fmt,content,base_dir,options)?;
     budget.check()?;

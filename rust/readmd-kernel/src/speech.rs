@@ -3,7 +3,7 @@
 //! microphone capture or cloud service is involved.
 
 use serde_json::{json, Value};
-use std::{io::Write, path::Path, process::{Command, Stdio}, time::{Duration, Instant}};
+use std::{io::{Read, Seek, SeekFrom, Write}, path::Path, process::{Command, Stdio}, time::{Duration, Instant}};
 
 thread_local! { static CANCEL: std::cell::RefCell<Option<std::sync::Arc<dyn Fn()->bool+Send+Sync>>> = std::cell::RefCell::new(None); }
 pub fn with_cancel<T>(check:std::sync::Arc<dyn Fn()->bool+Send+Sync>,action:impl FnOnce()->T)->T {
@@ -38,23 +38,37 @@ try {
   $recognizer.LoadGrammar((New-Object System.Speech.Recognition.DictationGrammar))
   $recognizer.SetInputToWaveFile([string]$request.path)
   $segments = New-Object 'System.Collections.Generic.List[object]'
-  $cursor = 0.0
-  while ($true) {
-    try { $result = $recognizer.Recognize() }
-    catch {
-      # SAPI disposes the input at EOF after its final nonempty result.
-      if ($segments.Count -gt 0 -and $_.Exception.InnerException -is [System.InvalidOperationException]) { break }
-      throw
+  $recognized = 'readmd-recognized-' + [Guid]::NewGuid().ToString('N')
+  $completed = 'readmd-completed-' + [Guid]::NewGuid().ToString('N')
+  try {
+    Register-ObjectEvent -InputObject $recognizer -EventName SpeechRecognized -SourceIdentifier $recognized | Out-Null
+    Register-ObjectEvent -InputObject $recognizer -EventName RecognizeCompleted -SourceIdentifier $completed | Out-Null
+    # Keep one recognition operation for the complete input. Repeated synchronous
+    # Recognize calls restart SAPI's position origin between phrases.
+    $recognizer.RecognizeAsync([System.Speech.Recognition.RecognizeMode]::Multiple)
+    while ($true) {
+      $event = Wait-Event -Timeout 1
+      if (!$event) { continue }
+      try {
+        if ($event.SourceIdentifier -eq $recognized) {
+          $result = $event.SourceEventArgs.Result
+          if ($result) {
+            $start = $result.Audio.AudioPosition.TotalSeconds
+            $segments.Add(@{start=$start;text=$result.Text;confidence=[double]$result.Confidence})
+          }
+        } elseif ($event.SourceIdentifier -eq $completed) {
+          if ($event.SourceEventArgs.Error) { throw $event.SourceEventArgs.Error }
+          if ($event.SourceEventArgs.Cancelled) { throw 'cancelled' }
+          break
+        }
+      } finally { Remove-Event -EventIdentifier $event.EventIdentifier }
     }
-    if (!$result) { break }
-    # AudioPosition is absolute within the input stream, including earlier
-    # phrases. Adding the previous phrase's end double-counts elapsed time.
-    $start = $result.Audio.AudioPosition.TotalSeconds
-    $segments.Add(@{start=$start;text=$result.Text;confidence=[double]$result.Confidence})
-    $cursor = $start + $result.Audio.Duration.TotalSeconds
+  } finally {
+    Unregister-Event -SourceIdentifier $recognized -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier $completed -ErrorAction SilentlyContinue
   }
   $recognizer.Dispose()
-  @{ok=$true;engine='system-speech';language=$engine.Culture.Name;duration=$cursor;segments=@($segments.ToArray())} | ConvertTo-Json -Compress -Depth 5
+  @{ok=$true;engine='system-speech';language=$engine.Culture.Name;segments=@($segments.ToArray())} | ConvertTo-Json -Compress -Depth 5
 } catch {
   if ($recognizer) { $recognizer.Dispose() }
   @{ok=$false;code='speech_recognition_failed';error=$_.Exception.Message} | ConvertTo-Json -Compress
@@ -98,6 +112,97 @@ pub fn capabilities() -> Value {
         .unwrap_or_else(|e| json!({"ok":false,"engine":"system-speech","languages":[],"error":e}))).clone()
 }
 
+/// Complete decoded audio duration, rather than the end of the last phrase.
+/// Read only RIFF headers with bounded seeks; never allocate or scan PCM data.
+/// Other containers/encodings remain the installed recognizer's decision and
+/// have no duration field when their sample count cannot be established here.
+fn wave_duration(path: &Path) -> Result<Option<f64>, String> {
+    const INVALID: &str = "audio_decode_failed: invalid_wave_duration";
+    fn invalid(known_frames: Option<(u32, u16)>) -> Result<Option<f64>, String> {
+        if known_frames.is_some() { Err(INVALID.into()) } else { Ok(None) }
+    }
+    if cancelled() { return Err("cancelled".into()); }
+    let mut file = std::fs::File::open(path).map_err(|_| INVALID.to_string())?;
+    let length = file.metadata().map_err(|_| INVALID.to_string())?.len();
+    if length < 12 { return Ok(None); }
+    let mut header = [0u8; 12];
+    file.read_exact(&mut header).map_err(|_| INVALID.to_string())?;
+    // In particular, do not reject RF64/RIFX or compressed WAV formats that a
+    // host without FFmpeg could already pass directly to System.Speech.
+    if &header[..4] != b"RIFF" || &header[8..] != b"WAVE" { return Ok(None); }
+    let declared = u32::from_le_bytes(header[4..8].try_into().unwrap());
+    // Streaming RIFF writers also use an unknown-length sentinel. The host
+    // may accept it, but it cannot establish a complete frame count here.
+    if declared == u32::MAX { return Ok(None); }
+    let end = u64::from(declared) + 8;
+    if end < 12 { return Ok(None); }
+    let truncated = end > length;
+    let limit = end.min(length);
+    let mut at = 12u64;
+    let mut chunks = 0usize;
+    let mut frames = None;
+    let mut format_seen = false;
+    let mut data_bytes = None;
+    while at < limit {
+        if cancelled() { return Err("cancelled".into()); }
+        chunks += 1;
+        // A valid host-specific file may exceed our metadata budget. Leave its
+        // recognition path intact and omit duration rather than reject it.
+        if chunks > 4096 { return Ok(None); }
+        if limit - at < 8 { return invalid(frames); }
+        file.seek(SeekFrom::Start(at)).map_err(|_| INVALID.to_string())?;
+        let mut chunk = [0u8; 8];
+        file.read_exact(&mut chunk).map_err(|_| INVALID.to_string())?;
+        let size = u64::from(u32::from_le_bytes(chunk[4..].try_into().unwrap()));
+        if size == u64::from(u32::MAX) { return Ok(None); }
+        let payload_end = at + 8 + size;
+        let next = payload_end + size % 2;
+        if next > limit { return invalid(frames); }
+        match &chunk[..4] {
+            b"fmt " => {
+                if format_seen { return Ok(None); }
+                format_seen = true;
+                if size < 16 { return Ok(None); }
+                let mut format = [0u8; 40];
+                let count = size.min(format.len() as u64) as usize;
+                file.read_exact(&mut format[..count]).map_err(|_| INVALID.to_string())?;
+                let tag = u16::from_le_bytes(format[..2].try_into().unwrap());
+                let codec = if tag == 0xfffe && size >= 40
+                    && u16::from_le_bytes(format[16..18].try_into().unwrap()) >= 22
+                    && &format[26..40] == b"\0\0\0\0\x10\0\x80\0\0\xaa\0\x38\x9b\x71" {
+                    u16::from_le_bytes(format[24..26].try_into().unwrap())
+                } else { tag };
+                if matches!(codec, 1 | 3) {
+                    let channels = u16::from_le_bytes(format[2..4].try_into().unwrap());
+                    let rate = u32::from_le_bytes(format[4..8].try_into().unwrap());
+                    let byte_rate = u32::from_le_bytes(format[8..12].try_into().unwrap());
+                    let align = u16::from_le_bytes(format[12..14].try_into().unwrap());
+                    let bits = u16::from_le_bytes(format[14..16].try_into().unwrap());
+                    if channels == 0 || rate == 0 || bits == 0 || align == 0 { return Err(INVALID.into()); }
+                    if bits % 8 != 0 || (codec == 3 && !matches!(bits, 32 | 64)) { return Ok(None); }
+                    if u32::from(channels).checked_mul(u32::from(bits / 8)) != Some(u32::from(align))
+                        || rate.checked_mul(u32::from(align)) != Some(byte_rate) {
+                        return Err(INVALID.into());
+                    }
+                    frames = Some((rate, align));
+                }
+            }
+            b"data" => {
+                if data_bytes.replace(size).is_some() { return Ok(None); }
+            }
+            _ => {}
+        }
+        at = next;
+    }
+    let Some((rate, align)) = frames else { return Ok(None); };
+    // A nonstandard WAV can put audio in a wavl LIST rather than one top-level
+    // data chunk. Preserve the recognizer's existing acceptance of such files.
+    let Some(bytes) = data_bytes else { return Ok(None); };
+    if truncated || bytes % u64::from(align) != 0 { return Err(INVALID.into()); }
+    if cancelled() { return Err("cancelled".into()); }
+    Ok(Some((bytes / u64::from(align)) as f64 / f64::from(rate)))
+}
+
 pub fn transcribe(path: &str, language: Option<&str>) -> Result<Value, String> {
     if !Path::new(path).is_file() { return Err("file_not_found".into()); }
     let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
@@ -112,12 +217,21 @@ pub fn transcribe(path: &str, language: Option<&str>) -> Result<Value, String> {
     } else if Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("wav")) {
         Path::new(path)
     } else { return Err("ffmpeg_unavailable".into()); };
-    let result = request(json!({"path":input,"language":language.unwrap_or("auto")}), Duration::from_secs(600))?;
+    // For non-WAV inputs this is the selected decoded audio stream, including
+    // codec trimming/padding, not the duration of a video's longer image track.
+    let duration = wave_duration(input)?;
+    let mut result = request(json!({"path":input,"language":language.unwrap_or("auto")}), Duration::from_secs(600))?;
     if result.get("ok").and_then(Value::as_bool) != Some(true) {
         return Err(result.get("error").and_then(Value::as_str).unwrap_or("speech_recognition_failed").into());
     }
+    if cancelled() { return Err("cancelled".into()); }
+    if let Some(duration) = duration { result["duration"] = json!(duration); }
     Ok(result)
 }
+
+#[cfg(test)]
+#[path = "speech_duration_tests.rs"]
+mod duration_tests;
 
 #[cfg(test)]
 mod tests {

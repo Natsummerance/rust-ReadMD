@@ -144,6 +144,7 @@ function renderAiEmptyState() {
 }
 window.addEventListener('readmd:ai-config-changed', () => renderAiEmptyState());
 window.addEventListener('readmd:language-changed', () => updateAiContextStrip());
+window.addEventListener('readmd:document-transaction', remapAiTargets);
 
 function updateAiContextStrip() {
   const label = $('ai-context-file');
@@ -152,11 +153,22 @@ function updateAiContextStrip() {
   const target = getAiTargetText();
   label.textContent = name ? name + ' · ' + i18n.t(target.isSelection ? 'ai.scopeSelection' : 'ai.scopeFull') : i18n.t('ux.noDocument');
   label.title = typeof state !== 'undefined' ? (state.file || '') : '';
+  const reviewEdit = $('ai-review-edit');
+  if (reviewEdit) { reviewEdit.hidden = !getActiveTab(); reviewEdit.disabled = Boolean(state.ai.busy); }
+  window.ReadMDAiHarness?.render();
 }
 
 function initAiComposerUx() {
   const input = $('ai-prompt'), out = $('ai-output'), latest = $('ai-jump-latest');
   if (!input || !out || !latest) return;
+  const send = $('ai-run');
+  if (send && !$('ai-review-edit')) {
+    const reviewEdit = document.createElement('button');
+    reviewEdit.id = 'ai-review-edit'; reviewEdit.type = 'button'; reviewEdit.className = 'new-chat-btn';
+    reviewEdit.textContent = window.i18n.t('review.aiEdit'); reviewEdit.dataset.i18n = 'review.aiEdit';
+    reviewEdit.addEventListener('click', () => runAi('modify'));
+    send.before(reviewEdit);
+  }
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(180, input.scrollHeight) + 'px'; });
   // The connection pill doubles as the shortcut to connection settings.
   const conn = document.querySelector('#ai-panel .ai-connection-summary');
@@ -180,7 +192,9 @@ function initAiComposerUx() {
   });
   input.addEventListener('focus', () => { captureAiSelection(); updateAiContextStrip(); });
   document.addEventListener('readmd:document-loaded', () => {
-    state.ai.capturedTarget = null; state.ai.conversationTarget = null;
+    for (const key of ['capturedTarget', 'conversationTarget']) {
+      if (state.ai[key]?.tabId !== state.activeTabId) state.ai[key] = null;
+    }
     updateAiContextStrip();
   });
 }
@@ -1942,9 +1956,8 @@ function getCurrentDocumentText() {
     }
     if ($('edit-area')) return $('edit-area').value;
   }
-  return state.mode === 'file'
-    ? (state.original || state.fixed || '')
-    : (state.fixed || state.original || '');
+  const tab = getActiveTab();
+  return String(tab?.isDirty ? tab.content : (tab?.original ?? state.original ?? tab?.content ?? state.fixed ?? '')).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
 }
 
 function captureAiSelection() {
@@ -1952,35 +1965,17 @@ function captureAiSelection() {
   const selection = window.getSelection?.();
   if (selection?.rangeCount && !selection.isCollapsed) {
     const range = selection.getRangeAt(0);
-    const root = [$('content'), $('preview-pane')].find(el => el?.contains(range.startContainer) && el.contains(range.endContainer));
+    const root = [state.editing ? null : $('content'), $('preview-pane')].find(el => el?.contains(range.startContainer) && el.contains(range.endContainer));
     if (root) {
       const fragment = range.cloneContents();
       fragment.querySelectorAll('[data-rd-chrome], button, input, mjx-assistive-mml').forEach(el => el.remove());
       const text = fragment.textContent || '';
       if (text.trim()) {
         const source = getCurrentDocumentText();
-        let from = -1, to = -1;
-        const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
-        const block = start?.closest('[data-source-line]');
-        // Plain rendered blocks map through their source line and DOM offset.
-        // This distinguishes identical paragraphs and repeated words inside a
-        // paragraph. Rich projections without a precise map stay read-only:
-        // applying their answer uses the existing safe-copy path.
-        if (block && root.contains(block) && block.contains(range.endContainer)) {
-          const line = Number(block.dataset.sourceLine);
-          const lines = source.split('\n');
-          const begin = lines.slice(0, line - 1).reduce((n, s) => n + s.length + 1, 0);
-          const next = [...root.querySelectorAll('[data-source-line]')].map(el => Number(el.dataset.sourceLine)).filter(n => n > line).sort((a,b) => a-b)[0];
-          const end = next ? lines.slice(0, next - 1).reduce((n, s) => n + s.length + 1, 0) : source.length;
-          const raw = source.slice(begin, end), rendered = block.textContent;
-          const offset = raw.indexOf(rendered);
-          if (Number.isInteger(line) && line > 0 && rendered && offset >= 0 && raw.indexOf(rendered, offset + 1) < 0) {
-            const prefix = document.createRange(); prefix.selectNodeContents(block); prefix.setEnd(range.startContainer, range.startOffset);
-            const position = begin + offset + prefix.toString().length;
-            if (source.slice(position, position + text.length) === text) { from = position; to = position + text.length; }
-          }
-        }
-        state.ai.capturedTarget = { text, isSelection:true, from, to, source, tabId };
+        const mapped = window.ReadMDAiSelection?.mapRange(source, root, range, {
+          breaks: Boolean(state.breakOnSingleNewline), partial: root.id === 'content' && Boolean(state.pagination?.enabled) });
+        state.ai.capturedTarget = mapped ? { ...mapped, isSelection: true, source, tabId } :
+          { text, displayText: text, isSelection: true, from: -1, to: -1, exact: false, source, tabId };
         return true;
       }
     }
@@ -1991,7 +1986,7 @@ function captureAiSelection() {
       const text = cmView.state.sliceDoc(range.from, range.to);
       if (text.trim()) {
         const source = getCurrentDocumentText();
-        state.ai.capturedTarget = { text, isSelection:true, from:range.from, to:range.to, source, tabId };
+        state.ai.capturedTarget = { text, isSelection:true, exact:true, from:range.from, to:range.to, source, tabId };
         return true;
       }
     }
@@ -1999,10 +1994,24 @@ function captureAiSelection() {
   return false;
 }
 
+function remapAiTargets(event) {
+  const transaction = event.detail;
+  if (!transaction || !state.ai) return;
+  for (const key of ['capturedTarget', 'conversationTarget']) {
+    const target = state.ai[key];
+    if (target?.tabId !== transaction.tabId) continue;
+    state.ai[key] = window.ReadMDAiSelection?.remapTarget(target, transaction) ||
+      { ...target, source: transaction.after, isSelection: true, exact: false, from: -1, to: -1, conflict: true };
+  }
+  if (transaction.tabId === state.activeTabId) updateAiContextStrip();
+}
+
 function getAiTargetText() {
   const source = getCurrentDocumentText();
   for (const target of [state.ai.capturedTarget, state.ai.conversationTarget]) {
-    if (target?.tabId === state.activeTabId && target.source === source) return { ...target };
+    if (target?.tabId !== state.activeTabId) continue;
+    return window.ReadMDAiSelection?.currentTarget(target, source) ||
+      { ...target, source, isSelection: true, exact: false, from: -1, to: -1, conflict: true };
   }
   return { text:source, isSelection:false, from:0, to:source.length, source, tabId:state.activeTabId };
 }
@@ -2010,6 +2019,7 @@ function getAiTargetText() {
 function setAiBusy(b) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   state.ai.busy = b;
+  if ($('ai-review-edit')) $('ai-review-edit').disabled = b;
   const runBtn = $('ai-run');
   const stopBtn = $('ai-stop');
   if (runBtn) {
@@ -2161,10 +2171,14 @@ async function runAiRequest(action) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   state.ai.lastAction = action || (currentAiTemplate() && currentAiTemplate().action) || '';
   captureAiSelection();
+  const reviewTab = getActiveTab();
+  const reviewStamp = reviewTab && window.ReadMDReview ? await ReadMDReview.capture(reviewTab) : null;
+  if (reviewTab && getActiveTab() !== reviewTab) return;
   const target = state.ai.targetOverride;
   const targetInfo = target != null
-    ? { text: target, isSelection: true, from: -1, to: -1 }
+    ? { text: target, isSelection: true, exact: false, from: -1, to: -1, source: getCurrentDocumentText(), tabId: state.activeTabId }
     : getAiTargetText();
+  if (target != null) state.ai.capturedTarget = targetInfo;
   state.ai.targetOverride = null;
   const origin = { tabId:state.activeTabId, name:state.sourceName, path:state.file, dir:state.dir,
     generation:getActiveTab()?.editGeneration || 0, isEditMode:Boolean(state.editing && window.cmView) };
@@ -2187,7 +2201,7 @@ async function runAiRequest(action) {
     text: text,
     from: targetInfo.from,
     to: targetInfo.to,
-    exact: targetInfo.from >= 0 && targetInfo.to >= targetInfo.from,
+    exact: targetInfo.exact !== false && targetInfo.from >= 0 && targetInfo.to > targetInfo.from,
     isContinue: isContinueAction,
     isEditMode: origin.isEditMode
   } : (isContinueAction ? {
@@ -2198,7 +2212,7 @@ async function runAiRequest(action) {
     isEditMode: origin.isEditMode
   } : { text:'', from:0, to:targetInfo.to, isSelection:false, isEditMode:origin.isEditMode });
 
-  Object.assign(currentSelectionSnapshot, origin);
+  Object.assign(currentSelectionSnapshot, origin, { reviewStamp, source: reviewStamp?.content || targetInfo.source || getCurrentDocumentText() });
   state.ai.lastSelection = currentSelectionSnapshot;
   const isIncognito = $('ai-incognito').checked;
   const model = $('ai-model').value.trim() || (p.models || [''])[0] || '';
@@ -2215,6 +2229,48 @@ async function runAiRequest(action) {
   try { requestHeaders = readAiCustomHeaders(); } catch (e) { return; }
 
   const skillId = (tpl && tpl.skill_id) || 'readmd-ask';
+  if (action === 'modify') {
+    if (!reviewTab || !reviewStamp || (isSelection && !currentSelectionSnapshot.exact)) { showToast(_t('review.conflict')); return; }
+    if (!state.editing) await toggleEdit();
+    if (getActiveTab() !== reviewTab || !state.editing) return;
+    setAiBusy(true);
+    const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
+    if (window.ReadMDAiHarness && window.READMD_ENGINE === 'rust') {
+      state.ai.raw = ''; updateAiRawButtons();
+      try {
+        await window.ReadMDAiHarness.start({ request: prompt || _t('review.aiEdit'), skill_id: skillId,
+          provider: activeProvider.id, credential_id: activeProvider.credential_id, model, stream, task_id: taskId,
+          ranges: isSelection ? [{ from: targetInfo.from, to: targetInfo.to }] : undefined }, reviewStamp, reviewTab);
+      } catch (error) {
+        const key = 'error.' + (error.code || ''), localized = _t(key);
+        showToast(localized !== key ? localized : _t(/conflict|stale/.test(error.code || '') ? 'review.conflict' : 'review.aiFailed'));
+      } finally { setAiBusy(false); state.ai.aborter = null; window.ReadMDAiHarness.render(); }
+      return;
+    }
+    const controller = new AbortController();
+    state.ai.aborter = { abort: () => {
+      if (controller.signal.aborted) { void ReadMDReview.cancelAi(taskId); return; }
+      controller.abort(); if ($('ai-status')) $('ai-status').textContent = _t('task.cancelling');
+    } };
+    state.ai.raw = ''; updateAiRawButtons();
+    try {
+      await ReadMDReview.runAi({ request: prompt || _t('review.aiEdit'), skill_id: skillId,
+        provider: activeProvider.id, credential_id: activeProvider.credential_id, model, stream,
+        task_id: taskId, signal: controller.signal,
+        ranges: isSelection ? [{ from: targetInfo.from, to: targetInfo.to }] : undefined }, reviewStamp, reviewTab);
+      if (getActiveTab() === reviewTab) {
+        const out = $('ai-output'); out.querySelector('.ai-empty-state')?.remove();
+        const receipt = document.createElement('p'); receipt.className = 'ai-review-receipt'; receipt.textContent = _t('review.pending');
+        receipt.dataset.reviewDocumentId = reviewStamp.document_id; out.appendChild(receipt);
+        showToast(_t('review.pending'));
+      }
+    } catch (error) {
+      const key='error.'+(error.code||''), localized=_t(key);
+      showToast(error.code==='cancelled' ? _t('ai.stopped') : localized!==key ? localized : _t('review.aiFailed'));
+    }
+    finally { setAiBusy(false); state.ai.aborter = null; }
+    return;
+  }
   const docs = text.length > 120000 ? text.slice(0, 120000) + '\n\n' + (_t('ai.contentTruncated') || '') : text;
   const fill = s => String(s || '').replace(/\{doc\}/g, docs).replace(/\{prompt\}/g, prompt || '');
   let userMsg;
@@ -2630,204 +2686,48 @@ async function copyAi() {
 }
 
 async function applyAi(targetResult, selectionContext) {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const raw = targetResult || state.ai.raw;
   if (!raw) return;
-
-  const ctx = selectionContext || state.ai.lastSelection || null;
-  if (ctx && 'tabId' in ctx && (ctx.tabId !== state.activeTabId || (ctx.isContinue && ctx.generation !== (getActiveTab()?.editGeneration || 0)))) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-  const tpl = currentAiTemplate();
-  const act = (tpl && tpl.action) || state.ai.lastAction || '';
-  const tplId = (tpl && tpl.id) || '';
-  const tplName = (tpl && tpl.name) || '';
-  const prompt = ($('ai-prompt') && $('ai-prompt').value) || '';
-  const isContinue = Boolean((ctx && ctx.isContinue) || act === 'continue' || act === 'complete' || tplId.includes('continue') || tplName.includes('续写') || /续写|接着写|继续写/i.test(prompt));
-  const hasSelection = Boolean(ctx && ctx.text && ctx.text.trim());
-  const applyTabId = state.activeTabId;
-  if (hasSelection && ctx.exact === false) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx.name), ctx.dir || '', raw, [], { originPath: ctx.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-
-  if (!hasSelection && !isContinue) {
-    const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-
-    if (typeof renderVirtual === 'function') {
-      await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-    } else {
-      const newTab = {
-        id: 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        mode: 'virtual',
-        source: 'ai',
-        path: null,
-        dir: state.dir || '',
-        name: cleanName,
-        title: cleanName,
-        content: raw,
-        originPath: state.file || null,
-        original: raw,
-        fixed: raw,
-        fixes: [],
-        stats: {},
-        size: 0,
-        mtime: 0,
-        encoding: 'utf-8',
-        webAssets: [],
-        isDirty: true,
-        scrollPos: 0,
-        isVirtual: true,
-      };
-      state.tabs.push(newTab);
-      state.activeTabId = newTab.id;
-      syncStateFromActiveTab();
-      renderContent(raw, cleanName);
-      renderTabsBar();
-    }
-    showToast(_t('toast.appliedVirtualNotice') || ('已创建副本标签页：' + cleanName));
-    return;
-  }
-
-  // 【选区和续写：直接插入/替换到正文，可撤销 (Ctrl+Z)，未保存状态，按 Ctrl+S 保存】
-  // 自动切换到编辑模式，且绝对不能开启预览（setPvLayout('none')），防止画面挤压变形
+  const ctx = selectionContext || state.ai.lastSelection;
+  const tab = getActiveTab(), stamp = ctx?.reviewStamp;
+  const safeCopy = async () => {
+    await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || tab?.name), ctx?.dir || tab?.dir || '', raw, [], { originPath: ctx?.path || tab?.path });
+    showToast(window.i18n.t('storage.aiSafeCopy'));
+  };
+  if (!tab || !window.ReadMDReview || !stamp || ctx.tabId !== tab.id || (ctx.text && ctx.exact === false)) return safeCopy();
+  if (!await ReadMDReview.flush(tab) || getActiveTab() !== tab) return safeCopy();
+  const latest = ReadMDReview.snapshot(tab);
+  if (!latest || latest.generation !== stamp.generation || (tab.editGeneration || 0) !== stamp.editGeneration) return safeCopy();
   if (!state.editing) {
-    if (state.pvLayout && state.pvLayout !== 'none') {
-      state._pvLayoutBeforeAi = state.pvLayout;
-    }
-    state.pvLayout = 'none';
-    if (typeof toggleEdit === 'function') {
-      await toggleEdit();
-    }
-    if (typeof setPvLayout === 'function') setPvLayout('none');
+    await toggleEdit();
+    if (getActiveTab() !== tab || !state.editing) return safeCopy();
+  }
+  const current = window.cmView ? cmView.state.doc.toString() : ReadMDReview.lf($('edit-area')?.value);
+  if (current !== stamp.content) return safeCopy();
+  let edits;
+  const replacement = ReadMDReview.lf(raw);
+  if (ctx.text) {
+    if (!Number.isInteger(ctx.from) || !Number.isInteger(ctx.to) || ctx.from < 0 || ctx.to > current.length || current.slice(ctx.from, ctx.to) !== ctx.text) return safeCopy();
+    const at = ctx.isContinue ? ctx.to : ctx.from;
+    const separator = ctx.isContinue && !ctx.text.endsWith('\n') && !replacement.startsWith('\n') ? '\n\n' : '';
+    edits = [{ from: at, to: ctx.to, insert: separator + replacement }];
+  } else if (ctx.isContinue) {
+    const separator = current ? (current.endsWith('\n') ? '\n' : '\n\n') : '';
+    edits = [{ from: current.length, to: current.length, insert: separator + replacement }];
   } else {
-    if (state.pvLayout && state.pvLayout !== 'none') {
-      state._pvLayoutBeforeAi = state.pvLayout;
-      if (typeof setPvLayout === 'function') setPvLayout('none');
-    }
+    try { edits = ReadMDReview.documentEdits(current, replacement); }
+    catch (_) { return safeCopy(); }
   }
-
-  // 等待 CodeMirror 初始化就绪
-  if (!cmView && window.ReadMDCodeMirror) {
-    for (let retry = 0; retry < 12 && !cmView; retry++) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-  }
-  if (state.activeTabId !== applyTabId) {
-    await renderVirtual('ai', getNextAiCopyTabName(ctx?.name), ctx?.dir || '', raw, [], { originPath: ctx?.path });
-    showToast(_t('storage.aiSafeCopy')); return;
-  }
-
-  if (cmView) {
-    const doc = cmView.state.doc;
-    const docLen = doc.length;
-    let insertFrom = -1;
-    let insertTo = -1;
-    let insertText = raw;
-
-    if (hasSelection) {
-      const selText = ctx.text;
-      if (typeof ctx.from === 'number' && typeof ctx.to === 'number' && ctx.from >= 0 && ctx.to <= docLen && doc.sliceString(ctx.from, ctx.to) === selText) {
-        insertFrom = ctx.from;
-        insertTo = ctx.to;
-      } else {
-        const fullDoc = doc.toString();
-        const firstIdx = fullDoc.indexOf(selText);
-        const secondIdx = fullDoc.indexOf(selText, firstIdx + 1);
-        if (firstIdx >= 0 && secondIdx < 0) {
-          // 仅当全文中唯一定位匹配时才允许重绑
-          insertFrom = firstIdx;
-          insertTo = firstIdx + selText.length;
-        } else {
-          // 存在多次重复出现或原内容已变动，无法唯一定位，拒绝替换第一处！
-          insertFrom = -1;
-          insertTo = -1;
-        }
-      }
-
-      if (insertFrom < 0 || insertTo < 0) {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-        if (typeof renderVirtual === 'function') {
-          await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-        }
-        return;
-      }
-
-      if (isContinue) {
-        const sep = (selText.endsWith('\n') || raw.startsWith('\n')) ? '' : '\n\n';
-        insertFrom = insertTo;
-        insertText = sep + raw;
-      } else {
-        insertText = raw;
-      }
-    } else if (isContinue) {
-      insertFrom = docLen;
-      insertTo = docLen;
-      const lastChar = docLen > 0 ? doc.sliceString(docLen - 1, docLen) : '';
-      const sep = lastChar === '\n' ? '\n' : '\n\n';
-      insertText = (docLen > 0 ? sep : '') + raw;
-    }
-
-    const view = cmView, tabId = state.activeTabId, previous = doc.toString();
-    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
-    if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== previous) {
-      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
-    }
-    // A bulk AI application is one independently undoable edit and never writes the source file.
-    cmView.dispatch({
-      changes: { from: insertFrom, to: insertTo, insert: insertText },
-      annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
-      selection: { anchor: insertFrom + insertText.length },
-      scrollIntoView: true
-    });
-    cmView.focus();
-    showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
-  } else if ($('edit-area')) {
-    const ta = $('edit-area');
-    const val = ta.value;
-    let from = val.length, to = val.length, insert = raw;
-    if (hasSelection) {
-      const exact = Number.isInteger(ctx.from) && Number.isInteger(ctx.to) && ctx.from >= 0 && ctx.to <= val.length && val.slice(ctx.from, ctx.to) === ctx.text;
-      const first = val.indexOf(ctx.text);
-      const idx = exact ? ctx.from : first >= 0 && val.indexOf(ctx.text, first + 1) < 0 ? first : -1;
-      if (idx >= 0) {
-        if (isContinue) {
-          const sep = (ctx.text.endsWith('\n') || raw.startsWith('\n')) ? '' : '\n\n';
-          from = idx + ctx.text.length;
-          to = from;
-          insert = sep + raw;
-        } else {
-          from = idx;
-          to = idx + ctx.text.length;
-          insert = raw;
-        }
-      } else {
-        showToast(_t('toast.appliedSelectionFallback') || '原选区无法唯一定位，已安全创建副本');
-        const cleanName = getNextAiCopyTabName(state.sourceName || state.file);
-        if (typeof renderVirtual === 'function') {
-          await renderVirtual('ai', cleanName, state.dir || '', raw, [], { originPath: state.file });
-        }
-        return;
-      }
-    } else if (isContinue) {
-      const sep = val.endsWith('\n') ? '\n' : '\n\n';
-      from = val.length;
-      to = val.length;
-      insert = (val ? sep : '') + raw;
-    }
-    const tabId = state.activeTabId;
-    if (!await window.ReadMDRecovery?.checkpoint('ai_apply')) return;
-    if (state.activeTabId !== tabId || !state.editing || cmView || ta.value !== val) {
-      await renderVirtual('ai', getNextAiCopyTabName(ctx?.name || state.sourceName), ctx?.dir || state.dir || '', raw, [], { originPath: ctx?.path || state.file }); return;
-    }
-    ta.setRangeText(insert, from, to, 'end');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-    showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+S 保存）');
+  if (!edits.length) return;
+  try {
+    await ReadMDReview.propose(edits, stamp, tab);
+    if (getActiveTab() === tab) window.cmView?.focus();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return safeCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
 }
-
 async function saveAiAs() {
   if (!state.ai.raw) return;
   const content = state.ai.raw, origin = getActiveTab();

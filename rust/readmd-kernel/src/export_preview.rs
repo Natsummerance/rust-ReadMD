@@ -78,6 +78,31 @@ pub fn cached(key:&str)->Option<Arc<Artifact>> {
 pub fn prepare(format:&str,content:&str,base:&str,options:&Value,name:&str,assets:&Path)->Result<Arc<Artifact>,String> {
     prepare_with_data(format,content,base,options,name,assets,&crate::paths::data_dir())
 }
+/// Snapshot provenance is internal state, not completed client defaults. The
+/// artifact handed to preview is generated with the same typed options as save.
+pub(crate) fn snapshot_key(frozen:&crate::export_snapshot::Frozen)->String{
+    let packet=json!([frozen.content,frozen.options,frozen.resolved_options,frozen.engine_identity,frozen.font_identity,frozen.asset_identity]);
+    format!("snapshot:{}:{:x}",frozen.snapshot_id,Sha256::digest(packet.to_string().as_bytes()))
+}
+pub(crate) fn prepare_snapshot(frozen:&crate::export_snapshot::Frozen,data:&Path)->Result<Arc<Artifact>,String>{
+    let key=snapshot_key(frozen);if let Some(old)=cached(&key){return Ok(old);}
+    if !matches!(frozen.format.as_str(),"pdf"|"docx"){return Err("unsupported_preview_format".into());}
+    let resolved:crate::publication_typography::ResolvedOptions=serde_json::from_value(frozen.resolved_options.clone()).map_err(|_|"export_snapshot_invalid_request")?;
+    let directory=tempfile::Builder::new().prefix("readmd-snapshot-preview-").tempdir().map_err(|_|"export_snapshot_persistence_failed")?;
+    let file=directory.path().join(format!("document.{}",frozen.format));
+    let generated=crate::mdexport::export_document_with_resolved_options(&frozen.format,&frozen.content,&frozen.base_dir.to_string_lossy(),&file.to_string_lossy(),&resolved,&frozen.name,&frozen.assets_dir,data)?;
+    if !generated.ok{return Err("preview_generation_failed".into());}
+    let mut warnings=generated.warns.unwrap_or_default();
+    let (pdf,projection_engine)=if frozen.format=="pdf"{(file.clone(),frozen.options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust").to_string())}else{
+        let pdf=directory.path().join("layout.pdf");let mut options=frozen.options.clone();
+        let projection=frozen.engine_identity.pointer("/projection/engine").and_then(Value::as_str).unwrap_or("rust");
+        options["pdf"]=json!({"engine":projection});let projected=resolved.clone().with_completed_values(options).map_err(str::to_string)?;
+        let result=crate::mdexport::export_document_with_resolved_options("pdf",&frozen.content,&frozen.base_dir.to_string_lossy(),&pdf.to_string_lossy(),&projected,&frozen.name,&frozen.assets_dir,data)?;
+        if !result.ok{return Err("preview_generation_failed".into());}warnings.extend(result.warns.unwrap_or_default());(pdf,projection.to_string())
+    };
+    let artifact=Arc::new(Artifact{key,file,pdf,format:frozen.format.clone(),warnings,projection_engine,source_map:None,_directory:directory,created:Instant::now()});
+    let mut items=cache().lock().unwrap_or_else(|e|e.into_inner());while items.len()>=6{items.pop_front();}items.push_back(artifact.clone());Ok(artifact)
+}
 pub fn prepare_with_data(format:&str,content:&str,base:&str,options:&Value,name:&str,assets:&Path,data:&Path)->Result<Arc<Artifact>,String>{
     crate::publication_budget::run(format,options,||prepare_inner(format,content,base,options,name,assets,data))
 }

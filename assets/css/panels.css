@@ -1750,3 +1750,28 @@ body:has(#edit-bar:not(.hidden)) .statusbar-left-group { flex:0 1 24%; }
 .formula-inline-controls textarea.formula-inline-input{flex:1 1 240px;min-width:120px;max-width:100%;min-height:44px;resize:vertical;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent;color:inherit;font:inherit;line-height:1.5;padding:4px 8px}
 .formula-inline-controls textarea.formula-inline-input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 /* READMD_CONTEXT_SOURCE_END */
+
+/* READMD_AI_TASK_STATUS_BEGIN */
+/* Persistent tasks use the existing AI sidebar rather than a new workbench. */
+.ai-task-status { flex: 0 0 auto; max-height: 30vh; overflow-y: auto; padding: var(--space-2) var(--space-3); border-block-end: 1px solid var(--color-border); font-size: var(--text-xs); color: var(--color-fg-muted); }
+.ai-task-status[hidden] { display: none; }
+.ai-task-row { display: flex; align-items: center; gap: var(--space-2); justify-content: space-between; padding-block: var(--space-1); }
+.ai-task-row > span { overflow-wrap: anywhere; }
+#ai-panel #ai-task-status .ai-task-row > button { flex: 0 0 auto; min-width: 44px; min-height: 44px; height: auto; }
+.ai-task-history > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+/* READMD_AI_TASK_STATUS_END */
+
+/* READMD_DOCUMENT_REFACTOR_BEGIN */
+/* A transient diff for a confirmed rename; no additional persistent toolbar. */
+.document-refactor-box { width: min(760px,calc(100vw - 32px)); max-height: min(740px,calc(100dvh - 48px)); display:flex; flex-direction:column; gap:16px; padding:24px; border:1px solid var(--color-border); border-radius:var(--radius-xl); background:var(--bg2); color:var(--fg); box-shadow:var(--shadow-3); }
+.document-refactor-box h2 { margin:0; font-size:var(--text-lg); }
+.document-refactor-source { overflow-wrap:anywhere; color:var(--color-fg-muted); }
+.document-refactor-files { min-height:0; overflow:auto; overscroll-behavior:contain; }
+.document-refactor-files details { border-block-end:1px solid var(--color-border); padding-block:8px; }
+.document-refactor-files summary { min-height:44px; cursor:pointer; align-content:center; overflow-wrap:anywhere; }
+.document-refactor-edit { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; padding:8px 12px; font-size:var(--text-sm); }
+.document-refactor-edit>span:first-child { color:var(--color-fg-muted); }
+.document-refactor-edit code { white-space:pre-wrap; overflow-wrap:anywhere; }
+.document-refactor-actions { display:flex; justify-content:flex-end; gap:8px; }
+.document-refactor-actions button { min-width:72px; min-height:44px; }
+/* READMD_DOCUMENT_REFACTOR_END */

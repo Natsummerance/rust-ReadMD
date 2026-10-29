@@ -107,7 +107,7 @@ function createEditor(doc) {
       CM.bracketMatching(),
       CM.indentOnInput(),
       CM.history(),
-      CM.EditorState.transactionFilter.of(transaction => transaction.docChanged && !transaction.isUserEvent('collaboration.remote') && window.ReadMDCollaborationShare?.canEdit() === false ? [] : transaction),
+      CM.EditorState.transactionFilter.of(transaction => transaction.docChanged && !transaction.isUserEvent('collaboration.remote') && !transaction.isUserEvent('review.remote') && window.ReadMDCollaborationShare?.canEdit() === false ? [] : transaction),
       CM.markdown({ base: CM.markdownLanguage, codeLanguages: CM.languages }),
       // Markdown prose: pair brackets, double quotes, backticks and CJK brackets
       // (single quotes stay unpaired: they are apostrophes in prose).
@@ -115,6 +115,7 @@ function createEditor(doc) {
       CM.syntaxHighlighting(cmHighlightStyle()),
       cmMarkdownDecorations(),
       cmMathMetadataDecorations(CM),
+      window.ReadMDReview?.extension(CM, tab) || [],
       C.focus.of(editorPrefs.focus ? cmFocusExtension() : []),
       C.typewriter.of(editorPrefs.typewriter ? cmTypewriterExtension() : []),
       CM.autocompletion({ override: [cmMarkdownCompletions()], activateOnTyping: false, interactionDelay: 0, icons: false }),
@@ -153,6 +154,7 @@ function createEditor(doc) {
       CM.Prec.highest(CM.EditorView.domEventHandlers({ paste: cmHandlePaste })),
       CM.EditorView.domEventHandlers({ mousedown: cmTaskMarkerClick }),
       CM.EditorView.updateListener.of(u => {
+        window.ReadMDReview?.onEditorUpdate(u);
         window.ReadMDCollaborationShare?.onEditorUpdate(u);
         if (u.docChanged) {
           const tab = getActiveTab(); if (tab) tab.editGeneration = (tab.editGeneration || 0) + 1;
@@ -174,6 +176,7 @@ function createEditor(doc) {
   if (reusable) cmView.dispatch({ effects: [C.theme.reconfigure(cmThemeFor(document.body.dataset.theme)), C.gutter.reconfigure(cmGutterExtension()),
     C.focus.reconfigure(editorPrefs.focus ? cmFocusExtension() : []), C.typewriter.reconfigure(editorPrefs.typewriter ? cmTypewriterExtension() : [])] });
   window.cmView = cmView;
+  window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
   cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
@@ -207,6 +210,7 @@ function cmHistoryCommand(key) {
 
 function cmUndo() {
   if (window.ReadMDCollaborationShare?.history(false)) return;
+  if (window.ReadMDReview?.history(false)) return;
   const run = cmView && cmHistoryCommand('undo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('undo');
@@ -214,6 +218,7 @@ function cmUndo() {
 
 function cmRedo() {
   if (window.ReadMDCollaborationShare?.history(true)) return;
+  if (window.ReadMDReview?.history(true)) return;
   const run = cmView && cmHistoryCommand('redo');
   if (run) { run(cmView); cmView.focus(); }
   else if ($('edit-area')) document.execCommand('redo');
@@ -412,6 +417,7 @@ function destroyEditor() {
   hideCmSelectionToolbar();
   closeSlashMenu();
   if (cmView) {
+    window.ReadMDReview?.detach(cmView);
     try { cmView.destroy(); } catch (e) { /* ignore */ }
     cmView = null;
   }
@@ -1436,9 +1442,72 @@ function updateDocStatistics() {
 }
 
 
+/* Delimited clipboard records, including Excel's quoted tabs/newlines. A final
+   record separator terminates its row; additional empty records remain rows.
+   Plain comma prose is ambiguous, so CSV requires an explicit text/csv type. */
+const CLIPBOARD_TABLE_LIMITS = { bytes: 1024 * 1024, rows: 1000, columns: 100, cells: 20000 };
+
+function clipboardTableRows(text, delimiter) {
+  text = String(text || '');
+  if (text.length > CLIPBOARD_TABLE_LIMITS.bytes) return null;
+  // Count UTF-8 without allocating an encoded copy of a large clipboard.
+  let bytes = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0);
+    bytes += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (bytes > CLIPBOARD_TABLE_LIMITS.bytes) return null;
+  }
+  text = text.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  if (!text.includes(delimiter)) return null;
+  const rows = [];
+  let row = [], cell = '', quoted = false, closed = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch !== '"') cell += ch;
+      else if (text[i + 1] === '"') { cell += '"'; i++; }
+      else { quoted = false; closed = true; }
+    } else if (ch === delimiter || ch === '\n') {
+      if (row.length >= CLIPBOARD_TABLE_LIMITS.columns) return null;
+      row.push(cell); cell = ''; closed = false;
+      if (ch === '\n') {
+        if (rows.length >= CLIPBOARD_TABLE_LIMITS.rows) return null;
+        rows.push(row); row = [];
+      }
+    } else {
+      // Unexpected text after a closing quote or broken CSV is left to normal
+      // paste. Quotes within an unquoted TSV value are ordinary cell text.
+      if (closed || ch === '"' && cell && delimiter === ',') return null;
+      if (ch === '"' && !cell) quoted = true;
+      else cell += ch;
+    }
+  }
+  if (quoted) return null;
+  if (!text.endsWith('\n') || row.length) {
+    if (row.length >= CLIPBOARD_TABLE_LIMITS.columns || rows.length >= CLIPBOARD_TABLE_LIMITS.rows) return null;
+    row.push(cell); rows.push(row);
+  }
+  if (rows.length < 2 || rows[0].length < 2) return null;
+  let columns = rows[0].length;
+  for (const record of rows) {
+    if (delimiter === ',' && record.length !== columns) return null;
+    columns = Math.max(columns, record.length);
+  }
+  if (rows.length * columns > CLIPBOARD_TABLE_LIMITS.cells) return null;
+  return { rows, columns };
+}
+
+function clipboardTableCell(text) {
+  // Office cells are text, not Markdown/HTML. Entities also avoid GFM's
+  // backslash/pipe parity trap and survive subsequent table Tab/Enter edits.
+  return text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
+    .replace(/\n/g, '<br>')
+    .replace(/^ +| +$/g, spaces => '&#32;'.repeat(spaces.length));
+}
+
 /* 智能 Excel / CSV 粘贴转 Markdown 表格 */
 function handleSmartExcelPaste(e) {
-  if (!e.clipboardData) return;
+  if (!e.clipboardData || e.defaultPrevented) return;
 
   // 0. 剪贴板图片粘贴 -> 自动上传并插入 Markdown 语法
   const items = e.clipboardData.items;
@@ -1497,31 +1566,18 @@ function handleSmartExcelPaste(e) {
     return;
   }
 
-  const text = e.clipboardData.getData('text/plain');
-  if (!text || !text.includes('\t') || !text.includes('\n')) return;
+  if (!state.editing || window.ReadMDCollaborationShare?.canEdit() === false) return;
+  if (cmView) {
+    const ranges = cmView.state.selection.ranges;
+    if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;
+  } else if (!$('edit-area') || e.target !== $('edit-area')) return;
 
-  const lines = text.trim().split(/\r?\n/).map(l => l.split('\t'));
-  if (lines.length < 2 || lines[0].length < 2) return;
-
-  // 确认为多行多列表格数据
-  e.preventDefault();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const colCount = Math.max(...lines.map(r => r.length));
-  const mdRows = [];
-
-  // 表头
-  const defaultCol = _t('editor.table') || '';
-  const headers = lines[0].map(c => c.trim().replace(/\|/g, '\\|') || defaultCol);
-  while (headers.length < colCount) headers.push(defaultCol + (headers.length + 1));
-  mdRows.push('| ' + headers.join(' | ') + ' |');
-  mdRows.push('| ' + headers.map(() => '---').join(' | ') + ' |');
-
-  // 表体
-  for (let i = 1; i < lines.length; i++) {
-    const row = lines[i].map(c => c.trim().replace(/\|/g, '\\|'));
-    while (row.length < colCount) row.push('');
-    mdRows.push('| ' + row.join(' | ') + ' |');
-  }
+  const csv = e.clipboardData.getData('text/csv');
+  const text = csv || e.clipboardData.getData('text/tab-separated-values') || e.clipboardData.getData('text/plain');
+  const table = clipboardTableRows(text, csv ? ',' : '\t');
+  if (!table) return;
+  const mdRows = table.rows.map(record => '| ' + Array.from({ length: table.columns }, (_, i) => clipboardTableCell(record[i] || '')).join(' | ') + ' |');
+  mdRows.splice(1, 0, '| ' + Array(table.columns).fill('---').join(' | ') + ' |');
 
   const tableMd = '\n' + mdRows.join('\n') + '\n';
   if (cmView) {
@@ -1532,23 +1588,118 @@ function handleSmartExcelPaste(e) {
       userEvent: 'input.paste'
     });
     cmView.focus();
-  } else if ($('edit-area')) {
-    document.execCommand('insertText', false, tableMd);
+  } else {
+    // Preserve the textarea's native undo stack. If insertion is unavailable,
+    // leave the clipboard event unconsumed so ordinary paste can still run.
+    try { if (!document.execCommand('insertText', false, tableMd)) return; }
+    catch (_) { return; }
   }
-  showToast(_t('toast.tableConverted', { count: lines.length }) || `已将剪贴板中 ${lines.length} 行表格转为 Markdown 表格`, 2000);
+  e.preventDefault();
+  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  showToast(_t('toast.tableConverted', { count: table.rows.length }) || `已将剪贴板中 ${table.rows.length} 行表格转为 Markdown 表格`, 2000);
 }
+
+document.addEventListener('paste', e => {
+  if (!cmView && state.editing && e.target === $('edit-area')) handleSmartExcelPaste(e);
+});
 
 /* 交互式表格设计器 */
 let selectedRows = 3;
 let selectedCols = 3;
+
+/* Column alignment edits only the delimiter token. Cell Markdown and spacing
+   never pass through the table formatter or an HTML round trip. */
+function cmTableRowSegments(text) {
+  if (text.length > 65536) return null;
+  const pipes = [];
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\\') { escaped = !escaped; continue; }
+    if (ch === '|' && !escaped) pipes.push(i);
+    escaped = false;
+  }
+  let from = 0, to = text.length;
+  const first = text.search(/\S/), last = text.search(/\s*$/) - 1;
+  if (pipes[0] === first) from = pipes.shift() + 1;
+  if (pipes[pipes.length - 1] === last) to = pipes.pop();
+  const cells = [];
+  for (const pipe of pipes) {
+    cells.push({ from, to: pipe }); from = pipe + 1;
+    if (cells.length >= 100) return null;
+  }
+  cells.push({ from, to });
+  return cells;
+}
+
+function cmTableAlignmentContext(view) {
+  const CM = window.ReadMDCodeMirror;
+  if (!view || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  const hit = cmSingleCursorLine(view);
+  if (!hit || cmInCode(view.state, hit.range.from) || cmInCode(view.state, hit.range.to)) return null;
+  let table = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
+  while (table && table.name !== 'Table') table = table.parent;
+  if (!table || table.to - table.from > 1024 * 1024) return null;
+  const doc = view.state.doc, header = doc.lineAt(table.from), last = doc.lineAt(table.to);
+  // Nested list/quote prefixes need their own source-coordinate model.
+  if (!/^ {0,3}$/.test(header.text.slice(0, table.from - header.from)) || last.number - header.number + 1 > 1000 || header.number === doc.lines) return null;
+  const delimiter = doc.line(header.number + 1);
+  if (hit.line.number === delimiter.number) return null;
+  const headers = cmTableRowSegments(header.text), cells = cmTableRowSegments(hit.line.text), delimiters = cmTableRowSegments(delimiter.text);
+  if (!headers || !cells || !delimiters || headers.length !== delimiters.length || cells.length !== headers.length) return null;
+  const column = cells.findIndex(cell => hit.range.from >= hit.line.from + cell.from && hit.range.to <= hit.line.from + cell.to);
+  if (column < 0) return null;
+  const segment = delimiters[column], token = delimiter.text.slice(segment.from, segment.to).match(/^([ \t]*)(:?)(-+)(:?)([ \t]*)$/);
+  if (!token) return null;
+  const from = delimiter.from + segment.from + token[1].length;
+  return { column, from, to: from + token[2].length + token[3].length + token[4].length, dashes: token[3],
+    alignment: token[2] && token[4] ? 'center' : token[4] ? 'right' : token[2] ? 'left' : '', range: hit.range };
+}
+
+function cmAlignTableColumn(view, alignment) {
+  if (!['left', 'center', 'right'].includes(alignment)) return false;
+  const hit = cmTableAlignmentContext(view);
+  if (!hit || hit.alignment === alignment) return false;
+  const insert = (alignment !== 'right' ? ':' : '') + hit.dashes + (alignment !== 'left' ? ':' : '');
+  const delta = insert.length - (hit.to - hit.from), map = pos => pos < hit.to ? pos : pos + delta;
+  view.dispatch({ changes: { from: hit.from, to: hit.to, insert }, selection: { anchor: map(hit.range.anchor), head: map(hit.range.head) },
+    scrollIntoView: true, userEvent: 'input.table.align' });
+  view.focus();
+  return true;
+}
 
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
   const modal = $('table-modal');
   if (!modal) return;
+  const _t = key => window.i18n ? window.i18n.t(key) : key;
+  const picker = $('table-grid-picker'), label = $('table-grid-label');
+  $('table-align-controls')?.remove();
+  const view = cmView, hit = cmTableAlignmentContext(view);
+  if (hit && picker) {
+    const snapshot = view.state, tab = getActiveTab();
+    picker.classList.add('hidden');
+    if (label) label.textContent = _t('formula.column') + ' ' + (hit.column + 1);
+    const controls = document.createElement('div'); controls.id = 'table-align-controls'; controls.className = 'panel-feedback-row';
+    controls.setAttribute('role', 'group'); controls.setAttribute('aria-label', _t('dialog.tableAlign'));
+    for (const alignment of ['left', 'center', 'right']) {
+      const key = 'dialog.tableAlign' + alignment[0].toUpperCase() + alignment.slice(1), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.dataset.tableAlign = alignment; button.dataset.i18n = key; button.textContent = _t(key);
+      button.setAttribute('aria-pressed', String(hit.alignment === alignment));
+      if (hit.alignment === alignment) button.dataset.modalInitial = '';
+      button.addEventListener('click', () => {
+        if (cmView === view && view.state.doc === snapshot.doc && view.state.selection.eq(snapshot.selection) && getActiveTab() === tab) cmAlignTableColumn(view, alignment);
+        closeTableModal();
+      });
+      controls.append(button);
+    }
+    picker.before(controls);
+  } else {
+    picker?.classList.remove('hidden');
+    initTableGridPicker();
+  }
   modal.classList.remove('hidden');
-  initTableGridPicker();
 }
 
 function closeTableModal() {
@@ -1699,144 +1850,51 @@ function switchEditAiToChatPanel() {
 window.switchEditAiToChatPanel = switchEditAiToChatPanel;
 
 async function runEditAiAction(act, customPrompt = '') {
-  if (editAiRunning || !state.editing || !cmView) return;
-  editAiRunning = true;
-  const epoch = ++editAiRequestEpoch;
+  if (editAiRunning || !state.editing || !cmView || !window.ReadMDReview) return;
+  const tab = getActiveTab(), view = cmView, epoch = ++editAiRequestEpoch;
   const aborter = editAiAborter = new AbortController();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const preview = $('edit-ai-preview');
-  const previewContent = $('edit-ai-preview-content');
-  const statusEl = $('edit-ai-status');
-  if (preview) preview.classList.remove('hidden');
-  if (previewContent) previewContent.innerHTML = '';
-  if (statusEl) statusEl.textContent = _t('editai.generating') || '';
-  const submitBtn = $('edit-ai-submit');
+  const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
+  editAiRunning = true;
+  const preview = $('edit-ai-preview'), previewContent = $('edit-ai-preview-content'), statusEl = $('edit-ai-status');
+  preview?.classList.remove('hidden');
+  if (previewContent) previewContent.textContent = '';
+  if (statusEl) statusEl.textContent = window.i18n.t('review.busy');
+  const submit = $('edit-ai-submit');
+  if (submit) { submit.disabled = true; submit.classList.add('btn-loading'); }
   const chips = document.querySelectorAll('.edit-ai-act-chip');
+  chips.forEach(chip => { chip.disabled = true; });
   ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = true; });
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('btn-loading'); }
-  chips.forEach(c => { c.disabled = true; });
-
-  const currentDocStr = cmView ? cmView.state.doc.toString() : '';
-  const range = editAiSelectionRange || {
-    from: cmView ? cmView.state.selection.main.from : 0,
-    to: cmView ? cmView.state.selection.main.to : 0,
-    text: cmView ? cmView.state.sliceDoc(cmView.state.selection.main.from, cmView.state.selection.main.to) : ''
-  };
-  editAiSnapshot = {
-    tabId: state.activeTabId, name: state.sourceName, path: state.file, dir: state.dir,
-    docText: currentDocStr,
-    range: { ...range },
-    hadSelection: range.from !== range.to && Boolean(range.text)
-  };
-  const skillByAction = { complete: 'readmd-continue', polish: 'readmd-polish', fix: 'readmd-format-fix', translate: 'readmd-translate' };
-  const skillId = skillByAction[act] || 'readmd-polish';
-  let userMessage = '';
-  const sourceText = range.text || currentDocStr;
-
-  if (act === 'complete') {
-    userMessage = customPrompt || '';
-  } else if (act === 'polish') {
-    userMessage = customPrompt || '';
-  } else if (act === 'fix') {
-    userMessage = customPrompt || '';
-  } else if (act === 'translate') {
-    userMessage = customPrompt || '';
-  } else {
-    userMessage = customPrompt || '';
-  }
-
   editAiCurrentResult = '';
-
   try {
-    const connection = typeof ensureAiConfigured === 'function'
-      ? await ensureAiConfigured()
-      : (typeof resolveSharedAiConnection === 'function' ? await resolveSharedAiConnection() : null);
-    if (!connection) {
-      if (statusEl) statusEl.textContent = _t('toast.noApiKeyNotice');
-      return;
+    const stamp = await ReadMDReview.capture(tab);
+    if (!stamp || epoch !== editAiRequestEpoch || getActiveTab() !== tab || cmView !== view) return;
+    const range = editAiSelectionRange || { from: view.state.selection.main.from, to: view.state.selection.main.to, text: '' };
+    if (range.from < 0 || range.to > stamp.content.length || (range.text && stamp.content.slice(range.from, range.to) !== range.text)) throw new Error(window.i18n.t('review.conflict'));
+    editAiSnapshot = { tabId: tab.id, name: tab.name, path: tab.path, dir: tab.dir, docText: stamp.content,
+      reviewStamp: stamp, range: { ...range }, hadSelection: range.from !== range.to && Boolean(range.text) };
+    const connection = typeof ensureAiConfigured === 'function' ? await ensureAiConfigured() : await resolveSharedAiConnection();
+    if (!connection || epoch !== editAiRequestEpoch || getActiveTab() !== tab || cmView !== view) return;
+    const skills = { complete: 'readmd-continue', polish: 'readmd-polish', fix: 'readmd-format-fix', translate: 'readmd-translate' };
+    const labels = { complete: 'editai.actComplete', polish: 'editai.actPolish', fix: 'editai.actFix', translate: 'editai.actTranslate' };
+    await ReadMDReview.runAi({ request: customPrompt || window.i18n.t(labels[act] || 'ai.polish'),
+      skill_id: skills[act] || 'readmd-polish', provider: connection.provider, credential_id: connection.credential_id,
+      model: connection.model, task_id: taskId, signal: aborter.signal,
+      ranges: range.from !== range.to ? [{ from: range.from, to: range.to }] : undefined }, stamp, tab);
+    if (epoch === editAiRequestEpoch && getActiveTab() === tab && cmView === view) {
+      closeEditAiBar(); showToast(window.i18n.t('review.pending'));
     }
-    if (epoch !== editAiRequestEpoch) return;
-    const res = await apiFetch('/api/ai/chat', {
-      signal: aborter.signal,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: connection.provider,
-        credential_id: connection.credential_id,
-        model: connection.model,
-        base_url: connection.base_url,
-        mode: connection.mode,
-        endpoint_mode: connection.endpoint_mode,
-        headers: connection.headers,
-        skill_id: skillId,
-        skill_variables: {
-          document: range.context || sourceText,
-          selection: sourceText,
-          request: userMessage,
-          language: (window.i18n && window.i18n.locale) || document.documentElement.lang || 'en',
-          context: range.context || '',
-          output_format: 'Markdown'
-        },
-        messages: [{ role: 'user', content: userMessage || 'Apply the requested editing action to the supplied Markdown.' }],
-        stream: false
-      })
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      let errMsg = 'HTTP ' + res.status;
-      try {
-        const errJson = JSON.parse(errText);
-        if (errJson.error) errMsg = errJson.error;
-      } catch (e) {
-        if (errText) errMsg = errText.slice(0, 100);
-      }
-      throw new Error(errMsg);
+  } catch (error) {
+    if (epoch === editAiRequestEpoch && getActiveTab() === tab && cmView === view) {
+      if (statusEl) statusEl.textContent = window.i18n.t(error.code === 'cancelled' ? 'ai.stopped' : /conflict|stale/.test(error.code || '') ? 'review.conflict' : 'review.persistenceFailed');
+      const errorKey = 'error.' + error.code, localized = window.i18n.t(errorKey);
+      if (previewContent) previewContent.textContent = error.code && localized !== errorKey ? localized : (error.message || window.i18n.t('review.aiFailed'));
     }
-
-    let resultText = '';
-    const contentType = res.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      const data = await res.json();
-      if (data.ok === false) throw new Error(data.error || _t('audit.invalidResponse'));
-      resultText = data.content || (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-    } else {
-      const rawText = await res.text();
-      const lines = rawText.split('\n');
-      const chunks = [];
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          const jsonStr = line.slice(5).trim();
-          if (jsonStr && jsonStr !== '[DONE]') {
-            try {
-              const d = JSON.parse(jsonStr);
-              if (d.d) chunks.push(d.d);
-              else if (d.content) chunks.push(d.content);
-            } catch (e) {}
-          }
-        }
-      }
-      resultText = chunks.length ? chunks.join('') : rawText;
-    }
-
-    if (epoch !== editAiRequestEpoch) return;
-    if (!resultText.trim()) throw new Error(_t('audit.emptyAiResult'));
-    editAiCurrentResult = resultText;
-    ['edit-ai-apply', 'edit-ai-insert'].forEach(id => { if ($(id)) $(id).disabled = false; });
-    if (previewContent) {
-      previewContent.textContent = resultText;
-    }
-    if (statusEl) statusEl.textContent = _t('editai.title') || '';
-  } catch (err) {
-    if (epoch !== editAiRequestEpoch || err.name === 'AbortError') return;
-    if (statusEl) statusEl.textContent = (_t('ai.reqFailMsg') || '') + err.message;
-    if (previewContent) previewContent.textContent = err.message;
   } finally {
     if (epoch === editAiRequestEpoch) {
       editAiRunning = false;
       editAiAborter = null;
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('btn-loading'); }
-      chips.forEach(c => { c.disabled = false; });
+      if (submit) { submit.disabled = false; submit.classList.remove('btn-loading'); }
+      chips.forEach(chip => { chip.disabled = false; });
     }
   }
 }
@@ -1845,77 +1903,40 @@ function preserveEditAiCopy() {
   const result = editAiCurrentResult;
   const origin = editAiSnapshot || {};
   closeEditAiBar();
-  showToast(window.i18n.t('toast.appliedSelectionFallback'));
+  showToast(window.i18n.t('storage.aiSafeCopy'));
   return renderVirtual('ai', getNextAiCopyTabName(origin.name || state.sourceName), origin.dir || '', result, [], { originPath: origin.path });
 }
 
 async function applyEditAiResult() {
-  if (editAiRunning) return;
-  if (!cmView || !editAiCurrentResult) {
-    closeEditAiBar();
-    return;
+  if (editAiRunning || !editAiCurrentResult) return;
+  const origin = editAiSnapshot, view = cmView, tab = getActiveTab();
+  if (!view || !origin?.reviewStamp || origin.tabId !== tab?.id || !window.ReadMDReview) return preserveEditAiCopy();
+  const from = origin.range.from, to = origin.range.to;
+  if (view.state.doc.toString() !== origin.docText || view.state.sliceDoc(from, to) !== (origin.range.text || '')) return preserveEditAiCopy();
+  try {
+    await ReadMDReview.propose([{ from, to, insert: editAiCurrentResult }], origin.reviewStamp, tab);
+    if (getActiveTab() === tab && cmView === view) closeEditAiBar();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return preserveEditAiCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
-  const currentDoc = cmView.state.doc.toString();
-  let from = 0, to = 0;
-
-  if (editAiSnapshot && editAiSnapshot.hadSelection) {
-    const origText = editAiSnapshot.range.text;
-    const snapFrom = editAiSnapshot.range.from;
-    const snapTo = editAiSnapshot.range.to;
-    if (snapFrom >= 0 && snapTo <= currentDoc.length && cmView.state.sliceDoc(snapFrom, snapTo) === origText) {
-      from = snapFrom;
-      to = snapTo;
-    } else {
-      const firstIdx = currentDoc.indexOf(origText);
-      const secondIdx = firstIdx >= 0 ? currentDoc.indexOf(origText, firstIdx + 1) : -1;
-      if (firstIdx >= 0 && secondIdx < 0) {
-        from = firstIdx;
-        to = firstIdx + origText.length;
-      } else {
-        return preserveEditAiCopy();
-      }
-    }
-  } else {
-    const curSel = cmView.state.selection.main;
-    from = curSel ? curSel.from : 0;
-    to = curSel ? curSel.to : 0;
-  }
-
-  const view = cmView, tabId = state.activeTabId;
-  if (!await window.ReadMDRecovery?.checkpoint('ai_replace')) return;
-  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== currentDoc) return preserveEditAiCopy();
-  cmView.dispatch({
-    changes: { from, to, insert: editAiCurrentResult },
-    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.apply'),
-    selection: { anchor: from + editAiCurrentResult.length },
-    scrollIntoView: true
-  });
-  closeEditAiBar();
-  showToast(_t('toast.appliedSavedNotice') || '已应用到正文（可按 Ctrl+Z 撤回，Ctrl+S 保存）');
 }
 
 async function insertEditAiResult() {
-  if (editAiRunning) return;
-  if (!cmView || !editAiCurrentResult) {
-    closeEditAiBar();
-    return;
+  if (editAiRunning || !editAiCurrentResult) return;
+  const origin = editAiSnapshot, tab = getActiveTab(), view = cmView;
+  if (!view || !origin?.reviewStamp || origin.tabId !== tab?.id || view.state.doc.toString() !== origin.docText) return preserveEditAiCopy();
+  const pos = origin.range.to;
+  try {
+    await ReadMDReview.propose([{ from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' }], origin.reviewStamp, tab);
+    if (getActiveTab() === tab && cmView === view) closeEditAiBar();
+    showToast(window.i18n.t('review.pending'));
+  } catch (error) {
+    if (/stale|conflict|budget/.test(error.code || '')) return preserveEditAiCopy();
+    showToast(window.i18n.t('review.persistenceFailed'));
   }
-  if (editAiSnapshot && 'tabId' in editAiSnapshot && state.activeTabId !== editAiSnapshot.tabId) return preserveEditAiCopy();
-  const sel = cmView.state.selection.main;
-  const pos = sel ? sel.to : cmView.state.doc.length;
-  const view = cmView, tabId = state.activeTabId, before = cmView.state.doc.toString();
-  if (!await window.ReadMDRecovery?.checkpoint('ai_insert')) return;
-  if (cmView !== view || state.activeTabId !== tabId || cmView.state.doc.toString() !== before) return preserveEditAiCopy();
-  cmView.dispatch({
-    changes: { from: pos, to: pos, insert: '\n' + editAiCurrentResult + '\n' },
-    annotations: window.ReadMDCodeMirror.Transaction.userEvent.of('ai.insert'),
-    selection: { anchor: pos + editAiCurrentResult.length + 2 }
-  });
-  closeEditAiBar();
 }
-
 function discardEditAiResult() {
   closeEditAiBar();
 }
@@ -2192,8 +2213,8 @@ function cmBacktickInput(view, from) {
   return true;
 }
 
-/* Paste: images are saved next to the document, tab-separated cells become
-   a table (both via handleSmartExcelPaste); a URL pasted over a selection
+/* Paste: images are saved next to the document, TSV / explicitly typed CSV
+   becomes a table (both via handleSmartExcelPaste); a URL over a selection
    becomes a link (CodeMirror's pasteURLAsLink handles that next). */
 function cmHandlePaste(event, view) {
   if (view !== cmView) return false;

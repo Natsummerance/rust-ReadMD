@@ -65,6 +65,13 @@ fn bad(code: &'static str) -> ApiError {
 fn string<'a>(v: &'a Value, key: &str) -> ApiResult<&'a str> {
     v[key].as_str().ok_or_else(|| bad("collaboration_invalid"))
 }
+fn optional_string<'a>(v: &'a Value, key: &str) -> ApiResult<Option<&'a str>> {
+    match v.get(key) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(bad("collaboration_invalid")),
+    }
+}
 fn role(v: &Value) -> ApiResult<Role> {
     serde_json::from_value(v.clone()).map_err(|_| bad("collaboration_invalid"))
 }
@@ -83,7 +90,10 @@ pub fn session_request(
             room,
             secret,
             string(&v, "vector")?,
-            v["update"].as_str(),
+            // Only omission means a read-only sync. A malformed submitted
+            // delta must never receive the acknowledgement used to clear the
+            // client's durable offline queue.
+            optional_string(&v, "update")?,
             v.get("presence").filter(|v| !v.is_null()).cloned(),
         ),
         "snapshot" => service.snapshot(room, secret),
@@ -91,14 +101,17 @@ pub fn session_request(
             json!({"ok":true,"credential":service.invite(room,secret,role(&v["role"])?,v["name"].as_str().unwrap_or(""))?}),
         ),
         "permission" => {
+            // Missing fields are not a revocation request. Both role changes
+            // and revocation must be explicit before changing durable access.
+            let requested_role = v.get("role").ok_or_else(|| bad("collaboration_invalid"))?;
             service.permission(
                 room,
                 secret,
                 string(&v, "member")?,
-                if v["role"].is_null() {
+                if requested_role.is_null() {
                     None
                 } else {
-                    Some(role(&v["role"])?)
+                    Some(role(requested_role)?)
                 },
             )?;
             Ok(json!({"ok":true}))
@@ -493,3 +506,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "collaboration_host_contract_tests.rs"]
+mod contract_tests;

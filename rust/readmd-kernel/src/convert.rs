@@ -953,12 +953,102 @@ pub fn write_md_managed(data_dir: &Path, path: &str, content: &str, overwrite: b
 }
 
 pub(crate) fn write_md_managed_locked(data_dir: &Path, path: &str, content: &str, overwrite: bool) -> Result<(), String> {
-    let target = Path::new(path);
-    if target.exists() && !overwrite { return Err("output_exists".into()); }
-    if target.is_file() && fs::read(target).ok().as_deref() == Some(content.as_bytes()) { return Ok(()); }
-    crate::document_history::checkpoint_file(data_dir, target, "conversion_overwrite")?;
-    write_md(path, content)
+    let gate=crate::document_operations::acquire(data_dir,std::time::Duration::from_secs(3)).map_err(|e|e.code().to_string())?;
+    let plan=capture_md_output_plan_guarded(data_dir,Path::new(path),overwrite,&gate)?;
+    write_md_output_plan_guarded(data_dir,&plan,content,&gate,||!crate::speech::cancelled())
 }
+
+#[derive(Clone, Debug)]
+enum MdTargetBefore { Missing, Existing(crate::document_operations::FileFingerprint) }
+
+/// A conversion's output choice is captured before its long parser/OCR work.
+/// It is an expected-before witness, never a filesystem access credential.
+#[derive(Clone, Debug)]
+pub(crate) struct MdOutputPlan {
+    target: PathBuf,
+    before: MdTargetBefore,
+}
+impl MdOutputPlan {
+    pub(crate) fn target(&self) -> &Path { &self.target }
+}
+
+pub(crate) fn capture_md_output_plan(data_dir: &Path, target: &Path, overwrite: bool) -> Result<MdOutputPlan, String> {
+    let _saving=crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e|e.into_inner());
+    let gate=crate::document_operations::acquire(data_dir,std::time::Duration::from_secs(3)).map_err(|e|e.code().to_string())?;
+    capture_md_output_plan_guarded(data_dir,target,overwrite,&gate)
+}
+
+fn capture_md_output_plan_guarded(data_dir: &Path, target: &Path, overwrite: bool, gate: &crate::document_operations::Guard) -> Result<MdOutputPlan, String> {
+    gate.verify_profile(data_dir).map_err(|e|e.code().to_string())?;
+    let target=if target.is_absolute() { target.to_path_buf() } else { std::env::current_dir().map_err(|_|"document_operation_path".to_string())?.join(target) };
+    if crate::review_api::pending_rename_in_profile(data_dir,&target).map_err(|e|e.code)?.is_some() { return Err("rename_recovery_pending".into()); }
+    if !overwrite {
+        // An existing output is a skip, including a directory or link. This
+        // does not read a large existing document merely to decline overwrite.
+        gate.verify_missing(&target).map_err(|e|if e.kind==crate::document_operations::ErrorKind::TargetExists {"output_exists".to_string()} else {e.code().to_string()})?;
+    }
+    let before=match crate::document_operations::observe(&target,crate::document_operations::MAX_CAPTURE_BYTES).map_err(|e|e.code().to_string())? {
+        crate::document_operations::Observation::Missing=>MdTargetBefore::Missing,
+        crate::document_operations::Observation::Regular(_) if !overwrite=>return Err("output_exists".into()),
+        crate::document_operations::Observation::Regular(file)=>MdTargetBefore::Existing(file.fingerprint().clone()),
+        crate::document_operations::Observation::Unsupported(_)=>return Err("document_operation_unsupported".into()),
+    };
+    Ok(MdOutputPlan {target,before})
+}
+
+/// Caller holds SAVE_LOCK -> this profile gate. Both resources and document
+/// publication/rollback must stay inside it when resources can be shared.
+pub(crate) fn verify_md_output_plan(data_dir: &Path, plan: &MdOutputPlan, gate: &crate::document_operations::Guard) -> Result<(), String> {
+    gate.verify_profile(data_dir).map_err(|e|e.code().to_string())?;
+    if crate::review_api::pending_rename_in_profile(data_dir,&plan.target).map_err(|e|e.code)?.is_some() { return Err("rename_recovery_pending".into()); }
+    match &plan.before {
+        MdTargetBefore::Missing=>gate.verify_missing(&plan.target).map_err(|e|e.code().to_string()),
+        MdTargetBefore::Existing(before)=>gate.verify_existing(&plan.target,before,crate::document_operations::MAX_CAPTURE_BYTES).map(|_|()).map_err(|e|e.code().to_string()),
+    }
+}
+
+pub(crate) fn write_md_output_plan(data_dir: &Path, plan: &MdOutputPlan, content: &str) -> Result<(), String> {
+    write_md_output_plan_with_commit(data_dir,plan,content,||!crate::speech::cancelled())
+}
+
+pub(crate) fn write_md_output_plan_with_commit(data_dir: &Path, plan: &MdOutputPlan, content: &str, before_publish: impl FnOnce()->bool) -> Result<(), String> {
+    let _saving=crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e|e.into_inner());
+    let gate=crate::document_operations::acquire(data_dir,std::time::Duration::from_secs(3)).map_err(|e|e.code().to_string())?;
+    write_md_output_plan_guarded(data_dir,plan,content,&gate,before_publish)
+}
+
+pub(crate) fn write_md_output_plan_guarded(data_dir: &Path, plan: &MdOutputPlan, content: &str, gate: &crate::document_operations::Guard, before_publish: impl FnOnce()->bool) -> Result<(), String> {
+    use std::io::Write;
+    verify_md_output_plan(data_dir,plan,gate)?;
+    if matches!(&plan.before,MdTargetBefore::Existing(before) if before.revision==sha256_hex(content.as_bytes())) { return Ok(()); }
+    if matches!(&plan.before,MdTargetBefore::Existing(_)) {
+        crate::document_history::checkpoint_file(data_dir,&plan.target,"conversion_overwrite").map_err(|_|"conversion_checkpoint_failed".to_string())?;
+    }
+    let parent=plan.target.parent().ok_or_else(||"document_operation_path".to_string())?;
+    let mut temporary=tempfile::Builder::new().prefix(".readmd-convert-").tempfile_in(parent).map_err(|_|"conversion_write_failed".to_string())?;
+    temporary.write_all(content.as_bytes()).map_err(|_|"conversion_write_failed".to_string())?;
+    if matches!(&plan.before,MdTargetBefore::Existing(_)) {
+        let permissions=fs::metadata(&plan.target).map_err(|_|"document_operation_identity_changed".to_string())?.permissions();
+        temporary.as_file().set_permissions(permissions).map_err(|_|"conversion_write_failed".to_string())?;
+    }
+    temporary.as_file().sync_all().map_err(|_|"conversion_write_failed".to_string())?;
+    // Recheck after checkpoint/resource/temporary-file I/O. Cooperating same
+    // profile writers hold this gate; external changes still are not an inode
+    // CAS between this check and an explicitly authorized overwrite.
+    verify_md_output_plan(data_dir,plan,gate)?;
+    let private_output=crate::task_workspace::track_atomic(&temporary,&plan.target).map_err(|_|"conversion_write_failed".to_string())?;
+    if !before_publish() { return Err("cancelled".into()); }
+    if matches!(&plan.before,MdTargetBefore::Missing) || private_output {
+        temporary.persist_noclobber(&plan.target).map_err(|e|if e.error.kind()==std::io::ErrorKind::AlreadyExists {"document_operation_target_exists".to_string()} else {"conversion_write_failed".to_string()})?;
+    } else {
+        temporary.persist(&plan.target).map_err(|_|"conversion_write_failed".to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "convert_commit_tests.rs"]
+mod commit_tests;
 
 fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
@@ -3930,7 +4020,7 @@ fn doc_to_md(path: &str, _form_tables: bool) -> Result<ConvertResult, String> {
 // file, 72-byte content streams holding a single `/Obj4 Do` image draw and zero
 // `Tj`/`TJ`/`Tf` operators) it transcribed the phone number as `183 钓 469523` at the
 // current render scale and `1836 69523` at 200 and 288 dpi, while the authority answers
-// `18360469523` (see `scratch/rust_parity/fixreport-convert-pdfscan-s2.md`; the 2498-char
+// `[contact-redacted]` (see `scratch/rust_parity/fixreport-convert-pdfscan-s2.md`; the 2498-char
 // authority recording is `scratch/rust_parity/wb7/py_pdf_out.txt`).  Feeding a page to an
 // engine other than the one the product reports is how invented text reaches a "successful"
 // conversion.
@@ -3968,7 +4058,7 @@ fn doc_to_md(path: &str, _form_tables: bool) -> Result<ConvertResult, String> {
 /// operator), both document-wide text tiers answer 0 chars / 0 bytes — there is nothing
 /// there to decode, and PyMuPDF likewise sees 0 chars per page.  That fixture is therefore
 /// refused by the empty text rather than by the shape of the text; the invented
-/// transcription `183 钓 469523` (document says `联系电话 18360469523`) came from the render
+/// transcription `183 钓 469523` (document says `联系电话 [contact-redacted]`) came from the render
 /// rung's own host recogniser, not from a text tier.  The authority for the file is the
 /// 2498-char OCR recording in `scratch/rust_parity/wb7/py_pdf_out.txt`.
 ///
@@ -8005,7 +8095,7 @@ mod pdf_tests {
                 // MuPDF could map; Python sends such a page to the render+OCR rung
                 // (`convert.py:2265-2277`) and the authority for this fixture is the
                 // 2498-char recording in `scratch/rust_parity/wb7/py_pdf_out.txt`
-                // (`联系电话 18360469523`).
+                // (`联系电话 [contact-redacted]`).
                 //
                 // Corrected attribution: `183 钓 469523` was *not* the text tiers.  Measured
                 // on this fixture, every one of its five content streams is 72 bytes holding

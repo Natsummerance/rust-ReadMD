@@ -439,12 +439,6 @@
     "requirement": "3.12"
   },
   {
-    "path": "rust/readmd-kernel/src/server.rs",
-    "pattern": "\"\\.py\"",
-    "reason": "File-extension table for the open dialog filter.",
-    "requirement": "3.12"
-  },
-  {
     "path": "rust/readmd-kernel/src/skill_import.rs",
     "pattern": "\\.py\"",
     "reason": "Skill import classifies .py files as inert script data (never executed).",

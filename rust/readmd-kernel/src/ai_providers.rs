@@ -1328,6 +1328,10 @@ pub struct RouteArgs {
 pub struct ResolvedRoute {
     pub target: RouteTarget,
     pub args: RouteArgs,
+    /// Native tool protocol selected from the configured API format/mode.
+    /// Review must not infer a wire protocol from a model name or silently
+    /// inherit the text-chat fallback for unknown formats/modes.
+    pub tool_protocol: Option<&'static str>,
 }
 
 /// Everything `chat()` reads out of the persisted configuration.
@@ -1511,8 +1515,20 @@ pub fn resolve_chat(
         RouteTarget::Chat
     };
 
+    // Keep legacy chat dispatch unchanged. The bounded review bridge accepts
+    // only explicit native tool protocols; completion/Responses and unknown
+    // modes are deliberately outside this first workflow.
+    let tool_protocol = match (fmt.trim().to_ascii_lowercase().as_str(), mode.as_str()) {
+        ("openai", "auto" | "chat" | "chat_completions") => Some("chat_completions"),
+        ("openai" | "anthropic", "messages" | "anthropic")
+        | ("anthropic", "auto") => Some("anthropic"),
+        ("gemini", "auto" | "gemini" | "generate_content") => Some("gemini"),
+        _ => None,
+    };
+
     Ok(ResolvedRoute {
         target,
+        tool_protocol,
         args: RouteArgs {
             base_url,
             api_key,

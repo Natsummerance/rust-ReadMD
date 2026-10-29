@@ -32,6 +32,10 @@ const MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
 /// Tools that write files, touch the network or run code.
 const CONFIRM_REQUIRED: &[&str] = &[
     "readmd_pdf_document",
+    "readmd_review_document",
+    "readmd_review_ai",
+    "readmd_export_snapshot",
+    "readmd_ai_task",
     "readmd_web_to_markdown",
     "readmd_export_document",
     "readmd_export_presentation",
@@ -99,6 +103,52 @@ fn pdf_document_schema()->Value{
     props.as_object_mut().unwrap().extend(json!({"checkpoint":{"type":"string"},"expected_source_revision":{"type":"string"},"password":{"type":"string"},"allow_signatures":{"type":"boolean"},"discard":{"type":"boolean"},"confirm":confirm_prop()}).as_object().unwrap().clone());
     schema(props,&["action","confirm"])
 }
+fn review_document_schema()->Value {
+    let mut value=schema(json!({
+        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard"]},
+        "path":{"type":"string","minLength":1},"content":{"type":"string"},"document_id":{"type":"string","minLength":1,"maxLength":256},
+        "generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
+        "call_id":{"type":"string","minLength":1,"maxLength":256},"origin":{"type":"string","enum":["editor","ai"]},
+        "edits":{"type":"array","minItems":1,"maxItems":4096,"items":{"type":"object","required":["from","to","insert"],"additionalProperties":false,"properties":{
+            "from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"insert":{"type":"string"}}}},
+        "ids":{"type":"array","minItems":1,"maxItems":4096,"uniqueItems":true,"items":{"type":"string","minLength":1}},"decision":{"type":"string","enum":["accept","withdraw"]},
+        "resolution":{"type":"string","enum":["keep_current"]},
+        "task_id":{"type":"string","minLength":1,"maxLength":128},"confirm":confirm_prop()
+    }), &["action","confirm"]);
+    // Validate each operation's required fields before it can authorize a file
+    // or create the durable store. The outer schema owns all property types.
+    value["oneOf"]=json!([
+        {"type":"object","properties":{"action":{"const":"open"}},"required":["path"]},
+        {"type":"object","properties":{"action":{"const":"read"}},"required":["document_id"]},
+        {"type":"object","properties":{"action":{"enum":["edit","propose"]}},"required":["document_id","generation","review_revision","call_id","edits"]},
+        {"type":"object","properties":{"action":{"const":"resolve"}},"required":["document_id","generation","review_revision","call_id","ids","decision"]},
+        {"type":"object","properties":{"action":{"enum":["undo","redo","discard"]}},"required":["document_id","generation","review_revision","call_id"]},
+    ]);
+    value
+}
+fn review_ai_schema()->Value {
+    schema(json!({"document_id":{"type":"string","minLength":1,"maxLength":256},"generation":{"type":"integer","minimum":0},
+        "review_revision":{"type":"integer","minimum":0},"call_id":{"type":"string","minLength":1,"maxLength":128},
+        "request":{"type":"string","minLength":1,"maxLength":32768},"task_id":{"type":"string","minLength":1,"maxLength":128},
+        "provider":{"type":"string"},"credential_id":{"type":"string"},"model":{"type":"string"},
+        "ranges":{"type":"array","minItems":1,"maxItems":4096,"items":{"type":"object","required":["from","to"],"additionalProperties":false,
+            "properties":{"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0}}}},"confirm":confirm_prop()}),
+        &["document_id","generation","review_revision","call_id","request","confirm"])
+}
+fn ai_task_schema()->Value{
+    let mut value=review_ai_schema();value["required"]=json!(["action","confirm"]);
+    let props=value["properties"].as_object_mut().unwrap();
+    props.insert("action".into(),json!({"enum":["start","list","status","pause","resume","tools"]}));
+    props.insert("after_event_id".into(),json!({"type":"integer","minimum":0}));
+    props.insert("skill_id".into(),json!({"type":"string"}));props.insert("language".into(),json!({"type":"string"}));
+    props.insert("budget".into(),json!({"type":"object","properties":{"max_rounds":{"type":"integer","minimum":1,"maximum":256},"max_elapsed_ms":{"type":"integer","minimum":1,"maximum":7200000}},"required":["max_rounds","max_elapsed_ms"],"additionalProperties":false}));value
+}
+fn export_snapshot_schema()->Value{
+    schema(json!({"action":{"enum":["prepare","status","runtime","figures","commit","reconcile","discard"]},"document_id":{"type":"string"},"generation":{"type":"integer","minimum":0},
+        "review_revision":{"type":"integer","minimum":0},"snapshot_id":{"type":"string"},"call_id":{"type":"string"},"task_id":{"type":"string"},
+        "format":{"enum":["html","pdf","docx","epub","tex"]},"suggestedName":{"type":"string"},"options":{"type":"object"},"rendered":{"type":"array"},
+        "accept_pending":{"type":"boolean"},"out_path":{"type":"string"},"overwrite":{"type":"boolean"},"confirm":confirm_prop()}),&["action","confirm"])
+}
 pub fn tools() -> Value {
     // Keep nested option schemas outside the large tool-list macro.
     let epub_navigation_schema=json!({"anyOf":[crate::publication_navigation::request_schema(),{"type":"null"}]});
@@ -115,7 +165,7 @@ pub fn tools() -> Value {
           "inputSchema":schema(json!({"action":{"type":"string","enum":["list","apply"]},"content":{"type":"string"},"base_revision":{"type":"string"},"id":{"type":"string"},"patch":{"type":"object"}}), &["content"]) },
         { "name":"readmd_publication_numbering", "description":"Read or edit source-owned heading and equation/figure/table numbering. Apply requires base_revision and config (null clears). Returns one reversible content transaction, stable identities and the effective plan. Never writes files or changes export preferences.",
           "inputSchema":crate::cross_references::numbering_request_schema() },
-        { "name":"readmd_openapi_document", "description":"Generate or update a provenance-tracked Markdown region from local OpenAPI 3.0/3.1 JSON or YAML. Returns a revision-checked transaction, operation changes, source maps and unresolved-reference diagnostics. Preserves surrounding prose and refuses to overwrite manual edits. Never writes files or fetches references.",
+        { "name":"readmd_openapi_document", "description":"Generate or update a provenance-tracked Markdown region from local OpenAPI 3.0/3.1 JSON or YAML. Returns a revision-checked transaction, operation changes, source maps and unresolved-reference diagnostics. Preserves surrounding prose and refuses to overwrite manual edits. Resolves bounded local references within the source directory and includes them in the source revision. Never writes files or fetches references over the network.",
           "inputSchema":schema(json!({"source":{"type":"string"},"source_name":{"type":"string"},"source_id":{"type":"string"},"file_path":{"type":"string"},"content":{"type":"string"},"base_revision":{"type":"string"},"expected_source_revision":{"type":"string"},"locale":{"type":"string"}}), &["content","base_revision"]) },
         { "name":"readmd_pdf_document", "description":"Use the desktop PDF object editor and managed offline PDFium worker. Open/render/edit/undo/redo/save/recovery share revision-guarded drafts. Only save modifies the original PDF. Requires the matching installed capability pack and explicit confirmation; never returns passwords.",
           "inputSchema":pdf_document_schema() },
@@ -253,13 +303,23 @@ pub fn tools() -> Value {
         "name":"readmd_publication_inline_text", "description":"Read source-bound author text spans or plan one reversible UTF-16 range edit. Western size and complex-script size are independent. Null clears direct formatting; base resets to the paragraph base. No file writes; revisions, nesting and atomic source targets are checked.",
         "inputSchema":crate::publication_inline_text::request_schema()
     }));
+    list.as_array_mut().unwrap().push(json!({
+        "name":"readmd_review_document", "description":"Use the desktop durable content and inline review service. Open authorizes exactly the requested file, never its parent directory. UTF-16 edits require generation, review_revision and call_id. Review decisions, undo and drafts survive restart. No disk save is performed.",
+        "inputSchema":review_document_schema()
+    }));
+    list.as_array_mut().unwrap().push(json!({
+        "name":"readmd_review_ai", "description":"Run native read_document then propose_review model tools against an authorized current working document. Uses private configured provider credentials. Returns only Rust-confirmed, revision-checked durable review changes, never raw secrets. Does not save the source file.",
+        "inputSchema":review_ai_schema()
+    }));
+    list.as_array_mut().unwrap().push(json!({"name":"readmd_ai_task","description":"Start, inspect, pause or explicitly resume a durable native-tool task on an authorized document. Defaults to cumulative 64 rounds/30 minutes; startup never automatically resumes. The tools action returns the kernel's shared native tool registry. No source save or export tool is granted to the model.","inputSchema":ai_task_schema()}));
+    list.as_array_mut().unwrap().push(json!({"name":"readmd_export_snapshot","description":"Freeze authoritative reviewed content, byte-stable resources and style provenance, then commit an immutable HTML/PDF/DOCX/EPUB/TeX result. Accept only matching frozen changes after verified publication. Commit needs an explicit out_path; overwrite requires true. Reconcile verifies prior output without overwriting it.","inputSchema":export_snapshot_schema()}));
     for tool in list.as_array_mut().unwrap() {
         let name = tool["name"].as_str().unwrap_or("");
         let read_only = matches!(name, "readmd_fix_markdown" | "readmd_generate_toc" | "readmd_latex_to_md" | "readmd_md_to_latex" | "readmd_latex_to_omml" | "readmd_parse_bibtex" | "readmd_process_imports" | "readmd_ai_assistant" | "readmd_ai_providers" | "readmd_export_presets" | "readmd_pdf_audit");
         let read_only = read_only || matches!(name, "readmd_analyze_document" | "readmd_search_workspace" | "readmd_read_document" | "readmd_document_history");
         let read_only = read_only || matches!(name, "readmd_ai_complete" | "readmd_suggest_links" | "readmd_resolve_link");
         let read_only = read_only || matches!(name, "readmd_math" | "readmd_content_transaction" | "readmd_academic_document" | "readmd_openapi_document" | "readmd_publication_blocks" | "readmd_publication_inline_text" | "readmd_publication_metadata" | "readmd_publication_numbering" | "readmd_publication_profile");
-        let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_complete" | "readmd_ai_models" | "readmd_run_code_chunk");
+        let open_world = matches!(name, "readmd_web_to_markdown" | "readmd_ai_chat" | "readmd_ai_complete" | "readmd_ai_models" | "readmd_review_ai" | "readmd_ai_task" | "readmd_run_code_chunk");
         tool["annotations"] = json!({ "readOnlyHint": read_only, "destructiveHint": !read_only, "idempotentHint": read_only && name != "readmd_ai_complete", "openWorldHint": open_world });
     }
     list
@@ -487,6 +547,9 @@ fn call_tool_cancellable(app: &Arc<App>, name: &str, args: &Value, cancel: Optio
     if name == "readmd_ai_chat" && (args.get("api_key").is_some() || args.get("key").is_some()) {
         return error_result("raw_key_rejected", None);
     }
+    if matches!(name,"readmd_review_document"|"readmd_review_ai") && args.as_object().is_some_and(|object|object.keys().any(|key|{
+        matches!(key.to_ascii_lowercase().as_str(),"key"|"api_key"|"api-key"|"apikey"|"access_token"|"token"|"authorization"|"headers"|"secret"|"password"|"requestrawkey")
+    })) {return error_result("raw_key_rejected",None);}
     if let Err(code) = validate_tool_arguments(name, args) {
         return error_result(code, None);
     }
@@ -508,6 +571,15 @@ fn validate_tool_arguments(name: &str, args: &Value) -> Result<(), &'static str>
         let from = arg_i64(args, "depth_from", 1);
         let to = arg_i64(args, "depth_to", 6);
         if !(1..=6).contains(&from) || !(from..=6).contains(&to) { return Err("invalid_arguments"); }
+    }
+    if name=="readmd_review_document" && args["action"]=="open"
+        && args["path"].as_str().is_some_and(|path|path.starts_with("draft:")) && args.get("content").is_none() {
+        return Err("invalid_arguments");
+    }
+    if name=="readmd_review_ai" {
+        let request=args["request"].as_str().ok_or("invalid_arguments")?;
+        let task=args.get("task_id").unwrap_or(&args["call_id"]).as_str().ok_or("invalid_arguments")?;
+        if request.trim().is_empty()||request.len()>32*1024||!crate::cancel::valid_id(task) {return Err("invalid_arguments");}
     }
     Ok(())
 }
@@ -564,6 +636,21 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
         "readmd_pdf_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/pdf/workspace",Some(args))?))),
         "readmd_academic_document" => Ok(json_result(&api(app,"POST","/api/academic/document",Some(args))?)),
         "readmd_openapi_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/developer/openapi",Some(args))?))),
+        "readmd_review_document" | "readmd_review_ai" => {
+            let mut body=args.clone();body.as_object_mut().unwrap().remove("confirm");
+            if name=="readmd_review_document" && body["action"]=="open" {
+                let path=arg_str(&body,"path","");
+                if !path.starts_with("draft:") {
+                    let path=existing_file(&path)?;
+                    let encoded=percent_encoding::utf8_percent_encode(&path.to_string_lossy(),percent_encoding::NON_ALPHANUMERIC).to_string();
+                    let _=api(app,"GET",&format!("/api/file?p={encoded}"),None)?;
+                }
+            }
+            let route=if name=="readmd_review_ai"{"/api/review/ai"}else{"/api/review"};
+            check_cancel(cancel)?;
+            let output=crate::cancel::with_external(cancel,||api(app,"POST",route,Some(&body)))?;
+            Ok(json_result(&output))
+        },
         "readmd_content_transaction" => Ok(json_result(&api(app,"POST","/api/documents/transaction",Some(args))?)),
         "readmd_math" => {
             let operation=args["operation"].as_str().unwrap_or("parse");
@@ -673,6 +760,28 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
             Ok(text_result(text))
         }
         "readmd_export_document" => export_document(app, args, cancel),
+        "readmd_ai_task"|"readmd_export_snapshot"=>{
+            let mut body=args.clone();body.as_object_mut().unwrap().remove("confirm");
+            if name=="readmd_export_snapshot"&&body["action"]=="commit"{
+                let id=body["snapshot_id"].as_str().ok_or_else(||error_result("invalid_arguments",None))?;
+                let meta=crate::export_snapshot::Service::new(&app.paths.data_dir).get(id).map_err(|code|error_result(code,None))?;
+                let format=meta["format"].as_str().ok_or_else(||error_result("invalid_arguments",None))?;
+                let raw=arg_str(&body,"out_path","");
+                let path=if meta["state"]=="prepared"{output_target(&raw,&format!(".{format}"),body["overwrite"]==true)}else{
+                    if raw.is_empty(){Err("output_path_must_be_absolute")}else{output_path_without_symlinks(Path::new(&raw))}
+                }.map_err(|code|error_result(code,None))?;
+                body["out_path"]=json!(path);body["overwrite"]=json!(args["overwrite"]==true);
+            }
+            check_cancel(cancel)?;let route=if name=="readmd_ai_task"{"/api/ai/tasks"}else{"/api/export/snapshot"};
+            let mut result=crate::cancel::with_external(cancel,||api(app,"POST",route,Some(&body)))?;
+            if name=="readmd_export_snapshot"&&body["action"]=="prepare"{
+                // The browser needs frozen source to produce client SVGs.
+                // MCP discovery/commit needs only identity and state; do not
+                // echo embedded local image/font bytes to an external agent.
+                if let Some(object)=result.as_object_mut(){object.remove("content");object.remove("options");}
+            }
+            Ok(json_result(&result))
+        },
         "readmd_latex_to_md" => Ok(text_result(crate::texmd::latex_to_markdown(&arg_str(args, "latex_content", ""), ""))),
         "readmd_md_to_latex" => {
             let title = arg_str(args, "doc_title", "ReadMD Document");
@@ -830,6 +939,13 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
             let raw = arg_str(args, "pdf_path", "");
             if raw.is_empty() || !Path::new(&raw).is_absolute() {
                 return Err(error_result("path_must_be_absolute", None));
+            }
+            // The legacy rollback removes the target before copying its backup.
+            // Keep this adapter restricted to PDF files before either mutation.
+            if Path::new(&raw).extension().and_then(|ext| ext.to_str())
+                .is_none_or(|ext| !ext.eq_ignore_ascii_case("pdf"))
+            {
+                return Err(error_result("invalid_output_extension", None));
             }
             let v = crate::pdf_editor::rollback(&raw).map_err(|e| error_result("pdf_rollback_failed", Some(&e.message)))?;
             Ok(json_result(&v))
@@ -1154,6 +1270,55 @@ pub fn run_stdio(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn pdf_rollback_rejects_text_targets_before_removing_or_restoring_them() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = root.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        let app = Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(
+            &root.path().join("profile"), root.path(), &assets,
+        )).unwrap());
+        for name in ["Protected.md", "Protected.txt", "Protected.pdf.md", "Protected"] {
+            let target = root.path().join(name);
+            let backup = crate::pdf_editor::backup_path_of(&target);
+            std::fs::write(&target, b"CURRENT SYNTHETIC TEXT\n").unwrap();
+            std::fs::write(&backup, b"OLDER SYNTHETIC TEXT\n").unwrap();
+            let result = call_tool(&app, "readmd_pdf_rollback", &json!({"pdf_path":target,"confirm":true}));
+            assert_eq!(result["isError"], true, "{result}");
+            assert_eq!(result["structuredContent"]["error_code"], "invalid_output_extension");
+            assert_eq!(std::fs::read(&target).unwrap(), b"CURRENT SYNTHETIC TEXT\n");
+            assert_eq!(std::fs::read(&backup).unwrap(), b"OLDER SYNTHETIC TEXT\n");
+            // A surviving backup must not grant permission to recreate a text path.
+            std::fs::remove_file(&target).unwrap();
+            let result = call_tool(&app, "readmd_pdf_rollback", &json!({"pdf_path":target,"confirm":true}));
+            assert_eq!(result["structuredContent"]["error_code"], "invalid_output_extension");
+            assert!(!target.exists());
+            assert_eq!(std::fs::read(&backup).unwrap(), b"OLDER SYNTHETIC TEXT\n");
+        }
+    }
+
+    #[test]
+    fn pdf_rollback_restores_pdf_bytes_and_keeps_the_backup() {
+        let root = tempfile::tempdir().unwrap();
+        let assets = root.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        let app = Arc::new(App::bootstrap(crate::paths::AppPaths::with_dirs(
+            &root.path().join("profile"), root.path(), &assets,
+        )).unwrap());
+        for name in ["Synthetic.pdf", "Synthetic.PDF"] {
+            let target = root.path().join(name);
+            let backup = crate::pdf_editor::backup_path_of(&target);
+            let original = b"%PDF-1.7\nSynthetic backup bytes\n%%EOF\n";
+            std::fs::write(&target, b"%PDF-1.7\nSynthetic edited bytes\n%%EOF\n").unwrap();
+            std::fs::write(&backup, original).unwrap();
+            let result = call_tool(&app, "readmd_pdf_rollback", &json!({"pdf_path":target,"confirm":true}));
+            assert_ne!(result["isError"], true, "{result}");
+            assert_eq!(result["structuredContent"]["ok"], true);
+            assert_eq!(std::fs::read(&target).unwrap(), original);
+            assert_eq!(std::fs::read(&backup).unwrap(), original);
+        }
+    }
+
+    #[test]
     fn output_target_retains_extension_parent_traversal_and_old_target_guards() {
         let fixture = tempfile::tempdir().unwrap();
         let target = fixture.path().join("Protected.pdf");
@@ -1385,6 +1550,183 @@ mod tests {
     }
     use super::*;
     use std::sync::mpsc;
+
+    fn review_fixture() -> (tempfile::TempDir,crate::paths::AppPaths,Arc<App>,PathBuf) {
+        let root=tempfile::tempdir().unwrap();
+        let assets=root.path().join("assets");std::fs::create_dir(&assets).unwrap();
+        let paths=crate::paths::AppPaths::with_dirs(&root.path().join("profile"),root.path(),&assets);
+        let file=root.path().join("Review.md");
+        std::fs::write(&file,"\u{feff}A original\r\n\r\nC hand\r\n\r\nB original\r\n").unwrap();
+        let app=Arc::new(App::bootstrap(paths.clone()).unwrap());
+        (root,paths,app,file)
+    }
+
+    fn review_ok(result:Value)->Value {
+        assert_ne!(result["isError"],true,"{result}");
+        let body=result["structuredContent"].clone();
+        assert!(body.is_object(),"{result}");
+        assert_eq!(serde_json::from_str::<Value>(result["content"][0]["text"].as_str().unwrap()).unwrap(),body);
+        body
+    }
+
+    fn review_cas(current:&Value,action:&str,call:&str)->Value {
+        json!({"action":action,"document_id":current["document_id"],"generation":current["generation"],
+            "review_revision":current["review_revision"],"call_id":call,"confirm":true})
+    }
+
+    #[test]
+    fn mcp_review_uses_the_desktop_sqlite_session_and_persists_unsaved_decisions() {
+        let (_root,paths,app,file)=review_fixture();
+        let original=std::fs::read(&file).unwrap();
+        let mut current=review_ok(call_tool(&app,"readmd_review_document",&json!({"action":"open","path":file,"confirm":true})));
+        assert_eq!(current["content"],"A original\n\nC hand\n\nB original\n");
+        assert_eq!(current["encoding"],"utf-8-sig");assert_eq!(current["line_ending"],"crlf");
+        let document_id=current["document_id"].clone();
+        let mut edit=review_cas(&current,"edit","mcp-human-unsaved");
+        edit["edits"]=json!([{"from":31,"to":31,"insert":"SESSION_ONLY\n"}]);
+        current=review_ok(call_tool(&app,"readmd_review_document",&edit));
+        let mut proposal=review_cas(&current,"propose","mcp-atomic-proposal");
+        proposal["edits"]=json!([
+            {"from":2,"to":10,"insert":"reviewed-A"},
+            {"from":22,"to":30,"insert":"reviewed-B"},
+        ]);
+        current=review_ok(call_tool(&app,"readmd_review_document",&proposal));
+        assert_eq!(current["durable"],true);
+        assert_eq!(current["changes"].as_array().unwrap().len(),2);
+        let a=current["changes"][0]["id"].clone();let b=current["changes"][1]["id"].clone();
+        assert_ne!(a,b);assert_eq!(current["changes"][0]["decision"],"pending");
+        assert_eq!(current["changes"][1]["application"],"applied");
+        let repeated=review_ok(call_tool(&app,"readmd_review_document",&proposal));
+        assert_eq!(repeated,current,"a repeated call must return the same receipt");
+        let mut different=proposal.clone();different["edits"][0]["insert"]=json!("different");
+        assert_eq!(call_tool(&app,"readmd_review_document",&different)["structuredContent"]["error_code"],"review_call_conflict");
+        let read=json!({"action":"read","document_id":document_id,"confirm":true});
+        let read_mcp=review_ok(call_tool(&app,"readmd_review_document",&read));
+        assert_eq!(read_mcp["content"],"A reviewed-A\n\nC hand\n\nB reviewed-B\nSESSION_ONLY\n");
+        let (status,desktop)=server::call_in_process(&app,"POST","/api/review",Some(&json!({"action":"read","document_id":document_id})));
+        assert_eq!(status,200);assert_eq!(desktop,read_mcp,"MCP must consume the desktop service snapshot");
+        let database=rusqlite::Connection::open(paths.data_dir.join("review.sqlite3")).unwrap();
+        let calls:i64=database.query_row("SELECT COUNT(*) FROM review_receipts WHERE document_id=?1 AND call_id='mcp-atomic-proposal'",[document_id.as_str().unwrap()],|row|row.get(0)).unwrap();
+        assert_eq!(calls,1);drop(database);
+        let before_accept_generation=current["generation"].clone();
+        let mut accept=review_cas(&current,"resolve","mcp-accept-a");accept["ids"]=json!([a]);accept["decision"]=json!("accept");
+        current=review_ok(call_tool(&app,"readmd_review_document",&accept));
+        assert_eq!(current["generation"],before_accept_generation,"accepting applied text must not insert it again");
+        let accepted_revision=current["review_revision"].clone();
+        assert_eq!(std::fs::read(&file).unwrap(),original,"review tools do not save the source file");
+        drop(app);
+        let reopened=Arc::new(App::bootstrap(paths.clone()).unwrap());
+        current=review_ok(call_tool(&reopened,"readmd_review_document",&json!({"action":"open","path":file,"confirm":true})));
+        assert_eq!(current["document_id"],document_id);assert_eq!(current["review_revision"],accepted_revision);
+        assert_eq!(current["changes"][0]["id"],a);assert_eq!(current["changes"][0]["decision"],"accepted");
+        assert_eq!(current["changes"][1]["id"],b);assert_eq!(current["changes"][1]["decision"],"pending");
+        assert!(current["content"].as_str().unwrap().contains("SESSION_ONLY"));
+        let mut withdraw=review_cas(&current,"resolve","mcp-withdraw-b");withdraw["ids"]=json!([b]);withdraw["decision"]=json!("withdraw");
+        current=review_ok(call_tool(&reopened,"readmd_review_document",&withdraw));
+        assert_eq!(current["content"],"A reviewed-A\n\nC hand\n\nB original\nSESSION_ONLY\n");
+        assert_eq!(current["changes"][0]["decision"],"accepted");assert_eq!(current["changes"][1]["decision"],"withdrawn");
+        drop(reopened);
+        let again=Arc::new(App::bootstrap(paths).unwrap());
+        let restored=review_ok(call_tool(&again,"readmd_review_document",&read));
+        assert_eq!(restored["content"],current["content"]);assert_eq!(restored["changes"],current["changes"]);
+        assert_eq!(std::fs::read(file).unwrap(),original);
+    }
+
+    #[test]
+    fn mcp_review_rejects_unconfirmed_malformed_and_raw_key_requests_before_dispatch() {
+        let (_root,paths,app,file)=review_fixture();
+        let open=json!({"action":"open","path":file,"confirm":true});
+        let ai=json!({"document_id":"unopened","generation":1,"review_revision":0,"call_id":"mcp-ai-request","request":"Review prose.","confirm":true});
+        for (name,base) in [("readmd_review_document",&open),("readmd_review_ai",&ai)] {
+            for confirm in [None,Some(json!(false)),Some(json!("true"))] {
+                let mut request=base.clone();
+                match confirm {None=>{request.as_object_mut().unwrap().remove("confirm");},Some(value)=>request["confirm"]=value}
+                assert_eq!(call_tool(&app,name,&request)["structuredContent"]["error_code"],"confirmation_required");
+            }
+            for key in ["api_key","key","apiKey","Authorization","headers","requestRawKey"] {
+                let mut request=base.clone();request[key]=json!("SYNTHETIC_RAW_SECRET");
+                let result=call_tool(&app,name,&request);
+                assert_eq!(result["structuredContent"]["error_code"],"raw_key_rejected");
+                assert!(!result.to_string().contains("SYNTHETIC_RAW_SECRET"));
+            }
+        }
+        for malformed in [
+            json!({"action":"open","confirm":true}),
+            json!({"action":"open","path":"draft:missing-content","confirm":true}),
+            json!({"action":"read","document_id":false,"confirm":true}),
+            json!({"action":"edit","document_id":"x","generation":1,"review_revision":0,"call_id":"x","confirm":true}),
+            json!({"action":"propose","document_id":"x","generation":1,"review_revision":0,"call_id":"x","edits":[],"confirm":true}),
+            json!({"action":"resolve","document_id":"x","generation":1,"review_revision":0,"call_id":"x","ids":[],"decision":"accept","confirm":true}),
+            json!({"action":"edit","document_id":"x","generation":1,"review_revision":0,"call_id":"x","origin":"system","edits":[{"from":0,"to":0,"insert":"x"}],"confirm":true}),
+        ] {
+            assert_eq!(call_tool(&app,"readmd_review_document",&malformed)["structuredContent"]["error_code"],"invalid_arguments");
+        }
+        for (key,value) in [
+            ("request",json!(" ")), ("request",json!("甲".repeat(12_000))),
+            ("generation",json!(1.0)), ("task_id",json!("bad task id")),
+            ("ranges",json!([{"from":0,"to":3,"confirm":true}])),
+            ("base_url",json!("https://provider.invalid")), ("mode",json!("completion")),
+        ] {
+            let mut request=ai.clone();request[key]=value;
+            assert_eq!(call_tool(&app,"readmd_review_ai",&request)["structuredContent"]["error_code"],"invalid_arguments","field {key}");
+        }
+        assert!(!paths.data_dir.join("review.sqlite3").exists(),"rejected arguments must not reach the durable service");
+        assert!(server::review_authorized_path(file.to_str().unwrap()).is_none(),"rejected open must not authorize a file");
+    }
+
+    #[test]
+    fn mcp_review_open_grants_one_file_and_existing_file_rejects_bad_targets() {
+        let (root,_paths,app,file)=review_fixture();
+        assert_eq!(existing_file(file.to_str().unwrap()).unwrap(),file);
+        assert_eq!(existing_file("relative.md").unwrap_err()["structuredContent"]["error_code"],"path_must_be_absolute");
+        assert_eq!(existing_file(root.path().to_str().unwrap()).unwrap_err()["structuredContent"]["error_code"],"file_not_found");
+        let missing=root.path().join("missing.md");
+        assert_eq!(existing_file(missing.to_str().unwrap()).unwrap_err()["structuredContent"]["error_code"],"file_not_found");
+        let neighbor=root.path().join("Neighbor.md");std::fs::write(&neighbor,"NEIGHBOR UNCHANGED").unwrap();
+        review_ok(call_tool(&app,"readmd_review_document",&json!({"action":"open","path":file,"confirm":true})));
+        assert!(server::review_authorized_path(file.to_str().unwrap()).is_some());
+        assert!(server::review_authorized_path(neighbor.to_str().unwrap()).is_none());
+        let (status,rejected)=server::call_in_process(&app,"POST","/api/review",Some(&json!({"action":"open","path":neighbor})));
+        assert_eq!(status,403);assert_eq!(rejected["error_code"],"review_not_authorized");
+        assert_eq!(std::fs::read_to_string(neighbor).unwrap(),"NEIGHBOR UNCHANGED");
+    }
+
+    #[test]
+    fn mcp_review_semantic_failures_keep_the_sqlite_snapshot_atomic() {
+        let (_root,_paths,app,file)=review_fixture();
+        let current=review_ok(call_tool(&app,"readmd_review_document",&json!({"action":"open","path":file,"content":"😀 alpha\n\nbeta\n","confirm":true})));
+        let mut invalid=review_cas(&current,"propose","mcp-invalid-surrogate");
+        invalid["edits"]=json!([{"from":10,"to":14,"insert":"valid"},{"from":1,"to":2,"insert":"invalid"}]);
+        assert_eq!(call_tool(&app,"readmd_review_document",&invalid)["structuredContent"]["error_code"],"transaction_invalid_range");
+        let mut stale=review_cas(&current,"propose","mcp-stale");stale["generation"]=json!(0);stale["edits"]=json!([{"from":3,"to":8,"insert":"new"}]);
+        assert_eq!(call_tool(&app,"readmd_review_document",&stale)["structuredContent"]["error_code"],"review_stale_generation");
+        let restored=review_ok(call_tool(&app,"readmd_review_document",&json!({"action":"read","document_id":current["document_id"],"confirm":true})));
+        assert_eq!(restored,current,"failed transactions must not leave text, changes or events behind");
+    }
+
+    #[test]
+    fn mcp_review_ai_catalog_and_precancelled_request_do_not_start_work() {
+        let (_root,paths,app,_file)=review_fixture();
+        let catalog=tools();
+        let ai=catalog.as_array().unwrap().iter().find(|tool|tool["name"]=="readmd_review_ai").unwrap();
+        assert_eq!(ai["annotations"]["openWorldHint"],true);
+        assert_eq!(ai["inputSchema"]["additionalProperties"],false);
+        assert!(ai["inputSchema"]["properties"].get("api_key").is_none());
+        let request=json!({"document_id":"unopened","generation":1,"review_revision":0,"call_id":"mcp-ai-cancelled","request":"Review prose.","confirm":true});
+        let flag=AtomicBool::new(true);
+        let result=call_tool_cancellable(&app,"readmd_review_ai",&request,Some(&flag));
+        assert_eq!(result["structuredContent"]["error_code"],"cancelled");
+        assert!(!paths.data_dir.join("review.sqlite3").exists());
+    }
+
+    #[test]
+    fn mcp_review_resolve_advertises_only_the_explicit_keep_current_resolution() {
+        let mut request=json!({"action":"resolve","document_id":"fixture","generation":1,"review_revision":0,
+            "call_id":"mcp-keep-current","ids":["change"],"decision":"accept","resolution":"keep_current","confirm":true});
+        assert!(validate_tool_arguments("readmd_review_document",&request).is_ok());
+        request["resolution"]=json!("replace_current");
+        assert_eq!(validate_tool_arguments("readmd_review_document",&request),Err("invalid_arguments"));
+    }
 
     #[test]
     fn bounded_transport_drains_bad_messages_and_recovers() {

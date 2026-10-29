@@ -111,7 +111,18 @@
         "rust/readmd-kernel/src/convert/docx_citations.rs",
         "rust/readmd-kernel/src/convert/docx_citations_tests.rs",
         "rust/readmd-kernel/src/convert/docx_text_style.rs",
-        "rust/readmd-kernel/src/convert/docx_text_style_tests.rs"
+        "rust/readmd-kernel/src/convert/docx_text_style_tests.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "assets/js/editor/review.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/durable-review-process.cjs",
+        "docs/design/v006-batch1-review-spec.md"
       ],
       "evidence": [
         {
@@ -359,10 +370,19 @@
           "scope": "C84 finite authored-citation UTF-16/CRLF transactions, inverse/redo, stale rejection, save and two new-PID reopen generations; full transaction and review acceptance remains open.",
           "recordedAt": "2026-10-24T10:22:41.160Z",
           "sourceDigest": "ae5ace8a9b843bf5a93e87ec0cf4550b13b4cf7cfe1b09f692f728de70989e91"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "3487d8a1a613e787a5dad0aef1830cde39e3fb95fd2750c4211dca7db58ced71",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "V6-11/13普通正文身份、UTF-16局部事务、单调generation、幂等回执、精确锚点与撤销重做；正式CSP真实Windows内核/文件及stdio验证，不代表全部结构、传输和平台。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
         }
       ],
       "remaining": [
-        "完整文件身份接口和跨操作统一事务仍需补齐；验证编码、换行、撤销及外部竞争的完整原生链路",
+        "普通正文稳定身份、修订保护及局部撤销保存重开已限定通过；公式/表格等结构审阅、跨文档统一事务及完整原生故障矩阵继续保留。",
         "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。",
         "2026-10-24 C84有限证据已封存：C84 finite authored-citation UTF-16/CRLF transactions, inverse/redo, stale rejection, save and two new-PID reopen generations; full transaction and review acceptance remains open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
       ]
@@ -432,7 +452,19 @@
         "tools/test/task-workspace-retirement.test.cjs",
         "docs/reviews/readmd-v005-batch3-semantics-recovery-2026-10-20.md",
         "rust/readmd-kernel/src/publication_budget.rs",
-        "rust/readmd-kernel/src/export_preview.rs"
+        "rust/readmd-kernel/src/export_preview.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "assets/js/editor/review.js",
+        "assets/js/editor/editor.js",
+        "assets/js/reader/render.js",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/durable-review-process.cjs",
+        "docs/design/v006-batch1-review-spec.md"
       ],
       "evidence": [
         {
@@ -733,10 +765,19 @@
           "scope": "C84 actual Windows resource-lock cancellation/timeout preserves old target bytes and Win32 identity, then explicit new-owner recovery; not full crash, external-change or disk-full acceptance.",
           "recordedAt": "2026-10-24T10:22:41.160Z",
           "sourceDigest": "ddc046be82d3bd03c3bc9551bed83367d235ba47e1a601c1165b113f639e3179"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "66912568c1bcb2f8cfa83da0852870c75ccc013ea1536f481a930f53e4a915c5",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "V6-12/15普通正文原子保存意图、编码/EOL、已保存待审基线、异常退出、外改、真实Windows文件锁、恢复竞争与配额拒绝；非物理磁盘满或完整格式/平台/长期认证。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
         }
       ],
       "remaining": [
-        "已完成公式独立恢复与配额保护、普通保存互不清除及正常/异常重启；全部格式的磁盘满/文件锁/编码等故障矩阵、集中历史全局压力、待审正文保护仍待验收",
+        "普通正文审阅原文、保存决定独立、正常/异常重开、外改/Windows文件锁/确认编码及存储配额拒绝已限定验证；全部格式磁盘满、全局压力、非Windows与完整启动/任务审阅链仍待验收。",
         "B3-52当前Windows证据已覆盖Typst/OCR实际进程/MCP和持久暂存、旧OCR兼容、创建五边界、预留预算与公平恢复及4客户端并发；仍须首条持久头前无归属标记的处置、完整启动/任务审阅引用、TeX暂存/AppContainer配置/DOS映射、全部引擎/桌面/MCP/VS Code传输、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。",
         "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。",
         "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。",
@@ -1583,7 +1624,21 @@
         "docs/reviews/readmd-v005-batch3-semantics-recovery-2026-10-20.md",
         "rust/readmd-kernel/src/publication_budget.rs",
         "rust/readmd-kernel/src/export_preview.rs",
-        "rust/readmd-kernel/src/server.rs"
+        "rust/readmd-kernel/src/server.rs",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/features/ai.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -1844,9 +1899,19 @@
           "scope": "C84 shared publication resource/cached-key budget and captured cancellation; five real lock faults, two HTTP ack <2ms and retirement <600ms; all inner writer/I/O and UI responsiveness remain open.",
           "recordedAt": "2026-10-24T10:22:41.160Z",
           "sourceDigest": "3a5103b5724a664060afc9bd38e0e84679d4759df8c0e5ca4d4d7fcc9e61a5a9"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "f9a49a41f52b9367a764d3109e165e7df3af733021c26b7c3ca65c3edf235fa4",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "原生多轮任务累计预算、持久意图、跨进程OS租约与双槽、拥有者取消及原文档绑定；真实页面暂停迟到与异常进程恢复通过，不计全部任务或长期性能认证。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批限定结果：原生多轮任务累计预算、持久意图、跨进程OS租约与双槽、拥有者取消及原文档绑定；真实页面暂停迟到与异常进程恢复通过，不计全部任务或长期性能认证。",
         "已有PDF、TeX及OpenAPI取消不提交证据；PDF取消完成223ms未达到200ms目标，其他长任务生命周期及性能仍待覆盖",
         "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。",
         "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。",
@@ -6568,7 +6633,98 @@
         "rust/readmd-kernel/src/document_knowledge.rs",
         "assets/js/features/graph.js",
         "assets/js/reader/heading-identity.js",
-        "rust/readmd-kernel/src/document_intelligence.rs"
+        "rust/readmd-kernel/src/document_intelligence.rs",
+        "docs/design/v006-batch3-rename-safety-spec.md",
+        "docs/design/v006-batch3-session-cas-safety-spec.md",
+        "rust/readmd-kernel/src/document_operations.rs",
+        "rust/readmd-kernel/src/settings_persistence.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/readmd_fix.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "assets/js/core/tabs.js",
+        "assets/js/reader/render.js",
+        "assets/js/editor/review.js",
+        "docs/design/v006-batch3-rename-refactor-safety-spec.md",
+        "rust/readmd-kernel/src/document_refactor.rs",
+        "rust/readmd-kernel/src/document_refactor_fs.rs",
+        "rust/readmd-kernel/src/document_refactor_links.rs",
+        "rust/readmd-kernel/src/review_refactor.rs",
+        "rust/readmd-kernel/src/document_operations/refactor_windows.rs",
+        "rust/readmd-kernel/src/document_operations/refactor_path_checks.rs",
+        "rust/readmd-kernel/src/document_operations/refactor_metadata.rs",
+        "rust/readmd-kernel/src/document_operations/windows.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "assets/js/core/state.js",
+        "assets/js/features/document-refactor.js",
+        "assets/js/features/ai-harness.js",
+        "assets/css/panels.css",
+        "assets/readmd.boot.js",
+        "rust/xtask/src/bundle.rs",
+        "rust/readmd-kernel/src/document_refactor_tests.rs",
+        "rust/readmd-kernel/src/document_refactor_fs_tests.rs",
+        "rust/readmd-kernel/src/document_refactor_links_tests.rs",
+        "rust/readmd-kernel/src/document_refactor_scope_tests.rs",
+        "rust/readmd-kernel/src/review_refactor_tests.rs",
+        "ui-tests/document-refactor-adapter.test.cjs",
+        "ui-tests/session-refactor-adapter.test.cjs",
+        "ui-tests/native-auth-bootstrap.test.cjs",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "tools/test/v006-refactor-host.cjs",
+        "tools/test/v006-refactor-http.cjs",
+        "tools/test/v006-refactor-browser.cjs",
+        "tools/test/math-document-context-frontend.test.cjs",
+        "tools/test/math-source-only-frontend.test.cjs",
+        "tools/i18n-v006-rename.json",
+        "assets/i18n/ar.json",
+        "assets/i18n/bn.json",
+        "assets/i18n/bo.json",
+        "assets/i18n/da.json",
+        "assets/i18n/de.json",
+        "assets/i18n/el.json",
+        "assets/i18n/en.json",
+        "assets/i18n/eo.json",
+        "assets/i18n/es.json",
+        "assets/i18n/fi.json",
+        "assets/i18n/fr.json",
+        "assets/i18n/ga.json",
+        "assets/i18n/he.json",
+        "assets/i18n/hi.json",
+        "assets/i18n/hr.json",
+        "assets/i18n/hu.json",
+        "assets/i18n/id.json",
+        "assets/i18n/it.json",
+        "assets/i18n/ja.json",
+        "assets/i18n/kg.json",
+        "assets/i18n/kl.json",
+        "assets/i18n/km.json",
+        "assets/i18n/ko.json",
+        "assets/i18n/lo.json",
+        "assets/i18n/meta.json",
+        "assets/i18n/mn.json",
+        "assets/i18n/ms.json",
+        "assets/i18n/mt.json",
+        "assets/i18n/my.json",
+        "assets/i18n/ne.json",
+        "assets/i18n/nl.json",
+        "assets/i18n/no.json",
+        "assets/i18n/pt.json",
+        "assets/i18n/ro.json",
+        "assets/i18n/ru.json",
+        "assets/i18n/rw.json",
+        "assets/i18n/sl.json",
+        "assets/i18n/sv.json",
+        "assets/i18n/th.json",
+        "assets/i18n/tl.json",
+        "assets/i18n/tr.json",
+        "assets/i18n/ug.json",
+        "assets/i18n/uk.json",
+        "assets/i18n/vi.json",
+        "assets/i18n/zh-CN.json",
+        "assets/i18n/zh-HK.json",
+        "assets/i18n/zh-TW.json",
+        "rust/readmd-kernel/src/lib.rs"
       ],
       "evidence": [
         {
@@ -6589,10 +6745,41 @@
           "outcome": "passed",
           "scope": "正式CSP、零重试前端回归；浏览器测试不冒充原生文件验收",
           "recordedAt": "2026-10-08T05:56:42.038Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "0c440becb14040e971ca79ca521415bef6eb06957945c791288024847fa1f959",
+          "kind": "integration",
+          "outcome": "failed",
+          "scope": "两类真实重命名失败已复现：新路径授权缺失、已有审阅路径未迁移；完整安全修复仍未实施。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-rename-2026-10-27.md",
+          "sha256": "2d71689d825d1630b255a8be9fceaa91d074746e710a67ec94c05c1db83abf07",
+          "sourceDigest": "e12f46f67524bca70a4b8d0d181b9daa86cf324cb231c33b65a46d61a2b7d5a7",
+          "kind": "integration",
+          "outcome": "passed",
+          "scope": "限定 Windows 单文件已保存重命名、保存及同一审阅身份；真实多进程及正式 CSP headless，受控故障另列，不代替原生多窗口或多文件引用更新。",
+          "recordedAt": "2026-10-27T13:46:18Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-refactor-evidence-2026-10-28.json",
+          "sha256": "86079547a9e53f0b8f86aa56073194869528bb054bcd7858d44f5b8e04cd5c48",
+          "sourceDigest": "9b0c17f30a61384319793f24c7a0059eab698f8a4d95b81fa62885fabd4db0af",
+          "kind": "integration",
+          "outcome": "passed",
+          "scope": "限定 Windows 多文件 Markdown 引用预览、无覆盖事务与失败／进程中断恢复；真实 HTTP 和正式 CSP headless，非原生多窗口或跨平台认证。",
+          "recordedAt": "2026-10-28T06:47:47.090Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
-        "已有真实链接补全/解析及断链诊断；多文件重命名引用更新、修订保护及失败回滚仍待补齐"
+        "Windows 受支持资料夹的多文件重命名、引用预览、修订保护、保守回滚与新进程恢复已有真实文件／HTTP／正式 CSP headless 限定证据；真实桌面多窗口、断电／实际磁盘满、完整权限及无强身份文件系统仍待验。",
+        "当前只覆盖明确选择范围内 .md/.markdown/.mdown 的同目录同扩展名操作；其他文档语法、跨目录／跨卷、非 Windows 等价租约及完整工作区跨格式流程继续待办，外部进程最终快照后新增非参与引用不受组租约约束。"
       ]
     },
     {
@@ -6608,7 +6795,10 @@
         "packages/vscode-extension/src/openapi.ts",
         "rust/readmd-kernel/src/mcp.rs",
         "ui-tests/openapi-native.cjs",
-        "ui-tests/vscode-openapi-native.cjs"
+        "ui-tests/vscode-openapi-native.cjs",
+        "rust/readmd-kernel/src/openapi_local_refs_tests.rs",
+        "tools/test/v006-openapi-local-refs.cjs",
+        "ui-tests/v006-batch3-openapi-browser.cjs"
       ],
       "evidence": [
         {
@@ -6648,6 +6838,16 @@
           "outcome": "passed",
           "scope": "共享编辑钩子变更后8项Windows原生OpenAPI回归，正式CSP及实际文件保存",
           "recordedAt": "2026-10-08T03:40:13.876Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "1e83cd6e6cbdcd50d4156d29e654584e9907abc57ccf8ed3ef7dbefa8815a5d8",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "本目录内 OpenAPI JSON/YAML 本地引用、依赖修订、审阅与保存重开通过；完整规范与跨平台仍未验收。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
           "platform": "windows-x64"
         }
       ],
@@ -6784,7 +6984,8 @@
         "tools/test/inspect-typst-baseline.py",
         "tools/test/inspect-typst-baseline.test.py",
         "docs/design/v005-batch3-native-defaults-typst-ink-2026-10-24.md",
-        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md"
+        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md",
+        "tools/test/v006-openapi-local-refs.cjs"
       ],
       "evidence": [
         {
@@ -6932,6 +7133,16 @@
           "platform": "windows-x64",
           "recordedAt": "2026-10-24T06:37:50.911Z",
           "scope": "C73真实stdio及HTTP有限导入/局部源事务/逆事务/重做/过期拒绝/保存重开/导出链；5个stdio主机及1个HTTP主机正常退出，10组79输出400次工具调用131次独立核对。完整I10工具/传输/故障和VS Code Extension Host继续未验收。"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "22661789d1fd23875b89ca57672e7814e20a518d742abb610ede980d2a3d13db",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "真实 MCP stdio 与 HTTP 对有限 OpenAPI 跨文件引用结果一致；不替代完整 VS Code Extension Host 验收。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -6950,9 +7161,34 @@
       "acceptance": "Row/column alignment and values preserved; necessary extensions explicit",
       "status": "in_progress",
       "implementation": [
-        "assets/js/editor/editor.js"
+        "assets/js/editor/editor.js",
+        "tools/test/v006-table-clipboard.test.cjs",
+        "tools/test/v006-table-clipboard-browser.cjs",
+        "tools/test/v006-table-align.test.cjs",
+        "tools/test/v006-table-align-browser.cjs"
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "dd6e2619ca10ab53bf455d58b7c4757a56b511c0e957af059e3a0b5e41f12101",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "真实可信 TSV、PNG 粘贴及受控 CSV 事件，单次撤销、保存重开通过；不等于完整可视表格。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json",
+          "sha256": "42a41d643b66ab890c80a981c788d23497744127cb6da315e20344507b4606c2",
+          "sourceDigest": "5a0c4786b3a72b9353096c9fb5682698404d708185b8ea95fde5a304053d079c",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "顶层 GFM 当前列左／中／右对齐，正式 CSP headless 保存、撤销及新进程重开；不等于完整可视表格。",
+          "recordedAt": "2026-10-27T10:24:42.530Z",
+          "platform": "windows-x64"
+        }
+      ],
       "remaining": [
         "可视单元格、行列、排序、CSV/TSV及扩展属性保存重开完整实测"
       ]
@@ -6991,7 +7227,9 @@
         "assets/js/core/tabs.js",
         "assets/js/features/document-history.js",
         "ui-tests/collaboration-native.cjs",
-        "ui-tests/collaboration-http-stress.cjs"
+        "ui-tests/collaboration-http-stress.cjs",
+        "ui-tests/collaboration-mutation-contract.cjs",
+        "ui-tests/collaboration-owner-lease.cjs"
       ],
       "evidence": [
         {
@@ -7039,6 +7277,16 @@
           "outcome": "passed",
           "scope": "真实独立Rust HTTP服务，3/10/50个Yjs文档并发、重复、个人撤销、权限撤销、乱序128次投递跨日志压缩和重启恢复；不替代50原生窗口、空闲性能或8小时测试",
           "recordedAt": "2026-10-08T05:07:20.654Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "6ff2411920ffc599e5b4382ace9b774ac64c0f8a8e974812716be7bee6ad574e",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "严格同步请求与单数据库单写入者保护通过真实服务检查；3/10/50 为模拟客户端，不替代真人或长期验证。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -7055,7 +7303,9 @@
       "implementation": [
         "rust/readmd-kernel/src/collaboration.rs",
         "assets/collaboration/client.js",
-        "ui-tests/collaboration-http-stress.cjs"
+        "ui-tests/collaboration-http-stress.cjs",
+        "rust/readmd-kernel/src/collaboration_host.rs",
+        "ui-tests/collaboration-mutation-contract.cjs"
       ],
       "evidence": [
         {
@@ -7084,6 +7334,16 @@
           "outcome": "passed",
           "scope": "真实独立Rust HTTP服务，3/10/50个Yjs文档并发、重复、个人撤销、权限撤销、乱序128次投递跨日志压缩和重启恢复；不替代50原生窗口、空闲性能或8小时测试",
           "recordedAt": "2026-10-08T05:07:20.654Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "a202ddb6e7a091921ee93f19d5f2099701cd28995d4d6be8a1253a890c8f7322",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "缺失角色不会误撤权，无效增量不会被误确认；完整多人审阅与权限矩阵待验。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -7103,7 +7363,8 @@
         "rust/readmd-kernel/src/bin/readmd-collaboration.rs",
         "assets/collaboration/session.js",
         "assets/js/features/collaboration.js",
-        "ui-tests/collaboration-http-stress.cjs"
+        "ui-tests/collaboration-http-stress.cjs",
+        "ui-tests/collaboration-owner-lease.cjs"
       ],
       "evidence": [
         {
@@ -7133,6 +7394,16 @@
           "outcome": "passed",
           "scope": "真实独立Rust HTTP服务，3/10/50个Yjs文档并发、重复、个人撤销、权限撤销、乱序128次投递跨日志压缩和重启恢复；不替代50原生窗口、空闲性能或8小时测试",
           "recordedAt": "2026-10-08T05:07:20.654Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "0e095a44975307ba29a42e26e64532b31bca1aac907397aa2d2c121e2224879e",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "真实独立进程验证单写入者、终止接手和在线备份恢复；部署 TLS、跨平台及长期运行待验。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -11101,7 +11372,11 @@
         "ui-tests/docx-notes-import-native.cjs",
         "rust/readmd-kernel/src/batch2.rs",
         "tools/test/managed-tex-process-cold.cjs",
-        "tools/test/interop-calibre-roundtrip.cjs"
+        "tools/test/interop-calibre-roundtrip.cjs",
+        "rust/readmd-kernel/src/content.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "assets/js/reader/render.js",
+        "ui-tests/v006-batch3-conversion-process.cjs"
       ],
       "evidence": [
         {
@@ -11132,6 +11407,16 @@
           "outcome": "partial",
           "recordedAt": "2026-10-19T03:50:44.397Z",
           "scope": "修复真实PDF转Markdown在单字符|上的反向切片panic、有效短文被150字符阈值丢弃、全流兜底把CMap字体数据混成正文；新增四条真实PDF回归直接验证两Rust字体解码器、短文/数字/CID映射及非页面流隔离；单/双空行、退化边界、Unicode与正常表格有Rust回归，原失败PDF使用新候选经真实stdio读回，原件摘要不变。Calibre独立合成EPUB→HTMLZ→EPUB严格检查实测丢失MathML，原始失败保留，不算ReadMD导出或阅读器原生通过。完整复杂格式/公式表格语义/全部互操作继续开放。"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "d5525e75b0f5c7b8b81a514f2cb5b4795c382c3dd9d73bb5eccba9525620c760",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "含图片合成 DOCX 的预览资源暂存、失败保护、显式保存重开通过；非全格式或原排版认证。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -11184,7 +11469,12 @@
         "ui-tests/pdf-math-text-native.cjs",
         "ui-tests/pdf-workspace-native.cjs",
         "docs/guides/math-editing.md",
-        "docs/design/v005-five-batch-spec.md"
+        "docs/design/v005-five-batch-spec.md",
+        "tools/test/v006-pdf-image-target.test.cjs",
+        "tools/test/v006-pdf-image-target-process.cjs",
+        "assets/js/core/dialog.js",
+        "tools/test/v006-pdf-delete-target.test.cjs",
+        "tools/test/v006-pdf-delete-target-process.cjs"
       ],
       "evidence": [
         {
@@ -11278,6 +11568,26 @@
           "kind": "inspection",
           "outcome": "partial",
           "scope": "资源、接线、46语言/2580键、无Python、打包和diff检查通过；不等同语义翻译审校。"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "e5e563c6dc90f61aaa23ecbb8e08de7f569a79f03b7af9ccd0143db3c2a097e2",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "真实 PDFium 和 headless 界面验证图片异步选择的会话保护及保存重开；嵌套对象、表单及原生窗口未完成。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json",
+          "sha256": "42a41d643b66ab890c80a981c788d23497744127cb6da315e20344507b4606c2",
+          "sourceDigest": "508e613a1f97a78a0b4ea7bc1bc6c24c8872e6f7497a90b7922c5e7b3e6bd668",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "PDF 删页确认绑定会话／页／修订，关闭在途拒绝新操作并保留取消；真实 PDFium 与 headless 浏览器两种窗口通过，非完整 PDF 编辑认证。",
+          "recordedAt": "2026-10-27T10:24:42.530Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -11296,7 +11606,11 @@
         "rust/readmd-kernel/src/pdf_workspace.rs",
         "rust/readmd-kernel/src/pdfium_worker.rs",
         "ui-tests/pdf-security-native.cjs",
-        "rust/readmd-kernel/examples/pdf_security_fixture.rs"
+        "rust/readmd-kernel/examples/pdf_security_fixture.rs",
+        "assets/js/features/pdf.js",
+        "tools/test/v006-pdf-image-target-process.cjs",
+        "assets/js/core/dialog.js",
+        "tools/test/v006-pdf-delete-target-process.cjs"
       ],
       "evidence": [
         {
@@ -11338,6 +11652,26 @@
           "scope": "只读真实哲学EPUB/PDF：预览无旁目录；明确保存共享资源并重开；270页PDF选页批注保存，未改样本页像素相同；原书摘要未变。非全部转换格式或完整PDF认证。",
           "recordedAt": "2026-10-08T10:51:23.000Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "e827ba48c824173311c52c954b3a9c5fe7cba1fe233b9fab0d2acbd9fbb825d8",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "有限合成 PDF 图片替换后未修改区域像素、对象、表单和第二页保持；不等于任意 PDF 完整保真。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json",
+          "sha256": "42a41d643b66ab890c80a981c788d23497744127cb6da315e20344507b4606c2",
+          "sourceDigest": "76569627ce44c46e344695abd535ea4817b2db7cc4e11c655d3405d13ed576bf",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "合成 PDF 删除、撤销、取消关闭、保存并关闭及新进程重开，原文档未误改；不等于任意 PDF 保真。",
+          "recordedAt": "2026-10-27T10:24:42.530Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
@@ -11366,10 +11700,48 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/transcribe.rs",
-        "rust/readmd-kernel/src/speech.rs"
+        "rust/readmd-kernel/src/readmd_fix.rs",
+        "rust/readmd-kernel/src/speech.rs",
+        "rust/readmd-kernel/src/speech_duration_tests.rs",
+        "tools/test/v006-media-duration.cjs",
+        "ui-tests/v006-media-duration-native.cjs",
+        "tools/test/v006-speech-offsets.cjs",
+        "ui-tests/v006-speech-offsets-native.cjs"
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "8d79dc9d327643dabb6376cb89bd5f0ac11fa071d8adfe44588133004804bf04",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "Windows 系统语音真实识别的音轨总时长包括尾部静音，不可计算格式保留识别并省略；选段与字幕仍未完成。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json",
+          "sha256": "42a41d643b66ab890c80a981c788d23497744127cb6da315e20344507b4606c2",
+          "sourceDigest": "bcf6338286957ee887ee2d358721122bcd62cda35a332e94f963db5c8e703cad",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "Windows 连续识别的多句时间戳与物理帧对照、真实服务和 headless 界面保存重开通过；媒体选段及容器原始偏移仍未完成。",
+          "recordedAt": "2026-10-27T10:24:42.530Z",
+          "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-media-timestamp-2026-10-27.md",
+          "sha256": "7317cf404603090a3b81df6540d19370341022952578bea77149dc6ab6477e0a",
+          "sourceDigest": "c9c6441f40dbe923dd853cb35ed9319b38b0fa6551fa72c93510d228d74f7f3b",
+          "kind": "integration",
+          "outcome": "passed",
+          "scope": "限定 Windows 系统识别的行首时间戳显示修复：正式 CSP headless 预览、保存重开及独立 PCM 帧对照；不代替选段、字幕或原生桌面验收。",
+          "recordedAt": "2026-10-27T14:18:30Z",
+          "platform": "windows-x64"
+        }
+      ],
       "remaining": [
+        "2026-10-27 媒体总时长及行首时间戳显示的有限修复已测；选段原始时间偏移、跨平台受管引擎、字幕及长任务仍待完整实现。",
         "起止时间、轨道、原始偏移字幕、摘要和回放定位完整流程"
       ]
     },
@@ -11397,7 +11769,43 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/ai.rs",
-        "assets/js/features/ai.js"
+        "assets/js/features/ai.js",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "assets/js/editor/review.js",
+        "assets/js/editor/editor.js",
+        "assets/js/editor/preview.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "assets/js/reader/render.js",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/durable-review-process.cjs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/ai_review_tests.rs",
+        "rust/readmd-kernel/src/review_route.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/examples/review_ai_probe.rs",
+        "assets/js/features/ai-selection.js",
+        "ui-tests/ai-review-selection.test.cjs",
+        "docs/design/v006-batch1-review-spec.md",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "rust/readmd-kernel/src/mcp.rs",
+        "assets/js/features/ai-harness.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "assets/css/panels.css",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -11409,10 +11817,29 @@
           "outcome": "passed",
           "scope": "已配置Antigravity真实模型列表、对话、文档动作及Tab接受/撤销；未覆盖长文和多模态",
           "recordedAt": "2026-10-08"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "9e7dba57f85a441b07c83ed8b78017240de37a03eb273c5c48f3a0757e1cbc85",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "实际配置服务原生读取未保存正文后提出两块修改，所选模板生效，A/B/C手改、同意、保存重开、单块撤回、请求重放及取消/迟到保护；模型与页面证据分开。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "5321e699d75edf215a1b65587a056492f951609e86e037b5b3ae49dcec9b8cb4",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "普通正文的多轮工具修改与既有逐块审阅共用Rust服务，输入/后台回执并发及补全撤销队列修复；实际指定模型HTTP400，真实长文和多模态成功仍未验。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
-        "统一跨章节/文档差异审阅；数字/公式/引用保护和过期、切页、取消覆盖"
+        "2026-10-27第二批限定结果：普通正文的多轮工具修改与既有逐块审阅共用Rust服务，输入/后台回执并发及补全撤销队列修复；实际指定模型HTTP400，真实长文和多模态成功仍未验。",
+        "普通正文单文档逐块审阅和真实AI闭环已通过；跨章节/多文档修改、数字/公式/引用语义保护、复杂结构与全部服务商实测仍需完成。"
       ]
     },
     {
@@ -11424,7 +11851,13 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/ai_completion.rs",
-        "assets/js/editor/editor.js"
+        "assets/js/editor/editor.js",
+        "assets/js/editor/review.js",
+        "assets/css/panels.css",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -11446,9 +11879,19 @@
           "scope": "实际Antigravity发现23模型；真实对话/总结/大纲/润色/翻译/解释/问题/上下文补全；原生Tab接受和撤销。约9–14秒，速度目标、多模态和Harness不在此证据范围。",
           "recordedAt": "2026-10-08T10:51:23.008Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "241fd8469e372509e677a65059691e35675cd0a6a6b680c54470907fe67bec5c",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "正式CSP实际流式补全、Esc、Tab、真实CtrlZ、手输丢弃灰字及输入法事件通过；使用受控SSE，非本轮实际模型速度/质量认证。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批限定结果：正式CSP实际流式补全、Esc、Tab、真实CtrlZ、手输丢弃灰字及输入法事件通过；使用受控SSE，非本轮实际模型速度/质量认证。",
         "原生流式/Tab/撤销已有证据；全模型速度路由、输入法、过期和长文性能验收"
       ]
     },
@@ -11461,7 +11904,23 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/ai_providers.rs",
-        "rust/readmd-kernel/src/ai.rs"
+        "rust/readmd-kernel/src/ai.rs",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "rust/readmd-kernel/src/mcp.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/features/ai.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -11473,9 +11932,19 @@
           "scope": "实际Antigravity发现23模型；真实对话/总结/大纲/润色/翻译/解释/问题/上下文补全；原生Tab接受和撤销。约9–14秒，速度目标、多模态和Harness不在此证据范围。",
           "recordedAt": "2026-10-08T10:51:23.010Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "15b22a54f156150b1b5f86ba5a376cfe47ae399e10c5c3608688b0f8f46c7ee5",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "OpenAI兼容/Anthropic/Gemini流式工具组装、签名及错误边界契约通过；仅受控实际SSE链路，不代表所有公开服务商认证。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批限定结果：OpenAI兼容/Anthropic/Gemini流式工具组装、签名及错误边界契约通过；仅受控实际SSE链路，不代表所有公开服务商认证。",
         "所有公开协议的代理、分页、限流、取消、半途断流和本地服务真实验收"
       ]
     },
@@ -11488,11 +11957,61 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/mcp.rs",
-        "assets/js/features/ai.js"
+        "assets/js/features/ai.js",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "tools/test/durable-review-stdio.cjs",
+        "docs/design/v006-batch1-review-spec.md",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "rust/readmd-kernel/src/export_snapshot_tests.rs",
+        "rust/readmd-kernel/src/export_snapshot_api.rs",
+        "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+        "rust/readmd-kernel/src/export_preview.rs",
+        "assets/js/features/export.js",
+        "ui-tests/export-review-snapshot.test.cjs",
+        "tools/test/export-harness-stdio.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "e1f27906a48463a8a40b88f3c43c9839a0baa5b826f5ce065471acf70f01cb64",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "readmd_review_document/readmd_review_ai复用Rust服务；真实MCP stdio三个独立进程验证未保存正文、幂等、同意/撤回/撤销和重启，原文件未自动保存；非全部外部网站或Extension Host认证。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "e181d4e817adee37d50ed86a8880151bb6bda3f57fc22cabb238a559038772d8",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "readmd_ai_task与readmd_export_snapshot复用Rust服务和四项工具；真实stdio三个进程7项通过，无配置回显、无暗中保存原文件；完整Extension Host及外部网站仍待验。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        }
+      ],
       "remaining": [
-        "授权分享链接、文件交接及MCP实际服务对接完整流程"
+        "2026-10-27第二批限定结果：readmd_ai_task与readmd_export_snapshot复用Rust服务和四项工具；真实stdio三个进程7项通过，无配置回显、无暗中保存原文件；完整Extension Host及外部网站仍待验。",
+        "新增审阅MCP工具已复用同一Rust服务并完成真实stdio；授权分享链接、文件交接、外部AI应用及完整VS Code Extension Host对接仍需验收。"
       ]
     },
     {
@@ -11504,7 +12023,24 @@
       "status": "in_progress",
       "implementation": [
         "rust/readmd-kernel/src/ai.rs",
-        "rust/readmd-kernel/src/ai_completion.rs"
+        "rust/readmd-kernel/src/ai_completion.rs",
+        "rust/readmd-kernel/examples/review_ai_probe.rs",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "rust/readmd-kernel/src/mcp.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/features/ai.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -11526,9 +12062,19 @@
           "scope": "实际Antigravity发现23模型；真实对话/总结/大纲/润色/翻译/解释/问题/上下文补全；原生Tab接受和撤销。约9–14秒，速度目标、多模态和Harness不在此证据范围。",
           "recordedAt": "2026-10-08T10:51:23.012Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/private-connection-diagnostic.json",
+          "sha256": "5b71376fab0eba5d71c249805e0ec11f7f3b125a068ff0ea689448656cf4902d",
+          "sourceDigest": "6b49fbce39e691cac2d10f5710f3be6c53cc2cd2f7ccab6e3cac84b7a47c4043",
+          "kind": "integration",
+          "outcome": "failed",
+          "scope": "只读既有私有配置、真实发现指定模型、最小实际请求及同适配器复核；上游HTTP400/地区限制，配置未变，正文/身份/密钥未记入证据。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批真实模型：模型发现成功，指定模型的最小聊天/旧桥/多轮任务均失败；上游HTTP400并明确报告使用地区不受支持。连接恢复前，长文、多模态及新的多轮成功保持待验，不以受控SSE代替。",
         "真实基础对话/文档动作/补全已测；长文及多模态识别、故障矩阵待测"
       ]
     },
@@ -12319,7 +12865,32 @@
         "tools/test/batch3-rust-note-numbering-stdio.cjs",
         "tools/test/batch3-rust-note-numbering-stdio.test.cjs",
         "tools/test/inspect-rust-note-numbering.py",
-        "tools/test/inspect-rust-note-numbering.test.py"
+        "tools/test/inspect-rust-note-numbering.test.py",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/features/ai.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "rust/readmd-kernel/src/export_snapshot_tests.rs",
+        "rust/readmd-kernel/src/export_snapshot_api.rs",
+        "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "ui-tests/export-review-snapshot.test.cjs",
+        "tools/test/export-harness-stdio.cjs",
+        "assets/js/editor/review.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -13274,9 +13845,19 @@
           "scope": "C90-source locked/offline Rust3853/0/3 existing ignores, frontend1214/0/0, Python30 controls, six gates; two actual CLI/MCP lanes and immutable archive-only readback. No GUI, release host, all faults, eight-hour or other-platform certification.",
           "recordedAt": "2026-10-24T12:13:56.414Z",
           "sourceDigest": "654fe04eb2719bea7b72eabeee2dc4b53a6c208c6ba2c55afe00642c4f84f81b"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "af453b47afcd55a8515d412e2979fad5cb701cae011bb30f1f7613f02b6e3484",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "本批完整Rust4065/0/3既有忽略、前端工具1423/0/0、真实CSP页面19项及stdio7项；原生GUI/外部应用/其它平台/长期不认证。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批限定结果：本批完整Rust4065/0/3既有忽略、前端工具1423/0/0、真实CSP页面19项及stdio7项；原生GUI/外部应用/其它平台/长期不认证。",
         "本轮限定P01/P07与实际引擎/布局/MCP、完整Rust库及仓库检查有冻结证据；完整前端全部场景、锁文件/真实磁盘满/全部故障/八小时混合压力仍待验收。",
         "继续46语言人工语义审校、真实Word/独立阅读器、全部原生平台、完整OMML/出版参数、响应式数学和长期性能门槛。",
         "2026-10-24 C73有限回归及79份真实输出与有界归档回读已通过；前置字体/缓存key期限取消、全部故障、真实磁盘满、八小时、实际外部应用、全I10及其它平台原门槛仍开放。",
@@ -13614,7 +14195,25 @@
         "rust/readmd-kernel/src/task_workspace/registry.rs",
         "tools/test/task-workspace-retirement.cjs",
         "tools/test/task-workspace-retirement.test.cjs",
-        "docs/reviews/readmd-v005-batch3-semantics-recovery-2026-10-20.md"
+        "docs/reviews/readmd-v005-batch3-semantics-recovery-2026-10-20.md",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "rust/readmd-kernel/src/document_history.rs",
+        "docs/design/v006-batch1-review-spec.md",
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "rust/readmd-kernel/src/export_snapshot_tests.rs",
+        "rust/readmd-kernel/src/export_snapshot_api.rs",
+        "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+        "rust/readmd-kernel/src/export_preview.rs",
+        "assets/js/features/export.js",
+        "ui-tests/export-review-snapshot.test.cjs",
+        "tools/test/export-harness-stdio.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md",
+        "rust/readmd-kernel/src/content.rs",
+        "ui-tests/v006-batch3-conversion-process.cjs"
       ],
       "evidence": [
         {
@@ -13673,10 +14272,39 @@
           "platform": "windows-x64",
           "recordedAt": "2026-10-20T11:38:01.347Z",
           "scope": "D03限定增量：完整退役WAL硬链接见证、精确对象身份及祖先读取保护；最终同源库test EXE真实终止10拥有者/15新恢复进程/10场景，未知与替换保护、恢复原身份后收敛、预算不双计全部通过。原脚本路径误判首失败保留。非首归属/断电/远程卷/真实磁盘满/任务审阅/长期认证。"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "0cbf7db8dfd90d22ace8d45220428f4bca7445ee1557ebe97267b8c9e76e4911",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "待审原文/候选/事件资源引用保留，不被普通历史淘汰；分离资源改写精确映射；隐藏原文相对图片跨目录另存以409拒绝并保护旧目标，不冒充已实现依赖搬迁。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "e25af69ac55d034c2fb76696fe52532a3ff67b911265376ced837abd81b4c030",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "快照固定实际资源字节、依赖安全路径及配额，缺引擎字体只绑定缺失资源；HTML自包含、TeX不可变依赖组与原子正文提交；不等于完整另存搬迁/全局资源清理。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "e7b469ff4462a4ae89aca07ba753036257260182b629519304b9bd15b05118b2",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "二进制文档读取与路径导入使用暂存资源；失败不写源目录或覆盖同名 Markdown，明确保存后才物化。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
-        "已保留引用式图片标题；HTML图片、移动/打包依赖、引用安全清理及集中暂存容量/过期策略尚需完成；待审修改引用不能误删",
+        "2026-10-27第二批限定结果：快照固定实际资源字节、依赖安全路径及配额，缺引擎字体只绑定缺失资源；HTML自包含、TeX不可变依赖组与原子正文提交；不等于完整另存搬迁/全局资源清理。",
+        "审阅原文/候选/操作中的图片引用已保留；隐藏原文相对图片的跨目录另存当前安全拒绝，第四批补依赖搬迁。HTML图片、移动/打包与引用安全清理、集中暂存容量/过期策略仍需完成。",
         "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。",
         "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。"
       ]
@@ -14627,7 +15255,24 @@
         "assets/js/features/ai.js",
         "assets/index.html",
         "ui-tests/ai-context.spec.js",
-        "ui-tests/quick-ux-native.cjs"
+        "ui-tests/quick-ux-native.cjs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/ai_review_tests.rs",
+        "rust/readmd-kernel/src/review_route.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/examples/review_ai_probe.rs",
+        "assets/js/features/ai-selection.js",
+        "ui-tests/ai-review-selection.test.cjs",
+        "assets/js/editor/review.js",
+        "assets/js/editor/editor.js",
+        "assets/js/editor/preview.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "assets/js/reader/render.js",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/durable-review-process.cjs",
+        "docs/design/v006-batch1-review-spec.md"
       ],
       "evidence": [
         {
@@ -14648,10 +15293,19 @@
           "outcome": "passed",
           "scope": "本批39项desktop界面回归全通过，无跳过/重试，正式CSP；覆盖自动选区/追问/配置切页/无文档对话/备用编辑器、公式应用/无效草稿/属性/撤销及统一勾选框。不替代全工作区或所有平台原生验收。",
           "recordedAt": "2026-10-08T13:26:59.871Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "8dae6fea6d92fe93ce5ec6a03c64f39cd3ef447e4dfd6e07aa3a005f509e89ac",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "首次选区/全文自动上下文，重复普通渲染文本精确UTF-16源映射、emoji/实体/粗体/链接、输入前捕获、事务后追问重定位和切页固定；无法精确映射不扩全文授权。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
         }
       ],
       "remaining": [
-        "已移除选区勾选框并完成编辑态精确选区、阅读态普通块源行映射、获焦前捕获、追问沿用、切页更新、异步配置目标固定与重复请求保护；复杂富文本跨块精确源映射、会话重开后的对象恢复、工作区来源展示和读写授权范围仍需实现及原生验证。无法精确映射的渲染选区保持安全副本，不按首次字符串替换。"
+        "普通渲染正文精确选区、追问重定位和恢复保护已限定验证；代码/公式/表格/HTML等变形投影及复杂跨块结构仍保持只读安全上下文；工作区来源展示、完整重开对象和读写授权矩阵继续保留。"
       ]
     },
     {
@@ -14660,11 +15314,65 @@
       "requirement": "Shared visible-body block review engine",
       "workflow": "AI changes body → manual takeover → save/reopen → accept/revert",
       "acceptance": "Independent content/review revisions; baselines survive save/expiry; preserve mixed manual edits; multi-round lineage",
-      "status": "pending",
-      "implementation": [],
-      "evidence": [],
+      "status": "in_progress",
+      "implementation": [
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "assets/js/editor/review.js",
+        "assets/js/editor/editor.js",
+        "assets/js/editor/preview.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "assets/js/reader/render.js",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/durable-review-process.cjs",
+        "assets/css/editor.css",
+        "docs/design/v006-batch1-review-spec.md",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "rust/readmd-kernel/src/mcp.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/features/ai.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "assets/css/panels.css",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
+      ],
+      "evidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "aca07050dfef9f08c9bba26fb03d2cd8bd4bc7fe66a0973c1cea1b1b59900272",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "普通正文ReviewChange已实现逐块高亮、同意/撤回、接管比较/保留我的修改、保存独立、重开恢复、真实文件与前端11项；不计协作/Word/结构化审阅完成。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "b9804191bbf82153511f8ee7e8155f906301cf95cd5dce821befaf3e3a499431",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "编辑回执与后台审阅共用FIFO，未发送undo/redo保留顺序及发送时CAS，真实快捷键和三条红绿回归通过；结构/协作/Word审阅仍欠。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        }
+      ],
       "remaining": [
-        "统一ReviewChange实现AI/协作/Word审阅，逐块高亮与接管、恢复及撤回"
+        "2026-10-27第二批限定结果：编辑回执与后台审阅共用FIFO，未发送undo/redo保留顺序及发送时CAS，真实快捷键和三条红绿回归通过；结构/协作/Word审阅仍欠。",
+        "普通正文持久审阅已完成本批范围；公式/表格等结构化审阅、协作建议/Word修订回流、多轮依赖复杂接管、原生Wry及跨平台完整证据仍待完成。"
       ]
     },
     {
@@ -14673,11 +15381,39 @@
       "requirement": "Snapshot-bound accept-all and export",
       "workflow": "Pending changes → accept-all/export → failure/cancel/success",
       "acceptance": "Prompt required; failure/cancel retains pending; only snapshot IDs accepted on success; later changes remain pending",
-      "status": "pending",
-      "implementation": [],
-      "evidence": [],
+      "status": "in_progress",
+      "implementation": [
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "rust/readmd-kernel/src/export_snapshot_tests.rs",
+        "rust/readmd-kernel/src/export_snapshot_api.rs",
+        "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+        "rust/readmd-kernel/src/export_preview.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "assets/js/features/export.js",
+        "ui-tests/export-review-snapshot.test.cjs",
+        "tools/test/export-harness-stdio.cjs",
+        "assets/js/editor/review.js",
+        "assets/css/panels.css",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
+      ],
+      "evidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "a10c6bc78c84bef2094a9edbde4a5925cdec7fa013e85bdce8eeed618ed49b14",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "五格式真实快照导出、同意确认、失败取消保护、仅旧集合接受、预览一致、覆盖/外改拒绝、重启对账及可独立撤回通过。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        }
+      ],
       "remaining": [
-        "接入审阅快照、导出事务及失败/取消竞态测试"
+        "普通正文五格式及真实内核/MCP/headless流程已经通过；复杂结构与协作/Word建议组合、正式Wry/安装包、物理磁盘满与完整平台矩阵仍待验收，不能以本地限定流程宣布整项认证。"
       ]
     },
     {
@@ -14686,11 +15422,65 @@
       "requirement": "Native autonomous tool Harness and resumable lifecycle",
       "workflow": "Plan/tools/check/revise → switch/close/tray/quit → resume",
       "acceptance": "Shared Rust tool registry; scoped/validated/idempotent tools; 64 rounds/30 min; checkpoint stops never reported complete",
-      "status": "pending",
-      "implementation": [],
-      "evidence": [],
+      "status": "in_progress",
+      "implementation": [
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_store.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "rust/readmd-kernel/src/review_api.rs",
+        "rust/readmd-kernel/src/review_api_tests.rs",
+        "rust/readmd-kernel/src/server.rs",
+        "rust/readmd-kernel/src/ai_review.rs",
+        "rust/readmd-kernel/src/ai_review_tests.rs",
+        "rust/readmd-kernel/src/review_route.rs",
+        "rust/readmd-kernel/src/review_transport.rs",
+        "rust/readmd-kernel/examples/review_ai_probe.rs",
+        "assets/js/features/ai.js",
+        "assets/js/features/ai-selection.js",
+        "ui-tests/ai-review-selection.test.cjs",
+        "rust/readmd-kernel/src/mcp.rs",
+        "docs/design/v006-batch1-review-spec.md",
+        "rust/readmd-kernel/src/ai_harness.rs",
+        "rust/readmd-kernel/src/ai_harness_tests.rs",
+        "rust/readmd-kernel/src/ai_task_store.rs",
+        "rust/readmd-kernel/src/ai_task_api.rs",
+        "rust/readmd-kernel/src/ai_task_api_tests.rs",
+        "rust/readmd-kernel/src/lib.rs",
+        "rust/readmd-kernel/src/main.rs",
+        "assets/js/features/ai-harness.js",
+        "assets/js/core/tabs.js",
+        "assets/js/features/document-history.js",
+        "ui-tests/ai-harness-adapter.test.cjs",
+        "assets/js/editor/review.js",
+        "assets/css/panels.css",
+        "assets/readmd.boot.js",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
+      ],
+      "evidence": [
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "2a06c4ded771236d31dd0e99158b5b04484c1a3598e8e4a1ce50e42a4a294c24",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "最小原生read_document→propose_review桥及三协议工具契约；真实已配置服务、模板指令与摘要、幂等、范围/CAS、取消等待、网络线程上界和保存重开；不冒充完整自主Harness。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "fbbab11ea4e6d348e053cab01ff1686bbb0e199bd210885aa0f649db0d039321",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "四项原生工具、三协议流式、多轮检查完成、持久意图、64轮/30分钟累计预算、OS租约与双槽、关侧栏切页继续、暂停迟到/崩溃等待/明确续作通过；真实指定模型受上游400阻断。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        }
+      ],
       "remaining": [
-        "多协议工具调用、任务生命周期、幂等/预算/恢复校验及Antigravity实际请求"
+        "本批原生四工具Harness和本地生命周期通过；实际指定连接返回HTTP400，真实多轮长文/补全/多模态成功仍待验。",
+        "复杂结构/跨文档/协作工具、人工接管后自动继续其它范围、原生Wry/托盘/正式安装包、Extension Host与完整平台/故障长期验收仍待完成。"
       ]
     },
     {
@@ -14799,7 +15589,16 @@
         "tools/test/inspect-typst-baseline.py",
         "tools/test/inspect-typst-baseline.test.py",
         "docs/design/v005-batch3-native-defaults-typst-ink-2026-10-24.md",
-        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md"
+        "docs/reviews/readmd-v005-batch3-native-defaults-typst-ink-2026-10-24.md",
+        "rust/readmd-kernel/src/export_snapshot.rs",
+        "rust/readmd-kernel/src/export_snapshot_tests.rs",
+        "rust/readmd-kernel/src/export_snapshot_api.rs",
+        "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+        "rust/readmd-kernel/src/review.rs",
+        "rust/readmd-kernel/src/review_tests.rs",
+        "ui-tests/export-review-snapshot.test.cjs",
+        "tools/test/export-harness-stdio.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -14954,9 +15753,19 @@
           "platform": "windows-x64",
           "recordedAt": "2026-10-24T06:37:50.911Z",
           "scope": "C73有限水平TrueType普通段落非零基线及保护Code/Math；真实三页53链接分片、来源墨迹命中与6张HTTP分页图片，4组/18PDF/89工具/16独立核对、10旧目标保护。完整字形/字体/路径/链接比较及有界像素反控通过，不认证其它stories、CFF、全P04或Word真实版式。"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "75139e94300f4e3b59703686fa75a349a6233615d6844d948240e18a5a76b009",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "固定输入的实际PDF、DOCX投影和EPUB预览接入快照身份；PDF预览字节与提交产物相同、字体/引擎/图表变动不得借旧缓存；不冒充Word原生分页。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
         }
       ],
       "remaining": [
+        "2026-10-27第二批限定结果：固定输入的实际PDF、DOCX投影和EPUB预览接入快照身份；PDF预览字节与提交产物相同、字体/引擎/图表变动不得借旧缓存；不冒充Word原生分页。",
         "真实Typst分页、顶层段落/标题/块公式/题注点击回写、当前修订及保存重开已有Windows证据；嵌套块、纯链接块和任意复杂组合继续补齐。",
         "Word真实分页及实际程序往返、任意节/尾注/全部出版属性、非Windows原生、干净环境与长期压力仍未验收。",
         "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
@@ -15088,7 +15897,16 @@
         "tools/worker-budget-translations.json",
         "assets/data/publication-metadata-i18n.json",
         "tools/i18n-batch3-publication-metadata.json",
-        "ui-tests/publication-engines-native.cjs"
+        "ui-tests/publication-engines-native.cjs",
+        "tools/i18n-v006-review.json",
+        "assets/js/editor/review.js",
+        "assets/js/features/ai.js",
+        "assets/js/editor/editor.js",
+        "docs/design/v006-batch1-review-spec.md",
+        "tools/i18n-v006-batch2.json",
+        "ui-tests/durable-review-adapter.test.cjs",
+        "ui-tests/export-harness-process.cjs",
+        "docs/design/v006-batch2-snapshot-harness-spec.md"
       ],
       "evidence": [
         {
@@ -15250,10 +16068,40 @@
           "platform": "windows-x64",
           "recordedAt": "2026-10-23T08:21:58.032Z",
           "scope": "7条新增文案×46语言及动态错误结构检查；尚未完成所有语言语义审校。"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+          "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+          "sourceDigest": "0a7a520a1a41eacf82ec0eda5ea7ee335576c8b7dd92b04008961908cf9716bb",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "本批43个新词条×46语言，结构一致且总2880键；新增动态错误别名及无障碍提示接线。完整人工语义、RTL、长文本、读屏和高DPI不借结构检查结案。",
+          "recordedAt": "2026-10-27T03:39:28.599Z"
+        },
+        {
+          "path": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+          "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+          "sourceDigest": "6bea26c5f591b372ac7f5862cfc42f888168dd984ae51c181f486f5ec3095dfb",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "新增49词条覆盖46语言，总2929键结构一致；动态任务错误/确认/无障碍接线，两种窗口相关控件44px；完整人工语义、RTL/读屏/高DPI仍待验。",
+          "recordedAt": "2026-10-27T07:03:11.943Z"
+        },
+        {
+          "path": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+          "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+          "sourceDigest": "5a27220081dc1adc4cabdbe32595116e5a07cd236f08c20722945b62d8503fa7",
+          "kind": "inspection",
+          "outcome": "partial",
+          "scope": "46 语言键结构一致；发现 Kikongo 既有文案混入其他语言，语言语义审校仍未完成。",
+          "recordedAt": "2026-10-27T09:43:23.424Z",
+          "platform": "windows-x64"
         }
       ],
       "remaining": [
-        "全部新增动态文案、错误及无障碍名称翻译与46语言语义审校",
+        "2026-10-27 Kikongo 文件存在语言混用，71 项含西里尔文字仅为审查线索；46 语言语义审校仍未完成。",
+        "2026-10-27第二批限定结果：新增49词条覆盖46语言，总2929键结构一致；动态任务错误/确认/无障碍接线，两种窗口相关控件44px；完整人工语义、RTL/读屏/高DPI仍待验。",
+        "全部新增动态文案、错误及无障碍名称的46语言人工语义、RTL、长文本、读屏和高DPI仍待统一验收；本批43新词条已提供46语言翻译并通过结构检查。",
         "本增量五个OCR错误/批处理键已提供46语言字典且结构检查通过；原生语义、RTL、长文本与无障碍仍未审校，不能计为完整本地化通过。",
         "本轮原生截图仍观察到旧通用打开/重新加载/主题提示中英混用；继续修复全局提示并做46语言人工语义与无障碍审校，新增出版词条通过不等于全界面完成。"
       ]
@@ -16776,7 +17624,7 @@
       ]
     }
   ],
-  "updated": "2026-10-25",
+  "updated": "2026-10-28",
   "platformEvidence": [
     {
       "id": "windows-x64",
@@ -17896,25 +18744,25 @@
       "openIssues": [
         {
           "name": "script-arabic-epub",
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-wR1038/report.json",
           "certified": false
         },
         {
           "name": "script-hebrew-epub",
-          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:210)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
+          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:210)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-wR1038/report.json",
           "certified": false
         },
         {
           "name": "script-devanagari-typst",
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-wR1038/report.json",
           "certified": false
         },
         {
           "name": "script-devanagari-epub",
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:70:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:79:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:148:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:286:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:298:221)",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-wR1038/report.json",
           "certified": false
         }
@@ -17990,7 +18838,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         },
@@ -18057,7 +18905,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           },
           "readerLinkEvidence": [
@@ -18781,7 +19629,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         },
@@ -18815,7 +19663,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           },
           "plannedChecks": 136,
@@ -18869,7 +19717,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         },
@@ -18903,7 +19751,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         },
@@ -18937,7 +19785,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         },
@@ -18971,7 +19819,7 @@
           "currentBindingVerified": true,
           "independentReaderRuntime": {
             "executionTimeHashRecorded": true,
-            "path": "T:\\programming\\project\\Hermes\\hermes-agent\\venv\\Scripts\\python.exe",
+            "path": "<local-path>",
             "sha256": "30eb0ce05922f054dff5afa2ad3d4c5a563d5520c455c39ea2802edf587f106d"
           }
         }
@@ -18980,7 +19828,7 @@
         {
           "name": "script-arabic-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -18988,7 +19836,7 @@
         {
           "name": "script-hebrew-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
+          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -18996,7 +19844,7 @@
         {
           "name": "script-devanagari-typst",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19004,7 +19852,7 @@
         {
           "name": "script-devanagari-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:483\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:330:221)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19012,7 +19860,7 @@
         {
           "name": "caption-first-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: REF destination is not within its complete current physical caption\n    at assertPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:89:700)\n    at inspectOutput (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:291)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:235\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:100)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: REF destination is not within its complete current physical caption\n    at assertPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:89:700)\n    at inspectOutput (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:291)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:235\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:100)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-reader-links",
           "independentEvidence": {
             "category": "external-reader-links",
@@ -19088,7 +19936,7 @@
         {
           "name": "caption-first-xelatex",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Complete caption title lost/reordered tbl:cap-one\n    at assertComplete (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:37:57)\n    at assertPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:86:484)\n    at inspectOutput (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:355)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:235\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:100)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: Complete caption title lost/reordered tbl:cap-one\n    at assertComplete (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:37:57)\n    at assertPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:86:484)\n    at inspectOutput (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:355)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:235\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:134:100)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-reader-copy",
           "independentEvidence": {
             "category": "external-reader-copy",
@@ -19153,7 +20001,7 @@
         {
           "name": "caption-script-arabic-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19161,7 +20009,7 @@
         {
           "name": "caption-script-hebrew-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19169,7 +20017,7 @@
         {
           "name": "caption-script-devanagari-typst",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19177,7 +20025,7 @@
         {
           "name": "caption-script-devanagari-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:435\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.firstPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:136:252)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:336:24)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19185,7 +20033,7 @@
         {
           "name": "caption-common-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: REF destination is not within its complete current physical caption\n    at assertPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:89:700)\n    at inspectOutput (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:291)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:376\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: REF destination is not within its complete current physical caption\n    at assertPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:89:700)\n    at inspectOutput (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:291)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:376\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-reader-links",
           "independentEvidence": {
             "category": "external-reader-links",
@@ -19261,7 +20109,7 @@
         {
           "name": "caption-common-reopened-xelatex",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Complete caption title lost/reordered tbl:cap-one\n    at assertComplete (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:37:57)\n    at assertPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:86:484)\n    at inspectOutput (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:355)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:376\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Complete caption title lost/reordered tbl:cap-one\n    at assertComplete (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:37:57)\n    at assertPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:86:484)\n    at inspectOutput (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:131:355)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:376\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-reader-copy",
           "independentEvidence": {
             "category": "external-reader-copy",
@@ -19326,7 +20174,7 @@
         {
           "name": "caption-script-arabic-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19334,7 +20182,7 @@
         {
           "name": "caption-script-hebrew-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: pypdf lost actual hebrew text\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:210)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19342,7 +20190,7 @@
         {
           "name": "caption-script-devanagari-reopened-typst",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19350,7 +20198,7 @@
         {
           "name": "caption-script-devanagari-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Actual output contains replacement/tofu text\n    at checkTrace (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:83:177)\n    at checkGlyphs (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:92:41)\n    at Object.assertScriptPdf (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:161:20)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:695\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-script-copy",
           "report": ".cache/capability-upgrade/batch3-author-inline-20261021/consumers/engines/stdio-JMxymP/report.json",
           "certified": false
@@ -19358,7 +20206,7 @@
         {
           "name": "uniform-section-continuous-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Current note destination lost CALL_A_START\n    at assertUniformPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:95:569)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:613\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Current note destination lost CALL_A_START\n    at assertUniformPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:95:569)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:613\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-reader-links",
           "independentEvidence": {
             "category": "external-reader-links",
@@ -19584,7 +20432,7 @@
         {
           "name": "uniform-section-section-reopened-epub",
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Current note destination lost CALL_A_START\n    at assertUniformPdf (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:95:569)\n    at Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:613\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
+          "error": "AssertionError [ERR_ASSERTION]: Current note destination lost CALL_A_START\n    at assertUniformPdf (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:95:569)\n    at <local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:613\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async Object.runCheck (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:317:53)\n    at async Object.reopenedPhase (<local-root>\\tools\\test\\batch3-caption-author-engine-cases.cjs:140:231)\n    at async main (<local-root>\\tools\\test\\batch3-author-inline-engines-stdio.cjs:337:339)",
           "category": "external-reader-links",
           "independentEvidence": {
             "category": "external-reader-links",
@@ -20059,7 +20907,7 @@
             "sha256": "da47230f6792598ff19a6a0e693938bd74d542b19286f0959ce51f798b9f8de3"
           },
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Independent oracle failed 021-direct-no-styles-before-docx\n\n1 !== 0\n\n    at oracle (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:225:494)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:250:232)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+          "error": "AssertionError [ERR_ASSERTION]: Independent oracle failed 021-direct-no-styles-before-docx\n\n1 !== 0\n\n    at oracle (<local-root>\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:225:494)\n    at main (<local-root>\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:250:232)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
         },
         {
           "label": "C52 strict OPC parser rejects EPUB HTML5 doctype",
@@ -20068,7 +20916,7 @@
             "sha256": "56edf553222e22308b27b476860d951ba2f8758b201d314fe9c46f4dbfb638f2"
           },
           "passed": false,
-          "error": "AssertionError [ERR_ASSERTION]: Independent oracle failed 091-direct-no-styles-current-epub\n\n1 !== 0\n\n    at oracle (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:225:494)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:259:45)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+          "error": "AssertionError [ERR_ASSERTION]: Independent oracle failed 091-direct-no-styles-current-epub\n\n1 !== 0\n\n    at oracle (<local-root>\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:225:494)\n    at main (<local-root>\\tools\\test\\batch3-math-word-paragraph-stdio.cjs:259:45)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
         }
       ],
       "limitations": [
@@ -23393,7 +24241,7 @@
           "retainedEvidenceFiles": 279,
           "firstFailure": {
             "stage": "ordinary-first actual five consumers",
-            "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 7\n\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:164:110)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+            "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 7\n\n    at main (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:164:110)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
           }
         },
         {
@@ -23405,7 +24253,7 @@
           "retainedEvidenceFiles": 290,
           "firstFailure": {
             "stage": "ordinary-first actual five consumers",
-            "error": "SyntaxError: Unexpected token 'w', \"warning: T\"... is not valid JSON\n    at JSON.parse (<anonymous>)\n    at oracle (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:54:118)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:169:87)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+            "error": "SyntaxError: Unexpected token 'w', \"warning: T\"... is not valid JSON\n    at JSON.parse (<anonymous>)\n    at oracle (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:54:118)\n    at main (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:169:87)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
           }
         },
         {
@@ -23417,7 +24265,7 @@
           "retainedEvidenceFiles": 295,
           "firstFailure": {
             "stage": "ordinary-first actual five consumers",
-            "error": "AssertionError [ERR_ASSERTION]: ordinary-first-rust-complete-pdf-equality\n\n1 !== 0\n\n    at oracle (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:54:80)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:172:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+            "error": "AssertionError [ERR_ASSERTION]: ordinary-first-rust-complete-pdf-equality\n\n1 !== 0\n\n    at oracle (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:54:80)\n    at main (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:172:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
           }
         },
         {
@@ -23429,7 +24277,7 @@
           "retainedEvidenceFiles": 445,
           "firstFailure": {
             "stage": "explicit conflict old target",
-            "error": "AssertionError [ERR_ASSERTION]: Expected an actual MCP tool error\n+ actual - expected\n\n+ undefined\n- true\n\n    at Object.errorBody (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-section-stdio.cjs:64:35)\n    at expectedError (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:30:60)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-document-defaults-stdio.cjs:204:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+            "error": "AssertionError [ERR_ASSERTION]: Expected an actual MCP tool error\n+ actual - expected\n\n+ undefined\n- true\n\n    at Object.errorBody (<local-root>\\tools\\test\\batch3-math-section-stdio.cjs:64:35)\n    at expectedError (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:30:60)\n    at main (<local-root>\\tools\\test\\batch3-math-document-defaults-stdio.cjs:204:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
           }
         }
       ],
@@ -23555,7 +24403,7 @@
           "firstFailure": {
             "name": "source roundtrip a",
             "passed": false,
-            "error": "AssertionError [ERR_ASSERTION]: {\"ok\":false,\"error_code\":\"math_invalid_property\"}\n    at payload (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\managed-tex-process-cold.cjs:72:3)\n    at main (Z:\\Natsumer\\.codex\\worktrees\\b2bb\\readmd\\tools\\test\\batch3-math-native-runs-stdio.cjs:127:21)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
+            "error": "AssertionError [ERR_ASSERTION]: {\"ok\":false,\"error_code\":\"math_invalid_property\"}\n    at payload (<local-root>\\tools\\test\\managed-tex-process-cold.cjs:72:3)\n    at main (<local-root>\\tools\\test\\batch3-math-native-runs-stdio.cjs:127:21)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)"
           }
         }
       ],
@@ -23584,6 +24432,170 @@
       "fullP04Certified": false,
       "fullBatch3Certified": false,
       "releaseAccepted": false
+    },
+    "v006Batch1_20261027": {
+      "status": "passed_scoped",
+      "scope": "V6-11–17 bounded ordinary-prose durable review,save/reopen/recovery and minimum native AI bridge",
+      "recordedAt": "2026-10-27T03:39:28.599Z",
+      "candidate": "v006-batch1-05",
+      "contract": "docs/design/v006-batch1-review-spec.md",
+      "report": "docs/reviews/readmd-v006-batch1-review-2026-10-27.md",
+      "evidence": "docs/evidence/capability-upgrade/2026-10-27/v006-batch1-scoped/manifest.json",
+      "sha256": "5f67865fec1acc89d4e8fdc52bbf57951c18dcd493fa143cfacd875e4a39124e",
+      "rust": {
+        "passed": 3978,
+        "failed": 0,
+        "ignored": 3,
+        "seconds": 248.51
+      },
+      "node": {
+        "passed": 1371,
+        "failed": 0,
+        "skipped": 0,
+        "testFiles": 102
+      },
+      "completePageChecks": 11,
+      "stdioChecks": 4,
+      "realConfiguredAi": true,
+      "nativeGuiTested": false,
+      "fullRequirementCertification": false,
+      "releaseAccepted": false,
+      "formalVersion": "0.0.5"
+    },
+    "v006Batch2_20261027": {
+      "status": "partial_external_ai",
+      "localWorkflowsPassed": true,
+      "fullBatchAccepted": false,
+      "scope": "V6-21–27 ordinary prose snapshot/export and durable four-tool tasks; real selected-provider success remains blocked",
+      "recordedAt": "2026-10-27T07:03:11.943Z",
+      "candidate": "v006-batch2-16",
+      "contract": "docs/design/v006-batch2-snapshot-harness-spec.md",
+      "report": "docs/reviews/readmd-v006-batch2-review-2026-10-27.md",
+      "evidence": "docs/evidence/capability-upgrade/2026-10-27/v006-batch2-scoped/manifest.json",
+      "sha256": "f8ada8372bc161e234ac2aff1a50b2e499ff4838f8364385c32524ed8de84203",
+      "validation": {
+        "rust": {
+          "passed": 4065,
+          "failed": 0,
+          "ignored": 3,
+          "seconds": 256.14
+        },
+        "node": {
+          "passed": 1423,
+          "failed": 0,
+          "skipped": 0,
+          "testFiles": 104
+        },
+        "completePage": {
+          "checks": 19,
+          "pageErrors": 0,
+          "productionCSP": true,
+          "browser": "installed headless msedge",
+          "realWindowsKernel": true,
+          "controlledSseProvider": true,
+          "realModel": false
+        },
+        "stdio": {
+          "checks": 7,
+          "processes": [
+            34356,
+            9576,
+            18716
+          ],
+          "normalEof": true
+        },
+        "realConfiguredAi": {
+          "passed": false,
+          "modelDiscoverySucceeded": true,
+          "upstreamHttpStatus": 400,
+          "classifiedRegionRestriction": true,
+          "configurationUnchanged": true,
+          "configurationCopied": false,
+          "rawProviderResponseLogged": false
+        }
+      },
+      "nativeGuiTested": false,
+      "fullRequirementCertification": false,
+      "releaseAccepted": false,
+      "formalVersion": "0.0.5"
+    },
+    "v006Batch3_20261027": {
+      "status": "partial",
+      "fullBatchAccepted": false,
+      "recordedAt": "2026-10-27T09:43:23.424Z",
+      "evidence": "docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json",
+      "sha256": "8851f60ef236b37721aa3acd658f7ccd9c97ddf1f14d4a54ac5c2a74960ddf92",
+      "report": "docs/reviews/readmd-v006-batch3-progress-2026-10-27.md",
+      "scope": "Windows scoped OpenAPI, table paste, collaboration safety, conversion staging, PDF image race and media duration; rename remains unresolved.",
+      "validation": {
+        "rust": {
+          "passed": 4102,
+          "failed": 0,
+          "ignored": 3
+        },
+        "node": {
+          "files": 107,
+          "passed": 1455,
+          "failed": 0,
+          "skipped": 0
+        },
+        "realNativeWindow": false,
+        "privateAiTest": false
+      }
+    },
+    "v006Batch3Followup_20261027": {
+      "status": "partial",
+      "fullBatchAccepted": false,
+      "recordedAt": "2026-10-27T10:24:42.530Z",
+      "evidence": "docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json",
+      "sha256": "42a41d643b66ab890c80a981c788d23497744127cb6da315e20344507b4606c2",
+      "report": "docs/reviews/readmd-v006-batch3-progress-2026-10-27.md",
+      "scope": "Scoped table column alignment, PDF close/delete protection, and Windows continuous speech timestamps; rename and broader batch remain incomplete.",
+      "validation": {
+        "rust": {
+          "passed": 4102,
+          "failed": 0,
+          "ignored": 3
+        },
+        "node": {
+          "passed": 1497,
+          "failed": 0,
+          "skipped": 0,
+          "files": 109
+        },
+        "realNativeWindow": false,
+        "privateAiTest": false
+      }
+    },
+    "v006Batch3RenameRefactor_20261028": {
+      "status": "passed_scoped",
+      "fullBatchAccepted": false,
+      "releaseAccepted": false,
+      "recordedAt": "2026-10-28T06:47:47.090Z",
+      "evidence": "docs/reviews/readmd-v006-batch3-refactor-evidence-2026-10-28.json",
+      "sha256": "86079547a9e53f0b8f86aa56073194869528bb054bcd7858d44f5b8e04cd5c48",
+      "report": "docs/reviews/readmd-v006-batch3-refactor-2026-10-28.md",
+      "contract": "docs/design/v006-batch3-rename-refactor-safety-spec.md",
+      "sourceDigest": "9b0c17f30a61384319793f24c7a0059eab698f8a4d95b81fa62885fabd4db0af",
+      "validation": {
+        "rust": {
+          "passed": 4286,
+          "failed": 0,
+          "historicalIgnored": 7,
+          "seconds": 260.74,
+          "command": "cargo test --locked --offline -p readmd-kernel --lib (cwd rust/)"
+        },
+        "node": {
+          "files": 113,
+          "passed": 1653,
+          "failed": 0,
+          "skipped": 0,
+          "discovery": "rg --files tools/test ui-tests packages/vscode-extension -g '*.test.cjs' -g '*.test.mjs' -g '*.test.js' -g '!**/node_modules/**'"
+        },
+        "realHttpChecks": 6,
+        "headlessWorkflows": 5,
+        "realNativeWindow": false
+      }
     }
   }
 }

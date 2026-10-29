@@ -2,9 +2,9 @@
 
 let activeConfirmFinish = null;
 
-function confirmAction({ title, message = '', confirmText, cancelText, danger = false } = {}) {
+function confirmAction({ title, message = '', confirmText, cancelText, danger = false, signal } = {}) {
   const modal = $('confirm-modal');
-  if (!modal) return Promise.resolve(false);
+  if (!modal || signal?.aborted) return Promise.resolve(false);
   if (activeConfirmFinish) activeConfirmFinish(false);
 
   return new Promise(resolve => {
@@ -20,6 +20,7 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
       cancelButton.removeEventListener('click', onCancel);
       modal.removeEventListener('keydown', onKeyDown);
       modal.removeEventListener('click', onClick);
+      signal?.removeEventListener('abort', onAbort);
       modal.classList.add('hidden');
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
       resolve(value);
@@ -32,6 +33,7 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
     };
     const onConfirm = () => finish(true);
     const onCancel = () => finish(false);
+    const onAbort = () => finish(false);
     const onClick = event => {
       if (event.target === modal) finish(false);
     };
@@ -48,7 +50,10 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
     cancelButton.addEventListener('click', onCancel);
     modal.addEventListener('keydown', onKeyDown);
     modal.addEventListener('click', onClick);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    // An abort may have been triggered while another confirmation was closed.
+    if (signal?.aborted) { finish(false); return; }
     modal.classList.remove('hidden');
-    setTimeout(() => cancelButton.focus({ preventScroll: true }), 0);
+    setTimeout(() => { if (!finished) cancelButton.focus({ preventScroll: true }); }, 0);
   });
 }

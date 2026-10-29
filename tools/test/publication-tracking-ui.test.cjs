@@ -30,15 +30,23 @@ test('new tracking control stays hidden on unconfigured unsupported formats',()=
 test('valid shared tracking preset remains savable in unsupported HTML without exporting',async()=>{const e=environment(),h=e.context.window.ReadMDPublication.tracking,calls=[];e.context.state.export.fmt='html';e.context.state.export.options.typography.trackingPt=.025;h.mount(e.host,{style:{trackingPt:.025},getFormat:()=> 'html'});e.context.renderExportPresetCards=()=>{};e.context.hasPy=false;e.context.py=null;e.context.renderExportPresetSelect=()=>{};e.context.getExportPresetNames=()=>({});e.context.getExportLast=()=>({});e.context.cancelNativeExportPreview=()=>{};e.context.apiFetch=async(route,options)=>{calls.push({route,body:JSON.parse(options.body)});return{ok:true,json:async()=>({ok:true})};};e.context.expSavePreset();e.ids.get('exp-save-input').value='Tracking shared';await e.ids.get('exp-save-ok').onclick();assert.equal(calls.length,1);assert.equal(calls[0].route,'/api/export/presets');assert.equal(calls[0].body.custom['Tracking shared'].typography.trackingPt,.025);});
 
 test('DOCX automatic preview reports unsupported inline while an explicit unsupported export still reports a toast',async()=>{
-  const e=environment(),toasts=[];let timer;e.ids.set('export-preview-modal',{classList:{contains:()=>true},querySelector:()=>null});e.context.showToast=message=>toasts.push(message);e.context.window.READMD_ENGINE='rust';e.context.state.export.options.typography.trackingPt=1;
+  const e=environment(),toasts=[],calls=[],tab={id:'owned-preview-tab'};let timer;e.ids.set('export-preview-modal',{classList:{contains:()=>true},querySelector:()=>null});e.context.showToast=message=>toasts.push(message);e.context.window.READMD_ENGINE='rust';e.context.state.export.options.typography.trackingPt=1;
   e.context.window.ReadMDPublication.tracking.mount(e.host,{style:{trackingPt:1},getFormat:()=>e.context.state.export.fmt});
   e.context._t=(key,params)=>e.context.i18n.t(key,params);e.context.window.ReadMDTask={loading:host=>{host.textContent='loading';}};e.context.crypto={randomUUID:()=> 'owned-preview-test'};
   e.context.setTimeout=callback=>{timer=callback();return 1;};e.context.clearTimeout=()=>{};e.context.apiMessage=data=>'error.'+data.error_code;
-  e.context.apiFetch=async()=>({ok:false,json:async()=>({ok:false,error_code:'publication_tracking_unsupported'})});
+  e.context.TextEncoder=TextEncoder;e.context.getActiveTab=()=>tab;
+  e.context.window.ReadMDReview={lf:content=>content.replace(/\r\n?/g,'\n'),capture:async target=>{assert.equal(target,tab);return{document_id:'owned-preview-document',generation:1,review_revision:2,content:'Original source'};}};
+  e.context.apiFetch=async(route,options)=>{const body=JSON.parse(options.body);calls.push({route,body});
+    if(route==='/api/export/snapshot'&&body.action==='prepare')return{ok:true,json:async()=>({ok:true,snapshot_id:'owned-preview-snapshot',pending_count:0,pending_ids:[],content:'Original source',options:body.options})};
+    if(route==='/api/export/snapshot'&&body.action==='runtime'){assert.equal(body.snapshot_id,'owned-preview-snapshot');return{ok:true,json:async()=>({ok:true,runtime_ready:true})};}
+    assert.equal(route,'/api/export/preview');assert.equal(body.snapshot_id,'owned-preview-snapshot');assert.equal(Object.hasOwn(body,'content'),false);
+    return{ok:false,json:async()=>({ok:false,error_code:'publication_tracking_unsupported'})};};
   e.context.currentExportContent=()=> 'Original source';e.context.currentExportName=()=> 'Original';e.context.renderExportPresetCards=()=>{};
   e.context.updateExportLivePreview();assert(timer);await timer;
-  assert(e.ids.get('export-preview-mini-content').textContent.includes('error.publication_tracking_unsupported'));assert.deepEqual(toasts,[]);
+  assert(e.ids.get('export-preview-mini-content').textContent.includes('error.publication_tracking_unsupported'),e.ids.get('export-preview-mini-content').textContent);assert.deepEqual(toasts,[]);
+  assert.deepEqual(calls.map(call=>call.body.action||call.route),['prepare','runtime','runtime','/api/export/preview']);
   e.context.state.export.fmt='html';assert.equal(await e.context.runExportOnce(),false);assert.deepEqual(toasts,['error.publication_tracking_unsupported']);
+  assert.equal(calls.length,4,'Unsupported explicit export still rejects before another snapshot/API request');
 });
 
 test('baseline shift is sparse, preserves inherited zero and clears without materializing a default',()=>{

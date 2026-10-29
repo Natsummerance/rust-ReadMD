@@ -1,0 +1,190 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-27T10:24:42.530Z",
+  "baseCommit": "bf1ed9cf27644db9985c3cee13d0084ab6ae730c",
+  "platform": "windows-x64",
+  "syntheticMaterials": true,
+  "candidate": {
+    "kernel": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+    "boot": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+  },
+  "build": {
+    "locked": true,
+    "offline": true,
+    "incremental": false,
+    "sharedTarget": true,
+    "rust": {
+      "passed": 4102,
+      "failed": 0,
+      "ignored": 3,
+      "logSha256": "801631adc5f2f70d34e8cea15787bbedaa1f48e966605dfa62c27672c0ec9a6b"
+    },
+    "node": {
+      "passed": 1497,
+      "failed": 0,
+      "skipped": 0,
+      "files": 109,
+      "logSha256": "25cae250ff6c52b3e3b1fde7972ed53400a7de2ee2dd09a9f6125cc46821f8fd",
+      "firstFailureSha256": "353509a48ba468d9a632d7ec53c9368645397d0ce7d3b203706cb9122034e249"
+    }
+  },
+  "reports": [
+    {
+      "name": "table_browser",
+      "path": ".cache/v006-table-align/browser-final-boot/report.json",
+      "sha256": "684159251adf6952cd10a6d8d1b5cd6041a61914e2465efa7df1ecb0356c2a51",
+      "checks": 5,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    },
+    {
+      "name": "pdf_close_1160",
+      "path": ".cache/v006-pdf-delete-target/closing-candidate-2/report.json",
+      "sha256": "196f32f8031bba2a2028eaa52494ca5bbfefb443b8b856c6edc0031e3f7957e8",
+      "checks": 7,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    },
+    {
+      "name": "pdf_close_1024",
+      "path": ".cache/v006-pdf-delete-target/compact-final/report.json",
+      "sha256": "6ca35e55fcd2efe08f5acc7ae2f9df7c42e92c110f350131ae5c0562e2c0652d",
+      "checks": 7,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    },
+    {
+      "name": "speech_offsets_service",
+      "path": ".cache/capability-upgrade/v006-speech-offsets/offsets-UWpxju/report.json",
+      "sha256": "b79242922d4ceb1d83b05a8edf4e40b624cbfb9fafdbb0d35c7acd288c557eaf",
+      "checks": 4,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "0227b45b659775c78717124fadeb5e7fd8eb6c701599fa9b1c7a3d2e7dad2177"
+    },
+    {
+      "name": "speech_offsets_browser",
+      "path": ".cache/capability-upgrade/v006-speech-offsets/browser-YOQo3W/report.json",
+      "sha256": "017bdd8cf4c8cdd1f51542fd431262412523ca4998a045327687c501332225a0",
+      "checks": 3,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    },
+    {
+      "name": "speech_duration_service",
+      "path": ".cache/capability-upgrade/v006-media-duration/service-AP306J/report.json",
+      "sha256": "0424cef8d302e16634ee793dca2363aae2f94abf990daaedc9cea406d0076541",
+      "checks": 9,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "0227b45b659775c78717124fadeb5e7fd8eb6c701599fa9b1c7a3d2e7dad2177"
+    },
+    {
+      "name": "speech_duration_browser",
+      "path": ".cache/capability-upgrade/v006-media-duration/browser-ufOhKO/report.json",
+      "sha256": "5131e14f1d72de3e1043877ab97b1586ca9e685839b72d14db4f66dcc8cc97ad",
+      "checks": 3,
+      "kernelSha256": "a0a5a7133a8323f28fc3fe35d8a113a2cf9fe2dfbcd9add18da6124bf1572c03",
+      "bootSha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    }
+  ],
+  "firstFailures": [
+    {
+      "name": "table_absent",
+      "path": ".cache/v006-table-align/browser-first-failure-2/report.json",
+      "sha256": "7674b4611b2921eecfe8b3b8756f102f628e50e8fabd624e1b3b7a7507c8ec39"
+    },
+    {
+      "name": "table_guard",
+      "path": ".cache/v006-table-align/browser-after-boot/report.json",
+      "sha256": "b80399236689ba7fec6012be6a72cc17ff8aaeadd38a622763f97fb9ab13c026"
+    },
+    {
+      "name": "pdf_old_confirmation",
+      "path": ".cache/v006-pdf-delete-target/first-failure-controlled/report.json",
+      "sha256": "86be2bdc7ac21997286001fbe3a158832c15aedc6c934332dc1ecfcff1886ee8"
+    },
+    {
+      "name": "pdf_closing_race",
+      "path": ".cache/v006-pdf-delete-target/closing-first-failure/report.json",
+      "sha256": "888f07d710765d5a6d2bb964d9456f54b00186016ef249aca0dcf4342c30cf64"
+    },
+    {
+      "name": "speech_offsets",
+      "path": ".cache/capability-upgrade/v006-speech-offsets/offsets-gqUUxQ/report.json",
+      "sha256": "fc446866a6d968cad7626c6ba9f0b911ac1b9a3d0cce1422c92e16913a5ee9d8"
+    },
+    {
+      "name": "speech_browser",
+      "path": ".cache/capability-upgrade/v006-speech-offsets/browser-suMXz1/report.json",
+      "sha256": "6b413d407bac8665a23731da935dcf7cea2ceed248af5e0cd4b3fc4fde155902"
+    }
+  ],
+  "sources": [
+    {
+      "path": "assets/js/core/dialog.js",
+      "sha256": "3bb708b451e596eafe83ab2f768f2e78bae207f0be16dc48e041e5fa6d3658dd"
+    },
+    {
+      "path": "assets/js/editor/editor.js",
+      "sha256": "266ffed534e6e50de855e038c7e3655ad088217147074faa9a4e44ea9a27615c"
+    },
+    {
+      "path": "assets/js/features/pdf.js",
+      "sha256": "fc1daaaf16e0aefad07a9f5327df09e15f01dbc2696fdb5d2d04de76b14dc81a"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "sha256": "097866dd95c0f7267faf791d41572ed203d82584565eb73ca1909f0e06dd7b93"
+    },
+    {
+      "path": "rust/readmd-kernel/src/speech.rs",
+      "sha256": "f2d062505f3eef0db1c31f7109543a539084e66d1784cc83203fc627d931542f"
+    },
+    {
+      "path": "tools/test/v006-pdf-delete-target.test.cjs",
+      "sha256": "f001d6aa87aff4c173a05c3699b3de1a24c451b9e116b17a65ffdd2040d182c3"
+    },
+    {
+      "path": "tools/test/v006-pdf-delete-target-process.cjs",
+      "sha256": "336f830c6f08bc44eb8b0c9f04f6e01836670e1957b756edc4d5cd7999a18358"
+    },
+    {
+      "path": "tools/test/v006-pdf-image-target.test.cjs",
+      "sha256": "d7ac0644b6378bb30f203d8fed7c835ddce4974a0d8bebc5164f7ecc7e06f08e"
+    },
+    {
+      "path": "tools/test/v006-pdf-image-target-process.cjs",
+      "sha256": "e5dd1151e6a90c8cc35ea8c69d9afbf9adffff21baef4d29b706bd148c0b3191"
+    },
+    {
+      "path": "tools/test/v006-table-align.test.cjs",
+      "sha256": "e2c258b07966f06dc481978cdea779db6c8924eddb260fd697da3a81416347b5"
+    },
+    {
+      "path": "tools/test/v006-table-align-http.cjs",
+      "sha256": "dcc6423c879cc72888ea41ee492b521b865cd1a17ef0f87658308c6387425f2f"
+    },
+    {
+      "path": "tools/test/v006-table-align-browser.cjs",
+      "sha256": "ce550cb7eea035ea1a048fa4f3c9484552c05cd8698dea853a8899b7d7cf87e2"
+    },
+    {
+      "path": "tools/test/v006-speech-offsets.cjs",
+      "sha256": "e9b395b980b77f8aa376b9717d0e5ab3fdee88ee9ed8ac0a70ac6dda02d0c1dd"
+    },
+    {
+      "path": "ui-tests/v006-speech-offsets-native.cjs",
+      "sha256": "e14451f08c84b815260fddf2d284b7fbe08aea05b8bfcef80bf5b966a26d8d8f"
+    },
+    {
+      "path": "tools/test/math-source-only-frontend.test.cjs",
+      "sha256": "c87dce001a79d59dd8b808141272a2b0f7d55d85149f553fc4cb6098f9fac130"
+    }
+  ],
+  "limitations": [
+    "Scoped headless Edge and real Windows processes; no native visible-window, non-Windows, 50-human or eight-hour certification.",
+    "Media still uses Windows System.Speech and host FFmpeg; region-restricted private AI connection was not called.",
+    "Timestamp formatting, source media selection and full offset semantics remain incomplete.",
+    "Rename authorization and durable review migration remain unresolved.",
+    "Repository history and older tracked files require privacy review before any push or publication."
+  ]
+}

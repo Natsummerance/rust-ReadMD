@@ -6,6 +6,9 @@ assets/providers/provider-catalog.json -text
 packages/readmd-pet-rust/runtime-assets/renderer/assets/*.js -text
 # This inventory is an exact recording input; keep its byte hash portable.
 docs/reviews/ui-function-inventory-2026-10-02/inventory.json -text
+# The V0.0.6 scoped evidence manifest is referenced by an exact SHA-256.
+docs/reviews/readmd-v006-batch3-evidence-2026-10-27.json -text
+docs/reviews/readmd-v006-batch3-followup-evidence-2026-10-27.json -text
 # Locked third-party inputs must retain their exact bytes after checkout.
 rust/vendor/** -text
 assets/vendor/** -text
@@ -18,3 +21,17 @@ rust/readmd-kernel/src/fixtures/** -text
 # Native PDF fixtures contain byte offsets and must survive Windows checkout.
 rust/readmd-kernel/tests/fixtures/** -text
 rust/readmd-kernel/tests/fixtures/*.pdf binary
+
+# Hash-bound acceptance evidence must have identical bytes on every host.
+docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md -text
+docs/reviews/readmd-v005-batch3-p04-paragraph-decoration-2026-10-24.md -text
+docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md -text
+docs/reviews/readmd-v005-batch3-windows-faults-cross-owner-2026-10-24.md -text
+docs/reviews/readmd-v006-batch3-media-timestamp-2026-10-27.md -text
+docs/reviews/readmd-v006-batch3-refactor-evidence-2026-10-28.json -text
+docs/reviews/readmd-v006-batch3-rename-2026-10-27.md -text
+
+# Existing exact-byte frontend guards must survive cross-platform checkout.
+assets/js/core/settings.js -text
+assets/css/panels.css -text
+tests/frontend/toolbar.test.mjs -text

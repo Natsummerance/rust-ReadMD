@@ -185,7 +185,7 @@ async function uploadFile(file) {
     const qs = '?ext=' + encodeURIComponent(ext) + '&name=' + encodeURIComponent(fileName);
     const r = await apiFetch('/api/upload' + qs, { method: 'POST', body: file });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(apiMessage(d) || `HTTP ${r.status}`);
     return d.path || null;
   } catch (e) {
     showToast((_t('toast.uploadFailed') || '上传失败：') + (e.message || e));

@@ -65,6 +65,41 @@ fn bytes_bounded(path: &Path) -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
+fn edit_source_identity(path: &Path) -> Result<crate::document_operations::FileIdentity, String> {
+    use crate::document_operations::{self, IdentityObservation};
+    match document_operations::observe_identity(path).map_err(edit_operation_error)? {
+        IdentityObservation::Regular(identity) => Ok(identity),
+        IdentityObservation::Missing => Err("document_conflict".into()),
+        IdentityObservation::Unsupported(_) => Err("document_operation_unsupported".into()),
+    }
+}
+fn edit_operation_error(error: crate::document_operations::Error) -> String {
+    use crate::document_operations::ErrorKind;
+    match error.kind {
+        ErrorKind::Missing | ErrorKind::IdentityChanged | ErrorKind::RevisionChanged => "document_conflict".into(),
+        _ => error.code().into(),
+    }
+}
+/// The caller holds SAVE_LOCK -> profile gate. Bind the original request and
+/// raw-byte revision to the same file, including a same-content replacement.
+fn verify_edit_source(
+    gate: &crate::document_operations::Guard,
+    requested: &Path,
+    path: &Path,
+    identity: &crate::document_operations::FileIdentity,
+    expected: &str,
+) -> Result<(), String> {
+    if absolute_file(requested).map_err(|_| "document_conflict")? != path {
+        return Err("document_conflict".into());
+    }
+    gate.verify_existing_identity(path, identity).map_err(edit_operation_error)?;
+    if revision(&bytes_bounded(path)?) != expected {
+        return Err("document_conflict".into());
+    }
+    // A replacement during the bounded read is also a conflict.
+    gate.verify_existing_identity(path, identity).map_err(edit_operation_error)?;
+    Ok(())
+}
 fn markdown(path: &Path) -> bool {
     matches!(
         content::ext_of(path).as_str(),
@@ -731,7 +766,11 @@ pub fn edit_document(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     cancelled(cancel)?;
-    let path = absolute_file(path)?;
+    let requested_path = path;
+    let path = absolute_file(requested_path)?;
+    // Capture before reading the edit baseline. Defer a capture error until a
+    // real commit so previews and byte no-ops retain their existing behavior.
+    let source_identity = if dry_run { Ok(None) } else { edit_source_identity(&path).map(Some) };
     let bytes = bytes_bounded(&path)?;
     if revision(&bytes) != expected.to_lowercase() {
         return Err("document_conflict".into());
@@ -808,33 +847,55 @@ pub fn edit_document(
     // no-op keeps its old byte/response contract without opening staged files.
     let staged = if changed { crate::document_assets::discover_staged(&edited, &app.paths.data_dir)? } else { Vec::new() };
     let resource_rewrite_required = !staged.is_empty();
-    let mut resources = None;
+    let mut saved_resources = None;
     let mut checkpoint = Value::Null;
     if !dry_run && changed {
+        let source_identity = source_identity?.ok_or("document_conflict")?;
         cancelled(cancel)?;
         if revision(&bytes_bounded(&path)?) != expected.to_lowercase() {
             return Err("document_conflict".into());
         }
-        if resource_rewrite_required {
-            let materialized = crate::document_assets::materialize_staged(&edited, &path, &staged, &app.paths.data_dir)?;
-            encoded = crate::text_encoding::encode(&materialized.text, encoding).map_err(|_| "encoding_unrepresentable")?;
-            if encoded.len() > MAX_DOCUMENT_BYTES { return Err("document_too_large".into()); }
-            edited = materialized.text.clone();
-            resources = Some(materialized);
-            changed = encoded != bytes;
-        }
-        if changed {
+        #[cfg(test)]
+        commit_safety_tests::commit_barrier(false);
+        {
+            let gate = crate::document_operations::acquire(
+                &app.paths.data_dir, crate::document_operations::MAX_LOCK_WAIT,
+            ).map_err(edit_operation_error)?;
+            // The lookup includes both source_path and target_path reservations.
+            if crate::review_api::pending_rename(app, &path).map_err(|error| error.code)?.is_some() {
+                return Err("rename_recovery_pending".into());
+            }
             cancelled(cancel)?;
-            if revision(&bytes_bounded(&path)?) != expected.to_lowercase() { return Err("document_conflict".into()); }
-            checkpoint = json!(crate::document_history::checkpoint_file(
-                &app.paths.data_dir, &path, "mcp_edit"
-            )?.map(|entry| entry.id));
-            cancelled(cancel)?;
-            if revision(&bytes_bounded(&path)?) != expected.to_lowercase() { return Err("document_conflict".into()); }
-            content::write_bytes_atomic(&path, &encoded).map_err(|_| "file_write_failed")?;
-            if let Some(resources) = &mut resources { resources.commit(); }
-            let _ = content::index(app, &path);
+            verify_edit_source(&gate, requested_path, &path, &source_identity, &expected.to_lowercase())?;
+            // Materialized's rollback must run before releasing the gate: a
+            // cooperating save must not reuse an asset before we may remove it.
+            let mut resources = None;
+            if resource_rewrite_required {
+                let materialized = crate::document_assets::materialize_staged(&edited, &path, &staged, &app.paths.data_dir)?;
+                encoded = crate::text_encoding::encode(&materialized.text, encoding).map_err(|_| "encoding_unrepresentable")?;
+                if encoded.len() > MAX_DOCUMENT_BYTES { return Err("document_too_large".into()); }
+                edited = materialized.text.clone();
+                saved_resources = Some((materialized.edits.clone(), materialized.assets.clone()));
+                resources = Some(materialized);
+                changed = encoded != bytes;
+            }
+            if changed {
+                cancelled(cancel)?;
+                verify_edit_source(&gate, requested_path, &path, &source_identity, &expected.to_lowercase())?;
+                checkpoint = json!(crate::document_history::checkpoint_file(
+                    &app.paths.data_dir, &path, "mcp_edit"
+                )?.map(|entry| entry.id));
+                #[cfg(test)]
+                commit_safety_tests::commit_barrier(true);
+                cancelled(cancel)?;
+                verify_edit_source(&gate, requested_path, &path, &source_identity, &expected.to_lowercase())?;
+                // External editors do not participate in the profile gate;
+                // this preflight is not an atomic CAS against their writes.
+                content::write_bytes_atomic(&path, &encoded).map_err(|_| "file_write_failed")?;
+                if let Some(resources) = &mut resources { resources.commit(); }
+            }
         }
+        if changed { let _ = content::index(app, &path); }
     }
     let mut response = json!({"ok":true,"dry_run":dry_run,"changed":changed,"replacements":if replace_all{count}else{1},
         "revision":revision(if dry_run {&bytes}else{&encoded}),"proposed_revision":revision(&encoded),
@@ -842,13 +903,17 @@ pub fn edit_document(
         "preview":{"before":old.chars().take(1600).collect::<String>(),"after":new.chars().take(1600).collect::<String>(),
             "truncated":old.chars().count()>1600 || new.chars().count()>1600}});
     if dry_run && resource_rewrite_required { response["resource_rewrite_required"] = json!(true); }
-    if let Some(resources) = &resources {
+    if let Some((edits, assets)) = saved_resources {
         response["saved_content"] = json!(edited);
-        response["asset_edits"] = json!(resources.edits);
-        response["saved_assets"] = json!(resources.assets);
+        response["asset_edits"] = json!(edits);
+        response["saved_assets"] = json!(assets);
     }
     Ok(response)
 }
+
+#[cfg(test)]
+#[path = "document_intelligence_commit_tests.rs"]
+mod commit_safety_tests;
 
 #[cfg(test)]
 mod tests {

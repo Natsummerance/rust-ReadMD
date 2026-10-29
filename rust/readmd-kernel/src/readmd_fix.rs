@@ -38,6 +38,11 @@ lazy_static::lazy_static! {
     // `\p{Z}` is Zs/Zl/Zp and does NOT contain U+001C..U+001F (category Cc), so
     // this class stays as it is; Python reaches those four through `ch.isspace()`.
     static ref PUNCT_CLASS_RE: Regex = Regex::new(r"[\p{P}\p{S}\p{Z}]").unwrap();
+    // The transcription formatter emits a bold timestamp followed by a prose
+    // separator. Its square brackets confuse the Python-compatible delimiter
+    // classifier, so protect only this exact line prefix, not bracketed prose.
+    // Hours have no numeric-width ceiling (recordings can exceed 99 hours).
+    static ref TRANSCRIPTION_TIMESTAMP_PREFIX_RE: Regex = Regex::new(r"^(\*\*\[(?:[0-9]{2,}:)?[0-5][0-9]:[0-5][0-9]\]\*\*)(?:[ \t]|$)").unwrap();
 }
 
 // ----------------------------------------------------------------------------
@@ -810,8 +815,17 @@ fn fix_emphasis_line(line: &str) -> (String, Vec<String>) {
     if HR_RE.is_match(line) {
         return (line.to_string(), Vec::new());
     }
+    let timestamp = TRANSCRIPTION_TIMESTAMP_PREFIX_RE.captures(line)
+        .and_then(|captures| captures.get(1));
+    let prefix_end = timestamp.map(|prefix| prefix.end()).unwrap_or(0);
+    let prefix = &line[..prefix_end];
     let mut log = Vec::new();
-    let mut s = line.to_string();
+    // Keep a nonempty prefix while repairing the body: dropping it altogether
+    // would make a trailing " * " look like a standalone delimiter/list line
+    // and invoke unrelated Python compatibility special cases.
+    const TIMESTAMP_MASK: &str = "\x1aT\x1a";
+    let mut s = if prefix.is_empty() { line.to_string() }
+        else { format!("{}{}", TIMESTAMP_MASK, &line[prefix_end..]) };
     let mut all_spans: Vec<(String, String)> = Vec::new();
 
     // Py 496-509: balance, then immediately mask the resulting pairs, per delimiter.
@@ -850,6 +864,12 @@ fn fix_emphasis_line(line: &str) -> (String, Vec<String>) {
     // happen before fix_markdown's final restore() -- it does, and it did before.
     for (ph, orig) in all_spans.iter().rev() {
         s = s.replace(ph.as_str(), orig.as_str());
+    }
+    if !prefix.is_empty() {
+        // Only the synthetic leading marker is replaced; matching bytes in the
+        // source body must remain literal and cannot claim this timestamp.
+        debug_assert!(s.starts_with(TIMESTAMP_MASK));
+        s.replace_range(..TIMESTAMP_MASK.len(), prefix);
     }
     (s, log)
 }
@@ -1148,6 +1168,136 @@ mod tests {
         for unchanged in ["[cf. __literal @a]","[see __prefix @b, p. 4;\n @c]"] {assert!(result.text.contains(unchanged),"{}",result.text);}
         assert!(result.text.contains("- **unfinished**"));assert!(!result.text.contains('\x1a'));
         assert_eq!(result.text.lines().count(),input.lines().count());
+    }
+}
+
+#[cfg(test)]
+mod transcription_timestamp_tests {
+    use super::*;
+
+    #[test]
+    fn transcription_formatter_timestamps_survive_repair_and_repeat() {
+        let segments = [0.0, 65.9, 3599.0, 3661.0, 360061.0, 44442061.0]
+            .into_iter()
+            .map(|start| crate::transcribe::Segment { start, text: "Synthetic transcript segment.".into() })
+            .collect::<Vec<_>>();
+        let source = crate::transcribe::format_segments(&segments, None, None, None, None, None);
+        let first = fix_markdown(&source);
+        assert_eq!(first.text, source);
+        assert!(first.fixes.is_empty(), "{:?}", first.fixes);
+        assert_eq!(first.stats["bold"], 0);
+        assert!(first.text.contains("**[100:01:01]**"));
+        assert!(first.text.contains("**[12345:01:01]**"));
+        let second = fix_markdown(&first.text);
+        assert_eq!(second.text, first.text);
+        assert!(second.fixes.is_empty());
+        let html = crate::content::render_html(&first.text);
+        assert!(html.contains("<strong>[01:05]</strong>"), "{html}");
+        assert!(html.contains("<strong>[100:01:01]</strong>"), "{html}");
+    }
+
+    #[test]
+    fn transcription_timestamp_prefix_accepts_only_complete_ascii_times_and_prose_boundaries() {
+        for timestamp in ["00:00", "59:59", "00:00:00", "99:59:59", "100:00:00", "999999999999999999999:59:59"] {
+            for suffix in ["", " Synthetic body.", "\t中文 😀 transcript."] {
+                let source = format!("**[{timestamp}]**{suffix}");
+                let result = fix_markdown(&source);
+                assert_eq!(result.text, source, "{source:?}");
+                assert!(result.fixes.is_empty(), "{source:?}: {:?}", result.fixes);
+                assert_eq!(fix_markdown(&result.text).text, result.text);
+            }
+        }
+    }
+
+    #[test]
+    fn transcription_timestamp_keeps_body_emphasis_repair_and_line_diagnostics() {
+        for (unfinished, completed) in [
+            ("**unfinished", "**unfinished**"),
+            ("***unfinished", "***unfinished***"),
+            ("__unfinished", "__unfinished__"),
+            ("*unfinished", "*unfinished*"),
+        ] {
+            let source = format!("Before.\n**[100:01:02]** Speaker: {unfinished}\nAfter.\n");
+            let expected = format!("Before.\n**[100:01:02]** Speaker: {completed}\nAfter.\n");
+            let result = fix_markdown(&source);
+            assert_eq!(result.text, expected);
+            assert_eq!(result.stats["bold"], 1);
+            assert_eq!(result.fixes.len(), 1);
+            assert!(result.fixes[0].contains("第 2 行"));
+            assert_eq!(fix_markdown(&result.text).text, result.text);
+            assert!(!result.text.contains('\x1a'));
+        }
+        // A single trailing marker is inline prose here, even when its shape
+        // would exempt an ordinary list line from the single-star pass.
+        assert_eq!(fix_markdown("**[00:01]** * ").text, "**[00:01]** \\* ");
+    }
+
+    #[test]
+    fn transcription_timestamp_protection_preserves_escapes_inline_code_and_fences() {
+        let source = concat!(
+            "\\*\\*[00:01]\\*\\* Explicit literal.\n",
+            "`**[00:02]** **inline`\n",
+            "`**[00:03]**` Speaker: **unfinished\n",
+            "    **[00:04]** **indented\n",
+            "```text\n**[00:05]** **fenced\n<script>synthetic()</script>\n```\n",
+            "~~~text\n**[100:00:01]** __fenced\n~~~\n",
+        );
+        let expected = source.replace("Speaker: **unfinished\n", "Speaker: **unfinished**\n");
+        let result = fix_markdown(source);
+        assert_eq!(result.text, expected);
+        assert_eq!(result.stats["bold"], 1);
+        assert_eq!(result.text.lines().count(), source.lines().count());
+        assert_eq!(fix_markdown(&result.text).text, result.text);
+        assert!(!result.text.contains('\x1a'));
+    }
+
+    #[test]
+    fn transcription_timestamp_does_not_exempt_non_times_or_invalid_separators() {
+        for value in [
+            "title", "1:02", "01:2", "60:00", "00:60", "1:02:03", "100:60:00", "100:00:60",
+            "01:02:03:04", "-01:02:03", "00.01", "00-01", "00：01", "００:０１", "00: 01", "00:01.500",
+        ] {
+            let source = format!("**[{value}]** Ordinary body.");
+            assert!(!TRANSCRIPTION_TIMESTAMP_PREFIX_RE.is_match(&source), "{source}");
+            assert_eq!(fix_markdown(&source).text, format!("\\*\\*[{value}]\\*\\* Ordinary body."));
+        }
+        for suffix in [": body", ", body", "- body", "\u{a0}body", "\u{1c}body"] {
+            let source = format!("**[00:01]**{suffix}");
+            assert!(!TRANSCRIPTION_TIMESTAMP_PREFIX_RE.is_match(&source), "{source:?}");
+            assert_eq!(fix_markdown(&source).text, format!("\\*\\*[00:01]\\*\\*{suffix}"));
+        }
+        // With no prose separator the old classifier treats the second run
+        // as an opener; retain that Python-compatible repair as well.
+        assert!(!TRANSCRIPTION_TIMESTAMP_PREFIX_RE.is_match("**[00:01]**joined"));
+        assert_eq!(fix_markdown("**[00:01]**joined").text, "\\*\\*[00:01]**joined**");
+        for lead in ["Speaker: ", " ", "- ", "> "] {
+            let source = format!("{lead}**[00:01]** Body.");
+            assert!(!TRANSCRIPTION_TIMESTAMP_PREFIX_RE.is_match(&source), "{source}");
+            // Outside the special prefix, the existing classifier already
+            // balances these examples correctly; do not invent a repair.
+            assert_eq!(fix_markdown(&source).text, source);
+        }
+    }
+
+    #[test]
+    fn transcription_timestamp_repair_does_not_activate_html_entities_or_code() {
+        let source = concat!(
+            "**[00:01]** &lt;script&gt;synthetic()&lt;/script&gt; ",
+            "`<img src=x onerror=\"synthetic()\">` ",
+            "\\<script>synthetic()\\</script>\n",
+        );
+        let result = fix_markdown(source);
+        assert_eq!(result.text, source);
+        assert_eq!(fix_markdown(&result.text).text, result.text);
+        let html = crate::content::render_html(&result.text);
+        assert!(html.contains("<strong>[00:01]</strong>"), "{html}");
+        assert!(html.contains("&lt;script&gt;"), "{html}");
+        assert!(html.contains("<code>&lt;img"), "{html}");
+        assert!(!html.contains("<script") && !html.contains("<img"), "{html}");
+        // Source repair also leaves deliberately authored raw HTML intact;
+        // sanitization belongs to the reader, not this Markdown source pass.
+        let raw = "**[00:02]** <script>synthetic()</script> <img src=x onerror=\"synthetic()\">\n";
+        assert_eq!(fix_markdown(raw).text, raw);
     }
 }
 

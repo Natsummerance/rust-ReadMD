@@ -1734,6 +1734,17 @@ fn ocr_result_is_empty(text: &str) -> bool {
 }
 
 pub fn h_ocr(app: &App, req: &Request) -> Response {
+    h_ocr_with_commit(app,req,||!crate::speech::cancelled())
+}
+
+/// The route's task owner supplies its atomic cancel-versus-publish boundary.
+/// Read-only OCR, empty output, skips and identical output never invoke it.
+pub fn h_ocr_with_commit(app: &App, req: &Request, before_publish: impl FnOnce()->bool) -> Response {
+    h_ocr_with_engine(app,req,before_publish,ocr::ocr_any)
+}
+
+fn h_ocr_with_engine(app: &App, req: &Request, before_publish: impl FnOnce()->bool,
+    recognize: impl FnOnce(&str)->Result<String,ocr::OcrError>) -> Response {
     let p = double_decode(req.q("p").unwrap_or(""));
     if !Path::new(&p).is_file() {
         return Response::json_status(404, &json!({"error": "文件不存在", "error_code": crate::api_codes::FILE_NOT_FOUND}));
@@ -1741,8 +1752,19 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
     if let Some(gate) = module_gate(app, "ocr") {
         return gate;
     }
-    match ocr::ocr_any(&p) {
+    let output=if req.q("save")==Some("1") {
+        let out=std::path::PathBuf::from(crate::convert::md_output_path(&p));
+        let mode=req.q("on_exists").unwrap_or("skip");
+        let target=if mode=="rename" {crate::batch2::free_output_path(&out)} else {out};
+        let plan=crate::convert::capture_md_output_plan(&app.paths.data_dir,&target,mode=="overwrite");
+        if let Err(code)=&plan {
+            if code!="output_exists" {return Response::json_status(crate::batch2::conversion_commit_status(code),&json!({"ok":false,"saved":false,"out":target,"error_code":code}));}
+        }
+        Some((target,plan))
+    } else {None};
+    match recognize(&p) {
         Ok(text) => {
+            if crate::speech::cancelled() {return Response::json_status(499,&json!({"ok":false,"saved":false,"error_code":"cancelled"}));}
             let fixed = readmd_fix::fix_markdown(&text);
             let (dir, name) = ntpath_split(&p);
             let mut body = json!({
@@ -1763,20 +1785,15 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
                 body["note_code"] = json!("ocr_no_text");
             }
             // `save=1`: write `<src>.md` beside the source, honouring `on_exists`.
-            if req.q("save") == Some("1") && !empty {
-                let out = std::path::PathBuf::from(crate::convert::md_output_path(&p));
-                let mode = req.q("on_exists").unwrap_or("skip");
-                let target = match mode {
-                    "rename" => crate::batch2::free_output_path(&out),
-                    _ => out.clone(),
-                };
-                let (saved, skipped) = if target.exists() && mode != "overwrite" && mode != "rename" {
-                    (false, true)
-                } else {
-                    match crate::convert::write_md_managed(&app.paths.data_dir, &target.to_string_lossy(), &fixed.text, mode == "overwrite") {
-                        Ok(()) => (true, false),
-                        Err(error) => return Response::json_status(500, &json!({"ok": false, "content": fixed.text, "saved": false, "out": target, "error": error, "error_code": "save_failed"})),
-                    }
+            if let Some((target,plan))=output.filter(|_|!empty) {
+                let (saved,skipped)=match plan {
+                    Err(code) if code=="output_exists"=>(false,true),
+                    Err(code)=>return Response::json_status(crate::batch2::conversion_commit_status(&code),&json!({"ok":false,"content":fixed.text,"saved":false,"out":target,"error_code":code})),
+                    Ok(plan)=>match crate::convert::write_md_output_plan_with_commit(&app.paths.data_dir,&plan,&fixed.text,
+                        ||!crate::speech::cancelled() && before_publish()) {
+                        Ok(())=>(true,false),
+                        Err(code)=>return Response::json_status(crate::batch2::conversion_commit_status(&code),&json!({"ok":false,"content":fixed.text,"saved":false,"out":target,"error_code":code})),
+                    },
                 };
                 body["out"] = json!(target.to_string_lossy());
                 body["saved"] = json!(saved);
@@ -1789,6 +1806,10 @@ pub fn h_ocr(app: &App, req: &Request) -> Response {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "ocr_commit_tests.rs"]
+mod ocr_commit_tests;
 
 /// `Handler._api_transcribe` (`readmd.py:2052`).
 pub fn h_transcribe(_app: &App, req: &Request) -> Response {

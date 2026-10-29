@@ -2041,10 +2041,12 @@ fn shutdown(
     probe_json: &Option<String>,
     timed_out: bool,
     failed: bool,
+    tasks: &readmd_kernel::ai_harness::Service,
 ) -> i32 {
     if done.swap(true, Ordering::SeqCst) {
         return if failed { 1 } else { 0 };
     }
+    let _ = tasks.pause_owned();
     // Python leaves the early `return 1` paths without a `_clear_instance()` call
     // even though `start_server` already published the entry; the kernel clears it
     // on every exit so a failed boot cannot strand a dead control address.
@@ -3129,7 +3131,7 @@ fn build_webview<'a>(
 /// with the code left in `ControlFlow`, so this function never returns: every
 /// terminal path goes through [`shutdown`] first, which is the kernel's single
 /// instance.json-tearing-down / probe-reporting tail.
-fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: Option<String>) -> ! {
+fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: Option<String>, task_app: Arc<App>) -> ! {
     use tao::dpi::LogicalSize;
     use tao::event::{Event, WindowEvent};
     use tao::event_loop::ControlFlow;
@@ -3169,7 +3171,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             // `readmd.py:6550-6554`: a window that cannot be created is a failed
             // boot — the probe report is still written and the exit code is 1.
             static FAILED: AtomicBool = AtomicBool::new(false);
-            exit(shutdown(&FAILED, &data_dir, &probe, &probe_json, false, true));
+            exit(shutdown(&FAILED, &data_dir, &probe, &probe_json, false, true, &task_app.ai_tasks));
         }
     };
     // `milestone('boot', 'window_created')` (`readmd.py:6560`).
@@ -3197,6 +3199,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 } catch (e) {}
                 try {
                     if (window.LAN_TOKEN) { h['X-ReadMD-Token'] = window.LAN_TOKEN; }
+                    else if (h['X-ReadMD-App-Token']) { h['X-ReadMD-Token'] = h['X-ReadMD-App-Token']; }
                 } catch (e) {}
                 return h;
             }
@@ -3455,6 +3458,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 get_settings: async function() {
                     try {
                         const res = await fetch('/api/settings', { headers: bridgeHeaders(false) });
+                        if (!res.ok) return null;
                         const data = await res.json();
                         if (data && typeof data === 'object' && !Array.isArray(data) &&
                                 typeof data.ok === 'boolean' &&
@@ -3462,7 +3466,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             return data.settings;
                         }
                         return data || {};
-                    } catch(e) { return {}; }
+                    } catch(e) { return null; }
                 },
                 save_settings: async function(settings) {
                     try {
@@ -3500,12 +3504,12 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         return await res.json();
                     } catch(e) { return { ok: false, error: e.message }; }
                 },
-                export_epub: async function(content, out_path, meta, options, baseDir) {
+                export_epub: async function(content, out_path, meta, options, baseDir, sourceIdentity) {
                     try {
                         const res = await fetch('/api/export/epub', {
                             method: 'POST',
                             headers: bridgeHeaders(true),
-                            body: JSON.stringify({ confirm: true, content: content, out_path: out_path, meta: meta, options: options, baseDir: baseDir || '' })
+                            body: JSON.stringify(Object.assign({ confirm: true, content: content, out_path: out_path, meta: meta, options: options, baseDir: baseDir || '' }, sourceIdentity || {}))
                         });
                         return await res.json();
                     } catch(e) { return { ok: false, error: e.message }; }
@@ -3948,28 +3952,37 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     return nativeWeb('authorize', {url, task, timeout:300000, label:window.i18n?window.i18n.t('web.authorizeSite'):'授权此站点'});
                 },
                 revoke_private_web: function(task) { return nativeWeb('revoke', {task}); },
-                // `Api.rename_file(self, path, new_stem)` (`readmd.py:4732`)
-                // receives a *stem*: `new_path = os.path.join(os.path.dirname(
-                // old_path), stem + os.path.splitext(old_path)[1])`, i.e. the
-                // directory and the extension of the original file are kept and
-                // only the name body changes.  Both JS call sites depend on that
-                // spelling (`assets/js/core/tabs.js:379` sends the tab title,
-                // `assets/js/reader/render.js:88` sends `input.value.trim()`),
-                // while the old `{from,to}` pair read as "rename to this full
-                // destination", which is how R7 §B5 lost the folder and the
-                // extension.  The kernel handler's own vocabulary is
-                // `path` + `new_stem` (`server.rs h_rename`), and stem
-                // validation/`target_exists`/reference sync stay server-side
-                // exactly as `_validate_rename_stem` keeps them in Python.
-                rename_file: async function(path, new_stem) {
+                // The stem keeps the original directory/extension. The UI
+                // persists the operation receipt before sending this request;
+                // an ambiguous transport failure is recovered by operation ID.
+                rename_file: async function(path, new_stem, options) {
                     try {
                         const res = await fetch('/api/rename', {
                             method: 'POST',
                             headers: bridgeHeaders(true),
-                            body: JSON.stringify({ path: path, new_stem: new_stem })
+                            body: JSON.stringify({ ...(options || {}), path: path, new_stem: new_stem })
                         });
                         return await res.json();
-                    } catch(e) { return { ok: false, error: e.message }; }
+                    } catch(e) { return { ok: false, state: 'unknown', error_code: 'rename_transport_unknown' }; }
+                },
+                rename_status: async function(operation_id) {
+                    try {
+                        const res = await fetch('/api/rename/status', {
+                            method: 'POST',
+                            headers: bridgeHeaders(true),
+                            body: JSON.stringify({ operation_id: operation_id })
+                        });
+                        return await res.json();
+                    } catch(e) { return { ok: false, state: 'unknown', error_code: 'rename_transport_unknown' }; }
+                },
+                rename_abandon: async function(operation_id) {
+                    try {
+                        const res = await fetch('/api/rename/abandon', {
+                            method: 'POST', headers: bridgeHeaders(true),
+                            body: JSON.stringify({ operation_id: operation_id })
+                        });
+                        return await res.json();
+                    } catch(e) { return { ok: false, state: 'unknown', error_code: 'rename_transport_unknown' }; }
                 },
                 get_export_presets: async function() {
                     try {
@@ -4210,7 +4223,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             // Python's non-native fallback also ends in the shared tail
             // (`readmd.py:6662-6675` then `6697-6709`), i.e. a normal exit.
             static FALLBACK_ONCE: AtomicBool = AtomicBool::new(false);
-            exit(shutdown(&FALLBACK_ONCE, &data_dir, &probe, &probe_json, false, false));
+            exit(shutdown(&FALLBACK_ONCE, &data_dir, &probe, &probe_json, false, false, &task_app.ai_tasks));
         }
     };
 
@@ -4407,13 +4420,13 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         if let Some(dir) = retry_profile.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
-        let code = shutdown(&done, &data_dir, &probe, &probe_json, timed_out, false);
+        let code = shutdown(&done, &data_dir, &probe, &probe_json, timed_out, false, &task_app.ai_tasks);
         *control_flow = ControlFlow::ExitWithCode(code);
     });
 }
 
-pub(super) fn run(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: Option<String>) -> ! {
-    run_window(url, data_dir, probe, probe_json)
+pub(super) fn run(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: Option<String>, task_app: Arc<App>) -> ! {
+    run_window(url, data_dir, probe, probe_json, task_app)
 }
 }
 
@@ -4543,6 +4556,7 @@ fn main() {
     if opts.mcp {
         eprintln!("readmd {} MCP server on stdio", server::VERSION);
         readmd_kernel::mcp::run_stdio(app.clone());
+        let _ = app.ai_tasks.pause_owned();
         exit(0);
     }
 
@@ -4640,7 +4654,7 @@ fn main() {
         println!("ReadMD 服务运行于 {}（Ctrl+C 退出）", url);
         park_until_quit();
         static BROWSER_TAIL: AtomicBool = AtomicBool::new(false);
-        exit(shutdown(&BROWSER_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false));
+        exit(shutdown(&BROWSER_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false, &app.ai_tasks));
     }
 
     if !opts.window {
@@ -4649,7 +4663,7 @@ fn main() {
         // `sleep(600)` loop, and the tail removes `instance.json`.
         park_until_quit();
         static HEADLESS_TAIL: AtomicBool = AtomicBool::new(false);
-        exit(shutdown(&HEADLESS_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false));
+        exit(shutdown(&HEADLESS_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false, &app.ai_tasks));
     }
 
     // `run_window` never returns: tao's `EventLoop::run` is `-> !` and exits the
@@ -4659,7 +4673,7 @@ fn main() {
         log::warn!("desktop companion restore failed: {}", pet_restored.get("code").and_then(serde_json::Value::as_str).unwrap_or("unknown"));
     }
     #[cfg(feature = "desktop")]
-    desktop::run(url, app.paths.data_dir.clone(), probe, opts.startup_probe_json.clone());
+    desktop::run(url, app.paths.data_dir.clone(), probe, opts.startup_probe_json.clone(), app.clone());
 
     // Headless build (`--no-default-features`, e.g. the Docker image): no
     // window toolkit is linked, so a window request is served like `--browser`.
@@ -4669,6 +4683,6 @@ fn main() {
         open_in_default_browser(&url);
         park_until_quit();
         static HEADLESS_BROWSER_TAIL: AtomicBool = AtomicBool::new(false);
-        exit(shutdown(&HEADLESS_BROWSER_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false));
+        exit(shutdown(&HEADLESS_BROWSER_TAIL, &app.paths.data_dir, &probe, &opts.startup_probe_json, false, false, &app.ai_tasks));
     }
 }

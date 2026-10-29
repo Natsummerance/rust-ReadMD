@@ -1042,7 +1042,15 @@ pub fn describe(app: &App, canonical: &Path, include_content: bool) -> Result<Va
         let mut converted_ok = false;
         if is_convertible {
             let path_str = canonical.to_string_lossy();
-            if let Ok(res) = crate::convert::convert_verbose(&path_str, true) {
+            // Reading must not create assets beside the source. Redirect the
+            // synchronous legacy parsers into the managed staging directory.
+            let (converted, assets, asset_error) = crate::document_assets::with_staging(
+                &app.paths.data_dir,
+                || crate::convert::convert_verbose(&path_str, true),
+            );
+            if let Some(error) = asset_error {
+                value["conversion_error"] = json!(error);
+            } else if let Ok(res) = converted {
                 // `readmd.py:3155` `if not text.strip():`
                 if res.success
                     && res
@@ -1066,6 +1074,7 @@ pub fn describe(app: &App, canonical: &Path, include_content: bool) -> Result<Va
                     value["is_markdown"] = json!(true);
                     value["converted"] = json!(true);
                     value["source"] = json!("convert");
+                    value["assets"] = json!(assets);
                     value["binary"] = json!(false);
                     converted_ok = true;
                 }

@@ -46,6 +46,9 @@ function openFileRename() {
       if (titleSpan) { startTabInlineRename(activeTab, titleSpan, tabEl); return; }
     }
   }
+  // A physical rename needs a durable tab identity and session receipt. Do
+  // not fall through to the legacy title-only path when that identity is absent.
+  if (state.file && hasPy) { showToast(_t('review.persistenceFailed')); return; }
   const title = $('file-title');
   if (!title) return;
   const current = state.file || title.textContent || '';
@@ -83,24 +86,7 @@ function openFileRename() {
     committed = true;
     const nextStem = input.value.trim();
     if (!nextStem || nextStem === stem) { cancelFileRename(); return; }
-    if (hasPy && py.rename_file && state.file) {
-      try {
-        const res = await py.rename_file(state.file, nextStem);
-        if (res && res.ok) {
-          state.file = res.path;
-          state.sourceName = res.name;
-          setFileTitle(res.name, true, res.path);
-          addRecent(res.path);
-          showToast(_t('toast.renamedTo', { name: res.name }) || ('已重命名为：' + res.name));
-        } else {
-          showToast((_t('toast.renameFailed') || '重命名失败：') + ((res && res.error) || (_t('toast.unknownError') || '未知错误')));
-        }
-      } catch (e) {
-        showToast((_t('toast.renameFailed') || '重命名失败：') + e.message);
-      }
-    } else {
-      setFileTitle(nextStem + ext, true, nextStem + ext);
-    }
+    setFileTitle(nextStem + ext, true, nextStem + ext);
     cancelFileRename();
   }
 
@@ -112,14 +98,56 @@ function openFileRename() {
 }
 
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null } = {}) {
+// A close transaction publishes the next session before it removes tabs.
+// Defer external opens and completed imports until that transition finishes;
+// simply dropping an OS open request would lose the user's action.
+async function waitForSessionTransition() {
+  const session = window.ReadMDSession;
+  while (session?.busy?.()) {
+    if (typeof session.whenIdle !== 'function') return false;
+    await session.whenIdle();
+  }
+  return true;
+}
+
+// Several OS opens or completed imports can arrive while a close is in flight.
+// Deliver them sequentially after the transaction, otherwise later document
+// epochs would cancel earlier requests when all waiters wake at once.
+let deferredSessionOperations = Promise.resolve();
+let deferredSessionOperationCount = 0;
+function deferSessionOperation(action, alreadyQueued) {
+  if (alreadyQueued) return action();
+  deferredSessionOperationCount++;
+  const task = deferredSessionOperations.then(action, action);
+  deferredSessionOperations = task.then(
+    () => { deferredSessionOperationCount--; },
+    () => { deferredSessionOperationCount--; },
+  );
+  return task;
+}
+
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  const defer = () => deferSessionOperation(async () => {
+    if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true });
+  }, _sessionQueued);
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  const renameReserved = () => state.tabs.some(tab => {
+    const pendingPath = tab._renamePending?.old_path;
+    return (tab._renameInFlight || tab._renamePending) &&
+      ((tab.path && normalizePath(tab.path) === normalizePath(path)) ||
+       (pendingPath && normalizePath(pendingPath) === normalizePath(path)));
+  });
+  if (renameReserved()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
   const existingTab = findTabByPath(path);
   const refreshRevision = existingTab?.revision;
-  const refreshAllowed = () => !backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
-    && state.activeTabId === existingTab.id && existingTab.path === path && !state.editing && !existingTab.isDirty && existingTab.revision === refreshRevision);
+  const refreshAllowed = () => !renameReserved() && (!existingTab || (state.tabs.includes(existingTab)
+    && normalizePath(existingTab.path || '') === normalizePath(path))) && (!backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
+    && state.activeTabId === existingTab.id && existingTab.path === path && !state.editing && !existingTab.isDirty && existingTab.revision === refreshRevision));
   if (!refreshAllowed()) return;
   const activeEditing = !!(existingTab && state.activeTabId === existingTab.id && state.editing);
   const activeDirty = activeEditing && hasUnsavedEditorChanges();
@@ -132,9 +160,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
   // a stale CodeMirror instance.
   if (activeEditing) exitEdit();
   if (existingTab && !force && state.activeTabId !== existingTab.id) {
-    await switchTab(existingTab.id);
+    // If switchTab refreshes an externally changed target, its nested load is
+    // part of this same queued action and must not wait behind itself.
+    await switchTab(existingTab.id, { _sessionQueued });
+    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
     if (state.activeTabId !== existingTab.id) return;
   }
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   // Opening an already-open clean path is an explicit refresh request.  Start
   // the load only after tab switching, because switching invalidates older
   // document epochs by design.
@@ -149,8 +181,24 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       return;
     }
     const d = await r.json();
+    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) {
+      setProgress(0);
+      return defer();
+    }
     if (!isDocumentLoadCurrent(loadEpoch)) return;
     if (!refreshAllowed()) { setProgress(0); return; }
+    if (d.conversion_error) {
+      showToast(_t('toast.convertFailed'));
+      setProgress(0);
+      return;
+    }
+    // The extracted Markdown is an unsaved document, not the source binary.
+    // Its staged images are committed by the normal explicit Save As flow.
+    if (d.converted) {
+      await renderVirtual('convert', d.name, d.dir, d.content, d.fixes,
+        { assets: d.assets, originPath: d.path }, _sessionQueued);
+      return;
+    }
     const isBrowserCopy = force && browserCopy === null
       ? (existingTab ? existingTab.browserCopy === true : false)
       : browserCopy === true;
@@ -185,14 +233,16 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
       Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
+      await window.ReadMDReview?.restore(existingTab);
+      if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (wasActive) syncStateFromActiveTab();
       if (!wasActive) existingTab.scrollPos = previousScroll;
 
       if (wasActive) {
-        await prepareDocCitations(d.path, d.content);
+        await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         setFixes(d.fixes || [], d.stats || {});
-        await renderContent(d.content, d.name);
+        await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
           renderPage(previousPage, null, true);
@@ -215,11 +265,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       };
       state.tabs.push(newTab);
       state.activeTabId = newTab.id;
+      await window.ReadMDReview?.restore(newTab);
+      if (!isDocumentLoadCurrent(loadEpoch)) return;
       syncStateFromActiveTab();
-      await prepareDocCitations(d.path, d.content);
+      await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       setFixes(d.fixes || [], d.stats || {});
-      await renderContent(d.content, d.name);
+      await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
         showToast(_t('toast.openedPages', { name: d.name, count: state.pagination.totalPages }), 4000);
@@ -3229,9 +3281,15 @@ function openPath(p) {
 
 /* ---------------- 虚拟文档（转换/网页/OCR） ---------------- */
 
-async function renderVirtual(source, name, dir, content, fixes, extras) {
+async function renderVirtual(source, name, dir, content, fixes, extras, _sessionQueued = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const defer = () => deferSessionOperation(async () => {
+    if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
+    return renderVirtual(source, name, dir, content, fixes, extras, true);
+  }, _sessionQueued);
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
+  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();

@@ -2,6 +2,12 @@
 // A contextual import/review flow; no extra toolbar, files, or execution on open.
 (function () {
   const t=(key,params)=>window.i18n.t(key,params);
+  function errorText(error){
+    // A reviewed specification or its target can change while the dialog is
+    // open. Use the existing translated stale-review guidance in every locale.
+    const key=error.message==='transaction_conflict'?'error.review_stale_generation':'error.'+error.message;
+    const translated=t(key);return translated===key?t('toast.unknownError'):translated;
+  }
   let review=null,epoch=0,modal,pending=null;
   const activeContent=()=>{const tab=getActiveTab();return state.editing&&cmView?cmView.state.doc.toString():((tab?.isDirty?tab.content:tab?.original)??state.original??'').replace(/\r\n?/g,'\n');};
   const revision=async text=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');
@@ -54,7 +60,7 @@
       const data=await request('/api/developer/openapi',{file_path:file,content,base_revision,locale:i18n.currentLang,task_id:job.id});
       if(token!==epoch||state.activeTabId!==tabId||content!==(state.mode==='welcome'?'':activeContent()))throw Error('transaction_conflict');
       review={data,content,tabId,file,locale:i18n.currentLang};paint();ReadMDModal.open(modal);return true;
-    }catch(error){if(token===epoch)$('openapi-review-status').textContent=t('error.'+error.message);return false;}
+    }catch(error){if(token===epoch)$('openapi-review-status').textContent=errorText(error);return false;}
     finally{if(pending===job)pending=null;}
   }
   async function accept(){
@@ -76,7 +82,7 @@
       if(!valid()||!cmView)throw Error('transaction_conflict');
       const changes=current.data.transaction.edits.map(edit=>({from:edit.from,to:edit.to,insert:edit.insert}));
       cmView.dispatch({changes,userEvent:'input.openapi'});close();cmView.focus();return true;
-    }catch(error){$('openapi-review-status').textContent=t('error.'+error.message);return false;}
+    }catch(error){$('openapi-review-status').textContent=errorText(error);return false;}
     finally{if(review===current)button.disabled=false;}
   }
   async function choose(){

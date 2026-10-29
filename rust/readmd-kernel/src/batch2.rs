@@ -1152,6 +1152,7 @@ pub(crate) fn h_export_epub(app: &Arc<App>, req: &Request) -> ApiResult<Response
         }
     };
 
+    crate::export_snapshot_api::legacy_guard(app,&body)?;
     // `if body.get('confirm') is not True:` — a non-dict document raises here.
     if body.get("confirm") != Some(&Value::Bool(true)) {
         return Ok(api_error(400, "confirmation_required"));
@@ -2167,6 +2168,7 @@ pub(crate) fn h_export_presentation(app: &Arc<App>, req: &Request) -> ApiResult<
     if !body.is_object() {
         return Ok(failed());
     }
+    crate::export_snapshot_api::legacy_guard(app,&body)?;
 
     // `body.get(key, default)` for a *str*: `content` defaults to `''`,
     // `theme` to `'black'`, `transition` to `'slide'`.  A non-str value is the
@@ -2542,16 +2544,6 @@ fn auto_fixes(warns: &[Value]) -> Vec<String> {
 /// `readmd.py:3164-3174` / `readmd.py:3199-3209`: `out = _md_output_path(p)`,
 /// `overwrite = qs['overwrite'] == '1' or _is_upload_path(p)`, then the autosave
 /// whose failure Python only logs (`saved` stays `false`, status still 200).
-fn autosave_md(data_dir: &Path, fixed: &str, out: &Path, overwrite: bool) -> (bool, bool) {
-    if out.exists() && !overwrite {
-        return (false, true);
-    }
-    match crate::convert::write_md_managed(data_dir, &out.to_string_lossy(), fixed, overwrite) {
-        Ok(()) => (true, false),
-        Err(_) => (false, false),
-    }
-}
-
 /// What to do when the converted `.md` already exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OnExists {
@@ -2590,38 +2582,74 @@ pub(crate) fn free_output_path(out: &Path) -> PathBuf {
     out.to_path_buf()
 }
 
-/// Resolve the output path and write it according to `mode`.
-/// Returns `(out, saved, skipped, existed)`.
-fn save_converted(data_dir: &Path, fixed: &str, out: PathBuf, mode: OnExists, force: bool, preview: bool) -> (PathBuf, bool, bool, bool) {
+struct ConvertedOutputPlan {
+    target: PathBuf,
+    existed: bool,
+    preview: bool,
+    expected: Result<crate::convert::MdOutputPlan,String>,
+}
+impl ConvertedOutputPlan {
+    fn admission_error(&self) -> Option<&str> {
+        match &self.expected { Err(code) if !self.preview && code!="output_exists"=>Some(code), _=>None }
+    }
+}
+
+/// Bind both the selected name and its before-state before long conversion.
+/// Preview performs no output observation, gate acquisition or publication.
+fn plan_converted_output(data_dir: &Path, out: PathBuf, mode: OnExists, force: bool, preview: bool) -> ConvertedOutputPlan {
     let existed = out.exists();
-    if preview { return (out, false, false, existed); }
+    if preview {return ConvertedOutputPlan {target:out,existed,preview:true,expected:Err(String::new())};}
     let (target, overwrite) = match mode {
         _ if force => (out, true),
         OnExists::Overwrite => (out, true),
         OnExists::Rename => (free_output_path(&out), false),
         OnExists::Skip => (out, false),
     };
-    let (saved, skipped) = autosave_md(data_dir, fixed, &target, overwrite);
-    (target, saved, skipped, existed)
+    let expected=crate::convert::capture_md_output_plan(data_dir,&target,overwrite);
+    ConvertedOutputPlan {target,existed,preview,expected}
 }
 
-fn save_converted_assets(data_dir: &Path, fixed: &str, out: PathBuf, mode: OnExists, force: bool, preview: bool, assets: &[crate::document_assets::AssetHandle]) -> (PathBuf, bool, bool, bool, String) {
-    if preview || assets.is_empty() {
-        let (out, saved, skipped, existed) = save_converted(data_dir, fixed, out, mode, force, preview);
-        return (out, saved, skipped, existed, fixed.into());
-    }
-    let existed = out.exists();
-    let overwrite = force || mode == OnExists::Overwrite;
-    let target = if mode == OnExists::Rename && !force { free_output_path(&out) } else { out };
-    let _guard = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    if target.exists() && !overwrite { return (target, false, true, existed, fixed.into()); }
-    let mut resources = match crate::document_assets::materialize(fixed, &target, assets) {
-        Ok(resources) => resources, Err(_) => return (target, false, false, existed, fixed.into()),
+pub(crate) fn conversion_commit_status(code: &str) -> u16 {
+    if code=="cancelled" {499}
+    else if code.contains("persistence") || code=="document_operation_storage" {507}
+    else if code=="document_operation_unsupported" || code=="document_operation_path" || code=="review_unsupported_schema" {422}
+    else if code.starts_with("document_operation_") || code=="rename_recovery_pending" {409}
+    else {500}
+}
+fn conversion_commit_error(code: &str, content: &str, out: &Path) -> Response {
+    Response::json_status(conversion_commit_status(code),&json!({"ok":false,"content":content,"saved":false,"out":out,
+        "error_code":code,"error":"转换结果未写入；请检查输出位置或重试"}))
+}
+
+fn save_converted(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPlan) -> Result<(PathBuf, bool, bool, bool),String> {
+    if plan.preview {return Ok((plan.target.clone(),false,false,plan.existed));}
+    let expected=match &plan.expected {
+        Ok(expected)=>expected,
+        Err(code) if code=="output_exists"=>return Ok((plan.target.clone(),false,true,plan.existed)),
+        Err(code)=>return Err(code.clone()),
     };
-    let saved = crate::convert::write_md_managed_locked(data_dir, &target.to_string_lossy(), &resources.text, overwrite).is_ok();
-    let skipped = false;
-    if saved { resources.commit(); }
-    (target, saved, skipped, existed, if saved { resources.text.clone() } else { fixed.into() })
+    if crate::speech::cancelled() {return Err("cancelled".into());}
+    crate::convert::write_md_output_plan(data_dir,expected,fixed)?;
+    Ok((plan.target.clone(),true,false,plan.existed))
+}
+
+fn save_converted_assets(data_dir: &Path, fixed: &str, plan: &ConvertedOutputPlan, assets: &[crate::document_assets::AssetHandle], check_speech_cancel: bool) -> Result<(PathBuf, bool, bool, bool, String),String> {
+    if plan.preview {return Ok((plan.target.clone(),false,false,plan.existed,fixed.into()));}
+    let expected=match &plan.expected {
+        Ok(expected)=>expected,
+        Err(code) if code=="output_exists"=>return Ok((plan.target.clone(),false,true,plan.existed,fixed.into())),
+        Err(code)=>return Err(code.clone()),
+    };
+    let _saving = crate::document_history::SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let gate=crate::document_operations::acquire(data_dir,std::time::Duration::from_secs(3)).map_err(|e|e.code().to_string())?;
+    crate::convert::verify_md_output_plan(data_dir,expected,&gate)?;
+    if check_speech_cancel && crate::speech::cancelled() {return Err("cancelled".into());}
+    // Shared resources can be reused by another process. Keep materialization,
+    // document publication, and this guard's commit/rollback in the same gate.
+    let mut resources=crate::document_assets::materialize(fixed,expected.target(),assets)?;
+    crate::convert::write_md_output_plan_guarded(data_dir,expected,&resources.text,&gate,||!check_speech_cancel || !crate::speech::cancelled())?;
+    resources.commit();
+    Ok((plan.target.clone(),true,false,plan.existed,resources.text.clone()))
 }
 
 /// `os.path.dirname(os.path.abspath(p))`, the base directory `MDC.check`
@@ -2636,6 +2664,10 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, pre
     let name = crate::convert::basename(p);
     let dir = crate::convert::dirname(p);
     let ws = working.to_string_lossy().into_owned();
+    let out=PathBuf::from(crate::convert::md_output_path(&ws));
+    let force=crate::convert::is_upload_path(&ws,&app.paths.data_dir);
+    let plan=plan_converted_output(&app.paths.data_dir,out,mode,force,preview);
+    if let Some(code)=plan.admission_error() {return conversion_commit_error(code,"",&plan.target);}
 
     let (text, _enc) = match crate::convert::read_text_smart(&ws) {
         Ok(v) => v,
@@ -2656,10 +2688,9 @@ fn convert_txt_lane(app: &Arc<App>, p: &str, working: &Path, mode: OnExists, pre
 
     let (fixed, warns) = crate::convert::mdcheck_check(&md, &mdcheck_base_dir(working));
     let fixes = auto_fixes(&warns);
-    let out = PathBuf::from(crate::convert::md_output_path(&ws));
-    let force = crate::convert::is_upload_path(&ws, &app.paths.data_dir);
-    let (out, saved, skipped, out_exists) = save_converted(&app.paths.data_dir, &fixed, out, mode, force, preview);
-    if !preview && !saved && !skipped { return Response::json_status(500, &json!({"ok": false, "content": fixed, "saved": false, "out": out, "error_code": "save_failed", "error": "转换成功，但输出文件未保存；原文件未覆盖"})); }
+    let (out,saved,skipped,out_exists)=match save_converted(&app.paths.data_dir,&fixed,&plan) {
+        Ok(result)=>result,Err(code)=>return conversion_commit_error(&code,&fixed,&plan.target),
+    };
 
     Response::json(&json!({
         "content": fixed,
@@ -2699,6 +2730,9 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         }
 
         let ws = target.to_string_lossy().into_owned();
+        let plan=plan_converted_output(&app.paths.data_dir,PathBuf::from(crate::convert::md_output_path(&ws)),mode,
+            crate::convert::is_upload_path(&ws,&app.paths.data_dir),req.q("preview")==Some("1"));
+        if let Some(code)=plan.admission_error() {return Ok(conversion_commit_error(code,"",&plan.target));}
         let res = crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::for_app(app), &ws, true, req.q("language"));
         let err = res.error.clone().unwrap_or_default();
         if !err.is_empty() && res.text.is_empty() {
@@ -2732,10 +2766,9 @@ pub(crate) fn h_convert(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         let dir = crate::convert::dirname(&p);
         let (fixed, warns) = crate::convert::mdcheck_check(&res.text, &mdcheck_base_dir(&target));
         let fixes = auto_fixes(&warns);
-        let out = PathBuf::from(crate::convert::md_output_path(&ws));
-        let force = crate::convert::is_upload_path(&ws, &app.paths.data_dir);
-        let (out, saved, skipped, out_exists, fixed) = save_converted_assets(&app.paths.data_dir, &fixed, out, mode, force, req.q("preview") == Some("1"), &res.assets);
-        if req.q("preview") != Some("1") && !saved && !skipped { return Ok(Response::json_status(500, &json!({"ok": false, "content": fixed, "saved": false, "out": out, "error_code": "save_failed", "error": "转换成功，但输出文件未保存；原文件未覆盖"}))); }
+        let (out,saved,skipped,out_exists,fixed)=match save_converted_assets(&app.paths.data_dir,&fixed,&plan,&res.assets,true) {
+            Ok(result)=>result,Err(code)=>return Ok(conversion_commit_error(&code,&fixed,&plan.target)),
+        };
 
         return Ok(Response::json(&json!({
             "content": fixed,
@@ -2917,19 +2950,25 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
             )
         };
 
+        let target_path=planned_out.unwrap_or_else(||crate::convert::md_output_path(&src));
+        let allow_overwrite=overwrite || crate::convert::is_upload_path(&src,data_dir);
+        let mode=if allow_overwrite {OnExists::Overwrite} else {OnExists::Skip};
+        let commit_plan=plan_converted_output(data_dir,PathBuf::from(&target_path),mode,false,false);
+        let planning_error=commit_plan.admission_error().map(str::to_string);
+
         // `mod.convert_verbose(it['src'])` — the raw client path, verbatim.
         // A converter panic on one malformed file becomes that item's error;
         // without the guard the worker thread dies and the job never finishes.
         let cancel_id=job_id.to_string();
         let check=Arc::new(move || CONVERT_JOBS.lock().unwrap_or_else(|e|e.into_inner()).as_ref().and_then(|m|m.get(&cancel_id)).is_none_or(|job|job.cancel));
-        let res = std::panic::catch_unwind(|| crate::speech::with_cancel(check,||crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::new(data_dir), &src, true, language))).unwrap_or_else(|_| {
+        let res = if planning_error.is_some() {crate::convert::ConvertTriple {text:String::new(),engine:String::new(),error:None,assets:Vec::new()}} else {std::panic::catch_unwind(|| crate::speech::with_cancel(check,||crate::plugin_manager::convert_document(&crate::plugin_manager::Sandbox::new(data_dir), &src, true, language))).unwrap_or_else(|_| {
             crate::convert::ConvertTriple {
                 text: String::new(),
                 engine: String::new(),
                 error: Some("转换器内部错误".to_string()),
                 assets: Vec::new(),
             }
-        });
+        })};
         // Cancellation can arrive while a native parser/OCR page is running.
         // Stop before post-processing or committing its partial extraction.
         {
@@ -2955,7 +2994,9 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         let mut engine: Option<String> = None;
         let mut warns: Option<Vec<Value>> = None;
 
-        if !err.is_empty() && res.text.is_empty() {
+        if let Some(code)=planning_error {
+            error=Some("输出位置不可安全写入；未发布转换结果".into()); error_code=Some(code);
+        } else if !err.is_empty() && res.text.is_empty() {
             // `if err and not text:` — nothing was produced, so no `out`/`engine`.
             let failure = crate::conversion_errors::body(&err);
             error = failure["error"].as_str().map(str::to_string);
@@ -2967,17 +3008,11 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         } else {
             let base_dir = mdcheck_base_dir(Path::new(&src));
             let (fixed, issues) = crate::convert::mdcheck_check(&res.text, &base_dir);
-            let target = planned_out
-                .unwrap_or_else(|| crate::convert::md_output_path(&src));
+            let target = commit_plan.target.to_string_lossy().into_owned();
             out = Some(target.clone());
             engine = Some(res.engine.clone());
             warns = Some(issues);
-            // `allow_overwrite = bool(job.get('overwrite')) or _is_upload_path(it['src'])`
-            let allow_overwrite = overwrite || crate::convert::is_upload_path(&src, data_dir);
-            if Path::new(&target).exists() && !allow_overwrite {
-                status = "skipped".to_string();
-                error_code = Some("output_exists".to_string());
-            } else {
+            {
                 // Serialize the final cancellation check with the commit.
                 // A cancel acknowledged before this lock commits no output.
                 let guard = CONVERT_JOBS.lock().unwrap_or_else(|e| e.into_inner());
@@ -2986,13 +3021,13 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
                     status = "canceled".into();
                     out = None;
                 } else {
-                    let mode = if allow_overwrite { OnExists::Overwrite } else { OnExists::Skip };
-                    let (_, saved, skipped, _, _) = save_converted_assets(data_dir, &fixed, PathBuf::from(&target), mode, false, false, &res.assets);
-                    if saved { status = "ok".to_string(); }
-                    else if skipped { status = "skipped".into(); error_code = Some("output_exists".into()); }
-                    else {
-                        error = Some("写入失败：资源或文档未能保存".into());
-                        error_code = Some("write_failed".to_string());
+                    // The jobs mutex already linearizes cancel versus this
+                    // commit; do not re-enter its speech cancellation hook.
+                    match save_converted_assets(data_dir,&fixed,&commit_plan,&res.assets,false) {
+                        Ok((_,true,_,_,_))=>status="ok".into(),
+                        Ok((_,_,true,_,_))=>{status="skipped".into();error_code=Some("output_exists".into());},
+                        Ok(_)=>{error=Some("写入失败：资源或文档未能保存".into());error_code=Some("write_failed".into());},
+                        Err(code)=>{error=Some("输出位置已改变或无法写入；未发布转换结果".into());error_code=Some(code);},
                     }
                 }
             }
@@ -3019,6 +3054,10 @@ fn convert_worker_with_language(job_id: &str, data_dir: &Path, language: Option<
         idx += 1;
     }
 }
+
+#[cfg(test)]
+#[path = "batch2_commit_tests.rs"]
+mod commit_tests;
 
 #[cfg(test)]
 mod tests {

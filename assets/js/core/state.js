@@ -23,8 +23,10 @@ function bindPy() {
   return hasPy;
 }
 
-const LAN_TOKEN = window.LAN_TOKEN || null;
 const APP_TOKEN = document.querySelector('meta[name="readmd-app-token"]')?.content || null;
+// The local strict-mode API uses the same process token as the app gate.
+// Read the CSP-safe meta bootstrap; an explicit LAN token still takes priority.
+const LAN_TOKEN = window.LAN_TOKEN || APP_TOKEN || null;
 const IS_STARTUP_PROBE = document.querySelector('meta[name="readmd-startup-probe"]')?.content === '1' || !!window.__STARTUP_PROBE__;
 window.__STARTUP_PROBE__ = IS_STARTUP_PROBE;
 
@@ -141,6 +143,21 @@ function apiMessage(d, fallbackKey) {
     if(String(d.error_code).startsWith('diagram_')&&typeof diagramErrorKey==='function')return tr(diagramErrorKey(d.error_code))||tr(fallbackKey);
   }
   if (d.note_code) { const s = tr('note.' + d.note_code); if (s) return s; }
+  const documentOperationErrors = {
+    document_operation_busy: 'error.review_save_in_progress',
+    document_operation_missing: 'error.file_not_found',
+    document_operation_identity_changed: 'error.review_save_conflict',
+    document_operation_revision_changed: 'error.review_save_conflict',
+    document_operation_target_exists: 'convert.existsTitle',
+    rename_revision_conflict: 'error.review_save_conflict',
+    rename_unsaved_review: 'toast.renameBlockedEdit',
+    rename_recovery_pending: 'error.review_needs_recovery',
+    document_operation_unsupported: 'review.persistenceFailed',
+    document_operation_lock: 'review.persistenceFailed',
+    document_operation_storage: 'review.persistenceFailed',
+  };
+  const documentKey = documentOperationErrors[d.error_code || d.code];
+  if (documentKey) return tr(documentKey) || tr(fallbackKey);
   const svgErrors={svg_unsafe:'reader.diagramInvalidInput',svg_invalid:'reader.diagramInvalidInput',svg_budget:'reader.diagramInputTooLarge',svg_engine_unavailable:'reader.diagramDependencyMissing',svg_render_failed:'reader.diagramRenderFailed'};
   const svgKey=svgErrors[d.error_code||d.error];if(svgKey)return tr(svgKey)||tr(fallbackKey);
   // Keep export/preview failures actionable as well as inline validation.
