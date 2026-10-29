@@ -2678,6 +2678,18 @@ mod graph_tests {
         ix.index_directory(&root_s, false).unwrap();
         put(&root, "b/note.md", "# B Note\n");
         put(&root, "c.md", "# C\n[[note]]\n[[NOTE]]\n[[Note.MD]]\n");
+        // Creation order is not directory enumeration order (ext4 can yield b
+        // before a). Derive this fixture's independent expectation directly
+        // from its two directories; do not ask the production resolver/walker.
+        let fixture_dirs: Vec<String> = fs::read_dir(&root).unwrap()
+            .map(|entry| entry.unwrap())
+            .filter(|entry| entry.file_type().unwrap().is_dir())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name == "a" || name == "b")
+            .collect();
+        assert_eq!(fixture_dirs.len(), 2);
+        let first_note = format!("{}/note.md", fixture_dirs[0]);
+        let other_note = format!("{}/note.md", fixture_dirs[1]);
         assert_eq!(
             ix.index_directory(&root_s, false).unwrap().to_json(),
             json!({"scanned_count": 3, "indexed_count": 2, "deleted_count": 0})
@@ -2688,13 +2700,13 @@ mod graph_tests {
         for row in &fwd {
             assert_eq!(
                 rel_id(&root, row["target_path"].as_str().unwrap()),
-                "a/note.md",
+                first_note,
                 "the lowercased-basename table yields its first walk entry"
             );
         }
-        let rows = ix.get_backlinks(&stored(&root, "a/note.md")).unwrap();
-        assert_eq!(rows.len(), 3, "the three spellings all resolve to a/note.md");
-        assert!(ix.get_backlinks(&stored(&root, "b/note.md")).unwrap().is_empty(), "matching target_path is exact");
+        let rows = ix.get_backlinks(&stored(&root, &first_note)).unwrap();
+        assert_eq!(rows.len(), 3, "the three spellings all resolve to the first walk entry");
+        assert!(ix.get_backlinks(&stored(&root, &other_note)).unwrap().is_empty(), "matching target_path is exact");
 
         let flat = ix.get_graph_data(None, 500).unwrap();
         assert_eq!(ids(&flat), ["note.md", "c.md"], "three documents collapse to two ids");
@@ -2709,7 +2721,10 @@ mod graph_tests {
 
         let scoped = ix.get_graph_data(Some(&root_s), 500).unwrap();
         assert_eq!(ids(&scoped), ["a/note.md", "c.md", "b/note.md"]);
-        check_node(&scoped, &root, "b/note.md", Some("b/note.md"), "B Note", false, 0, 0, 0);
+        let first_label = if fixture_dirs[0] == "a" { "A Note" } else { "B Note" };
+        let other_label = if fixture_dirs[1] == "a" { "A Note" } else { "B Note" };
+        check_node(&scoped, &root, &first_note, Some(&first_note), first_label, false, 0, 3, 3);
+        check_node(&scoped, &root, &other_note, Some(&other_note), other_label, false, 0, 0, 0);
         check_stats(&scoped, 3, 3, 0);
     }
 }

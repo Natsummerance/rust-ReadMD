@@ -26,6 +26,8 @@ default = ["desktop"]
 # tao + wry window.  `--no-default-features` builds the same kernel as a
 # browser/headless server only.
 desktop = ["dep:tao", "dep:wry"]
+# Opt-in native integration driver. Its code is excluded from release builds.
+native-qa = ["desktop"]
 mobile-ffi = []
 # Loaded only by the optional capability worker, never by the default reader.
 pdfium-worker = ["dep:pdfium-render"]

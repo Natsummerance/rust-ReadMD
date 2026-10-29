@@ -70,8 +70,10 @@ test('native release packages remap build roots and pass privacy validation befo
   for(const [gate,archive] of [
     ['node tools/privacy-scan.mjs "$pkgDir"','Compress-Archive -Path'],
     ['node tools/privacy-scan.mjs "$PKG_DIR"','tar -czvf'],
-    ['node tools/privacy-scan.mjs "$APP_DIR"','zip -r "${{ matrix.platform.asset_name }}.zip"'],
   ])assert(build.indexOf(gate)>=0&&build.indexOf(gate)<build.indexOf(archive),gate);
+  const mac=read('tools/package-macos.mjs');
+  assert(build.includes('node tools/package-macos.mjs'));
+  assert(mac.indexOf("tools/privacy-scan.mjs")<mac.indexOf("command('/usr/bin/ditto'"));
   const sources=read('tools/test/freeze-longtail-candidate.cjs');
   assert(sources.includes('tools/native-build-env.mjs'));
   assert(sources.includes('tools/build-svg-renderer.mjs'));
@@ -179,7 +181,7 @@ test('release packages require the current pet runtime and aligned versions', ()
   assert.match(workflow,/pet-package --platform/);
   assert.match(workflow,/Copy-Item "dist\\pet\\ReadMD-Pet-Rust.zip".*-ErrorAction Stop/);
   assert.match(workflow,/ReadMD-Pet-Rust-linux-x86_64.zip.*usr\/share\/readmd/);
-  assert.match(workflow,/ReadMD-Pet-Rust-macos-\*\.zip.*Contents\/Resources/);
+  assert.match(workflow,/--pet.*ReadMD-Pet-Rust-macos-/);
   assert.match(read('ReadMD.nsi'),/File "dist\\ReadMD-windows-x64\\ReadMD-Pet-Rust.zip"/);
   const version=read('VERSION').trim();
   assert.match(read('rust/Cargo.toml'),new RegExp('version = "'+version.replaceAll('.','\\.')+'"'));
@@ -188,4 +190,29 @@ test('release packages require the current pet runtime and aligned versions', ()
   assert.equal(pin.files.length,4);
   for(const file of pin.files)assert.ok(exists('packages/readmd-pet-rust/runtime-assets/'+file.path));
   assert.ok(!exists('packages/readmd-pet-rust/runtime-assets/vendor/live2dcubismcore.min.js'));
+});
+
+test('macOS releases seal free ad-hoc bundles and optionally notarize with configured Developer ID',()=>{
+  const workflow=read('.github/workflows/release.yml');
+  assert.match(workflow,/default: ad-hoc/);
+  const mode=/READMD_MACOS_SIGNING_MODE: \$\{\{ (.+?) \}\}/.exec(workflow)?.[1];
+  assert.ok(mode);
+  const evaluate=inputs=>runInNewContext(mode,{inputs});
+  assert.equal(evaluate({}),'development','tags need no paid credentials');
+  assert.equal(evaluate({macos_signing:'ad-hoc',publish_release:true}),'development');
+  assert.equal(evaluate({macos_signing:'developer-id'}),'distribution');
+  assert.match(workflow,/node tools\/macos-ci-credentials.mjs prepare/);
+  assert.match(workflow,/if: always\(\).*macOS[\s\S]*?node tools\/macos-ci-credentials.mjs cleanup/);
+  const packaging=read('tools/package-macos.mjs');
+  assert.match(packaging,/if\(mode==='distribution'\).*notarizeTarget\(app/);
+  const signing=packaging.indexOf('const signing=signTarget(app');
+  assert(signing>packaging.indexOf('Info.plist'));
+  assert(signing<packaging.indexOf("command('/usr/bin/ditto'"));
+  assert.match(packaging,/signTarget\(dmg/);
+  const pet=read('rust/xtask/src/pet_package.rs');
+  assert(pet.indexOf('tools/macos-sign.mjs')<pet.indexOf('let mut artifacts = Vec::new()'));
+  const setup=read('scripts/unix/setup.sh');
+  assert.match(setup,/cargo build --locked --offline --manifest-path rust\/Cargo.toml/);
+  assert.doesNotMatch(setup,/<string>0\.0\.1<\/string>/);
+  assert.match(setup,/node tools\/macos-sign.mjs/);
 });

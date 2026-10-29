@@ -13,6 +13,12 @@ on:
         required: false
         default: false
         type: boolean
+      macos_signing:
+        description: macOS signature (ad-hoc is free; Developer ID requires configured credentials)
+        required: false
+        default: ad-hoc
+        type: choice
+        options: [ad-hoc, developer-id]
 
 permissions:
   contents: write
@@ -60,12 +66,29 @@ jobs:
     env:
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+      CARGO_INCREMENTAL: 0
       READMD_PET_CUBISM_CORE: ${{ github.workspace }}/.cache/readmd-release-core.js
+      # Free ad-hoc bundles are the default. Developer ID/notarization is an
+      # explicit optional workflow choice, never inferred from a release tag.
+      READMD_MACOS_SIGNING_MODE: ${{ inputs.macos_signing == 'developer-id' && 'distribution' || 'development' }}
+      READMD_MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      READMD_MACOS_SIGNING_KEYCHAIN: ${{ github.workspace }}/.cache/macos-signing/signing.keychain-db
+      READMD_MACOS_NOTARY_KEY_FILE: ${{ github.workspace }}/.cache/macos-signing/notary.p8
+      READMD_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      READMD_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Prepare macOS distribution credentials
+        if: runner.os == 'macOS' && env.READMD_MACOS_SIGNING_MODE == 'distribution'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+        run: node tools/macos-ci-credentials.mjs prepare
 
       - name: Normalise version
         shell: bash
@@ -202,50 +225,17 @@ jobs:
       - name: Package macOS Artifacts
         if: runner.os == 'macOS'
         run: |
-          APP_DIR="dist/ReadMD.app"
-          mkdir -p "$APP_DIR/Contents/MacOS"
-          mkdir -p "$APP_DIR/Contents/Resources"
-          cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$APP_DIR/Contents/MacOS/ReadMD"
-          cp dist/pet/ReadMD-Pet-Rust-macos-*.zip "$APP_DIR/Contents/Resources/"
-          chmod +x "$APP_DIR/Contents/MacOS/ReadMD"
-          if [ -f "assets/ReadMD.icns" ]; then
-            cp "assets/ReadMD.icns" "$APP_DIR/Contents/Resources/readmd.icns"
-          elif [ -f "assets/readmd.icns" ]; then
-            cp "assets/readmd.icns" "$APP_DIR/Contents/Resources/readmd.icns"
-          fi
-          cp -r assets "$APP_DIR/Contents/Resources/"
-          cat <<PLIST > "$APP_DIR/Contents/Info.plist"
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleName</key>
-              <string>ReadMD</string>
-              <key>CFBundleDisplayName</key>
-              <string>ReadMD</string>
-              <key>CFBundleIdentifier</key>
-              <string>asia.readmd.desktop</string>
-              <key>CFBundleVersion</key>
-              <string>${APP_VERSION}</string>
-              <key>CFBundleShortVersionString</key>
-              <string>${APP_VERSION}</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleExecutable</key>
-              <string>ReadMD</string>
-              <key>CFBundleIconFile</key>
-              <string>readmd.icns</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>10.15</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          PLIST
-          node tools/privacy-scan.mjs "$APP_DIR"
-          cd dist
-          zip -r "${{ matrix.platform.asset_name }}.zip" ReadMD.app
-          hdiutil create -volname "ReadMD" -srcfolder ReadMD.app -ov -format UDZO "${{ matrix.platform.asset_name }}.dmg"
+          set -euo pipefail
+          case "${{ matrix.platform.target }}" in
+            aarch64*) arch=arm64; pet_arch=aarch64 ;;
+            *) arch=x64; pet_arch=x86_64 ;;
+          esac
+          node tools/package-macos.mjs --binary "rust/target/${{ matrix.platform.target }}/release/readmd" --pet "dist/pet/ReadMD-Pet-Rust-macos-$pet_arch.zip" --output dist/macos-package --arch "$arch"
+          mv dist/macos-package/ReadMD-macos-*.zip dist/macos-package/ReadMD-macos-*.dmg dist/
+
+      - name: Remove temporary macOS distribution credentials
+        if: always() && runner.os == 'macOS' && env.READMD_MACOS_SIGNING_MODE == 'distribution'
+        run: node tools/macos-ci-credentials.mjs cleanup
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
