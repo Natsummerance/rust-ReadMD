@@ -1,0 +1,169 @@
+{
+  "recordedAt": "2026-10-29T12:18:48.706Z",
+  "repository": "Natsummerance/rust-ReadMD",
+  "release": {
+    "id": 423434964,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.5",
+    "tag": "V0.0.5",
+    "originalTagCommit": "3cbb7a39ad889a2a485105acb4950a6cee995649",
+    "tagMoved": false,
+    "applicationVersion": "0.0.5",
+    "newVersionPublished": false,
+    "macBuildSourceCommit": "bf731860347f24b9946c71ab66d3588303345ec7",
+    "published": true,
+    "signing": "ad-hoc",
+    "developerIdSigned": false,
+    "notarized": false,
+    "perAppFirstLaunchApprovalRequired": true,
+    "files": [
+      {
+        "id": 688365474,
+        "name": "ReadMD-macos-arm64.dmg",
+        "size": 73934191,
+        "digest": "sha256:41d3e4d5f5a97bc391b90858ce2523f8180c4f5dbdc5c80653e02054eb37a729"
+      },
+      {
+        "id": 688366934,
+        "name": "ReadMD-macos-arm64.zip",
+        "size": 66588050,
+        "digest": "sha256:6a5f80be4554bdbeb4f9884bbb74e0d0baff2453e91ab2333929be92a209e504"
+      },
+      {
+        "id": 688367798,
+        "name": "ReadMD-macos-x64.dmg",
+        "size": 74914776,
+        "digest": "sha256:c38b950a7bfae096b478d0cfd378e116affdb7ad18dc1db7d7bbbf6032e1c9a1"
+      },
+      {
+        "id": 688369557,
+        "name": "ReadMD-macos-x64.zip",
+        "size": 67436409,
+        "digest": "sha256:35e843d6e66fb7d0ec291503b6ce9df173843574830ac8cad1867e520ae9652f"
+      },
+      {
+        "id": 688370527,
+        "name": "SHA256SUMS.txt",
+        "size": 903,
+        "digest": "sha256:d012437e972876b9637988b39e624777af6a84daefbd80f4a08784c9d19489eb"
+      }
+    ],
+    "nonMacAssetsPreserved": [
+      {
+        "id": 675176701,
+        "name": "ReadMD-linux-x86_64.deb",
+        "digest": "sha256:a836b03b9a0f8ce990e193540d7b21bc5511b0ccdb91377452c28e98d4324328"
+      },
+      {
+        "id": 675176805,
+        "name": "ReadMD-linux-x86_64.tar.gz",
+        "digest": "sha256:8e77c00189011e2ce566c0825fc39eb29986cbd367428dc65940c43094a183cd"
+      },
+      {
+        "id": 675177680,
+        "name": "readmd-mcp-server-0.0.5.zip",
+        "digest": "sha256:eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595"
+      },
+      {
+        "id": 675177633,
+        "name": "readmd-vscode-0.0.5.vsix",
+        "digest": "sha256:6fe8514bce973318155c1893ad81069541866f5f976eb5187d2a99b2920f8849"
+      },
+      {
+        "id": 675177432,
+        "name": "ReadMD-windows-x64.zip",
+        "digest": "sha256:9b27d4e3beaef0fa93bf0cbb4e1a9b10aabb0a7d577e9ecc88e08effa0f8be8d"
+      },
+      {
+        "id": 675177542,
+        "name": "ReadMDSetup-windows-x64.exe",
+        "digest": "sha256:8ec74b139515f4cd9125ac829a962794383f056ee51ee2e9d1e3463f031904e9"
+      }
+    ],
+    "anonymousCdnDownloadsVerified": true
+  },
+  "nativeEvidence": {
+    "appleSiliconChecks": 36,
+    "rosettaX64Checks": 36,
+    "actualCocoaWkWebView": true,
+    "releaseZipDmgPackagesVerified": 4,
+    "humanFirstLaunchApprovalTested": false,
+    "physicalIntelTested": false,
+    "fullMacPlatformCertification": false
+  },
+  "source": {
+    "migrationBranch": "codex/mac-migration-20261029",
+    "migrationHead": "b141931eae2bfcd7d2329b1c65ad5c1559b89018",
+    "hotfixBranch": "codex/v005-macos-refresh-20261029",
+    "hotfixHead": "60708d46d705f70e19f697cf594ae3a2ad6d9907",
+    "pullRequest": "https://github.com/Natsummerance/rust-ReadMD/pull/2",
+    "mergedIntoMain": false
+  },
+  "branchCleanup": {
+    "deleted": [
+      {
+        "name": "codex/v005-upgrade",
+        "head": "3cbb7a39ad889a2a485105acb4950a6cee995649"
+      },
+      {
+        "name": "codex/website-stable-downloads-20261008",
+        "head": "7819bcde8e295f64cf17f797cabc32113bc5221c"
+      },
+      {
+        "name": "codex/website-stable-downloads-20261008-r2",
+        "head": "e38cb9875d4f08752bb0dae51562370e0dc76512"
+      },
+      {
+        "name": "codex/website-stable-downloads-20261008-r3",
+        "head": "63fef3a23d032555b2ba2ea849f94312aed1cdcb"
+      }
+    ],
+    "retained": [
+      "main",
+      "codex/mac-migration-20261029",
+      "codex/v005-macos-refresh-20261029"
+    ],
+    "atomicServerUpdate": true,
+    "remoteHeadsCheckedAtPush": true,
+    "localRecoveryBundleVerified": true,
+    "existingHooksBypassed": false,
+    "temporaryHookRemoved": true
+  },
+  "website": {
+    "stableVersion": "0.0.5",
+    "localizedDownloadPages": 4,
+    "homeAndDownloadEntrancesSynchronized": true,
+    "localizedMacInstallGuidance": true,
+    "fullBuildAndValidationPassed": true,
+    "liveDeploymentNotYetVerified": true
+  },
+  "ci": {
+    "initialLinuxFailure": {
+      "head": "70091192657b699312af8e6a1b4b513fc175ec02",
+      "passed": 3844,
+      "failed": 1,
+      "ignored": 3,
+      "test": "link_indexer::graph_tests::graph_duplicate_basenames_collapse_without_a_root",
+      "rootCause": "unchanged historical fixture assumed creation order equals native enumeration order",
+      "productionIndexerChanged": false,
+      "correctedFixtureMacChecksPassed": 9
+    },
+    "latestHead": "60708d46d705f70e19f697cf594ae3a2ad6d9907",
+    "latestCiPending": true
+  },
+  "evidence": [
+    {
+      "file": "public-download-verification.json",
+      "sha256": "86932ee7fb07ff49d5ee525f1c1920be0ac5be86630dea23b2687dfb80c981e8"
+    },
+    {
+      "file": "branch-cleanup-completed.json",
+      "sha256": "a039ab9c1a934b5cfaa976e8a262cf6a1f06263c25e840d73d4088bad2849800"
+    },
+    {
+      "file": "publication-journal.json",
+      "sha256": "de701c6cfbc15b3c5d935ebc83b20f711cb5026b82acddec8fe0d04a6bf12d05"
+    }
+  ],
+  "completeCapabilityContractsAccepted": 0,
+  "acceptanceLedgerChanged": false
+}
