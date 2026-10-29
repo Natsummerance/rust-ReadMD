@@ -11,7 +11,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 function command(program,args,options={}) {
   const result=spawnSync(program,args,{...options,maxBuffer:64*1024*1024});
-  if(result.error||result.status!==0)throw Error(path.basename(program)+' failed while packaging (inspect the owned inputs locally)');
+  if(result.error||result.status!==0)throw Error(path.basename(program)+' failed while packaging (exit '+result.status+', signal '+(result.signal||'none')+'; inspect the owned inputs locally)');
   return result.stdout;
 }
 function archOf(binary){return command('/usr/bin/lipo',['-archs',binary],{encoding:'utf8'}).trim();}
