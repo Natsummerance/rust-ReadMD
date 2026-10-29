@@ -92,7 +92,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
 
 function inspectArchive(directory, name, timeoutMs = 10000) {
   const file = path.join(directory, name), bytes = fs.readFileSync(file), parts = zipParts(bytes);
-  const result = spawnSync(process.env.READMD_TEST_PYTHON || 'python.exe', ['-I', '-X', 'utf8', '-c', INSPECT_ARCHIVE, name], { cwd: directory, windowsHide: true, encoding: 'utf8', timeout: Math.max(1, Math.min(10000, timeoutMs)), maxBuffer: 1024 * 1024 });
+  const result = spawnSync(process.env.READMD_TEST_PYTHON || (process.platform === 'win32' ? 'python.exe' : 'python3'), ['-I', '-X', 'utf8', '-c', INSPECT_ARCHIVE, name], { cwd: directory, windowsHide: true, encoding: 'utf8', timeout: Math.max(1, Math.min(10000, timeoutMs)), maxBuffer: 1024 * 1024 });
   if (result.status !== 0) throw Error('INDEPENDENT_ARCHIVE_INSPECTION_FAILED');
   return { file: name, bytes: bytes.length, sha256: sha256(bytes), zipMemberCount: parts.size, ...JSON.parse(result.stdout) };
 }

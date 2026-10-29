@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Níl athainmniú comhaid agus nuashonrú na nasc san fhillteán seo ar fáil ar an ardán seo fós. Níor athraíodh aon chomhad ná nasc.",
   "rename.safeUnsupported": "Ní féidir ainm an chomhaid seo a athrú go sábháilte. Seiceáil ceadanna an chomhaid nó a shonraí breise; tá an bunleagan caomhnaithe.",
   "review.accept": "Glac leis an athrú",
   "review.acceptAll": "Glac leis na hathruithe uile",

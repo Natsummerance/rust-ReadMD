@@ -201,6 +201,21 @@ async function app(options = {}) {
     options, commit, get receipt() { return receipt; }, get pendingSaved() { return pendingSaved; }, get flushes() { return flushes; } };
 }
 
+scenario('unsupported platform stops after read-only preview without confirmation or durable intent', async () => {
+  const a = await app({ plan(value) { value.commit_supported = false; } });
+  assert.equal(await a.adapter.rename(a.source, 'Renamed.md'), false);
+  assert.deepEqual(a.calls.map(call => call.action), ['preview']);
+  assert.equal(a.modals.length, 0);
+  assert.equal(a.pendingSaved, null);
+  assert(!a.timeline.some(step => /session:prepare|ai:reserve/.test(step)));
+  assert.equal(a.source.path, OLD);
+  assert.equal(a.source._renamePending, undefined);
+  assert.equal(a.adapter.busy(), false);
+  assert.equal(a.files.get(OLD).original, BODY);
+  assert.equal(a.files.get(REF).original, LINKS);
+  assert.deepEqual(a.toasts, ['rename.groupUnavailable']);
+});
+
 scenario('confirms the exact second preview and adopts all verified files after intent persistence', async () => {
   const a = await app({ event(_event, { source, reference, review }) {
     assert.equal(source.path, NEW); assert.match(reference.original, /Renamed\.md/);

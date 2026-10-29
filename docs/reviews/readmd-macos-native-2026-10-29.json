@@ -1,0 +1,608 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-29",
+  "baseCommit": "9d78b5b1a4067f265b9d1f7f10edace5c63297ec",
+  "formalVersion": "0.0.5",
+  "releaseAccepted": false,
+  "fullBatchAccepted": false,
+  "platform": {
+    "arch": "arm64",
+    "cpu": "Apple M5 Ultra",
+    "macos": "27.2",
+    "build": "26B123",
+    "kernelRelease": "27.2.0"
+  },
+  "originalRelease": {
+    "tag": "V0.0.5",
+    "asset": "ReadMD-macos-arm64.zip",
+    "source": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/ReadMD-macos-arm64.zip",
+    "bytes": 61784110,
+    "sha256": "fd4f4a27f648add3f2ad6a49f32aa1ac17f1dee79f4cddbfa6c1cb26cbe0670d",
+    "githubDigestMatches": true
+  },
+  "originalSignature": {
+    "valid": false,
+    "infoPlistBound": false,
+    "sealedResources": false,
+    "diagnostic": "code has no resources but signature indicates they must be present"
+  },
+  "candidate": {
+    "binarySha256": "7be811e90845b39891d52d4a021ecce9b2d21f04c2de953c8028bce3824d0d3e",
+    "bootSha256": "bbfdfd7cdda3ab2da894a7259c852505d47a9b70fdc243fedf32e7c637a94d9b",
+    "harnessSha256": "b240160a2d5ef9013be8a895f4818323e0c3a13eea6a85aa57cfe800f2241db1",
+    "zipSha256": "31ec10be61a0d03a40a8c5fb351a94c5fe4383652b48ee7bd8954a7d34b56202",
+    "build": {
+      "locked": true,
+      "offline": true,
+      "incremental": false,
+      "debug": true,
+      "features": [
+        "desktop",
+        "native-qa"
+      ],
+      "qaExcludedFromReleaseBuilds": true
+    },
+    "signature": {
+      "mode": "ad-hoc-development",
+      "strictVerificationPassed": true,
+      "notarized": false,
+      "gatekeeperAccepted": false
+    },
+    "packagePrivacyPassed": true
+  },
+  "sourceDigestAlgorithm": "SHA256(sorted relative path + NUL + file SHA256 + LF); changed code plus VERSION and Cargo manifests/lock; excludes this evidence document",
+  "sourceDigest": "6828c8d5d771425281db97206aba1ef06e6972893c490cebcc159486a7206208",
+  "sourceFiles": [
+    {
+      "path": ".github/workflows/release.yml",
+      "sha256": "ae0f564f48b68a66e146f2ab58f64fe97b43107d8a242e1816ee31f2ffc4a363"
+    },
+    {
+      "path": "VERSION",
+      "sha256": "ae86e790678acc7fc14f18e559c2f8c4972634d5b1b74a2a297565b8c90f804a"
+    },
+    {
+      "path": "assets/i18n/ar.json",
+      "sha256": "d76e43aee56380e197d90371870f273015da843b96e59e1d50f177b0ff2238d6"
+    },
+    {
+      "path": "assets/i18n/bn.json",
+      "sha256": "e82bbc0ea22626a94558a33958adb12cbc709853c5fb817b1442168b965b72a5"
+    },
+    {
+      "path": "assets/i18n/bo.json",
+      "sha256": "73f8a810436f6bbd5ecd790c01cc7557c727e836a8200f580eac62009d87c791"
+    },
+    {
+      "path": "assets/i18n/da.json",
+      "sha256": "6fb42fbf5353c28c76f50c961e0840c5cc1dc040857cfd40a1756fb5a8ea3209"
+    },
+    {
+      "path": "assets/i18n/de.json",
+      "sha256": "cad480a402aee443e367aea49e6db84cc9213900a563640315eac9f7a0b9e3db"
+    },
+    {
+      "path": "assets/i18n/el.json",
+      "sha256": "f0993c45c16354add6eb74f86062328adb985d88a2ff7d8b4d91bb612a5cebc5"
+    },
+    {
+      "path": "assets/i18n/en.json",
+      "sha256": "f3929184f018573a7738cd5769836c86596cbcec6835b4e23de7ab8cfa27e1d2"
+    },
+    {
+      "path": "assets/i18n/eo.json",
+      "sha256": "5ed6f352dfc83ebbea846c081b14c53f47456465f3f2c00a8e127b0335184492"
+    },
+    {
+      "path": "assets/i18n/es.json",
+      "sha256": "fc590b2e68d586baa9d82e0a15cb5d27d4b1a38c8c9fcd9ef8f6cae87e958175"
+    },
+    {
+      "path": "assets/i18n/fi.json",
+      "sha256": "8c971c9e8bfadb000e70e126c65594eab8a218dae488ee2683f502c935c1f479"
+    },
+    {
+      "path": "assets/i18n/fr.json",
+      "sha256": "634ae55439365fddca90250c433026a6e8d2af23be73ad867dc338e19d1eaaf0"
+    },
+    {
+      "path": "assets/i18n/ga.json",
+      "sha256": "c628687f72b1d35877fdc8b798c007e9c25ef8aeea0f0a2dd8d0ce55009e3669"
+    },
+    {
+      "path": "assets/i18n/he.json",
+      "sha256": "40faf69f334eed67ab1de05c6cecfdcd2d3ef126f4164c388846cd1e6bebc3f9"
+    },
+    {
+      "path": "assets/i18n/hi.json",
+      "sha256": "233c03fe9dd780fee5c5e683811043b43cacec33c7ef97cfb9db1315971732ff"
+    },
+    {
+      "path": "assets/i18n/hr.json",
+      "sha256": "57ffc00a0d4504b2d473fb4be288ded1d81e23f13a98d859ca300b3e6be1b6e0"
+    },
+    {
+      "path": "assets/i18n/hu.json",
+      "sha256": "3e0b080137e038f6aa8408c56adb77d06ad4cea8625bcb7c2938a090091c3498"
+    },
+    {
+      "path": "assets/i18n/id.json",
+      "sha256": "9165c45407016685e8f884563531a3c4d20418bdb711b3b3c0272ba9fc017131"
+    },
+    {
+      "path": "assets/i18n/it.json",
+      "sha256": "e3f953052ebd2e35f48ca6a685465de4d64cad8f8cc7abdb745179c9cc792cef"
+    },
+    {
+      "path": "assets/i18n/ja.json",
+      "sha256": "5865b04d6308204d0fcf3009b39eb4654b5a54956d8803a21cd41bfcb9774623"
+    },
+    {
+      "path": "assets/i18n/kg.json",
+      "sha256": "7a05513d553e1982ba4d235655096e197f79ec87026bf4680b39afd2ea6f2ab1"
+    },
+    {
+      "path": "assets/i18n/kl.json",
+      "sha256": "35801eee1751d4ae6f881552e214f5710d0088c9750675dcd6dca3cd89692c1c"
+    },
+    {
+      "path": "assets/i18n/km.json",
+      "sha256": "6d8f63b0fd7ca76a51bebdcd7a77a58b120f05ed532379289ff17235d75feb68"
+    },
+    {
+      "path": "assets/i18n/ko.json",
+      "sha256": "04b397a00b11fa495658ff6842188084963580f970541cb5e9455f2cc68290bd"
+    },
+    {
+      "path": "assets/i18n/lo.json",
+      "sha256": "716be02897aac397d20ef1d9d6d8d8cece89fb2f32a2be80bdf639546aa8b38d"
+    },
+    {
+      "path": "assets/i18n/mn.json",
+      "sha256": "f230198b8a71580684bab862a4b75a5ff6aacc04824f30cb9b5af5ab5d0af627"
+    },
+    {
+      "path": "assets/i18n/ms.json",
+      "sha256": "7f6e3db6822a0c7a548ff4cdc6a3b51bf5db7ae3fc175dfa7a8b1199e1f1c448"
+    },
+    {
+      "path": "assets/i18n/mt.json",
+      "sha256": "6fb0b8f08bbbabffa55e3c9dec8316ae54708f08057a2dee6fc359ad45b71ef1"
+    },
+    {
+      "path": "assets/i18n/my.json",
+      "sha256": "179e5c5394ca929125d24545bc62a69102b68c70d9845dc3b6b3eec9bf9123f1"
+    },
+    {
+      "path": "assets/i18n/ne.json",
+      "sha256": "055984c8778a37d6ddf0d09667ed43bc69ef273eae39a4abca068b54ed1ed1ae"
+    },
+    {
+      "path": "assets/i18n/nl.json",
+      "sha256": "1c40791f5c3ad8e8386425e2f74626dbbae4f1edecb42188feec3e3be28ac64c"
+    },
+    {
+      "path": "assets/i18n/no.json",
+      "sha256": "f4b428cf70abd921a4dc03ea84a9433b5de334b2b516eca8670199486a72d8a2"
+    },
+    {
+      "path": "assets/i18n/pt.json",
+      "sha256": "c1e8f08c1ce70d1f5c723ad7de69efe37e53bade5942af8f8a471b14b8279c01"
+    },
+    {
+      "path": "assets/i18n/ro.json",
+      "sha256": "cc651cd06bb7f35a3eb2ab8eb861b12a927f374a9dc7d5d11fd0a2d6a57e99bb"
+    },
+    {
+      "path": "assets/i18n/ru.json",
+      "sha256": "f385fda04f7ef6e3533e620107aaa60d8e187dfb77c2a8b19629a226da98f6b3"
+    },
+    {
+      "path": "assets/i18n/rw.json",
+      "sha256": "31efcde685326ea2df55b6751e6fa5e5dbe1049b477a43e74bed62249a03a3cb"
+    },
+    {
+      "path": "assets/i18n/sl.json",
+      "sha256": "bf9e84da71c5f21c5b1f8029658cb586a6d0ce854c39a5afa386d77c400e8518"
+    },
+    {
+      "path": "assets/i18n/sv.json",
+      "sha256": "2a2f0797f9f1996b722ddb071da42fa66fca52846ff1726d5343d1c26a92a0d4"
+    },
+    {
+      "path": "assets/i18n/th.json",
+      "sha256": "0d8708e498bfb415b2eda04aa1057cf1486468dc4f05e632a25033d871d1c3d4"
+    },
+    {
+      "path": "assets/i18n/tl.json",
+      "sha256": "7169a0dbd89b61e7c994f7e57b5a0bd851d9b963ee5eece6881ca96ca92d1b71"
+    },
+    {
+      "path": "assets/i18n/tr.json",
+      "sha256": "81359d0b377df6d4b4e1220c53422d1de85f5dd707e4e3be52a4639eee034e9b"
+    },
+    {
+      "path": "assets/i18n/ug.json",
+      "sha256": "6ee31d6dff9f3fbc1c21e7bc0fb620a933a608d3dda66dfb35ac525eeafd45d8"
+    },
+    {
+      "path": "assets/i18n/uk.json",
+      "sha256": "5ea82e28c0e4f856b3831fb5c789b88bf6a119f787b44968ac5735351afe600c"
+    },
+    {
+      "path": "assets/i18n/vi.json",
+      "sha256": "5080650cb01461fb694f7594d87541de564eaea844aed4b6dee2254add057dc6"
+    },
+    {
+      "path": "assets/i18n/zh-CN.json",
+      "sha256": "4a1897ceca5395a44831f3510cb6a6600c2efed40c268d47c9912bb58f4b450c"
+    },
+    {
+      "path": "assets/i18n/zh-HK.json",
+      "sha256": "f24e9139e9cbc1754020bf8011cda6049975e9e68b2e178eea6024937264d22e"
+    },
+    {
+      "path": "assets/i18n/zh-TW.json",
+      "sha256": "94f6e05c60097b59fc049cd6e0751d0f613459f32ab5c201dbdf8914cf55d888"
+    },
+    {
+      "path": "assets/js/features/document-refactor.js",
+      "sha256": "16278055450cf118a0c38e85a919b75ba9523175cdbb1fdb1d6a2ed69bf5be1f"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "sha256": "bbfdfd7cdda3ab2da894a7259c852505d47a9b70fdc243fedf32e7c637a94d9b"
+    },
+    {
+      "path": "rust/Cargo.lock",
+      "sha256": "7aed6131443c7436f0f6102c866ea87a09c13e2794ce54465000f4f8d527d178"
+    },
+    {
+      "path": "rust/Cargo.toml",
+      "sha256": "aa1270d92f14f211e9eb86b536557697361fe5c088fd544d71adca2523f1cad4"
+    },
+    {
+      "path": "rust/readmd-kernel/Cargo.toml",
+      "sha256": "6f888b53daf9e239207fdc2c6faa2a99e78884f56d23a61b5d3088d06755d6b1"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_operations/unix.rs",
+      "sha256": "3fec51db72a86dd412301114e571161c66835b5b6138ccde272ebbd52a593a63"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor.rs",
+      "sha256": "4caf1cc983b6190168b02e7aa13565a822d162113bdf42954a3a2fec3ee0464b"
+    },
+    {
+      "path": "rust/readmd-kernel/src/document_refactor_scope_tests.rs",
+      "sha256": "db7434f7aec57690eaff3bb17fe0c34500405662c73c56fca54c9f9bbb2bf890"
+    },
+    {
+      "path": "rust/readmd-kernel/src/export_snapshot.rs",
+      "sha256": "2cfe158c27bc7cd8776229d3b5e5877d3933896fd8e9ace60977923c63ba4b68"
+    },
+    {
+      "path": "rust/readmd-kernel/src/main.rs",
+      "sha256": "6dfe8e782e263392fe385493956dc8c15d5c8825ffc268ecd007d1cb78b37e32"
+    },
+    {
+      "path": "rust/readmd-kernel/src/native_qa.rs",
+      "sha256": "82bb4690c2e0266e96442b01fc779db8e2f901397c94abb7be8d503125019537"
+    },
+    {
+      "path": "rust/xtask/src/pet_package.rs",
+      "sha256": "d34525fca04e6d63a5493fe4a6c716484fc8ac089700047d4536c581efbe6ab1"
+    },
+    {
+      "path": "scripts/unix/setup.sh",
+      "sha256": "9109d2a7edf7170b28721158bd13ad0841e24849182e653db895f3833efe424c"
+    },
+    {
+      "path": "tools/i18n-v006-macos.json",
+      "sha256": "309fc9b69d57741a405c61101aa2ed0573244eb904987814dfc89cd751b8dfb6"
+    },
+    {
+      "path": "tools/macos-ci-credentials.mjs",
+      "sha256": "2a670eb85f18e645a7edb454e0924990a24168893512cb1ecaa4f5c1da3a5e93"
+    },
+    {
+      "path": "tools/macos-sign.mjs",
+      "sha256": "04bf350fecca2501c663449e1fb321402208a21c0a1c5dc6f5ba89a8631fd6b5"
+    },
+    {
+      "path": "tools/test/interop-calibre-roundtrip.cjs",
+      "sha256": "fec831be9c15078cc11859ca4539f42429ba2bbe7a1d66f8a8d939a7d1ca968b"
+    },
+    {
+      "path": "tools/test/macos-sign.test.mjs",
+      "sha256": "af71e87dfee7f30f49ae83b72eb2b07ab9bd6ebd1e4c63e25143f9d7d188ff55"
+    },
+    {
+      "path": "tools/test/native-startup-ready.test.mjs",
+      "sha256": "07647cb6d322ad8498382fe8373fe13c418cdca401b12b7ebb3a3896a47cd133"
+    },
+    {
+      "path": "tools/test/release-contract.test.mjs",
+      "sha256": "7083ebb3ef07f00472ee8a7bb6754b7e5aa65d297f2e4c24697e3b73c0b31580"
+    },
+    {
+      "path": "ui-tests/document-refactor-adapter.test.cjs",
+      "sha256": "0149bf3a7dc255fefe1bd60a43bcffd9e75b74e3f814b0f7e299899a8f29259d"
+    },
+    {
+      "path": "ui-tests/macos-workflow-native.cjs",
+      "sha256": "b240160a2d5ef9013be8a895f4818323e0c3a13eea6a85aa57cfe800f2241db1"
+    }
+  ],
+  "nativeWorkflow": {
+    "platform": "macos-arm64",
+    "kernelRelease": "27.2.0",
+    "binarySha256": "7be811e90845b39891d52d4a021ecce9b2d21f04c2de953c8028bce3824d0d3e",
+    "bootSha256": "bbfdfd7cdda3ab2da894a7259c852505d47a9b70fdc243fedf32e7c637a94d9b",
+    "harnessSha256": "b240160a2d5ef9013be8a895f4818323e0c3a13eea6a85aa57cfe800f2241db1",
+    "nativeHost": "Cocoa WKWebView",
+    "productionCsp": true,
+    "strictTokenMode": true,
+    "chooserOrAuthShim": false,
+    "driver": "debug-only native-qa; direct production UI function calls",
+    "workspaceWriteSandbox": true,
+    "controlledCleanupAfterDirtyQuitCancel": true,
+    "phases": [
+      {
+        "ok": true,
+        "phase": "edit_save",
+        "checks": [
+          "native_bridge_ready",
+          "chinese_path_opened",
+          "initial_text_exact",
+          "native_document_visible",
+          "editor_has_real_layout",
+          "source_visible_without_scrolling",
+          "unchanged_editor_clean",
+          "edit_creates_no_copy",
+          "edit_is_dirty",
+          "undo_restores_original",
+          "redo_restores_edit",
+          "native_save_receipt",
+          "saved_editor_clean",
+          "clean_tab_closed",
+          "clean_close_has_no_prompt",
+          "saved_file_reopened",
+          "session_acknowledged"
+        ],
+        "code": 0,
+        "signal": null
+      },
+      {
+        "ok": true,
+        "phase": "restore_close",
+        "checks": [
+          "native_bridge_ready",
+          "session_restored",
+          "restart_text_exact",
+          "restored_editor_clean",
+          "last_tab_closed",
+          "session_acknowledged"
+        ],
+        "code": 0,
+        "signal": null
+      },
+      {
+        "ok": true,
+        "phase": "empty_home",
+        "checks": [
+          "native_bridge_ready",
+          "empty_session_home",
+          "session_acknowledged"
+        ],
+        "code": 0,
+        "signal": null
+      },
+      {
+        "ok": true,
+        "phase": "blocked_rename",
+        "checks": [
+          "native_bridge_ready",
+          "explicit_workspace_listed",
+          "group_rename_refused",
+          "no_rename_intent_or_path_change",
+          "rename_barrier_released",
+          "platform_reason_visible",
+          "session_acknowledged"
+        ],
+        "code": 0,
+        "signal": null
+      },
+      {
+        "ok": true,
+        "phase": "external_conflict",
+        "checks": [
+          "native_bridge_ready",
+          "conflict_fixture_dirty",
+          "real_save_conflict_dialog",
+          "save_conflict_dialog_fits_window",
+          "external_revision_rejects_save",
+          "failed_save_keeps_user_text",
+          "quit_cancelled",
+          "cancel_keeps_dirty_editor",
+          "dirty_draft_checkpointed",
+          "session_acknowledged"
+        ],
+        "code": 0,
+        "signal": null
+      }
+    ],
+    "passed": true,
+    "checks": 43,
+    "persistentGroupRows": {
+      "refactors": 0,
+      "reserved_paths": 0
+    },
+    "syntheticFilesOnly": true,
+    "physicalInputOrHumanVisualAcceptance": false
+  },
+  "regressions": {
+    "rustLibrary": {
+      "passed": 4200,
+      "failed": 1,
+      "historicalIgnored": 7,
+      "remainingFailure": "svg_render::tests::renderer_uses_real_core_font_outlines_without_host_fonts",
+      "reason": "svg_engine_unavailable: managed macOS worker missing; Windows-only worker is present",
+      "green": false
+    },
+    "nativeBin": {
+      "passed": 113,
+      "failed": 0
+    },
+    "xtask": {
+      "passed": 12,
+      "failed": 0
+    },
+    "node": {
+      "files": 115,
+      "passed": 1655,
+      "failed": 0,
+      "skipped": 3,
+      "skipScope": "Windows Job and PowerShell only"
+    },
+    "gates": [
+      "assets",
+      "styles",
+      "wiring",
+      "i18n",
+      "no-python",
+      "capability"
+    ],
+    "localeSemanticReviewAccepted": false
+  },
+  "leaseProbe": {
+    "fcntlResult": -1,
+    "errno": 1,
+    "admissionOnly": true,
+    "groupCommitSupported": false,
+    "nativeEquivalentAccepted": false
+  },
+  "formalDistribution": {
+    "pipelineImplemented": true,
+    "developerIdExercised": false,
+    "notaryServiceExercised": false,
+    "staplingExercised": false,
+    "dmgExercised": false
+  },
+  "rawArtifacts": {
+    "location": "workspace-local evidence; private absolute paths stay out of Git",
+    "files": [
+      {
+        "name": "original-diagnose.log",
+        "sha256": "530f41993d12b22a55ee7965905f10ee43648eae235bb51ed0d93386c68770af"
+      },
+      {
+        "name": "original-native-startup.log",
+        "sha256": "d058e652d40adfc671c92d9243e61cf0768500f75a73d5e0515edd8a46a8c0b7"
+      },
+      {
+        "name": "original-native-startup-02.log",
+        "sha256": "c5ef7b013bf94ac4964211a6f40658ad25dc53ff95835f83b5c20a4056936eee"
+      },
+      {
+        "name": "rust-library-01.log",
+        "sha256": "029e6776d4bb791bc8c5b81ac274896091985cff69e197755bd5e49c0520b7d3"
+      },
+      {
+        "name": "rust-library-02.log",
+        "sha256": "8bdfec82fd3c1f76c88ffccb0b0760d18a1917bde5230b5bc93dd8363ba8494e"
+      },
+      {
+        "name": "node-full-01.log",
+        "sha256": "8bfb292ea1e80d686768ad558ee336cf3b36cdfb4e3710d0d4c5a51146a4085c"
+      },
+      {
+        "name": "node-full-02.log",
+        "sha256": "a9feea496f227ef2920866bae25b796a4103b3b33c509ede114dd2395b55d9d6"
+      },
+      {
+        "name": "bin-xtask-tests-01.log",
+        "sha256": "34cb92e77d49c0acb86615f2741aa256b01bb0c513677d7ec5420295a82fc967"
+      },
+      {
+        "name": "xtask-tests-01.log",
+        "sha256": "a900a9d386d23f85da9001b034b8e45ca5ac051f6294114907dd16e2b74833b0"
+      },
+      {
+        "name": "build-final-01.log",
+        "sha256": "02442103c3ef582cb1ac12873f41e8c2857e0e571533e4390943703ccaf20fd0"
+      },
+      {
+        "name": "final-copy-signature.log",
+        "sha256": "30fdf95ac95957f5a12ca3e4d0fac73bdd4f181a2240125a286e668eb756e1f6"
+      },
+      {
+        "name": "final-diagnose.log",
+        "sha256": "526511c590d60b74897c1d6254cfc530fecc025b5cd03d7135637ce25375e040"
+      },
+      {
+        "name": "final-package-privacy.log",
+        "sha256": "59430187cf213179cc903f44409a101e1a6816c5ad940799618857d5a70f678f"
+      },
+      {
+        "name": "final-database.json",
+        "sha256": "b9e5ee6db539c32c5b8bad0edac934ff2e23905a441fb1eca5e111b3aa7fb208"
+      },
+      {
+        "name": "lease-admission.c",
+        "sha256": "3ba1601225491a01ba0c5653b4f7b2152b567bafd89dc896aefffd7f91f36bf1"
+      },
+      {
+        "name": "lease-admission.json",
+        "sha256": "e5e4e5b81fd5ed8424e5170be7f0253810cb4cf4ab80212bfcb2c21b79e22b3e"
+      },
+      {
+        "name": "workflow-source-01/report.json",
+        "sha256": "1d0f97a1f72c5c3c550a50ee8bc8ccfbf56003c1dff52cca0123a536947a72ac"
+      },
+      {
+        "name": "workflow-source-02/report.json",
+        "sha256": "e9270ba2c1df682dbada86ee3f563ea1a888a54f28d9c23f3dad1409c6225494"
+      },
+      {
+        "name": "workflow-source-03/report.json",
+        "sha256": "ebec5614b628cb2259b87f4e7c570e9ef7cf67c00ee6a42866df762e87652f8f"
+      },
+      {
+        "name": "workflow-packaged-01/report.json",
+        "sha256": "09b4416351ee1697c57e91b229a743ab548982493220e4d7e8c6cfd8834ac8b9"
+      },
+      {
+        "name": "workflow-final-01/report.json",
+        "sha256": "fd46fcf46ce7e51df13167352860279eb83f4f81d38710dbe7f3d122621e087d"
+      },
+      {
+        "name": "workflow-extended-01/report.json",
+        "sha256": "14117aa9c1e3fd1f91c0c413e5bf47931100860d5af29e8eaef58bcb133c9b80"
+      },
+      {
+        "name": "workflow-extended-02/report.json",
+        "sha256": "eb4559f4357660bb4864367a1c3b7b40f48804c5acaab6766347859ea85aedaf"
+      },
+      {
+        "name": "workflow-extended-03/report.json",
+        "sha256": "1c541d3430c4d93c12deeffa75d2d4148687ba7f720c86f64c36767ca9951d08"
+      }
+    ]
+  },
+  "privacy": {
+    "configurationInstalled": false,
+    "realAiCalled": false,
+    "computerUse": false,
+    "privateHistoryImported": false,
+    "pushed": false,
+    "screenshotsCreated": false
+  },
+  "limits": [
+    "Code-driven Cocoa WKWebView acceptance; no physical keyboard/IME or human visual claim.",
+    "Only basic saved documents and guarded external-conflict behavior.",
+    "Dirty failure phase ends with controlled host cleanup after checkpoint, not a power-loss claim.",
+    "Mac group rename remains refused; ordinary rename is not substituted.",
+    "Mac resvg, file associations, menu/tray, AI credentials, formal distribution and native multi-window remain separate work."
+  ]
+}

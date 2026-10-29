@@ -20,6 +20,9 @@ use readmd_kernel::App;
 #[cfg(feature = "desktop")]
 mod desktop_web;
 
+#[cfg(all(feature = "native-qa", debug_assertions))]
+mod native_qa;
+
 // Replication lane `port-registry-ffi-s14`: the Win32 registry / shell FFI that
 // replaced `install_association()`'s eight `reg add` children, its
 // `ie4uinit.exe -show`, and the WebView2 `reg query`.  The module lives in
@@ -2831,12 +2834,16 @@ fn diagnose_report(target: Check) -> String {
         ));
         lines.push(format!(
             "  - display available: {}",
-            std::env::var("DISPLAY")
+            if cfg!(target_os = "macos") {
+                "native desktop probe required (use --startup-probe)".to_string()
+            } else { std::env::var("DISPLAY")
                 .or_else(|_| std::env::var("WAYLAND_DISPLAY"))
                 .map(|v| format!("yes ({})", v))
-                .unwrap_or_else(|_| "no".to_string())
+                .unwrap_or_else(|_| "no".to_string()) }
         ));
-        lines.push("[N] overall readiness: [OK] native webview path selected".to_string());
+        lines.push(if cfg!(target_os = "macos") {
+            "[N] overall readiness: native window not tested by this diagnostic".to_string()
+        } else { "[N] overall readiness: [OK] native webview path selected".to_string() });
     }
     lines.push("=".repeat(64));
     lines.join("\n")
@@ -3108,6 +3115,8 @@ fn build_webview<'a>(
                     let _ = render_proxy.send_event(HostEvent::Web);
                 }
                 _ => {
+                    #[cfg(all(feature = "native-qa", debug_assertions))]
+                    if crate::native_qa::record(request.body()) { return; }
                     if request.body().len() < 64 * 1024 && crate::desktop_web::origin(&request.uri().to_string()) == reader_origin {
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) {
                             if let Some(action) = value.get("readmd_window").and_then(serde_json::Value::as_str) {
@@ -4244,6 +4253,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         })
     };
     let mut close_to_tray = true;
+    #[cfg(all(feature = "native-qa", debug_assertions))]
+    let mut native_qa = crate::native_qa::Driver::from_profile(&data_dir);
     let mut renders = crate::desktop_web::Manager::new(&shared_url, &data_dir);
     let render_proxy = drop_proxy.clone();
     let render_wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || { let _ = render_proxy.send_event(HostEvent::Web); });
@@ -4326,6 +4337,11 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         if renders.active() { *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100)); }
         if !closing && !matches!(event, Event::MainEventsCleared | Event::UserEvent(_)) { return; }
         if let Some(reader) = webview.as_ref() { renders.tick(target, reader, render_wake.clone()); }
+        #[cfg(all(feature = "native-qa", debug_assertions))]
+        if let (Some(driver), Some(reader)) = (native_qa.as_mut(), webview.as_ref()) {
+            driver.tick(reader, page_ready_flag.load(Ordering::SeqCst));
+            *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
+        }
         if renders.active() { *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100)); }
         // Hand queued native drops to the page.  The payload is serde_json
         // output, which is a valid JS expression — no string splicing of paths.
@@ -4401,9 +4417,12 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     if let Some(webview) = webview.as_ref() {
                         let sink = page_ready_flag.clone();
                         let _ = webview.evaluate_script_with_callback(
-                            "document.readyState",
+                            // WKWebView initially exposes a complete about:blank
+                            // document. It does not prove that the production
+                            // boot, recovery or authenticated bridge loaded.
+                            "String(document.readyState === 'complete' && window.__readmdAppReady === true && !!window.pywebview?.api?.report_ready)",
                             move |value: String| {
-                                if value.contains("complete") {
+                                if value == "true" || value == "\"true\"" {
                                     sink.store(true, Ordering::SeqCst);
                                 }
                             },

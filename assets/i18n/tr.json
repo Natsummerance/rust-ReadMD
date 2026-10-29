@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Bu platformda dosya yeniden adlandırılırken klasördeki bağlantıların güncellenmesi henüz desteklenmiyor. Hiçbir dosya veya bağlantı değiştirilmedi.",
   "rename.safeUnsupported": "Bu dosyanın adı güvenli biçimde değiştirilemiyor. Dosya izinlerini veya ek dosya verilerini kontrol edin; özgün dosya korunmuştur.",
   "review.accept": "Değişikliği kabul et",
   "review.acceptAll": "Tüm değişiklikleri kabul et",

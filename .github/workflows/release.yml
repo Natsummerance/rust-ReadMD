@@ -61,11 +61,25 @@ jobs:
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
       READMD_PET_CUBISM_CORE: ${{ github.workspace }}/.cache/readmd-release-core.js
+      READMD_MACOS_SIGNING_MODE: ${{ (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V') || inputs.publish_release == true) && 'distribution' || 'development' }}
+      READMD_MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      READMD_MACOS_SIGNING_KEYCHAIN: ${{ github.workspace }}/.cache/macos-signing/signing.keychain-db
+      READMD_MACOS_NOTARY_KEY_FILE: ${{ github.workspace }}/.cache/macos-signing/notary.p8
+      READMD_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      READMD_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Prepare macOS distribution credentials
+        if: runner.os == 'macOS' && env.READMD_MACOS_SIGNING_MODE == 'distribution'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_KEY_P8: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+        run: node tools/macos-ci-credentials.mjs prepare
 
       - name: Normalise version
         shell: bash
@@ -202,6 +216,7 @@ jobs:
       - name: Package macOS Artifacts
         if: runner.os == 'macOS'
         run: |
+          set -euo pipefail
           APP_DIR="dist/ReadMD.app"
           mkdir -p "$APP_DIR/Contents/MacOS"
           mkdir -p "$APP_DIR/Contents/Resources"
@@ -214,6 +229,8 @@ jobs:
             cp "assets/readmd.icns" "$APP_DIR/Contents/Resources/readmd.icns"
           fi
           cp -r assets "$APP_DIR/Contents/Resources/"
+          minimum_macos=10.15
+          if [ "${{ matrix.platform.target }}" = aarch64-apple-darwin ]; then minimum_macos=11.0; fi
           cat <<PLIST > "$APP_DIR/Contents/Info.plist"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -236,16 +253,32 @@ jobs:
               <key>CFBundleIconFile</key>
               <string>readmd.icns</string>
               <key>LSMinimumSystemVersion</key>
-              <string>10.15</string>
+              <string>${minimum_macos}</string>
               <key>NSHighResolutionCapable</key>
               <true/>
           </dict>
           </plist>
           PLIST
+          # The helper package was signed before its manifest was hashed.
+          # Sign the complete app last, after every resource is in place.
+          if [ "$READMD_MACOS_SIGNING_MODE" = distribution ]; then
+            node tools/macos-sign.mjs --path "$APP_DIR" --notarize
+          else
+            node tools/macos-sign.mjs --path "$APP_DIR"
+          fi
           node tools/privacy-scan.mjs "$APP_DIR"
           cd dist
-          zip -r "${{ matrix.platform.asset_name }}.zip" ReadMD.app
+          ditto -c -k --sequesterRsrc --keepParent ReadMD.app "${{ matrix.platform.asset_name }}.zip"
           hdiutil create -volname "ReadMD" -srcfolder ReadMD.app -ov -format UDZO "${{ matrix.platform.asset_name }}.dmg"
+          if [ "$READMD_MACOS_SIGNING_MODE" = distribution ]; then
+            node ../tools/macos-sign.mjs --path "${{ matrix.platform.asset_name }}.dmg" --notarize
+          else
+            node ../tools/macos-sign.mjs --path "${{ matrix.platform.asset_name }}.dmg"
+          fi
+
+      - name: Remove temporary macOS distribution credentials
+        if: always() && runner.os == 'macOS' && env.READMD_MACOS_SIGNING_MODE == 'distribution'
+        run: node tools/macos-ci-credentials.mjs cleanup
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

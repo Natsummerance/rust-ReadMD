@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Fuq din il-pjattaforma għadu mhux possibbli li tibdel isem fajl u taġġorna l-links f’dan il-folder. Ma nbidel ebda fajl jew link.",
   "rename.safeUnsupported": "Ma jistax jinbidel l-isem ta’ dan il-fajl b’mod sigur. Iċċekkja l-permessi tal-fajl jew id-dejta addizzjonali tiegħu; l-oriġinal inżamm.",
   "review.accept": "Aċċetta l-bidla",
   "review.acceptAll": "Aċċetta l-bidliet kollha",

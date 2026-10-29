@@ -1,5 +1,30 @@
 use super::*;
 
+#[test]
+fn preview_reports_platform_commit_capability_without_creating_an_intent() {
+    let (_temp, app, request) = super::tests::fixture();
+    let value = execute(&app, &request).unwrap();
+    assert_eq!(value["commit_supported"], cfg!(windows));
+    assert_eq!(value["commit_block_reason"], if cfg!(windows) { Value::Null } else { json!("equivalent_group_lease_unavailable") });
+    assert!(app.review.refactor_record(request["operation_id"].as_str().unwrap()).unwrap().is_none());
+    #[cfg(not(windows))]
+    {
+        let originals: Vec<_> = value["files"].as_array().unwrap().iter().map(|file| {
+            let path = PathBuf::from(file["source_path"].as_str().unwrap());
+            let bytes = fs::read(&path).unwrap();
+            (path, bytes)
+        }).collect();
+        let mut commit = request.clone();
+        commit["action"] = json!("commit");
+        commit["plan_hash"] = value["plan_hash"].clone();
+        commit["confirmed"] = json!(true);
+        assert_eq!(execute(&app, &commit).unwrap_err().code, "document_operation_unsupported");
+        for (path, bytes) in originals { assert_eq!(fs::read(path).unwrap(), bytes); }
+        assert!(!Path::new(value["target_path"].as_str().unwrap()).exists());
+        assert!(app.review.refactor_record(request["operation_id"].as_str().unwrap()).unwrap().is_none());
+    }
+}
+
 fn verify_under_gate(app: &Arc<App>, plan: &Value) -> ApiResult<()> {
     let _save = crate::document_history::SAVE_LOCK
         .lock()

@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Hindi pa available sa platform na ito ang pagpapalit ng pangalan ng file kasabay ng pag-update ng mga link sa folder. Walang binagong file o link.",
   "rename.safeUnsupported": "Hindi ligtas na mapalitan ang pangalan ng file na ito. Suriin ang mga pahintulot o karagdagang data ng file; napanatili ang orihinal.",
   "review.accept": "Tanggapin ang pagbabago",
   "review.acceptAll": "Tanggapin ang lahat ng pagbabago",

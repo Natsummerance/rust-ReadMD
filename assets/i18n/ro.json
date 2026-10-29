@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Redenumirea unui fișier și actualizarea legăturilor din acest dosar nu sunt încă disponibile pe această platformă. Niciun fișier sau link nu a fost modificat.",
   "rename.safeUnsupported": "Acest fișier nu poate fi redenumit în siguranță. Verificați permisiunile sau datele suplimentare ale fișierului; originalul este păstrat.",
   "review.accept": "Acceptă modificarea",
   "review.acceptAll": "Acceptă toate modificările",

@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Preimenovanje datoteke uz ažuriranje poveznica u ovoj mapi još nije dostupno na ovoj platformi. Datoteke i poveznice nisu promijenjene.",
   "rename.safeUnsupported": "Ovu datoteku nije moguće sigurno preimenovati. Provjerite dozvole datoteke ili dodatne podatke; izvornik je sačuvan.",
   "review.accept": "Prihvati promjenu",
   "review.acceptAll": "Prihvati sve promjene",

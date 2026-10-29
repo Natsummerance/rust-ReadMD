@@ -17642,8 +17642,14 @@
     {
       "id": "macos-arm64",
       "formal": true,
-      "environment": "unavailable",
-      "status": "pending"
+      "environment": "available",
+      "status": "pending",
+      "nativeEvidence": {
+        "scope": "basic-read-edit-save-session-external-conflict-and-safe-refusal",
+        "status": "passed",
+        "record": "docs/reviews/readmd-macos-native-2026-10-29.json",
+        "fullCapabilityAccepted": false
+      }
     },
     {
       "id": "linux-x64",

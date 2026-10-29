@@ -129,7 +129,11 @@ impl Directory {
         }
     }
     pub(super) fn try_lock(&self, name: &OsStr) -> io::Result<Option<fs::File>> {
-        let file = at(self.file(), name, libc::O_RDWR | libc::O_CREAT)?;
+        let file = at(self.file(), name, libc::O_RDWR | libc::O_CREAT).map_err(|error| {
+            // Unix rejects a directory before a file handle is returned. It is
+            // an invalid existing lock object, not a storage failure to repair.
+            if error.raw_os_error() == Some(libc::EISDIR) { unsafe_path() } else { error }
+        })?;
         let metadata = file.metadata()?;
         if !metadata.is_file() || metadata.len() != 0 || metadata.nlink() != 1 {
             return Err(unsafe_path());

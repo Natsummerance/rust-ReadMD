@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Een bestand hernoemen en de links in deze map bijwerken is op dit platform nog niet beschikbaar. Er zijn geen bestanden of links gewijzigd.",
   "rename.safeUnsupported": "Dit bestand kan niet veilig worden hernoemd. Controleer de bestandsrechten of aanvullende bestandsgegevens; het origineel blijft behouden.",
   "review.accept": "Wijziging accepteren",
   "review.acceptAll": "Alle wijzigingen accepteren",

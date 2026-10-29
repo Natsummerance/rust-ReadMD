@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Mengganti nama berkas sekaligus memperbarui tautan dalam folder ini belum tersedia di platform ini. Tidak ada berkas atau tautan yang diubah.",
   "rename.safeUnsupported": "Nama berkas ini tidak dapat diubah dengan aman. Periksa izin atau data tambahan berkas; berkas asli tetap tersimpan.",
   "review.accept": "Terima perubahan",
   "review.acceptAll": "Terima semua perubahan",

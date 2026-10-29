@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Den här plattformen stöder ännu inte namnbyte med uppdatering av länkarna i mappen. Inga filer eller länkar har ändrats.",
   "rename.safeUnsupported": "Det går inte att byta namn på filen på ett säkert sätt. Kontrollera filens behörigheter eller extra fildata; originalet är bevarat.",
   "review.accept": "Godkänn ändring",
   "review.acceptAll": "Godkänn alla ändringar",

@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Esta plataforma aún no permite renombrar un archivo y actualizar los enlaces de esta carpeta. No se ha modificado ningún archivo ni enlace.",
   "rename.safeUnsupported": "No se puede cambiar el nombre de este archivo de forma segura. Comprueba sus permisos o datos adicionales; el original se conserva.",
   "review.accept": "Aceptar cambio",
   "review.acceptAll": "Aceptar todos los cambios",

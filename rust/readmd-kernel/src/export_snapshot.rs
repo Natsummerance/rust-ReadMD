@@ -867,7 +867,12 @@ fn open_absolute(path: &Path) -> Result<Opened, &'static str> {
                 if !current.metadata().map_err(|_| IO)?.is_dir() { return Err("export_snapshot_resource_path"); }
                 let name = CString::new(part.as_bytes()).map_err(|_| "export_snapshot_resource_path")?;
                 let next = unsafe { libc::openat(current.as_raw_fd(), name.as_ptr(), flags) };
-                if next < 0 { return Err("export_snapshot_resource_missing"); }
+                if next < 0 {
+                    let error = std::io::Error::last_os_error();
+                    return Err(if matches!(error.raw_os_error(),Some(libc::ELOOP | libc::ENOTDIR)) {
+                        "export_snapshot_resource_path"
+                    } else { "export_snapshot_resource_missing" });
+                }
                 ancestors.push(current); current = unsafe { File::from_raw_fd(next) };
             }
             _ => return Err("export_snapshot_resource_path"),

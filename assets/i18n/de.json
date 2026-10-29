@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "Das Umbenennen mit Aktualisierung der Links in diesem Ordner ist auf dieser Plattform noch nicht verfügbar. Dateien und Links wurden nicht verändert.",
   "rename.safeUnsupported": "Diese Datei kann nicht sicher umbenannt werden. Prüfen Sie die Dateiberechtigungen oder zusätzliche Dateidaten; das Original bleibt erhalten.",
   "review.accept": "Änderung annehmen",
   "review.acceptAll": "Alle Änderungen annehmen",

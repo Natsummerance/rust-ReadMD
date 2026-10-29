@@ -231,7 +231,7 @@ pub fn main(root: &Path, argv: &[String]) -> Result<(), String> {
     // Compile ReadMD's tracked presentation, rather than shipping a stale dist
     // entry. Existing PIXI/Cubism chunks are reused without installing packages.
     let node = std::env::var("NODE").unwrap_or_else(|_| "node".into());
-    let status = Command::new(node)
+    let status = Command::new(&node)
         .arg(crate_dir.join("scripts").join("build-renderer.mjs"))
         .arg("--renderer-cache").arg(&renderer)
         .arg("--output").arg(stage.join("renderer"))
@@ -271,6 +271,15 @@ pub fn main(root: &Path, argv: &[String]) -> Result<(), String> {
         copy_tree(&crate_dir.join("gnome-companion"), &stage.join("gnome-companion"))?;
     }
 
+    // Sign BEFORE hashing the executable into the runtime manifest. An outer
+    // app resource seal cannot replace the helper's own code signature.
+    if platform == "macos" {
+        let status = Command::new(&node)
+            .arg(root.join("tools/macos-sign.mjs"))
+            .arg("--path").arg(&stage)
+            .current_dir(root).status().map_err(|_| "macOS pet signing could not start")?;
+        if !status.success() { return Err("macOS pet signing failed before manifest creation".into()); }
+    }
     let mut artifacts = Vec::new();
     for (rel, path) in files_sorted(&stage)? {
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;

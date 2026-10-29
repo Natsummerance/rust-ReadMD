@@ -18525,6 +18525,7 @@ window.ReadMDRefactor = (() => {
   let current = null;
   function failure(code) { const error = new Error(code); error.code = code; return error; }
   function notify(code = 'conflict') {
+    if (code === 'platform_unsupported') { if (typeof showToast === 'function') showToast(t('rename.groupUnavailable')); return; }
     const unsupported = /unsupported|read_?only|metadata|permission|access_denied/.test(code);
     const specificKey = 'error.' + code, specific = t(specificKey);
     const name = unsupported ? 'rename.safeUnsupported' : /recovery|unknown/.test(code) ? 'error.review_needs_recovery' : /persist/.test(code) ? 'review.persistenceFailed'
@@ -18835,6 +18836,9 @@ window.ReadMDRefactor = (() => {
     try {
       if (!stem || /[\\/]/.test(stem) || !clean(tab, ctx)) throw failure('busy');
       const first = await preview(ctx, stem);
+      // A read-only preview is not permission to commit. Do not reserve review
+      // owners, ask for confirmation or persist an intent on an unsupported host.
+      if (first.commit_supported === false) throw failure('platform_unsupported');
       await reserve(ctx, first.files);
       const second = await preview(ctx, stem);
       if (JSON.stringify(roster(first)) !== JSON.stringify(roster(second)) || !stableOwners(ctx, second.files)) throw failure('conflict');

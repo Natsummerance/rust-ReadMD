@@ -424,7 +424,9 @@ fn build_plan(app: &Arc<App>, request: &Value) -> ApiResult<Value> {
 fn preview(plan: &Value) -> Value {
     json!({"ok":true,"operation_id":plan["operation_id"],"plan_hash":plan["plan_hash"],
         "source_path":plan["source_path"],"target_path":plan["target_path"],"files":plan["files"],
-        "diagnostics":plan["diagnostics"],"scan_files":plan["scan_files"]})
+        "diagnostics":plan["diagnostics"],"scan_files":plan["scan_files"],
+        "commit_supported":cfg!(windows),
+        "commit_block_reason":if cfg!(windows){Value::Null}else{json!("equivalent_group_lease_unavailable")}})
 }
 
 // The expensive syntax plan is computed outside the gate. Re-read the bounded

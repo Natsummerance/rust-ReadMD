@@ -70,7 +70,7 @@ test('native release packages remap build roots and pass privacy validation befo
   for(const [gate,archive] of [
     ['node tools/privacy-scan.mjs "$pkgDir"','Compress-Archive -Path'],
     ['node tools/privacy-scan.mjs "$PKG_DIR"','tar -czvf'],
-    ['node tools/privacy-scan.mjs "$APP_DIR"','zip -r "${{ matrix.platform.asset_name }}.zip"'],
+    ['node tools/privacy-scan.mjs "$APP_DIR"','ditto -c -k --sequesterRsrc --keepParent ReadMD.app'],
   ])assert(build.indexOf(gate)>=0&&build.indexOf(gate)<build.indexOf(archive),gate);
   const sources=read('tools/test/freeze-longtail-candidate.cjs');
   assert(sources.includes('tools/native-build-env.mjs'));
@@ -188,4 +188,22 @@ test('release packages require the current pet runtime and aligned versions', ()
   assert.equal(pin.files.length,4);
   for(const file of pin.files)assert.ok(exists('packages/readmd-pet-rust/runtime-assets/'+file.path));
   assert.ok(!exists('packages/readmd-pet-rust/runtime-assets/vendor/live2dcubismcore.min.js'));
+});
+
+test('formal macOS packages require signing, notarization and credential cleanup',()=>{
+  const workflow=read('.github/workflows/release.yml');
+  assert.match(workflow,/READMD_MACOS_SIGNING_MODE:.*'distribution'.*'development'/);
+  assert.match(workflow,/node tools\/macos-ci-credentials.mjs prepare/);
+  assert.match(workflow,/if: always\(\).*macOS[\s\S]*?node tools\/macos-ci-credentials.mjs cleanup/);
+  assert.match(workflow,/if \[ "\$READMD_MACOS_SIGNING_MODE" = distribution \]; then\s+node tools\/macos-sign.mjs --path "\$APP_DIR" --notarize/);
+  const signing=workflow.indexOf('node tools/macos-sign.mjs --path "$APP_DIR"');
+  assert(signing>workflow.indexOf('cat <<PLIST'));
+  assert(signing<workflow.indexOf('ditto -c -k --sequesterRsrc'));
+  assert.match(workflow,/macos-sign.mjs --path.*\.dmg/);
+  const pet=read('rust/xtask/src/pet_package.rs');
+  assert(pet.indexOf('tools/macos-sign.mjs')<pet.indexOf('let mut artifacts = Vec::new()'));
+  const setup=read('scripts/unix/setup.sh');
+  assert.match(setup,/cargo build --locked --offline --manifest-path rust\/Cargo.toml/);
+  assert.doesNotMatch(setup,/<string>0\.0\.1<\/string>/);
+  assert.match(setup,/node tools\/macos-sign.mjs/);
 });

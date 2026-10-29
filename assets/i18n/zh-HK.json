@@ -1,4 +1,5 @@
 {
+  "rename.groupUnavailable": "目前平台暫不支援重新命名檔案並更新資料夾內的引用。檔案與連結均未更改。",
   "rename.safeUnsupported": "無法安全重新命名此檔案。請檢查檔案權限或附加資料；原有檔案已保留。",
   "review.accept": "接受此處修改",
   "review.acceptAll": "接受全部修改",
