@@ -37,3 +37,18 @@ Word 和 Rust PDF 复用同一渲染参数，输出为高分辨率兼容 PNG，�
 ## 尚未验收
 
 仅 Windows x64 有实际构建和像素/透明度输出证据；其他平台的路径分支不能代表可用引擎。当前小型工作程序随资源目录交付，统一能力包安装、更新、卸载仍属 R003。未认证任意 SVG 的所有效果、操作系统级内存隔离、排队取消时限或八小时资源压力；资源上限不能代替这些测试。
+
+## 2026-10-29 Mac 构建修正
+
+Mac 刷新使用同一 v0.48.1 源码归档、Cargo.lock 和 vendored 依赖。最初采用的官方 Mac 预编译文件包含上游构建机路径：本机隐私检查通过，GitHub Mac 打包检查拒绝。保留首次失败，并改用路径重映射后的源码构建，没有放宽发布隐私检查。
+
+在已配置 ReadMD `nativeBuildEnvironment` 的环境中，从归档源码目录运行以下命令；`CARGO_INCREMENTAL=0`，`CARGO_HOME` 和 `CARGO_TARGET_DIR` 使用工作区内的共享缓存。Intel 在 Apple Silicon 上构建时还需预先准备对应的锁定标准库。每次编译均离线，不在编译过程中获取依赖。
+
+```sh
+cargo build --offline --locked --profile production -p resvg --bin resvg --target aarch64-apple-darwin
+cargo build --offline --locked --profile production -p resvg --bin resvg --target x86_64-apple-darwin
+```
+
+各目标分别生成 `cargo metadata --offline --locked --format-version 1 --filter-platform TARGET` 和 `cargo tree --offline --locked -p resvg --edges normal,build --prefix none --target TARGET`，再使用上述打包工具，最后一个参数分别为 `macos-arm64` 或 `macos-x64`。生产配置由已锁定的上游源码提供，启用 LTO、移除调试符号、关闭增量编译。主程序和工作进程均保留宿主架构检查。
+
+Mac 锁文件记录源码归档、Cargo.lock、实际工作程序摘要及 61 个依赖的许可通知。打包前额外检查常见托管构建机根目录，防止更换开发机器后才发现预编译产物中的路径。此修正不构成物理 Intel、旧版 macOS、所有 SVG 效果或资源压力的验收。Mac 原生与安装副本证据另见 V0.0.5 刷新记录；本节前的 Windows 状态保留为当时记录。

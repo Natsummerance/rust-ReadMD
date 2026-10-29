@@ -142,3 +142,11 @@ test('SVG packager rejects an embedded path before creating or copying output', 
   assert.ok(!result.stderr.includes(developerRoot) && !result.stderr.includes('native-fixture'));
   assert.equal(fs.existsSync(output), false);
 });
+
+test('bundled Mac SVG workers pass privacy checks on hosted runners as well as locally', () => {
+  for (const platform of ['macos-arm64', 'macos-x64']) {
+    const bytes = fs.readFileSync(new URL('../../assets/engines/resvg/' + platform + '/resvg', import.meta.url));
+    assert.deepEqual(scanNativePaths(platform, bytes), []);
+    assert.deepEqual(scanNativePaths(platform, bytes, { buildRoots: ['/Users/runner', '/home/runner'] }), []);
+  }
+});

@@ -3,12 +3,12 @@
   "id": "resvg",
   "version": "0.48.1",
   "platform": "macos-x64",
-  "size": 4918768,
-  "sha256": "c1bc3012b2b94d280a943c01feea3cb1f6a14cb47107714e990d090f007390df",
+  "size": 3254264,
+  "sha256": "2d1f68ad6b2acb647b7eadf178ad95a28760c63d5022619d483342c376e603fe",
   "source": "https://github.com/linebender/resvg/releases/tag/v0.48.1",
   "sourceSha256": "13ed5a2bae7a01156288ecae5bf944cf7d1c572742c19fc68027947a4d87294c",
   "license": "Apache-2.0 OR MIT",
-  "build": "verified upstream prebuilt; source and archive digests checked; no host PATH lookup",
+  "build": "cargo build --offline --locked --profile production -p resvg --bin resvg --target x86_64-apple-darwin",
   "packages": [
     {
       "name": "adler2",
@@ -556,7 +556,6 @@
       ]
     }
   ],
-  "upstreamAsset": "resvg-macos-x86_64.zip",
-  "upstreamAssetSha256": "0135923e443863db251a26bd78eabc6efb4b59d67b8cdc5469e3e1da26bc0ce2",
-  "upstreamBinarySha256": "c1bc3012b2b94d280a943c01feea3cb1f6a14cb47107714e990d090f007390df"
+  "cargoLockSha256": "671b3b9f4f2ae1ab69a8677dc8dac0b8c6d0c476fd9cf0af4e2f30a642321cb1",
+  "pathRemapping": true
 }

@@ -5,22 +5,20 @@ const [source,binary,metadata,dependencies,output,requestedPlatform='windows-x64
 if(!output)throw Error('Usage: node tools/build-svg-renderer.mjs SOURCE_DIR RESVG_BINARY METADATA_JSON DEPENDENCIES_TXT OUTPUT_DIR [windows-x64|macos-arm64|macos-x64]');
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const platform=requestedPlatform;
-const upstream={
-  'macos-arm64':{archive:'resvg-macos-aarch64.zip',sha256:'06440eb5aa14a28cbfc7e40ae39e1ffa71adc051b89fbaa913b4f1d9b905d09f',arch:'arm64'},
-  'macos-x64':{archive:'resvg-macos-x86_64.zip',sha256:'0135923e443863db251a26bd78eabc6efb4b59d67b8cdc5469e3e1da26bc0ce2',arch:'x86_64'},
+const mac={
+  'macos-arm64':{arch:'arm64',target:'aarch64-apple-darwin'},
+  'macos-x64':{arch:'x86_64',target:'x86_64-apple-darwin'},
 }[platform];
-if(platform!=='windows-x64'&&!upstream)throw Error('Unsupported worker platform');
+if(platform!=='windows-x64'&&!mac)throw Error('Unsupported worker platform');
 const name=platform==='windows-x64'?'resvg.exe':'resvg';
 const engine=fs.readFileSync(binary);if(engine.length>8*1024*1024)throw Error('Unexpected worker size');
-const privacyFailures=scanNativePaths(name,engine);if(privacyFailures.length)throw Error('SVG worker privacy check failed: '+privacyFailures.join('; '));
-if(upstream){
+const privacyFailures=[...scanNativePaths(name,engine),...scanNativePaths(name,engine,{buildRoots:['/Users/runner','/home/runner']})];if(privacyFailures.length)throw Error('SVG worker privacy check failed: '+[...new Set(privacyFailures)].join('; '));
+if(mac){
   if(process.platform!=='darwin')throw Error('Mac worker preparation requires native architecture inspection');
-  const archive=path.join(source,'..',upstream.archive);
-  if(hash(fs.readFileSync(archive))!==upstream.sha256)throw Error('Unreviewed Mac worker archive');
-  const extracted=spawnSync('/usr/bin/unzip',['-p',archive,'resvg'],{maxBuffer:8*1024*1024});
-  if(extracted.status!==0||!extracted.stdout.equals(engine))throw Error('Worker does not match the reviewed archive member');
   const arch=spawnSync('/usr/bin/lipo',['-archs',binary],{encoding:'utf8'});
-  if(arch.status!==0||arch.stdout.trim()!==upstream.arch)throw Error('Wrong Mac worker architecture');
+  if(arch.status!==0||arch.stdout.trim()!==mac.arch)throw Error('Wrong Mac worker architecture');
+  const version=spawnSync(binary,['--version'],{encoding:'utf8',timeout:10000});
+  if(version.status!==0||version.stdout.trim()!=='0.48.1')throw Error('Wrong Mac worker version');
 }
 const archive=path.join(source,'..','resvg-0.48.1.tar.xz');
 const sourceSha256='13ed5a2bae7a01156288ecae5bf944cf7d1c572742c19fc68027947a4d87294c';
@@ -38,5 +36,5 @@ for(const p of packages){
   licenses.push({name:p.name,version:p.version,license:p.license,notices:files});
 }
 const lock={schema:1,id:'resvg',version:'0.48.1',platform,size:engine.length,sha256:hash(engine),source:'https://github.com/linebender/resvg/releases/tag/v0.48.1',sourceSha256,license:'Apache-2.0 OR MIT',build:'cargo build --offline --locked --release -p resvg --bin resvg',packages:licenses};
-if(upstream){lock.build='verified upstream prebuilt; source and archive digests checked; no host PATH lookup';lock.upstreamAsset=upstream.archive;lock.upstreamAssetSha256=upstream.sha256;lock.upstreamBinarySha256=hash(engine);}
+if(mac){lock.build='cargo build --offline --locked --profile production -p resvg --bin resvg --target '+mac.target;lock.cargoLockSha256=hash(fs.readFileSync(path.join(source,'Cargo.lock')));lock.pathRemapping=true;}
 fs.writeFileSync(path.join(output,'lock.json'),JSON.stringify(lock,null,2)+'\n');console.log(JSON.stringify({platform,size:engine.length,sha256:lock.sha256,licenses:licenses.length}));
