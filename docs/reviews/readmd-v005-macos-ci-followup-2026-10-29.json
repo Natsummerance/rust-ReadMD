@@ -1,0 +1,482 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-10-29T13:36:49.620Z",
+  "repository": "Natsummerance/rust-ReadMD",
+  "version": "0.0.5",
+  "release": {
+    "id": 423434964,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.5",
+    "buildSource": "02737040e6dad02d1d73a963db999bded2fa8d78",
+    "originalTagCommit": "3cbb7a39ad889a2a485105acb4950a6cee995649",
+    "tagMoved": false,
+    "signing": "ad-hoc",
+    "developerIdSigned": false,
+    "notarized": false,
+    "firstLaunchPerAppApprovalRequired": true,
+    "published": true,
+    "anonymousDownloads": [
+      {
+        "name": "ReadMD-macos-arm64.zip",
+        "size": 65910402,
+        "sha256": "b94a3986926cabc0d2201a0919e936b10969d15b44ef037e37aad2059a144f21",
+        "anonymousDownload": true
+      },
+      {
+        "name": "ReadMD-macos-arm64.dmg",
+        "size": 73471263,
+        "sha256": "0563d181741af7ed5eaf133233c784f3332d3e21946547658c36bfc20dd549f6",
+        "anonymousDownload": true
+      },
+      {
+        "name": "ReadMD-macos-x64.zip",
+        "size": 66758762,
+        "sha256": "cfdf07a549be5997add9bc5780d7f26f079028947caf33d8da1cb244aee9afd9",
+        "anonymousDownload": true
+      },
+      {
+        "name": "ReadMD-macos-x64.dmg",
+        "size": 74452996,
+        "sha256": "de9e89b0066856c909300e028653d90f860f990e3f57f1c58dfb792cef21bdd3",
+        "anonymousDownload": true
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 903,
+        "sha256": "c46ba15fdad6a76500e19abd038f517fa6e3bf1059e76d149299e273488dd95a",
+        "anonymousDownload": true
+      }
+    ],
+    "nonMacAssetsPreserved": [
+      {
+        "name": "ReadMD-linux-x86_64.deb",
+        "id": 675176701,
+        "digest": "sha256:a836b03b9a0f8ce990e193540d7b21bc5511b0ccdb91377452c28e98d4324328"
+      },
+      {
+        "name": "ReadMD-linux-x86_64.tar.gz",
+        "id": 675176805,
+        "digest": "sha256:8e77c00189011e2ce566c0825fc39eb29986cbd367428dc65940c43094a183cd"
+      },
+      {
+        "name": "readmd-mcp-server-0.0.5.zip",
+        "id": 675177680,
+        "digest": "sha256:eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595"
+      },
+      {
+        "name": "readmd-vscode-0.0.5.vsix",
+        "id": 675177633,
+        "digest": "sha256:6fe8514bce973318155c1893ad81069541866f5f976eb5187d2a99b2920f8849"
+      },
+      {
+        "name": "ReadMD-windows-x64.zip",
+        "id": 675177432,
+        "digest": "sha256:9b27d4e3beaef0fa93bf0cbb4e1a9b10aabb0a7d577e9ecc88e08effa0f8be8d"
+      },
+      {
+        "name": "ReadMDSetup-windows-x64.exe",
+        "id": 675177542,
+        "digest": "sha256:8ec74b139515f4cd9125ac829a962794383f056ee51ee2e9d1e3463f031904e9"
+      }
+    ]
+  },
+  "integration": {
+    "mainCommit": "f18638f14a3868457eb1ca71bb0e0f06bf57ea3b",
+    "pullRequest": "https://github.com/Natsummerance/rust-ReadMD/pull/2",
+    "merged": true,
+    "releaseSourceCi": [
+      {
+        "id": 40877803333,
+        "head": "02737040e6dad02d1d73a963db999bded2fa8d78",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40877803333"
+      },
+      {
+        "id": 40877803432,
+        "head": "02737040e6dad02d1d73a963db999bded2fa8d78",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40877803432"
+      },
+      {
+        "id": 40877803299,
+        "head": "02737040e6dad02d1d73a963db999bded2fa8d78",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40877803299"
+      }
+    ],
+    "websiteOnlyHead": "60e1d623e000e45cb1acafd008f34c6e68ce6311",
+    "websiteOnlyChangedFiles": [
+      "website/public/integrations/index.html",
+      "website/public/ja/integrations/index.html",
+      "website/public/version.json",
+      "website/public/zh-cn/integrations/index.html",
+      "website/public/zh-tw/integrations/index.html",
+      "website/published-release.json",
+      "website/release.json"
+    ],
+    "mainCiSnapshot": {
+      "head": "f18638f14a3868457eb1ca71bb0e0f06bf57ea3b",
+      "recordedAt": "2026-10-29T13:38:03.580Z",
+      "runs": [
+        {
+          "id": 40882091793,
+          "name": "Multi-Platform Rust Build and Release",
+          "status": "in_progress",
+          "conclusion": null,
+          "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091793",
+          "jobs": [
+            {
+              "id": 123475985768,
+              "name": "Build · Linux x64",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475986035,
+              "name": "Build · Windows x64",
+              "status": "in_progress",
+              "conclusion": null,
+              "failedSteps": []
+            },
+            {
+              "id": 123475986066,
+              "name": "Build · macOS Intel",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475986102,
+              "name": "Build · macOS ARM64",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475987696,
+              "name": "Release quality",
+              "status": "completed",
+              "conclusion": "skipped",
+              "failedSteps": []
+            }
+          ]
+        },
+        {
+          "id": 40882091689,
+          "name": "Website GitHub Pages",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091689",
+          "jobs": [
+            {
+              "id": 123475985433,
+              "name": "build",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475988069,
+              "name": "refresh-after-release",
+              "status": "completed",
+              "conclusion": "skipped",
+              "failedSteps": []
+            },
+            {
+              "id": 123476211409,
+              "name": "deploy",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            }
+          ]
+        },
+        {
+          "id": 40882091785,
+          "name": "Repo quality",
+          "status": "in_progress",
+          "conclusion": null,
+          "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091785",
+          "jobs": [
+            {
+              "id": 123475990092,
+              "name": "VS Code and MCP quality",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475990357,
+              "name": "Frontend gates",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475990420,
+              "name": "Kernel tests · ubuntu-latest",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475990497,
+              "name": "UI quality (Playwright)",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475990616,
+              "name": "Kernel tests · macos-latest",
+              "status": "in_progress",
+              "conclusion": null,
+              "failedSteps": []
+            },
+            {
+              "id": 123475990818,
+              "name": "Kernel tests · windows-latest",
+              "status": "in_progress",
+              "conclusion": null,
+              "failedSteps": []
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "verification": {
+    "rustLibrary": {
+      "passed": 3846,
+      "failed": 0,
+      "ignored": 3
+    },
+    "relatedNodeChecks": {
+      "passed": 31,
+      "failed": 0,
+      "skipped": 0
+    },
+    "nativeWorkflow": {
+      "reexecuted": true,
+      "host": "Cocoa WKWebView",
+      "debugOnlyDriver": true,
+      "qaBinaryBuildSource": "bf731860347f24b9946c71ab66d3588303345ec7",
+      "resourceSnapshot": "02737040e6dad02d1d73a963db999bded2fa8d78",
+      "rustChangesSinceQaBuild": "Only the cfg(test) directory-enumeration fixture changed; production Rust services are unchanged.",
+      "perArchitecture": [
+        {
+          "platform": "macos-arm64",
+          "binarySha256": "3f78fe9a134ff65caf8c63ba604c05f10df729dad747af2f8e931d13d8d686fd",
+          "bootSha256": "eeb0d07463f63bc7c0a66ffc93ace8810a893a80105d1d5ccd6c65c98c5f9326",
+          "checks": 36,
+          "passed": true
+        },
+        {
+          "platform": "macos-x86_64-rosetta",
+          "binarySha256": "78051e0fbc2d6e3efaf26ad77536297ea66d02098b634b8151e9428b7e235117",
+          "bootSha256": "eeb0d07463f63bc7c0a66ffc93ace8810a893a80105d1d5ccd6c65c98c5f9326",
+          "checks": 36,
+          "passed": true
+        }
+      ],
+      "productionCsp": true,
+      "strictAuthentication": true,
+      "chooserOrAuthShim": false
+    },
+    "releaseArtifacts": {
+      "buildSource": "02737040e6dad02d1d73a963db999bded2fa8d78",
+      "packages": [
+        {
+          "name": "ReadMD-macos-arm64.zip",
+          "size": 65910402,
+          "sha256": "b94a3986926cabc0d2201a0919e936b10969d15b44ef037e37aad2059a144f21",
+          "signatureValid": true,
+          "coldStartupPassed": true,
+          "managedSvgPassed": true,
+          "defaultGatekeeperAccepted": false
+        },
+        {
+          "name": "ReadMD-macos-arm64.dmg",
+          "size": 73471263,
+          "sha256": "0563d181741af7ed5eaf133233c784f3332d3e21946547658c36bfc20dd549f6",
+          "signatureValid": true,
+          "coldStartupPassed": true,
+          "managedSvgPassed": true,
+          "defaultGatekeeperAccepted": false
+        },
+        {
+          "name": "ReadMD-macos-x64.zip",
+          "size": 66758762,
+          "sha256": "cfdf07a549be5997add9bc5780d7f26f079028947caf33d8da1cb244aee9afd9",
+          "signatureValid": true,
+          "coldStartupPassed": true,
+          "managedSvgPassed": true,
+          "defaultGatekeeperAccepted": false
+        },
+        {
+          "name": "ReadMD-macos-x64.dmg",
+          "size": 74452996,
+          "sha256": "de9e89b0066856c909300e028653d90f860f990e3f57f1c58dfb792cef21bdd3",
+          "signatureValid": true,
+          "coldStartupPassed": true,
+          "managedSvgPassed": true,
+          "defaultGatekeeperAccepted": false
+        }
+      ]
+    },
+    "website": {
+      "contractChecksPerSourceLine": 20,
+      "localFullBuildPassed": true,
+      "mainDeployment": {
+        "id": 40882091689,
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091689",
+        "conclusion": "success"
+      },
+      "mainCommit": "f18638f14a3868457eb1ca71bb0e0f06bf57ea3b",
+      "liveAssetMetadataMatches": true,
+      "pages": [
+        {
+          "url": "https://rust.readmd.asia/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "home",
+          "language": "en",
+          "correctDownloads": true,
+          "installationGuideChecked": false,
+          "htmlSha256": "bd43c2cd62abf5d7abde0eb33fcfb6c5b8080a4537511d4508c3314bebfa7fa1"
+        },
+        {
+          "url": "https://rust.readmd.asia/download/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "download",
+          "language": "en",
+          "correctDownloads": true,
+          "installationGuideChecked": true,
+          "htmlSha256": "5cdd74ff7b749793f4c6cfda76dc861b9df346cf060edfe06b6f5cfcc73ba29b"
+        },
+        {
+          "url": "https://rust.readmd.asia/zh-cn/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "home",
+          "language": "zh-cn/",
+          "correctDownloads": true,
+          "installationGuideChecked": false,
+          "htmlSha256": "30a2bd0edf1def90897e7a0961ef3986d604dc3d992025d04555a5d5bd3ae88a"
+        },
+        {
+          "url": "https://rust.readmd.asia/zh-cn/download/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "download",
+          "language": "zh-cn/",
+          "correctDownloads": true,
+          "installationGuideChecked": true,
+          "htmlSha256": "803a17aecb7e78d45b0fe40d0a6c958a98125028fcbb84b97be23b9e1ac57d20"
+        },
+        {
+          "url": "https://rust.readmd.asia/zh-tw/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "home",
+          "language": "zh-tw/",
+          "correctDownloads": true,
+          "installationGuideChecked": false,
+          "htmlSha256": "a5fb49f15a2740a7f4fc34b28c739a01c37e172d8215c6eb18dfb7b26f1aef7f"
+        },
+        {
+          "url": "https://rust.readmd.asia/zh-tw/download/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "download",
+          "language": "zh-tw/",
+          "correctDownloads": true,
+          "installationGuideChecked": true,
+          "htmlSha256": "121edfc606de42143cc9229ea1daddb8040bb1448ad429eb4768bdf1d21398e2"
+        },
+        {
+          "url": "https://rust.readmd.asia/ja/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "home",
+          "language": "ja/",
+          "correctDownloads": true,
+          "installationGuideChecked": false,
+          "htmlSha256": "99d4221a2cff527f5730076804fbdd5b0a7ed6d80497992c8ec8d8c530a80f0e"
+        },
+        {
+          "url": "https://rust.readmd.asia/ja/download/",
+          "status": 200,
+          "version": "0.0.5",
+          "kind": "download",
+          "language": "ja/",
+          "correctDownloads": true,
+          "installationGuideChecked": true,
+          "htmlSha256": "ecc933503301b1e2756df45536a754ba003c67e35c1e96b8f8013e84c23409b6"
+        }
+      ],
+      "redirects": [
+        {
+          "from": "https://readmd.asia/",
+          "to": "https://rust.readmd.asia/",
+          "status": 200
+        },
+        {
+          "from": "https://readmd.asia/download/",
+          "to": "https://rust.readmd.asia/download/",
+          "status": 200
+        }
+      ]
+    }
+  },
+  "svgWorkers": [
+    {
+      "arch": "arm64",
+      "version": "0.48.1",
+      "sourceArchiveSha256": "13ed5a2bae7a01156288ecae5bf944cf7d1c572742c19fc68027947a4d87294c",
+      "cargoLockSha256": "671b3b9f4f2ae1ab69a8677dc8dac0b8c6d0c476fd9cf0af4e2f30a642321cb1",
+      "rawBinarySha256": "930f46b2f4c6b89eeb79b6e6dbf62df9ad7a38de48e469c629cc9ab2ddde99bb",
+      "size": 2934512,
+      "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "offline": true,
+      "locked": true,
+      "pathRemapping": true,
+      "incremental": false,
+      "dependencyNotices": 61
+    },
+    {
+      "arch": "x64",
+      "version": "0.48.1",
+      "sourceArchiveSha256": "13ed5a2bae7a01156288ecae5bf944cf7d1c572742c19fc68027947a4d87294c",
+      "cargoLockSha256": "671b3b9f4f2ae1ab69a8677dc8dac0b8c6d0c476fd9cf0af4e2f30a642321cb1",
+      "rawBinarySha256": "2d1f68ad6b2acb647b7eadf178ad95a28760c63d5022619d483342c376e603fe",
+      "size": 3254264,
+      "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+      "offline": true,
+      "locked": true,
+      "pathRemapping": true,
+      "incremental": false,
+      "dependencyNotices": 61
+    }
+  ],
+  "firstFailuresRetained": [
+    "Upstream prebuilt Mac SVG workers pass the local-root check but fail the hosted-runner-root check; replacement workers pass both.",
+    "Linux graph fixture assumed creation order was directory enumeration order; independent native enumeration now determines expected duplicate-basename resolution.",
+    "One Windows Vega run exceeded the existing 12-second limit. No timeout or assertion was relaxed; the full release-source CI later passed. This is not a performance certification."
+  ],
+  "limitations": [
+    "Default Gatekeeper rejects ad-hoc bundles; users must allow this specific application after checking the download.",
+    "Intel execution was Rosetta on Apple Silicon; physical Intel and old macOS remain untested.",
+    "Human visual review, first-launch security approval, physical shortcut and IME interactions remain untested.",
+    "The native QA driver uses a debug build; production release cold startup, signatures and actual SVG output have separate artifact checks.",
+    "The earlier extended LF-source byte-guard failures remain historical evidence; the related checks here are not whole-contract acceptance.",
+    "Native menu/tray, Finder file associations and real AI provider flows require separate Mac evidence."
+  ],
+  "obsoleteBranchesDeleted": 4,
+  "contractAcceptanceUnchanged": true,
+  "next": "Continue the V006 migration branch with a safe native equivalent for non-Windows grouped rename and process-restart recovery, preserving current platform guards."
+}

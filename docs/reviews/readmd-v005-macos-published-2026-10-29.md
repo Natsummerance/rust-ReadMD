@@ -1,5 +1,7 @@
 # V0.0.5 Mac 修复已发布 · 2026-10-29
 
+此为首次发布快照；后续 SVG 源码重建、CI 修复与官网部署的当前证据见[后续复核](./readmd-v005-macos-ci-followup-2026-10-29.md)。
+
 [正式发布页](https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.5) 已替换四个 Mac 包及合并后的 SHA256SUMS。Mac 包源码为 bf731860347f24b9946c71ab66d3588303345ec7，版本号仍为 0.0.5；原标签仍指向 3cbb7a39ad889a2a485105acb4950a6cee995649。没有发布 V0.0.6，也没有移动旧标签。
 
 全部五个文件已从匿名公开下载链接逐字节计算 SHA-256，与本机已验证候选和 GitHub 资产摘要一致。Windows、Linux、VS Code、MCP 的原资产 ID 和摘要逐项保持。替换前保存了五个原始 Mac/校验文件的恢复副本；上传、认证、正式名称切换、说明核对和旧资产清理均有本地持久回执。
