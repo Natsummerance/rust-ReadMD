@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recordedAt": "2026-10-29T13:36:49.620Z",
+  "recordedAt": "2026-10-29T13:45:36.561Z",
   "repository": "Natsummerance/rust-ReadMD",
   "version": "0.0.5",
   "release": {
@@ -118,52 +118,8 @@
     ],
     "mainCiSnapshot": {
       "head": "f18638f14a3868457eb1ca71bb0e0f06bf57ea3b",
-      "recordedAt": "2026-10-29T13:38:03.580Z",
+      "recordedAt": "2026-10-29T13:43:34.897Z",
       "runs": [
-        {
-          "id": 40882091793,
-          "name": "Multi-Platform Rust Build and Release",
-          "status": "in_progress",
-          "conclusion": null,
-          "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091793",
-          "jobs": [
-            {
-              "id": 123475985768,
-              "name": "Build · Linux x64",
-              "status": "completed",
-              "conclusion": "success",
-              "failedSteps": []
-            },
-            {
-              "id": 123475986035,
-              "name": "Build · Windows x64",
-              "status": "in_progress",
-              "conclusion": null,
-              "failedSteps": []
-            },
-            {
-              "id": 123475986066,
-              "name": "Build · macOS Intel",
-              "status": "completed",
-              "conclusion": "success",
-              "failedSteps": []
-            },
-            {
-              "id": 123475986102,
-              "name": "Build · macOS ARM64",
-              "status": "completed",
-              "conclusion": "success",
-              "failedSteps": []
-            },
-            {
-              "id": 123475987696,
-              "name": "Release quality",
-              "status": "completed",
-              "conclusion": "skipped",
-              "failedSteps": []
-            }
-          ]
-        },
         {
           "id": 40882091689,
           "name": "Website GitHub Pages",
@@ -195,10 +151,61 @@
           ]
         },
         {
+          "id": 40882091793,
+          "name": "Multi-Platform Rust Build and Release",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091793",
+          "jobs": [
+            {
+              "id": 123475985768,
+              "name": "Build · Linux x64",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475986035,
+              "name": "Build · Windows x64",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475986066,
+              "name": "Build · macOS Intel",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475986102,
+              "name": "Build · macOS ARM64",
+              "status": "completed",
+              "conclusion": "success",
+              "failedSteps": []
+            },
+            {
+              "id": 123475987696,
+              "name": "Release quality",
+              "status": "completed",
+              "conclusion": "skipped",
+              "failedSteps": []
+            },
+            {
+              "id": 123481801730,
+              "name": "Publish GitHub Release",
+              "status": "completed",
+              "conclusion": "skipped",
+              "failedSteps": []
+            }
+          ]
+        },
+        {
           "id": 40882091785,
           "name": "Repo quality",
-          "status": "in_progress",
-          "conclusion": null,
+          "status": "completed",
+          "conclusion": "success",
           "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/40882091785",
           "jobs": [
             {
@@ -232,21 +239,22 @@
             {
               "id": 123475990616,
               "name": "Kernel tests · macos-latest",
-              "status": "in_progress",
-              "conclusion": null,
+              "status": "completed",
+              "conclusion": "success",
               "failedSteps": []
             },
             {
               "id": 123475990818,
               "name": "Kernel tests · windows-latest",
-              "status": "in_progress",
-              "conclusion": null,
+              "status": "completed",
+              "conclusion": "success",
               "failedSteps": []
             }
           ]
         }
       ]
-    }
+    },
+    "mainCiAllPassed": true
   },
   "verification": {
     "rustLibrary": {
