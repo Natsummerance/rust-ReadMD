@@ -1,0 +1,60 @@
+{
+  "recordedAt": "2026-10-29T11:13:49.261Z",
+  "sourceCommit": "35a88cf322a761a66ca8c960e5446ce93e171b19",
+  "sourceTree": "a0c600a54c716e8324d81850408bfcec43fd2fe3",
+  "branch": "codex/mac-migration-20261029",
+  "changes": [
+    "Mac resvg 0.48.1 workers and original license notices",
+    "inside-out ad-hoc signing with worker/runtime manifest rehashing",
+    "shared native packaging and staged Mac-only release refresh",
+    "free ad-hoc CI default with explicit optional Developer ID path"
+  ],
+  "tests": {
+    "rustLibrary": {
+      "passed": 4201,
+      "failed": 0,
+      "ignored": 7
+    },
+    "node": {
+      "files": 128,
+      "passed": 1741,
+      "failed": 0,
+      "skipped": 3
+    },
+    "focusedMacPackagingAndRefresh": {
+      "passed": 18,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "firstFailurePreserved": {
+    "previousLibraryPassed": 4200,
+    "previousLibraryFailed": 1,
+    "rootCause": "Mac managed SVG engine absent; fixed by pinned bundled worker"
+  },
+  "bootSha256": "bbfdfd7cdda3ab2da894a7259c852505d47a9b70fdc243fedf32e7c637a94d9b",
+  "evidence": [
+    {
+      "file": "rust-library-svg-final-01.log",
+      "sha256": "8a3410e00dc9f05e713f5797e4937790bd0106251aebb9e4ca5ec5d9cd128f88"
+    },
+    {
+      "file": "node-mac-integration-final-01.log",
+      "sha256": "1df8f7c1079846906b282c7ff9235075bd73c4b99da951b6dd2dbf5a24e9a6a5"
+    },
+    {
+      "file": "integrated-mac-package-tests-01.log",
+      "sha256": "47b8b8c1a07494c3c4341544965d5f2f0d907dde2c393482b102d43d3e1498ba"
+    },
+    {
+      "file": "integrated-mac-privacy-01.log",
+      "sha256": "01bf2fd864d917ef69cc42011d55cda43a1497b5c20698d1d9afc6f6bd28c9af"
+    }
+  ],
+  "v005ReleaseSourceCommit": "bf731860347f24b9946c71ab66d3588303345ec7",
+  "v005NativeReport": "readmd-v005-macos-2026-10-29.json",
+  "developmentNativeUiReexecutedForThisResourceOnlyChange": false,
+  "developmentNativeUiPriorEvidencePreserved": true,
+  "fullAcceptanceLedgerChanged": false,
+  "remoteMutations": 0
+}
