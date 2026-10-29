@@ -1,7 +1,7 @@
 {
   "stable": "0.0.5",
   "candidate": "0.0.5",
-  "candidate_ref": "codex/v005-upgrade",
+  "candidate_ref": "02737040e6dad02d1d73a963db999bded2fa8d78",
   "published": "2026-10-25",
   "repository": "Natsummerance/rust-ReadMD"
 }
