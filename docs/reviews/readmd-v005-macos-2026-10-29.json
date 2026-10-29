@@ -1,0 +1,428 @@
+{
+  "recordedAt": "2026-10-29T10:59:35.849Z",
+  "scope": "V0.0.5 Mac startup/basic read-write and installation packaging only",
+  "sourceCommit": "bf731860347f24b9946c71ab66d3588303345ec7",
+  "sourceTree": "a39d67c4167d510cfb6567ea3b55f4cb931824b8",
+  "originalTagCommit": "3cbb7a39ad889a2a485105acb4950a6cee995649",
+  "signing": {
+    "kind": "ad-hoc",
+    "developerId": false,
+    "notarized": false,
+    "defaultGatekeeperAccepted": false,
+    "perAppUserApprovalRequired": true,
+    "firstHumanApprovalTested": false
+  },
+  "host": {
+    "architecture": "arm64",
+    "operatingSystem": "macOS 27.2 (26B123)"
+  },
+  "nativeWorkflows": [
+    {
+      "file": "native-v005-arm64-final-01/report.json",
+      "sha256": "4a18fbfcde73496ec865803dfad306809e0a4ac736fc6834baf23d40733d9b5d",
+      "platform": "macos-arm64",
+      "hostArch": "arm64",
+      "binaryArch": "arm64",
+      "kernelRelease": "27.2.0",
+      "binarySha256": "8e84b042684d320d60b44a90b51c68e108fc30a39b60bfb884df2287c2a73d64",
+      "bootSha256": "eeb0d07463f63bc7c0a66ffc93ace8810a893a80105d1d5ccd6c65c98c5f9326",
+      "harnessSha256": "e2b28d00e1e23fe25122cbf1ed625d44e8310456a47837ad4b79d0a16e070134",
+      "nativeHost": "Cocoa WKWebView",
+      "productionCsp": true,
+      "strictTokenMode": true,
+      "chooserOrAuthShim": false,
+      "driver": "debug-only native-qa; direct production UI function calls",
+      "workspaceWriteSandbox": true,
+      "controlledCleanupAfterDirtyQuitCancel": true,
+      "phases": [
+        {
+          "ok": true,
+          "phase": "edit_save",
+          "checks": [
+            "native_bridge_ready",
+            "chinese_path_opened",
+            "initial_text_exact",
+            "native_document_visible",
+            "editor_has_real_layout",
+            "source_visible_without_scrolling",
+            "unchanged_editor_clean",
+            "edit_creates_no_copy",
+            "edit_is_dirty",
+            "undo_restores_original",
+            "redo_restores_edit",
+            "native_save_receipt",
+            "saved_editor_clean",
+            "clean_tab_closed",
+            "clean_close_has_no_prompt",
+            "saved_file_reopened",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "restore_close",
+          "checks": [
+            "native_bridge_ready",
+            "session_restored",
+            "restart_text_exact",
+            "restored_editor_clean",
+            "last_tab_closed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "empty_home",
+          "checks": [
+            "native_bridge_ready",
+            "empty_session_home",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "external_conflict",
+          "checks": [
+            "native_bridge_ready",
+            "conflict_fixture_dirty",
+            "real_save_conflict_dialog",
+            "save_conflict_dialog_fits_window",
+            "external_revision_rejects_save",
+            "failed_save_keeps_user_text",
+            "quit_cancelled",
+            "cancel_keeps_dirty_editor",
+            "dirty_draft_checkpointed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "passed": true
+    },
+    {
+      "file": "native-v005-x64-final-01/report.json",
+      "sha256": "9d6b4f5f82468cdf8a57783169a89e158b70c9feeffd6d800a3470215f056625",
+      "platform": "macos-x86_64-rosetta",
+      "hostArch": "arm64",
+      "binaryArch": "x86_64",
+      "kernelRelease": "27.2.0",
+      "binarySha256": "407cc60eb3f9d81b853cc1b208bf2921a3ef4455f0e5227b04e8c9f48e8c4e4f",
+      "bootSha256": "eeb0d07463f63bc7c0a66ffc93ace8810a893a80105d1d5ccd6c65c98c5f9326",
+      "harnessSha256": "e2b28d00e1e23fe25122cbf1ed625d44e8310456a47837ad4b79d0a16e070134",
+      "nativeHost": "Cocoa WKWebView",
+      "productionCsp": true,
+      "strictTokenMode": true,
+      "chooserOrAuthShim": false,
+      "driver": "debug-only native-qa; direct production UI function calls",
+      "workspaceWriteSandbox": true,
+      "controlledCleanupAfterDirtyQuitCancel": true,
+      "phases": [
+        {
+          "ok": true,
+          "phase": "edit_save",
+          "checks": [
+            "native_bridge_ready",
+            "chinese_path_opened",
+            "initial_text_exact",
+            "native_document_visible",
+            "editor_has_real_layout",
+            "source_visible_without_scrolling",
+            "unchanged_editor_clean",
+            "edit_creates_no_copy",
+            "edit_is_dirty",
+            "undo_restores_original",
+            "redo_restores_edit",
+            "native_save_receipt",
+            "saved_editor_clean",
+            "clean_tab_closed",
+            "clean_close_has_no_prompt",
+            "saved_file_reopened",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "restore_close",
+          "checks": [
+            "native_bridge_ready",
+            "session_restored",
+            "restart_text_exact",
+            "restored_editor_clean",
+            "last_tab_closed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "empty_home",
+          "checks": [
+            "native_bridge_ready",
+            "empty_session_home",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "external_conflict",
+          "checks": [
+            "native_bridge_ready",
+            "conflict_fixture_dirty",
+            "real_save_conflict_dialog",
+            "save_conflict_dialog_fits_window",
+            "external_revision_rejects_save",
+            "failed_save_keeps_user_text",
+            "quit_cancelled",
+            "cancel_keeps_dirty_editor",
+            "dirty_draft_checkpointed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "releasePackages": [
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 66588050,
+      "sha256": "6a5f80be4554bdbeb4f9884bbb74e0d0baff2453e91ab2333929be92a209e504",
+      "signatureValid": true,
+      "codeSignature": "ad-hoc",
+      "gatekeeperAccepted": false,
+      "perAppApprovalRequired": true,
+      "coldStartupPassed": true,
+      "coldStartup": {
+        "passed": true,
+        "milestones_ms": {
+          "first_document": null,
+          "page_loaded": 433,
+          "server_up": 3,
+          "window_created": 139,
+          "window_loaded": null
+        },
+        "timed_out": false,
+        "version": "0.0.5"
+      },
+      "managedSvgPassed": true
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 73934191,
+      "sha256": "41d3e4d5f5a97bc391b90858ce2523f8180c4f5dbdc5c80653e02054eb37a729",
+      "signatureValid": true,
+      "codeSignature": "ad-hoc",
+      "gatekeeperAccepted": false,
+      "perAppApprovalRequired": true,
+      "coldStartupPassed": true,
+      "coldStartup": {
+        "passed": true,
+        "milestones_ms": {
+          "first_document": null,
+          "page_loaded": 435,
+          "server_up": 3,
+          "window_created": 137,
+          "window_loaded": null
+        },
+        "timed_out": false,
+        "version": "0.0.5"
+      },
+      "managedSvgPassed": true
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 67436409,
+      "sha256": "35e843d6e66fb7d0ec291503b6ce9df173843574830ac8cad1867e520ae9652f",
+      "signatureValid": true,
+      "codeSignature": "ad-hoc",
+      "gatekeeperAccepted": false,
+      "perAppApprovalRequired": true,
+      "coldStartupPassed": true,
+      "coldStartup": {
+        "passed": true,
+        "milestones_ms": {
+          "first_document": null,
+          "page_loaded": 1674,
+          "server_up": 5,
+          "window_created": 855,
+          "window_loaded": null
+        },
+        "timed_out": false,
+        "version": "0.0.5"
+      },
+      "managedSvgPassed": true
+    },
+    {
+      "name": "ReadMD-macos-x64.dmg",
+      "size": 74914776,
+      "sha256": "c38b950a7bfae096b478d0cfd378e116affdb7ad18dc1db7d7bbbf6032e1c9a1",
+      "signatureValid": true,
+      "codeSignature": "ad-hoc",
+      "gatekeeperAccepted": false,
+      "perAppApprovalRequired": true,
+      "coldStartupPassed": true,
+      "coldStartup": {
+        "passed": true,
+        "milestones_ms": {
+          "first_document": null,
+          "page_loaded": 530,
+          "server_up": 5,
+          "window_created": 171,
+          "window_loaded": null
+        },
+        "timed_out": false,
+        "version": "0.0.5"
+      },
+      "managedSvgPassed": true
+    }
+  ],
+  "tests": {
+    "rustLibrary": {
+      "passed": 3846,
+      "failed": 0,
+      "ignored": 3
+    },
+    "rustBinary": {
+      "passed": 113,
+      "failed": 0
+    },
+    "xtask": {
+      "passed": 12,
+      "failed": 0
+    },
+    "requiredCiNode": {
+      "passed": 83,
+      "failed": 0,
+      "skipped": 0
+    },
+    "extendedNode": {
+      "files": 113,
+      "passed": 1387,
+      "failed": 3,
+      "skipped": 3,
+      "baselineFilesUnmodified": true,
+      "failureCategory": "existing byte-pin assertions on the unchanged published LF sources",
+      "expectedHashesChanged": false
+    },
+    "frontendGates": [
+      "bundle-boot --check",
+      "check-assets --check",
+      "check-i18n",
+      "check-styles",
+      "check-wiring",
+      "check-no-python",
+      "privacy-scan"
+    ],
+    "whitespaceCheck": {
+      "productCodePassed": true,
+      "upstreamNoticesPreservedVerbatim": true,
+      "upstreamNoticeWhitespaceReported": true
+    }
+  },
+  "evidenceLogs": [
+    {
+      "file": "hotfix-library-01.log",
+      "sha256": "457d26bb0f7bb2fbad236237b08ea11ffe46c7f28ed09e6df0cf0ec3a6ad6225"
+    },
+    {
+      "file": "hotfix-bin-xtask-01.log",
+      "sha256": "68c04f3cda72635d1923bf9fceabbae3a8d3e595526f56518895401f6c6b1bbe"
+    },
+    {
+      "file": "hotfix-xtask-01.log",
+      "sha256": "d2938631557a99aa9644a72cf991c03951cb3ca4f89cfdb7a5ff5a7cb52fc450"
+    },
+    {
+      "file": "hotfix-bundle-check-01.log",
+      "sha256": "04344dd062912bc8b1c162207ab0e55ad6bda13b0bda121e6234c3c20c5b9854"
+    },
+    {
+      "file": "hotfix-node-full-03.log",
+      "sha256": "f5efdf9250c515a3dbeade1774312a40443d58e656a12f981a0ff8f622581055"
+    },
+    {
+      "file": "hotfix-gate-ci-node-01.log",
+      "sha256": "b25a3cc8ee427f7a15854f09385d2c0e3951ca87f6905c6ce684cdc46c868ab5"
+    },
+    {
+      "file": "hotfix-gate-assets-01.log",
+      "sha256": "6232e260d54a8cce066b0a6c406d5bed7d25a541593aa14bac8918117ac4d827"
+    },
+    {
+      "file": "hotfix-gate-i18n-01.log",
+      "sha256": "2e5350d61a0867e5ab2881580a6a7e34122f36da82017804931edebc9b717051"
+    },
+    {
+      "file": "hotfix-gate-styles-01.log",
+      "sha256": "0060eb1dc6f644fa679069c5082a4a37b467031ddc85f20b3f3a377213322f79"
+    },
+    {
+      "file": "hotfix-gate-wiring-01.log",
+      "sha256": "4273a35d57a6d309d6f190198da2c341b068cc97a80ded959751aec032734edf"
+    },
+    {
+      "file": "hotfix-gate-no-python-01.log",
+      "sha256": "158a0d53257a18ddef99b19bbac248be4c7b431ea35990b77a4d04ba9946ae0f"
+    },
+    {
+      "file": "hotfix-precommit-privacy-01.log",
+      "sha256": "c94deb97cafcdb10466a13cc0f5c577b750bd7cc4bae33ddbb8cf2a2bb93faf6"
+    },
+    {
+      "file": "refresh-safety-tests-01.log",
+      "sha256": "117f2d55ed715b2921a125a6a7c0669ba7b18285a44c9c749d53eb5e5d8bb393"
+    }
+  ],
+  "firstFailures": [
+    {
+      "evidence": "native-v005-debug-01",
+      "reason": "unbundled native process remained document.hidden; packaged .app passed without dropping the visibility assertion"
+    },
+    {
+      "evidence": "native-v005-debug-02",
+      "reason": "unbundled explicit show-window attempt timed out; packaged .app then passed"
+    },
+    {
+      "evidence": "hotfix-build-release-x64-01.log",
+      "reason": "target-specific core_detect dependency absent from offline cache; separately fetched locked target dependencies and rebuilt offline"
+    },
+    {
+      "evidence": "hotfix-node-full-01.log",
+      "reason": "two fixed-evidence failures plus three unchanged byte guards; evidence restored, three historical assertions remain"
+    },
+    {
+      "evidence": "package-arm64-01.log",
+      "reason": "packager expected a helper name different from the real runtime manifest; corrected exact helper name, rebuilt fresh candidate"
+    }
+  ],
+  "notClaimed": [
+    "Physical Intel Mac",
+    "Older macOS versions",
+    "Human first-launch approval",
+    "Physical keyboard/IME and visual QA",
+    "File associations/menu bar/tray/AI credentials",
+    "Complete V0.0.6 acceptance",
+    "Power loss recovery"
+  ],
+  "remote": {
+    "pushed": false,
+    "releaseReplaced": false,
+    "branchesDeleted": false,
+    "reason": "GitHub account not connected"
+  },
+  "acceptanceLedgerChanged": false
+}
