@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Zahtevani izvozni pogon ali pisave niso na voljo. Namestite jih in poskusite znova.",
   "export.secFigures": "Znanstvene slike",
   "export.secSlides": "Prosojnice",
-  "export.slidesHint": "Razdeli prosojnice s črto, ki vsebuje samo ---. Izvozi eno samo datoteko HTML brez povezave (reveal.js).",
+  "export.slidesHint": "Diapozitive ločite z vrstico, ki vsebuje samo ---. Izvozi datoteko PowerPoint (.pptx), ki jo je mogoče urejati.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Prehod",
   "export.snapshotBusy": "Pregled poteka…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Nadaljuj",
   "ai.taskRounds": "{count} krogov",
   "ai.taskRunning": "Pregled poteka…",
-  "ai.thinking": "Razmišljanje…"
+  "ai.thinking": "Razmišljanje…",
+  "warn.pptx_math_image": "Enačbe se ohranijo kot slike, njihova izvorna koda pa v opombah diapozitivov."
 }

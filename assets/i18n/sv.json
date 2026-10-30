@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Den nödvändiga exportmotorn eller teckensnitten är inte tillgängliga. Installera dem och försök igen.",
   "export.secFigures": "Vetenskapliga figurer",
   "export.secSlides": "Bildspel",
-  "export.slidesHint": "Dela upp bildspel med en rad som endast innehåller ---. Exporterar en enskild offline-HTML-fil (reveal.js).",
+  "export.slidesHint": "Dela bilder med en rad som bara innehåller ---. Exporterar en redigerbar PowerPoint-fil (.pptx).",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Övergång",
   "export.snapshotBusy": "Granskning pågår…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Återuppta",
   "ai.taskRounds": "{count} omgångar",
   "ai.taskRunning": "Granskning pågår…",
-  "ai.thinking": "Tänker…"
+  "ai.thinking": "Tänker…",
+  "warn.pptx_math_image": "Formler bevaras som bilder med källkoden i bildanteckningarna."
 }

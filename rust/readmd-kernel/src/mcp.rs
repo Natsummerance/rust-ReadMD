@@ -146,7 +146,7 @@ fn ai_task_schema()->Value{
 fn export_snapshot_schema()->Value{
     schema(json!({"action":{"enum":["prepare","status","runtime","figures","commit","reconcile","discard"]},"document_id":{"type":"string"},"generation":{"type":"integer","minimum":0},
         "review_revision":{"type":"integer","minimum":0},"snapshot_id":{"type":"string"},"call_id":{"type":"string"},"task_id":{"type":"string"},
-        "format":{"enum":["html","pdf","docx","epub","tex"]},"suggestedName":{"type":"string"},"options":{"type":"object"},"rendered":{"type":"array"},
+        "format":{"enum":["html","pdf","docx","pptx","epub","tex"]},"suggestedName":{"type":"string"},"options":{"type":"object"},"rendered":{"type":"array"},
         "accept_pending":{"type":"boolean"},"out_path":{"type":"string"},"overwrite":{"type":"boolean"},"confirm":confirm_prop()}),&["action","confirm"])
 }
 pub fn tools() -> Value {

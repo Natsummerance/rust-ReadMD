@@ -12,8 +12,9 @@ test.beforeEach(async ({ page, baseURL }) => {
   }, new URL(baseURL).origin);
   await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async content => {
-    const path = await uploadFile(new File([content], 'panel-acceptance.md', { type: 'text/markdown' }));
-    await loadFile(path); state.pvLayout = 'none'; await toggleEdit();
+    await window.__readmdSessionReady;
+    const path = await uploadFile(new File([content], 'panel-acceptance-'+crypto.randomUUID()+'.md', { type: 'text/markdown' }));
+    await loadFile(path); state.pvLayout = 'none'; if(!state.editing)await toggleEdit();
   }, initial);
 });
 
@@ -29,8 +30,8 @@ for (const [tool, opener, field, action, value] of [
     await page.locator('#' + action).click();
     const inserted = await page.evaluate(() => cmView.state.doc.toString());
     expect(inserted.split(value).length - 1).toBe(1);
-    await page.keyboard.press('Control+z');
-    expect(await page.evaluate(() => cmView.state.doc.toString())).toBe(before);
+    await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');
+    await expect.poll(() => page.evaluate(() => cmView.state.doc.toString())).toBe(before);
   });
 }
 
@@ -157,7 +158,7 @@ test('image save is single flight, preserves editing on failure and supports one
   await expect(page.locator('#img-rot-l')).toBeEnabled(); await expect(page.locator('#img-close')).toBeEnabled();
   await page.locator('#img-insert').click(); await expect(page.locator('#img-modal')).toBeHidden();
   expect(calls).toBe(2); expect((await page.evaluate(() => cmView.state.doc.toString())).split('acceptance-image.png').length - 1).toBe(1);
-  await page.keyboard.press('Control+z'); expect(await page.evaluate(() => cmView.state.doc.toString())).toBe(before);
+  await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z'); await expect.poll(() => page.evaluate(() => cmView.state.doc.toString())).toBe(before);
   await page.evaluate(() => openImgModal()); await expect(page.locator('#img-insert')).toBeDisabled();
 });
 

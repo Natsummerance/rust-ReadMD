@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "O motor de exportação ou os tipos de letra necessários não estão disponíveis. Instale-os e tente novamente.",
   "export.secFigures": "Figuras científicas",
   "export.secSlides": "Slides",
-  "export.slidesHint": "Divida os slides com uma linha contendo apenas ---. Exporta um único arquivo HTML offline (reveal.js).",
+  "export.slidesHint": "Separe os slides com uma linha contendo apenas ---. Exporta um arquivo PowerPoint (.pptx) editável.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Transição",
   "export.snapshotBusy": "Revisão em curso…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Retomar",
   "ai.taskRounds": "{count} rondas",
   "ai.taskRunning": "Revisão em curso…",
-  "ai.thinking": "Pensando…"
+  "ai.thinking": "Pensando…",
+  "warn.pptx_math_image": "As equações são preservadas como imagens, com seu código-fonte nas notas dos slides."
 }

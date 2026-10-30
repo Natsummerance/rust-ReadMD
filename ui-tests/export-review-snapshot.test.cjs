@@ -24,7 +24,7 @@ async function fixture(settings = {}) {
   const tab = { id: 'tab-a', path: 'A.md', name: 'A.md', original: snapshot.content, content: snapshot.content, isDirty: false, editGeneration: 0 };
   const state = { tabs: [tab], activeTabId: tab.id, editing: true, mode: 'file', file: tab.path, dir: '', original: tab.original,
     export: { fmt: settings.format || 'html', options: clone(settings.options || {}), defaults: {} } };
-  function node() { return { value: '', textContent: '', className: '', title: '', dataset: {}, hidden: false, setAttribute() {}, addEventListener() {}, appendChild() {},
+  function node() { return { value: '', textContent: '', className: '', title: '', dataset: {}, hidden: false, setAttribute() {}, addEventListener() {}, appendChild() {}, querySelector: () => null,
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false } }; }
   for (const name of ['edit-area', 'export-result', 'export-open', 'export-reveal', 'export-opts', 'export-modal', 'exp-preset']) nodes.set(name, node());
   nodes.get('edit-area').value = snapshot.content;
@@ -59,10 +59,14 @@ async function fixture(settings = {}) {
     }
     assert.equal(url, '/api/export/snapshot');
     if (body.action === 'prepare') {
+      if (settings.holdPrepare?.format === body.format) {
+        const gate = settings.holdPrepare; gate.entered.resolve(); await gate.release.promise;
+        if (settings.holdPrepare === gate) settings.holdPrepare = null;
+      }
       assert.equal(body.doc_id, snapshot.document_id); assert.equal(body.generation, snapshot.generation); assert.equal(body.review_revision, snapshot.review_revision);
       const pending = snapshot.changes.filter(item => item.decision === 'pending');
       const prepared = { ok: true, snapshot_id: 'snapshot-' + (frozen.size + 1), format: body.format, pending_count: pending.length, pending_ids: pending.map(item => item.id),
-        runtime_ready: required.every(id => installed.has(id)),
+        runtime_ready: required.every(id => installed.has(id)), retained_bytes: 1024,
         content: snapshot.content, options: body.options, versions: pending.map(item => [item.id, item.version]) };
       frozen.set(prepared.snapshot_id, clone(prepared));
       return response(prepared);
@@ -77,7 +81,7 @@ async function fixture(settings = {}) {
     if (body.action === 'figures') {
       const prepared = frozen.get(body.snapshot_id); assert.equal(prepared.runtime_ready, true);
       if (settings.figuresRequireFonts) { prepared.figures_require_fonts = true; prepared.runtime_ready = installed.has('fonts'); }
-      return response({ ok: true });
+      return response({ ok: true, runtime_ready: prepared.runtime_ready, retained_bytes: 1024 });
     }
     if (body.action === 'reconcile') return response({ ok: true, state: committedReceipt ? 'committed' : 'commit_intent', receipt: committedReceipt });
     assert.equal(body.action, 'commit');
@@ -151,7 +155,7 @@ for (const format of ['html', 'pdf', 'docx', 'epub', 'tex']) test(format + ': co
     ['export', 'export.acceptAllAndExport'], ['review', 'export.viewChanges'], ['cancel', 'dialog.cancel'],
   ]);
   const route = app.calls.filter(call => call.url === '/api/export/snapshot');
-  assert.deepEqual(route.map(call => call.body.action), ['prepare', 'runtime', 'figures', 'runtime', 'commit']);
+  assert.deepEqual(route.map(call => call.body.action), ['prepare', 'figures', 'commit']);
   assert.equal(route.at(-1).body.snapshot_id, 'snapshot-1');
 });
 
@@ -216,11 +220,68 @@ test('presentation snapshot requires explicit consent before committing or accep
   assert.deepEqual(app.snapshot.changes.map(item => item.decision), ['pending', 'pending']);
 });
 
+test('returning to a format reuses only its exact prepared document generation and closing releases all previews', async () => {
+  const app = await fixture();
+  const prepare = fmt => app.context.prepareReviewExport(fmt, {}, 'A', app.tab, true);
+  const first = await prepare('pdf');
+  const second = await prepare('docx');
+  const again = await prepare('pdf');
+  assert.equal(again, first);
+  assert.notEqual(second.snapshot_id, first.snapshot_id);
+  assert.equal(app.calls.filter(call => call.body.action === 'prepare').length, 2);
+  assert.equal(app.calls.filter(call => call.body.action === 'discard').length, 0);
+  app.type('A different visible body.');
+  const changed = await prepare('pdf');
+  assert.notEqual(changed.snapshot_id, first.snapshot_id);
+  assert.notEqual(changed.stamp.generation, first.stamp.generation);
+  await app.context.discardPreparedExports();
+  assert.equal(new Set(app.calls.filter(call => call.body.action === 'discard').map(call => call.body.snapshot_id)).size, 3);
+  assert.ok(app.snapshot.changes.every(change => change.decision !== 'accepted'));
+});
+
+test('large preview inputs are released instead of accumulating and never accept review changes', async () => {
+  const app = await fixture();
+  const first = await app.context.prepareReviewExport('pdf', {}, 'A', app.tab, true);
+  first.retained_bytes = 16 * 1024 * 1024 + 1;
+  await app.context.prepareReviewExport('docx', {}, 'A', app.tab, true);
+  assert.equal(first.phase, 'discarded');
+  assert.equal(app.calls.filter(call => call.body.action === 'discard' && call.body.snapshot_id === first.snapshot_id).length, 1);
+  assert.deepEqual(app.snapshot.changes.map(change => change.decision), ['pending', 'pending']);
+});
+
+test('a ready snapshot needs no duplicate runtime bind while missing runtime still requires a real acknowledgement', async () => {
+  const ready = await fixture();
+  const frozen = await ready.context.prepareReviewExport('pdf', {}, 'A', ready.tab, true);
+  await ready.context.bindSnapshotRuntime(frozen); await ready.context.bindSnapshotRuntime(frozen);
+  assert.equal(ready.calls.filter(call => call.body.action === 'runtime').length, 0);
+  const missing = await fixture({requiredCapabilities:['fonts']});
+  const waiting = await missing.context.prepareReviewExport('pdf', {}, 'A', missing.tab, true);
+  await assert.rejects(() => missing.context.bindSnapshotRuntime(waiting));
+  assert.equal(missing.calls.filter(call => call.body.action === 'runtime').length, 1);
+  assert.equal(waiting.runtime_ready, false);
+});
+
+test('a late preparation from an abandoned format cannot replace the current preview snapshot', async () => {
+  const gate = { entered: barrier(), release: barrier(), format: 'pdf' };
+  const app = await fixture({ holdPrepare: gate });
+  const older = app.context.prepareReviewExport('pdf', {}, 'A', app.tab, true);
+  await gate.entered.promise;
+  const current = await app.context.prepareReviewExport('docx', {}, 'A', app.tab, true);
+  gate.release.resolve();
+  const old = await older;
+  const stillCurrent = await app.context.prepareReviewExport('docx', {}, 'A', app.tab, true);
+  assert.equal(stillCurrent, current);
+  assert.notEqual(old.snapshot_id, current.snapshot_id);
+  assert.equal(current.phase, 'prepared');
+  assert.equal(app.calls.filter(call => call.body.action === 'discard' && call.body.snapshot_id === current.snapshot_id).length, 0);
+  assert.deepEqual(app.snapshot.changes.map(change => change.decision), ['pending', 'pending']);
+});
+
 test('native preview and the final export reuse the same frozen snapshot and bind figures once', async () => {
   const app = await fixture({ format: 'epub' }); let generatePreview;
   app.context.setTimeout = callback => { generatePreview = callback; return 1; };
   app.context.renderNativeExportPreview = () => {};
-  const modal = { classList: { contains: () => true } }; app.nodes.set('export-preview-modal', modal);
+  const modal = { classList: { contains: () => true, remove() {} } }; app.nodes.set('export-preview-modal', modal);
   const options = app.context.collectExportOptions();
   app.context.requestNativeExportPreview('epub', options, app.snapshot.content, 'A', '');
   await generatePreview(); await app.run();
@@ -233,7 +294,7 @@ test('native preview and the final export reuse the same frozen snapshot and bin
 
 test('a lost commit acknowledgement reconciles its durable receipt without invoking another export', async () => {
   const app = await fixture({ loseCommitAck: true }); await app.run();
-  assert.deepEqual(app.calls.filter(call => call.url === '/api/export/snapshot').map(call => call.body.action), ['prepare', 'runtime', 'figures', 'runtime', 'commit', 'reconcile']);
+  assert.deepEqual(app.calls.filter(call => call.url === '/api/export/snapshot').map(call => call.body.action), ['prepare', 'figures', 'commit', 'reconcile']);
   assert.deepEqual(app.snapshot.changes.map(item => item.decision), ['accepted', 'accepted']);
   assert.equal(app.nodes.get('export-result').className, 'export-result ok');
 });
@@ -288,7 +349,7 @@ test('missing PDF engine and fonts install after prepare, then bind before figur
   await app.review.propose([{ from: stamp.content.length, to: stamp.content.length, insert: ' / AI C' }], stamp, app.tab);
   gate.release.resolve(); await exporting;
   const order = app.calls.filter(call => call.url !== '/api/review').map(call => call.url === 'capability' ? 'ensure:' + call.body.id : call.url === 'publication' ? 'ensure:publication' : call.url === 'figures' ? 'render:figures' : call.body.action);
-  assert.deepEqual(order, ['prepare', 'ensure:typst', 'ensure:publication', 'runtime', 'render:figures', 'figures', 'ensure:publication', 'runtime', 'commit']);
+  assert.deepEqual(order, ['prepare', 'ensure:typst', 'ensure:publication', 'runtime', 'render:figures', 'figures', 'ensure:publication', 'commit']);
   assert.equal(app.figureInputs[0], '中文 AI A / AI B');
   assert.deepEqual(app.snapshot.changes.map(change => change.decision), ['accepted', 'accepted', 'pending']);
   assert.equal(app.calls.filter(call => call.body.action === 'prepare').length, 1);
@@ -302,7 +363,7 @@ test('DOCX publication fonts use the frozen projection-safe PDF engine instead o
   assert.equal(publication.body.options.pdf.engine, 'rust'); assert.equal(app.state.export.options.pdf.engine, 'xelatex');
   assert.equal(app.calls.some(call => call.url === 'capability'), false, 'irrelevant TeX settings do not install a TeX engine for DOCX');
   const order = app.calls.filter(call => call.url !== '/api/review').map(call => call.url === 'publication' ? 'ensure:publication' : call.url === 'figures' ? 'render:figures' : call.body.action);
-  assert.deepEqual(order, ['prepare', 'ensure:publication', 'runtime', 'render:figures', 'figures', 'ensure:publication', 'runtime', 'commit']);
+  assert.deepEqual(order, ['prepare', 'ensure:publication', 'runtime', 'render:figures', 'figures', 'ensure:publication', 'commit']);
 });
 
 for (const denied of ['typst', 'fonts']) test('declining required ' + denied + ' installation discards only the prepared snapshot and preserves review decisions', async () => {
@@ -326,7 +387,7 @@ for (const entry of [
   const element = () => ({ children: [], classList: { add() {}, remove() {} }, remove() {}, setAttribute() {}, replaceChildren() { this.children = []; }, append(...children) { this.children.push(...children); } });
   const capability = element(); app.nodes.set('export-preview-capability', capability);
   app.nodes.set('export-preview-card', element());
-  app.nodes.set('export-preview-modal', { classList: { contains: () => true }, querySelector: () => null });
+  app.nodes.set('export-preview-modal', { classList: { contains: () => true, remove() {} }, querySelector: () => null });
   app.context.document.createElement = element;
   const options = app.context.collectExportOptions();
   app.context.updateExportLivePreview = () => app.context.requestNativeExportPreview(entry.format, options, app.snapshot.content, 'A', '');
@@ -347,7 +408,7 @@ for (const entry of [
   assert.ok(app.calls.filter(call => call.body.action === 'runtime').every(call => call.body.snapshot_id === preview.body.snapshot_id));
 });
 
-test('CJK labels rendered from ASCII source install fonts before the second runtime bind for PDF and DOCX without refreshing the snapshot', async () => {
+test('CJK labels rendered from ASCII source bind newly required fonts for PDF and DOCX without refreshing the snapshot', async () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><text>中文轴标</text></svg>';
   for (const format of ['pdf', 'docx']) {
     const gate = { entered: barrier(), release: barrier() };
@@ -360,7 +421,7 @@ test('CJK labels rendered from ASCII source install fonts before the second runt
     assert.equal(publications[0].body.options.figures, undefined); assert.equal(publications[1].body.options.figures.rendered[0].svg, svg);
     assert.ok(publications.every(call => call.body.content === 'AI A / AI B' && call.body.options.pdf.engine === 'rust'));
     const order = app.calls.filter(call => call.url !== '/api/review').map(call => call.url === 'publication' ? 'publication' : call.url === 'figures' ? 'render' : call.body.action);
-    assert.deepEqual(order, ['prepare', 'publication', 'runtime', 'render', 'figures', 'publication', 'runtime', 'commit']);
+    assert.deepEqual(order, ['prepare', 'publication', 'render', 'figures', 'publication', 'runtime', 'commit']);
     assert.deepEqual(app.snapshot.changes.map(change => change.decision), ['accepted', 'accepted', 'pending']);
     assert.equal(app.calls.filter(call => call.body.action === 'prepare').length, 1); assert.equal(app.calls.filter(call => call.body.action === 'figures').length, 1);
     assert.ok(app.calls.filter(call => ['runtime', 'commit'].includes(call.body.action)).every(call => call.body.snapshot_id === prepared.snapshot_id));
@@ -373,12 +434,12 @@ test('CJK SVG labels discovered after preview rendering show the existing font i
   app.context.renderNativeExportPreview = () => {}; app.context._t = app.context.window.i18n.t;
   const element = () => ({ children: [], classList: { add() {}, remove() {} }, remove() {}, setAttribute() {}, replaceChildren() { this.children = []; }, append(...children) { this.children.push(...children); } });
   const capability = element(); app.nodes.set('export-preview-capability', capability); app.nodes.set('export-preview-card', element());
-  app.nodes.set('export-preview-modal', { classList: { contains: () => true }, querySelector: () => null }); app.context.document.createElement = element;
+  app.nodes.set('export-preview-modal', { classList: { contains: () => true, remove() {} }, querySelector: () => null }); app.context.document.createElement = element;
   const options = app.context.collectExportOptions(); app.context.updateExportLivePreview = () => app.context.requestNativeExportPreview('docx', options, app.snapshot.content, 'A', '');
   app.context.updateExportLivePreview(); await nextTurn();
   assert.equal(app.calls.some(call => ['capability', 'publication', '/api/export/preview'].includes(call.url)), false, 'preview does not prompt or publish with missing fonts');
   assert.equal(capability.children[0].textContent, 'error.publication_fonts_unavailable'); assert.equal(capability.children[1].textContent, 'capability.installContinue');
-  assert.deepEqual(app.calls.filter(call => call.url === '/api/export/snapshot').map(call => call.body.action), ['prepare', 'runtime', 'figures', 'runtime']);
+  assert.deepEqual(app.calls.filter(call => call.url === '/api/export/snapshot').map(call => call.body.action), ['prepare', 'figures', 'runtime']);
   assert.deepEqual(app.snapshot.changes.map(change => change.decision), ['pending', 'pending']);
   await capability.children[1].onclick({ stopPropagation() {} }); await nextTurn();
   const preview = app.calls.find(call => call.url === '/api/export/preview'); assert.ok(preview); await app.run();

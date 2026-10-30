@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Enjin eksport atau fon yang diperlukan tidak tersedia. Pasangkannya dan cuba lagi.",
   "export.secFigures": "Rajah saintifik",
   "export.secSlides": "Slaid",
-  "export.slidesHint": "Pecahkan slaid dengan baris yang mengandungi --- sahaja. Mengeksport satu fail HTML luar talian (reveal.js).",
+  "export.slidesHint": "Pisahkan slaid dengan baris yang hanya mengandungi ---. Eksport fail PowerPoint (.pptx) yang boleh disunting.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Peralihan",
   "export.snapshotBusy": "Semakan sedang dijalankan…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Sambung",
   "ai.taskRounds": "{count} pusingan",
   "ai.taskRunning": "Semakan sedang dijalankan…",
-  "ai.thinking": "Memikirkan…"
+  "ai.thinking": "Memikirkan…",
+  "warn.pptx_math_image": "Persamaan dikekalkan sebagai imej, dengan sumbernya dalam nota slaid."
 }

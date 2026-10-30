@@ -52,3 +52,11 @@ cargo build --offline --locked --profile production -p resvg --bin resvg --targe
 各目标分别生成 `cargo metadata --offline --locked --format-version 1 --filter-platform TARGET` 和 `cargo tree --offline --locked -p resvg --edges normal,build --prefix none --target TARGET`，再使用上述打包工具，最后一个参数分别为 `macos-arm64` 或 `macos-x64`。生产配置由已锁定的上游源码提供，启用 LTO、移除调试符号、关闭增量编译。主程序和工作进程均保留宿主架构检查。
 
 Mac 锁文件记录源码归档、Cargo.lock、实际工作程序摘要及 61 个依赖的许可通知。打包前额外检查常见托管构建机根目录，防止更换开发机器后才发现预编译产物中的路径。此修正不构成物理 Intel、旧版 macOS、所有 SVG 效果或资源压力的验收。Mac 原生与安装副本证据另见 V0.0.5 刷新记录；本节前的 Windows 状态保留为当时记录。
+
+## 2026-10-30 Linux 构建闭环
+
+本轮 Linux 回归发现资源目录没有该平台的工作程序，不能把已有路径分支当成可用能力。官方 Linux x64 预编译包虽通过上游摘要校验，仍含构建机路径，因此未纳入产品，也未放宽隐私扫描。
+
+`tools/prepare-linux-svg-worker.mjs prepare` 先校验同一份上游源码归档，审核归档成员，显式准备锁定依赖；`build` 使用同一个共享 target、路径重映射与上游 production 配置执行 `--locked --offline` 构建。打包在 Linux x64 宿主核对 ELF 架构及真实版本，生成二进制锁和实际 normal/build 依赖的许可通知。唯一已记录的相对 README 符号链接不提取，改为复制归档根 README，不改 Rust 源码或 Cargo.lock。
+
+质量与 Linux 安装包构建工作流均使用这个入口，随后清理带所有权标记的源码准备目录。原生 Linux 输出测试与打包结果须以该次 Actions 实际结果为准；Mac 上审核归档和代码不能代替 Linux 验收。ARM Linux 工作程序仍未交付。

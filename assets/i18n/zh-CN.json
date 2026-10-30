@@ -2844,7 +2844,7 @@
   "export.runtimeUnavailable": "所需的导出引擎或字体不可用。请安装后重试。",
   "export.secFigures": "科研绘图",
   "export.secSlides": "幻灯片",
-  "export.slidesHint": "用单独一行 --- 分隔幻灯片。导出为可离线打开的单个 HTML 文件（reveal.js）。",
+  "export.slidesHint": "用单独一行 --- 分页。导出可编辑的 PowerPoint（.pptx）文件。",
   "export.slidesTheme": "主题",
   "export.slidesTransition": "切换效果",
   "export.snapshotBusy": "正在审阅…",
@@ -2929,5 +2929,6 @@
   "plugin.search": "搜索插件与功能",
   "plugin.summary": "{total} 项能力 · {installed} 项已安装 · {active} 项已启用",
   "plugin.unsupportedBuild": "当前版本暂不支持",
-  "toast.savingImage": "正在保存剪贴板图片…"
+  "toast.savingImage": "正在保存剪贴板图片…",
+  "warn.pptx_math_image": "公式以图片保留，公式源码写入幻灯片备注。"
 }

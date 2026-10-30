@@ -42,9 +42,11 @@ function driver(phase,file) {
         check(getEditContent().replace(/\r\n/g,'\n')===${JSON.stringify(before+inserted)},'redo_restores_edit');
         check(await saveEdit()===true,'native_save_receipt');
         check(!getActiveTab().isDirty,'saved_editor_clean');
-        const tab=getActiveTab();await closeTab(tab.id);
+        const tab=getActiveTab();
+        check(true,window.ReadMDSession?.busy?.()?'session_busy_before_close':'session_idle_before_close');
+        check(true,'begin_clean_close');await closeTab(tab.id);
         check(!state.tabs.some(t=>t.id===tab.id),'clean_tab_closed');
-        check(!document.getElementById('close-confirm-modal')?.classList.contains('show'),'clean_close_has_no_prompt');
+        check(document.getElementById('close-confirm-modal')?.classList.contains('hidden')===true,'clean_close_has_no_prompt');
         await loadFile(file);
         check(getActiveTab().content.replace(/\r\n/g,'\n')===${JSON.stringify(before+inserted)},'saved_file_reopened');
       }else if(phase==='restore_close'){
@@ -94,6 +96,7 @@ function driver(phase,file) {
     }catch(error){
       const name=String(error.message||'native_workflow_failed');
       checks.push(/^[a-z_]{1,127}$/.test(name)?name:'native_workflow_failed');
+      checks.push('native_error_'+String(error.name||'Error').toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,64));
       window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:false,phase,checks}}));
       window.ipc.postMessage('readmd:quit');
     }

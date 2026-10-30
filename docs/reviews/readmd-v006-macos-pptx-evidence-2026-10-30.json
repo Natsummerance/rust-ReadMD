@@ -1,0 +1,783 @@
+{
+  "schema": 1,
+  "version": "0.0.6",
+  "status": "local_slices_verified_ci_and_release_pending",
+  "baseCommit": "9df20892395d6d551a1fcefba7616cfb649050a1",
+  "migrationCommit": "0d941dea85d4efff9764e80b0a3b12205c04e7b9",
+  "sourceFiles": [
+    {
+      "path": ".github/workflows/release.yml",
+      "bytes": 12145,
+      "sha256": "e736bd36c54c6424a8dcb5ea78aab0ceb5d3331ea4aa39a2e65efa488b3b0660"
+    },
+    {
+      "path": ".github/workflows/repo-quality.yml",
+      "bytes": 8087,
+      "sha256": "aa9f0a850d5a67a2ba44673c22367e31c048849ef3135fcb7d3ee804ba0e9fae"
+    },
+    {
+      "path": "RELEASE_NOTES.md",
+      "bytes": 12876,
+      "sha256": "401cd1e5dffabd1c63cbf7de1d985f58f3d56cad8b5d5d5448b1a065164ff3f0"
+    },
+    {
+      "path": "assets/i18n/ar.json",
+      "bytes": 227543,
+      "sha256": "edfcebf01998f310725df3e6969176e31b55144767d4c706d2dae7dd71377e82"
+    },
+    {
+      "path": "assets/i18n/bn.json",
+      "bytes": 317954,
+      "sha256": "5a3dcab0c1b678d21b6c18d0759abcbcd49e93a9f07893fc5290e6ce39cf5975"
+    },
+    {
+      "path": "assets/i18n/bo.json",
+      "bytes": 369630,
+      "sha256": "d292695a9490ebf67860c854331c3f88216e2690b22e9a6d9a6e92c40351c193"
+    },
+    {
+      "path": "assets/i18n/da.json",
+      "bytes": 180014,
+      "sha256": "75fdf1cd5459e7fe1ce02cb6185fec915f34368b09eada500f351c5f6e5a9fe4"
+    },
+    {
+      "path": "assets/i18n/de.json",
+      "bytes": 194294,
+      "sha256": "f01652acacb7c9e7750e75651aa0f2b524c68ca40fb7b171b1149e47fb21e82e"
+    },
+    {
+      "path": "assets/i18n/el.json",
+      "bytes": 272798,
+      "sha256": "fa58c989b26c1f08fdecc9fc2fdd146661e42312eec68110a48e4424a4bb56a9"
+    },
+    {
+      "path": "assets/i18n/en.json",
+      "bytes": 167490,
+      "sha256": "407e6dc5ff5240263068bbd6c73c1e0645d59efe6e1a3502fb5999c71e879063"
+    },
+    {
+      "path": "assets/i18n/eo.json",
+      "bytes": 177105,
+      "sha256": "f59f3fbefb818050907f3be0e28d3f2fd5a06aa5e00b99c671b8c9bf752de196"
+    },
+    {
+      "path": "assets/i18n/es.json",
+      "bytes": 191231,
+      "sha256": "9ae742895752d1137041f9035f424dcd294c7e5cc293692c2fd3a613b9197ecc"
+    },
+    {
+      "path": "assets/i18n/fi.json",
+      "bytes": 184477,
+      "sha256": "59af46e3d6a47eeac077efe40b48688c3bf343da6c2fadd4f2ee7652e744e287"
+    },
+    {
+      "path": "assets/i18n/fr.json",
+      "bytes": 196649,
+      "sha256": "5e7beafe90229abb3a9da174e671220f11383fc33f60b3d67d97d84afac44b72"
+    },
+    {
+      "path": "assets/i18n/ga.json",
+      "bytes": 194642,
+      "sha256": "fb6a28c25ba63c60ff7aabcecd2212d903805c93ecb552d7090cbf02140cc4f2"
+    },
+    {
+      "path": "assets/i18n/he.json",
+      "bytes": 210443,
+      "sha256": "5f1c7f57c1b3c72ce459425054e0ed49ce555729bae27967d9341ecae56d8fd6"
+    },
+    {
+      "path": "assets/i18n/hi.json",
+      "bytes": 314187,
+      "sha256": "97d104f6033a13ab95366901a17cd89fba107f4682ae2fe2775a722475e5571a"
+    },
+    {
+      "path": "assets/i18n/hr.json",
+      "bytes": 180672,
+      "sha256": "bc0292900f2f9ec0081b75cd7e0e847beed60af6ca2c5db4ac4e1a2e8030f955"
+    },
+    {
+      "path": "assets/i18n/hu.json",
+      "bytes": 194770,
+      "sha256": "277e8782f06d81d33d4057a18e21495f81ee9f4dcc68493825b4f48150367f1c"
+    },
+    {
+      "path": "assets/i18n/id.json",
+      "bytes": 177581,
+      "sha256": "68dfc6cd845a90035f738fdf9b4a1b809baba015eebe1990e5763ff54e3ada57"
+    },
+    {
+      "path": "assets/i18n/it.json",
+      "bytes": 188251,
+      "sha256": "aad5b63e90c19acd5db212de201c33642aa30b6889aed4bb58eaeff477102ff1"
+    },
+    {
+      "path": "assets/i18n/ja.json",
+      "bytes": 214391,
+      "sha256": "1d7e32885744274115d7f98683aedaf48de194fe69d1ce13585d96a7d4f79fc5"
+    },
+    {
+      "path": "assets/i18n/kg.json",
+      "bytes": 183073,
+      "sha256": "d9366027ca19b95b09352ccfb2d7e1bdb013c4e8014758ac4b6796603ad74a95"
+    },
+    {
+      "path": "assets/i18n/kl.json",
+      "bytes": 206218,
+      "sha256": "c0682e2c40debbc1e659d9620533a29aa07652755129fcc1f6c219b6219f816c"
+    },
+    {
+      "path": "assets/i18n/km.json",
+      "bytes": 326209,
+      "sha256": "730834874394ffa89c84cd85549c00685cb7c39979e268a2549b327a33899940"
+    },
+    {
+      "path": "assets/i18n/ko.json",
+      "bytes": 195528,
+      "sha256": "81a6fae075ac4084bc0a964d18616a9e21b26b9da7fa9cbea9acc1e1e73b72a3"
+    },
+    {
+      "path": "assets/i18n/lo.json",
+      "bytes": 306187,
+      "sha256": "3070e5534c64b0545ab4704f9445dfa5956cbabf49c84c5b4048afe6002212e3"
+    },
+    {
+      "path": "assets/i18n/mn.json",
+      "bytes": 257579,
+      "sha256": "764f85403bac91b6feee451516e662933a7d3d8dbc18de08f4a6644c01753cdb"
+    },
+    {
+      "path": "assets/i18n/ms.json",
+      "bytes": 178274,
+      "sha256": "f48339f82d178f16a418c33aa08570295c1e5c09b2beeca258c5ec9db90f7216"
+    },
+    {
+      "path": "assets/i18n/mt.json",
+      "bytes": 191579,
+      "sha256": "e2c8e34e574627685f937a897f6c32851189734e7802d5e5b617adf9088d4c35"
+    },
+    {
+      "path": "assets/i18n/my.json",
+      "bytes": 384733,
+      "sha256": "36f77762a0e72fb1a4e43c8a189cdb377e1be8c0ad8539d1b9f01a286f07e32f"
+    },
+    {
+      "path": "assets/i18n/ne.json",
+      "bytes": 316460,
+      "sha256": "afa9ec72d85c304a9f48740cb5eb385e23d6ae7821b4160984f87ab53f0c492e"
+    },
+    {
+      "path": "assets/i18n/nl.json",
+      "bytes": 182643,
+      "sha256": "077419ed7ad4dbc41560052d2ef8c672a15e1778f11515423262b370ec75643b"
+    },
+    {
+      "path": "assets/i18n/no.json",
+      "bytes": 179794,
+      "sha256": "f25e2e71d559f0ac726f9d79e11ea4ce9104f60721168583e0f2b860f2ce3675"
+    },
+    {
+      "path": "assets/i18n/pt.json",
+      "bytes": 189938,
+      "sha256": "d05789b2dfd0cddc40e09944a89efd346a59593a216a531db99e92fa6dd692b9"
+    },
+    {
+      "path": "assets/i18n/ro.json",
+      "bytes": 191382,
+      "sha256": "e0e3885206cba65ea49bf79d74c1f3e2b5d95a6886b7a53e5a90c176b2296ff4"
+    },
+    {
+      "path": "assets/i18n/ru.json",
+      "bytes": 263429,
+      "sha256": "8f94468af329aafd0856a7b7205690468e7b66d85468908592abcf760b90d42f"
+    },
+    {
+      "path": "assets/i18n/rw.json",
+      "bytes": 189148,
+      "sha256": "416e89825c0492183795e1cbbe6a7429053c334870100c4617b5e501496ca792"
+    },
+    {
+      "path": "assets/i18n/sl.json",
+      "bytes": 180330,
+      "sha256": "82a1e61b29071d409bf26c9986075fdd0ae6b729c1129071cdaf18194ee20ce6"
+    },
+    {
+      "path": "assets/i18n/sv.json",
+      "bytes": 182702,
+      "sha256": "aed6a609e475880ce0619a30178b1dd63b44d3e98fcf8b6c5df72700c2b40701"
+    },
+    {
+      "path": "assets/i18n/th.json",
+      "bytes": 312690,
+      "sha256": "eb8fe41db8ebfd6d33c5b2bcb72567c9bcd529c96123b9c95a970f4896b975ca"
+    },
+    {
+      "path": "assets/i18n/tl.json",
+      "bytes": 192900,
+      "sha256": "4d6c620075863cf9006d74649a0de48eb03bcfe7f7c003b230f1c573fc1ef099"
+    },
+    {
+      "path": "assets/i18n/tr.json",
+      "bytes": 186489,
+      "sha256": "db99b8d4b9641c349df86a672c5ba549f48f9c5168c0a1c79b6228c0cd5a7f5d"
+    },
+    {
+      "path": "assets/i18n/ug.json",
+      "bytes": 265663,
+      "sha256": "d01b19a3a784539fd9202b06d7c1116fd66ee32a51160952cec29b9619e35d08"
+    },
+    {
+      "path": "assets/i18n/uk.json",
+      "bytes": 258888,
+      "sha256": "a7de0ffeb193d91135b67442e52360e1468e45c7735b71a1f8888bc6fd3f26b6"
+    },
+    {
+      "path": "assets/i18n/vi.json",
+      "bytes": 205412,
+      "sha256": "31da97ae6ae922fa320780468bc1c416b98f2f881dc01073de18bb3be960c5ea"
+    },
+    {
+      "path": "assets/i18n/zh-CN.json",
+      "bytes": 163349,
+      "sha256": "3b6b668f209995a2e543e9307ca261bccefa19bd7371e86898650f2cb1d82361"
+    },
+    {
+      "path": "assets/i18n/zh-HK.json",
+      "bytes": 164569,
+      "sha256": "1789fd799ca780103b4e01be939ba37356d870add537d78897d60c4ce79fd07b"
+    },
+    {
+      "path": "assets/i18n/zh-TW.json",
+      "bytes": 164676,
+      "sha256": "08b6c696ff522f940c60e6d85c17b5034e74e75732f7011cbb9ebc92f12df83d"
+    },
+    {
+      "path": "assets/index.html",
+      "bytes": 142027,
+      "sha256": "c3fc1202d19b2f5c12a65344fd1accaec6751066e08b8695aea73bcc038fc14f"
+    },
+    {
+      "path": "assets/js/features/export.js",
+      "bytes": 150231,
+      "sha256": "f0bdae30e9dfa19b399ad770c9f13e2e9c1e6552b13324604d804eb0a9c6d703"
+    },
+    {
+      "path": "assets/js/shell/shell.js",
+      "bytes": 12058,
+      "sha256": "b612c703089313696cae1cf8d410a670c14a6bdaf503b2507530f1532d2c28fe"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "bytes": 1743352,
+      "sha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774"
+    },
+    {
+      "path": "assets/style.css",
+      "bytes": 210026,
+      "sha256": "ae9d0f7642ff5018129b170a54d3b3390aeb7752a81f493c77e090060d9ba37e"
+    },
+    {
+      "path": "docs/design/svg-renderer.md",
+      "bytes": 5746,
+      "sha256": "d4b34486a3633de08944a7ee0f034a8eaab1a3c1b3208f2357115f615e8f0c0c"
+    },
+    {
+      "path": "docs/design/v006-macos-window-chrome-2026-10-30.md",
+      "bytes": 3492,
+      "sha256": "db473ce333acb93433e65d4936ec35ad607921f209579d88245e96f1ba2b83f8"
+    },
+    {
+      "path": "docs/design/v006-pptx-export-closure-2026-10-30.md",
+      "bytes": 2712,
+      "sha256": "065b18cc753f5112552d662552b2276f3781dd7efb164ddae35154f15a54ddbc"
+    },
+    {
+      "path": "docs/design/v006-release-closure-2026-10-30.md",
+      "bytes": 5540,
+      "sha256": "e161175479372411c919753b0d9bc6bce5eda555a63654aed931b6ec0e24e2ee"
+    },
+    {
+      "path": "docs/design/v007-carryover-2026-10-30.md",
+      "bytes": 2479,
+      "sha256": "ab812e5c778644f7ce6d30411ee5cd44f925ad102f552e4e5fa37b89134fae22"
+    },
+    {
+      "path": "release/release_notes.md",
+      "bytes": 2998,
+      "sha256": "d910c8ae9bc2b93440bc59bee75eb273736c8a9b231813ae0f6c2e65627ba502"
+    },
+    {
+      "path": "release/release_notes_macos.md",
+      "bytes": 1809,
+      "sha256": "bfdec2a8ed681994ca841aba8412384ddd94b3b44b9d4ac8154b6cdd3a9ba0a6"
+    },
+    {
+      "path": "rust/Cargo.lock",
+      "bytes": 110907,
+      "sha256": "cfc2c5408d2fc8c33f26e41134da760ece343f2c5d0b6bc6ec2cf32c800e6111"
+    },
+    {
+      "path": "rust/Cargo.toml",
+      "bytes": 927,
+      "sha256": "7505ad5e0dab7bfacd97276a796bc51f859fe5ba3c2d30df7f26cb6ec690b678"
+    },
+    {
+      "path": "rust/readmd-kernel/Cargo.toml",
+      "bytes": 5009,
+      "sha256": "030f47fd4f3df039388869c71eb8ff40f2f33bfcb58d8d8f27bcd13827610729"
+    },
+    {
+      "path": "rust/readmd-kernel/src/api_codes.rs",
+      "bytes": 36274,
+      "sha256": "85ada725d795ce76c6065b9d790214ea7e137c3b5626f9cd330f9c5e6adf239e"
+    },
+    {
+      "path": "rust/readmd-kernel/src/convert.rs",
+      "bytes": 447857,
+      "sha256": "93496a2fb30e194aa5865bb090ffda2edd6934f8856aa8cb7c3cc3b0c078114c"
+    },
+    {
+      "path": "rust/readmd-kernel/src/export_snapshot.rs",
+      "bytes": 70095,
+      "sha256": "41e739dd3f9a1fbb814bf17e9e93d9533d4ed43080fd96aee8d3bd44cd3a660f"
+    },
+    {
+      "path": "rust/readmd-kernel/src/export_snapshot_api.rs",
+      "bytes": 21703,
+      "sha256": "d1b067abe00c8fb5342da289f96606ae8e442137a0cfdfb0cfc17fc625181290"
+    },
+    {
+      "path": "rust/readmd-kernel/src/export_snapshot_api_tests.rs",
+      "bytes": 21057,
+      "sha256": "e22480a0ff56bba01d45d6cb94e2e65ec540fadd361c2f2f9bee624cea67e16f"
+    },
+    {
+      "path": "rust/readmd-kernel/src/export_snapshot_tests.rs",
+      "bytes": 54260,
+      "sha256": "d44751874ab354adbcd46f9155cf6c091946e231eaad6a6e7d8675cf89371a10"
+    },
+    {
+      "path": "rust/readmd-kernel/src/lib.rs",
+      "bytes": 43578,
+      "sha256": "aa5ddaccc65e258872ca251de8de7892e2dcf26615811dd26228ce3b565d2413"
+    },
+    {
+      "path": "rust/readmd-kernel/src/macos_window_chrome.rs",
+      "bytes": 5139,
+      "sha256": "f1c4bfa8b484d71ca1956d9d6c285926792758253c296eb85121a66fad457a8e"
+    },
+    {
+      "path": "rust/readmd-kernel/src/main.rs",
+      "bytes": 210996,
+      "sha256": "2992bd6ce370a786755161de602d9b944aef9a5607b5a00d53b0a2fd30a0c2d7"
+    },
+    {
+      "path": "rust/readmd-kernel/src/mcp.rs",
+      "bytes": 134849,
+      "sha256": "d267db08929b2f7e02d80ccf8d5b1238846bd311d5a6c9c4ec9ea8f33d76fe5e"
+    },
+    {
+      "path": "rust/readmd-kernel/src/mdexport.rs",
+      "bytes": 430784,
+      "sha256": "018de997057ce1e0ea492126094af287e59e2a003ef391c13ec3bb1d7f97299f"
+    },
+    {
+      "path": "rust/readmd-kernel/src/native_qa.rs",
+      "bytes": 2753,
+      "sha256": "0fa6122141df20da0a0187658043add450b542d60a277a9a390416fa03f86727"
+    },
+    {
+      "path": "rust/readmd-kernel/src/pptx_export.rs",
+      "bytes": 42928,
+      "sha256": "39a8e155f72b861b2ef7fc10af58c5655a91d4eb4aaa5cc67b21f8db7077b98b"
+    },
+    {
+      "path": "rust/readmd-kernel/src/pptx_export_tests.rs",
+      "bytes": 8139,
+      "sha256": "bd691156b5e891ee3f7bb80c66f506dc9bbc97d3198ebf69b22260271549d63f"
+    },
+    {
+      "path": "rust/readmd-kernel/src/publication_fonts.rs",
+      "bytes": 13587,
+      "sha256": "cc81acc48fe6aafb3775d11d593dd68de934c9f3b38ffd806a0ad1ce6b6c6e25"
+    },
+    {
+      "path": "rust/readmd-kernel/src/win_dialogs.rs",
+      "bytes": 67354,
+      "sha256": "00153b944d3631c561c28da5e1c375228d1958679886c9507abeae58466f17f9"
+    },
+    {
+      "path": "tools/build-svg-renderer.mjs",
+      "bytes": 4383,
+      "sha256": "3e08ceb9f0b631ee551ff11490ccab50235c4cb724a2fad2369d8885dfeff5d6"
+    },
+    {
+      "path": "tools/ci-test-temp.mjs",
+      "bytes": 1056,
+      "sha256": "63f3c0ca498be27d1464873ffcf9aa8204d6a3c1cea9b91e8ebcd5c260832590"
+    },
+    {
+      "path": "tools/prepare-linux-svg-worker.mjs",
+      "bytes": 6149,
+      "sha256": "01b1bc4525b52f518f9f8f867c07ff7fb8f4b4ee5562bc00421199f4d2aec0ee"
+    },
+    {
+      "path": "tools/test/publication-tracking-ui.test.cjs",
+      "bytes": 17243,
+      "sha256": "1ac73bb2ed2b962ef929e15f215ccfff9d7f503dd5722642ad490f5f17bef7fa"
+    },
+    {
+      "path": "tools/test/svg-source-inventory.test.mjs",
+      "bytes": 1254,
+      "sha256": "f7f92f07306c9e4c909df06d460a932d4b8b321c2918303c47e9cf0de96b4bdb"
+    },
+    {
+      "path": "ui-tests/community-upgrade.spec.js",
+      "bytes": 4655,
+      "sha256": "48a81ccc0eff9589210848259207b9277b9cb491f0a1aa6cce405d3a6843b6ed"
+    },
+    {
+      "path": "ui-tests/export-review-snapshot.test.cjs",
+      "bytes": 35880,
+      "sha256": "3770408a5bd22e80e31dde811801ab0bfc435e02d26438bcd999119d4b16c1f5"
+    },
+    {
+      "path": "ui-tests/macos-export-native.cjs",
+      "bytes": 9242,
+      "sha256": "2cc9ea208405349eb0a93975865101d2c9996804618ef6bf43fc428a214240c9"
+    },
+    {
+      "path": "ui-tests/macos-window-native.cjs",
+      "bytes": 12362,
+      "sha256": "e96390d0531fa39402dd53167f4c415f95a31aa256d9fd552f230aeb8bb18d1d"
+    },
+    {
+      "path": "ui-tests/macos-workflow-native.cjs",
+      "bytes": 13500,
+      "sha256": "9b4780e3c790abcc45fa0eddbba77563c9d12fd2a188e0b6603e64f19abb8b9a"
+    },
+    {
+      "path": "ui-tests/panel-ux-production.spec.js",
+      "bytes": 17047,
+      "sha256": "543bed81e932e38cb753ce12f10798a34ea141fee44210ccc9089e172f1b9712"
+    },
+    {
+      "path": "ui-tests/ui-quality.spec.js",
+      "bytes": 5955,
+      "sha256": "ce733987bc3c929cdc07649aaa3b5fa43cca35fc89c5113b39b1897f44c9bc07"
+    }
+  ],
+  "native": {
+    "host": "Actual Cocoa WKWebView",
+    "platform": "macOS arm64",
+    "productionCsp": true,
+    "strictAuthentication": true,
+    "windowOrChooserShim": false,
+    "debugOnlyOwnedIntegrationDriver": true,
+    "cases": [
+      {
+        "name": "native-basic-final-candidate",
+        "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+        "bootSha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774",
+        "driverSha256": "9b4780e3c790abcc45fa0eddbba77563c9d12fd2a188e0b6603e64f19abb8b9a",
+        "checks": [
+          "native_bridge_ready",
+          "chinese_path_opened",
+          "initial_text_exact",
+          "native_document_visible",
+          "editor_has_real_layout",
+          "source_visible_without_scrolling",
+          "unchanged_editor_clean",
+          "edit_creates_no_copy",
+          "edit_is_dirty",
+          "undo_restores_original",
+          "redo_restores_edit",
+          "native_save_receipt",
+          "saved_editor_clean",
+          "session_idle_before_close",
+          "begin_clean_close",
+          "clean_tab_closed",
+          "clean_close_has_no_prompt",
+          "saved_file_reopened",
+          "session_acknowledged",
+          "native_bridge_ready",
+          "session_restored",
+          "restart_text_exact",
+          "restored_editor_clean",
+          "last_tab_closed",
+          "session_acknowledged",
+          "native_bridge_ready",
+          "empty_session_home",
+          "session_acknowledged",
+          "native_bridge_ready",
+          "explicit_workspace_listed",
+          "group_rename_refused",
+          "no_rename_intent_or_path_change",
+          "rename_barrier_released",
+          "platform_reason_visible",
+          "session_acknowledged",
+          "native_bridge_ready",
+          "conflict_fixture_dirty",
+          "real_save_conflict_dialog",
+          "save_conflict_dialog_fits_window",
+          "external_revision_rejects_save",
+          "failed_save_keeps_user_text",
+          "quit_cancelled",
+          "cancel_keeps_dirty_editor",
+          "dirty_draft_checkpointed",
+          "session_acknowledged"
+        ]
+      },
+      {
+        "name": "native-export-final-candidate",
+        "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+        "bootSha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774",
+        "driverSha256": "2cc9ea208405349eb0a93975865101d2c9996804618ef6bf43fc428a214240c9",
+        "checks": [
+          "cocoa_bridge_ready",
+          "chinese_path_opened",
+          "opened_document_clean",
+          "pdf_preview_ready",
+          "pdf_snapshot_committed",
+          "docx_preview_ready",
+          "docx_snapshot_committed",
+          "epub_preview_ready",
+          "epub_snapshot_committed",
+          "html_preview_ready",
+          "html_snapshot_committed",
+          "tex_preview_ready",
+          "tex_snapshot_committed",
+          "pptx_preview_ready",
+          "three_actual_widescreen_slides",
+          "pptx_snapshot_committed",
+          "source_reopened_unchanged",
+          "session_acknowledged"
+        ],
+        "artifacts": [
+          {
+            "format": "pdf",
+            "bytes": 8459,
+            "sha256": "0c7a4a7ebfbf22dc33776274ef2d6d1e8b0bdc07c7915ee0a16fff90dbfd9e7d"
+          },
+          {
+            "format": "docx",
+            "bytes": 5861,
+            "sha256": "319d70d71db00e82ee6d93aeb93dd8c2f0e5e18720abf778138477e98682f0f6"
+          },
+          {
+            "format": "epub",
+            "bytes": 4444,
+            "sha256": "56df827f8ebafeeacb21c4b8b10fdbed50520c91969e27ded62ec629b1d0f4c5"
+          },
+          {
+            "format": "html",
+            "bytes": 2153159,
+            "sha256": "981fc3f36833934097e4ce04154e580b2943b549a64eb95b17340e4e289785ed"
+          },
+          {
+            "format": "tex",
+            "bytes": 5316,
+            "sha256": "e242152b3ab7209ff8f08f1e8019a04ae6e39326cda090a15295eeb89b7e885b"
+          },
+          {
+            "format": "pptx",
+            "bytes": 12488,
+            "sha256": "4b9a40a8e9cbebe2fea6bfd4e03eaf8c4b236592b5473647c2bd6c0613be57a4"
+          }
+        ]
+      },
+      {
+        "name": "native-export-cjk-final-candidate",
+        "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+        "bootSha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774",
+        "driverSha256": "2cc9ea208405349eb0a93975865101d2c9996804618ef6bf43fc428a214240c9",
+        "checks": [
+          "cocoa_bridge_ready",
+          "chinese_path_opened",
+          "locked_offline_fonts_installed",
+          "opened_document_clean",
+          "pdf_preview_ready",
+          "pdf_snapshot_committed",
+          "docx_preview_ready",
+          "docx_snapshot_committed",
+          "epub_preview_ready",
+          "epub_snapshot_committed",
+          "html_preview_ready",
+          "html_snapshot_committed",
+          "tex_preview_ready",
+          "tex_snapshot_committed",
+          "pptx_preview_ready",
+          "three_actual_widescreen_slides",
+          "pptx_snapshot_committed",
+          "source_reopened_unchanged",
+          "session_acknowledged"
+        ],
+        "artifacts": [
+          {
+            "format": "pdf",
+            "bytes": 24949,
+            "sha256": "b49af085605a6746dfa708087ef2afdd3a9399961759e72a6caf7322987c8fbd"
+          },
+          {
+            "format": "docx",
+            "bytes": 30554,
+            "sha256": "40a4d58fcf0eea0e43edd186cd4a02f02a56972dcd814a018a3831e178205e0e"
+          },
+          {
+            "format": "epub",
+            "bytes": 4817,
+            "sha256": "6fe66a8244b3f8bd972ae014ee2cac5de9b81d5989274e58789a8390b276394f"
+          },
+          {
+            "format": "html",
+            "bytes": 2153408,
+            "sha256": "2e41c6fecaf9c69b96e4353482c0fcc621d331333546c75c400418a4ab579f1f"
+          },
+          {
+            "format": "tex",
+            "bytes": 5373,
+            "sha256": "e7e002ed7ab574b1e5c01442e41efef0b00d00ead53ec8dcc6565ba6f5bb5506"
+          },
+          {
+            "format": "pptx",
+            "bytes": 31983,
+            "sha256": "5fb407ae45c1828c3d8b17607910c62c7ab9240ca663e5d86b59c553756b9dcf"
+          }
+        ]
+      },
+      {
+        "name": "final-candidate-mac-window",
+        "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+        "bootSha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774",
+        "driverSha256": "e96390d0531fa39402dd53167f4c415f95a31aa256d9fd552f230aeb8bb18d1d",
+        "checks": [
+          "native_macos_bridge",
+          "actual_cocoa_titlebar_style",
+          "no_duplicate_windows_controls",
+          "native_header_1024",
+          "native_header_1160",
+          "native_header_largest_available_screen",
+          "mac_top_row_mirrored_and_right_aligned",
+          "mac_global_actions_reverse_in_top_row",
+          "rtl_respects_native_left_controls",
+          "dark_header_fits",
+          "light_header_fits",
+          "zen_releases_header_layout_height",
+          "native_minimize_button_invoked",
+          "actual_native_yellow_minimizes",
+          "native_window_restores",
+          "native_fullscreen_button_invoked",
+          "actual_native_green_enters_fullscreen_and_zen",
+          "fullscreen_allows_independent_zen_exit",
+          "native_fullscreen_button_invoked",
+          "actual_native_green_exit_clears_zen",
+          "native_buttons_return_to_header_after_fullscreen",
+          "native_unsaved_indicator_tracks_real_edit",
+          "native_close_button_invoked",
+          "actual_native_red_cancel_preserves_document",
+          "native_save_after_close_cancel",
+          "native_unsaved_indicator_clears_after_save",
+          "native_window_session_acknowledged"
+        ]
+      }
+    ]
+  },
+  "regressions": [
+    {
+      "name": "Rust Mac no-default-features library",
+      "passed": 4219,
+      "failed": 0,
+      "existingIgnored": 7,
+      "logSha256": "ac16901a8d652d21a24b72e65298ba01d097d5d42acd69c9605e5df1b533c8f3"
+    },
+    {
+      "name": "Frontend and tools",
+      "passed": 1753,
+      "failed": 0,
+      "platformSkipped": 3,
+      "logSha256": "28e6235879fa5e697aa32c5377639208eebf4172068d02663e171b5bae09f8d8"
+    },
+    {
+      "name": "Desktop/mobile Chromium production UI",
+      "passed": 54,
+      "failed": 0,
+      "scope": "Actual Rust service; cancellation protocol fixture and async image fixture remain explicitly identified in their tests",
+      "nativePlatformAcceptance": false,
+      "logSha256": "93ee0a1ca177cb8caaf228862827d638d38c2668013279043da4a01eb21003cf"
+    }
+  ],
+  "html": {
+    "checks": [
+      "unauthenticated_preview_rejected",
+      "mini_image_decodes_frozen_original_bytes",
+      "full_preview_has_actual_visible_image",
+      "actual_formula_typeset_before_ready",
+      "actual_commit_preserves_preview_resource_after_external_change",
+      "new_modal_uses_new_actual_resource_bytes",
+      "format_switch_clears_html_loading_state"
+    ],
+    "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+    "bootSha256": "e49ac3c5f2889f2c4f14f93214f3b204e336b272926c47f1c956ff853ab58774",
+    "output": {
+      "bytes": 2153401,
+      "sha256": "0ea13df3218159fe8df722e6a05f4adef25972a6df6cf8a0c4a25c119c915e35"
+    }
+  },
+  "quality": [
+    {
+      "check": "check-i18n.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-styles.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-wiring.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-no-python.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-assets.mjs",
+      "exit": 0
+    },
+    {
+      "check": "privacy-scan.mjs",
+      "exit": 0
+    }
+  ],
+  "firstFailures": [
+    {
+      "name": "PPTX table imported without visible table in LibreOffice",
+      "resolution": "Use the standard DrawingML table graphicData URI; actual native table survives independent import and save-back."
+    },
+    {
+      "name": "HTML capture contained a broken relative image",
+      "resolution": "Preview reads the owned frozen snapshot; actual image bytes, decode, formula, external resource change and new-modal refresh verified. Reject and replace the original capture."
+    },
+    {
+      "name": "Native fullscreen exit click during Space animation ignored",
+      "resolution": "The owned native driver waits for actual viewport stability before a second real green-button click. No replacement button or production fullscreen shortcut was introduced."
+    },
+    {
+      "name": "Occasional immediate saved-tab close refusal in earlier native runs",
+      "resolution": "Source and saved bytes stayed intact. Fixed-label guard diagnostics and later complete native runs passed; root cause is unproven and no causal fix is claimed."
+    },
+    {
+      "name": "Linux regression lacked a bundled SVG worker",
+      "resolution": "Pinned source preparation and offline native Linux build added to CI; upstream prebuilt worker rejected by privacy scan. Await actual Linux CI result."
+    }
+  ],
+  "notAccepted": [
+    "Entire 75-item capability contract",
+    "Native Intel hardware, old macOS, all Linux distributions and HarmonyOS",
+    "Manual IME and keyboard coverage",
+    "PowerPoint/WPS/Keynote round-trip matrix",
+    "Complete SVG/Math/CSL/PDF/media/AI provider coverage",
+    "Performance percentile targets",
+    "Developer ID signature, notarization or default Gatekeeper acceptance",
+    "Final installer cold start and V0.0.6 publication are pending separate candidate receipts"
+  ]
+}

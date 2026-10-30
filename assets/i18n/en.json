@@ -2844,7 +2844,7 @@
   "export.runtimeUnavailable": "The required export engine or fonts are unavailable. Install them and try again.",
   "export.secFigures": "Scientific figures",
   "export.secSlides": "Slides",
-  "export.slidesHint": "Split slides with a line containing only ---. Exports a single offline HTML file (reveal.js).",
+  "export.slidesHint": "Separate slides with a line containing only ---. Exports an editable PowerPoint (.pptx) file.",
   "export.slidesTheme": "Theme",
   "export.slidesTransition": "Transition",
   "export.snapshotBusy": "Review in progress…",
@@ -2929,5 +2929,6 @@
   "plugin.search": "Search plugins and capabilities",
   "plugin.summary": "{total} capabilities · {installed} installed · {active} active",
   "plugin.unsupportedBuild": "Not available in this build",
-  "toast.savingImage": "Saving clipboard image..."
+  "toast.savingImage": "Saving clipboard image...",
+  "warn.pptx_math_image": "Equations are preserved as images, with their source in slide notes."
 }

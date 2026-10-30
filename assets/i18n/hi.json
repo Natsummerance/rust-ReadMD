@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "आवश्यक निर्यात इंजन या फ़ॉन्ट उपलब्ध नहीं हैं। उन्हें इंस्टॉल करके फिर कोशिश करें।",
   "export.secFigures": "वैज्ञानिक आकृतियाँ",
   "export.secSlides": "स्लाइड्स",
-  "export.slidesHint": "केवल --- वाली लाइन से स्लाइड्स को विभाजित करें। एक सिंगल ऑफ़लाइन HTML फ़ाइल (reveal.js) एक्सपोर्ट करता है।",
+  "export.slidesHint": "केवल --- वाली पंक्ति से स्लाइड अलग करें। संपादन योग्य PowerPoint (.pptx) फ़ाइल निर्यात होती है।",
   "export.slidesTheme": "थीम",
   "export.slidesTransition": "ट्रांज़िशन",
   "export.snapshotBusy": "समीक्षा जारी है…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "फिर शुरू करें",
   "ai.taskRounds": "{count} चरण",
   "ai.taskRunning": "समीक्षा जारी है…",
-  "ai.thinking": "सोच रहा है…"
+  "ai.thinking": "सोच रहा है…",
+  "warn.pptx_math_image": "समीकरण चित्रों के रूप में सुरक्षित रहते हैं और उनका स्रोत स्लाइड नोट्स में रहता है।"
 }

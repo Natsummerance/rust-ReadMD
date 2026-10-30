@@ -28,13 +28,38 @@ fn actual_html_export_freezes_body_and_picture_and_accepts_only_old_change(){
     assert_eq!(frozen["pending_count"],1);
     let later=propose(&runtime,&first,"second",12,13,"CHANGED");
     fs::write(dir.path().join("figure.svg"),original_svg.replace("ORIGINAL","LATER")).unwrap();
+    let(code,preview)=api(&runtime,"/api/export/preview",&json!({"snapshot_id":frozen["snapshot_id"],"task_id":uuid::Uuid::new_v4().to_string()}));
+    assert_eq!(code,200,"{preview}");assert_eq!(preview["format"],"html");assert_eq!(preview["mode"],"projection");
+    use base64::Engine;
+    let projected=preview["content"].as_str().unwrap();
+    assert!(projected.contains("data:image/svg+xml;base64,"));assert!(projected.contains(&base64::engine::general_purpose::STANDARD.encode(original_svg)));
+    assert!(projected.contains("New prose."));assert!(!projected.contains("CHANGED"));
+    assert_eq!(runtime.review.handle(&json!({"action":"read","document_id":later["document_id"]})).unwrap()["changes"][0]["decision"],"pending");
     let output=dir.path().join("result.html");let(code,result)=commit_to(&runtime,&frozen,&output,true);assert_eq!(code,200,"{result}");assert_eq!(result["ok"],true,"{result}");
     let html=fs::read_to_string(&output).unwrap();assert!(html.contains("New prose."));assert!(!html.contains("CHANGED"));
-    use base64::Engine;assert!(html.contains(&base64::engine::general_purpose::STANDARD.encode(original_svg)));
+    assert!(html.contains(&base64::engine::general_purpose::STANDARD.encode(original_svg)));
     let now=runtime.review.handle(&json!({"action":"read","document_id":later["document_id"]})).unwrap();
     assert_eq!(now["changes"][0]["decision"],"accepted");assert_eq!(now["changes"][1]["decision"],"pending");assert!(now["content"].as_str().unwrap().contains("CHANGED"));
     assert_eq!(fs::read_to_string(&path).unwrap(),"Old prose.\n\nC original.\n\n![Figure](figure.svg)\n");
     let(_,again)=commit_to(&runtime,&frozen,&output,true);assert_eq!(again["ok"],true);assert_eq!(again["review"]["review_revision"],now["review_revision"]);
+}
+
+#[test]
+fn actual_pptx_preview_commit_reopen_and_consent_use_frozen_body_and_image(){
+    let dir=tempfile::tempdir().unwrap();let runtime=app(dir.path());let source=dir.path().join("研究.md");
+    let original="# Research\n\nOld conclusion.\n\n---\n\n## Data\n\n| Item | Result |\n| --- | --- |\n| Sample | 42 |\n\n![Frozen](figure.png)\n";
+    fs::write(&source,original).unwrap();let mut png=std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(4,2,image::Rgba([220,30,10,255]))).write_to(&mut png,image::ImageFormat::Png).unwrap();let png=png.into_inner();fs::write(dir.path().join("figure.png"),&png).unwrap();
+    let opened=open(&runtime,&source);let offset=original.find("Old").unwrap();let changed=propose(&runtime,&opened,"pptx-proposal",offset,offset+3,"New");let frozen=prepare(&runtime,&changed,"pptx","pptx-prepare");
+    let (status,preview)=api(&runtime,"/api/export/preview",&json!({"snapshot_id":frozen["snapshot_id"]}));assert_eq!(status,200,"{preview}");assert_eq!(preview["ok"],true);assert_eq!(preview["format"],"pptx");assert!(preview["html"].as_str().unwrap().contains("New conclusion."));
+    assert_eq!(runtime.review.handle(&json!({"action":"read","document_id":opened["document_id"]})).unwrap()["changes"][0]["decision"],"pending");
+    fs::write(dir.path().join("figure.png"),b"changed after freeze").unwrap();let target=dir.path().join("研究.pptx");
+    let (status,denied)=commit_to(&runtime,&frozen,&target,false);assert_eq!(status,409,"{denied}");assert!(!target.exists());
+    let wrong=dir.path().join("fake.html");let(status,_)=commit_to(&runtime,&frozen,&wrong,true);assert_ne!(status,200);assert!(!wrong.exists());
+    let(status,saved)=commit_to(&runtime,&frozen,&target,true);assert_eq!(status,200,"{saved}");assert_eq!(saved["ok"],true);assert_eq!(saved["review"]["changes"][0]["decision"],"accepted");
+    let bytes=fs::read(&target).unwrap();assert_eq!(&bytes[..4],b"PK\x03\x04");let entries=crate::convert::parse_zip_entries(&bytes).unwrap();assert!(entries.iter().any(|(name,data)|name.starts_with("ppt/media/")&&data==&png));assert!(entries.iter().any(|(name,data)|name.starts_with("ppt/slides/slide")&&String::from_utf8_lossy(data).contains("New conclusion.")));
+    let imported=crate::convert::convert_verbose(target.to_str().unwrap(),true).unwrap();assert!(imported.success);let body=imported.content.unwrap();assert!(body.contains("New conclusion."));assert!(body.contains("Sample"));assert!(body.contains("42"));
+    let(status,repeated)=commit_to(&runtime,&frozen,&target,true);assert_eq!(status,200,"{repeated}");assert_eq!(fs::read(&target).unwrap(),bytes);assert_eq!(fs::read_to_string(source).unwrap(),original);
 }
 #[test]
 fn snapshot_requires_consent_and_failure_preserves_target_and_review(){

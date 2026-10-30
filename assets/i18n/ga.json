@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Níl an t-inneall easpórtála nó na clófhoirne riachtanacha ar fáil. Suiteáil iad agus bain triail eile as.",
   "export.secFigures": "Figiúirí eolaíocha",
   "export.secSlides": "Sleamhnáin",
-  "export.slidesHint": "Roinn sleamhnáin le líne nach bhfuil ann ach ---. Aschuir sé comhad HTML aonair as líne (reveal.js).",
+  "export.slidesHint": "Scar sleamhnáin le líne nach bhfuil uirthi ach ---. Easpórtálann sé comhad PowerPoint (.pptx) ineagarthóireachta.",
   "export.slidesTheme": "Téama",
   "export.slidesTransition": "Aistriú",
   "export.snapshotBusy": "Athbhreithniú ar siúl…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Atosaigh",
   "ai.taskRounds": "{count} babhta",
   "ai.taskRunning": "Athbhreithniú ar siúl…",
-  "ai.thinking": "Ag smaoineamh…"
+  "ai.thinking": "Ag smaoineamh…",
+  "warn.pptx_math_image": "Coinnítear cothromóidí mar íomhánna, agus a bhfoinse i nótaí na sleamhnán."
 }

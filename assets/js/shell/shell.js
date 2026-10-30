@@ -111,7 +111,8 @@ function initWindowChrome() {
   if (ai && $('btn-more')) ai.before($('btn-more'));
   const title = $('window-title');
   const native = !!(hasPy && py.custom_titlebar && py.window_control);
-  const command = (action, options) => { if (native) py.window_control(action, options); };
+  const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
+  const command = (action, options) => { if (native || macNative) py.window_control(action, options); };
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
@@ -127,6 +128,7 @@ function initWindowChrome() {
   actions.addEventListener('focusout', () => setTimeout(() => {
     if (!actions.contains(document.activeElement)) $('toolbar')?.classList.remove('zen-toolbar-revealed');
   }, 0));
+  if (macNative) initMacWindowChrome(command);
   if (!native) return;
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
@@ -167,4 +169,54 @@ function initWindowChrome() {
   };
   syncWindowPreferences();
   window.addEventListener('readmd:language-changed', syncWindowPreferences);
+}
+
+function initMacWindowChrome(command) {
+  document.body.classList.add('native-macos');
+  // Cocoa draws, localizes and operates the traffic lights. The web page has
+  // no second set of caption buttons or resize hit areas on this platform.
+  $('window-controls')?.classList.add('hidden');
+  let scheduled = false, previous = '';
+  const visible = () => {
+    if (!document.body.classList.contains('zen-mode')) return true;
+    const focused = document.activeElement?.closest?.('#app-titlebar,#toolbar');
+    return !!focused || !!$('app-titlebar')?.matches(':hover') || !!$('toolbar')?.matches(':hover')
+      || !!$('toolbar')?.classList.contains('zen-toolbar-revealed')
+      || !document.body.classList.contains('zen-toolbar-suppressed') && !!document.querySelector('.zen-hover-trigger:hover');
+  };
+  const update = () => {
+    scheduled = false;
+    const payload = { visible: visible(), theme: document.body.dataset.theme === 'dark' ? 'dark' : 'light',
+      edited: !!state.tabs?.some(tab => tab.isDirty) || !!window.ReadMDPdf?.dirty };
+    const key = JSON.stringify(payload);
+    if (key !== previous) { previous = key; command('chrome', payload); }
+  };
+  const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(update); } };
+  new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
+    const bar = $(id); if (bar) new MutationObserver(schedule).observe(bar, { childList: true, subtree: true });
+  }
+  for (const target of [$('app-titlebar'), $('toolbar'), document.querySelector('.zen-hover-trigger')]) {
+    if (!target) continue;
+    for (const event of ['pointerenter', 'pointerleave', 'focusin', 'focusout']) target.addEventListener(event, schedule);
+  }
+  window.addEventListener('readmd:document-transaction', schedule);
+  window.__readmdWindowState = status => {
+    window.__readmdNativeWindowState = status;
+    document.body.classList.toggle('window-maximized', !!status.maximized);
+    document.body.classList.toggle('window-fullscreen', !!status.fullscreen);
+    document.body.classList.toggle('window-inactive', status.focused === false);
+    const inset = status.chrome?.leadingInset;
+    if (Number.isFinite(inset) && inset >= 76 && inset <= 128) document.body.style.setProperty('--native-controls-leading', inset + 'px');
+  };
+  const drag = $('app-titlebar');
+  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions');
+  let press = null;
+  drag.addEventListener('pointerdown', event => { if (event.button === 0 && !interactive(event.target)) press = { x: event.screenX, y: event.screenY }; });
+  drag.addEventListener('pointermove', event => {
+    if (press && (event.buttons & 1) && Math.hypot(event.screenX - press.x, event.screenY - press.y) >= 4) { press = null; command('drag'); }
+  });
+  window.addEventListener('pointerup', () => { press = null; });
+  drag.addEventListener('dblclick', event => { if (!interactive(event.target)) command('maximize'); });
+  schedule();
 }

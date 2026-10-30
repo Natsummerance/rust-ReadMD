@@ -124,6 +124,16 @@ jobs:
           cargo fetch --locked --manifest-path packages/readmd-pet-rust/Cargo.toml
           node tools/prepare-pet-core.mjs
 
+      - name: Prepare pinned Linux SVG source and dependencies
+        if: runner.os == 'Linux'
+        run: node tools/prepare-linux-svg-worker.mjs prepare
+      - name: Build and inspect Linux SVG worker offline
+        if: runner.os == 'Linux'
+        run: node tools/prepare-linux-svg-worker.mjs build
+      - name: Remove owned SVG source preparation
+        if: always() && runner.os == 'Linux'
+        run: node tools/prepare-linux-svg-worker.mjs clean
+
       - name: Verify release version and frontend bundle
         shell: bash
         run: |

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "كېرەكلىك ئېكسپورت ماتورى ياكى خەت نۇسخىلىرىنى ئىشلەتكىلى بولمايدۇ. ئۇلارنى قاچىلاپ قايتا سىناڭ.",
   "export.secFigures": "ئىلمىي رەسىملەر",
   "export.secSlides": "سلايدلار",
-  "export.slidesHint": "پەقەتلا --- بار بولغان قۇر ئارقىلىق سلايدلارنى بۆلۈڭ. يالغۇز تورسىز HTML ھۆججىتى (reveal.js) قىلىپ چىقىرىدۇ.",
+  "export.slidesHint": "پەقەت --- بار قۇر بىلەن سىلايدلارنى ئايرىڭ. تەھرىرلىگىلى بولىدىغان PowerPoint (.pptx) ھۆججىتى چىقىرىلىدۇ.",
   "export.slidesTheme": "تېما",
   "export.slidesTransition": "ئۆتكۈنچى ھالەت",
   "export.snapshotBusy": "تەكشۈرۈلۈۋاتىدۇ…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "داۋاملاشتۇرۇش",
   "ai.taskRounds": "{count} ئايلانما",
   "ai.taskRunning": "تەكشۈرۈلۈۋاتىدۇ…",
-  "ai.thinking": "ئويلىنىۋاتىدۇ…"
+  "ai.thinking": "ئويلىنىۋاتىدۇ…",
+  "warn.pptx_math_image": "تەڭلىمىلەر رەسىم سۈپىتىدە ساقلىنىدۇ، ئەسلى كودى سىلايد ئىزاھاتىغا يېزىلىدۇ."
 }

@@ -24,3 +24,9 @@ opt-level = "s"
 # itself or weakening any integrity/cancellation checks.
 [profile.dev.package.sha2]
 opt-level = 3
+
+# Resource verification hashes large font/runtime bytes on every boundary.
+# Keep that CPU work optimized in shipping builds too; retain the complete
+# byte checks rather than turning them into metadata-only readiness checks.
+[profile.release.package.sha2]
+opt-level = 3

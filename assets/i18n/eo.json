@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "La bezonataj eksporta motoro aŭ tiparoj ne estas disponeblaj. Instalu ilin kaj provu denove.",
   "export.secFigures": "Sciencaj figuroj",
   "export.secSlides": "Glitaĵoj",
-  "export.slidesHint": "Disdividi glitaĵojn per linio enhavanta nur ---. Eksportas unuopan eksterretan HTML-dosieron (reveal.js).",
+  "export.slidesHint": "Apartigu lumbildojn per linio enhavanta nur ---. Eksportas redakteblan PowerPoint-dosieron (.pptx).",
   "export.slidesTheme": "Etoso",
   "export.slidesTransition": "Transiro",
   "export.snapshotBusy": "Reviziado daŭras…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Daŭrigi",
   "ai.taskRounds": "{count} rondoj",
   "ai.taskRunning": "Reviziado daŭras…",
-  "ai.thinking": "Pensante…"
+  "ai.thinking": "Pensante…",
+  "warn.pptx_math_image": "Ekvacioj konserviĝas kiel bildoj, kun sia fonto en la lumbildaj notoj."
 }

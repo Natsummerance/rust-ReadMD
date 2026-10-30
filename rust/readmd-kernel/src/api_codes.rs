@@ -161,6 +161,7 @@ pub const WARN_DOCX_CITATION_RESOURCES_INVALID: &str = "docx_citation_resources_
 pub const WARN_PUBLICATION_LAYOUT_HEADING: &str = "publication_layout_heading_unsupported";
 pub const WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL: &str = "publication_continuous_columns_partial";
 pub const WARN_PUBLICATION_FONT_SUBSTITUTED: &str = "publication_font_substituted";
+pub const WARN_PPTX_MATH_IMAGE: &str = "pptx_math_image";
 
 pub const PDF_BUSY: &str = "pdf_busy";
 pub const PDF_CONFLICT: &str = "pdf_conflict";
@@ -389,6 +390,7 @@ pub const ERROR_CODES: &[&str] = &[
 ];
 pub const NOTE_CODES: &[&str] = &[CONVERT_NO_TEXT, OCR_NO_TEXT, TRANSCRIBE_UNAVAILABLE];
 pub const WARN_CODES: &[&str] = &[
+    WARN_PPTX_MATH_IMAGE,
     WARN_DOCX_CITATION_INVALID,WARN_DOCX_CITATION_CONFLICT,WARN_DOCX_CITATION_RESOURCES_INVALID,
     WARN_PUBLICATION_NUMBERING_TAB,WARN_PUBLICATION_NOTE_PAGE_RESTART,WARN_PUBLICATION_NOTE_SECTION_RESTART,WARN_PUBLICATION_NOTE_CONTINUATION,
     WARN_ACADEMIC_UNPRINTABLE_REFERENCE,WARN_ACADEMIC_DIAGNOSTIC,
@@ -423,6 +425,7 @@ pub const WARN_CODES: &[&str] = &[
 /// their historical Chinese text; this table is the one place that knows
 /// their shapes.  Longer prefixes first.
 const WARN_PREFIXES: &[(&str, &str, &str)] = &[
+    ("pptx_math_image",WARN_PPTX_MATH_IMAGE,""),
     ("docx_citation_invalid",WARN_DOCX_CITATION_INVALID,""),
     ("docx_citation_conflict",WARN_DOCX_CITATION_CONFLICT,""),
     ("docx_citation_resources_invalid",WARN_DOCX_CITATION_RESOURCES_INVALID,""),

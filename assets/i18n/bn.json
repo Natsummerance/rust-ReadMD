@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "প্রয়োজনীয় রপ্তানি ইঞ্জিন বা ফন্ট পাওয়া যাচ্ছে না। সেগুলো ইনস্টল করে আবার চেষ্টা করুন।",
   "export.secFigures": "বৈজ্ঞানিক চিত্র",
   "export.secSlides": "স্লাইডসমূহ",
-  "export.slidesHint": "শুধুমাত্র --- ধারণকারী একটি লাইন দিয়ে স্লাইড বিভক্ত করুন। একটি একক অফলাইন HTML ফাইল (reveal.js) এক্সপোর্ট করে।",
+  "export.slidesHint": "শুধু --- থাকা একটি লাইন দিয়ে স্লাইড আলাদা করুন। সম্পাদনাযোগ্য PowerPoint (.pptx) ফাইল রপ্তানি করে।",
   "export.slidesTheme": "থিম",
   "export.slidesTransition": "ট্রানজিশন",
   "export.snapshotBusy": "পর্যালোচনা চলছে…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "আবার চালু করুন",
   "ai.taskRounds": "{count} দফা",
   "ai.taskRunning": "পর্যালোচনা চলছে…",
-  "ai.thinking": "চিন্তা করা হচ্ছে…"
+  "ai.thinking": "চিন্তা করা হচ্ছে…",
+  "warn.pptx_math_image": "সমীকরণ ছবিরূপে সংরক্ষিত থাকে এবং তার উৎস স্লাইডের নোটে থাকে।"
 }

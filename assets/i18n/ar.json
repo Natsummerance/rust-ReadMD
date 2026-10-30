@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "محرك التصدير أو الخطوط المطلوبة غير متاحة. ثبّتها وحاول مجددًا.",
   "export.secFigures": "أشكال علمية",
   "export.secSlides": "شرائح",
-  "export.slidesHint": "تقسيم الشرائح بسطر يحتوي على --- فقط. يصدّر ملف HTML واحداً بدون إنترنت (reveal.js).",
+  "export.slidesHint": "افصل الشرائح بسطر يحتوي على --- فقط. يُصدّر ملف PowerPoint (.pptx) قابلًا للتحرير.",
   "export.slidesTheme": "السمة",
   "export.slidesTransition": "الانتقال",
   "export.snapshotBusy": "المراجعة جارية…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "استئناف",
   "ai.taskRounds": "{count} جولات",
   "ai.taskRunning": "المراجعة جارية…",
-  "ai.thinking": "جارٍ التفكير…"
+  "ai.thinking": "جارٍ التفكير…",
+  "warn.pptx_math_image": "تُحفظ المعادلات كصور، ويُحفظ مصدرها في ملاحظات الشرائح."
 }

@@ -3021,13 +3021,14 @@ fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,res
     crate::math_word_projection::validate_source_with_style(content,math_target,&math_style)?;
     let managed_pdf=fmt=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust"|"typst"));
     let budget=crate::publication_budget::capture();let checked=||budget.api();
-    let _fonts=if managed_pdf||matches!(fmt.as_str(),"docx"|"epub"|"html"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
+    let _fonts=if managed_pdf||matches!(fmt.as_str(),"docx"|"epub"|"html"|"pptx"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
     if managed_pdf{crate::publication_fonts::require_for_export("pdf",content,options)?;}
     let (prepared,warnings)=prepare_export_source(&fmt,content,base_dir,options)?;
     budget.check()?;
     let content=prepared.as_str();
     let mut result=match fmt.as_str() {
         "html" => export_html(content, base_dir, out_path, options, source_name, assets_dir),
+        "pptx" => crate::pptx_export::export(content,base_dir,out_path,options,source_name),
         "presentation" => {
             let (html,warns)=presentation_with_images(content,base_dir,source_name,options,true,assets_dir)?;
             crate::publication_budget::check()?;
@@ -4743,6 +4744,14 @@ fn split_on_blank_runs(s: &str) -> Vec<String> {
 
 /// `split_slides_structure` — [[(content, note)]]
 pub(crate) fn split_slides_structure(content: &str) -> Vec<Vec<(String, String)>> {
+    split_slides_content(content, true)
+}
+/// The native slide writer consumes Markdown, not an HTML-template string.
+/// Escaping `>`/`&` before parsing changes authored blockquotes and text.
+pub(crate) fn split_slides_markdown(content: &str) -> Vec<Vec<(String, String)>> {
+    split_slides_content(content, false)
+}
+fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, String)>> {
     let (_meta, body) = parse_frontmatter(content);
     let bc: Vec<char> = body.chars().collect();
     let has_explicit_slide = find_directive(&bc, 0, &["slide"], true, false).is_some();
@@ -4795,8 +4804,8 @@ pub(crate) fn split_slides_structure(content: &str) -> Vec<Vec<(String, String)>
             }
             let (clean, notes) = extract_notes(&v_chunk);
             let clean = py_strip(&clean).to_string();
-            let clean = sanitize_slide_html(&clean);
-            let note_text = py_strip(&sanitize_slide_html(&notes.join("\n\n"))).to_string();
+            let clean = if sanitize { sanitize_slide_html(&clean) } else { clean };
+            let note_text = if sanitize { py_strip(&sanitize_slide_html(&notes.join("\n\n"))).to_string() } else { notes.join("\n\n") };
             vertical.push((clean, note_text));
         }
         if !vertical.is_empty() {

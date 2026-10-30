@@ -81,6 +81,18 @@ fn repeated_slide_image_references_are_bounded_before_runtime_rendering(){
 }
 
 #[test]
+fn repeated_html_image_references_are_bounded_before_expanding_the_projection(){
+    let content="![Repeated image](large.svg)\n\n".repeat(64);
+    let fixture=Fixture::new(&content);
+    let image=format!("<svg xmlns=\"http://www.w3.org/2000/svg\"><!--{}--></svg>","x".repeat(1024*1024));
+    fs::write(fixture.source.parent().unwrap().join("large.svg"),image).unwrap();
+    let result=fixture.service.prepare(&fixture.review,&fixture.request("html-budget","html",json!({})),&fixture.assets);
+    assert_eq!(result.err().unwrap(),BUDGET);
+    assert_eq!(fs::read_to_string(&fixture.source).unwrap(),content);
+    assert!(!fixture.source.parent().unwrap().join("readmd-assets").exists());
+}
+
+#[test]
 fn construction_is_lazy_and_prepare_is_idempotent_with_exact_private_options() {
     let directory = TempDir::new().unwrap(); let data = directory.path().join("unused");
     let _ = Service::new(&data); assert!(!data.exists());

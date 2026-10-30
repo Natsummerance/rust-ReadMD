@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Das erforderliche Exportprogramm oder die Schriftarten sind nicht verfügbar. Installieren Sie sie und versuchen Sie es erneut.",
   "export.secFigures": "Wissenschaftliche Abbildungen",
   "export.secSlides": "Folien",
-  "export.slidesHint": "Folien mit einer Zeile trennen, die nur --- enthält. Exportiert eine einzelne Offline-HTML-Datei (reveal.js).",
+  "export.slidesHint": "Folien mit einer Zeile trennen, die nur --- enthält. Exportiert eine bearbeitbare PowerPoint-Datei (.pptx).",
   "export.slidesTheme": "Design",
   "export.slidesTransition": "Übergang",
   "export.snapshotBusy": "Prüfung läuft…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Fortsetzen",
   "ai.taskRounds": "{count} Runden",
   "ai.taskRunning": "Prüfung läuft…",
-  "ai.thinking": "Nachdenken…"
+  "ai.thinking": "Nachdenken…",
+  "warn.pptx_math_image": "Formeln bleiben als Bilder erhalten. Ihr Quelltext steht in den Foliennotizen."
 }

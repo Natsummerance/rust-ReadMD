@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "必要なエクスポートエンジンまたはフォントを利用できません。インストールしてから再試行してください。",
   "export.secFigures": "科学図表",
   "export.secSlides": "スライド",
-  "export.slidesHint": "--- のみを含む行でスライドを分割します。単一のオフラインHTMLファイル (reveal.js) としてエクスポートします。",
+  "export.slidesHint": "--- だけの行でスライドを区切ります。編集可能な PowerPoint（.pptx）を出力します。",
   "export.slidesTheme": "テーマ",
   "export.slidesTransition": "切り替え効果",
   "export.snapshotBusy": "レビュー中…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "再開",
   "ai.taskRounds": "{count} ラウンド",
   "ai.taskRunning": "レビュー中…",
-  "ai.thinking": "思考中…"
+  "ai.thinking": "思考中…",
+  "warn.pptx_math_image": "数式は画像として保持し、数式ソースはスライドのノートに保存します。"
 }

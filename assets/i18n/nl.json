@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "De vereiste exportengine of lettertypen zijn niet beschikbaar. Installeer deze en probeer het opnieuw.",
   "export.secFigures": "Wetenschappelijke figuren",
   "export.secSlides": "Dia's",
-  "export.slidesHint": "Splits dia's met een regel die alleen --- bevat. Exporteert een enkel offline HTML-bestand (reveal.js).",
+  "export.slidesHint": "Scheid dia’s met een regel die alleen --- bevat. Exporteert een bewerkbaar PowerPoint-bestand (.pptx).",
   "export.slidesTheme": "Thema",
   "export.slidesTransition": "Overgang",
   "export.snapshotBusy": "Beoordeling bezig…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Hervatten",
   "ai.taskRounds": "{count} rondes",
   "ai.taskRunning": "Beoordeling bezig…",
-  "ai.thinking": "Nadenken…"
+  "ai.thinking": "Nadenken…",
+  "warn.pptx_math_image": "Formules blijven als afbeeldingen behouden, met hun broncode in de dianotities."
 }

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Den nødvendige eksportmotoren eller skriftene er ikke tilgjengelige. Installer dem og prøv på nytt.",
   "export.secFigures": "Vitenskapelige figurer",
   "export.secSlides": "Lysbilder",
-  "export.slidesHint": "Del opp lysbilder med en linje som bare inneholder ---. Eksporterer en enkelt offline HTML-fil (reveal.js).",
+  "export.slidesHint": "Skill lysbilder med en linje som bare inneholder ---. Eksporterer en redigerbar PowerPoint-fil (.pptx).",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Overgang",
   "export.snapshotBusy": "Gjennomgang pågår…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Fortsett",
   "ai.taskRounds": "{count} runder",
   "ai.taskRunning": "Gjennomgang pågår…",
-  "ai.thinking": "Tenker…"
+  "ai.thinking": "Tenker…",
+  "warn.pptx_math_image": "Formler beholdes som bilder med kildekoden i lysbildenotatene."
 }

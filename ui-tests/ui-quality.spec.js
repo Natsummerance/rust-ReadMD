@@ -13,7 +13,7 @@ test.beforeEach(async ({ page }) => {
 async function openDoc(page, body = '# Title\n\nSome text.\n') {
   await page.goto('/');
   await waitForPage(page, () => typeof renderVirtual === 'function' && window.ReadMDModal);
-  await page.evaluate(async md => { await renderVirtual('clipboard', 'ui.md', '', md, []); }, body);
+  await page.evaluate(async md => { await window.__readmdSessionReady;await renderVirtual('clipboard', 'ui-'+crypto.randomUUID()+'.md', '', md, []); }, body);
 }
 
 const MODALS = [
@@ -51,11 +51,15 @@ test('Esc during IME composition does not close a modal', async ({ page }) => {
   await expect(page.locator('#export-modal')).toBeVisible();
 });
 
+// UI protocol fixture only; real cancellation/persistence is exercised by the
+// Rust and export-harness MCP acceptance tests. Preparation remains real here.
 test('export is single-flight and can be cancelled', async ({ page }) => {
   let exports = 0;
+  let startedTask = null;
   let cancelled = null;
-  await page.route('**/api/export', async route => {
-    exports += 1;
+  await page.route('**/api/export/snapshot', async route => {
+    if(route.request().postDataJSON()?.action!=='commit')return route.continue();
+    exports += 1;startedTask=route.request().postDataJSON().task_id;
     await new Promise(r => setTimeout(r, 800));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error_code: 'cancelled' }) });
   });
@@ -64,7 +68,7 @@ test('export is single-flight and can be cancelled', async ({ page }) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, state: 'cancelling' }) });
   });
   await openDoc(page);
-  await page.evaluate(() => { openExportModal(); state.export.fmt = 'html'; });
+  await page.evaluate(async () => { await openExportModal(); state.export.fmt = 'html'; });
   const run = page.locator('#export-run');
   await run.click();
   await run.click({ force: true });
@@ -77,7 +81,8 @@ test('export is single-flight and can be cancelled', async ({ page }) => {
   await expect(cancel).toBeHidden();
   await expect(run).toBeEnabled();
   expect(exports).toBe(1);
-  expect(cancelled && cancelled.id).toMatch(/^export-/);
+  expect(startedTask).toBeTruthy();
+  expect(cancelled && cancelled.id).toBe(startedTask);
 });
 
 test('no horizontal page overflow at 360px', async ({ page }) => {

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "ម៉ាស៊ីននាំចេញ ឬពុម្ពអក្សរដែលត្រូវការមិនអាចប្រើបានទេ។ ដំឡើងវា រួចព្យាយាមម្ដងទៀត។",
   "export.secFigures": "រូបភាពវិទ្យាសាស្ត្រ",
   "export.secSlides": "ស្លាយ",
-  "export.slidesHint": "បែងចែកស្លាយโดยបន្ទាត់ដែលមានតែ --- ប៉ុណ្ណោះ។ នាំចេញឯកសារ HTML ក្រៅបណ្តាញតែមួយ (reveal.js)។",
+  "export.slidesHint": "បំបែកស្លាយដោយបន្ទាត់ដែលមានតែ ---។ នាំចេញឯកសារ PowerPoint (.pptx) ដែលអាចកែសម្រួលបាន។",
   "export.slidesTheme": "ស្បែក",
   "export.slidesTransition": "การផ្លាស់ប្តូរ",
   "export.snapshotBusy": "កំពុងពិនិត្យ…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "បន្ត",
   "ai.taskRounds": "{count} ជុំ",
   "ai.taskRunning": "កំពុងពិនិត្យ…",
-  "ai.thinking": "កំពុងគិត..."
+  "ai.thinking": "កំពុងគិត...",
+  "warn.pptx_math_image": "សមីការត្រូវបានរក្សាទុកជារូបភាព ហើយកូដប្រភពរបស់វាស្ថិតក្នុងកំណត់ចំណាំស្លាយ។"
 }

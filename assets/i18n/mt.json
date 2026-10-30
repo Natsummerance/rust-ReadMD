@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Il-magna tal-esportazzjoni jew il-fonts meħtieġa mhumiex disponibbli. Installahom u erġa’ pprova.",
   "export.secFigures": "Figuri xjentifiċi",
   "export.secSlides": "Slajds",
-  "export.slidesHint": "Aqsam is-slajds b'linja li jkun fiha biss ---. Jesporta fajl HTML uniku offline (reveal.js).",
+  "export.slidesHint": "Ifred is-slajds b’linja li fiha biss ---. Jesporta fajl PowerPoint (.pptx) li jista’ jiġi editjat.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Tranżizzjoni",
   "export.snapshotBusy": "Reviżjoni għaddejja…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Kompli",
   "ai.taskRounds": "{count} rawnds",
   "ai.taskRunning": "Reviżjoni għaddejja…",
-  "ai.thinking": "Qed jaħseb…"
+  "ai.thinking": "Qed jaħseb…",
+  "warn.pptx_math_image": "L-ekwazzjonijiet jinżammu bħala stampi, bis-sors tagħhom fin-noti tas-slajds."
 }

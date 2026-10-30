@@ -54,6 +54,7 @@ struct Record {
     #[serde(default="runtime_ready_default")] runtime_ready: bool,
     #[serde(default)] pending_engine: bool,
     #[serde(default)] pending_fonts: bool,
+    #[serde(default)] pptx_image_fonts: bool,
 }
 
 impl Service {
@@ -95,7 +96,7 @@ impl Service {
         let call_id = text(request, "call_id")?;
         if call_id.is_empty() || call_id.len() > 256 { return Err(INVALID); }
         let format = text(request, "format")?;
-        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex" | "presentation") { return Err("unsupported_format"); }
+        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex" | "presentation" | "pptx") { return Err("unsupported_format"); }
         let name = text(request, "suggested_name")?;
         if name.is_empty() || name.len() > 256 || name.chars().any(|c| c.is_control() || "/\\:".contains(c)) { return Err(INVALID); }
         let options = request.get("options").filter(|value| value.is_object()).ok_or(INVALID)?.clone();
@@ -139,7 +140,7 @@ impl Service {
                 engine_identity: Value::Null, font_identity: Value::Null,
                 protected_paths: if draft.is_some() { Vec::new() } else { vec![absolute_target(document_path)?] },
                 figures: None, output: None, receipt: None, error: None, created_at: now(), discarded: false,
-                runtime_ready:true,pending_engine:false,pending_fonts:false };
+                runtime_ready:true,pending_engine:false,pending_fonts:false,pptx_image_fonts:false };
             // Only the profile-owned staging protocol can remap an absolute
             // reference. Model-supplied file paths do not grant read authority.
             let staged = crate::document_assets::discover_staged(original, &self.data_dir).map_err(|_| "export_snapshot_resource_path")?;
@@ -219,7 +220,13 @@ impl Service {
             (record.engine_identity, record.font_identity) = runtime_identity(&self.data_dir, assets_dir, format, &record.options)?;
             record.font_identity["document"] = json!(record.resources.iter().filter(|resource|font_resource(&resource.path)).collect::<Vec<_>>());
             record.pending_engine=record.engine_identity["pending"]==true;
-            record.pending_fonts=needs_fonts(format,&record.content,&record.options)&&managed_fonts_absent(&record.font_identity);
+            if format=="pptx" {
+                for resource in record.resources.iter().filter(|resource|resource.path.to_ascii_lowercase().ends_with(".svg")) {
+                    let bytes=read_absolute(&temporary.path().join(storage_path(&resource.path)?),MAX_RESOURCE_BYTES)?;
+                    record.pptx_image_fonts|=crate::publication_fonts::needs_cjk(std::str::from_utf8(&bytes).map_err(|_|INVALID)?);
+                }
+            }
+            record.pending_fonts=(record.pptx_image_fonts||needs_fonts(format,&record.content,&record.options))&&managed_fonts_absent(&record.font_identity);
             record.runtime_ready=!record.pending_engine&&!record.pending_fonts;
             let supplied = record.options.pointer("/figures/rendered").cloned();
             if let Some(rendered) = supplied { assign_figures(&mut record, &rendered)?; }
@@ -312,7 +319,7 @@ impl Service {
                 return Ok(metadata(&record));
             }
             if engine["pending"]==true {return Err(missing_engine_error(&record.options));}
-            if needs_fonts(&record.format,&record.content,&record.options)&&managed_fonts_absent(&fonts) {return Err("publication_fonts_unavailable");}
+            if (record.pptx_image_fonts||needs_fonts(&record.format,&record.content,&record.options))&&managed_fonts_absent(&fonts) {return Err("publication_fonts_unavailable");}
             let mut expected_engine=record.engine_identity.clone();let mut actual_engine=engine.clone();
             if record.pending_engine {
                 for value in [&mut expected_engine,&mut actual_engine] {
@@ -560,7 +567,7 @@ fn metadata(record: &Record) -> Value {
     let mut result = json!({"ok":true,"snapshot_id":record.snapshot_id,"document_id":record.review["document_id"],
         "generation":record.review["generation"],"review_revision":record.review["review_revision"],"format":record.format,"suggested_name":record.name,
         "state":record.state,"pending_count":ids.len(),"pending_ids":ids,"resource_count":record.resources.len(),"figures_complete":required_figures(record).is_ok(),"discarded":record.discarded,
-        "runtime_ready":record.runtime_ready,"pending_engine":record.pending_engine,"pending_fonts":record.pending_fonts,"runtime_engine":record.engine_identity["engine"]});
+        "runtime_ready":record.runtime_ready,"pending_engine":record.pending_engine,"pending_fonts":record.pending_fonts,"runtime_engine":record.engine_identity["engine"],"retained_bytes":record_bytes(record).unwrap_or(MAX_SNAPSHOT_BYTES)});
     if let Some(output) = &record.output {
         result["output"] = json!({"target":output.target,"target_before":output.target_before,"expected_sha256":output.expected_sha256,
             "dependencies":output.dependencies.iter().map(|(path,hash)|json!({"path":path,"sha256":hash})).collect::<Vec<_>>()});
@@ -752,6 +759,13 @@ fn freeze_html_projection(record:&mut Record,root:&Path)->Result<(),&'static str
         materialized.commit();
     }
     let mut edits=Vec::new();
+    let mut projected_bytes=record.content.len();
+    let mut project=|range:std::ops::Range<usize>,value:String|->Result<(),&'static str>{
+        crate::publication_budget::check().map_err(|code|match code.as_str(){"typst_timeout"=>"typst_timeout","latex_timeout"=>"latex_timeout","cancelled"=>"cancelled",_=>INVALID})?;
+        projected_bytes=projected_bytes.checked_sub(range.len()).and_then(|n|n.checked_add(value.len()))
+            .filter(|n|*n<=MAX_SNAPSHOT_BYTES).ok_or(BUDGET)?;
+        edits.push((range,value));Ok(())
+    };
     for (range,reference) in crate::document_assets::image_references(&record.content) {
         if reference.starts_with("data:image/") { continue; }
         let raw=&record.content[range.clone()];
@@ -759,13 +773,13 @@ fn freeze_html_projection(record:&mut Record,root:&Path)->Result<(),&'static str
         let after=&raw[at..];let leading=after.len()-after.trim_start().len();
         let start=at+leading+usize::from(after.trim_start().starts_with('<'));
         if !raw[start..].starts_with(&reference) { return Err("export_snapshot_dynamic_resource"); }
-        edits.push((range.start+start..range.start+start+reference.len(),resource_uri(root,&reference)?));
+        project(range.start+start..range.start+start+reference.len(),resource_uri(root,&reference)?)?;
     }
     for (event,range) in Parser::new_ext(&record.content,Options::all()).into_offset_iter() {
         let (Event::Html(html)|Event::InlineHtml(html))=event else {continue;};
         for (local,reference) in html_references(&html)? {
             if reference.starts_with("data:") || reference.starts_with('#') || reference.is_empty() {continue;}
-            edits.push((range.start+local.start..range.start+local.end,resource_uri(root,&reference)?));
+            project(range.start+local.start..range.start+local.end,resource_uri(root,&reference)?)?;
         }
     }
     edits.sort_by_key(|(range,_)|(range.start,range.end));

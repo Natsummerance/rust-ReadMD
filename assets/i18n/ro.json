@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Motorul de export sau fonturile necesare nu sunt disponibile. Instalează-le și încearcă din nou.",
   "export.secFigures": "Figuri științifice",
   "export.secSlides": "Diapozitive",
-  "export.slidesHint": "Îparte diapozitivele cu o linie care conține doar ---. Exportă un singur fișier HTML offline (reveal.js).",
+  "export.slidesHint": "Separați diapozitivele cu o linie care conține doar ---. Exportă un fișier PowerPoint (.pptx) editabil.",
   "export.slidesTheme": "Temă",
   "export.slidesTransition": "Tranziție",
   "export.snapshotBusy": "Revizuire în curs…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Reia",
   "ai.taskRounds": "{count} runde",
   "ai.taskRunning": "Revizuire în curs…",
-  "ai.thinking": "Se gândește…"
+  "ai.thinking": "Se gândește…",
+  "warn.pptx_math_image": "Ecuațiile sunt păstrate ca imagini, iar sursa lor se află în notele diapozitivelor."
 }

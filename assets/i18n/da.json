@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Det nødvendige eksportprogram eller de nødvendige skrifttyper er ikke tilgængelige. Installér dem, og prøv igen.",
   "export.secFigures": "Videnskabelige figurer",
   "export.secSlides": "Slides",
-  "export.slidesHint": "Opdel slides med en linje, der kun indeholder ---. Eksporterer en enkelt offline HTML-fil (reveal.js).",
+  "export.slidesHint": "Adskil dias med en linje, der kun indeholder ---. Eksporterer en redigerbar PowerPoint-fil (.pptx).",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Overgang",
   "export.snapshotBusy": "Gennemgang i gang…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Genoptag",
   "ai.taskRounds": "{count} runder",
   "ai.taskRunning": "Gennemgang i gang…",
-  "ai.thinking": "Tænker…"
+  "ai.thinking": "Tænker…",
+  "warn.pptx_math_image": "Formler bevares som billeder med deres kildekode i diasnoterne."
 }

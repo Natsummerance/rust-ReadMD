@@ -2716,6 +2716,7 @@ dependencies = [
  "libc",
  "log",
  "lopdf",
+ "objc2-app-kit",
  "pdf-extract",
  "pdfium-render",
  "percent-encoding",

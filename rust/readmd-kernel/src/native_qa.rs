@@ -35,7 +35,10 @@ pub fn record(body: &str) -> bool {
     let label = |value: &Value| value.as_str().is_some_and(|s| !s.is_empty() && s.len() < 128 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'));
     if !result["ok"].is_boolean() || !label(&result["phase"]) || !result["checks"].as_array().is_some_and(|items| items.len() <= 64 && items.iter().all(label)) { return true; }
     // Do not accept document text, URLs, paths, tokens or arbitrary diagnostics.
-    let safe = serde_json::json!({"ok":result["ok"],"phase":result["phase"],"checks":result["checks"]});
+    let mut safe = serde_json::json!({"ok":result["ok"],"phase":result["phase"],"checks":result["checks"]});
+    // Optional numeric own-window handle for isolated screenshot verification;
+    // no document text, arbitrary diagnostics, endpoints or paths are accepted.
+    if let Some(number)=result["window_number"].as_u64().filter(|n|*n>0&&*n<=u32::MAX as u64) {safe["window_number"]=serde_json::json!(number);}
     if let Ok(mut file) = fs::OpenOptions::new().write(true).create_new(true).open(output) {
         if let Ok(bytes) = serde_json::to_vec_pretty(&safe) { let _ = file.write_all(&bytes).and_then(|_| file.sync_all()); }
     }

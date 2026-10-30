@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Annissinermut atortoq imaluunniit naqinnerit pisariaqartut atorneqarsinnaanngillat. Ikkukkit misileqqillutillu.",
   "export.secFigures": "Ilisimatusarnermut assiliartat",
   "export.secSlides": "Saqqummersitsissutit",
-  "export.slidesHint": "Saqqummersitsissutit immikkoortikkit liniarlugu taamaallaat imaqartoq ---. HTML-fil ataaseq internetianngitsumik anisitaavoq (reveal.js).",
+  "export.slidesHint": "--- kisimi allassimasoq atorlugu saqqummiussassat avissaartikkit. PowerPoint (.pptx)-fiili aaqqissorneqarsinnaasoq anisinneqarpoq.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Ingerlaqqiffik",
   "export.snapshotBusy": "Misissuineq ingerlanneqarpoq…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Ingerlateqqiguk",
   "ai.taskRounds": "{count}-riarluni",
   "ai.taskRunning": "Misissuineq ingerlanneqarpoq…",
-  "ai.thinking": "Isumaliortoq…"
+  "ai.thinking": "Isumaliortoq…",
+  "warn.pptx_math_image": "Naligiissitat assitut toqqorneqarput, aallaqqaataallu saqqummiussassap allattaaviiniippoq."
 }

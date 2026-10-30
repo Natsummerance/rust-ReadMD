@@ -189,9 +189,9 @@ function getExportSections() {
       { k:'figures.widthMm',label:_t('export.figureWidth'),type:'number',min:45,max:300 },
       { k:'figures.fontSizePt',label:_t('export.figureFontSize'),type:'number',min:5,max:18,step:.5 },
     ]},
-    { title: _t('export.secSlides') || '', fmts: ['presentation'], fields: [
+    { title: _t('export.secSlides') || '', fmts: ['pptx'], fields: [
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
-      { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'convex', 'concave', 'none'] },
+      { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];
@@ -283,7 +283,7 @@ async function loadExportPresets() {
     state.export.catalog = d.catalog || [];
     state.export.custom = d.custom || {};
     state.export.last = d.last || null;
-    if (state.export.last && state.export.last.fmt) state.export.fmt = state.export.last.fmt;
+    if (state.export.last && state.export.last.fmt) state.export.fmt = state.export.last.fmt === 'presentation' ? 'pptx' : state.export.last.fmt;
     if (state.export.last && state.export.last.options) {
       state.export.options = expDeepMerge(state.export.defaults, state.export.last.options);
     } else {
@@ -340,7 +340,7 @@ async function openExportModal() {
   if(await prepareExportProfile(epoch))renderExportModal();
 }
 
-function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); void discardPreparedExport(exportSnapshotCache); exportSnapshotCache=null; }
+function closeExportModal() { exportOpenEpoch++; exportProfileContext=null; exportNumberingControl?.destroy(); exportNumberingControl=null; $('export-modal').classList.add('hidden'); cancelNativeExportPreview(); void discardPreparedExports(); }
 
 function mountExportNumbering(host) {
   if(!window.ReadMDPublicationNumbering)return null;
@@ -379,6 +379,7 @@ function currentExportName() {
 
 
 function renderExportModal() {
+  if (state.export.fmt === 'presentation') state.export.fmt = 'pptx';
   $('export-modal').classList.remove('hidden');
   document.querySelectorAll('#export-box .exp-fmt').forEach(button => {
     const selected = button.dataset.fmt === state.export.fmt;
@@ -938,9 +939,14 @@ function cancelNativeExportPreview() {
   nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.missingCapability = null; nativeExportPreview.blobUrl = '';
   document.querySelectorAll('.export-slide-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
   $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview');
+  $('export-preview-card')?.classList.remove('is-slide-preview');
+  $('export-preview-modal')?.classList.remove('is-slide-preview');
   $('export-preview-mini-page')?.classList.remove('is-native-preview');
   $('export-preview-card')?.classList.remove('hidden');
   $('export-preview-capability')?.remove();
+  document.querySelectorAll('#export-preview-mini-content, #export-preview-modal .export-preview-paper-wrapper').forEach(host => {
+    host.classList.remove('export-html-pending'); host.querySelector('.export-html-loading')?.remove(); delete host.dataset.ready;
+  });
 }
 
 const exportFigureCache=new Map();
@@ -1034,7 +1040,9 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     }
     return;
   }
+  const debounce = nativeExportPreview.signature && nativeExportPreview.lastFormat === fmt ? 140 : 0;
   cancelNativeExportPreview();
+  nativeExportPreview.lastFormat = fmt;
   const generation = nativeExportPreview.generation;
   nativeExportPreview.signature = signature; nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
   const mini = $('export-preview-mini-content');
@@ -1050,12 +1058,17 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     const controller = new AbortController(); nativeExportPreview.controller = controller;
     const taskId=crypto.randomUUID();nativeExportPreview.taskId=taskId;
     try {
-      let previewPayload;
+      let previewPayload, frozenPreview;
       const legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
-      if (fmt === 'presentation' && legacyIdentity) throw exportSnapshotFailure('review_budget');
+      if (['html', 'presentation', 'pptx'].includes(fmt) && legacyIdentity) throw exportSnapshotFailure('review_budget');
       if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
         const frozen = await prepareReviewExport(fmt, options, suggestedName, originTab, true);
         if (!frozen || frozen.stamp.content !== window.ReadMDReview.lf(content)) throw exportSnapshotFailure('review_stale_generation');
+        if (generation !== nativeExportPreview.generation) return;
+        frozenPreview = frozen;
+        if (frozen.previewData && Date.now() - frozen.previewDataAt < 60000) {
+          applyNativeExportPreview(frozen.previewData, presetName, options); return;
+        }
         await bindSnapshotRuntime(frozen);
         await prepareSnapshotFigures(frozen);
         await bindSnapshotRuntime(frozen);
@@ -1075,14 +1088,12 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
         }
         throw new Error(apiMessage(data,'export.previewFailed'));
       }
-      if (fmt === 'presentation') data.format = 'presentation';
-      nativeExportPreview.data = data;
-      if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
-      if (data.pdf && !data.firstPage) {
-        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-        nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const previewBytes = frozenPreview ? JSON.stringify(data).length : 0;
+      if (frozenPreview && previewBytes <= EXPORT_PREVIEW_CACHE_BYTES) {
+        frozenPreview.previewData = data; frozenPreview.previewDataAt = Date.now();
+        frozenPreview.previewDataBytes = previewBytes;
       }
-      renderNativeExportPreview(presetName, options);
+      applyNativeExportPreview(data, presetName, options);
     } catch (error) {
       if (generation !== nativeExportPreview.generation || error.name === 'AbortError') return;
       const capability = {publication_fonts_unavailable:'fonts', typst_engine_unavailable:'typst', latex_engine_unavailable:'latex'}[error.code];
@@ -1097,13 +1108,25 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     } finally {
       if (nativeExportPreview.taskId === taskId) nativeExportPreview.taskId='';
     }
-  }, 300);
+  }, debounce);
+}
+
+function applyNativeExportPreview(data, presetName, options) {
+  nativeExportPreview.data = data;
+  if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
+  if (data.pdf && !data.firstPage) {
+    const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
+    nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  }
+  renderNativeExportPreview(presetName, options);
 }
 
 function renderNativeExportPreview(presetName, options) {
   const data = nativeExportPreview.data;
   if (!data) return;
   renderExportWarns(data.warnings || []);
+  if (data.format === 'html') { renderBrowserExportPreview('html', data.options || options, data.content, presetName); return; }
+  if (data.format === 'pptx') { renderPptxExportPreview(data, presetName); return; }
   if (data.format === 'presentation') { renderPresentationExportPreview(data, presetName); return; }
   if (data.mode === 'source') { renderSourceExportPreview(data, presetName); return; }
   if (data.format === 'epub') { renderEpubExportPreview(data, presetName); return; }
@@ -1196,6 +1219,74 @@ function renderNativeExportPreview(presetName, options) {
 // Use the real slide compiler rather than paginating Markdown as A4 paper.
 // Readiness is tied to the exact frame window and request generation. A late
 // ready message from an abandoned format can never reveal old slide content.
+function renderPptxExportPreview(data, presetName) {
+  const generation = nativeExportPreview.generation;
+  $('export-preview-mini-page')?.classList.add('is-native-preview', 'is-slide-preview');
+  $('export-preview-card')?.classList.add('is-slide-preview');
+  $('export-preview-modal')?.classList.add('is-slide-preview');
+  const miniPage = $('export-preview-mini-page'); if (miniPage) miniPage.style.transform = '';
+  const style = $('export-preview-dynamic-style'); if (style) style.textContent = '';
+  const meta = $('export-preview-paper-meta'); if (meta) meta.textContent = 'PPTX · 16:9 · ' + presetName;
+  const modal = $('export-preview-modal');
+  const hosts = [[$('export-preview-mini-content'), true]];
+  if (modal && !modal.classList.contains('hidden')) hosts.push([modal.querySelector('.export-preview-paper-wrapper'), false]);
+  const sync = () => {
+    if (generation !== nativeExportPreview.generation) return;
+    const page = Math.max(1, Math.min(data.pages, nativeExportPreview.page || 1)); nativeExportPreview.page = page;
+    document.querySelectorAll('.export-pptx-frame[data-generation="' + generation + '"]').forEach(frame => {
+      frame.contentDocument?.querySelectorAll('.readmd-slide').forEach((slide, index) => { slide.hidden = index !== page - 1; });
+    });
+    const count = $('export-preview-pages-meta'); if (count) count.textContent = page + ' / ' + data.pages;
+    for (const [id, delta] of [['export-preview-prev-btn', -1], ['export-preview-next-btn', 1]]) {
+      const button = $(id); if (!button) continue;
+      button.classList.add('is-visible'); button.disabled = delta < 0 ? page === 1 : page === data.pages;
+      button.onclick = () => { nativeExportPreview.page = page + delta; sync(); };
+    }
+  };
+  for (const [host, mini] of hosts) {
+    if (!host || host.querySelector('.export-pptx-frame[data-generation="' + generation + '"]')) continue;
+    host.replaceChildren(); host.setAttribute('aria-busy', 'true');
+    const frame = document.createElement('iframe'); frame.className = 'export-slide-frame export-pptx-frame is-pending';
+    frame.title = 'PPTX'; frame.dataset.generation = String(generation);
+    // This preview is static generated markup. It does not execute slide-source
+    // scripts, navigate its parent or acquire the parent's document authority.
+    frame.setAttribute('sandbox', 'allow-same-origin');
+    const loading = document.createElement('div'); host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
+    let disposed = false, observer;
+    const fit = () => {
+      const deck = frame.contentDocument?.getElementById('readmd-deck'); if (!deck) return;
+      const scale = Math.min(frame.clientWidth / data.width, frame.clientHeight / data.height);
+      deck.style.transform = 'translate(' + Math.max(0, (frame.clientWidth - data.width * scale) / 2) + 'px,' + Math.max(0, (frame.clientHeight - data.height * scale) / 2) + 'px) scale(' + scale + ')';
+    };
+    const dispose = () => { disposed = true; clearTimeout(deadline); observer?.disconnect(); frame.onload = null; };
+    const fail = () => {
+      if (disposed) return; dispose();
+      if (generation !== nativeExportPreview.generation || !host.isConnected) return;
+      host.replaceChildren(); host.setAttribute('aria-busy', 'false');
+      const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
+      retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
+    };
+    const deadline = setTimeout(fail, 30000);
+    frame._readmdDispose = dispose;
+    frame.onload = async () => {
+      try {
+        const doc = frame.contentDocument;
+        if (doc?.querySelectorAll('.readmd-slide').length !== data.pages || !doc.getElementById('readmd-deck')) throw Error('invalid_deck');
+        await doc.fonts.ready;
+        await Promise.all([...doc.images].map(img => img.decode()));
+        if (disposed || generation !== nativeExportPreview.generation || !host.isConnected) return;
+        fit(); observer = new ResizeObserver(fit); observer.observe(frame);
+        clearTimeout(deadline); loading.remove(); frame.classList.remove('is-pending'); frame.dataset.ready = 'true';
+        host.setAttribute('aria-busy', 'false'); sync();
+        if (mini) doc.querySelectorAll('a').forEach(link => link.removeAttribute('href'));
+        else doc.querySelectorAll('a').forEach(link => { link.target = '_blank'; link.rel = 'noopener noreferrer'; });
+      } catch (_) { fail(); }
+    };
+    frame.srcdoc = data.html; host.append(frame);
+  }
+}
+
 function renderPresentationExportPreview(data, presetName) {
   const generation = nativeExportPreview.generation;
   const miniPage = $('export-preview-mini-page');
@@ -1252,6 +1343,9 @@ function renderPresentationExportPreview(data, presetName) {
 
 function renderSourceExportPreview(data, presetName) {
   $('export-preview-mini-page')?.classList.add('is-native-preview', 'is-source-preview');
+  const style = $('export-preview-dynamic-style'); if (style) style.textContent = '';
+  const miniPage = $('export-preview-mini-page');
+  if (miniPage?.parentElement) miniPage.style.transform = 'scale(' + Math.min(2.5, (miniPage.parentElement.clientWidth - 32) / 110, (miniPage.parentElement.clientHeight - 32) / 148) + ')';
   const label = _t('convert.latex');
   const meta = $('export-preview-paper-meta'); if (meta) meta.textContent = label + ' · ' + presetName;
   const hosts = [$('export-preview-mini-content')];
@@ -1349,7 +1443,7 @@ function updateExportLivePreview() {
   renderExportPresetCards();
 
   const docTitle = currentExportName();
-  if (window.READMD_ENGINE === 'rust' && ['pdf', 'docx', 'epub', 'tex', 'presentation'].includes(fmt)) {
+  if (window.READMD_ENGINE === 'rust' && ['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx'].includes(fmt)) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
     return;
   }
@@ -1358,6 +1452,11 @@ function updateExportLivePreview() {
     content=htmlExportFigureContent(content,opts);if(content===null)return;
   }else{htmlFigurePreview.controller?.abort();Object.assign(htmlFigurePreview,{key:'',source:null,error:'',controller:null});}
 
+  renderBrowserExportPreview(fmt, opts, content, presetName);
+}
+
+function renderBrowserExportPreview(fmt, opts, content, presetName) {
+  const _t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
   // 注入或更新动态样式表
   let styleEl = $('export-preview-dynamic-style');
   if (!styleEl) {
@@ -1471,6 +1570,45 @@ function updateExportLivePreview() {
         }
       }
     }
+  }
+  if (fmt === 'html') awaitHtmlExportPreview();
+}
+
+function awaitHtmlExportPreview() {
+  const generation = nativeExportPreview.generation;
+  const modal = $('export-preview-modal');
+  const hosts = [$('export-preview-mini-content')];
+  if (modal && !modal.classList.contains('hidden')) hosts.push(modal.querySelector('.export-preview-paper-wrapper'));
+  for (const host of hosts) {
+    if (!host) continue;
+    const ticket = {}; host._readmdHtmlReady = ticket;
+    delete host.dataset.ready; host.setAttribute('aria-busy', 'true'); host.classList.add('export-html-pending');
+    const loading = document.createElement('div'); loading.className = 'export-html-loading';
+    host.append(loading); window.ReadMDTask.loading(loading, 'export.previewGenerating');
+    const images = [...host.querySelectorAll('img')];
+    const current = () => generation === nativeExportPreview.generation && host.isConnected && host._readmdHtmlReady === ticket;
+    const mathReady = async () => {
+      if (typeof mathReadyPromise !== 'undefined' && mathReadyPromise) await mathReadyPromise;
+      if (typeof mathTypesetQueue !== 'undefined') await mathTypesetQueue;
+      while (current() && host.querySelector('.readmd-dsl-math:not([data-readmd-ready]), .readmd-model-math:not([data-readmd-ready]), [data-readmd-busy]')) await new Promise(resolve => setTimeout(resolve, 25));
+      if (host.querySelector('[data-readmd-ready="error"], [data-mml-node="merror"], [data-mjx-error]')) throw Error('math_preview_failed');
+    };
+    // Discover fonts before reading FontFaceSet.ready; it can otherwise still
+    // describe the preceding format before this DOM has participated in layout.
+    void host.offsetWidth;
+    let deadline;
+    Promise.race([
+      Promise.all([document.fonts?.ready, mathReady(), ...images.map(img => img.decode())]),
+      new Promise((_, reject) => { deadline = setTimeout(() => reject(Error('preview_timeout')), 15000); }),
+    ]).then(() => {
+      if (current()) { host.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false'); }
+    }, () => {
+      if (!current()) return;
+      host.replaceChildren(); host.setAttribute('aria-busy', 'false');
+      const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
+      retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); }; host.append(message, retry);
+    }).finally(() => { clearTimeout(deadline); if (current()) { loading.remove(); host.classList.remove('export-html-pending'); } });
   }
 }
 
@@ -1881,7 +2019,25 @@ function renderExportPresetCards() {
 
 
 let exportSnapshotCache = null, exportSnapshotPreparing = null, exportInFlight = null;
-const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation']);
+const exportPreviewSnapshots = new Map();
+const EXPORT_PREVIEW_CACHE_BYTES = 16 * 1024 * 1024;
+async function discardPreparedExports() {
+  const snapshots = new Set([...exportPreviewSnapshots.values(), exportSnapshotCache]);
+  exportPreviewSnapshots.clear(); exportSnapshotCache = null;
+  await Promise.all([...snapshots].map(discardPreparedExport));
+}
+async function parkPreparedExport(frozen) {
+  if (!frozen || frozen.phase !== 'prepared') return;
+  const retained = value => value.retained_bytes + (value.previewDataBytes || 0);
+  if (!Number.isSafeInteger(frozen.retained_bytes) || retained(frozen) > EXPORT_PREVIEW_CACHE_BYTES) { await discardPreparedExport(frozen); return; }
+  exportPreviewSnapshots.set(frozen.key, frozen);
+  const bytes = () => [...exportPreviewSnapshots.values()].reduce((sum, value) => sum + retained(value), 0);
+  while (exportPreviewSnapshots.size > 5 || bytes() > EXPORT_PREVIEW_CACHE_BYTES) {
+    const oldest = exportPreviewSnapshots.values().next().value;
+    exportPreviewSnapshots.delete(oldest.key); await discardPreparedExport(oldest);
+  }
+}
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx']);
 function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
 function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
 function usesExportSnapshot(fmt, tab) {
@@ -1889,7 +2045,7 @@ function usesExportSnapshot(fmt, tab) {
 }
 async function oversizedUntrackedExport(fmt, tab, content) {
   if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
-  if (fmt === 'presentation') throw exportSnapshotFailure('review_budget');
+  if (['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
   if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
   const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
   // This read does not create a review database. Only an explicit absence can
@@ -1910,6 +2066,7 @@ async function discardPreparedExport(frozen) {
   // Once commit has been sent, only status/reconcile may decide its outcome.
   if (!frozen || !['prepared', 'reserved'].includes(frozen.phase)) return;
   frozen.phase = 'discarded';
+  exportPreviewSnapshots.delete(frozen.key); frozen.previewData = null; frozen.previewDataBytes = 0;
   frozen.figuresAborter?.abort();
   if (exportSnapshotCache === frozen) exportSnapshotCache = null;
   try { await exportSnapshotRequest('discard', { snapshot_id: frozen.snapshot_id, call_id: exportSnapshotId() }); } catch (_) {}
@@ -1919,19 +2076,35 @@ async function prepareReviewExport(fmt, options, suggestedName, tab, preview = f
   const stamp = await window.ReadMDReview.capture(tab);
   if (!stamp) throw exportSnapshotFailure('review_persistence_failed');
   const key = JSON.stringify([stamp.document_id, stamp.generation, stamp.review_revision, fmt, options, suggestedName]);
-  let frozen = exportSnapshotCache;
+  let frozen = exportSnapshotCache?.key === key ? exportSnapshotCache : exportPreviewSnapshots.get(key);
+  if (frozen?.phase === 'prepared') {
+    exportPreviewSnapshots.delete(key);
+    if (exportSnapshotCache !== frozen) await parkPreparedExport(exportSnapshotCache);
+    exportSnapshotCache = frozen;
+  }
   if (!frozen || frozen.key !== key || frozen.phase !== 'prepared') {
+    await parkPreparedExport(exportSnapshotCache);
     if (exportSnapshotPreparing?.key !== key) {
       const epoch = exportOpenEpoch;
       const work = (async () => {
-        const prepared = await exportSnapshotRequest('prepare', { doc_id: stamp.document_id, generation: stamp.generation,
+        const prepare = () => exportSnapshotRequest('prepare', { doc_id: stamp.document_id, generation: stamp.generation,
           review_revision: stamp.review_revision, format: fmt, options, suggestedName, call_id: exportSnapshotId() });
+        let prepared;
+        try { prepared = await prepare(); }
+        catch (error) {
+          if (error.code !== 'export_snapshot_budget' || !exportPreviewSnapshots.size) throw error;
+          // Release only this modal's parked, uncommitted previews. Review
+          // baselines and unfinished output intents are owned by Rust.
+          const parked = [...exportPreviewSnapshots.values()]; exportPreviewSnapshots.clear();
+          await Promise.all(parked.filter(value => value.phase === 'prepared').map(discardPreparedExport));
+          prepared = await prepare();
+        }
         if (!prepared.snapshot_id || !Number.isInteger(prepared.pending_count) || !Array.isArray(prepared.pending_ids)) throw exportSnapshotFailure('review_persistence_failed');
         const next = { ...prepared, key, tab, stamp, content: prepared.content ?? stamp.content, options: prepared.options || options,
           phase: 'prepared', commitCallId: exportSnapshotId() };
         if (epoch !== exportOpenEpoch) { await discardPreparedExport(next); throw exportSnapshotFailure('cancelled'); }
-        await discardPreparedExport(exportSnapshotCache);
-        exportSnapshotCache = next;
+        if (exportSnapshotPreparing?.work === work) exportSnapshotCache = next;
+        else await parkPreparedExport(next);
         return next;
       })();
       exportSnapshotPreparing = { key, work };
@@ -1940,6 +2113,7 @@ async function prepareReviewExport(fmt, options, suggestedName, tab, preview = f
     frozen = await exportSnapshotPreparing.work;
   }
   if (!preview) {
+    exportPreviewSnapshots.delete(frozen.key);
     frozen.phase = 'reserved';
     if (exportSnapshotCache === frozen) exportSnapshotCache = null;
   }
@@ -1948,6 +2122,7 @@ async function prepareReviewExport(fmt, options, suggestedName, tab, preview = f
 async function bindSnapshotRuntime(frozen) {
   // Preparation already owns the body and resource bytes. Installation can
   // fill only missing runtime identities on that same prepared snapshot.
+  if (frozen.runtime_ready === true) return;
   const runtime = await exportSnapshotRequest('runtime', { snapshot_id: frozen.snapshot_id });
   if (runtime.runtime_ready !== true) throw exportSnapshotFailure('export_snapshot_runtime_unavailable');
   frozen.runtime_ready = true;
@@ -1964,8 +2139,12 @@ async function prepareSnapshotFigures(frozen) {
     // export has reserved it. Discard owns this snapshot's resource lifetime.
     frozen.figuresAborter = new AbortController();
     const renderedOptions = await prepareExportFigures(frozen.content, frozen.options, frozen.figuresAborter.signal);
-    if (renderedOptions.figures?.rendered?.length) await exportSnapshotRequest('figures', {
-      snapshot_id: frozen.snapshot_id, rendered: renderedOptions.figures.rendered, call_id: exportSnapshotId() });
+    if (renderedOptions.figures?.rendered?.length) {
+      const bound = await exportSnapshotRequest('figures', {
+        snapshot_id: frozen.snapshot_id, rendered: renderedOptions.figures.rendered, call_id: exportSnapshotId() });
+      frozen.runtime_ready = bound.runtime_ready === true;
+      if (Number.isSafeInteger(bound.retained_bytes)) frozen.retained_bytes = bound.retained_bytes;
+    }
     return renderedOptions;
   })().catch(error => { frozen.figuresPromise = null; throw error; });
   return frozen.figuresPromise;

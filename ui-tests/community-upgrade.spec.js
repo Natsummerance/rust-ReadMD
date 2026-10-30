@@ -7,8 +7,9 @@ test('editing search uses the current draft; replace all is undoable and never c
   await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   const original = '# Search acceptance\n\nOriginal stays intact.\n';
   await page.evaluate(async original => {
-    const uploaded = await uploadFile(new File([original], 'search-acceptance.md', { type: 'text/markdown' }));
-    await loadFile(uploaded); state.pvLayout = 'none'; await toggleEdit();
+    await window.__readmdSessionReady;
+    const uploaded = await uploadFile(new File([original], 'search-acceptance-'+crypto.randomUUID()+'.md', { type: 'text/markdown' }));
+    await loadFile(uploaded); state.pvLayout = 'none'; if(!state.editing)await toggleEdit();
     cmView.dispatch({ changes: { from: cmView.state.doc.length, insert: '\nDraftNeedle draftneedle DRAFTNEEDLE [literal].\n' } });
   }, original);
   await page.locator('#btn-search').click();
@@ -21,9 +22,9 @@ test('editing search uses the current draft; replace all is undoable and never c
   await page.locator('#search-replace-input').fill('Replaced');
   const before = await page.evaluate(() => cmView.state.doc.toString());
   await page.locator('#search-replace-all').click();
-  expect(await page.evaluate(() => cmView.state.doc.toString())).toBe(before.replace(/draftneedle/gi, 'Replaced'));
-  await page.keyboard.press('Control+z');
-  expect(await page.evaluate(() => cmView.state.doc.toString())).toBe(before);
+  await expect.poll(() => page.evaluate(() => cmView.state.doc.toString())).toBe(before.replace(/draftneedle/gi, 'Replaced'));
+  await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');
+  await expect.poll(() => page.evaluate(() => cmView.state.doc.toString())).toBe(before);
   expect(await page.evaluate(() => state.original)).toBe(original);
   await page.locator('#search-input').fill('[literal]');
   await expect(page.locator('#search-count')).toHaveText('1/1');
@@ -57,7 +58,7 @@ test('textarea fallback searches the draft and replaces literally with a single 
   expect(await page.evaluate(() => $('edit-area').value.slice($('edit-area').selectionStart,$('edit-area').selectionEnd))).toBe('needle');
   await page.locator('#search-replace-input').fill('$1 literal'); await page.locator('#search-replace-all').click();
   await expect(page.locator('#edit-area')).toHaveValue('$1 literal one $1 literal two [literal]');
-  await page.locator('#edit-area').focus(); await page.keyboard.press('Control+z');
+  await page.locator('#edit-area').focus(); await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');
   await expect(page.locator('#edit-area')).toHaveValue('Needle one needle two [literal]');
   expect(await page.evaluate(() => state.original)).toBe('# Original');
 });

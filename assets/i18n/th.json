@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "เอนจินส่งออกหรือแบบอักษรที่จำเป็นไม่พร้อมใช้งาน โปรดติดตั้งแล้วลองอีกครั้ง",
   "export.secFigures": "ภาพประกอบทางวิทยาศาสตร์",
   "export.secSlides": "สไลด์",
-  "export.slidesHint": "แบ่งสไลด์ด้วยบรรทัดที่มีเพียง --- เท่านั้น ส่งออกเป็นไฟล์ HTML แบบออฟไลน์เดี่ยว (reveal.js)",
+  "export.slidesHint": "แยกสไลด์ด้วยบรรทัดที่มีเพียง --- ส่งออกเป็นไฟล์ PowerPoint (.pptx) ที่แก้ไขได้",
   "export.slidesTheme": "ธีม",
   "export.slidesTransition": "การเปลี่ยนภาพ",
   "export.snapshotBusy": "กำลังตรวจทาน…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "ดำเนินการต่อ",
   "ai.taskRounds": "{count} รอบ",
   "ai.taskRunning": "กำลังตรวจทาน…",
-  "ai.thinking": "กำลังคิด…"
+  "ai.thinking": "กำลังคิด…",
+  "warn.pptx_math_image": "เก็บสมการเป็นรูปภาพ พร้อมบันทึกซอร์สของสมการไว้ในบันทึกย่อของสไลด์"
 }

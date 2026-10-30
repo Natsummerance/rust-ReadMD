@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Η απαιτούμενη μηχανή εξαγωγής ή οι γραμματοσειρές δεν είναι διαθέσιμες. Εγκαταστήστε τις και δοκιμάστε ξανά.",
   "export.secFigures": "Επιστημονικά σχήματα",
   "export.secSlides": "Διαφάνειες",
-  "export.slidesHint": "Διαχωρισμός διαφανειών με γραμμή που περιέχει μόνο ---. Εξάγει ένα ενιαίο αρχείο HTML εκτός σύνδεσης (reveal.js).",
+  "export.slidesHint": "Χωρίστε τις διαφάνειες με μια γραμμή που περιέχει μόνο ---. Εξάγει επεξεργάσιμο αρχείο PowerPoint (.pptx).",
   "export.slidesTheme": "Θέμα",
   "export.slidesTransition": "Μετάβαση",
   "export.snapshotBusy": "Έλεγχος σε εξέλιξη…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Συνέχιση",
   "ai.taskRounds": "{count} γύροι",
   "ai.taskRunning": "Έλεγχος σε εξέλιξη…",
-  "ai.thinking": "Σκέψη…"
+  "ai.thinking": "Σκέψη…",
+  "warn.pptx_math_image": "Οι εξισώσεις διατηρούνται ως εικόνες, με τον πηγαίο κώδικά τους στις σημειώσεις διαφανειών."
 }

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "필요한 내보내기 엔진이나 글꼴을 사용할 수 없습니다. 설치한 후 다시 시도하세요.",
   "export.secFigures": "과학 도표",
   "export.secSlides": "슬라이드",
-  "export.slidesHint": "---만 포함된 줄로 슬라이드를 나눕니다. 단일 오프라인 HTML 파일(reveal.js)로 내보냅니다.",
+  "export.slidesHint": "--- 만 있는 줄로 슬라이드를 나눕니다. 편집 가능한 PowerPoint(.pptx) 파일로 내보냅니다.",
   "export.slidesTheme": "테마",
   "export.slidesTransition": "전환 효과",
   "export.snapshotBusy": "검토 중…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "다시 시작",
   "ai.taskRounds": "{count}회",
   "ai.taskRunning": "검토 중…",
-  "ai.thinking": "생각 중…"
+  "ai.thinking": "생각 중…",
+  "warn.pptx_math_image": "수식은 이미지로 유지되며 원본 수식은 슬라이드 노트에 저장됩니다."
 }

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Нужный механизм экспорта или шрифты недоступны. Установите их и повторите попытку.",
   "export.secFigures": "Научные рисунки",
   "export.secSlides": "Слайды",
-  "export.slidesHint": "Разделите слайды строкой, содержащей только ---. Экспортирует единый автономный HTML-файл (reveal.js).",
+  "export.slidesHint": "Разделяйте слайды строкой, содержащей только ---. Экспорт в редактируемый файл PowerPoint (.pptx).",
   "export.slidesTheme": "Тема",
   "export.slidesTransition": "Переход",
   "export.snapshotBusy": "Идёт проверка…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Продолжить",
   "ai.taskRounds": "Раундов: {count}",
   "ai.taskRunning": "Идёт проверка…",
-  "ai.thinking": "Думаю…"
+  "ai.thinking": "Думаю…",
+  "warn.pptx_math_image": "Формулы сохраняются как изображения, а их исходный код — в заметках к слайдам."
 }

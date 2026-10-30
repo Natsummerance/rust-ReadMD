@@ -47,6 +47,27 @@ fn enter(resources:Option<(Resources,crate::capability_packs::ResourceLease)>)->
 }
 pub fn needs_cjk(text:&str)->bool{text.chars().any(|c|matches!(c as u32,0x2e80..=0x9fff|0xac00..=0xd7af|0xf900..=0xfaff|0x20000..=0x323af))}
 pub(crate) fn required_for_export(format:&str,content:&str,options:&serde_json::Value)->bool {
+    if format=="pptx" {
+        // Editable CJK text does not require a font installation. Equations
+        // and embedded SVGs do: their actual ink is produced by our renderer.
+        let mut required=false;let document=crate::md_ast::parse(content);
+        crate::md_ast::walk_inlines(&document.blocks,&mut |inline| match inline {
+            crate::md_ast::Inline::Math(source)|crate::md_ast::Inline::OfficeMath{latex:source,..}=>required|=needs_cjk(source),
+            crate::md_ast::Inline::Image{src,..} if src.starts_with("data:image/svg+xml;base64,")=>{
+                use base64::Engine;
+                if let Ok(bytes)=base64::engine::general_purpose::STANDARD.decode(&src[26..]){required|=std::str::from_utf8(&bytes).is_ok_and(needs_cjk);}
+            },_=>(),
+        });
+        let mut pending=document.blocks.iter().collect::<Vec<_>>();
+        while let Some(block)=pending.pop(){use crate::md_ast::Block;match block {
+            Block::Math(source)|Block::OfficeMath{latex:source,..}=>required|=needs_cjk(source),
+            Block::Quote(blocks)|Block::FootnoteDef{blocks,..}=>pending.extend(blocks),
+            Block::List{items,..}=>for item in items{pending.extend(&item.blocks);},
+            Block::Styled{block,..}=>pending.push(block),_=>(),
+        }}
+        required|=options.pointer("/figures/rendered").and_then(serde_json::Value::as_array).is_some_and(|items|items.iter().any(|item|item["svg"].as_str().is_some_and(needs_cjk)));
+        return required;
+    }
     if !(format=="docx"||(format=="pdf"&&options.pointer("/pdf/engine").and_then(serde_json::Value::as_str).is_none_or(|engine|matches!(engine,"rust"|"typst")))){return false;}
     let mut selected=options.clone();
     if let Some(titles)=options.get("calloutTitles").and_then(serde_json::Value::as_object){

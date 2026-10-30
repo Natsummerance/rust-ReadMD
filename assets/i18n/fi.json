@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Tarvittava vientimoottori tai fontit eivät ole käytettävissä. Asenna ne ja yritä uudelleen.",
   "export.secFigures": "Tieteelliset kuvat",
   "export.secSlides": "Diat",
-  "export.slidesHint": "Jaa diat rivillä, jossa on vain ---. Vienti yhdeksi offline-HTML-tiedostoksi (reveal.js).",
+  "export.slidesHint": "Erota diat rivillä, joka sisältää vain ---. Vie muokattavan PowerPoint-tiedoston (.pptx).",
   "export.slidesTheme": "Teema",
   "export.slidesTransition": "Siirtymä",
   "export.snapshotBusy": "Tarkistus käynnissä…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Jatka",
   "ai.taskRounds": "{count} kierrosta",
   "ai.taskRunning": "Tarkistus käynnissä…",
-  "ai.thinking": "Ajatellaan…"
+  "ai.thinking": "Ajatellaan…",
+  "warn.pptx_math_image": "Kaavat säilytetään kuvina ja niiden lähdekoodi dian muistiinpanoissa."
 }

@@ -133,6 +133,7 @@ pub mod native_dialogs;
 pub mod xls_biff;
 /// PowerPoint 97-2003 record stream → Markdown.
 pub mod ppt_binary;
+pub(crate) mod pptx_export;
 /// MOBI / AZW / PalmDOC → HTML → Markdown.
 pub mod mobi;
 pub mod ocr;

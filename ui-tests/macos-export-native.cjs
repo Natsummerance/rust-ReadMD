@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),allowed=path.dirname(root),sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-const content='# Export contract\n\nActual slide one.\n\n---\n\n## Second slide\n\nThe original sentence must survive.\n\n---\n\n## Third slide\n\nA complete final page.\n'+(process.env.READMD_QA_FONT_PACK?'\n真实中文导出与恢复。\n':'');
+const content='# Export contract\n\nActual slide one.\n\n---\n\n## Second slide\n\nThe original sentence must survive.\n\n---\n\n## Third slide\n\nA complete final page.\n'+(process.env.READMD_QA_FONT_PACK?'\n真实中文导出与恢复。\n\n![中文图像](figure.svg)\n':'');
 function driver(file,outputs,fontPack){return `(async()=>{
  const checks=[];let phase='startup';const file=${JSON.stringify(file)},outputs=${JSON.stringify(outputs)};
  const check=(ok,name)=>{if(!ok)throw Error(name);checks.push(name);};
@@ -14,18 +14,19 @@ function driver(file,outputs,fontPack){return `(async()=>{
   await loadFile(file);check(getActiveTab()?.path===file,'chinese_path_opened');
   ${fontPack?`const installed=await ReadMDCapabilities.request({action:'install',path:${JSON.stringify(fontPack)}});check(installed.ok===true,'locked_offline_fonts_installed');`:''}
   check(!getActiveTab().isDirty,'opened_document_clean');await openExportModal();
-  for(const fmt of ['pdf','docx','epub','html','tex','presentation']){
+  for(const fmt of ['pdf','docx','epub','html','tex','pptx']){
    phase=fmt;document.querySelector('#export-box .exp-fmt[data-fmt="'+fmt+'"]').click();
    await until(()=>{const host=$('export-preview-mini-content');if(host?.getAttribute('aria-busy')==='true')return false;
     if(fmt==='pdf'||fmt==='docx'){const img=host?.querySelector('img');return nativeExportPreview.data?.format===fmt&&img?.complete&&img.naturalWidth>100;}
     if(fmt==='epub')return nativeExportPreview.data?.format==='epub'&&host?.querySelector('iframe')?.contentDocument?.body?.textContent.includes('Export contract');
     if(fmt==='tex')return nativeExportPreview.data?.mode==='source'&&host?.querySelector('code')?.textContent.includes('\\\\documentclass');
-    if(fmt==='presentation')return host?.querySelector('iframe')?.dataset.ready==='true';
-    return host?.textContent.includes('Actual slide one.');
+    if(fmt==='pptx')return host?.querySelector('iframe')?.dataset.ready==='true';
+    return nativeExportPreview.data?.format==='html'&&host?.dataset.ready==='true'&&host.textContent.includes('Actual slide one.')
+     &&[...host.querySelectorAll('img')].every(image=>image.complete&&image.naturalWidth>0);
    });check(true,fmt+'_preview_ready');
-   if(fmt==='presentation'){
-    const deck=$('export-preview-mini-content').querySelector('iframe').contentWindow.deck;
-    check(deck.getSlides().length===3&&deck.getConfig().width===1280&&deck.getConfig().height===720,'three_actual_widescreen_slides');
+   if(fmt==='pptx'){
+    const doc=$('export-preview-mini-content').querySelector('iframe').contentDocument;
+    check(doc.querySelectorAll('.readmd-slide').length===3&&nativeExportPreview.data.width===960&&nativeExportPreview.data.height===540,'three_actual_widescreen_slides');
    }
     const frozen=await prepareReviewExport(fmt,effectiveExportOptions(collectExportOptions()),currentExportName(),getActiveTab(),false);
     await bindSnapshotRuntime(frozen);await prepareSnapshotFigures(frozen);
@@ -48,7 +49,8 @@ function driver(file,outputs,fontPack){return `(async()=>{
 async function run(binary,out){
  assert.equal(process.platform,'darwin');assert(path.isAbsolute(binary)&&fs.statSync(binary).isFile());assert(out.startsWith(allowed+path.sep));fs.mkdirSync(out,{mode:0o700});
  const docs=path.join(out,'documents'),profile=path.join(out,'profile'),temp=path.join(out,'tmp'),nativeHome=path.join(out,'native-home');for(const dir of [docs,profile,temp,nativeHome])fs.mkdirSync(dir,{mode:0o700});
- const file=path.join(docs,'中文 导出.md');fs.writeFileSync(file,content,{flag:'wx'});const outputs=Object.fromEntries(['pdf','docx','epub','html','tex','presentation'].map(fmt=>[fmt,path.join(docs,'Export.'+(fmt==='presentation'?'slides.html':fmt))]));
+ const file=path.join(docs,'中文 导出.md');fs.writeFileSync(file,content,{flag:'wx'});const outputs=Object.fromEntries(['pdf','docx','epub','html','tex','pptx'].map(fmt=>[fmt,path.join(docs,'Export.'+fmt)]));
+ if(process.env.READMD_QA_FONT_PACK)fs.writeFileSync(path.join(docs,'figure.svg'),'<svg xmlns="http://www.w3.org/2000/svg" width="240" height="60"><text x="12" y="40" font-size="28">中文图像</text></svg>',{flag:'wx'});
  fs.writeFileSync(path.join(profile,'.readmd-native-qa-owned'),'readmd-synthetic-native-qa-v1',{mode:0o600});fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({lang:'en',closeToTray:false,autoCheckUpdate:false}));
  let ownedPack;if(process.env.READMD_QA_FONT_PACK){const bytes=fs.readFileSync(process.env.READMD_QA_FONT_PACK);assert.equal(sha(bytes),'037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69');ownedPack=path.join(docs,'fonts.readmd-pack');fs.writeFileSync(ownedPack,bytes,{flag:'wx'});}
  const script=driver(file,outputs,ownedPack);new vm.Script(script);fs.writeFileSync(path.join(profile,'native-qa.js'),script,{mode:0o600});
@@ -61,7 +63,7 @@ async function run(binary,out){
   const outcome=await new Promise((resolve,reject)=>{timer=setTimeout(()=>{child.kill('SIGTERM');reject(Error('native_export_deadline'));},180000);child.on('error',reject);child.on('exit',(code,signal)=>resolve({code,signal}));});
   report.outcome=outcome;const result=JSON.parse(fs.readFileSync(path.join(profile,'native-qa-result.json'),'utf8'));report.result=result;
   assert.equal(outcome.code,0);assert.equal(result.ok,true,result.phase+': '+result.checks.join(','));assert.equal(fs.readFileSync(file,'utf8'),content);
-  report.artifacts=Object.entries(outputs).map(([format,file])=>{const bytes=fs.readFileSync(file);assert(bytes.length>100);return {format,bytes:bytes.length,sha256:sha(bytes)};});report.passed=true;
+  report.artifacts=Object.entries(outputs).map(([format,file])=>{const bytes=fs.readFileSync(file);assert(bytes.length>100);if(format==='pptx')assert.equal(bytes.subarray(0,4).toString('hex'),'504b0304');return {format,bytes:bytes.length,sha256:sha(bytes)};});report.passed=true;
  }finally{clearTimeout(timer);if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM');fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2)+'\n');for(const dir of [temp,nativeHome])fs.rmSync(dir,{recursive:true,force:true});if(ownedPack)fs.unlinkSync(ownedPack);}
  console.log(JSON.stringify({nativeExportsPassed:report.passed,checks:report.result.checks.length,formats:report.artifacts.length}));
 }

@@ -5320,7 +5320,7 @@ fn parse_zip_central_directory(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>, St
     Ok(entries)
 }
 
-fn parse_zip_entries(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
+pub(crate) fn parse_zip_entries(data: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
     if let Ok(entries) = parse_zip_central_directory(data) {
         if !entries.is_empty() {
             return Ok(entries);

@@ -25,7 +25,7 @@ required-features = ["pdfium-worker"]
 default = ["desktop"]
 # tao + wry window.  `--no-default-features` builds the same kernel as a
 # browser/headless server only.
-desktop = ["dep:tao", "dep:wry"]
+desktop = ["dep:tao", "dep:wry", "dep:objc2-app-kit"]
 # Opt-in native integration driver. Its code is excluded from release builds.
 native-qa = ["desktop"]
 mobile-ffi = []
@@ -91,6 +91,11 @@ pdfium-render = { version = "=0.9.4", default-features = false, features = ["pdf
 # exact libc already in Cargo.lock; do not depend on another crate's imports.
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.189"
+
+# Reuse the exact AppKit binding and features already locked by tao/wry. This
+# is only the desktop Mac window; server builds do not acquire a UI dependency.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
 
 # Windows.Media.Ocr / Windows.Data.Pdf for native OCR; the same version wry
 # already pulls in, so Cargo.lock gains no new package.

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "所需的匯出引擎或字型無法使用。請安裝後重試。",
   "export.secFigures": "科研圖表",
   "export.secSlides": "投影片",
-  "export.slidesHint": "用單獨一行 --- 分隔投影片。匯出為可離線開啟的單一 HTML 檔案（reveal.js）。",
+  "export.slidesHint": "以獨立一行 --- 分頁。匯出可編輯的 PowerPoint（.pptx）檔案。",
   "export.slidesTheme": "主題",
   "export.slidesTransition": "切換效果",
   "export.snapshotBusy": "正在審閱…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "繼續",
   "ai.taskRounds": "{count} 輪",
   "ai.taskRunning": "正在審閱…",
-  "ai.thinking": "思考中…"
+  "ai.thinking": "思考中…",
+  "warn.pptx_math_image": "公式以圖片保留，公式原始碼寫入投影片備註。"
 }

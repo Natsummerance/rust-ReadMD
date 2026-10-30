@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "ເຄື່ອງຈັກສົ່ງອອກ ຫຼື ຟອນທີ່ຕ້ອງການບໍ່ພ້ອມໃຊ້. ຕິດຕັ້ງແລ້ວລອງອີກຄັ້ງ.",
   "export.secFigures": "ຮູບພາບວິທະຍາສາດ",
   "export.secSlides": "ສະໄລ້",
-  "export.slidesHint": "ແບ່ງສະໄລ້ດ້ວຍເສັ້ນທີ່ມີສະເພາະ --- ເທົ່ານັ້ນ. ສົ່ງອອກເປັນໄຟລ໌ HTML ອອບລາຍດຽວ (reveal.js).",
+  "export.slidesHint": "ແຍກສະໄລດ໌ດ້ວຍແຖວທີ່ມີພຽງ --- ເທົ່ານັ້ນ. ສົ່ງອອກເປັນໄຟລ໌ PowerPoint (.pptx) ທີ່ແກ້ໄຂໄດ້.",
   "export.slidesTheme": "ຮູບແບບ",
   "export.slidesTransition": "ການປ່ຽນຜ່ານ",
   "export.snapshotBusy": "ກຳລັງກວດທານ…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "ສືບຕໍ່",
   "ai.taskRounds": "{count} ຮອບ",
   "ai.taskRunning": "ກຳລັງກວດທານ…",
-  "ai.thinking": "ກຳລັງຄິດ…"
+  "ai.thinking": "ກຳລັງຄິດ…",
+  "warn.pptx_math_image": "ສົມຜົນຖືກເກັບເປັນຮູບພາບ ແລະລະຫັດຕົ້ນສະບັບຢູ່ໃນບັນທຶກສະໄລດ໌."
 }

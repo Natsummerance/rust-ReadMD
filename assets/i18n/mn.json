@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Шаардлагатай экспортын хөдөлгүүр эсвэл фонт байхгүй байна. Суулгаад дахин оролдоно уу.",
   "export.secFigures": "Шинжлэх ухааны зураг",
   "export.secSlides": "Слайдууд",
-  "export.slidesHint": "Зөвхөн --- агуулсан мөрөөр слайдуудыг хуваана. Оффлайн HTML файл (reveal.js) болгон экспортолно.",
+  "export.slidesHint": "Зөвхөн --- агуулсан мөрөөр слайдуудыг тусгаарлана. Засварлах боломжтой PowerPoint (.pptx) файл экспортолно.",
   "export.slidesTheme": "Загвар",
   "export.slidesTransition": "Шилжилт",
   "export.snapshotBusy": "Хянаж байна…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Үргэлжлүүлэх",
   "ai.taskRounds": "{count} үе",
   "ai.taskRunning": "Хянаж байна…",
-  "ai.thinking": "Бодож байна…"
+  "ai.thinking": "Бодож байна…",
+  "warn.pptx_math_image": "Тэгшитгэлийг зургаар хадгалж, эх кодыг слайдын тэмдэглэлд оруулна."
 }

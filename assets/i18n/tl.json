@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Hindi magagamit ang kinakailangang makina sa pag-export o mga font. I-install ang mga ito at subukan muli.",
   "export.secFigures": "Mga pigurang siyentipiko",
   "export.secSlides": "Mga Slide",
-  "export.slidesHint": "Hatiin ang mga slide gamit ang linyang naglalaman lamang ng ---. Mag-e-export ng iisang offline na HTML file (reveal.js).",
+  "export.slidesHint": "Paghiwalayin ang mga slide gamit ang linyang --- lamang. Nag-e-export ng nae-edit na PowerPoint (.pptx) na file.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Transisyon",
   "export.snapshotBusy": "Isinasagawa ang pagsusuri…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Ipagpatuloy",
   "ai.taskRounds": "{count} pag-ikot",
   "ai.taskRunning": "Isinasagawa ang pagsusuri…",
-  "ai.thinking": "Nag-iisip…"
+  "ai.thinking": "Nag-iisip…",
+  "warn.pptx_math_image": "Pinapanatili ang mga equation bilang larawan, at ang source nito ay nasa mga tala ng slide."
 }

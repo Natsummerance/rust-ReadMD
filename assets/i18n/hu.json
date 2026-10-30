@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "A szükséges exportáló motor vagy betűkészletek nem érhetők el. Telepítse őket, majd próbálja újra.",
   "export.secFigures": "Tudományos ábrák",
   "export.secSlides": "Diák",
-  "export.slidesHint": "Diák elválasztása egy csak --- karaktereket tartalmazó sorral. Egyetlen offline HTML-fájlként exportálja (reveal.js).",
+  "export.slidesHint": "A diákat egy kizárólag --- jelet tartalmazó sor választja el. Szerkeszthető PowerPoint-fájlt (.pptx) exportál.",
   "export.slidesTheme": "Téma",
   "export.slidesTransition": "Átmenet",
   "export.snapshotBusy": "Ellenőrzés folyamatban…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Folytatás",
   "ai.taskRounds": "{count} kör",
   "ai.taskRunning": "Ellenőrzés folyamatban…",
-  "ai.thinking": "Gondolkodás…"
+  "ai.thinking": "Gondolkodás…",
+  "warn.pptx_math_image": "A képletek képként maradnak meg, forrásuk a dia jegyzeteiben található."
 }

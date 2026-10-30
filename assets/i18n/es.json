@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "El motor de exportación o las fuentes necesarios no están disponibles. Instálelos e inténtelo de nuevo.",
   "export.secFigures": "Figuras científicas",
   "export.secSlides": "Diapositivas",
-  "export.slidesHint": "Divide las diapositivas con una línea que contenga solo ---. Exporta un único archivo HTML sin conexión (reveal.js).",
+  "export.slidesHint": "Separe las diapositivas con una línea que solo contenga ---. Exporta un archivo PowerPoint (.pptx) editable.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Transición",
   "export.snapshotBusy": "Revisión en curso…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Reanudar",
   "ai.taskRounds": "{count} rondas",
   "ai.taskRunning": "Revisión en curso…",
-  "ai.thinking": "Pensando…"
+  "ai.thinking": "Pensando…",
+  "warn.pptx_math_image": "Las ecuaciones se conservan como imágenes, con su código fuente en las notas de las diapositivas."
 }

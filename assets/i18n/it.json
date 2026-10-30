@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Il motore di esportazione o i caratteri necessari non sono disponibili. Installali e riprova.",
   "export.secFigures": "Figure scientifiche",
   "export.secSlides": "Diapositive",
-  "export.slidesHint": "Separa le diapositive con una riga contenente solo ---. Esporta un singolo file HTML offline (reveal.js).",
+  "export.slidesHint": "Separa le diapositive con una riga contenente solo ---. Esporta un file PowerPoint (.pptx) modificabile.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Transizione",
   "export.snapshotBusy": "Revisione in corso…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Riprendi",
   "ai.taskRounds": "{count} cicli",
   "ai.taskRunning": "Revisione in corso…",
-  "ai.thinking": "Sto pensando…"
+  "ai.thinking": "Sto pensando…",
+  "warn.pptx_math_image": "Le formule sono conservate come immagini, con il codice sorgente nelle note delle diapositive."
 }

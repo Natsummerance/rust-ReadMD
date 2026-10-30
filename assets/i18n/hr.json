@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Potreban izvozni mehanizam ili fontovi nisu dostupni. Instalirajte ih i pokušajte ponovno.",
   "export.secFigures": "Znanstvene slike",
   "export.secSlides": "Slajdovi",
-  "export.slidesHint": "Podijelite slajdove linijom koja sadrži samo ---. Izvozi jednu izvanmrežnu HTML datoteku (reveal.js).",
+  "export.slidesHint": "Odvojite slajdove retkom koji sadrži samo ---. Izvozi PowerPoint datoteku (.pptx) koju je moguće uređivati.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Prijelaz",
   "export.snapshotBusy": "Pregled je u tijeku…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Nastavi",
   "ai.taskRounds": "{count} krugova",
   "ai.taskRunning": "Pregled je u tijeku…",
-  "ai.thinking": "Razmišljanje…"
+  "ai.thinking": "Razmišljanje…",
+  "warn.pptx_math_image": "Jednadžbe se čuvaju kao slike, a njihov izvor u bilješkama slajdova."
 }

@@ -352,6 +352,7 @@ impl DialogShape {
         match format {
             "pdf" => Some(("pdf", "PDF 文档 (*.pdf)|*.pdf|所有文件 (*.*)|*.*")),
             "docx" => Some(("docx", "Word 文档 (*.docx)|*.docx|所有文件 (*.*)|*.*")),
+            "pptx" => Some(("pptx", "PowerPoint (*.pptx)|*.pptx|所有文件 (*.*)|*.*")),
             "epub" => Some(("epub", "EPUB 电子书 (*.epub)|*.epub|所有文件 (*.*)|*.*")),
             "html" => Some(("html", "HTML 网页 (*.html)|*.html|所有文件 (*.*)|*.*")),
             "tex" => Some(("tex", "LaTeX 文档 (*.tex)|*.tex|所有文件 (*.*)|*.*")),
@@ -1233,9 +1234,9 @@ mod tests {
     }
 
     #[test]
-    fn export_filters_cover_the_five_accepted_formats() {
+    fn export_filters_cover_the_six_accepted_formats() {
         for (format, extension) in
-            [("pdf", "pdf"), ("docx", "docx"), ("epub", "epub"), ("html", "html"), ("tex", "tex")]
+            [("pdf", "pdf"), ("docx", "docx"), ("pptx", "pptx"), ("epub", "epub"), ("html", "html"), ("tex", "tex")]
         {
             let (ext, text) = DialogShape::export_filter_text(format)
                 .unwrap_or_else(|| panic!("{format} has no filter"));

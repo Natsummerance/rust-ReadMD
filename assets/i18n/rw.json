@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Porogaramu yo kohereza hanze cyangwa imyandikire ikenewe ntiboneka. Bishyiremo wongere ugerageze.",
   "export.secFigures": "Amashusho y'ubumenyi",
   "export.secSlides": "Slides",
-  "export.slidesHint": "Gabanyamo slides ukoresheje umurongo urimo gusa ---. Bisohora dosiye imwe ya HTML ikora idafite interineti (reveal.js).",
+  "export.slidesHint": "Tandukanya amapaji y’iyerekana n’umurongo urimo --- gusa. Kohereza dosiye ya PowerPoint (.pptx) ishobora guhindurwa.",
   "export.slidesTheme": "Insanganyamatsiko",
   "export.slidesTransition": "Guhindura isura",
   "export.snapshotBusy": "Isuzuma rirakorwa…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Komeza",
   "ai.taskRounds": "Inshuro {count}",
   "ai.taskRunning": "Isuzuma rirakorwa…",
-  "ai.thinking": "Biratekereza…"
+  "ai.thinking": "Biratekereza…",
+  "warn.pptx_math_image": "Ingero z’imibare zibikwa nk’amashusho, inkomoko yazo ikabikwa mu bisobanuro by’amapaji."
 }

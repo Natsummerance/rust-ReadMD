@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Gerekli dışa aktarma motoru veya yazı tipleri kullanılamıyor. Bunları yükleyip yeniden deneyin.",
   "export.secFigures": "Bilimsel figürler",
   "export.secSlides": "Slaytlar",
-  "export.slidesHint": "Slaytları yalnızca --- içeren bir satırla ayırın. Tek bir çevrimdışı HTML dosyası (reveal.js) olarak dışa aktarır.",
+  "export.slidesHint": "Slaytları yalnızca --- içeren bir satırla ayırın. Düzenlenebilir PowerPoint (.pptx) dosyası olarak dışa aktarır.",
   "export.slidesTheme": "Tema",
   "export.slidesTransition": "Geçiş",
   "export.snapshotBusy": "İnceleme sürüyor…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Sürdür",
   "ai.taskRounds": "{count} tur",
   "ai.taskRunning": "İnceleme sürüyor…",
-  "ai.thinking": "Düşünüyor…"
+  "ai.thinking": "Düşünüyor…",
+  "warn.pptx_math_image": "Denklemler resim olarak korunur; kaynakları slayt notlarına kaydedilir."
 }

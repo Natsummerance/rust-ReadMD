@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "आवश्यक निर्यात इन्जिन वा फन्ट उपलब्ध छैनन्। तिनलाई स्थापना गरी फेरि प्रयास गर्नुहोस्।",
   "export.secFigures": "वैज्ञानिक चित्रहरू",
   "export.secSlides": "स्लाइडहरू",
-  "export.slidesHint": "केवल --- भएको रेखाले स्लाइडहरू विभाजन गर्नुहोस्। एउटा मात्र अफलाइन HTML फाइल (reveal.js) निर्यात गर्दछ।",
+  "export.slidesHint": "--- मात्र भएको पङ्क्तिले स्लाइड छुट्याउनुहोस्। सम्पादन गर्न मिल्ने PowerPoint (.pptx) फाइल निर्यात हुन्छ।",
   "export.slidesTheme": "थिम",
   "export.slidesTransition": "ट्रान्जिसन",
   "export.snapshotBusy": "समीक्षा हुँदैछ…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "पुनः सुरु गर्नुहोस्",
   "ai.taskRounds": "{count} चरण",
   "ai.taskRunning": "समीक्षा हुँदैछ…",
-  "ai.thinking": "सोच्दैछ…"
+  "ai.thinking": "सोच्दैछ…",
+  "warn.pptx_math_image": "समीकरण चित्रका रूपमा सुरक्षित रहन्छन् र तिनको स्रोत स्लाइडका टिप्पणीमा राखिन्छ।"
 }

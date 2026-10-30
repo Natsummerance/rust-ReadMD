@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Потрібний механізм експорту або шрифти недоступні. Установіть їх і спробуйте знову.",
   "export.secFigures": "Наукові рисунки",
   "export.secSlides": "Слайди",
-  "export.slidesHint": "Розділяйте слайди рядком, що містить лише ---. Експортує єдиний офлайн-файл HTML (reveal.js).",
+  "export.slidesHint": "Розділяйте слайди рядком, що містить лише ---. Експорт у редагований файл PowerPoint (.pptx).",
   "export.slidesTheme": "Тема",
   "export.slidesTransition": "Перехід",
   "export.snapshotBusy": "Триває перевірка…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Відновити",
   "ai.taskRounds": "Раундів: {count}",
   "ai.taskRunning": "Триває перевірка…",
-  "ai.thinking": "Міркування…"
+  "ai.thinking": "Міркування…",
+  "warn.pptx_math_image": "Формули зберігаються як зображення, а їхній вихідний код — у нотатках до слайдів."
 }

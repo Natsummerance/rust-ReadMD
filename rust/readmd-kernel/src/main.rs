@@ -19,6 +19,8 @@ use readmd_kernel::App;
 
 #[cfg(feature = "desktop")]
 mod desktop_web;
+#[cfg(all(feature="desktop",target_os="macos"))]
+mod macos_window_chrome;
 
 #[cfg(all(feature = "native-qa", debug_assertions))]
 mod native_qa;
@@ -3165,6 +3167,11 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         .with_inner_size(LogicalSize::new(1160.0, 820.0))
         .with_min_inner_size(LogicalSize::new(720.0, 480.0));
     #[cfg(windows)] { win_builder = win_builder.with_decorations(false); }
+    #[cfg(target_os="macos")] {
+        use tao::platform::macos::WindowBuilderExtMacOS;
+        win_builder = win_builder.with_titlebar_transparent(true).with_title_hidden(true)
+            .with_fullsize_content_view(true).with_automatic_window_tabbing(false);
+    }
 
     let icon_bytes = include_bytes!("icon_32.bin");
     if let Ok(icon) = tao::window::Icon::from_rgba(icon_bytes.to_vec(), 32, 32) {
@@ -3185,6 +3192,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
     };
     // `milestone('boot', 'window_created')` (`readmd.py:6560`).
     probe_mark(&probe, "window_created");
+    #[cfg(target_os="macos")]
+    macos_window_chrome::configure(&window);
 
     let bridge_init_script = r#"
         (function () {
@@ -3299,6 +3308,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     window.ipc.postMessage(JSON.stringify(Object.assign({}, options || {}, {readmd_window:action})));
                 },
                 custom_titlebar: @@READMD_CUSTOM_TITLEBAR@@,
+                native_titlebar: '@@READMD_NATIVE_TITLEBAR@@',
                 choose_folder: async function(initial_dir) {
                     return bridgePick('/api/dialog/choose-folder', {initial_dir:initial_dir||''}, false);
                 },
@@ -4139,6 +4149,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         .replace("@@READMD_VERSION@@", server::VERSION)
         .replace("@@READMD_PLATFORM@@", std::env::consts::OS)
         .replace("@@READMD_CUSTOM_TITLEBAR@@", if cfg!(windows) { "true" } else { "false" })
+        .replace("@@READMD_NATIVE_TITLEBAR@@", if cfg!(target_os="macos") { "macos" } else { "" })
         .replace("@@READMD_PROBE_MODE@@", if probe.is_some() { "true" } else { "false" });
 
     let webview_dir = data_dir.join("webview");
@@ -4253,6 +4264,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         })
     };
     let mut close_to_tray = true;
+    #[cfg(target_os="macos")]
+    let mut mac_chrome = macos_window_chrome::Chrome::default();
     #[cfg(all(feature = "native-qa", debug_assertions))]
     let mut native_qa = crate::native_qa::Driver::from_profile(&data_dir);
     let mut renders = crate::desktop_web::Manager::new(&shared_url, &data_dir);
@@ -4275,6 +4288,20 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         if let Event::UserEvent(HostEvent::Window(action, options)) = &event {
             if let Some(window) = window_handle.as_ref() {
                 match action.as_str() {
+                    #[cfg(target_os="macos")]
+                    "chrome" => mac_chrome.apply(window,options),
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_native_button" if native_qa.is_some() => {
+                        let performed=macos_window_chrome::perform_button(window,options["button"].as_str().unwrap_or(""));
+                        let result=serde_json::json!({"id":options["id"].as_u64().unwrap_or(0),"performed":performed});
+                        if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeButtonResult={result};"));}
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_window_size" if native_qa.is_some() => {
+                        if let (Some(width),Some(height))=(options["width"].as_f64(),options["height"].as_f64()) {
+                            if (720.0..=1920.0).contains(&width)&&(480.0..=1200.0).contains(&height) { window.set_inner_size(tao::dpi::LogicalSize::new(width,height)); }
+                        }
+                    },
                     "minimize" => window.set_minimized(true),
                     "title" => { if let Some(title) = options.get("title").and_then(serde_json::Value::as_str).filter(|s| s.len() < 1024) { window.set_title(title); } },
                     "maximize" => window.set_maximized(!window.is_maximized()),
@@ -4320,7 +4347,11 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         }
         if matches!(&event, Event::WindowEvent { event: WindowEvent::Resized(_) | WindowEvent::Focused(_) | WindowEvent::ScaleFactorChanged { .. }, .. } | Event::UserEvent(HostEvent::Window(..))) {
             if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
-                let state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available});
+                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized()});
+                #[cfg(target_os="macos")] {
+                    mac_chrome.refresh(window);
+                    state["chrome"]=macos_window_chrome::snapshot(window);
+                }
                 let _ = reader.evaluate_script(&format!("window.__readmdWindowState?.({state});"));
                 // Do not publish the previous fullscreen state while an IPC
                 // transition is queued; acknowledge after applying it below.
@@ -4385,7 +4416,11 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         }
         if fullscreen_request != FULLSCREEN_IDLE {
             if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
-                let state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available});
+                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized()});
+                #[cfg(target_os="macos")] {
+                    mac_chrome.refresh(window);
+                    state["chrome"]=macos_window_chrome::snapshot(window);
+                }
                 let _ = reader.evaluate_script(&format!("window.__readmdWindowState?.({state});window.__readmdNativeFullscreenState?.({});", window.fullscreen().is_some()));
             }
         }

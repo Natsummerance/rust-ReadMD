@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Nsadilu to mitindu ya bisono yina kele mfunu sambu na kubimisa kele ve. Tula yo mpi meka diaka.",
   "export.secFigures": "Bifwani ya siansi",
   "export.secSlides": "Слайддар",
-  "export.slidesHint": "Слайддарды жалгыз --- камтыган сап менен бөлүңүз. Бир оффлайн HTML файлын (reveal.js) экспорттойт.",
+  "export.slidesHint": "Kabula bapaje ya kulakisa na nzila yina kele kaka na ---. Bimisa fisye PowerPoint (.pptx) yina lenda sobama.",
   "export.slidesTheme": "Тема",
   "export.slidesTransition": "Өтүү",
   "export.snapshotBusy": "Ke tala diaka…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Landa diaka",
   "ai.taskRounds": "Bantangu {count}",
   "ai.taskRunning": "Ke tala diaka…",
-  "ai.thinking": "Ke yindula…"
+  "ai.thinking": "Ke yindula…",
+  "warn.pptx_math_image": "Bampila ya matematiki kele bibumbwa ya kifwanisu; kisina na yo kele na banotisi ya paje."
 }

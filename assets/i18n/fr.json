@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Le moteur d’export ou les polices nécessaires ne sont pas disponibles. Installez-les puis réessayez.",
   "export.secFigures": "Figures scientifiques",
   "export.secSlides": "Diapositives",
-  "export.slidesHint": "Séparez les diapositives avec une ligne contenant uniquement ---. Exporte un fichier HTML autonome unique (reveal.js).",
+  "export.slidesHint": "Séparez les diapositives par une ligne contenant uniquement ---. Exporte un fichier PowerPoint (.pptx) modifiable.",
   "export.slidesTheme": "Thème",
   "export.slidesTransition": "Transition",
   "export.snapshotBusy": "Révision en cours…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Reprendre",
   "ai.taskRounds": "{count} tours",
   "ai.taskRunning": "Révision en cours…",
-  "ai.thinking": "Réflexion en cours…"
+  "ai.thinking": "Réflexion en cours…",
+  "warn.pptx_math_image": "Les équations sont conservées en images, avec leur source dans les notes des diapositives."
 }

@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "מנוע הייצוא או הגופנים הדרושים אינם זמינים. יש להתקין אותם ולנסות שוב.",
   "export.secFigures": "איורים מדעיים",
   "export.secSlides": "שקופיות",
-  "export.slidesHint": "פצל שקופיות עם שורה המכילה --- בלבד. מייצא קובץ HTML לא מקוון יחיד (reveal.js).",
+  "export.slidesHint": "יש להפריד שקופיות בשורה המכילה --- בלבד. ייצוא קובץ PowerPoint (.pptx) הניתן לעריכה.",
   "export.slidesTheme": "ערכת נושא",
   "export.slidesTransition": "מעבר",
   "export.snapshotBusy": "הבדיקה מתבצעת…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "המשך",
   "ai.taskRounds": "{count} סבבים",
   "ai.taskRunning": "הבדיקה מתבצעת…",
-  "ai.thinking": "חושב…"
+  "ai.thinking": "חושב…",
+  "warn.pptx_math_image": "המשוואות נשמרות כתמונות, והמקור שלהן נשמר בהערות השקופיות."
 }

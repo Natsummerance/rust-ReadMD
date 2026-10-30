@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Công cụ xuất hoặc phông chữ cần thiết không khả dụng. Cài đặt rồi thử lại.",
   "export.secFigures": "Hình vẽ khoa học",
   "export.secSlides": "Trang chiếu",
-  "export.slidesHint": "Chia trang chiếu bằng một dòng chỉ chứa ---. Xuất một tệp HTML ngoại tuyến duy nhất (reveal.js).",
+  "export.slidesHint": "Tách các trang chiếu bằng một dòng chỉ có ---. Xuất tệp PowerPoint (.pptx) có thể chỉnh sửa.",
   "export.slidesTheme": "Chủ đề",
   "export.slidesTransition": "Chuyển cảnh",
   "export.snapshotBusy": "Đang duyệt…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Tiếp tục",
   "ai.taskRounds": "{count} vòng",
   "ai.taskRunning": "Đang duyệt…",
-  "ai.thinking": "Đang suy nghĩ…"
+  "ai.thinking": "Đang suy nghĩ…",
+  "warn.pptx_math_image": "Công thức được giữ dưới dạng hình ảnh, mã nguồn nằm trong ghi chú trang chiếu."
 }

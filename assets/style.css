@@ -4345,6 +4345,9 @@ body[data-theme="dark"] .conn-status { color: var(--fg3); }
   height: 100%;
   overflow: hidden;
 }
+.export-html-pending { position: relative; }
+.export-html-pending > :not(.export-html-loading) { visibility: hidden; }
+.export-html-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .export-preview-overlay {
   position: absolute;
   inset: 0;
@@ -5859,6 +5862,13 @@ body.zen-mode #content {
 }
 
 /* ---------- 演示文稿全屏模态框与悬浮定制工具栏 (Presentation Toolbar) ---------- */
+/* Native Mac traffic lights share the existing header, with measured physical
+   left clearance even in RTL. AppKit retains their appearance and hit areas. */
+body.native-macos #app-titlebar { padding-left: var(--native-controls-leading, 88px); direction: ltr; flex-direction: row-reverse; justify-content: flex-start; }
+body.native-macos #titlebar-actions { flex-direction: row-reverse; margin: 0; }
+body.native-macos #window-title { unicode-bidi: plaintext; }
+body.native-macos #window-controls { display: none; }
+body.native-macos.window-inactive #window-title { opacity: .64; }
 #presentation-modal {
   position: fixed;
   top: 0;
@@ -7663,6 +7673,13 @@ body[data-theme="dark"] .apple-range::-moz-range-track {
 #export-preview-mini-page.is-slide-preview { width: 110px; height: 61.875px; }
 .export-slide-frame { display: block; border: 0; background: var(--bg); }
 .export-slide-frame.is-pending { visibility: hidden; }
+.export-preview-card.is-slide-preview .export-preview-viewport { height: auto; aspect-ratio: 16 / 9; padding: 0; }
+.export-preview-card.is-slide-preview #export-preview-mini-page { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border-radius: 0; box-shadow: none; transform: none; }
+.export-preview-card.is-slide-preview #export-preview-mini-content > .export-pptx-frame { width: 100%; height: 100%; transform: none; }
+#export-preview-modal.is-slide-preview #export-preview-box { width: min(94vw, calc((94vh - 80px) * 16 / 9), 1600px); height: auto; max-width: none; max-height: 94vh; }
+#export-preview-modal.is-slide-preview .export-preview-modal-body { flex: none; overflow: hidden; padding: 8px; }
+#export-preview-modal.is-slide-preview .export-preview-paper-wrapper { position: relative; aspect-ratio: 16 / 9; display: block; gap: 0; }
+#export-preview-modal.is-slide-preview .export-pptx-frame { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
 #export-preview-modal .export-slide-frame { width: min(1100px, 100%); aspect-ratio: 16 / 9; height: auto; flex-shrink: 0; }
 #export-preview-mini-content > .export-slide-frame { width: 1280px; height: 720px; max-width: none; transform: scale(0.0859375); transform-origin: top left; pointer-events: none; }
 .export-source-preview { box-sizing: border-box; width: min(1100px, 100%); margin: 0; padding: var(--space-5); overflow: auto; text-align: start; white-space: pre; font: 13px/1.6 var(--font-mono, monospace); background: var(--bg); color: var(--fg); }

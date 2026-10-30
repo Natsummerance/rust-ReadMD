@@ -2818,7 +2818,7 @@
   "export.runtimeUnavailable": "Mesin ekspor atau font yang diperlukan tidak tersedia. Instal lalu coba lagi.",
   "export.secFigures": "Gambar ilmiah",
   "export.secSlides": "幻灯片",
-  "export.slidesHint": "使用仅包含 --- 的行分割幻灯片。将导出为单个离线 HTML 文件 (reveal.js)。",
+  "export.slidesHint": "Pisahkan slide dengan baris yang hanya berisi ---. Ekspor berkas PowerPoint (.pptx) yang dapat diedit.",
   "export.slidesTheme": "主题",
   "export.slidesTransition": "过渡效果",
   "export.snapshotBusy": "Peninjauan berlangsung…",
@@ -2929,5 +2929,6 @@
   "ai.taskResume": "Lanjutkan",
   "ai.taskRounds": "{count} putaran",
   "ai.taskRunning": "Peninjauan berlangsung…",
-  "ai.thinking": "思考中…"
+  "ai.thinking": "思考中…",
+  "warn.pptx_math_image": "Persamaan disimpan sebagai gambar, dengan sumbernya di catatan slide."
 }
