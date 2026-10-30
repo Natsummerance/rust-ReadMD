@@ -14,7 +14,7 @@
   },
   "source": {
     "baseCommit": "69a22781908f2e82a227276564f205f7e94842a5",
-    "productionManifestSha256": "fabc94c2fad5ec8766d894c3989a07c3759e9523faa38f3aaca37fe0df5176a9",
+    "productionManifestSha256": "8700e9e04aaf564bad9b057ee2f2e0aaa87d4694e158163121f5a06805d6c295",
     "binding": "base commit and production source manifest; the containing commit records the candidate source"
   },
   "modelServices": {
@@ -556,5 +556,16 @@
     "ongoing": 63,
     "todo": 12,
     "wholeItemAccepted": 0
+  },
+  "ciFirstFailure": {
+    "commit": "b091585519be30dbb3bd7ac2aa23177c41313880",
+    "run": 41127481374,
+    "jobs": [
+      124309648393,
+      124309648713
+    ],
+    "cause": "locked Playwright 1.54.0 does not support runner ubuntu26.04-x64",
+    "fix": "pin browser jobs and cache namespace to Ubuntu 24.04",
+    "rerunRequired": true
   }
 }

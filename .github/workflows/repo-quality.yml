@@ -102,7 +102,8 @@ jobs:
 
   integrations:
     name: VS Code and MCP quality
-    runs-on: ubuntu-latest
+    # Playwright 1.54.0 is locked to its supported browser images.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -112,6 +113,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+          key: playwright-1.54-ubuntu-24.04
       - name: Prepare locked test toolchains
         run: |
           cargo fetch --locked --manifest-path rust/Cargo.toml
@@ -164,7 +166,7 @@ jobs:
 
   ui:
     name: UI quality (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -174,6 +176,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+          key: playwright-1.54-ubuntu-24.04
       - name: Prepare locked Rust dependencies
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
       - name: Build headless kernel
