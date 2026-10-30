@@ -1,23 +1,36 @@
-use super::{InteractionRegionSnapshot, PlatformBackend};
+use super::{InteractionRegionSnapshot, PlatformBackend, Window};
 use crate::error::HostResult;
 use crate::protocol::SnapshotBounds;
-use objc2::runtime::NSObjectProtocol;
-use objc2::ClassType;
+use objc2::MainThreadMarker;
 use objc2_app_kit::{
-    NSFloatingWindowLevel, NSPanel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask,
+    NSEvent, NSEventModifierFlags, NSEventType, NSFloatingWindowLevel, NSScreen, NSWindow,
+    NSWindowCollectionBehavior,
 };
-use tao::dpi::{LogicalPosition, LogicalSize};
-use tao::platform::macos::WindowExtMacOS;
-use tao::window::Window;
+use objc2_foundation::NSProcessInfo;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-/// macOS keeps the transparent panel on the main AppKit thread. Tao owns the
-/// NSWindow while this backend applies the panel-level behavior exposed by the
-/// cross-platform interface.
+/// The real NSPanel and its WRY surface remain on the AppKit event-loop thread.
 #[derive(Default)]
 pub struct MacOsBackend {
     click_through: bool,
     focusable: bool,
     regions: InteractionRegionSnapshot,
+}
+
+static DRAGGING: AtomicBool = AtomicBool::new(false);
+static DRAG_COMPLETED: AtomicBool = AtomicBool::new(false);
+pub fn native_drag_active() -> bool {
+    DRAGGING.load(Ordering::Acquire)
+}
+pub fn take_completed_drag() -> bool {
+    DRAG_COMPLETED.swap(false, Ordering::AcqRel)
+}
+pub(crate) fn set_native_drag_active(active: bool) {
+    DRAGGING.store(active, Ordering::Release);
+}
+pub(crate) fn complete_native_drag() {
+    DRAGGING.store(false, Ordering::Release);
+    DRAG_COMPLETED.store(true, Ordering::Release);
 }
 
 impl PlatformBackend for MacOsBackend {
@@ -26,14 +39,11 @@ impl PlatformBackend for MacOsBackend {
     }
     fn init(&mut self, window: &Window) -> HostResult<()> {
         window.set_always_on_top(true);
-        window.set_visible_on_all_workspaces(true);
         configure_native_panel(window)?;
         Ok(())
     }
     fn set_bounds(&mut self, window: &Window, bounds: SnapshotBounds) -> HostResult<()> {
-        let b = bounds.clamp_host();
-        window.set_outer_position(LogicalPosition::new(b.x, b.y));
-        window.set_inner_size(LogicalSize::new(b.width, b.height));
+        window.set_bounds(bounds.clamp_host());
         Ok(())
     }
     fn set_visible(&mut self, window: &Window, visible: bool) -> HostResult<()> {
@@ -65,13 +75,15 @@ impl PlatformBackend for MacOsBackend {
         unsafe {
             (&*(raw as *const NSWindow)).setIgnoresMouseEvents(click_through);
         }
-        window
-            .set_ignore_cursor_events(click_through)
-            .map_err(|error| crate::error::HostError::Backend(error.to_string()))
+        Ok(())
     }
     fn set_focusable(&mut self, window: &Window, focusable: bool) -> HostResult<()> {
         self.focusable = focusable;
         window.set_focusable(focusable);
+        Ok(())
+    }
+    fn set_always_on_top(&mut self, window: &Window, enabled: bool) -> HostResult<()> {
+        window.set_always_on_top(enabled);
         Ok(())
     }
     fn update_interaction_regions(
@@ -82,13 +94,49 @@ impl PlatformBackend for MacOsBackend {
         self.regions = regions.clone();
         Ok(())
     }
+    fn pointer_origin(&self, window: &Window) -> Option<(f64, f64)> {
+        let mtm = MainThreadMarker::new()?;
+        let raw = window.ns_window();
+        if raw.is_null() {
+            return None;
+        }
+        let screen = NSScreen::screens(mtm).firstObject()?;
+        let frame = unsafe { (&*(raw as *const NSWindow)).frame() };
+        Some((
+            frame.origin.x,
+            screen.frame().size.height - frame.origin.y - frame.size.height,
+        ))
+    }
+    fn drag_window(&self, window: &Window) -> HostResult<()> {
+        let raw = window.ns_window();
+        if raw.is_null() || native_drag_active() || NSEvent::pressedMouseButtons() & 1 == 0 {
+            return Ok(());
+        }
+        let native = unsafe { &*(raw as *const NSWindow) };
+        // The global watcher delivers through Tao's user-event queue, where
+        // NSApp.currentEvent is no longer the original mouse-down. Give the
+        // real AppKit drag loop an owned event at the current native pointer.
+        let location = native.convertPointFromScreen(NSEvent::mouseLocation());
+        let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
+            NSEventType::LeftMouseDown, location, NSEventModifierFlags::empty(),
+            NSProcessInfo::processInfo().systemUptime(), native.windowNumber(), None, 0, 1, 1.0)
+            .ok_or_else(|| crate::error::HostError::Backend("macos_drag_event_failed".into()))?;
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                DRAGGING.store(false, Ordering::Release);
+            }
+        }
+        DRAGGING.store(true, Ordering::Release);
+        let _reset = Reset;
+        native.performWindowDragWithEvent(&event);
+        DRAG_COMPLETED.store(true, Ordering::Release);
+        Ok(())
+    }
 }
 
-/// Tao creates the AppKit `NSWindow`; configure that real object as a
-/// non-activating floating panel on the main event-loop thread.  Some Tao
-/// versions return an `NSPanel` directly, while others return an NSWindow with
-/// the equivalent non-activating style mask, so panel-only selectors are sent
-/// only after an Objective-C class check.
+/// Configure the actual owned NSPanel on its main event-loop thread. Its
+/// non-activating style is established by construction and never toggled.
 fn configure_native_panel(window: &Window) -> HostResult<()> {
     let raw = window.ns_window();
     if raw.is_null() {
@@ -98,7 +146,6 @@ fn configure_native_panel(window: &Window) -> HostResult<()> {
     }
     unsafe {
         let native = &*(raw as *const NSWindow);
-        native.setStyleMask(native.styleMask() | NSWindowStyleMask::NonactivatingPanel);
         native.setLevel(NSFloatingWindowLevel);
         native.setCollectionBehavior(
             NSWindowCollectionBehavior::CanJoinAllSpaces
@@ -109,16 +156,8 @@ fn configure_native_panel(window: &Window) -> HostResult<()> {
         native.setHasShadow(false);
         native.setOpaque(false);
         native.setMovable(true);
-        native.setMovableByWindowBackground(true);
+        native.setMovableByWindowBackground(false);
         native.setIgnoresMouseEvents(true);
-        if native.isKindOfClass(NSPanel::class()) {
-            // A panel is intentionally non-activating and remains visible
-            // while the host application changes focus.
-            let panel = &*(raw as *const NSPanel);
-            panel.setFloatingPanel(true);
-            panel.setBecomesKeyOnlyIfNeeded(false);
-            panel.setWorksWhenModal(true);
-        }
     }
     Ok(())
 }

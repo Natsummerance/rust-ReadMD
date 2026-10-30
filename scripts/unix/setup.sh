@@ -70,6 +70,24 @@ cat <<PLIST > "$APP_PATH/Contents/Info.plist"
     <string>${MINIMUM_MACOS}</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array><dict>
+        <key>CFBundleTypeName</key><string>Markdown</string>
+        <key>CFBundleTypeRole</key><string>Editor</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string></array>
+        <key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+    </dict></array>
+    <key>UTImportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>
+        <key>UTTypeDescription</key><string>Markdown</string>
+        <key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+            <key>public.mime-type</key><string>text/markdown</string>
+        </dict>
+    </dict></array>
 </dict>
 </plist>
 PLIST

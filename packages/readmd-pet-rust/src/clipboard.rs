@@ -40,7 +40,15 @@ fn capture() -> ClipboardCapture {
     windows::read()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "macos")]
+fn capture() -> ClipboardCapture {
+    macos::read()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn capture() -> ClipboardCapture {
     // No clipboard reader is compiled in outside Windows: the Electron
     // reference reads `clipboard` from Electron's own module, and neither

@@ -21,6 +21,10 @@ use readmd_kernel::App;
 mod desktop_web;
 #[cfg(all(feature="desktop",target_os="macos"))]
 mod macos_window_chrome;
+#[cfg(all(feature="desktop",target_os="macos"))]
+mod macos_application;
+#[cfg(all(target_os = "macos", feature = "desktop"))]
+mod macos_tray;
 
 #[cfg(all(feature = "native-qa", debug_assertions))]
 mod native_qa;
@@ -3153,6 +3157,15 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
 
     let event_loop = tao::event_loop::EventLoopBuilder::<HostEvent>::with_user_event().build();
     let drop_proxy = event_loop.create_proxy();
+    #[cfg(target_os = "macos")]
+    {
+        let proxy = drop_proxy.clone();
+        readmd_kernel::macos_file_dialog::set_wake(move || { let _ = proxy.send_event(HostEvent::Web); });
+        let proxy = drop_proxy.clone();
+        if let Err(code) = crate::macos_application::install(move || { let _ = proxy.send_event(HostEvent::Window("exit".into(), serde_json::Value::Null)); }) {
+            eprintln!("{code}"); exit(1);
+        }
+    }
     #[cfg(windows)] {
         let proxy = drop_proxy.clone();
         readmd_kernel::native_tray::set_wake(move || { let _ = proxy.send_event(HostEvent::Window("show".into(), serde_json::Value::Null)); });
@@ -3190,6 +3203,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             exit(shutdown(&FAILED, &data_dir, &probe, &probe_json, false, true, &task_app.ai_tasks));
         }
     };
+    #[cfg(target_os="macos")]
+    readmd_kernel::macos_file_dialog::set_parent(&window);
     // `milestone('boot', 'window_created')` (`readmd.py:6560`).
     probe_mark(&probe, "window_created");
     #[cfg(target_os="macos")]
@@ -3345,9 +3360,10 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             body: JSON.stringify(bodyData)
                         });
                         const data = await res.json();
-                        if (data.canceled) return null;
-                        if (!res.ok || data.ok !== true) {
-                            const error = new Error(data.error || data.error_code || ('HTTP ' + res.status)); error.details = data; throw error;
+                        if (data.canceled && !data.error_code && res.ok) return null;
+                        if (!res.ok || data.ok !== true || data.error_code) {
+                            const message=data.error_code==='dialog_unavailable'&&window.i18n?window.i18n.t('error.dialog_unavailable'):(data.error || data.error_code || ('HTTP ' + res.status));
+                            const error = new Error(message); error.details = data; throw error;
                         }
                         return options && options.result ? data : (data.path || null);
                     } catch(e) { throw e; }
@@ -4263,6 +4279,13 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             let _ = proxy.send_event(HostEvent::Window(action.into(), serde_json::Value::Null));
         })
     };
+    #[cfg(target_os="macos")]
+    let mut tray = {
+        let proxy = drop_proxy.clone();
+        crate::macos_tray::Tray::new(move |action| {
+            let _ = proxy.send_event(HostEvent::Window(action.into(), serde_json::Value::Null));
+        })
+    };
     let mut close_to_tray = true;
     #[cfg(target_os="macos")]
     let mut mac_chrome = macos_window_chrome::Chrome::default();
@@ -4272,12 +4295,33 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
     let render_proxy = drop_proxy.clone();
     let render_wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || { let _ = render_proxy.send_event(HostEvent::Web); });
     event_loop.run(move |event, target, control_flow| {
+        #[cfg(target_os = "macos")]
+        readmd_kernel::macos_file_dialog::drain();
         if done.load(Ordering::SeqCst) {
             // `ControlFlow::Exit*` is sticky; stay out of the way.
             *control_flow = ControlFlow::Exit;
             return;
         }
         *control_flow = ControlFlow::Wait;
+        #[cfg(target_os = "macos")]
+        match &event {
+            Event::Reopen { .. } => {
+                show_flag.store(true, Ordering::SeqCst);
+                let _ = drop_proxy.send_event(HostEvent::Web);
+            }
+            Event::Opened { urls } => {
+                let paths: Vec<_> = urls.iter().filter_map(|url|url.to_file_path().ok())
+                    .filter(|path|path.is_file()).take(64).map(|path|serde_json::json!({
+                        "path":path.to_string_lossy(),"name":path.file_name().map(|s|s.to_string_lossy()),"isDir":false
+                    })).collect();
+                if !paths.is_empty() {
+                    NATIVE_DROPS.lock().unwrap_or_else(|e|e.into_inner()).push_back(serde_json::json!({"paths":paths}).to_string());
+                    show_flag.store(true, Ordering::SeqCst);
+                    let _ = drop_proxy.send_event(HostEvent::Drop);
+                }
+            }
+            _ => (),
+        }
         if let Event::WindowEvent { window_id, event: WindowEvent::CloseRequested { .. }, .. } = &event {
             if let Some(reader) = webview.as_ref() {
                 if renders.close_window(*window_id, reader) { return; }
@@ -4297,6 +4341,51 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeButtonResult={result};"));}
                     },
                     #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_application" if native_qa.is_some() => {
+                        let path = options["path"].as_str().map(Path::new).filter(|p|p.is_absolute() && p.canonicalize()
+                            .is_ok_and(|p|task_app.paths.workspace.canonicalize().is_ok_and(|root|p.starts_with(root))));
+                        let proxy=drop_proxy.clone(); let id=options["id"].clone();
+                        crate::macos_application::qa_dispatch(options["action"].as_str().unwrap_or(""), path, move |performed| {
+                            let _=proxy.send_event(HostEvent::Window("qa_application_ready".into(),serde_json::json!({"id":id,"performed":performed})));
+                        });
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_application_ready" if native_qa.is_some() => {
+                        if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeApplicationResult={options};"));}
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_tray" if native_qa.is_some() => {
+                        let performed = tray.as_ref().is_some_and(|tray| tray.qa_action(options["action"].as_str().unwrap_or("")));
+                        let result = serde_json::json!({"id":options["id"],"performed":performed});
+                        if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeTrayResult={result};"));}
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_native_dialog" if native_qa.is_some() => {
+                        let path = options["path"].as_str().map(Path::new).filter(|p| {
+                            p.is_absolute() && p.parent().and_then(|p| p.canonicalize().ok())
+                                .is_some_and(|parent| task_app.paths.workspace.canonicalize().is_ok_and(|root| parent.starts_with(root)))
+                        });
+                        let proxy = drop_proxy.clone();
+                        let id = options["id"].clone();
+                        readmd_kernel::macos_file_dialog::qa_schedule(options["choice"].as_str().unwrap_or("status").to_string(), path.map(Path::to_path_buf), move |mut result| {
+                            result["id"] = id.clone();
+                            let _ = proxy.send_event(HostEvent::Window("qa_native_dialog_ready".into(),result));
+                        });
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_native_dialog_ready" if native_qa.is_some() => {
+                        let mut result = options.clone();
+                        if result["native_exception"].as_bool() == Some(true) {
+                            use std::os::unix::fs::OpenOptionsExt;
+                            if let Ok(file) = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
+                                .open(task_app.paths.data_dir.join("native-dialog-exception.json")) {
+                                let _ = serde_json::to_writer(file, &result);
+                            }
+                        }
+                        if let Some(object)=result.as_object_mut(){object.remove("native_exception_description");}
+                        if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeDialogResult={result};"));}
+                    },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
                     "qa_window_size" if native_qa.is_some() => {
                         if let (Some(width),Some(height))=(options["width"].as_f64(),options["height"].as_f64()) {
                             if (720.0..=1920.0).contains(&width)&&(480.0..=1200.0).contains(&height) { window.set_inner_size(tao::dpi::LogicalSize::new(width,height)); }
@@ -4314,8 +4403,39 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         };
                         if !window.is_maximized() { if let Some(edge) = direction { let _ = window.drag_resize_window(edge); } }
                     }
+                    "undo" | "redo" => {
+                        if page_ready_flag.load(Ordering::SeqCst) {
+                            if let Some(reader)=webview.as_ref() {
+                                let redo=action=="redo";
+                                let handler=if redo {"cmRedo"} else {"cmUndo"};
+                                // Reuse the toolbar's history dispatcher: it
+                                // preserves collaboration/review ownership.
+                                // Other text fields keep WKWebView's history.
+                                let _=reader.evaluate_script(&format!("(()=>{{if(typeof cmView!=='undefined'&&cmView?.composing)return;const el=document.activeElement;const field=el?.matches('input,textarea,[contenteditable=\"true\"]')&&!el?.closest('.cm-editor');if(typeof cmView!=='undefined'&&cmView&&typeof state!=='undefined'&&state.editing&&!field){{{handler}();}}else if(field){{document.execCommand('{action}');}}else{{el?.dispatchEvent(new KeyboardEvent('keydown',{{key:'{}',code:'KeyZ',metaKey:true,shiftKey:{redo},bubbles:true,cancelable:true}}));}}}})();",if redo {"Z"} else {"z"}));
+                            }
+                        }
+                    }
+                    "save" | "save-as" => {
+                        if page_ready_flag.load(Ordering::SeqCst) {
+                            if let Some(reader)=webview.as_ref() {
+                                // Native menu key equivalents enter the same
+                                // shortcut dispatch as the editor/PDF/UI. No
+                                // second save implementation or path grant.
+                                let shift=action=="save-as";
+                                let _=reader.evaluate_script(&format!("(()=>{{if(typeof cmView!=='undefined'&&cmView?.composing)return;(document.activeElement||document).dispatchEvent(new KeyboardEvent('keydown',{{key:'s',code:'KeyS',metaKey:true,shiftKey:{shift},bubbles:true,cancelable:true}}));}})();"));
+                            }
+                        }
+                    }
                     "close" => closing = true,
                     "show" | "open" | "exit" => {
+                        if action == "exit" && !page_ready_flag.load(Ordering::SeqCst) {
+                            // A hidden, unfinished shell cannot answer a JS
+                            // recovery request. Preserve its untouched session
+                            // and use the normal shutdown path.
+                            quit_flag.store(true,Ordering::SeqCst);
+                            let _ = drop_proxy.send_event(HostEvent::Web);
+                            return;
+                        }
                         window.set_visible(true); window.set_minimized(false); window.set_focus();
                         if let Some(reader) = webview.as_ref() {
                             let script = if action == "open" { "window.__trayOpenFile?.();" } else if action == "exit" {
@@ -4326,9 +4446,20 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     }
                     "preferences" => {
                         close_to_tray = options.get("closeToTray").and_then(serde_json::Value::as_bool).unwrap_or(true);
-                        #[cfg(windows)] if let Some(tray) = tray.as_mut() {
+                        #[cfg(any(windows,target_os="macos"))] if let Some(tray) = tray.as_mut() {
                             if let Some(labels) = options.get("labels").and_then(serde_json::Value::as_array) {
                                 if labels.len() == 3 { tray.set_labels([labels[0].as_str().unwrap_or("ReadMD"), labels[1].as_str().unwrap_or("Open"), labels[2].as_str().unwrap_or("Exit")]); }
+                            }
+                        }
+                        #[cfg(target_os="macos")] if let Some(tray)=tray.as_mut() {
+                            if let Some(labels)=options.get("fileLabels").and_then(serde_json::Value::as_array).filter(|v|v.len()==3) {
+                                tray.set_document_labels([labels[0].as_str().unwrap_or("File"),labels[1].as_str().unwrap_or("Save"),labels[2].as_str().unwrap_or("Save As…")]);
+                            }
+                            if let Some(labels)=options.get("editLabels").and_then(serde_json::Value::as_array).filter(|v|v.len()==6) {
+                                tray.set_edit_labels([
+                                    labels[0].as_str().unwrap_or("Edit"),labels[1].as_str().unwrap_or("Undo"),labels[2].as_str().unwrap_or("Redo"),
+                                    labels[3].as_str().unwrap_or("Cut"),labels[4].as_str().unwrap_or("Copy"),labels[5].as_str().unwrap_or("Paste")
+                                ]);
                             }
                         }
                     }
@@ -4336,9 +4467,9 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                 }
             }
         }
-        #[cfg(windows)]
+        #[cfg(any(windows,target_os="macos"))]
         let tray_available = tray.as_ref().is_some_and(|tray| tray.available());
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows,target_os="macos")))]
         let tray_available = false;
         if closing && close_to_tray && tray_available && deadline.is_none() && !quit_flag.load(Ordering::SeqCst) {
             if let Some(reader) = webview.as_ref() { let _ = reader.evaluate_script("window.ReadMDRecovery?.flush();"); }
@@ -4347,7 +4478,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         }
         if matches!(&event, Event::WindowEvent { event: WindowEvent::Resized(_) | WindowEvent::Focused(_) | WindowEvent::ScaleFactorChanged { .. }, .. } | Event::UserEvent(HostEvent::Window(..))) {
             if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
-                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized()});
+                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized(),"visible":window.is_visible()});
                 #[cfg(target_os="macos")] {
                     mac_chrome.refresh(window);
                     state["chrome"]=macos_window_chrome::snapshot(window);
@@ -4376,7 +4507,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         if renders.active() { *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100)); }
         // Hand queued native drops to the page.  The payload is serde_json
         // output, which is a valid JS expression — no string splicing of paths.
-        loop {
+        while page_ready_flag.load(Ordering::SeqCst) && webview.is_some() {
             let next = NATIVE_DROPS.lock().unwrap_or_else(|e| e.into_inner()).pop_front();
             let Some(json) = next else { break };
             if let Some(webview) = webview.as_ref() {
@@ -4388,8 +4519,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         // `Api.show_window()` (`readmd.py:5972`) is `window.show()` +
         // `window.restore()`.  Python reaches it from the tray and from the
         // double-click handoff; the front end calls it from `openExternalFile`
-        // (`assets/js/reader/render.js:249`).  The kernel has no tray, so this is
-        // the only path that can bring a hidden window back.
+        // (`assets/js/reader/render.js:249`). Native menu/tray actions share
+        // this platform-specific restoration behavior.
         if show_flag.swap(false, Ordering::SeqCst) {
             if let Some(window) = window_handle.as_ref() {
                 window.set_visible(true);
@@ -4416,7 +4547,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         }
         if fullscreen_request != FULLSCREEN_IDLE {
             if let (Some(window), Some(reader)) = (window_handle.as_ref(), webview.as_ref()) {
-                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized()});
+                let mut state = serde_json::json!({"maximized":window.is_maximized(),"fullscreen":window.fullscreen().is_some(),"trayAvailable":tray_available,"focused":window.is_focused(),"minimized":window.is_minimized(),"visible":window.is_visible()});
                 #[cfg(target_os="macos")] {
                     mac_chrome.refresh(window);
                     state["chrome"]=macos_window_chrome::snapshot(window);
@@ -4469,7 +4600,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
             return;
         }
         drop(webview.take());
-        #[cfg(windows)] drop(tray.take());
+        #[cfg(any(windows,target_os="macos"))] drop(tray.take());
         drop(window_handle.take());
         if let Some(dir) = retry_profile.take() {
             let _ = std::fs::remove_dir_all(dir);
@@ -4506,6 +4637,13 @@ fn enable_share(port: u16) {
 }
 
 fn main() {
+    // A bounded stdin/stdout protocol, before server, single-instance and GUI
+    // setup. No input path is accepted and no document/profile is opened.
+    #[cfg(target_os = "macos")]
+    if std::env::args().nth(1).as_deref() == Some("--readmd-macos-ocr-worker") {
+        let args: Vec<_> = std::env::args().skip(2).collect();
+        exit(readmd_kernel::ocr_macos::worker_main(&args));
+    }
     #[cfg(windows)]
     {
         // Core DLLs ship beside ReadMD.exe. Children (Typst/PDF workers and

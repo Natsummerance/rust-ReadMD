@@ -138,6 +138,10 @@ pub(crate) mod pptx_export;
 pub mod mobi;
 pub mod ocr;
 pub(crate) mod ocr_portable;
+#[cfg(target_os = "macos")]
+pub mod ocr_macos;
+#[cfg(all(target_os = "macos", feature = "desktop"))]
+pub mod macos_file_dialog;
 /// Windows.Media.Ocr / Windows.Data.Pdf native OCR (no-op elsewhere).
 pub mod ocr_winrt;
 #[cfg(target_os="macos")]
@@ -973,6 +977,9 @@ pub mod modules {
     /// `src.readmd_modules.MODULES`, in the legacy declaration order.
     pub const MODULES: &[&str] =
         &["convert", "ocr", "web", "ai", "transcribe", "pdf_editor"];
+    /// File recognition may initialize large runtime/model state. Ordinary
+    /// reader startup and status polling must leave it untouched.
+    pub const DEFERRED_MODULES: &[&str] = &["ocr", "transcribe"];
 
     #[derive(Debug, Default, Clone)]
     pub struct Registry {

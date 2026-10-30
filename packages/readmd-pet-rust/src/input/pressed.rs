@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 struct HeldKey {
+    #[cfg(any(windows, test))]
     virtual_key: i32,
+    #[cfg(any(windows, test))]
     missing: u8,
 }
 
@@ -30,6 +32,8 @@ impl PressedInput {
     }
 
     pub(super) fn key(&mut self, hid: u16, virtual_key: i32, down: bool) -> bool {
+        #[cfg(not(any(windows, test)))]
+        let _ = virtual_key;
         if down {
             if self.keys.contains_key(&hid) {
                 return false;
@@ -37,7 +41,9 @@ impl PressedInput {
             self.keys.insert(
                 hid,
                 HeldKey {
+                    #[cfg(any(windows, test))]
                     virtual_key,
+                    #[cfg(any(windows, test))]
                     missing: 0,
                 },
             );
@@ -78,6 +84,7 @@ impl PressedInput {
 
     /// Reconciliation only releases observed controls, never invents presses.
     /// Two missing samples avoid clearing an edge before user32 catches up.
+    #[cfg(any(windows, test))]
     pub(super) fn reconcile(&mut self, is_down: impl Fn(i32) -> bool) -> bool {
         let mut releases = Vec::new();
         for (&hid, held) in &mut self.keys {

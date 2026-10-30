@@ -1,6 +1,12 @@
 use crate::error::HostResult;
 use crate::protocol::SnapshotBounds;
-use tao::window::{Window, WindowBuilder};
+#[cfg(not(target_os = "macos"))]
+pub use tao::window::Window;
+use tao::window::WindowBuilder;
+#[cfg(target_os = "macos")]
+mod macos_panel;
+#[cfg(target_os = "macos")]
+pub use macos_panel::Window;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InteractionRect {
@@ -47,10 +53,24 @@ pub trait PlatformBackend {
         Ok(())
     }
     fn drag_window(&self, window: &Window) -> HostResult<()> {
-        let _ = window.drag_window();
-        Ok(())
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = window.drag_window();
+            Ok(())
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window;
+            Err(crate::error::HostError::Backend(
+                "native_drag_unavailable".into(),
+            ))
+        }
     }
     fn win32_hwnd(&self) -> Option<isize> {
+        None
+    }
+    /// Native top-left pointer coordinates (Quartz points on macOS).
+    fn pointer_origin(&self, _window: &Window) -> Option<(f64, f64)> {
         None
     }
 }
@@ -62,11 +82,11 @@ pub use windows::WindowsBackend;
 
 #[cfg(windows)]
 pub use windows::{native_drag_active, take_completed_drag};
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn native_drag_active() -> bool {
     false
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn take_completed_drag() -> bool {
     false
 }
@@ -75,6 +95,10 @@ pub fn take_completed_drag() -> bool {
 mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::MacOsBackend;
+#[cfg(target_os = "macos")]
+pub(crate) use macos::{complete_native_drag, set_native_drag_active};
+#[cfg(target_os = "macos")]
+pub use macos::{native_drag_active, take_completed_drag};
 
 #[cfg(target_os = "linux")]
 mod linux;

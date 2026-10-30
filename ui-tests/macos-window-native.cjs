@@ -7,7 +7,7 @@ const root=path.resolve(__dirname,'..'),workspace=path.dirname(root),sha=bytes=>
 const source='# Native window contract\n\nA synthetic document with reliable save and close.\n';
 function driver(file,ack){return String.raw`(async()=>{
  const checks=[];let phase='window_chrome';
- const check=(ok,name)=>{if(!ok)throw Error(name);checks.push(name);};
+ const check=(ok,name)=>{if(!ok)throw Error(name);checks.push(name);window.ipc.postMessage(JSON.stringify({readmd_native_qa_progress:{ok:true,phase,checks}}));};
  const until=async fn=>{const end=Date.now()+45000;while(Date.now()<end){py.window_control('status');if(await fn())return;await new Promise(r=>setTimeout(r,60));}throw Error('native_window_timeout');};
  const host=()=>window.__readmdNativeWindowState;
  let clickSequence=0;
@@ -43,7 +43,10 @@ function driver(file,ack){return String.raw`(async()=>{
   check(contentTop-$('content').getBoundingClientRect().top>=headerHeight+toolbarHeight-2,'zen_releases_header_layout_height');
   toggleZenMode(false);await until(()=>!document.body.classList.contains('zen-mode')&&host().chrome.buttons.every(b=>!b.hidden));
   await click('minimize');await until(()=>host()?.minimized===true);check(true,'actual_native_yellow_minimizes');
-  py.window_control('show');await until(()=>host()?.minimized===false&&document.visibilityState==='visible');check(true,'native_window_restores');
+  // Restoration must reactivate the reader as well as de-miniaturize it.
+  // An inactive restored window left WKWebView hidden and green unresponsive.
+  py.window_control('show');await until(()=>host()?.minimized===false&&host()?.visible===true&&host()?.focused===true&&document.visibilityState==='visible');
+  check(true,'native_window_restores_and_reactivates_reader');
   await click('fullscreen');await until(()=>host()?.fullscreen===true&&host().chrome.nativeFullscreen&&window.__readmdNativeFullscreen===true);
   check(document.body.classList.contains('zen-mode'),'actual_native_green_enters_fullscreen_and_zen');
   toggleZenMode(false);py.window_control('status');await new Promise(r=>setTimeout(r,180));
@@ -73,7 +76,7 @@ function driver(file,ack){return String.raw`(async()=>{
   await until(async()=>{const response=await apiFetch('/api/file?p='+encodeURIComponent(${JSON.stringify(ack)}));return response.ok;});
   check(await ReadMDSession.flush()!==false,'native_window_session_acknowledged');
   window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:true,phase,checks}}));await py.request_quit();
- }catch(error){checks.push(/^[a-z0-9_]{1,127}$/.test(error.message)?error.message:'native_window_failed');checks.push('native_error_'+String(error.name).toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,64));for(const[name,value]of [['host_fullscreen',host()?.fullscreen],['cocoa_fullscreen',host()?.chrome?.nativeFullscreen],['page_fullscreen',window.__readmdNativeFullscreen]])checks.push('observed_'+name+'_'+String(!!value));window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:false,phase,checks}}));window.ipc.postMessage('readmd:quit');}
+ }catch(error){checks.push(/^[a-z0-9_]{1,127}$/.test(error.message)?error.message:'native_window_failed');checks.push('native_error_'+String(error.name).toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,64));for(const[name,value]of [['host_fullscreen',host()?.fullscreen],['cocoa_fullscreen',host()?.chrome?.nativeFullscreen],['page_fullscreen',window.__readmdNativeFullscreen],['host_minimized',host()?.minimized],['host_visible',host()?.visible],['page_visible',document.visibilityState==='visible']])checks.push('observed_'+name+'_'+String(!!value));window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:false,phase,checks}}));window.ipc.postMessage('readmd:quit');}
 })();`;}
 async function run(binary,out){
  assert.equal(process.platform,'darwin');assert(path.isAbsolute(binary)&&fs.statSync(binary).isFile());assert(out.startsWith(workspace+path.sep));fs.mkdirSync(out);
@@ -84,6 +87,7 @@ async function run(binary,out){
  const policy='(version 1)(allow default)(deny file-write* (require-all (require-not (subpath '+JSON.stringify(workspace)+')) (require-not (subpath '+JSON.stringify('/System/Volumes/Data'+workspace)+')) (require-not (literal "/dev/null")) (require-not (literal "/dev/tty"))))';
  const fd=fs.openSync(path.join(out,'native.log'),'wx'),child=spawn('/usr/bin/sandbox-exec',['-p',policy,binary,'--port','0','--require-token','--data-dir',profile,'--workspace',docs,'--assets',path.join(root,'assets')],{cwd:out,env:{...process.env,READMD_NATIVE_QA:'1',READMD_DATA_DIR:profile,READMD_WORKSPACE:docs,READMD_ASSETS_DIR:'',READMD_EXTRA_ROOTS:'',TMPDIR:temp,SQLITE_TMPDIR:temp,CFFIXED_USER_HOME:home},stdio:['ignore',fd,fd]});fs.closeSync(fd);
  const result=path.join(profile,'native-qa-result.json');let timer;const exit=new Promise(resolve=>{child.on('error',()=>resolve({code:null,spawnError:true}));child.on('exit',(code,signal)=>resolve({code,signal}));});
+ fs.writeFileSync(path.join(out,'owned-process.json'),JSON.stringify({pid:child.pid,binarySha256:report.binarySha256}));
  try{
   timer=setTimeout(()=>child.kill('SIGTERM'),180000);
   const deadline=Date.now()+140000;while(!fs.existsSync(result)&&child.exitCode===null&&child.signalCode===null&&Date.now()<deadline)await new Promise(r=>setTimeout(r,50));

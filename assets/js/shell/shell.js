@@ -94,9 +94,10 @@
 })();
 
 function syncWindowPreferences() {
-  if (!hasPy || !py.custom_titlebar || !py.window_control) return;
+  if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
   const t = key => window.i18n?.t(key) || key;
-  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')] });
+  const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
+  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) });
   $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
   if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
 }

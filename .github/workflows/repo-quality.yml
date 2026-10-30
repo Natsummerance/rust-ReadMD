@@ -60,7 +60,10 @@ jobs:
       - name: Native subprocess deadline lane
         run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner::tests -- --test-threads=1
       - name: Test kernel and xtask
-        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner::tests
+        # Vision model acceptance remains a separate explicit invocation.
+        # Keep the real test executable while this non-model regression lane
+        # filters it instead of initializing recognition services.
+        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner::tests --skip ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
 
@@ -95,7 +98,7 @@ jobs:
       - name: Privacy scan
         run: node tools/privacy-scan.mjs
       - name: Node tests
-        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs
+        run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/native-picker.test.mjs tools/test/deferred-model-modules.test.cjs tools/test/native-capability-ready.test.cjs tools/test/native-window-preferences.test.cjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs
 
   integrations:
     name: VS Code and MCP quality

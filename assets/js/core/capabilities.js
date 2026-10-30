@@ -59,7 +59,7 @@
   function ready(id){if(id==='pdfium'||id==='ocr'){state.modules[id==='pdfium'?'pdf_editor':'ocr']='ready';updateModuleUi();}window.dispatchEvent(new CustomEvent('readmd:capability-installed',{detail:{id}}));}
   async function ensure(id){
     if(active)return active.id===id?active.promise:false;
-    try{const status=await request({action:'status',id});if(status.installed)return true;if(status.busy){showToast(t('error.'+(status.busy_code||'capability_install_busy')));return false;}}catch(_){/* catalog explains an unavailable platform */}
+    try{const status=await request({action:'status',id});if(status.ready||status.installed)return true;if(status.busy){showToast(t('error.'+(status.busy_code||'capability_install_busy')));return false;}}catch(_){/* catalog explains an unavailable platform */}
     let entry;
     try{entry=(await request({action:'catalog'})).packs.find(p=>p.id===id&&p.available);}catch(_){showToast(t('error.capability_catalog_invalid'));return false;}
     if(!entry){showToast(t('error.capability_pack_unavailable'));return false;}

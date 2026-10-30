@@ -996,6 +996,23 @@ fn operate(
     hooks: &InstallHooks<'_>,
 ) -> ApiResult<Response> {
     let action = v["action"].as_str().unwrap_or("status");
+    #[cfg(target_os = "macos")]
+    if action == "status" && v["id"] == "ocr" {
+        let native = crate::ocr_portable::with_paths(&app.paths, || {
+            if crate::ocr_portable::available() { return None; }
+            Some(crate::ocr_macos::probe())
+        });
+        if let Some(result) = native {
+            result.map_err(|code| crate::ocr::OcrError::from_portable(code))
+                .map_err(|e| ApiError::new(e.http_status(), e.api_code()))?;
+            module_state(app, "ocr", true);
+            // A working OS service is ready, but no managed pack was installed.
+            // Do not invent installation/version/uninstall metadata for it.
+            return ok_json(json!({"ok":true,"id":"ocr","platform":platform(),
+                "installed":false,"ready":true,"native":true,"provider":"macos-vision",
+                "busy":false,"present":true}));
+        }
+    }
     if action == "install" && provided.is_none() {
         let path = app
             .paths

@@ -29,3 +29,17 @@ test('user cancellation stays quiet, while selected paths keep the existing brid
   assert.deepEqual((await pick({ ok: true, paths: ['/demo/a.md', '/demo/b.md'] }, true)).value, ['/demo/a.md', '/demo/b.md']);
   assert.equal(selected.requests[0][1].headers.authenticated, true);
 });
+
+test('native Save As never reports an unavailable dialog or HTTP failure as user cancellation',async()=>{
+  const start=source.indexOf('save_as: async function('),end=source.indexOf('// `Api.save_file(',start);
+  assert(start>0&&end>start);
+  async function save(response,httpOk=true){
+    const context=vm.createContext({window:{i18n:{t:key=>key}},bridgeHeaders:()=>({}),fetch:async()=>({ok:httpOk,status:httpOk?200:503,json:async()=>response})});
+    const bridge=vm.runInContext('({'+source.slice(start,end)+'})',context);
+    return bridge.save_as('Owned body','owned.md',[],{result:true});
+  }
+  assert.equal(await save({ok:false,canceled:true}),null);
+  await assert.rejects(save({ok:false,canceled:true,error_code:'dialog_unavailable'}),error=>error.message==='error.dialog_unavailable'&&error.details.error_code==='dialog_unavailable');
+  await assert.rejects(save({ok:false,canceled:true},false),/HTTP 503/);
+  assert.equal((await save({ok:true,path:'/demo/new.md'})).path,'/demo/new.md');
+});

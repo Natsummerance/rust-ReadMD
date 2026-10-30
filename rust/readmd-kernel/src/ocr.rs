@@ -104,16 +104,23 @@ lazy_static! {
     static ref CACHE: Mutex<EngineCache> = Mutex::new(EngineCache { engine: None });
 }
 
-/// 引擎探测：Windows 10+ 走系统自带的 `Windows.Media.Ocr`（[`crate::ocr_winrt`]），
-/// 其他平台暂无原生引擎。结果缓存，避免每次请求重新探测。
+/// Managed engines take priority. Native engines must pass a real recognition
+/// probe; framework availability by itself is not readiness.
 pub fn pick_engine() -> Option<OcrEngine> {
     if crate::ocr_portable::available(){return Some(OcrEngine::Tesseract);}
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(engine) = cache.engine.clone() {
         return engine;
     }
-    let engine: Option<OcrEngine> = if crate::ocr_winrt::available() { Some(OcrEngine::WinRt) } else { None };
-    cache.engine = Some(engine.clone());
+    let engine: Option<OcrEngine> = if crate::ocr_winrt::available() { Some(OcrEngine::WinRt) } else {
+        #[cfg(target_os = "macos")]
+        { crate::ocr_macos::available().then_some(OcrEngine::MacVision) }
+        #[cfg(not(target_os = "macos"))]
+        { None }
+    };
+    if !cfg!(target_os = "macos") || engine.is_some() {
+        cache.engine = Some(engine.clone());
+    }
     engine
 }
 
@@ -137,6 +144,10 @@ pub fn ocr_bytes(data: &[u8], language: Option<&str>) -> Result<String, OcrError
         Err(code) if code=="ocr_no_engine"=>(),
         Err(code)=>return Err(OcrError::from_portable(code)),
     }
+    #[cfg(target_os = "macos")]
+    return crate::ocr_macos::image(data, language).map_err(OcrError::from_portable);
+    #[cfg(not(target_os = "macos"))]
+    {
     if pick_engine().is_none() {
         return Err(OcrError::engine(OCR_NO_ENGINE_MESSAGE));
     }
@@ -144,6 +155,7 @@ pub fn ocr_bytes(data: &[u8], language: Option<&str>) -> Result<String, OcrError
         Ok(lines) => Ok(lines.join("\n")),
         Err(e) if e == "ocr_no_engine" => Err(OcrError::engine(OCR_NO_ENGINE_MESSAGE)),
         Err(e) => Err(OcrError::from_portable(e)),
+    }
     }
 }
 

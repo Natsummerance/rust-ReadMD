@@ -1,10 +1,10 @@
 mod ipc;
 
 use crate::error::{HostError, HostResult};
+use crate::platform::Window;
 use crate::protocol::{RendererKind, RendererMessage};
 use percent_encoding::percent_decode_str;
 use std::path::{Path, PathBuf};
-use tao::window::Window;
 use url::Url;
 use wry::{DragDropEvent, WebView, WebViewBuilder};
 

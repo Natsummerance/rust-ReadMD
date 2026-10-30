@@ -1489,9 +1489,11 @@ async function pollModules() {
     const r = await apiFetch('/api/modules');
     const d = await r.json();
     state.modules = d.modules || {};
+    state.deferredModules = Array.isArray(d.deferred_modules) ? d.deferred_modules : [];
     state.win7 = !!d.win7;
     updateModuleUi();
-    const pending = Object.values(state.modules).some(v => v === 'loading' || v === 'idle');
+    const deferred = new Set(state.deferredModules);
+    const pending = Object.entries(state.modules).some(([name,v]) => v === 'loading' || (v === 'idle' && !deferred.has(name)));
     if (pending && state.modulesStarted) setTimeout(pollModules, 900);
   } catch (e) {
     if (state.modulesStarted) setTimeout(pollModules, 2000);
@@ -1524,14 +1526,14 @@ function updateModuleUi() {
   const parts = [];
   for (const [k, v] of Object.entries(m)) {
     const label=moduleLabel(k);if(!label)continue;
-    const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':'status.loading';
+    const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':v==='idle'?'convert.statusPending':'status.loading';
     parts.push(label+' · '+_t(status));
   }
   const el = $('status-mods');
   if (el) {
     const details=parts.length?_t('status.modulePrefix')+'\n'+parts.join('\n'):'';
     el.textContent=details?'●':'';el.title=details;el.setAttribute('role','img');el.setAttribute('aria-label',details);
-    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v!=='ready')?'loading':'ready';
+    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v==='loading')?'loading':Object.values(m).some(v=>v==='idle')?'idle':'ready';
   }
 }
 window.addEventListener('readmd:language-changed',updateModuleUi);
@@ -1565,6 +1567,7 @@ async function ensureModule(name, timeoutMs) {
       const r = await apiFetch('/api/modules');
       const d = await r.json();
       const st = d.modules && d.modules[name];
+      if (st) { state.modules[name] = st; updateModuleUi(); }
       if (st === 'ready') return true;
       if (st === 'error' || st === 'unavailable' || st === 'disabled') {
         delete moduleLoadRequests[name];
@@ -1642,7 +1645,7 @@ async function ensureModule(name, timeoutMs) {
   function ready(id){if(id==='pdfium'||id==='ocr'){state.modules[id==='pdfium'?'pdf_editor':'ocr']='ready';updateModuleUi();}window.dispatchEvent(new CustomEvent('readmd:capability-installed',{detail:{id}}));}
   async function ensure(id){
     if(active)return active.id===id?active.promise:false;
-    try{const status=await request({action:'status',id});if(status.installed)return true;if(status.busy){showToast(t('error.'+(status.busy_code||'capability_install_busy')));return false;}}catch(_){/* catalog explains an unavailable platform */}
+    try{const status=await request({action:'status',id});if(status.ready||status.installed)return true;if(status.busy){showToast(t('error.'+(status.busy_code||'capability_install_busy')));return false;}}catch(_){/* catalog explains an unavailable platform */}
     let entry;
     try{entry=(await request({action:'catalog'})).packs.find(p=>p.id===id&&p.available);}catch(_){showToast(t('error.capability_catalog_invalid'));return false;}
     if(!entry){showToast(t('error.capability_pack_unavailable'));return false;}
@@ -24692,6 +24695,7 @@ async function pollPetControls() {
         if (target === 'pet-settings') await openPetSettings();
         else if (target === 'ai') { if (typeof openAIPanel === 'function') openAIPanel(); }
       } else if (payload && payload.pending) {
+        try { await petNativeApi()?.show_window?.(); } catch (_) {}
         const trigger = $('btn-more');
         const menu = $('more-menu');
         if (trigger && menu && !menu.classList.contains('open')) trigger.click();
@@ -30386,9 +30390,10 @@ async function applyReadyUpdate() {
 })();
 
 function syncWindowPreferences() {
-  if (!hasPy || !py.custom_titlebar || !py.window_control) return;
+  if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
   const t = key => window.i18n?.t(key) || key;
-  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')] });
+  const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
+  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) });
   $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
   if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
 }

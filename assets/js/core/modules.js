@@ -17,9 +17,11 @@ async function pollModules() {
     const r = await apiFetch('/api/modules');
     const d = await r.json();
     state.modules = d.modules || {};
+    state.deferredModules = Array.isArray(d.deferred_modules) ? d.deferred_modules : [];
     state.win7 = !!d.win7;
     updateModuleUi();
-    const pending = Object.values(state.modules).some(v => v === 'loading' || v === 'idle');
+    const deferred = new Set(state.deferredModules);
+    const pending = Object.entries(state.modules).some(([name,v]) => v === 'loading' || (v === 'idle' && !deferred.has(name)));
     if (pending && state.modulesStarted) setTimeout(pollModules, 900);
   } catch (e) {
     if (state.modulesStarted) setTimeout(pollModules, 2000);
@@ -52,14 +54,14 @@ function updateModuleUi() {
   const parts = [];
   for (const [k, v] of Object.entries(m)) {
     const label=moduleLabel(k);if(!label)continue;
-    const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':'status.loading';
+    const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':v==='idle'?'convert.statusPending':'status.loading';
     parts.push(label+' · '+_t(status));
   }
   const el = $('status-mods');
   if (el) {
     const details=parts.length?_t('status.modulePrefix')+'\n'+parts.join('\n'):'';
     el.textContent=details?'●':'';el.title=details;el.setAttribute('role','img');el.setAttribute('aria-label',details);
-    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v!=='ready')?'loading':'ready';
+    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v==='loading')?'loading':Object.values(m).some(v=>v==='idle')?'idle':'ready';
   }
 }
 window.addEventListener('readmd:language-changed',updateModuleUi);
@@ -93,6 +95,7 @@ async function ensureModule(name, timeoutMs) {
       const r = await apiFetch('/api/modules');
       const d = await r.json();
       const st = d.modules && d.modules[name];
+      if (st) { state.modules[name] = st; updateModuleUi(); }
       if (st === 'ready') return true;
       if (st === 'error' || st === 'unavailable' || st === 'disabled') {
         delete moduleLoadRequests[name];

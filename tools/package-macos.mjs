@@ -46,9 +46,10 @@ function preparePet(input,destination,arch,temporary,env) {
   fs.writeFileSync(destination,zip(entries),{flag:'wx'});
   return {sourceArchiveSha256:hash(fs.readFileSync(input)),archiveSha256:hash(fs.readFileSync(destination)),artifacts:manifest.artifacts.length,signedExecutables:executable};
 }
-export function packageMacos({binary,pet,output,arch,env=process.env}) {
+export function packageMacos({binary,pet,output,arch,format='all',env=process.env}) {
   if(process.platform!=='darwin')throw Error('A native Mac is required');
   if(!['arm64','x64'].includes(arch))throw Error('Expected arm64 or x64');
+  if(!['all','zip'].includes(format))throw Error('Expected all or zip package format');
   for(const file of [binary,pet])if(!file||!fs.lstatSync(file).isFile())throw Error('Expected a regular local input file');
   if(archOf(binary)!==(arch==='arm64'?'arm64':'x86_64'))throw Error('Main executable architecture mismatch');
   const version=fs.readFileSync(path.join(root,'VERSION'),'utf8').trim();
@@ -81,6 +82,21 @@ export function packageMacos({binary,pet,output,arch,env=process.env}) {
 <key>CFBundleIconFile</key><string>readmd.icns</string>
 <key>LSMinimumSystemVersion</key><string>${arch==='arm64'?'11.0':'10.15'}</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>CFBundleDocumentTypes</key><array><dict>
+<key>CFBundleTypeName</key><string>Markdown</string>
+<key>CFBundleTypeRole</key><string>Editor</string>
+<key>LSHandlerRank</key><string>Alternate</string>
+<key>LSItemContentTypes</key><array><string>net.daringfireball.markdown</string></array>
+<key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+</dict></array>
+<key>UTImportedTypeDeclarations</key><array><dict>
+<key>UTTypeIdentifier</key><string>net.daringfireball.markdown</string>
+<key>UTTypeDescription</key><string>Markdown</string>
+<key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+<key>UTTypeTagSpecification</key><dict>
+<key>public.filename-extension</key><array><string>md</string><string>markdown</string><string>mdown</string><string>mkd</string></array>
+<key>public.mime-type</key><string>text/markdown</string>
+</dict></dict></array>
 </dict></plist>
 `);
     const signing=signTarget(app,{env});
@@ -90,9 +106,12 @@ export function packageMacos({binary,pet,output,arch,env=process.env}) {
     fs.symlinkSync('/Applications',path.join(stage,'Applications'));
     const zipFile=path.join(output,'ReadMD-macos-'+arch+'.zip'),dmg=path.join(output,'ReadMD-macos-'+arch+'.dmg');
     command('/usr/bin/ditto',['-c','-k','--sequesterRsrc','--keepParent',app,zipFile]);
-    command('/usr/bin/hdiutil',['create','-volname','ReadMD','-srcfolder',stage,'-format','UDZO',dmg]);
-    signTarget(dmg,{env});if(mode==='distribution')notarizeTarget(dmg,{env});
-    const report={version,arch,signing,sourceBinarySha256:hash(fs.readFileSync(binary)),binarySha256:hash(fs.readFileSync(executable)),bootSha256:hash(fs.readFileSync(path.join(contents,'Resources/assets/readmd.boot.js'))),pet:petReport,files:[zipFile,dmg].map(file=>({name:path.basename(file),size:fs.statSync(file).size,sha256:hash(fs.readFileSync(file))}))};
+    const files=[zipFile];
+    if(format==='all'){
+      command('/usr/bin/hdiutil',['create','-volname','ReadMD','-srcfolder',stage,'-format','UDZO',dmg]);
+      signTarget(dmg,{env});if(mode==='distribution')notarizeTarget(dmg,{env});files.push(dmg);
+    }
+    const report={version,arch,formats:format==='zip'?['zip']:['zip','dmg'],signing,sourceBinarySha256:hash(fs.readFileSync(binary)),binarySha256:hash(fs.readFileSync(executable)),bootSha256:hash(fs.readFileSync(path.join(contents,'Resources/assets/readmd.boot.js'))),pet:petReport,files:files.map(file=>({name:path.basename(file),size:fs.statSync(file).size,sha256:hash(fs.readFileSync(file))}))};
     fs.writeFileSync(path.join(output,'package.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
     completed=true;return report;
   } finally {
@@ -102,6 +121,7 @@ export function packageMacos({binary,pet,output,arch,env=process.env}) {
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const args=process.argv.slice(2),value=name=>args[args.indexOf(name)+1];
-  if(args.length!==8||new Set(args.filter((_,i)=>i%2===0)).size!==4||!['--binary','--pet','--output','--arch'].every(n=>args.includes(n)))throw Error('Usage: package-macos.mjs --binary FILE --pet ZIP --output NEW_DIRECTORY --arch arm64|x64');
-  console.log(JSON.stringify(packageMacos({binary:value('--binary'),pet:value('--pet'),output:value('--output'),arch:value('--arch')})));
+  const keys=args.filter((_,i)=>i%2===0),allowed=['--binary','--pet','--output','--arch','--format'];
+  if(![8,10].includes(args.length)||new Set(keys).size!==keys.length||keys.some(k=>!allowed.includes(k))||!allowed.slice(0,4).every(n=>keys.includes(n)))throw Error('Usage: package-macos.mjs --binary FILE --pet ZIP --output NEW_DIRECTORY --arch arm64|x64 [--format all|zip]');
+  console.log(JSON.stringify(packageMacos({binary:value('--binary'),pet:value('--pet'),output:value('--output'),arch:value('--arch'),format:keys.includes('--format')?value('--format'):'all'})));
 }

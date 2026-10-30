@@ -3,7 +3,8 @@
 //! * Windows: the in-process `IFileDialog` from [`crate::win_dialogs`], with the
 //!   WinForms-in-PowerShell picker kept only as a fallback for a machine where
 //!   COM refuses to start.
-//! * macOS: `osascript` (`choose file` / `choose folder` / `choose file name`).
+//! * macOS desktop: in-process AppKit panels on the GUI thread. A standalone
+//!   server retains `osascript` when no native event-loop dispatcher exists.
 //! * Linux/BSD: `zenity`, then `kdialog`.
 //!
 //! Every backend reports the same three outcomes as `win_dialogs`: a pick, a
@@ -95,6 +96,8 @@ pub fn run(req: &Request) -> DialogOutcome {
     }
     #[cfg(target_os = "macos")]
     {
+        #[cfg(feature = "desktop")]
+        if let Some(outcome) = crate::macos_file_dialog::dispatch(req) { return outcome; }
         mac::run(req)
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -158,7 +161,7 @@ fn picked(text: &str) -> DialogOutcome {
 /// Extensions of a `Label|*.a;*.b|…` filter (first group only), for the Unix
 /// backends that take a plain glob list.
 #[cfg(not(windows))]
-fn filter_globs(req: &Request) -> Option<(String, Vec<String>)> {
+pub(crate) fn filter_globs(req: &Request) -> Option<(String, Vec<String>)> {
     let text = req.filter_text()?;
     let mut parts = text.split('|');
     let label = parts.next()?.to_string();

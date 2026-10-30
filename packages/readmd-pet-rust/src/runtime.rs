@@ -3,8 +3,10 @@ use crate::bridge::{
 };
 use crate::error::{HostError, HostResult};
 use crate::input::{HitTestTarget, InputEvent, InputRect, InputWatcher};
+#[cfg(not(target_os = "macos"))]
+use crate::platform::configure_builder;
 use crate::platform::{
-    configure_builder, create_backend, InteractionRect, InteractionRegionSnapshot, PlatformBackend,
+    create_backend, InteractionRect, InteractionRegionSnapshot, PlatformBackend,
 };
 use crate::protocol::{PetSnapshot, RendererKind, RendererMessage, SnapshotBounds};
 use crate::webview::WebViewHost;
@@ -13,10 +15,15 @@ use std::env;
 use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(not(target_os = "macos"))]
 use tao::dpi::LogicalSize;
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
+#[cfg(not(target_os = "macos"))]
 use tao::window::WindowBuilder;
+#[cfg(all(target_os = "macos", feature = "native-qa", debug_assertions))]
+#[path = "native_pet_qa.rs"]
+mod native_qa;
 
 #[derive(Debug, Clone)]
 pub struct HostConfig {
@@ -117,6 +124,15 @@ impl PetHost {
             ))
             .map_err(|error| HostError::Backend(format!("health_unwritable:{error}")))?;
         let event_loop: EventLoop<UserEvent> = EventLoopBuilder::with_user_event().build();
+        #[cfg(target_os = "macos")]
+        let event_loop = {
+            use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
+            let mut event_loop = event_loop;
+            event_loop.set_activation_policy(ActivationPolicy::Accessory);
+            event_loop.set_dock_visibility(false);
+            event_loop.set_activate_ignoring_other_apps(false);
+            event_loop
+        };
         let proxy = event_loop.create_proxy();
         spawn_snapshot_reader(config.bridge_file.clone(), proxy.clone());
         spawn_parent_watcher(
@@ -127,6 +143,7 @@ impl PetHost {
             },
         );
 
+        #[cfg(not(target_os = "macos"))]
         let builder = configure_builder(
             WindowBuilder::new()
                 .with_title("ReadMD Desktop Pet")
@@ -145,16 +162,19 @@ impl PetHost {
                 .with_focused(false)
                 .with_inner_size(LogicalSize::new(320.0, 380.0)),
         );
+        #[cfg(not(target_os = "macos"))]
         let window = builder
             .build(&event_loop)
             .map_err(|error| HostError::Backend(format!("window_create:{error}")))?;
+        #[cfg(target_os = "macos")]
+        let window = crate::platform::Window::new()?;
         // The GNOME companion authenticates both the application id and the
         // per-host session token. Pass the token directly to the backend rather
         // than mutating the process environment.
         let mut backend = create_backend(&config.session_token);
         backend.init(&window)?;
         backend.set_bounds(&window, SnapshotBounds::default())?;
-        backend.set_click_through(&window, false)?;
+        backend.set_click_through(&window, cfg!(target_os = "macos"))?;
         backend.set_focusable(&window, false)?;
 
         let renderer_proxy = event_loop.create_proxy();
@@ -193,8 +213,23 @@ impl PetHost {
                 let _ = input_proxy.send_event(UserEvent::PetClick);
             }
         });
+        #[cfg(target_os = "macos")]
+        let local_input = {
+            let proxy = event_loop.create_proxy();
+            input_watcher
+                .install_local_events(&window, move |event| {
+                    if let InputEvent::PetClick = event {
+                        let _ = proxy.send_event(UserEvent::PetClick);
+                    }
+                })
+                .ok_or_else(|| HostError::Backend("macos_local_input_unavailable".into()))?
+        };
+        #[cfg(all(target_os = "macos", feature = "native-qa", debug_assertions))]
+        let mut native_qa = native_qa::Driver::from_config(&config);
 
         event_loop.run(move |event, _target, control_flow| {
+            #[cfg(target_os = "macos")]
+            let _keep_local_input = &local_input;
             *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(100));
             if crate::platform::take_completed_drag() {
                 if let Ok(pos) = window.outer_position() {
@@ -353,6 +388,16 @@ impl PetHost {
                 }
                 _ => {}
             }
+            #[cfg(all(target_os = "macos", feature = "native-qa", debug_assertions))]
+            if let Some(driver) = native_qa.as_mut() {
+                driver.tick(
+                    &window,
+                    backend.as_mut(),
+                    &mut state,
+                    &input_watcher,
+                    &webview,
+                );
+            }
         });
     }
 }
@@ -407,17 +452,22 @@ impl HostState {
 fn sync_input_watcher(
     watcher: &InputWatcher,
     backend: &dyn PlatformBackend,
-    window: &tao::window::Window,
+    window: &crate::platform::Window,
     state: &HostState,
 ) {
     let hwnd = backend.win32_hwnd().unwrap_or(0);
+    let pointer_origin = backend.pointer_origin(window);
     watcher.update_target(HitTestTarget {
         hwnd,
-        window_x: state.bounds.x,
-        window_y: state.bounds.y,
+        window_x: pointer_origin.map_or(state.bounds.x, |p| p.0),
+        window_y: pointer_origin.map_or(state.bounds.y, |p| p.1),
         width: state.bounds.width,
         height: state.bounds.height,
-        scale_factor: window.scale_factor().max(0.1),
+        scale_factor: if pointer_origin.is_some() {
+            1.0
+        } else {
+            window.scale_factor().max(0.1)
+        },
         rects: state.interaction_rects.clone(),
         pet_rects: state.pet_rects.clone(),
         regions_declared: state.interaction_generation > 0,
@@ -496,7 +546,7 @@ fn spawn_snapshot_reader(path: PathBuf, proxy: EventLoopProxy<UserEvent>) {
 }
 
 fn apply_snapshot(
-    window: &tao::window::Window,
+    window: &crate::platform::Window,
     backend: &mut dyn PlatformBackend,
     webview: &mut WebViewHost,
     state: &mut HostState,
@@ -538,7 +588,7 @@ fn apply_snapshot(
 }
 
 fn handle_renderer_message(
-    window: &tao::window::Window,
+    window: &crate::platform::Window,
     backend: &mut dyn PlatformBackend,
     webview: &mut WebViewHost,
     state: &mut HostState,
@@ -806,7 +856,7 @@ fn handle_renderer_message(
 /// geometry the window really ended up with.  A drag is the only chance to
 /// persist the user's chosen position, so a failed write must not be swallowed.
 fn commit_bounds(
-    window: &tao::window::Window,
+    window: &crate::platform::Window,
     backend: &mut dyn PlatformBackend,
     state: &mut HostState,
     publisher: &DurableCommandPublisher,
@@ -927,7 +977,7 @@ mod tests {
 }
 
 fn start_native_drag(
-    window: &tao::window::Window,
+    window: &crate::platform::Window,
     backend: &mut dyn PlatformBackend,
     _state: &mut HostState,
     _publisher: &DurableCommandPublisher,
@@ -938,7 +988,7 @@ fn start_native_drag(
     backend.drag_window(window)?;
     // Other platforms retain their existing Tao drag/persistence path. Windows
     // publishes the final measured position after WM_EXITSIZEMOVE instead.
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         if let Ok(pos) = window.outer_position() {
             let scale = window.scale_factor().max(0.1);

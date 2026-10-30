@@ -1429,7 +1429,7 @@ impl RuntimeTree {
         let Some(manifest) = self.installed_manifest() else {
             return false;
         };
-        if manifest.as_object().map(|object| object.is_empty()).unwrap_or(true) {
+        if is_symlink(&self.target) || manifest.as_object().map(|object| object.is_empty()).unwrap_or(true) {
             return false;
         }
         if !self.binary_path().is_file() {
@@ -1438,46 +1438,10 @@ impl RuntimeTree {
         if !self.target.join("renderer").join("index.html").is_file() {
             return false;
         }
-        // The runtime manifest the kernel actually ships lists its files under
-        // `artifacts` — a list of `{path, sha256, size, role}` objects
-        // (`runtime.py:161`, mirrored by `manifest_expected`) — *not* a path/
-        // digest `files` map.  Reading `files` here let the real manifest fall
-        // into a `None => true` arm and ship with zero digest verification.
-        // This must fail closed: a missing, empty or non-array `artifacts`
-        // section, an unreadable installed file, or any size/SHA-256 mismatch
-        // means the tree is not a verified install.
-        let Some(artifacts) = manifest.get("artifacts").and_then(Value::as_array) else {
-            return false;
-        };
-        if artifacts.is_empty() {
-            return false;
-        }
-        artifacts.iter().all(|item| {
-            let Some(object) = item.as_object() else { return false; };
-            let Some(relative) = object.get("path").and_then(Value::as_str) else {
-                return false;
-            };
-            let Some(expected) = object
-                .get("sha256")
-                .and_then(Value::as_str)
-                .map(|digest| digest.to_ascii_lowercase())
-            else {
-                return false;
-            };
-            let Some(size) = object.get("size").and_then(py_int_from_json) else {
-                return false;
-            };
-            let Some(candidate) = safe_join(&self.target, relative) else {
-                return false;
-            };
-            match (fs::metadata(&candidate).ok(), sha256_file(&candidate)) {
-                // `path.stat().st_size != item["size"] or _sha256(path) !=
-                // item["sha256"]` (`runtime.py:242`) — an unreadable file is a
-                // mismatch, never a pass.
-                (Some(meta), Some(actual)) => meta.len() as i64 == size && actual == expected,
-                _ => false,
-            }
-        })
+        // Installation and subsequent availability use the same full verifier:
+        // runtime/protocol/platform/roles, exact file list, symlinks and bytes.
+        // A digest-only subset must not bless an invalid or modified runtime.
+        verify_tree(&self.target, &manifest).is_ok()
     }
 
     /// `available()` — the installer's own "is the runtime already there".
@@ -1536,6 +1500,9 @@ impl RuntimeTree {
         }
         if copied {
             copied = copy_file(&manifest_path, &staged.join("runtime-manifest.json"));
+        }
+        if copied {
+            copied = runtime_file_modes(&staged, &expected).is_ok();
         }
         let result = if copied {
             self.publish(&staged)
@@ -2858,6 +2825,9 @@ pub fn install_zip(installer: &RuntimeTree, archive: &Path, confirm: bool) -> Pe
         if fs::write(staged.join("runtime-manifest.json"), &manifest_bytes).is_err() {
             break;
         }
+        if runtime_file_modes(&staged, &expected).is_err() {
+            break;
+        }
         outcome = PetOutcome::Returned(installer.publish(&staged));
         break;
     }
@@ -2899,6 +2869,27 @@ struct ExpectedArtifact {
     sha256: String,
     size: i64,
     role: String,
+}
+
+/// Only a fully validated, private staging tree reaches this function. ZIP
+/// extraction writes ordinary files and does not restore Unix execute bits.
+/// Derive safe modes from the verified roles, never archive-supplied setuid or
+/// world-writable flags. In particular, do not chmod an existing user's tree.
+fn runtime_file_modes(staged: &Path, expected: &BTreeMap<String, ExpectedArtifact>) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for (relative, artifact) in expected {
+            let path = safe_join(staged, relative).ok_or(std::io::ErrorKind::InvalidInput)?;
+            if is_symlink(&path) { return Err(std::io::ErrorKind::InvalidInput.into()); }
+            let executable = artifact.role == "executable"
+                || (artifact.role == "companion" && relative.ends_with(".sh"));
+            fs::set_permissions(path, fs::Permissions::from_mode(if executable { 0o755 } else { 0o644 }))?;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (staged, expected);
+    Ok(())
 }
 
 /// CPython's `int(value)` on a decoded JSON value (`runtime.py:150` and
@@ -3188,6 +3179,87 @@ pub fn clean_legacy_pet_installations(active_target: &Path) -> Vec<String> {
     cleaned
 }
 
+/// Refresh only the canonical runtime bundled with this installed application.
+/// A new app must not keep using its predecessor's Mac host indefinitely.
+/// Preferences and custom characters live outside this verified runtime tree.
+#[cfg(not(target_os="macos"))]
+fn refresh_bundled_runtime(_app: &App, _installer: &RuntimeTree) -> Option<PetOutcome> { None }
+
+#[cfg(target_os="macos")]
+fn refresh_bundled_runtime(app: &App, installer: &RuntimeTree) -> Option<PetOutcome> {
+    let current = installer.installed_manifest()?;
+    let current_version = current.get("version")?.as_str()?;
+    let archive = app_dir(app).join(format!("ReadMD-Pet-Rust-{}-{}.zip",pet_platform(),pet_arch()));
+    if is_symlink(&archive) || !archive.is_file() || file_size(&archive) > MAX_ARCHIVE_BYTES { return None; }
+    let blob = fs::read(&archive).ok()?;
+    let entries = zip::entries(&blob).ok()?;
+    let entry = entries.iter().find(|entry|entry.name == "runtime-manifest.json")?;
+    if entry.uncompressed_size > 1024 * 1024 { return None; }
+    let manifest_bytes = zip::read_entry(&blob,entry).ok()?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes).ok()?;
+    if manifest_expected(&manifest).is_err()
+        || manifest.get("platform").and_then(Value::as_str) != Some(pet_platform())
+        || manifest.get("arch").and_then(Value::as_str) != Some(pet_arch().as_str())
+        || compare_versions(manifest.get("version")?.as_str()?,current_version) != Some(1) { return None; }
+    if host_liveness().0 {
+        return Some(PetOutcome::Returned(json!({"ok":false,"code":"rust_runtime_update_requires_restart"})));
+    }
+    drop(blob);
+    Some(upgrade_mac_runtime(installer,&archive,&sha256_hex(&manifest_bytes)))
+}
+
+#[cfg(target_os="macos")]
+fn mac_move_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString,os::unix::ffi::OsStrExt};
+    let from = CString::new(from.as_os_str().as_bytes()).map_err(|_|std::io::ErrorKind::InvalidInput)?;
+    let to = CString::new(to.as_os_str().as_bytes()).map_err(|_|std::io::ErrorKind::InvalidInput)?;
+    let result = unsafe { libc::renameatx_np(libc::AT_FDCWD,from.as_ptr(),libc::AT_FDCWD,to.as_ptr(),libc::RENAME_EXCL) };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+/// Stage under an exclusively created directory, then move without replacement.
+/// The previous tree is retained as recovery material, including unknown data
+/// that appears concurrently. No recursive deletion of the previous install.
+#[cfg(target_os="macos")]
+fn upgrade_mac_runtime(installer: &RuntimeTree, archive: &Path, expected_manifest: &str) -> PetOutcome {
+    use std::os::unix::fs::DirBuilderExt;
+    let fail = |code| PetOutcome::Returned(json!({"ok":false,"code":code}));
+    if is_symlink(&installer.root) || !installer.verified_install() { return fail("rust_runtime_install_needs_repair"); }
+    let Some(old_manifest) = installer.installed_manifest_hash() else { return fail("rust_runtime_install_needs_repair"); };
+    let claimed = installer.root.join(format!("readmd-runtime-upgrade-{}",uuid::Uuid::new_v4()));
+    if fs::DirBuilder::new().mode(0o700).create(&claimed).is_err() { return fail("rust_runtime_install_failed"); }
+    let staged = RuntimeTree { root:claimed.clone(),target:claimed.join("next"),kind:RuntimeKind::Rust };
+    let result = install_zip(&staged,archive,true);
+    if result.value().and_then(|v|v["ok"].as_bool()) != Some(true) {
+        let _ = fs::remove_dir_all(&claimed);return result;
+    }
+    if !staged.verified_install() || staged.installed_manifest_hash().as_deref() != Some(expected_manifest)
+        || !installer.verified_install() || installer.installed_manifest_hash().as_deref() != Some(old_manifest.as_str()) {
+        let _ = fs::remove_dir_all(&claimed);return fail("rust_runtime_hash_mismatch");
+    }
+    let previous = claimed.join("previous");
+    let journal = claimed.join("upgrade-intent.json");
+    let record = |state| crate::content::write_bytes_atomic(&journal,&serde_json::to_vec(&json!({
+        "schema":1,"kind":"readmd-managed-pet-runtime","state":state,
+        "previous_manifest":old_manifest,"next_manifest":expected_manifest
+    })).unwrap_or_default());
+    if record("prepared").is_err() { let _ = fs::remove_dir_all(&claimed);return fail("rust_runtime_install_failed"); }
+    if mac_move_no_replace(&installer.target,&previous).is_err() { let _ = fs::remove_dir_all(&claimed);return fail("rust_runtime_install_failed"); }
+    let old_tree = RuntimeTree {root:claimed.clone(),target:previous.clone(),kind:RuntimeKind::Rust};
+    if record("previous_preserved").is_err() || !old_tree.verified_install()
+        || old_tree.installed_manifest_hash().as_deref() != Some(old_manifest.as_str())
+        || mac_move_no_replace(&staged.target,&installer.target).is_err() {
+        if mac_move_no_replace(&previous,&installer.target).is_err() {
+            let _ = record("recovery_pending");return fail("rust_runtime_recovery_pending");
+        }
+        let _ = record("rolled_back");return fail("rust_runtime_install_failed");
+    }
+    if !installer.verified_install() || installer.installed_manifest_hash().as_deref() != Some(expected_manifest)
+        || record("published_previous_retained").is_err() { return fail("rust_runtime_recovery_pending"); }
+    PetOutcome::Returned(json!({"ok":true,"installed":true,"runtime":"rust","upgraded":true,
+        "previous_retained":true,"install_path":installer.target.to_string_lossy()}))
+}
+
 /// `install_default_pet_plugin()`'s local-candidate search, then the network
 /// fallback that Python performs with an explicit `allow_network=True`.
 fn install_default_pet_plugin(app: &App) -> PetOutcome {
@@ -3197,7 +3269,13 @@ fn install_default_pet_plugin(app: &App) -> PetOutcome {
     let _install_guard = install_lock().acquire();
     let installer = RuntimeTree::rust(app);
     if installer.available() {
+        if let Some(result) = refresh_bundled_runtime(app, &installer) { return result; }
         return PetOutcome::Returned(json!({ "ok": true, "installed": true, "runtime": "rust", "install_path": installer.target.to_string_lossy() }));
+    }
+    // Automatic startup/enablement cannot erase a modified runtime or unknown
+    // user file. Keep the existing tree for explicit inspection/recovery.
+    if installer.target.exists() || is_symlink(&installer.target) {
+        return PetOutcome::Returned(json!({"ok":false,"code":"rust_runtime_install_needs_repair"}));
     }
     let install = app_dir(app);
     let roots: Vec<PathBuf> = vec![
@@ -3798,6 +3876,18 @@ fn start_pet_host(app: &App) -> Value {
             "code": "rust_runtime_already_running",
             "runtime": adapter_status(app, "", "rust_runtime_already_running"),
         });
+    }
+
+    #[cfg(target_os="macos")]
+    {
+        // Enabling an already installed, disabled companion must refresh the
+        // app-bundled host too. The UI only installs when availability is false;
+        // otherwise a valid V0.0.5 tree would keep launching its old Mac host.
+        // Running companions returned above and are never replaced in place.
+        let installed = install_default_pet_plugin(app);
+        if installed.value().and_then(|v|v["ok"].as_bool()) != Some(true) {
+            return installed.value().cloned().unwrap_or_else(||json!({"ok":false,"code":"pet_plugin_install_failed"}));
+        }
     }
 
     // `runtime.py:547-553`: the tree must exist, and a stale report left by a
@@ -4691,6 +4781,123 @@ mod tests {
         assert!(RuntimeTree::rust(&app).target.starts_with(&app.paths.data_dir));
         assert!(!app_dir(&app).join("plugins").exists());
         assert!(RuntimeTree::rust(&app).available());
+    }
+
+    fn native_bundle(version: &str, payload: &[u8]) -> Vec<u8> {
+        let (manifest,_,html) = bundle_parts();
+        let mut manifest: Value = serde_json::from_slice(&manifest).unwrap();
+        let executable = if cfg!(windows) { "readmd-pet-rust.exe" } else { "readmd-pet-rust" };
+        manifest["version"] = json!(version);
+        manifest["platform"] = json!(pet_platform());
+        manifest["arch"] = json!(pet_arch());
+        manifest["artifacts"][1]["path"] = json!(executable);
+        manifest["artifacts"][1]["size"] = json!(payload.len());
+        manifest["artifacts"][1]["sha256"] = json!(sha256_hex(payload));
+        zip_of(&[("runtime-manifest.json",&serde_json::to_vec(&manifest).unwrap()),("renderer/index.html",&html),(executable,payload)])
+    }
+
+    fn installed_native_bundle(app: &App) -> RuntimeTree {
+        let installer = RuntimeTree::rust(app);
+        let archive = app_dir(app).join("native-test-runtime.zip");
+        fs::write(&archive,native_bundle("1.0.0",b"owned-old-runtime")).unwrap();
+        assert_eq!(install_zip(&installer,&archive,true).value().unwrap()["ok"],true);
+        assert!(installer.verified_install());
+        installer
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_archive_and_directory_installs_publish_executable_safe_modes() {
+        use std::os::unix::fs::PermissionsExt;
+        let app = test_app("native-runtime-execute-mode");
+        let installer = installed_native_bundle(&app);
+        let body = fs::read(installer.binary_path()).unwrap();
+        assert_eq!(fs::metadata(installer.binary_path()).unwrap().permissions().mode() & 0o7777, 0o755);
+        assert_eq!(fs::metadata(installer.target.join("renderer/index.html")).unwrap().permissions().mode() & 0o7777, 0o644);
+        // A source copied from an old ZIP install can be byte-valid but lack
+        // execute permission. Repair only the new, private staged copy.
+        fs::set_permissions(installer.binary_path(), fs::Permissions::from_mode(0o640)).unwrap();
+        let copy = RuntimeTree { root:app.paths.data_dir.join("directory-copy"),target:app.paths.data_dir.join("directory-copy/runtime"),kind:RuntimeKind::Rust };
+        assert_eq!(copy.install_directory(&installer.target,true)["ok"], true);
+        assert_eq!(fs::metadata(copy.binary_path()).unwrap().permissions().mode() & 0o7777, 0o755);
+        assert_eq!(fs::metadata(installer.binary_path()).unwrap().permissions().mode() & 0o7777, 0o640);
+        assert_eq!(fs::read(copy.binary_path()).unwrap(), body);
+    }
+
+    #[test]
+    fn installed_runtime_requires_valid_protocol_platform_roles_and_exact_tree() {
+        let app = test_app("native-runtime-validation");
+        let installer = installed_native_bundle(&app);
+        let original = installer.installed_manifest().unwrap();
+        for changed in [
+            {let mut m=original.clone();m["protocol_version"]=json!(2);m},
+            {let mut m=original.clone();m["platform"]=json!("unrelated-platform");m},
+            {let mut m=original.clone();m["artifacts"][0]["role"]=json!("resource");m},
+        ] {
+            fs::write(installer.manifest_path(),serde_json::to_vec(&changed).unwrap()).unwrap();
+            assert!(!installer.verified_install());
+        }
+        fs::write(installer.manifest_path(),serde_json::to_vec(&original).unwrap()).unwrap();
+        assert!(installer.verified_install());
+        fs::write(installer.target.join("keep-my-notes.md"),b"owned unrelated data").unwrap();
+        assert!(!installer.verified_install());
+        let result=install_default_pet_plugin(&app);
+        assert_eq!(result.value().unwrap()["code"],"rust_runtime_install_needs_repair");
+        assert_eq!(fs::read(installer.target.join("keep-my-notes.md")).unwrap(),b"owned unrelated data");
+        assert_eq!(fs::read(installer.binary_path()).unwrap(),b"owned-old-runtime");
+    }
+
+    #[cfg(target_os="macos")]
+    #[test]
+    fn mac_bundled_upgrade_retains_previous_runtime_preferences_and_custom_data() {
+        let app = test_app("native-runtime-upgrade");
+        let installer = installed_native_bundle(&app);
+        app.update_settings(&json!({"pet_bounds":{"x":123,"y":456,"width":320,"height":420},"pet_slug":"mochi"}));
+        let custom=installer.root.join("my-custom-pet.txt");fs::write(&custom,b"user character data").unwrap();
+        let archive=app_dir(&app).join(format!("ReadMD-Pet-Rust-{}-{}.zip",pet_platform(),pet_arch()));
+        fs::write(&archive,native_bundle("1.0.1",b"owned-new-runtime")).unwrap();
+        let result=install_default_pet_plugin(&app);
+        assert_eq!(result.value().unwrap()["upgraded"],true);
+        assert!(installer.verified_install());
+        assert_eq!(fs::read(installer.binary_path()).unwrap(),b"owned-new-runtime");
+        assert_eq!(app.setting("pet_bounds")["x"],123);
+        assert_eq!(app.setting("pet_slug"),"mochi");
+        assert_eq!(fs::read(custom).unwrap(),b"user character data");
+        let previous=fs::read_dir(&installer.root).unwrap().flatten().map(|e|e.path())
+            .find(|p|p.file_name().unwrap().to_string_lossy().starts_with("readmd-runtime-upgrade-")).unwrap();
+        assert_eq!(fs::read(previous.join("previous/readmd-pet-rust")).unwrap(),b"owned-old-runtime");
+        let journal:Value=serde_json::from_slice(&fs::read(previous.join("upgrade-intent.json")).unwrap()).unwrap();
+        assert_eq!(journal["state"],"published_previous_retained");
+        assert_eq!(install_default_pet_plugin(&app).value().unwrap()["upgraded"],Value::Null);
+    }
+
+    #[cfg(target_os="macos")]
+    #[test]
+    fn mac_bundled_corruption_and_downgrade_leave_the_old_runtime_intact() {
+        let app = test_app("native-runtime-corrupt-upgrade");
+        let installer = installed_native_bundle(&app);
+        let archive=app_dir(&app).join(format!("ReadMD-Pet-Rust-{}-{}.zip",pet_platform(),pet_arch()));
+        fs::write(&archive,native_bundle("0.9.0",b"owned-downgrade")).unwrap();
+        assert_eq!(install_default_pet_plugin(&app).value().unwrap()["upgraded"],Value::Null);
+        let mut blob=native_bundle("1.0.1",b"owned-new-runtime");
+        let start=blob.windows(b"owned-new-runtime".len()).position(|w|w==b"owned-new-runtime").unwrap();blob[start]=b'X';
+        fs::write(&archive,blob).unwrap();
+        assert_eq!(install_default_pet_plugin(&app).value().unwrap()["ok"],false);
+        assert!(installer.verified_install());
+        assert_eq!(fs::read(installer.binary_path()).unwrap(),b"owned-old-runtime");
+    }
+
+    #[cfg(target_os="macos")]
+    #[test]
+    fn mac_runtime_move_never_replaces_an_external_placeholder() {
+        let root=scratch_dir("native-no-replace");
+        let source=root.join("source");let occupied=root.join("occupied");
+        fs::create_dir(&source).unwrap();fs::write(source.join("owned"),b"source").unwrap();
+        fs::create_dir(&occupied).unwrap();
+        assert!(mac_move_no_replace(&source,&occupied).is_err());
+        assert_eq!(fs::read(source.join("owned")).unwrap(),b"source");
+        assert!(occupied.is_dir());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

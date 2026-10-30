@@ -2,12 +2,23 @@ use crate::protocol::SnapshotBounds;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 use std::time::Duration;
-#[cfg(any(windows, test))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(any(windows, target_os = "macos", test))]
 mod pressed;
 #[cfg(windows)]
 mod windows;
+
+#[cfg(target_os = "macos")]
+pub(crate) fn native_permissions() -> Option<serde_json::Value> {
+    Some(macos::permissions())
+}
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn native_permissions() -> Option<serde_json::Value> {
+    None
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct InputRect {
@@ -218,6 +229,14 @@ impl InputWatcher {
             *lock = target;
         }
     }
+    #[cfg(target_os = "macos")]
+    pub(crate) fn install_local_events(
+        &self,
+        window: &crate::platform::Window,
+        emit: impl Fn(InputEvent) + 'static,
+    ) -> Option<macos::LocalMonitor> {
+        macos::LocalMonitor::install(window, self.target.clone(), emit)
+    }
 }
 
 impl Drop for InputWatcher {
@@ -237,7 +256,15 @@ where
     windows::run(target, running, on_event);
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn run_watcher_loop<F>(target: Arc<Mutex<HitTestTarget>>, running: Arc<AtomicBool>, on_event: F)
+where
+    F: Fn(InputEvent) + Send + Sync + 'static,
+{
+    macos::run(target, running, on_event);
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn run_watcher_loop<F>(_target: Arc<Mutex<HitTestTarget>>, running: Arc<AtomicBool>, _on_event: F)
 where
     F: Fn(InputEvent) + Send + Sync + 'static,

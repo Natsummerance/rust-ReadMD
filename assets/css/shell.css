@@ -45,6 +45,7 @@ body.rm-scrolled #toolbar { box-shadow: 0 1px 0 var(--color-border), var(--shado
 .status-version { padding: 0 6px; height: 18px; display: inline-flex; align-items: center; border: 0; border-radius: var(--radius-xs); background: var(--color-hover); font: var(--weight-medium) var(--text-2xs) / 1 var(--font-code); }
 #status-left { color: var(--color-fg-muted); }
 #status-mods { color: var(--color-fg-subtle); }
+#status-mods[data-module-state="idle"] { color: var(--color-fg-subtle); }
 #status-mods:not(:empty)::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: var(--color-accent); vertical-align: 1px; }
 .status-btn-home { height: 20px; gap: var(--space-1); padding: 0 var(--space-2); border: 0; border-radius: var(--radius-xs); background: transparent; font-size: var(--text-2xs); font-weight: var(--weight-medium); }
 .status-home-ic { width: 12px; height: 12px; }

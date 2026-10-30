@@ -31,6 +31,8 @@ pub struct HealthState {
     /// a stale `ready` report left by a crashed predecessor.
     pub runtime_generation: u64,
     pub protocol_version: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_permissions: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +117,7 @@ impl HealthWriter {
             engine_generation: generation,
             runtime_generation: runtime_generation(),
             protocol_version: crate::protocol::PROTOCOL_VERSION,
+            input_permissions: crate::input::native_permissions(),
         }
     }
 }

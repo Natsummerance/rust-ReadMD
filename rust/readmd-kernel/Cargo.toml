@@ -95,7 +95,13 @@ libc = "=0.2.189"
 # Reuse the exact AppKit binding and features already locked by tao/wry. This
 # is only the desktop Mac window; server builds do not acquire a UI dependency.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
+objc2-app-kit = { version = "=0.3.2", optional = true, default-features = false, features = ["std", "NSWindow", "NSView", "NSButton", "NSButtonCell", "NSActionCell", "NSCell", "NSControl", "NSResponder", "NSOpenPanel", "NSSavePanel", "NSPanel", "NSApplication", "NSEvent", "NSGraphicsContext", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSMenu", "NSMenuItem", "NSImage", "block2"] }
+block2 = "=0.6.2"
+# Vision also serves the headless/MCP host. Recognition runs in an owned child
+# of the signed ReadMD executable, so cancellation never shares ObjC objects.
+objc2 = { version = "=0.6.4", features = ["exception"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSError", "NSObject", "NSOperation", "NSProcessInfo", "NSString"] }
+objc2-vision = { version = "=0.3.2", default-features = false, features = ["std", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNObservation", "VNTypes", "objc2-core-foundation"] }
 
 # Windows.Media.Ocr / Windows.Data.Pdf for native OCR; the same version wry
 # already pulls in, so Cargo.lock gains no new package.

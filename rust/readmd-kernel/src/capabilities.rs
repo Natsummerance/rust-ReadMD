@@ -42,6 +42,14 @@ pub fn probe(name: &str) -> Result<(), &'static str> {
                 Err(code) if code=="ocr_no_engine"=>(),
                 Err(code)=>return Err(match code.as_str(){"cancelled"=>"cancelled","ocr_busy"=>"ocr_busy","ocr_timeout"=>"ocr_timeout",_=>"ocr_probe_failed"}),
             }
+            #[cfg(target_os = "macos")]
+            return crate::ocr_macos::probe().map_err(|code| match code.as_str() {
+                "cancelled" => "cancelled", "ocr_busy" => "ocr_busy",
+                "ocr_timeout" => "ocr_timeout", "ocr_no_engine" => "ocr_no_engine",
+                _ => "ocr_probe_failed",
+            });
+            #[cfg(not(target_os = "macos"))]
+            {
             if !crate::ocr_winrt::available(){return Err("ocr_no_engine");}
             // An owned 64×64 white BMP exercises image decoding and OCR without
             // inspecting any personal document or persisting a probe file.
@@ -51,6 +59,7 @@ pub fn probe(name: &str) -> Result<(), &'static str> {
             bmp[18..22].copy_from_slice(&64i32.to_le_bytes());bmp[22..26].copy_from_slice(&64i32.to_le_bytes());
             bmp[26..28].copy_from_slice(&1u16.to_le_bytes());bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
             crate::ocr_winrt::ocr_image_bytes(&bmp).map(|_|()).map_err(|_|"ocr_probe_failed")
+            }
         },
         "ai" => {
             // This is transport initialization, NOT a claim that credentials,

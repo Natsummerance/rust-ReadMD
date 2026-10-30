@@ -3607,13 +3607,16 @@ fn set_autostart(_app: &Arc<App>, enabled: bool) -> ApiResult<()> {
 const AUTOSTART_SUBKEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 fn h_modules(app: &Arc<App>, _req: &Request) -> ApiResult<Response> {
-    for name in crate::modules::MODULES {crate::capabilities::start(app,name,false);}
+    for name in crate::modules::MODULES {
+        if !crate::modules::DEFERRED_MODULES.contains(name) { crate::capabilities::start(app,name,false); }
+    }
     let (states, errors)=app.modules.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
     ok_json(json!({
         "ok": true,
         "engine": "rust",
         "version": VERSION,
         "modules": states,
+        "deferred_modules": crate::modules::DEFERRED_MODULES,
         "errors": errors,
         "probe_scope": "local_engine_operation",
         "ai_connection": "not_checked",

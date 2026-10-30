@@ -1,0 +1,560 @@
+{
+  "schema": 1,
+  "date": "2026-10-31",
+  "version": "0.0.6",
+  "formalReleasePublished": false,
+  "environment": {
+    "os": "macOS 27.2",
+    "architecture": "arm64",
+    "nativeDisplay": {
+      "width": 1920,
+      "height": 1080,
+      "scale": 1
+    }
+  },
+  "source": {
+    "baseCommit": "69a22781908f2e82a227276564f205f7e94842a5",
+    "productionManifestSha256": "fabc94c2fad5ec8766d894c3989a07c3759e9523faa38f3aaca37fe0df5176a9",
+    "binding": "base commit and production source manifest; the containing commit records the candidate source"
+  },
+  "modelServices": {
+    "deferred": true,
+    "inferenceAfterDeferral": false,
+    "filteredVisionTest": "ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption",
+    "testStillExecutable": true
+  },
+  "regressions": {
+    "kernelLibrary": {
+      "passed": 4226,
+      "failed": 0,
+      "existingIgnored": 7,
+      "explicitlyFiltered": 1,
+      "receipt": "macos-library-final-no-inference"
+    },
+    "node": {
+      "total": 1763,
+      "passed": 1760,
+      "failed": 0,
+      "platformSkipped": 3,
+      "receipt": "macos-node-packaging-final"
+    },
+    "petLibrary": {
+      "passed": 63,
+      "failed": 0,
+      "receipt": "macos-pet-library-final"
+    },
+    "petFormatAndClippy": true
+  },
+  "nativeCurrent": {
+    "menusAndLifecycle": {
+      "passed": true,
+      "binarySha256": "fdb560350111c1f875fcae9fce68e7302d28bbcf3c0a7a03fdc2803fefeb5024",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "a72f10ebc3cc6e8514cc423713b88a52a6710a077be40810714815f4b7a872da",
+      "phases": [
+        {
+          "ok": true,
+          "phase": "lifecycle",
+          "checks": [
+            "actual_native_mac_bridge",
+            "owned_profile_starts_on_home",
+            "native_open_file_dispatched",
+            "native_delegate_opened_chinese_document",
+            "native_open_does_not_mark_document_dirty",
+            "actual_native_status_item_available",
+            "close_to_menu_bar_keeps_document_session",
+            "native_reopen_dispatched",
+            "dock_reopen_restores_same_native_window_and_body",
+            "native_show_dispatched",
+            "native_menu_show_restores_hidden_reader",
+            "entering_edit_stays_clean",
+            "initial_edit_persisted_before_native_history",
+            "native_undo_menu_dispatched",
+            "native_undo_returns_to_unchanged_saved_body",
+            "native_undo_persisted_before_redo",
+            "native_undo_retains_durable_redo",
+            "native_redo_menu_dispatched",
+            "native_redo_restores_edit_and_dirty_revision",
+            "native_quit_key_dispatched",
+            "cancel_quit_key_preserves_unsaved_body",
+            "native_terminate_dispatched",
+            "cancel_terminate_preserves_unsaved_body",
+            "native_exit_dispatched",
+            "cancel_native_menu_quit_preserves_unsaved_body",
+            "native_save_key_dispatched",
+            "native_command_s_commits_current_visible_body",
+            "saved_document_returns_clean",
+            "model_services_stay_unloaded",
+            "session_persisted_before_native_quit"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "reopen",
+          "checks": [
+            "actual_native_mac_bridge",
+            "normal_native_quit_restores_saved_session",
+            "restarted_editor_matches_saved_revision",
+            "model_services_stay_unloaded",
+            "session_persisted_before_native_quit"
+          ],
+          "code": 0,
+          "signal": null
+        }
+      ]
+    },
+    "panelCancellationOnly": {
+      "passed": true,
+      "binarySha256": "fdb560350111c1f875fcae9fce68e7302d28bbcf3c0a7a03fdc2803fefeb5024",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "0440736db9cc26bd8296854b0dfab6f3a8bbe3a53e453d699efd2de2c2e6847c",
+      "phases": [
+        {
+          "ok": true,
+          "phase": "pick_save",
+          "checks": [
+            "actual_native_mac_bridge",
+            "picked_document_opened_in_native_reader",
+            "picked_body_and_bom_decoded_exactly",
+            "actual_appkit_panel_visible",
+            "native_open_cancel_keeps_document_and_tabs",
+            "opening_and_entering_edit_is_clean",
+            "actual_appkit_panel_visible",
+            "native_save_cancel_preserves_current_visible_draft",
+            "native_save_cancel_preserves_original_identity",
+            "explicit_user_revert_returns_to_original_revision",
+            "reverted_editor_closes_without_confirmation",
+            "model_services_remain_deferred",
+            "native_session_persisted"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "reopen",
+          "checks": [
+            "actual_native_mac_bridge",
+            "original_document_restored_after_cancellation",
+            "restored_document_is_clean_and_editable",
+            "restored_editor_closes_cleanly",
+            "model_services_remain_deferred",
+            "native_session_persisted"
+          ],
+          "code": 0,
+          "signal": null
+        }
+      ]
+    },
+    "releaseCompanionInstallUpgradeAndRenderers": {
+      "passed": true,
+      "binarySha256": "fdb560350111c1f875fcae9fce68e7302d28bbcf3c0a7a03fdc2803fefeb5024",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "archiveSha256": "5f99afc5988163538eece14c1f8a9162956e5031d6c86ccef6c76d7e06c534a7",
+      "previousArchiveSha256": "4199d2a1224d5cb5430253bd15901fc4bd4dca98e9c5d83a996341b0ec0380ba",
+      "harnessSha256": "cdf5ff90033ffcb3f7489a17d90ad72e7d48d7f3d6be90732a6f91c19be11315",
+      "checks": [
+        "cold_profile_has_no_runtime",
+        "actual_release_companion_ready_cold_install",
+        "installed_release_bytes_and_signature_verified_cold_install",
+        "release_companion_has_own_visible_native_window_cold_install",
+        "document_and_custom_data_preserved_cold_install",
+        "release_companion_stops_after_true_quit_cold_install",
+        "actual_release_companion_ready_cold_reopen",
+        "installed_release_bytes_and_signature_verified_cold_reopen",
+        "release_companion_has_own_visible_native_window_cold_reopen",
+        "document_and_custom_data_preserved_cold_reopen",
+        "release_companion_stops_after_true_quit_cold_reopen",
+        "genuine_v005_runtime_verified_before_upgrade",
+        "actual_release_companion_ready_upgrade_install",
+        "installed_release_bytes_and_signature_verified_upgrade_install",
+        "release_companion_has_own_visible_native_window_upgrade_install",
+        "genuine_previous_runtime_retained_for_recovery_install",
+        "document_and_custom_data_preserved_upgrade_install",
+        "release_companion_stops_after_true_quit_upgrade_install",
+        "actual_release_companion_ready_upgrade_reopen",
+        "installed_release_bytes_and_signature_verified_upgrade_reopen",
+        "release_companion_has_own_visible_native_window_upgrade_reopen",
+        "genuine_previous_runtime_retained_for_recovery_reopen",
+        "document_and_custom_data_preserved_upgrade_reopen",
+        "release_companion_stops_after_true_quit_upgrade_reopen",
+        "cold_profile_has_no_runtime",
+        "actual_release_companion_ready_bongo_install",
+        "installed_release_bytes_and_signature_verified_bongo_install",
+        "release_companion_has_own_visible_native_window_bongo_install",
+        "document_and_custom_data_preserved_bongo_install",
+        "release_companion_stops_after_true_quit_bongo_install",
+        "actual_release_companion_ready_bongo_reopen",
+        "installed_release_bytes_and_signature_verified_bongo_reopen",
+        "release_companion_has_own_visible_native_window_bongo_reopen",
+        "document_and_custom_data_preserved_bongo_reopen",
+        "release_companion_stops_after_true_quit_bongo_reopen",
+        "cold_profile_has_no_runtime",
+        "actual_release_companion_ready_live2d_install",
+        "installed_release_bytes_and_signature_verified_live2d_install",
+        "release_companion_has_own_visible_native_window_live2d_install",
+        "document_and_custom_data_preserved_live2d_install",
+        "release_companion_stops_after_true_quit_live2d_install",
+        "actual_release_companion_ready_live2d_reopen",
+        "installed_release_bytes_and_signature_verified_live2d_reopen",
+        "release_companion_has_own_visible_native_window_live2d_reopen",
+        "document_and_custom_data_preserved_live2d_reopen",
+        "release_companion_stops_after_true_quit_live2d_reopen"
+      ],
+      "scenarios": [
+        {
+          "scenario": "cold",
+          "phases": [
+            {
+              "ok": true,
+              "phase": "install",
+              "checks": [
+                "actual_cocoa_reader",
+                "normal_settings_install_and_enable_release_companion",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            },
+            {
+              "ok": true,
+              "phase": "reopen",
+              "checks": [
+                "actual_cocoa_reader",
+                "native_session_restores_same_document",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            }
+          ],
+          "screenshotSha256": "e847aa81b3388ea203df250fb941a5f0d536ace3eb0a378e84fb4b691824c75f"
+        },
+        {
+          "scenario": "upgrade",
+          "phases": [
+            {
+              "ok": true,
+              "phase": "install",
+              "checks": [
+                "actual_cocoa_reader",
+                "normal_settings_install_and_enable_release_companion",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            },
+            {
+              "ok": true,
+              "phase": "reopen",
+              "checks": [
+                "actual_cocoa_reader",
+                "native_session_restores_same_document",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            }
+          ],
+          "screenshotSha256": "c10df7ee11cbb0228c978bc9a23a67a773868f5c8aa85b89eaeef5a607bd3a9c"
+        },
+        {
+          "scenario": "bongo",
+          "phases": [
+            {
+              "ok": true,
+              "phase": "install",
+              "checks": [
+                "actual_cocoa_reader",
+                "normal_settings_install_and_enable_release_companion",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            },
+            {
+              "ok": true,
+              "phase": "reopen",
+              "checks": [
+                "actual_cocoa_reader",
+                "native_session_restores_same_document",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            }
+          ],
+          "screenshotSha256": "f9d3e17be785010588e7190890417fb8509bb2b691b054b8627fae08100ea9e0"
+        },
+        {
+          "scenario": "live2d",
+          "phases": [
+            {
+              "ok": true,
+              "phase": "install",
+              "checks": [
+                "actual_cocoa_reader",
+                "normal_settings_install_and_enable_release_companion",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            },
+            {
+              "ok": true,
+              "phase": "reopen",
+              "checks": [
+                "actual_cocoa_reader",
+                "native_session_restores_same_document",
+                "real_release_companion_rendered_and_supervised",
+                "selected_character_and_real_renderer_match",
+                "recognition_models_remain_unloaded",
+                "session_persisted_before_true_quit"
+              ]
+            }
+          ],
+          "screenshotSha256": "ab3c9e7a2393bfe0803453b0a4f6d45a8b84030ee8bae4fbcc610c3dd47fddf6"
+        }
+      ]
+    }
+  },
+  "previousNativeCandidates": {
+    "window27": {
+      "passed": true,
+      "binarySha256": "b4ef145e0044efc49d17102e1388757e66ea4b1b9c4d7d5a5dc94490a5df01a7",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "driverSha256": "e96390d0531fa39402dd53167f4c415f95a31aa256d9fd552f230aeb8bb18d1d",
+      "result": {
+        "ok": true,
+        "phase": "window_chrome",
+        "checks": [
+          "native_macos_bridge",
+          "actual_cocoa_titlebar_style",
+          "no_duplicate_windows_controls",
+          "native_header_1024",
+          "native_header_1160",
+          "native_header_largest_available_screen",
+          "mac_top_row_mirrored_and_right_aligned",
+          "mac_global_actions_reverse_in_top_row",
+          "rtl_respects_native_left_controls",
+          "dark_header_fits",
+          "light_header_fits",
+          "zen_releases_header_layout_height",
+          "native_minimize_button_invoked",
+          "actual_native_yellow_minimizes",
+          "native_window_restores",
+          "native_fullscreen_button_invoked",
+          "actual_native_green_enters_fullscreen_and_zen",
+          "fullscreen_allows_independent_zen_exit",
+          "native_fullscreen_button_invoked",
+          "actual_native_green_exit_clears_zen",
+          "native_buttons_return_to_header_after_fullscreen",
+          "native_unsaved_indicator_tracks_real_edit",
+          "native_close_button_invoked",
+          "actual_native_red_cancel_preserves_document",
+          "native_save_after_close_cancel",
+          "native_unsaved_indicator_clears_after_save",
+          "native_window_session_acknowledged"
+        ]
+      }
+    },
+    "workflow45": {
+      "passed": true,
+      "binarySha256": "b4ef145e0044efc49d17102e1388757e66ea4b1b9c4d7d5a5dc94490a5df01a7",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "9b4780e3c790abcc45fa0eddbba77563c9d12fd2a188e0b6603e64f19abb8b9a",
+      "phases": [
+        {
+          "ok": true,
+          "phase": "edit_save",
+          "checks": [
+            "native_bridge_ready",
+            "chinese_path_opened",
+            "initial_text_exact",
+            "native_document_visible",
+            "editor_has_real_layout",
+            "source_visible_without_scrolling",
+            "unchanged_editor_clean",
+            "edit_creates_no_copy",
+            "edit_is_dirty",
+            "undo_restores_original",
+            "redo_restores_edit",
+            "native_save_receipt",
+            "saved_editor_clean",
+            "session_idle_before_close",
+            "begin_clean_close",
+            "clean_tab_closed",
+            "clean_close_has_no_prompt",
+            "saved_file_reopened",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "restore_close",
+          "checks": [
+            "native_bridge_ready",
+            "session_restored",
+            "restart_text_exact",
+            "restored_editor_clean",
+            "last_tab_closed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "empty_home",
+          "checks": [
+            "native_bridge_ready",
+            "empty_session_home",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "blocked_rename",
+          "checks": [
+            "native_bridge_ready",
+            "explicit_workspace_listed",
+            "group_rename_refused",
+            "no_rename_intent_or_path_change",
+            "rename_barrier_released",
+            "platform_reason_visible",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        },
+        {
+          "ok": true,
+          "phase": "external_conflict",
+          "checks": [
+            "native_bridge_ready",
+            "conflict_fixture_dirty",
+            "real_save_conflict_dialog",
+            "save_conflict_dialog_fits_window",
+            "external_revision_rejects_save",
+            "failed_save_keeps_user_text",
+            "quit_cancelled",
+            "cancel_keeps_dirty_editor",
+            "dirty_draft_checkpointed",
+            "session_acknowledged"
+          ],
+          "code": 0,
+          "signal": null
+        }
+      ]
+    },
+    "sixExports18": {
+      "passed": true,
+      "binarySha256": "b4ef145e0044efc49d17102e1388757e66ea4b1b9c4d7d5a5dc94490a5df01a7",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "driverSha256": "2cc9ea208405349eb0a93975865101d2c9996804618ef6bf43fc428a214240c9",
+      "result": {
+        "ok": true,
+        "phase": "pptx",
+        "checks": [
+          "cocoa_bridge_ready",
+          "chinese_path_opened",
+          "opened_document_clean",
+          "pdf_preview_ready",
+          "pdf_snapshot_committed",
+          "docx_preview_ready",
+          "docx_snapshot_committed",
+          "epub_preview_ready",
+          "epub_snapshot_committed",
+          "html_preview_ready",
+          "html_snapshot_committed",
+          "tex_preview_ready",
+          "tex_snapshot_committed",
+          "pptx_preview_ready",
+          "three_actual_widescreen_slides",
+          "pptx_snapshot_committed",
+          "source_reopened_unchanged",
+          "session_acknowledged"
+        ]
+      }
+    }
+  },
+  "package": {
+    "version": "0.0.6",
+    "arch": "arm64",
+    "formats": [
+      "zip"
+    ],
+    "signing": {
+      "mode": "development",
+      "binaries": 3,
+      "bundles": 1,
+      "notarized": false
+    },
+    "sourceBinarySha256": "b02951a4e97eaa5b5495b133b0cfd2c07c21d94e510a5548451764aabe54da0c",
+    "binarySha256": "77c14fcc5cd51676776518fb306576b317eed2bf121cbf884f5d90690a403f69",
+    "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+    "pet": {
+      "sourceArchiveSha256": "5f99afc5988163538eece14c1f8a9162956e5031d6c86ccef6c76d7e06c534a7",
+      "archiveSha256": "1b4c38904c04542b0807c915bc3c41e37fca350700068024cd86d14fa6768139",
+      "artifacts": 109,
+      "signedExecutables": 1
+    },
+    "files": [
+      {
+        "name": "ReadMD-macos-arm64.zip",
+        "size": 67080520,
+        "sha256": "7deb7c264649d07cd322ab25cb58797a8d17284b6095ee04f11a3844a238e8e6"
+      }
+    ],
+    "independentExtractionVerified": true,
+    "bootProbe": {
+      "pageLoadedMs": 342,
+      "timedOut": false,
+      "firstDocument": null,
+      "windowLoaded": null
+    },
+    "gatekeeperNotarized": false,
+    "fullNativeAcceptance": false
+  },
+  "preparedSystemLaunchFixture": {
+    "sourceBinarySha256": "fdb560350111c1f875fcae9fce68e7302d28bbcf3c0a7a03fdc2803fefeb5024",
+    "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+    "bundleIdentifier": "asia.readmd.nativeqa.20261031",
+    "declaresFileAssociations": false,
+    "nativeQaEnabled": true,
+    "publicDistribution": false,
+    "signing": {
+      "mode": "development",
+      "binaries": 1,
+      "bundles": 1,
+      "notarized": false
+    }
+  },
+  "pending": [
+    "LaunchServices foreground restore/fullscreen acceptance; bare-process attempts remain failed",
+    "Actual native picker selection and Save As commit/reopen",
+    "Desktop companion global keyboard permission and real authorized input",
+    "OCR/ASR/AI native consumers and managed speech engine",
+    "Strict Mac multi-file refactor commit; platform safety guard kept",
+    "Native 4K/high-DPI capture and complete movie refresh",
+    "Current-source cross-platform CI and release gates"
+  ],
+  "ledger": {
+    "ongoing": 63,
+    "todo": 12,
+    "wholeItemAccepted": 0
+  }
+}
