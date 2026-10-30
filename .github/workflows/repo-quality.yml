@@ -55,8 +55,12 @@ jobs:
       - name: Remove owned SVG source preparation
         if: always() && runner.os == 'Linux'
         run: node tools/prepare-linux-svg-worker.mjs clean
+      # Exercise every subprocess test once, without competing with the large
+      # entropy/storage lane. Keep the production five-second timeouts intact.
+      - name: Native subprocess deadline lane
+        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner::tests -- --test-threads=1
       - name: Test kernel and xtask
-        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask
+        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner::tests
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
 

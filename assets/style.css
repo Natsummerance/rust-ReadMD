@@ -4348,6 +4348,8 @@ body[data-theme="dark"] .conn-status { color: var(--fg3); }
 .export-html-pending { position: relative; }
 .export-html-pending > :not(.export-html-loading) { visibility: hidden; }
 .export-html-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.export-preview-mini-page.is-html-preview img,
+.export-preview-html-sheet .export-page-body img { max-width: 100%; height: auto; }
 .export-preview-overlay {
   position: absolute;
   inset: 0;

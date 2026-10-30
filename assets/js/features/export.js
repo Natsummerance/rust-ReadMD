@@ -938,7 +938,7 @@ function cancelNativeExportPreview() {
   if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
   nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.missingCapability = null; nativeExportPreview.blobUrl = '';
   document.querySelectorAll('.export-slide-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
-  $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview');
+  $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview', 'is-html-preview');
   $('export-preview-card')?.classList.remove('is-slide-preview');
   $('export-preview-modal')?.classList.remove('is-slide-preview');
   $('export-preview-mini-page')?.classList.remove('is-native-preview');
@@ -1467,6 +1467,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
   styleEl.textContent = generateExportPreviewCss(opts, fmt);
 
   const isHtmlMode = fmt === 'html';
+  $('export-preview-mini-page')?.classList.toggle('is-html-preview', isHtmlMode);
   const fullProt = protectMath(content || '');
   const fullParsedHtml = marked.parse(fullProt.src, { gfm: true, breaks: isHtmlMode });
   const restoredFullHtml = restoreMath(fullParsedHtml, fullProt.saved);

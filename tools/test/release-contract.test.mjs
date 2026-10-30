@@ -112,6 +112,8 @@ test('formal release waits for shared quality checks and every build', () => {
   assert.match(publishing, /needs:\s*\[build,\s*quality\]/);
   assert.ok(!/always\(\)|continue-on-error:\s*true/.test(publishing));
   for (const stage of ['Test kernel and xtask', 'Frontend gates', 'UI quality (Playwright)']) assert.ok(quality.includes(stage), stage);
+  assert.match(quality, /Native subprocess deadline lane[\s\S]*?--lib code_chunk_runner::tests -- --test-threads=1/);
+  assert.match(quality, /Test kernel and xtask[\s\S]*?--skip code_chunk_runner::tests/);
   assert.match(quality, /VS Code and MCP quality/);
   assert.match(quality, /node tools\/package-integrations.mjs dist\/integrations/);
   assert.match(quality, /name: ReadMD-integrations/);

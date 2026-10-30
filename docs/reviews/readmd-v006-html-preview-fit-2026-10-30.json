@@ -1,0 +1,159 @@
+{
+  "schema": 1,
+  "baseCommit": "cfd5f41d61009a51e318371bfef21300897094bf",
+  "change": "Constrain HTML preview images to the mini and full page width while preserving aspect ratio",
+  "sourceFiles": [
+    {
+      "path": "assets/js/features/export.js",
+      "sha256": "d6f71b0c578decee94e3c5fcdd67f81805d682abcf7ccb6acd0bbdee29ae853e"
+    },
+    {
+      "path": "assets/readmd.boot.js",
+      "sha256": "f9757a26f6d1bca588dbe2da26fca79cfbdbc85a9215f2e144946460db162f1a"
+    },
+    {
+      "path": "assets/style.css",
+      "sha256": "fb060d97b3ce299438778be84bb799c5a8861576a8a95d36e052bad97549ca42"
+    },
+    {
+      "path": ".github/workflows/repo-quality.yml",
+      "sha256": "2344697f78c6a90acededd92383661509eb4fbc1918ca3adb795f063cc968aa9"
+    },
+    {
+      "path": "tools/test/release-contract.test.mjs",
+      "sha256": "705e93614694add7caeaba6cca4577b0a8004645e08729e51dccf5c87f2bb317"
+    }
+  ],
+  "html": {
+    "passed": true,
+    "checks": [
+      "unauthenticated_preview_rejected",
+      "mini_image_decodes_frozen_original_bytes",
+      "mini_large_image_fits_width_and_preserves_aspect",
+      "full_preview_has_actual_visible_image",
+      "actual_formula_typeset_before_ready",
+      "actual_commit_preserves_preview_resource_after_external_change",
+      "new_modal_uses_new_actual_resource_bytes",
+      "format_switch_clears_html_loading_state"
+    ],
+    "binarySha256": "6a768980f43117a46e831bc287f479201b00bcd263417eef47e11a26413d53a7",
+    "bootSha256": "f9757a26f6d1bca588dbe2da26fca79cfbdbc85a9215f2e144946460db162f1a",
+    "output": {
+      "bytes": 2153401,
+      "sha256": "0ea13df3218159fe8df722e6a05f4adef25972a6df6cf8a0c4a25c119c915e35"
+    }
+  },
+  "native": {
+    "passed": true,
+    "host": "Cocoa WKWebView",
+    "productionCsp": true,
+    "strictTokenMode": true,
+    "binarySha256": "c1918a3a604cee2c0c591c6d04d1afe9e0133c4ff7d3282246a641a8b88937ae",
+    "bootSha256": "f9757a26f6d1bca588dbe2da26fca79cfbdbc85a9215f2e144946460db162f1a",
+    "checks": [
+      "cocoa_bridge_ready",
+      "chinese_path_opened",
+      "opened_document_clean",
+      "pdf_preview_ready",
+      "pdf_snapshot_committed",
+      "docx_preview_ready",
+      "docx_snapshot_committed",
+      "epub_preview_ready",
+      "epub_snapshot_committed",
+      "html_preview_ready",
+      "html_snapshot_committed",
+      "tex_preview_ready",
+      "tex_snapshot_committed",
+      "pptx_preview_ready",
+      "three_actual_widescreen_slides",
+      "pptx_snapshot_committed",
+      "source_reopened_unchanged",
+      "session_acknowledged"
+    ],
+    "artifacts": [
+      {
+        "format": "pdf",
+        "bytes": 8459,
+        "sha256": "0c7a4a7ebfbf22dc33776274ef2d6d1e8b0bdc07c7915ee0a16fff90dbfd9e7d"
+      },
+      {
+        "format": "docx",
+        "bytes": 5860,
+        "sha256": "7120dfdea7e58f2e38255084d9a5f538e5f29ed95be3fb4c76d570cfd7e24c59"
+      },
+      {
+        "format": "epub",
+        "bytes": 4441,
+        "sha256": "03c38694333978d9a788d42e322a8a1cee0a6f45c28c778425f12d8685b4262c"
+      },
+      {
+        "format": "html",
+        "bytes": 2153159,
+        "sha256": "981fc3f36833934097e4ce04154e580b2943b549a64eb95b17340e4e289785ed"
+      },
+      {
+        "format": "tex",
+        "bytes": 5316,
+        "sha256": "e242152b3ab7209ff8f08f1e8019a04ae6e39326cda090a15295eeb89b7e885b"
+      },
+      {
+        "format": "pptx",
+        "bytes": 12488,
+        "sha256": "0a58deab7a7a6c4d0ae1c68de2e4c4bca6d575dbdeaad2dd203526000fe985cb"
+      }
+    ]
+  },
+  "baselineCi": {
+    "sourceCommit": "cfd5f41d61009a51e318371bfef21300897094bf",
+    "qualityRun": 41066709535,
+    "macKernel": "passed",
+    "linuxKernel": "passed",
+    "frontend": "passed",
+    "ui": "passed",
+    "integrations": "passed",
+    "windows": {
+      "passed": 4300,
+      "failed": 2,
+      "ignored": 7,
+      "failures": [
+        "golden_node_argv_assembly_matches_cpython",
+        "golden_nonzero_exit_envelope_matches_cpython"
+      ],
+      "observation": "Five-second execution timeout under the shared full-suite lane; cause requires isolated native subprocess verification"
+    }
+  },
+  "ciChange": "Run all code_chunk_runner tests once in a serial subprocess lane and the remainder separately. No runtime timeout, assertion or safety guard is relaxed.",
+  "releaseStatus": "pending_new_head_quality_and_installer_verification",
+  "regression": {
+    "passed": 1753,
+    "failed": 0,
+    "platformSkipped": 3,
+    "logSha256": "2ddec9770482d7121a5bd33baae3511083b43d9826b848a899e70c0a06fef7ac"
+  },
+  "quality": [
+    {
+      "check": "check-i18n.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-styles.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-wiring.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-no-python.mjs",
+      "exit": 0
+    },
+    {
+      "check": "check-assets.mjs",
+      "exit": 0
+    },
+    {
+      "check": "privacy-scan.mjs",
+      "exit": 0
+    }
+  ]
+}
