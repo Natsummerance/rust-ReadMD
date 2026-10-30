@@ -70,6 +70,17 @@ fn presentation_freezes_images_and_runtime_and_still_renders_after_original_imag
 }
 
 #[test]
+fn repeated_slide_image_references_are_bounded_before_runtime_rendering(){
+    let directory=TempDir::new().unwrap();
+    let image=format!("<svg xmlns=\"http://www.w3.org/2000/svg\"><!--{}--></svg>","x".repeat(1024*1024));
+    fs::write(directory.path().join("large.svg"),image).unwrap();
+    let content="![Repeated image](large.svg)\n\n".repeat(64);
+    let result=crate::mdexport::presentation_with_images(&content,directory.path().to_str().unwrap(),"Bounded",&json!({}),true,directory.path());
+    assert_eq!(result.err().unwrap(),"export_snapshot_budget","Repeated references cannot expand into an unbounded HTML allocation; no runtime files or target are touched");
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(),1);
+}
+
+#[test]
 fn construction_is_lazy_and_prepare_is_idempotent_with_exact_private_options() {
     let directory = TempDir::new().unwrap(); let data = directory.path().join("unused");
     let _ = Service::new(&data); assert!(!data.exists());

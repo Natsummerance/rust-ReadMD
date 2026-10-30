@@ -5104,9 +5104,12 @@ pub(crate) fn presentation_with_images(content:&str,base:&str,title:&str,options
             Resolved::Inline{mime,data}=>(mime,data),
         };
         crate::publication_budget::check()?;
+        let encoded_bytes=bytes.len().checked_add(2).and_then(|n|n.checked_div(3)).and_then(|n|n.checked_mul(4)).and_then(|n|n.checked_add(mime.len()+13)).ok_or("export_snapshot_budget")?;
+        if source.len().checked_sub(range.len()).and_then(|n|n.checked_add(encoded_bytes)).is_none_or(|n|n>crate::export_snapshot::MAX_SNAPSHOT_BYTES){return Err("export_snapshot_budget".into());}
         source.replace_range(range,&format!("data:{mime};base64,{}",base64::engine::general_purpose::STANDARD.encode(bytes)));
     }
     let html=render_presentation_html(&source,title,options["theme"].as_str().unwrap_or("black"),options["transition"].as_str().unwrap_or("slide"),standalone,assets)?;
+    if html.len()>crate::export_snapshot::MAX_SNAPSHOT_BYTES{return Err("export_snapshot_budget".into());}
     Ok((html,warnings))
 }
 pub fn render_presentation_html(
