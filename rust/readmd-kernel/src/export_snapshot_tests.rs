@@ -2,6 +2,19 @@ use super::*;
 use base64::Engine;
 use tempfile::TempDir;
 
+#[test]
+fn localized_unused_callout_titles_do_not_require_a_font_pack_but_visible_titles_do(){
+    let options=json!({"calloutTitles":{"note":"注意","warning":"警告"},"pdf":{"engine":"rust"}});
+    for format in ["pdf","docx"]{
+        assert!(!needs_fonts(format,"# English\n\nA Latin document.",&options));
+        assert!(!needs_fonts(format,"```md\n> [!NOTE]\n> literal example\n```",&options));
+        assert!(!needs_fonts(format,"> [!NOTE] Authored title\n> Body.",&options));
+        assert!(needs_fonts(format,"> [!NOTE]\n> Body.",&options));
+        assert!(needs_fonts(format,"# 中文正文",&options));
+        assert!(needs_fonts(format,"English body.",&json!({"header":{"text":"页眉"}})));
+    }
+}
+
 struct Fixture { directory: TempDir, data: PathBuf, assets: PathBuf, source: PathBuf, review: review::Service, service: Service, document: Value }
 impl Fixture {
     fn new(content: &str) -> Self {
@@ -36,6 +49,25 @@ impl Fixture {
     fn read(&self) -> Value { self.review.handle(&json!({"action":"read","document_id":self.document["document_id"]})).unwrap() }
 }
 fn id(value: &Value) -> &str { value["snapshot_id"].as_str().unwrap() }
+
+#[test]
+fn presentation_freezes_images_and_runtime_and_still_renders_after_original_image_changes(){
+    let content="# First slide\n\n![Red pixel](red.png)\n\n---\n\n## Second slide\n\nFinal body.\n";
+    let mut fixture=Fixture::new(content);
+    fixture.assets=fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets")).unwrap();
+    let mut png=std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(2,2,image::Rgba([255,0,0,255]))).write_to(&mut png,image::ImageFormat::Png).unwrap();
+    let original=png.into_inner();let source=fixture.source.parent().unwrap().join("red.png");fs::write(&source,&original).unwrap();
+    let prepared=fixture.prepare("presentation-freeze","presentation",json!({"theme":"white"}));
+    fs::write(&source,b"Changed after preview preparation").unwrap();
+    let frozen=fixture.service.load(id(&prepared)).unwrap();
+    assert_eq!(fs::read(frozen.base_dir.join("red.png")).unwrap(),original);
+    let (html,warnings)=crate::mdexport::presentation_with_images(&frozen.content,frozen.base_dir.to_str().unwrap(),"Slides",&frozen.options,true,&frozen.assets_dir).unwrap();
+    assert!(warnings.is_empty());assert!(html.contains("data:image/png;base64,"));assert!(html.contains("Final body."));assert!(html.contains("new Reveal"));
+    assert!(!html.contains("src=\"red.png\""));assert!(!html.contains("Changed after preview preparation"));
+    fs::write(frozen.assets_dir.join("vendor/reveal/dist/readmd-boot.js"),b"replaced runtime").unwrap();
+    assert_eq!(fixture.service.load(id(&prepared)).err().unwrap(),"export_snapshot_resource_changed");
+}
 
 #[test]
 fn construction_is_lazy_and_prepare_is_idempotent_with_exact_private_options() {

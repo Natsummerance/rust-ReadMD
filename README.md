@@ -49,8 +49,8 @@
 [macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
 [Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
 [UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
-[VS Code 扩展](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) ·
-[MCP 配置包](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) ·
+[VS Code 扩展](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.6.vsix) ·
+[MCP 配置包](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.6.zip) ·
 [SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
 
 ## 三步开始
@@ -125,15 +125,15 @@ Windows ZIP 必须完整解压并保留目录结构。桌面启动需要 Windows
 ## VSCode 扩展与 MCP Server 生态
 
 ### 1. VSCode 插件安装与使用
-- **界面安装**：下载 [`readmd-vscode-0.0.5.vsix`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) -> 在 VSCode 扩展面板选择 `... -> 从 VSIX 安装...`。
+- **界面安装**：下载 [`readmd-vscode-0.0.6.vsix`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.6.vsix) -> 在 VSCode 扩展面板选择 `... -> 从 VSIX 安装...`。
 - **命令行安装**：
  ```bash
- code --install-extension readmd-vscode-0.0.5.vsix
+ code --install-extension readmd-vscode-0.0.6.vsix
  ```
 - **核心功能**：打开 Markdown 文件点击右上角书本图标开启同步预览；右键菜单支持一键自动修复语法错误与转换为 LaTeX 源码。
 
 ### 2. MCP (Model Context Protocol) Server 配置
-下载 [`readmd-mcp-server-0.0.5.zip`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) 获取文档与连接模板；该包不包含可执行内核。先安装桌面端，再在 Claude Desktop、Cursor、Antigravity 与 Cline 中配置（请将 `command` 替换为已安装 ReadMD 可执行文件的**绝对路径**）：
+下载 [`readmd-mcp-server-0.0.6.zip`](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.6.zip) 获取文档与连接模板；该包不包含可执行内核。先安装桌面端，再在 Claude Desktop、Cursor、Antigravity 与 Cline 中配置（请将 `command` 替换为已安装 ReadMD 可执行文件的**绝对路径**）：
 
 **Windows**:
 ```json

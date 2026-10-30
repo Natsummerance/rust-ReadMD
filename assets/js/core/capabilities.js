@@ -119,6 +119,12 @@
     window.ReadMDModal.open(modal);return promise;
   }
   const needsFonts=text=>/[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\u{20000}-\u{323af}]/u.test(text);
-  async function ensurePublication(content,options){const engine=options?.pdf?.engine;if(engine&&!['rust','typst'].includes(engine))return true;return !needsFonts(content+JSON.stringify(options||{}))||await ensure('fonts');}
+  async function ensurePublication(content,options,format='pdf'){
+    const engine=options?.pdf?.engine;if(engine&&!['rust','typst'].includes(engine))return true;
+    const required=window.READMD_ENGINE==='rust'
+      ?(await request({action:'publication_fonts_needed',format,content,options:options||{}})).required
+      :needsFonts(content+JSON.stringify(options||{}));
+    return !required||await ensure('fonts');
+  }
   window.ReadMDCapabilities={ensure,request,size,upload,uninstall,ensurePublication};
 })();

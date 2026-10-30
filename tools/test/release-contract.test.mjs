@@ -22,11 +22,11 @@ test('platform matrix distinguishes native evidence from HarmonyOS source integr
   assert.equal(matrix.evidence_policy.release_blocked_until_complete, false);
   assert.equal(matrix.evidence_policy.full_capability_certification_blocked_until_complete, true);
   assert.deepEqual(matrix.evidence_policy.scoped_release, {
-    version: '0.0.5',
-    scope: 'docs/design/v005-release-scope-2026-10-25.md',
+    version: '0.0.6',
+    scope: 'docs/design/v006-release-closure-2026-10-30.md',
     candidate_evidence_required: true,
     native_evidence_not_inferred_from_build: true,
-    deferred_version: '0.0.6',
+    deferred_version: '0.0.7',
     targets: ['windows-x64', 'linux-x64', 'macos-x64', 'macos-arm64'],
   });
   assert.equal(matrix.evidence_policy.scoped_release.version, matrix.release);

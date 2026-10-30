@@ -209,9 +209,10 @@ test('an external AI head rebases a definitively stale queued edit instead of er
   assert.notEqual(edits[0].body.call_id, edits[1].body.call_id);
 });
 
-test('presentation export requires explicit review and never accepts changes through its unsupported route', async () => {
+test('presentation snapshot requires explicit consent before committing or accepting pending changes', async () => {
   const app = await fixture({ format: 'presentation', choice: 'review' }); await app.run();
-  assert.equal(app.calls.some(call => call.url.startsWith('/api/export')), false);
+  assert.equal(app.calls.filter(call => call.body.action === 'prepare').length, 1);
+  assert.equal(app.calls.some(call => call.body.action === 'commit' || call.url === '/api/export'), false);
   assert.deepEqual(app.snapshot.changes.map(item => item.decision), ['pending', 'pending']);
 });
 

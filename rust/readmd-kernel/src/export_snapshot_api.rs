@@ -68,6 +68,10 @@ pub(crate) fn preview(app:&Arc<App>,body:&Value)->ApiResult<Value>{
     let store=service(app);let frozen=store.load(id).map_err(error)?;store.validate_runtime(&frozen,&app.paths.assets_dir).map_err(error)?;
     let result=if frozen.format=="epub"{
         crate::epub_preview::prepare(&frozen.content,&frozen.base_dir.to_string_lossy(),&frozen.options,&frozen.name)
+    }else if frozen.format=="tex"{
+        crate::export_preview::source_snapshot(&frozen,&app.paths.data_dir)
+    }else if frozen.format=="presentation"{
+        crate::export_preview::presentation_snapshot(&frozen)
     }else{
         crate::export_preview::prepare_snapshot(&frozen,&app.paths.data_dir).and_then(|artifact|crate::export_preview::payload(&artifact))
     }.map_err(|code|ApiError::new(422,crate::latex_compile::error_body(&code)["error_code"].as_str().unwrap_or("export_snapshot_render_failed")))?;
@@ -93,7 +97,8 @@ fn file_hash(path:&Path)->ApiResult<Option<String>>{
 fn target(app:&App,raw:&str,format:&str)->ApiResult<PathBuf>{
     let path=Path::new(raw);if !path.is_absolute(){return Err(error("review_not_authorized"));}
     let extension=path.extension().and_then(|s|s.to_str()).unwrap_or("").to_ascii_lowercase();
-    if extension!=format&&!(format=="html"&&extension=="htm"){return Err(error("export_snapshot_invalid_request"));}
+    let extension_format=if format=="presentation"{"html"}else{format};
+    if extension!=extension_format&&!(extension_format=="html"&&extension=="htm"){return Err(error("export_snapshot_invalid_request"));}
     let parent=dunce::canonicalize(path.parent().ok_or_else(||error("review_not_authorized"))?).map_err(|_|error("export_snapshot_output_unverified"))?;
     let output=parent.join(path.file_name().ok_or_else(||error("review_not_authorized"))?);
     let inside=|root:&Path|{let root=dunce::canonicalize(root).unwrap_or_else(|_|dunce::simplified(root).to_path_buf());if cfg!(windows){let child=output.to_string_lossy().to_ascii_lowercase();let root=root.to_string_lossy().trim_end_matches(['\\','/']).to_ascii_lowercase();child==root||child.starts_with(&(root+"\\"))}else{output.starts_with(root)}};

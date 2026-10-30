@@ -46,6 +46,32 @@ fn enter(resources:Option<(Resources,crate::capability_packs::ResourceLease)>)->
     Scope{previous:CURRENT.with(|c|c.replace(fonts)),_lease:lease,_thread_bound:std::marker::PhantomData}
 }
 pub fn needs_cjk(text:&str)->bool{text.chars().any(|c|matches!(c as u32,0x2e80..=0x9fff|0xac00..=0xd7af|0xf900..=0xfaff|0x20000..=0x323af))}
+pub(crate) fn required_for_export(format:&str,content:&str,options:&serde_json::Value)->bool {
+    if !(format=="docx"||(format=="pdf"&&options.pointer("/pdf/engine").and_then(serde_json::Value::as_str).is_none_or(|engine|matches!(engine,"rust"|"typst")))){return false;}
+    let mut selected=options.clone();
+    if let Some(titles)=options.get("calloutTitles").and_then(serde_json::Value::as_object){
+        // UI localization is not document text. Only a default title actually
+        // used by a parsed callout can require the optional CJK font package.
+        // Literal code samples and explicitly authored titles must not cause
+        // an unrelated Latin document to be blocked in a Chinese UI.
+        use crate::md_ast::Block;
+        let document=crate::md_ast::parse(content);let mut stack=document.blocks.iter().collect::<Vec<_>>();
+        let mut used=serde_json::Map::new();
+        while let Some(block)=stack.pop(){match block{
+            Block::Quote(inner)=>{if let Some((kind,title,_))=crate::md_ast::quote_callout(inner){if title.is_empty(){if let Some(value)=titles.get(kind){used.insert(kind.into(),value.clone());}}}stack.extend(inner);},
+            Block::List{items,..}=>{for item in items{stack.extend(&item.blocks);}},
+            Block::Styled{block,..}=>stack.push(block),
+            Block::FootnoteDef{blocks,..}=>stack.extend(blocks),
+            _=>(),
+        }}
+        selected["calloutTitles"]=serde_json::Value::Object(used);
+    }
+    crate::publication_fonts::needs_cjk(&format!("{content}{selected}"))
+}
+pub(crate) fn require_for_export(format:&str,content:&str,options:&serde_json::Value)->Result<(),String>{
+    if crate::speech::cancelled(){return Err("cancelled".into());}
+    if required_for_export(format,content,options)&&current().is_none(){Err("publication_fonts_unavailable".into())}else{Ok(())}
+}
 pub fn require_cjk(text:&str)->Result<(),String>{if crate::speech::cancelled(){return Err("cancelled".into());}if needs_cjk(text)&&current().is_none(){Err("publication_fonts_unavailable".into())}else{Ok(())}}
 pub fn probe_directory(dir:&Path)->Result<(),String>{
     for name in ["ReadMDSansSC-Regular.ttf","ReadMDSansSC-Bold.ttf","ReadMDSerifSC-Regular.ttf","ReadMDSerifSC-Bold.ttf"]{

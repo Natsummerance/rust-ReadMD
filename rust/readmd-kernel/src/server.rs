@@ -8589,6 +8589,7 @@ fn h_export_preview(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         };
     }
     match crate::speech::with_cancel(check,||crate::publication_budget::run(format,&options,||{
+        if format=="tex"{return crate::export_preview::source_with_data(content,base,&options,name,&app.paths.assets_dir,&app.paths.data_dir);}
         let artifact=crate::export_preview::prepare_with_data(format,content,base,&options,name,&app.paths.assets_dir,&app.paths.data_dir)?;
         crate::publication_budget::check()?;
         let value=crate::export_preview::payload(&artifact)?;

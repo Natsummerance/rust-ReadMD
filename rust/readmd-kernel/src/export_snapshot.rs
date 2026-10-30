@@ -95,7 +95,7 @@ impl Service {
         let call_id = text(request, "call_id")?;
         if call_id.is_empty() || call_id.len() > 256 { return Err(INVALID); }
         let format = text(request, "format")?;
-        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex") { return Err("unsupported_format"); }
+        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex" | "presentation") { return Err("unsupported_format"); }
         let name = text(request, "suggested_name")?;
         if name.is_empty() || name.len() > 256 || name.chars().any(|c| c.is_control() || "/\\:".contains(c)) { return Err(INVALID); }
         let options = request.get("options").filter(|value| value.is_object()).ok_or(INVALID)?.clone();
@@ -182,6 +182,28 @@ impl Service {
                     let bytes = read_absolute(&source, MAX_RESOURCE_BYTES)?;
                     if bytes.is_empty() { return Err("export_snapshot_resource_missing"); }
                     copy_resource(temporary.path(), &format!("assets/{name}"), &bytes, &mut record.resources)?;
+                }
+            }
+            if format=="presentation" {
+                // Freeze the actual offline slide runtime alongside document
+                // resources. Never render an export against mutable live files.
+                for directory in ["vendor/reveal/dist","vendor/katex/dist"] {
+                    let source=assets_dir.join(directory);
+                    for entry in walkdir::WalkDir::new(&source).follow_links(false) {
+                        let entry=entry.map_err(|_|"export_snapshot_resource_missing")?;
+                        if entry.file_type().is_symlink(){return Err("export_snapshot_resource_path");}
+                        if !entry.file_type().is_file(){continue;}
+                        let relative=entry.path().strip_prefix(assets_dir).map_err(|_|INVALID)?;
+                        let bytes=read_absolute(entry.path(),MAX_RESOURCE_BYTES)?;
+                        copy_resource(temporary.path(),&format!("assets/{}",path_string(relative)?),&bytes,&mut record.resources)?;
+                        check_record_budget(&record,self.byte_limit)?;
+                    }
+                }
+                if record.content.contains("mermaid") {
+                    let relative="vendor/diagrams/mermaid/mermaid.min.js";
+                    let bytes=read_absolute(&assets_dir.join(relative),MAX_RESOURCE_BYTES)?;
+                    copy_resource(temporary.path(),&format!("assets/{relative}"),&bytes,&mut record.resources)?;
+                    check_record_budget(&record,self.byte_limit)?;
                 }
             }
             // Locks are application resources, never request-nominated paths.
@@ -838,7 +860,7 @@ fn application_assets_directory(path:&Path)->Result<PathBuf,&'static str> {
     dunce::canonicalize(directory).map_err(|_|"export_snapshot_resource_path")
 }
 struct Opened { file: File, _ancestors: Vec<File> }
-fn read_absolute(path: &Path, maximum: usize) -> Result<Vec<u8>, &'static str> {
+pub(crate) fn read_absolute(path: &Path, maximum: usize) -> Result<Vec<u8>, &'static str> {
     let opened = open_absolute(path)?;
     let before = opened.file.metadata().map_err(|_| "export_snapshot_resource_missing")?;
     if !plain(&before) || !before.is_file() { return Err("export_snapshot_resource_path"); }
@@ -999,9 +1021,8 @@ fn runtime_locks(format:&str,options:&Value)->Vec<String> {
     if matches!(engine,"xelatex"|"pdflatex") {names.push(format!("latex-{}-{}.lock.json",crate::latex_compile::VERSION,crate::capability_packs::platform()));}
     names
 }
-fn needs_fonts(format:&str,content:&str,options:&Value)->bool {
-    (format=="docx"||(format=="pdf"&&options.pointer("/pdf/engine").and_then(Value::as_str).is_none_or(|engine|matches!(engine,"rust"|"typst"))))
-        &&crate::publication_fonts::needs_cjk(&format!("{content}{options}"))
+pub(crate) fn needs_fonts(format:&str,content:&str,options:&Value)->bool {
+    crate::publication_fonts::required_for_export(format,content,options)
 }
 fn managed_fonts_absent(fonts:&Value)->bool {fonts["managed"].as_array().is_none_or(Vec::is_empty)}
 fn missing_engine_error(options:&Value)->&'static str {

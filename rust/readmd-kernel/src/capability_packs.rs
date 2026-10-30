@@ -918,6 +918,13 @@ pub fn endpoint(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return Err(ApiError::new(405, "method_not_allowed"));
     }
     let v = req.json()?;
+    if v["action"]=="publication_fonts_needed" {
+        let format=v["format"].as_str().unwrap_or("pdf");
+        if !matches!(format,"pdf"|"docx"){return Err(ApiError::bad_request("invalid_request"));}
+        let content=v["content"].as_str().ok_or_else(||ApiError::bad_request("invalid_request"))?;
+        let options=v.get("options").cloned().unwrap_or_else(||json!({}));
+        return ok_json(json!({"ok":true,"required":crate::export_snapshot::needs_fonts(format,content,&options)}));
+    }
     if matches!(
         v["action"].as_str(),
         Some(

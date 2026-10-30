@@ -3022,12 +3022,18 @@ fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,res
     let managed_pdf=fmt=="pdf"&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),None|Some("rust"|"typst"));
     let budget=crate::publication_budget::capture();let checked=||budget.api();
     let _fonts=if managed_pdf||matches!(fmt.as_str(),"docx"|"epub"|"html"){Some(crate::publication_fonts::scope_checked(data_dir,assets_dir,&checked).map_err(|error|error.code)?)}else{None};
-    if managed_pdf{crate::publication_fonts::require_cjk(&format!("{content}{}",options))?;}
+    if managed_pdf{crate::publication_fonts::require_for_export("pdf",content,options)?;}
     let (prepared,warnings)=prepare_export_source(&fmt,content,base_dir,options)?;
     budget.check()?;
     let content=prepared.as_str();
     let mut result=match fmt.as_str() {
         "html" => export_html(content, base_dir, out_path, options, source_name, assets_dir),
+        "presentation" => {
+            let (html,warns)=presentation_with_images(content,base_dir,source_name,options,true,assets_dir)?;
+            crate::publication_budget::check()?;
+            crate::content::write_bytes_atomic(Path::new(out_path),html.as_bytes()).map_err(|e|e.to_string())?;
+            Ok(ExportResult{ok:true,path:Some(out_path.into()),size:Some(html.len() as u64),warns:Some(warns),error:None,canceled:Some(false)})
+        },
         "tex" | "latex" => export_tex_with_geometry_and_lines(content,base_dir,out_path,resolved.values(),source_name,resolved.line_context()).map(|v|v.0),
         "epub" => export_epub(content, base_dir, out_path, options, source_name),
         "docx" => export_docx_with_lines(content, base_dir, out_path, options, source_name, resolved.line_context()),
@@ -5088,6 +5094,21 @@ fn pres_katex_tags(standalone: bool, assets_dir: &Path) -> Result<String, String
 /// `Err` carries the same signal as a Python exception escaping
 /// `_api_export_presentation` (the handler maps it to 500
 /// `presentation_export_failed`); `_read_vendor` is what usually fails.
+pub(crate) fn presentation_with_images(content:&str,base:&str,title:&str,options:&Value,standalone:bool,assets:&Path)->Result<(String,Vec<String>),String>{
+    use base64::Engine;
+    let mut warnings=Vec::new();let mut resolver=HtmlImageResolver::new(base);let mut source=content.to_string();
+    for (range,url) in crate::document_assets::image_references(content).into_iter().rev(){
+        let target=resolver.resolve(&url,&mut warnings).ok_or("export_snapshot_resource_missing")?;
+        let (mime,bytes)=match target{
+            Resolved::File(file)=>{let mime=mime_image_of(&file).ok_or("export_snapshot_resource_path")?.to_string();let bytes=crate::export_snapshot::read_absolute(&file,16*1024*1024).map_err(str::to_string)?;(mime,bytes)},
+            Resolved::Inline{mime,data}=>(mime,data),
+        };
+        crate::publication_budget::check()?;
+        source.replace_range(range,&format!("data:{mime};base64,{}",base64::engine::general_purpose::STANDARD.encode(bytes)));
+    }
+    let html=render_presentation_html(&source,title,options["theme"].as_str().unwrap_or("black"),options["transition"].as_str().unwrap_or("slide"),standalone,assets)?;
+    Ok((html,warnings))
+}
 pub fn render_presentation_html(
     content: &str,
     title: &str,

@@ -139,6 +139,8 @@ pub mod ocr;
 pub(crate) mod ocr_portable;
 /// Windows.Media.Ocr / Windows.Data.Pdf native OCR (no-op elsewhere).
 pub mod ocr_winrt;
+#[cfg(target_os="macos")]
+mod macos_pdf_render;
 pub mod parity_aichat;
 pub mod parity_diagram;
 pub mod parity_pets;

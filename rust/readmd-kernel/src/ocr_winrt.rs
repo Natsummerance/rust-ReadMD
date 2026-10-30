@@ -258,6 +258,11 @@ mod imp {
 #[cfg(not(windows))]
 mod imp {
     use super::*;
+    #[cfg(target_os="macos")]
+    pub fn render_pdf_page_png(bytes: &[u8], page_no: usize) -> Result<Vec<u8>, String> {
+        crate::macos_pdf_render::render(bytes,page_no)
+    }
+    #[cfg(not(target_os="macos"))]
     pub fn render_pdf_page_png(_bytes: &[u8], _page_no: usize) -> Result<Vec<u8>, String> {
         Err("pdf_renderer_unavailable".into())
     }

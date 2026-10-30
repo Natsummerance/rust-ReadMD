@@ -49,8 +49,8 @@
 [macOS Intel](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-macos-x64.zip) ·
 [Linux tar.gz](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.tar.gz) ·
 [UOS / 麒麟 Deb](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) ·
-[VS Code 擴充套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.5.vsix) ·
-[MCP 設定套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.5.zip) ·
+[VS Code 擴充套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-vscode-0.0.6.vsix) ·
+[MCP 設定套件](https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.5/readmd-mcp-server-0.0.6.zip) ·
 [SHA-256](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt)
 
 ## 三步開始

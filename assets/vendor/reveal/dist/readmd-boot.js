@@ -13,7 +13,7 @@
   if (katexPlugin) plugins.push(katexPlugin);
 
   var init = {
-    width: 1080,
+    width: 1280,
     height: 720,
     margin: 0.06,
     minScale: 0.2,

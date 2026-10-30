@@ -161,7 +161,7 @@ fn raw_document_bytes(content:&str,base:&str,options:&Value,name:&str,data:&Path
         .map_err(|e|if budget.interrupted(&e.code)||e.code=="typst_busy"{e.code}else{"typst_engine_unavailable".into()})?;
     let program=engine.directory.join(if cfg!(windows){"bin/typst.exe"}else{"bin/typst"});
     let _fonts=crate::publication_fonts::scope_checked(data,assets,&checked).map_err(|e|e.code)?;
-    crate::publication_fonts::require_cjk(&format!("{content}{}",options))?;
+    crate::publication_fonts::require_for_export("pdf",content,options)?;
     let dir=crate::task_workspace::Workspace::create(data,"typst-export").map_err(|_|"typst_workspace_failed")?;
     dir.scope(||{
     let (doc,citation_warnings)=crate::mdexport::publication_document(content,base,options)?;let source=if let Some(nonce)=nonce{crate::typst_writer::render_mapped(&doc,options,base,dir.path(),name,nonce)?}else{crate::typst_writer::render(&doc,options,base,dir.path(),name)?};

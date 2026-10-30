@@ -936,6 +936,8 @@ function cancelNativeExportPreview() {
   nativeExportPreview.pagePending = false;
   if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
   nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.missingCapability = null; nativeExportPreview.blobUrl = '';
+  document.querySelectorAll('.export-slide-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
+  $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview');
   $('export-preview-mini-page')?.classList.remove('is-native-preview');
   $('export-preview-card')?.classList.remove('hidden');
   $('export-preview-capability')?.remove();
@@ -1050,6 +1052,7 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
     try {
       let previewPayload;
       const legacyIdentity = await oversizedUntrackedExport(fmt, originTab, content);
+      if (fmt === 'presentation' && legacyIdentity) throw exportSnapshotFailure('review_budget');
       if (!legacyIdentity && usesExportSnapshot(fmt, originTab)) {
         const frozen = await prepareReviewExport(fmt, options, suggestedName, originTab, true);
         if (!frozen || frozen.stamp.content !== window.ReadMDReview.lf(content)) throw exportSnapshotFailure('review_stale_generation');
@@ -1072,9 +1075,10 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
         }
         throw new Error(apiMessage(data,'export.previewFailed'));
       }
+      if (fmt === 'presentation') data.format = 'presentation';
       nativeExportPreview.data = data;
       if (data.firstPage) nativeExportPreview.pageCache.set(1, data.firstPage);
-      if (data.format !== 'epub' && !data.firstPage) {
+      if (data.pdf && !data.firstPage) {
         const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
         nativeExportPreview.blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
       }
@@ -1100,6 +1104,8 @@ function renderNativeExportPreview(presetName, options) {
   const data = nativeExportPreview.data;
   if (!data) return;
   renderExportWarns(data.warnings || []);
+  if (data.format === 'presentation') { renderPresentationExportPreview(data, presetName); return; }
+  if (data.mode === 'source') { renderSourceExportPreview(data, presetName); return; }
   if (data.format === 'epub') { renderEpubExportPreview(data, presetName); return; }
   const mini = $('export-preview-mini-content');
   const miniPage = $('export-preview-mini-page');
@@ -1187,6 +1193,79 @@ function renderNativeExportPreview(presetName, options) {
   });
 }
 
+// Use the real slide compiler rather than paginating Markdown as A4 paper.
+// Readiness is tied to the exact frame window and request generation. A late
+// ready message from an abandoned format can never reveal old slide content.
+function renderPresentationExportPreview(data, presetName) {
+  const generation = nativeExportPreview.generation;
+  const miniPage = $('export-preview-mini-page');
+  miniPage?.classList.add('is-native-preview', 'is-slide-preview');
+  if (miniPage?.parentElement) miniPage.style.transform = 'scale(' + Math.min(2.5, (miniPage.parentElement.clientWidth - 32) / 110, (miniPage.parentElement.clientHeight - 32) / 61.875) + ')';
+  const style = $('export-preview-dynamic-style'); if (style) style.textContent = '';
+  const meta = $('export-preview-paper-meta');
+  if (meta) meta.textContent = _t('export.fmtSlides') + ' · 16:9 · ' + presetName;
+  const fullModal = $('export-preview-modal');
+  const hosts = [[$('export-preview-mini-content'), true]];
+  if (fullModal && !fullModal.classList.contains('hidden')) hosts.push([fullModal.querySelector('.export-preview-paper-wrapper'), false]);
+  for (const [host, mini] of hosts) {
+    if (!host || host.querySelector('.export-slide-frame[data-generation="' + generation + '"]')) continue;
+    host.replaceChildren(); host.setAttribute('aria-busy', 'true');
+    const frame = document.createElement('iframe'); frame.className = 'export-slide-frame';
+    frame.title = _t('export.fmtSlides'); frame.dataset.generation = String(generation);
+    frame.classList.add('is-pending');
+    const loading = document.createElement('div'); host.append(loading);
+    window.ReadMDTask.loading(loading, 'export.previewGenerating');
+    let deadline;
+    const dispose = () => { clearTimeout(deadline); window.removeEventListener('message', receive); };
+    const fail = () => {
+      dispose();
+      if (generation !== nativeExportPreview.generation || !host.isConnected) return;
+      host.replaceChildren(); host.setAttribute('aria-busy', 'false');
+      const message = document.createElement('p'); message.textContent = _t('export.previewFailed');
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'tb-btn'; retry.textContent = _t('audit.retryLoad');
+      retry.onclick = () => { nativeExportPreview.signature = ''; updateExportLivePreview(); };
+      host.append(message, retry);
+    };
+    const receive = event => {
+      if (event.source !== frame.contentWindow || generation !== nativeExportPreview.generation || String(event.data?.generation) !== String(generation)) return;
+      if (event.data.type === 'pres-failed') { fail(); return; }
+      if (event.data.type !== 'pres-ready') return;
+      dispose(); loading.remove(); frame.classList.remove('is-pending'); frame.dataset.ready = 'true'; host.setAttribute('aria-busy', 'false');
+      const deck = frame.contentWindow.deck;
+      if (mini) return;
+      const sync = () => {
+        const slides = deck.getSlides(), current = slides.indexOf(deck.getCurrentSlide());
+        const count = $('export-preview-pages-meta'); if (count) count.textContent = (current + 1) + ' / ' + slides.length;
+        const prev = $('export-preview-prev-btn'), next = $('export-preview-next-btn');
+        if (prev) { prev.classList.add('is-visible'); prev.disabled = deck.isFirstSlide(); prev.onclick = () => deck.prev(); }
+        if (next) { next.classList.add('is-visible'); next.disabled = deck.isLastSlide(); next.onclick = () => deck.next(); }
+      };
+      deck.on('slidechanged', sync); sync();
+    };
+    frame._readmdDispose = dispose;
+    window.addEventListener('message', receive);
+    deadline = setTimeout(fail, 30000);
+    frame.srcdoc = data.html.replace('</head>', '<meta name="readmd-presentation-request" content="' + generation + '"></head>');
+    host.append(frame);
+  }
+}
+
+function renderSourceExportPreview(data, presetName) {
+  $('export-preview-mini-page')?.classList.add('is-native-preview', 'is-source-preview');
+  const label = _t('convert.latex');
+  const meta = $('export-preview-paper-meta'); if (meta) meta.textContent = label + ' · ' + presetName;
+  const hosts = [$('export-preview-mini-content')];
+  if (!$('export-preview-modal')?.classList.contains('hidden')) hosts.push($('export-preview-modal')?.querySelector('.export-preview-paper-wrapper'));
+  for (const host of hosts) {
+    if (!host) continue;
+    const pre = document.createElement('pre'); pre.className = 'export-source-preview';
+    const code = document.createElement('code'); code.textContent = data.source; pre.append(code);
+    host.replaceChildren(pre); host.setAttribute('aria-busy', 'false');
+  }
+  const pages = $('export-preview-pages-meta'); if (pages) pages.textContent = label;
+  for (const id of ['export-preview-prev-btn', 'export-preview-next-btn']) { const button = $(id); if (button) { button.disabled = true; button.classList.remove('is-visible'); button.onclick = null; } }
+}
+
 function renderEpubExportPreview(data, presetName) {
   const frame=()=>{
     const el=document.createElement('iframe');el.className='export-epub-frame';el.title=_t('export.actualPreview');
@@ -1270,7 +1349,7 @@ function updateExportLivePreview() {
   renderExportPresetCards();
 
   const docTitle = currentExportName();
-  if (window.READMD_ENGINE === 'rust' && (fmt === 'pdf' || fmt === 'docx' || fmt === 'epub')) {
+  if (window.READMD_ENGINE === 'rust' && ['pdf', 'docx', 'epub', 'tex', 'presentation'].includes(fmt)) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
     return;
   }
@@ -1802,7 +1881,7 @@ function renderExportPresetCards() {
 
 
 let exportSnapshotCache = null, exportSnapshotPreparing = null, exportInFlight = null;
-const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex']);
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation']);
 function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
 function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
 function usesExportSnapshot(fmt, tab) {
@@ -1810,6 +1889,7 @@ function usesExportSnapshot(fmt, tab) {
 }
 async function oversizedUntrackedExport(fmt, tab, content) {
   if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
+  if (fmt === 'presentation') throw exportSnapshotFailure('review_budget');
   if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
   const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
   // This read does not create a review database. Only an explicit absence can
@@ -2007,7 +2087,7 @@ async function runExportOnce(taskId) {
     const epoch=exportOpenEpoch;
     if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options)){await discardPreparedExport(frozen);return false;}
+  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,fmt)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -2024,7 +2104,7 @@ async function runExportOnce(taskId) {
       // Rendered labels can introduce CJK glyphs absent from the diagram
       // source. Install against the frozen SVGs, then bind missing fonts on
       // this same snapshot before committing its output.
-      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options)) {
+      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, fmt)) {
         await discardPreparedExport(frozen); busy(false); return false;
       }
       await bindSnapshotRuntime(frozen);
