@@ -111,6 +111,12 @@ jobs:
           READMD_ASSETS_DIR: ${{ github.workspace }}/assets
           READMD_MCP_TEST_ROOT: ${{ github.workspace }}/.cache/integration-mcp
         run: node packages/mcp-server/test/stdio.mjs
+      - name: Durable review and export task MCP workflows
+        env:
+          READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
+        run: |
+          node tools/test/durable-review-stdio.cjs
+          node tools/test/export-harness-stdio.cjs
       - name: Offline preview, formulas and engineering diagrams
         working-directory: ui-tests
         env:

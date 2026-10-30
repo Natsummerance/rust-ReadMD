@@ -33,7 +33,8 @@ const EXPECTED_TOOLS=[
   'readmd_ai_assistant','readmd_ai_providers','readmd_ai_models','readmd_ai_complete','readmd_ai_chat','readmd_render_diagram',
   'readmd_process_imports','readmd_generate_toc','readmd_export_presentation','readmd_export_epub','readmd_run_code_chunk','readmd_pdf_audit',
   'readmd_analyze_document','readmd_search_workspace','readmd_suggest_links','readmd_resolve_link','readmd_read_document','readmd_edit_document',
-  'readmd_document_history','readmd_pdf_rollback'
+  'readmd_document_history','readmd_pdf_rollback',
+  'readmd_ai_task','readmd_export_snapshot','readmd_review_ai','readmd_review_document'
 ];
 function assertSchema(schema,at){
   if(typeof schema==='boolean')return;
