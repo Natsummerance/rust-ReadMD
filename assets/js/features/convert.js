@@ -228,6 +228,9 @@ function setPluginListStatus(message, retry = false) {
 }
 
 async function openPluginModal() {
+  // The readable shell and restored tabs can be ready before locale data.
+  // Dynamic cards must wait for the existing preferences/locale barrier.
+  await window.__readmdPreferencesReady;
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -315,6 +318,11 @@ let currentPluginCategory = 'all';
 let lastPluginsCache = {};
 let pluginTabsInitialized = false;
 let pluginInstalledOnly = false;
+
+window.addEventListener('readmd:language-changed', () => {
+  const modal = $('plugin-modal');
+  if (modal && !modal.classList.contains('hidden')) refreshPluginList();
+});
 
 function initPluginTabsOnce() {
   if (pluginTabsInitialized) return;
@@ -480,7 +488,7 @@ function renderPluginCards(plugins) {
     const category = PLUGIN_CATEGORY_TEXT[p.category] ? PLUGIN_CATEGORY_TEXT[p.category]() : (p.category || '');
     const capName = PLUGIN_CAPABILITY_TEXT[p.capability] ? PLUGIN_CAPABILITY_TEXT[p.capability]() : (p.capability || '');
     const isCached = Boolean(p.installed && p.cached);
-    const sizeStr = p.approx_size ? p.approx_size : '';
+    const sizeStr = p.approx_size ? (p.native ? p.approx_size.replace(/\s*·\s*Rust$/, '') : p.approx_size) : '';
     const isExclusive = Boolean(p.alternatives && p.alternatives.length > 0);
 
     const metaParts = [];
@@ -488,7 +496,7 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">

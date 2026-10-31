@@ -93,3 +93,4 @@ async function run(binary,out){
  console.log(JSON.stringify({nativeApplicationPassed:report.passed,phases:report.phases.length,checks:report.phases.reduce((n,p)=>n+p.checks.length,0)}));
 }
 if(require.main===module){const args=process.argv.slice(2);assert.equal(args.length,2);run(...args.map(p=>path.resolve(p))).catch(e=>{console.error(e.message);process.exitCode=1;});}
+module.exports={driver,original,addition};

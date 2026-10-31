@@ -22567,6 +22567,9 @@ function setPluginListStatus(message, retry = false) {
 }
 
 async function openPluginModal() {
+  // The readable shell and restored tabs can be ready before locale data.
+  // Dynamic cards must wait for the existing preferences/locale barrier.
+  await window.__readmdPreferencesReady;
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
@@ -22654,6 +22657,11 @@ let currentPluginCategory = 'all';
 let lastPluginsCache = {};
 let pluginTabsInitialized = false;
 let pluginInstalledOnly = false;
+
+window.addEventListener('readmd:language-changed', () => {
+  const modal = $('plugin-modal');
+  if (modal && !modal.classList.contains('hidden')) refreshPluginList();
+});
 
 function initPluginTabsOnce() {
   if (pluginTabsInitialized) return;
@@ -22819,7 +22827,7 @@ function renderPluginCards(plugins) {
     const category = PLUGIN_CATEGORY_TEXT[p.category] ? PLUGIN_CATEGORY_TEXT[p.category]() : (p.category || '');
     const capName = PLUGIN_CAPABILITY_TEXT[p.capability] ? PLUGIN_CAPABILITY_TEXT[p.capability]() : (p.capability || '');
     const isCached = Boolean(p.installed && p.cached);
-    const sizeStr = p.approx_size ? p.approx_size : '';
+    const sizeStr = p.approx_size ? (p.native ? p.approx_size.replace(/\s*·\s*Rust$/, '') : p.approx_size) : '';
     const isExclusive = Boolean(p.alternatives && p.alternatives.length > 0);
 
     const metaParts = [];
@@ -22827,7 +22835,7 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">
@@ -28983,7 +28991,7 @@ function exportPaperSize(page) {
     for(let i=0;i<results.length;i++){
       const result=results[i],item=document.createElement('div');item.className='plugin-capability-item';row.append(item);
       if(result.status!=='fulfilled'){item.textContent=t('error.'+result.reason.message);continue;}
-      const data=result.value,entry=entries[i],engine=t(entry.labelKey),name=document.createElement('div');name.className='plugin-capability-details';const title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(title,purpose,sizes);item.append(name);
+      const data=result.value,entry=entries[i],engine=t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
       if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(await window.ReadMDCapabilities.ensure(data.id))await window.refreshOfflineCapabilityPack();};item.append(install);}
       if(data.present){const remove=document.createElement('button');remove.type='button';remove.className='tb-btn';remove.id=data.id==='pdfium'?'plugin-capability-uninstall':'plugin-capability-uninstall-'+data.id;remove.textContent=t('plugin.uninstall');remove.onclick=async()=>{
         if(!await confirmAction({title:t('plugin.uninstall'),message:t('capability.uninstallConfirm',{name:engine}),confirmText:t('plugin.uninstall'),cancelText:t('common.cancel'),danger:true}))return;
