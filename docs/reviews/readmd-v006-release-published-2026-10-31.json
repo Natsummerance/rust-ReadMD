@@ -1,0 +1,165 @@
+{
+  "version": "0.0.6",
+  "source": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+  "releaseTag": "V0.0.6",
+  "releaseUrl": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+  "publishedAt": "2026-10-31T03:57:35Z",
+  "draft": false,
+  "prerelease": false,
+  "latestVerified": true,
+  "tagCommitVerified": true,
+  "manifestSha256": "0fac3647312a45e9d18ee1c4896a814422a00775d21304323b4c1758d686daaf",
+  "assetCount": 11,
+  "allServerDigestsMatchManifest": true,
+  "macPackageBytesMatchIndependentVerification": true,
+  "assets": [
+    {
+      "name": "ReadMD-linux-x86_64.deb",
+      "size": 56982248,
+      "sha256": "c2a2e1fcad9a258a5e59c94e2096e21393974051e5e5d9ec3bc60e2416f8b58a",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-linux-x86_64.deb"
+    },
+    {
+      "name": "ReadMD-linux-x86_64.tar.gz",
+      "size": 68126691,
+      "sha256": "efe5c09603f933487eb464326048f5b1e3db02e01c46b0e10a8eef0af3ce2072",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-linux-x86_64.tar.gz"
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 77275616,
+      "sha256": "959fa51b19bf8433f16db5e93095c218f6a84966d185ed82ed221db6b0b42584",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.dmg"
+    },
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 68065286,
+      "sha256": "2e3d105cf6d592355215e4f85d92fe2dde1a6dc392efea88923343ad182b46bd",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.zip"
+    },
+    {
+      "name": "ReadMD-macos-x64.dmg",
+      "size": 76843209,
+      "sha256": "da16caa3ab1f1c33fbdbebbc2b44c4f7f4d7508d057dc817dbdbb55cdb08c3d9",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-x64.dmg"
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 68973280,
+      "sha256": "ba5d8ca8d47243540de3e1c7c7b70d97d51453e46526b267153c60b7376a51bd",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-x64.zip"
+    },
+    {
+      "name": "readmd-mcp-server-0.0.6.zip",
+      "size": 7055,
+      "sha256": "eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-mcp-server-0.0.6.zip"
+    },
+    {
+      "name": "readmd-vscode-0.0.6.vsix",
+      "size": 14039557,
+      "sha256": "000871d99f9c34fb72310fc7f68385d0029c269d62a409703fb31667f10e131c",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/readmd-vscode-0.0.6.vsix"
+    },
+    {
+      "name": "ReadMD-windows-x64.zip",
+      "size": 68559134,
+      "sha256": "4462c782a1bc27364cd106e8e3dacc806013dd007aec2608f2f94ec5f787e292",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-windows-x64.zip"
+    },
+    {
+      "name": "ReadMDSetup-windows-x64.exe",
+      "size": 65147687,
+      "sha256": "b81284d7aee597deeeffff6d42f4ab7f31fe748c8ac2b59c8755d372266adc56",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMDSetup-windows-x64.exe"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 903,
+      "sha256": "0fac3647312a45e9d18ee1c4896a814422a00775d21304323b4c1758d686daaf",
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/SHA256SUMS.txt"
+    }
+  ],
+  "modelsRequested": false,
+  "passed": true,
+  "releaseRun": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41165447686",
+  "requiredJobs": [
+    {
+      "name": "Build · Linux x64",
+      "conclusion": "success"
+    },
+    {
+      "name": "Build · Windows x64",
+      "conclusion": "success"
+    },
+    {
+      "name": "Build · macOS ARM64",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / VS Code and MCP quality",
+      "conclusion": "success"
+    },
+    {
+      "name": "Build · macOS Intel",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / Kernel tests · ubuntu-latest",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / UI quality (Playwright)",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / Kernel tests · windows-latest",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / Kernel tests · macos-latest",
+      "conclusion": "success"
+    },
+    {
+      "name": "Release quality / Frontend gates",
+      "conclusion": "success"
+    },
+    {
+      "name": "Publish GitHub Release",
+      "conclusion": "success"
+    }
+  ],
+  "armProductionNative": {
+    "binarySha256": "7fddac1821a5ee1989f63ab8be24f1a8a128cf0d93f9a329074c620f6aeb2810",
+    "bootSha256": "eeff0bc985e0784885bc722b35b15d58ef290dd0114b3d931070f40570ab7397",
+    "nativeQaEnabled": false,
+    "normalSystemLaunch": true,
+    "forcedTermination": false,
+    "modelsRequested": false,
+    "phases": [
+      {
+        "phase": "cold",
+        "actualNativeDocumentVisible": true,
+        "normalQuitRequested": true,
+        "actualProcessGone": true,
+        "sessionPersisted": true,
+        "originalBytesUnchanged": true,
+        "windowScreenshotSha256": "2fe8567f3cd80d58179bb58d9799683ff964a88af33c53efa5332001d1e5d969"
+      },
+      {
+        "phase": "reopen",
+        "actualNativeDocumentVisible": true,
+        "normalQuitRequested": true,
+        "actualProcessGone": true,
+        "sessionPersisted": true,
+        "originalBytesUnchanged": true,
+        "windowScreenshotSha256": "55fe4793d9acfed2d63a6d43d72050c72b1bfe0ce023b14be16d74708b99fe04"
+      }
+    ],
+    "passed": true
+  },
+  "macSigning": "ad-hoc",
+  "appleNotarized": false,
+  "intelNativeExecution": false,
+  "promoStatus": "pending; software published first at user request"
+}
