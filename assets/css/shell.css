@@ -109,6 +109,18 @@ body.rm-scrolled #toolbar { box-shadow: 0 1px 0 var(--color-border), var(--shado
   .tab-close { width: 32px; height: 32px; }
 }
 @keyframes rm-rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+/* Mac chrome uses the system UI face and quiet, translucent surfaces. Content
+   fonts and the native AppKit traffic-light geometry keep their own settings. */
+body.native-macos { --font-ui: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", sans-serif; }
+body.native-macos #app-titlebar { background: color-mix(in srgb, var(--color-bg) 92%, transparent); -webkit-backdrop-filter: saturate(140%) blur(20px); backdrop-filter: saturate(140%) blur(20px); }
+body.native-macos #titlebar-home { padding: 5px; border-radius: 10px; }
+body.native-macos #titlebar-home .titlebar-mark { width: 34px; height: 34px; }
+body.native-macos .welcome-mark { width: 56px; height: 56px; }
+body.native-macos :is(#titlebar-actions, #toolbar) > .tb-btn,
+body.native-macos #toolbar .tb-btn { border-radius: 8px; }
+body.native-macos :is(#more-menu, .doc-tabs-dropdown, .tab-context-menu) { border-radius: 10px; background: color-mix(in srgb, var(--color-surface) 94%, transparent); -webkit-backdrop-filter: saturate(150%) blur(24px); backdrop-filter: saturate(150%) blur(24px); }
+body.native-macos :is(#export-box, #export-preview-box, #ai-settings-box, #ai-history-box, #pet-settings-box, #history-box, #img-box, #formula-box, #tpl-box, #share-box, #url-box, #close-confirm-box, #choice-box, #save-conflict-box, #fix-box, #convert-box, #update-box, .modal-dialog) { border-radius: 16px; }
+body.native-macos [role="dialog"] :is(.modal-input, .modal-select, .modal-textarea) { border-radius: 8px; }
 /* Mac extension sheet: compact controls, independent content scrolling, and
    full hit targets around the existing small switches. */
 body.native-macos #plugin-box { width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); min-height: 0; border-radius: 18px; }

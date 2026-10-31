@@ -16,6 +16,10 @@ function driver(file,ack){return String.raw`(async()=>{
   await window.__readmdSessionReady;await loadFile(${JSON.stringify(file)});
   await until(()=>host()?.chrome?.buttons?.length===3);
   check(py.native_titlebar==='macos'&&document.body.classList.contains('native-macos'),'native_macos_bridge');
+  await until(()=>document.querySelector('.titlebar-mark')?.complete&&document.querySelector('.titlebar-mark')?.naturalWidth===1024);
+  check(new URL(document.querySelector('.titlebar-mark').src).pathname==='/assets/ReadMD-macos.svg','native_header_uses_packaged_mac_brand');
+  check($('titlebar-home').getBoundingClientRect().width>=44&&getComputedStyle(document.querySelector('.titlebar-mark')).width==='34px','mac_brand_optical_size_and_home_hit_target');
+  check(getComputedStyle(document.body).fontFamily.includes('-apple-system'),'native_system_chrome_font');
   const chrome=host().chrome;
   check(chrome.systemControls&&chrome.fullSizeContent&&chrome.titleHidden&&chrome.transparentTitlebar,'actual_cocoa_titlebar_style');
   check(getComputedStyle($('window-controls')).display==='none'&&!document.querySelector('.window-resize-edge'),'no_duplicate_windows_controls');

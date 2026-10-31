@@ -30519,6 +30519,11 @@ function initWindowChrome() {
 
 function initMacWindowChrome(command) {
   document.body.classList.add('native-macos');
+  // Reuse the packaged Mac brand, including its optical inset and rounded tile.
+  // The original mark remains the default for browsers and other platforms.
+  for (const mark of document.querySelectorAll('.titlebar-mark,.welcome-mark')) {
+    mark.src = '/assets/ReadMD-macos.svg';
+  }
   // Cocoa draws, localizes and operates the traffic lights. The web page has
   // no second set of caption buttons or resize hit areas on this platform.
   $('window-controls')?.classList.add('hidden');
