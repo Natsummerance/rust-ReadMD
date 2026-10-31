@@ -33,6 +33,14 @@ test('native document Close uses the active tab service and preserves IME compos
  assert.equal(await context.window.__readmdNativeMenu('close-document'),true);assert.deepEqual(closed,['owned-document']);
  assert.equal(await context.window.__readmdNativeMenu('unregistered-command'),false);
 });
+test('rapid native New then Close waits for the document transition',async()=>{
+ let complete;const order=[],context=vm.createContext({window:{},state:{activeTabId:'original'},newDocument:async()=>{order.push('new-start');await new Promise(r=>{complete=r;});context.state.activeTabId='new';order.push('new-ready');},closeTab:async id=>order.push('close-'+id)});
+ vm.runInContext(body,context);
+ const creating=context.window.__readmdNativeMenu('new'),closing=context.window.__readmdNativeMenu('close-document');
+ for(let i=0;i<4;i++)await Promise.resolve();
+ assert.deepEqual(order,['new-start']);complete();
+ await Promise.all([creating,closing]);assert.deepEqual(order,['new-start','new-ready','close-new']);
+});
 test('custom titlebars retain preferences and a plain browser has no native call',()=>{
  assert.equal(run({custom_titlebar:true},false)[0].options.closeToTray,false);
  assert.deepEqual(run({custom_titlebar:false},false),[]);

@@ -107,7 +107,16 @@ function syncWindowPreferences() {
 
 // Native menus enter the existing UI workflows. Modal guards, revision checks,
 // workspace permissions and save/recovery remain owned by those workflows.
-window.__readmdNativeMenu = async action => {
+let nativeMenuQueue = Promise.resolve();
+window.__readmdNativeMenu = action => {
+  // AppKit acknowledges dispatch before an asynchronous editor transition
+  // finishes. Preserve command order so New followed by Close is not lost
+  // against the document service's busy guard.
+  const work = nativeMenuQueue.then(() => runNativeMenu(action));
+  nativeMenuQueue = work.catch(() => false);
+  return work;
+};
+async function runNativeMenu(action) {
   await window.__readmdSessionReady;
   if (typeof cmView !== 'undefined' && cmView?.composing) return false;
   if (window.ReadMDModal?.top()) {
@@ -119,14 +128,14 @@ window.__readmdNativeMenu = async action => {
     case 'folder': await openFolder(); break;
     case 'plugins': await openPluginModal(); break;
     case 'pet': await openPetSettings(); break;
-    case 'settings': window.ReadMDPalette?.open('settings'); break;
+    case 'settings': await window.ReadMDPalette?.open('settings'); break;
     case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId); break;
     case 'zen': toggleZenMode(); break;
-    case 'fullscreen': window.ReadMDViewMode?.toggleFullscreen(); break;
+    case 'fullscreen': await window.ReadMDViewMode?.toggleFullscreen(); break;
     default: return false;
   }
   return true;
-};
+}
 function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;
