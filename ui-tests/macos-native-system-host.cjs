@@ -9,7 +9,7 @@ const sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 function command(program,args){const r=spawnSync(program,args,{encoding:'utf8',timeout:15000});assert.equal(r.status,0,path.basename(program)+' failed');return r.stdout;}
 function within(p){assert(p.startsWith(workspace+path.sep),'only workspace-owned inputs');assert(!fs.lstatSync(p).isSymbolicLink());}
 function exists(pid){try{process.kill(pid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}}
-function prepare(app,out,{tmp,home}){
+function prepare(app,out,{tmp,home,petQa=false}){
  assert.equal(process.platform,'darwin');for(const p of [app,out,tmp,home])within(p);
  const info=JSON.parse(command('/usr/bin/plutil',['-convert','json','-o','-',path.join(app,'Contents/Info.plist')]));
  assert(info.CFBundleIdentifier.startsWith('asia.readmd.nativeqa.'));assert(!info.CFBundleDocumentTypes,'QA app must not declare file associations');
@@ -26,7 +26,7 @@ function prepare(app,out,{tmp,home}){
    for(const p of [profile,docs])within(p);assert.equal(owned().length,0,'previous QA instance must be gone');
    if(openFile){within(openFile);assert(fs.lstatSync(openFile).isFile());}
    fs.writeFileSync(log,'',{flag:'wx',mode:0o600});
-   const env={READMD_NATIVE_QA:'1',READMD_DATA_DIR:profile,READMD_WORKSPACE:docs,READMD_EXTRA_ROOTS:'',READMD_ASSETS_DIR:'',TMPDIR:tmp,SQLITE_TMPDIR:tmp,CFFIXED_USER_HOME:home};
+   const env={READMD_NATIVE_QA:'1',READMD_PET_NATIVE_QA:petQa?'1':'',READMD_DATA_DIR:profile,READMD_WORKSPACE:docs,READMD_EXTRA_ROOTS:'',READMD_ASSETS_DIR:'',TMPDIR:tmp,SQLITE_TMPDIR:tmp,CFFIXED_USER_HOME:home};
    const appArgs=['--port','0','--require-token','--data-dir',profile,'--workspace',docs,'--assets',path.join(root,'assets')];
    const child=spawn('/usr/bin/open',['-n','-W','--stdout',log,'--stderr',log,...Object.entries(env).flatMap(([k,v])=>['--env',k+'='+v]),...(openFile?['-a',app,openFile]:[app]),'--args',...appArgs],{cwd:out,stdio:'ignore'});
    const exited=new Promise(resolve=>{child.once('exit',(code,signal)=>resolve({code,signal}));child.once('error',()=>resolve({code:null,spawnError:true}));});

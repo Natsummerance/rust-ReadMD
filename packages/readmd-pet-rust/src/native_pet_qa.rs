@@ -13,6 +13,8 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+#[path = "native_pet_capture_qa.rs"]
+mod capture;
 
 pub(super) struct Driver {
     directory: PathBuf,
@@ -145,6 +147,20 @@ impl Driver {
         self.sequence = sequence;
         match value["action"].as_str().unwrap_or("") {
             "status" => self.write(Self::status(sequence, native, state)),
+            "capture" => {
+                capture::frame(&_webview.view, &self.directory, sequence);
+                self.write(Self::status(sequence, native, state));
+            }
+            "drop-owned-file" | "hover-owned-file" => {
+                let accepted = capture::drop_owned_file(
+                    &_webview.view,
+                    &self.directory,
+                    value["action"] == "drop-owned-file",
+                );
+                let mut result = Self::status(sequence, native, state);
+                result["owned_drop_accepted"] = json!(accepted);
+                self.write(result);
+            }
             "click" | "drag" | "context-menu" => {
                 let rect = state
                     .pet_rects

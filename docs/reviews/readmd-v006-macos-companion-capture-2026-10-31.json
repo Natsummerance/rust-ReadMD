@@ -1,0 +1,62 @@
+{
+  "scope": "Debug-only owned NSPanel capture and synthetic native AppKit destination drop. No published package changes.",
+  "publishedReleaseSource": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+  "platform": "macos-aarch64",
+  "modelsRequested": false,
+  "globalInput": false,
+  "sourceFiles": [
+    {
+      "file": "packages/readmd-pet-rust/src/native_pet_qa.rs",
+      "sha256": "6992851df5a7f0ad8eecd092c663e6b2fe901cd55d43b5ab257e443dcd1ec2c9"
+    },
+    {
+      "file": "packages/readmd-pet-rust/src/native_pet_capture_qa.rs",
+      "sha256": "8918c9f6474a7908e34f94e3335c8278b4630c8edcb1aaa03e9bde821d277117"
+    },
+    {
+      "file": "ui-tests/macos-native-system-host.cjs",
+      "sha256": "886b45abc5435b86b60585451b0ce8e4aefc77b6c308574146df808971de8e2a"
+    }
+  ],
+  "captureBinarySha256": "5b43c589f0793c84d431a64b1edd9391b417278d3b1b4290ad6788413b966d87",
+  "readerBinarySha256": "cd49ce04231aaf0c6019f45d9d4f21cd11e6849c22656239c910ed1500fd2b59",
+  "bootSha256": "eeff0bc985e0784885bc722b35b15d58ef290dd0114b3d931070f40570ab7397",
+  "actualNativeDragVerified": true,
+  "actualAppKitDropOpenedOriginalDocument": true,
+  "originalsUnchanged": true,
+  "nativeWindowShadow": false,
+  "opaqueWindow": false,
+  "clips": [
+    {
+      "id": "F093",
+      "width": 3840,
+      "height": 2400,
+      "seconds": 10.733333,
+      "sha256": "9d0038738e0a8ea27c29964894468e57814ab510c90d13a238c2554f57c40346",
+      "actualNativeFrames": 103,
+      "actualCompanionFrames": 96,
+      "fullDecodePassed": true
+    },
+    {
+      "id": "F095",
+      "width": 3840,
+      "height": 2400,
+      "seconds": 11.966667,
+      "sha256": "1153763854f3c4cc9d964e4f1b1a1543b9bb39620064931f2a41d35c4271d9f0",
+      "actualNativeFrames": 115,
+      "actualCompanionFrames": 118,
+      "fullDecodePassed": true
+    }
+  ],
+  "clippyWithWarningsDenied": true,
+  "unitLog": "pet-transparent-capture-unit.log",
+  "limits": [
+    "Synthetic owned native destination events do not establish human Finder drag verification.",
+    "Film captures are debug-host evidence, separate from the unchanged production V0.0.6 release."
+  ],
+  "unitTests": {
+    "passed": 63,
+    "failed": 0,
+    "ignored": 0
+  }
+}
