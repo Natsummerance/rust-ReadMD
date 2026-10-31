@@ -109,3 +109,4 @@ async function run(binary,out,flow='cancel'){
  console.log(JSON.stringify({nativeDialogsPassed:report.passed,phases:report.phases.length,checks:report.phases.reduce((n,p)=>n+p.checks.length,0),capture:report.captureSucceeded}));
 }
 if(require.main===module){const args=process.argv.slice(2);assert(args.length>=2&&args.length<=3,'absolute debug binary, new evidence directory, optional open/save flow required');run(path.resolve(args[0]),path.resolve(args[1]),args[2]).catch(e=>{console.error(e.message);process.exitCode=1;});}
+module.exports={driver,before,added,encode};

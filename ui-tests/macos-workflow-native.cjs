@@ -166,3 +166,4 @@ if(require.main===module){
   if(!binary||!out)throw Error('Usage: macos-workflow-native.cjs <absolute debug native-qa binary> <new absolute evidence directory>');
   run(path.resolve(binary),path.resolve(out)).catch(error=>{console.error(error.message);process.exitCode=1;});
 }
+module.exports={driver,encode,before,inserted,external};

@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),allowed=path.dirname(root),sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 const content='# Export contract\n\nActual slide one.\n\n---\n\n## Second slide\n\nThe original sentence must survive.\n\n---\n\n## Third slide\n\nA complete final page.\n'+(process.env.READMD_QA_FONT_PACK?'\n真实中文导出与恢复。\n\n![中文图像](figure.svg)\n':'');
-function driver(file,outputs,fontPack){return `(async()=>{
+function driver(file,outputs,fontPack,captureAck){return `(async()=>{
  const checks=[];let phase='startup';const file=${JSON.stringify(file)},outputs=${JSON.stringify(outputs)};
  const check=(ok,name)=>{if(!ok)throw Error(name);checks.push(name);};
  const until=async fn=>{const end=Date.now()+40000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,40));}throw Error('condition_timeout');};
@@ -27,6 +27,9 @@ function driver(file,outputs,fontPack){return `(async()=>{
    if(fmt==='pptx'){
     const doc=$('export-preview-mini-content').querySelector('iframe').contentDocument;
     check(doc.querySelectorAll('.readmd-slide').length===3&&nativeExportPreview.data.width===960&&nativeExportPreview.data.height===540,'three_actual_widescreen_slides');
+    ${captureAck?`py.window_control('status');await until(()=>window.__readmdNativeWindowState?.chrome?.windowNumber>0);
+    window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:true,phase:'capture_ready',checks:['actual_pptx_preview_ready'],window_number:window.__readmdNativeWindowState.chrome.windowNumber}}));
+    await until(async()=>{const r=await apiFetch('/api/file?p='+encodeURIComponent(${JSON.stringify(captureAck)}));return r.ok;});`:''}
    }
     const frozen=await prepareReviewExport(fmt,effectiveExportOptions(collectExportOptions()),currentExportName(),getActiveTab(),false);
     await bindSnapshotRuntime(frozen);await prepareSnapshotFigures(frozen);
@@ -68,4 +71,4 @@ async function run(binary,out){
  console.log(JSON.stringify({nativeExportsPassed:report.passed,checks:report.result.checks.length,formats:report.artifacts.length}));
 }
 if(require.main===module){const [binary,out]=process.argv.slice(2);if(!binary||!out)throw Error('Usage: macos-export-native.cjs <explicit debug native-qa binary> <new evidence directory>');run(path.resolve(binary),path.resolve(out)).catch(error=>{console.error(error.message);process.exitCode=1;});}
-module.exports={driver};
+module.exports={driver,content};

@@ -14,7 +14,12 @@ async function run(app,out){
  const docs=path.join(out,'documents'),profile=path.join(out,'profile'),tmp=path.join(out,'tmp'),home=path.join(out,'native-home');for(const d of [docs,profile,tmp,home])fs.mkdirSync(d,{mode:0o700});
  const file=path.join(docs,'系统启动与原生窗口验证.md'),ack=path.join(docs,'capture-ack.txt'),content='# Native window contract\n\nA synthetic document with reliable save and close.\n';fs.writeFileSync(file,content,{flag:'wx'});
  fs.writeFileSync(path.join(profile,'.readmd-native-qa-owned'),'readmd-synthetic-native-qa-v1',{mode:0o600});fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({lang:'en',closeToTray:false,autoCheckUpdate:false}));fs.writeFileSync(path.join(profile,'native-qa.js'),driver(file,ack),{mode:0o600});
- const helper=path.join(out,'owned-app-context'),compile=spawnSync('/usr/bin/xcrun',['swiftc','-module-cache-path',path.join(workspace,'.readmd-local/clang-module-cache'),path.join(__dirname,'fixtures/macos-owned-app-context.swift'),'-o',helper],{encoding:'utf8',timeout:60000});
+ // Swift serializes module paths. Mixing the Rust cache's historical ../
+ // spelling with the canonical path made Clang load Foundation twice. Keep a
+ // single canonical Swift QA cache, and never spill compiler scratch to /var.
+ const cachePath=path.join(workspace,'.readmd-local/clang-module-cache/native-qa-swift');fs.mkdirSync(cachePath,{recursive:true});
+ const moduleCache=fs.realpathSync(cachePath),compileEnv={...process.env,TMPDIR:tmp,CFFIXED_USER_HOME:home,CLANG_MODULE_CACHE_PATH:moduleCache,SWIFT_MODULE_CACHE_PATH:moduleCache};
+ const helper=path.join(out,'owned-app-context'),compile=spawnSync('/usr/bin/xcrun',['swiftc','-module-cache-path',moduleCache,path.join(__dirname,'fixtures/macos-owned-app-context.swift'),'-o',helper],{encoding:'utf8',env:compileEnv,timeout:60000});
  fs.writeFileSync(path.join(out,'helper-build.log'),compile.stderr,{mode:0o600});assert.equal(compile.status,0);
  const owned=()=>JSON.parse(command(helper,[id,app])).ownedApps;
  assert.equal(owned().length,0,'a previous QA app must not be adopted');
@@ -28,13 +33,25 @@ async function run(app,out){
   while(!fs.existsSync(resultFile)&&Date.now()<deadline){const apps=owned();assert(apps.length<=1,'multiple QA instances');if(apps[0])actualPid=apps[0].pid;assert(launching.exitCode===null&&launching.signalCode===null,'system launcher exited early');await pause(200);}
   const first=JSON.parse(fs.readFileSync(resultFile));fs.renameSync(resultFile,path.join(out,first.phase+'.json'));report.first=first;assert.equal(first.ok,true,first.checks.join(','));assert.equal(first.phase,'capture_ready');
   const apps=owned();assert.equal(apps.length,1);actualPid=apps[0].pid;report.appContext=apps[0];assert.equal(apps[0].active,true,'the native reader must be active after restore and fullscreen');
+  const commandPath=command('/bin/ps',['-p',String(actualPid),'-o','comm=']).trim();
+  assert.equal(fs.realpathSync(commandPath),fs.realpathSync(path.join(app,'Contents/MacOS',info.CFBundleExecutable)),'PID must be the exact QA executable');
+  report.ownedExecutableConfirmed=true;
   const captureHelper=path.join(workspace,'.readmd-local/native-window-capture');
   if(fs.existsSync(captureHelper)){
    const probe=JSON.parse(command(captureHelper,[String(actualPid),String(first.window_number)]));assert(probe.ownedWindowOnScreen,'capture must belong to the actual launched app');
    if(probe.captureAllowed){const image=path.join(out,'native-system-window.png');command('/usr/sbin/screencapture',['-x','-o','-l',String(first.window_number),image]);report.screenshotSha256=sha(fs.readFileSync(image));}
   }
+  const quitStart=Date.now(),alive=()=>{try{process.kill(actualPid,0);return true;}catch(error){if(error.code==='ESRCH')return false;throw error;}};
   fs.writeFileSync(ack,'Owned native capture complete.');report.launcherOutcome=await Promise.race([exited,pause(20000).then(()=>{throw Error('system_app_quit_timeout');})]);assert.equal(report.launcherOutcome.code,0);
-  report.result=JSON.parse(fs.readFileSync(resultFile));assert.equal(report.result.ok,true,report.result.checks.join(','));assert.equal(owned().length,0,'owned application must stop after true quit');assert.equal(fs.readFileSync(file,'utf8'),content+'\nOwned unsaved sentence.\n');
+  report.launcherReturnedMs=Date.now()-quitStart;
+  report.result=JSON.parse(fs.readFileSync(resultFile));assert.equal(report.result.ok,true,report.result.checks.join(','));
+  // open -W and the LaunchServices registry can settle before/after the Unix
+  // process. Observe the real PID as well; never replace a true quit with kill.
+  while(alive()&&Date.now()-quitStart<2000)await pause(50);
+  assert(!alive(),'the exact owned process must stop within two seconds');report.processGoneMs=Date.now()-quitStart;
+  while(owned().length&&Date.now()-quitStart<5000)await pause(100);
+  assert.equal(owned().length,0,'owned application registration must settle after true quit');report.registrationGoneMs=Date.now()-quitStart;
+  assert.equal(fs.readFileSync(file,'utf8'),content+'\nOwned unsaved sentence.\n');
   // open -W reports the launcher outcome, not the app's Unix exit status.
   report.nativeProcessExitCode=null;report.nativeProcessGone=true;report.passed=true;
  }finally{

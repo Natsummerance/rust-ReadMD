@@ -7,15 +7,23 @@
     "os": "macOS 27.2",
     "architecture": "arm64",
     "nativeDisplay": {
-      "width": 1920,
-      "height": 1080,
-      "scale": 1
+      "logicalWidth": 1920,
+      "logicalHeight": 1080,
+      "physicalWidth": 3840,
+      "physicalHeight": 2160,
+      "refreshRateHz": 120,
+      "nominalPhysicalToLogicalScale": 2,
+      "source": "system_profiler SPDisplaysDataType, sanitized resolution projection",
+      "native4kCaptureAccepted": false,
+      "priorBareProcessScaleObservation": 1
     }
   },
   "source": {
     "baseCommit": "69a22781908f2e82a227276564f205f7e94842a5",
     "productionManifestSha256": "8700e9e04aaf564bad9b057ee2f2e0aaa87d4694e158163121f5a06805d6c295",
-    "binding": "base commit and production source manifest; the containing commit records the candidate source"
+    "binding": "base commit and production source manifest; the containing commit records the candidate source",
+    "coreCheckpointCommit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+    "productionCodeChangedInThisEvidenceUpdate": false
   },
   "modelServices": {
     "deferred": true,
@@ -544,13 +552,13 @@
     }
   },
   "pending": [
-    "LaunchServices foreground restore/fullscreen acceptance; bare-process attempts remain failed",
-    "Actual native picker selection and Save As commit/reopen",
+    "Actual native Save As commit/reopen; first attempt returned false, cancellation/error diagnosis pending",
+    "Production-package full normal-launch workflow and default file association",
     "Desktop companion global keyboard permission and real authorized input",
     "OCR/ASR/AI native consumers and managed speech engine",
     "Strict Mac multi-file refactor commit; platform safety guard kept",
     "Native 4K/high-DPI capture and complete movie refresh",
-    "Current-source cross-platform CI and release gates"
+    "Final release gates; no V0.0.6 release or tag created"
   ],
   "ledger": {
     "ongoing": 63,
@@ -566,6 +574,309 @@
     ],
     "cause": "locked Playwright 1.54.0 does not support runner ubuntu26.04-x64",
     "fix": "pin browser jobs and cache namespace to Ubuntu 24.04",
-    "rerunRequired": true
-  }
+    "rerunRequired": false,
+    "verifiedFixCommit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+    "successfulRerun": 41129594664
+  },
+  "nativeSystemLaunch": {
+    "nativeHost": "LaunchServices / dedicated ad-hoc QA App / Cocoa WKWebView",
+    "defaultAssociationsChanged": false,
+    "modelServicesInvoked": false,
+    "debugDriverOnly": true,
+    "productionPackageFullWorkflowAccepted": false,
+    "sourceCheckpointAManifestSha256": "4f366a8e12d4171918c7246bf227e0a440f2673b9cf0bc19b0e3b6e23b4e4ca6",
+    "window": {
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "aa566785ce7a32799ef8e933756a7ff49f75cf16e84d2d168282360119fece3c",
+      "passed": true,
+      "checks": 27,
+      "actualAppActive": true,
+      "actualPidExecutableConfirmed": true,
+      "nativeProcessExitCode": null,
+      "nativeProcessGone": true,
+      "receipt": "mac-native-system-window-3",
+      "processGoneObservedAfterCaptureAckMs": 106,
+      "registryGoneObservedAfterCaptureAckMs": 227
+    },
+    "workflow": {
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "ee630a13f37b4dede68de1686ce2c8aa46d688909433d3da8139640f045e28b8",
+      "driverSha256": "045da93675ab469e08a8e2de8355f48aaee60c1faa6f536eeeb9badf999ac90f",
+      "passed": true,
+      "checks": 45,
+      "phases": [
+        {
+          "phase": "edit_save",
+          "checks": [
+            "native_bridge_ready",
+            "chinese_path_opened",
+            "initial_text_exact",
+            "native_document_visible",
+            "editor_has_real_layout",
+            "source_visible_without_scrolling",
+            "unchanged_editor_clean",
+            "edit_creates_no_copy",
+            "edit_is_dirty",
+            "undo_restores_original",
+            "redo_restores_edit",
+            "native_save_receipt",
+            "saved_editor_clean",
+            "session_idle_before_close",
+            "begin_clean_close",
+            "clean_tab_closed",
+            "clean_close_has_no_prompt",
+            "saved_file_reopened",
+            "session_acknowledged"
+          ],
+          "nativeProcessGone": true
+        },
+        {
+          "phase": "restore_close",
+          "checks": [
+            "native_bridge_ready",
+            "session_restored",
+            "restart_text_exact",
+            "restored_editor_clean",
+            "last_tab_closed",
+            "session_acknowledged"
+          ],
+          "nativeProcessGone": true
+        },
+        {
+          "phase": "empty_home",
+          "checks": [
+            "native_bridge_ready",
+            "empty_session_home",
+            "session_acknowledged"
+          ],
+          "nativeProcessGone": true
+        },
+        {
+          "phase": "blocked_rename",
+          "checks": [
+            "native_bridge_ready",
+            "explicit_workspace_listed",
+            "group_rename_refused",
+            "no_rename_intent_or_path_change",
+            "rename_barrier_released",
+            "platform_reason_visible",
+            "session_acknowledged"
+          ],
+          "nativeProcessGone": true
+        },
+        {
+          "phase": "external_conflict",
+          "checks": [
+            "native_bridge_ready",
+            "conflict_fixture_dirty",
+            "real_save_conflict_dialog",
+            "save_conflict_dialog_fits_window",
+            "external_revision_rejects_save",
+            "failed_save_keeps_user_text",
+            "quit_cancelled",
+            "cancel_keeps_dirty_editor",
+            "dirty_draft_checkpointed",
+            "session_acknowledged"
+          ],
+          "nativeProcessGone": true
+        }
+      ],
+      "receipt": "mac-native-system-workflow-1"
+    },
+    "exports": {
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "46259445def0566b800d7771c3e26147158fc58aea877600ba4a60360943bcf4",
+      "driverSha256": "a7ccbb72557658b4259f0383d9f0f04f0807db5cdf23ccc64d10ece0921ae023",
+      "passed": true,
+      "checks": 19,
+      "formats": [
+        {
+          "format": "pdf",
+          "bytes": 24949,
+          "sha256": "b49af085605a6746dfa708087ef2afdd3a9399961759e72a6caf7322987c8fbd",
+          "structuralCheck": true
+        },
+        {
+          "format": "docx",
+          "bytes": 30554,
+          "sha256": "4feae6388b2244fe8b1f73ef80dfca6314195fd90c2e5a64214beb6704537918",
+          "structuralCheck": true
+        },
+        {
+          "format": "epub",
+          "bytes": 4820,
+          "sha256": "42f43ed017181feb4adfc822d54c516499e85273e0335aa55508788c53b5c9cd",
+          "structuralCheck": true
+        },
+        {
+          "format": "html",
+          "bytes": 2153408,
+          "sha256": "2e41c6fecaf9c69b96e4353482c0fcc621d331333546c75c400418a4ab579f1f",
+          "structuralCheck": true
+        },
+        {
+          "format": "tex",
+          "bytes": 5373,
+          "sha256": "e7e002ed7ab574b1e5c01442e41efef0b00d00ead53ec8dcc6565ba6f5bb5506",
+          "structuralCheck": true
+        },
+        {
+          "format": "pptx",
+          "bytes": 31983,
+          "sha256": "56382a70613d13d27fc1632716be5b03a26d65e9264ea6cfa74d813242311312",
+          "editableSlides": 3,
+          "aspectRatio": "16:9",
+          "structuralCheck": true
+        }
+      ],
+      "fontPackSha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+      "actualChineseAndSvg": true,
+      "previewScreenshotSha256": "18da681b52b3e7e3a7326d7722d57297bf999510cf07201b1b7647cf5600e108",
+      "receipt": "mac-native-system-export-cjk-capture",
+      "launcherWaitObservedMs": 9626,
+      "launcherWaitIsNotPerPreviewLatencyOrP95": true
+    },
+    "osOpen": {
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "b528a145bfb5ba503c5626813008d1bd78ddbf8db54ba5a813baffa14ef1b9f4",
+      "passed": true,
+      "checks": 20,
+      "hostSha256": "65d544acf3c4fd78218da8ccf0f1c57c56f74c60bea93472266dacde10de34df",
+      "explicitOsFileOpen": true,
+      "documentPassedInCli": false,
+      "documentOutsideWorkspace": true,
+      "parentWorkspaceSelected": false,
+      "defaultAssociationTested": false,
+      "modelsIdleVerified": true,
+      "receipt": "mac-native-os-open-1"
+    },
+    "dialogsCancel": {
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "f2901f476a8ceaf742da7fe3f1d6cd0cbc402d2025369b69f831b196b1c887aa",
+      "driverSha256": "3f27d6368b1e16ac77c5827e1fad9fab5343f25d6735b3335662e39b53d352fb",
+      "passed": true,
+      "checks": 19,
+      "cancelOnly": true,
+      "selectionOrSaveCommitAccepted": false,
+      "receipt": "mac-native-system-dialog-cancel"
+    },
+    "automatedScopedChecks": 130,
+    "manualNativeSelection": {
+      "status": "actual_open_passed_save_as_returned_false_pending_diagnosis",
+      "receipt": "mac-native-system-dialog-manual-2",
+      "nativeOpenSelectionVerified": true,
+      "selectedDocumentBodyVerified": true,
+      "saveAsCommitAccepted": false,
+      "originalUnchanged": true,
+      "newFileCreated": false,
+      "cancellationVersusFailureKnown": false,
+      "passiveTransportObserverPreparedNotYetExecuted": true
+    },
+    "registrationCleanup": {
+      "dedicatedQaBundleUnregistered": true,
+      "ownedProcessesRunning": 0,
+      "defaultAssociationsChanged": false
+    }
+  },
+  "currentCi": {
+    "commit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+    "allWorkflowsPassed": true,
+    "runs": [
+      {
+        "id": 41129594664,
+        "name": "Repo quality",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594664"
+      },
+      {
+        "id": 41129594676,
+        "name": "Multi-Platform Rust Build and Release",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594676"
+      },
+      {
+        "id": 41129594695,
+        "name": "ReadMD desktop pet Rust quality",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594695"
+      },
+      {
+        "id": 41129594725,
+        "name": "Website GitHub Pages",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594725"
+      }
+    ]
+  },
+  "independentlyVerifiedCiMacPackages": [
+    {
+      "commit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+      "arch": "arm64",
+      "staticIntegrityPassed": true,
+      "nativeFullWorkflowPassed": false,
+      "binarySha256": "8ad4e9d75c31b1ee7a1afcf78159aecae1f8ad488ba598f28fc8e7b60c9f5578",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "signing": "ad-hoc",
+      "notarized": false,
+      "minOs": "11.0",
+      "infoMinOs": "11.0",
+      "files": [
+        {
+          "name": "ReadMD-macos-arm64.dmg",
+          "bytes": 77651846,
+          "sha256": "2582ead1330e5259f8b2ec4ebcd0db0d808ebf1aadd95c1e2f7015e9804bfa3e"
+        },
+        {
+          "name": "ReadMD-macos-arm64.zip",
+          "bytes": 66498667,
+          "sha256": "a3da47824a10d604444677450aa6e99955e64ead202447f38d69655a999e8b3a"
+        }
+      ],
+      "pet": {
+        "version": "1.0.1",
+        "artifacts": 109,
+        "fullByteManifestVerified": true,
+        "archiveSha256": "5f0cee58b9a95e3286f098d2bb0e3cd9312e8cd0189af7ca8380b62ac3e4be70"
+      }
+    },
+    {
+      "commit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+      "arch": "x64",
+      "staticIntegrityPassed": true,
+      "nativeFullWorkflowPassed": false,
+      "binarySha256": "c32d8fdad4601d6eee6f58c0a18d4d32204434dcd854d640efd3de7461d5e42f",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "signing": "ad-hoc",
+      "notarized": false,
+      "minOs": "10.12",
+      "infoMinOs": "10.15",
+      "files": [
+        {
+          "name": "ReadMD-macos-x64.dmg",
+          "bytes": 76716493,
+          "sha256": "bcb6135dc2e51cdec526cd47fa5068d82c054c1da2c7f3892adbdc4571d8b302"
+        },
+        {
+          "name": "ReadMD-macos-x64.zip",
+          "bytes": 67404906,
+          "sha256": "ea977acb00cb8fdf271c25565585bf16275bd9d789fa3b3578db226b5999a16f"
+        }
+      ],
+      "pet": {
+        "version": "1.0.1",
+        "artifacts": 109,
+        "fullByteManifestVerified": true,
+        "archiveSha256": "0f62023d9b9e79730d2fd909f1e2d3809b1e5fd45a5007184e3ecf8265e526db"
+      }
+    }
+  ]
 }
