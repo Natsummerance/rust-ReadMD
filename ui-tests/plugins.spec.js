@@ -102,7 +102,7 @@ test('Plugin Center entry point and modal cards render correctly', async ({ page
   await page.locator('.plugin-runtime-details > summary').click();
   const ffmpegBadge = page.locator('#plugin-ffmpeg-badge');
   await expect(ffmpegBadge).toBeVisible();
-  await expect(ffmpegBadge).toContainText('已就绪');
+  await expect(ffmpegBadge).toContainText('使用时验证');
 
   const sandboxPath = page.locator('#plugin-sandbox-path');
   await expect(sandboxPath).toContainText('plugins');

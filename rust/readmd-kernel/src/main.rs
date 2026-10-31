@@ -4356,7 +4356,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
                     "qa_tray" if native_qa.is_some() => {
                         let performed = tray.as_ref().is_some_and(|tray| tray.qa_action(options["action"].as_str().unwrap_or("")));
-                        let result = serde_json::json!({"id":options["id"],"performed":performed});
+                        let result = serde_json::json!({"id":options["id"],"performed":performed,"menu":tray.as_ref().map(|t|t.qa_snapshot())});
                         if let Some(reader)=webview.as_ref(){let _=reader.evaluate_script(&format!("window.__readmdNativeTrayResult={result};"));}
                     },
                     #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
@@ -4427,6 +4427,18 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                         }
                     }
                     "close" => closing = true,
+                    #[cfg(target_os="macos")]
+                    "new" | "folder" | "plugins" | "pet" | "settings" | "close-document" | "zen" | "fullscreen" => {
+                        if page_ready_flag.load(Ordering::SeqCst) {
+                            if let Some(main)=objc2::MainThreadMarker::new() {objc2_app_kit::NSApplication::sharedApplication(main).unhide(None);}
+                            window.set_visible(true);window.set_minimized(false);window.set_focus();
+                            if let Some(reader)=webview.as_ref() {
+                                // `action` is a fixed whitelist, serialized rather than spliced.
+                                let action=serde_json::to_string(action).unwrap();
+                                let _=reader.evaluate_script(&format!("window.__readmdNativeMenu?.({action}).catch(()=>{{}});"));
+                            }
+                        }
+                    }
                     "show" | "open" | "exit" => {
                         if action == "exit" && !page_ready_flag.load(Ordering::SeqCst) {
                             // A hidden, unfinished shell cannot answer a JS
@@ -4436,6 +4448,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             let _ = drop_proxy.send_event(HostEvent::Web);
                             return;
                         }
+                        #[cfg(target_os="macos")]
+                        if let Some(main)=objc2::MainThreadMarker::new() {objc2_app_kit::NSApplication::sharedApplication(main).unhide(None);}
                         window.set_visible(true); window.set_minimized(false); window.set_focus();
                         if let Some(reader) = webview.as_ref() {
                             let script = if action == "open" { "window.__trayOpenFile?.();" } else if action == "exit" {
@@ -4452,6 +4466,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             }
                         }
                         #[cfg(target_os="macos")] if let Some(tray)=tray.as_mut() {
+                            tray.set_extra_labels(&options["menuLabels"]);
                             if let Some(labels)=options.get("fileLabels").and_then(serde_json::Value::as_array).filter(|v|v.len()==3) {
                                 tray.set_document_labels([labels[0].as_str().unwrap_or("File"),labels[1].as_str().unwrap_or("Save"),labels[2].as_str().unwrap_or("Save As…")]);
                             }

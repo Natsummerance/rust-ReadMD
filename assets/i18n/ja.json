@@ -1,4 +1,7 @@
 {
+  "mac.hide": "ReadMD を非表示",
+  "mac.selectAll": "すべてを選択",
+  "plugin.onDemand": "使用時に検証",
   "rename.groupUnavailable": "このプラットフォームでは、フォルダー内のリンク更新を伴うファイル名の変更はまだ利用できません。ファイルやリンクは変更されていません。",
   "rename.safeUnsupported": "このファイルの名前を安全に変更できません。ファイルのアクセス権または追加データを確認してください。元のファイルは保持されています。",
   "review.accept": "変更を承認",

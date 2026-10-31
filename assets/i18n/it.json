@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Nascondi ReadMD",
+  "mac.selectAll": "Seleziona tutto",
+  "plugin.onDemand": "Verifica durante l’uso",
   "rename.groupUnavailable": "Questa piattaforma non consente ancora di rinominare un file aggiornando i collegamenti della cartella. Nessun file o collegamento è stato modificato.",
   "rename.safeUnsupported": "Impossibile rinominare questo file in sicurezza. Controlla le autorizzazioni o i dati aggiuntivi del file; l’originale è conservato.",
   "review.accept": "Accetta modifica",

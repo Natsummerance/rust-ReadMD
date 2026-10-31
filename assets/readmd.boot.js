@@ -22613,7 +22613,7 @@ async function refreshPluginListOnce(version) {
 
     if (ffmpegBadge) {
       if (data.ffmpeg) {
-        ffmpegBadge.textContent = _t('plugin.ffmpegReady') || '已就绪';
+        ffmpegBadge.textContent = _t('plugin.onDemand');
         ffmpegBadge.className = 'plugin-badge ready';
       } else {
         ffmpegBadge.textContent = _t('plugin.ffmpegMissing') || '未检测到（音视频转写建议配置）';
@@ -22670,7 +22670,9 @@ function initPluginTabsOnce() {
   container.addEventListener('keydown', e => {
     if (!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
     const tabs = [...container.querySelectorAll('.plugin-tab-pill')], index = tabs.indexOf(document.activeElement);
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    const rtl = getComputedStyle(container).direction === 'rtl';
+    const step = (e.key === 'ArrowLeft' ? -1 : 1) * (rtl ? -1 : 1);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + step + tabs.length) % tabs.length;
     e.preventDefault(); tabs[next].click(); tabs[next].focus();
   });
   container.addEventListener('click', (e) => {
@@ -22857,18 +22859,22 @@ function renderPluginCards(plugins) {
           ${p.last_log ? `<div class="plugin-log-tip" title="${escapeHtml(p.last_log)}">${escapeHtml(p.last_log)}</div>` : ''}
         </div>
       `;
+    } else if (p.native?.platform_supported === false) {
+      footLeft = `<span class="plugin-status-txt">${escapeHtml(_t('plugin.unsupportedBuild'))}</span>`;
+      if (p.installed) footRight = `<button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>`;
     } else if (p.installed) {
       footLeft = `
         <label class="apple-switch plugin-switch">
           <input type="checkbox" class="plugin-switch-input" ${p.enabled ? 'checked' : ''} data-action="toggle" aria-label="${escapeHtml(title)}">
           <span class="apple-switch-track plugin-switch-track" aria-hidden="true"><span class="apple-switch-thumb plugin-switch-thumb"></span></span>
-          <span class="plugin-status-txt ${p.enabled ? 'active' : ''}">${p.enabled ? _t('plugin.pluggedIn') : _t('plugin.standby')}</span>
+          <span class="plugin-status-txt ${p.enabled ? 'active' : ''}">${p.enabled ? _t('plugin.enabled') : _t('plugin.disabled')}</span>
         </label>
       `;
       footRight = `
         <button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>
       `;
       if (p.install_error_code) progressHtml = pluginErrorMarkup(p);
+      else if (p.native?.validation === 'on_demand') progressHtml = `<p class="plugin-runtime-note">${escapeHtml(_t('plugin.onDemand'))}</p>`;
     } else if (p.native && p.native.builtin && !p.native.installable) {
       // The Rust kernel already ships this capability; nothing to install.
       footLeft = `
@@ -30393,10 +30399,36 @@ function syncWindowPreferences() {
   if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
   const t = key => window.i18n?.t(key) || key;
   const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
-  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) });
+  const preferences = { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) };
+  if (py.native_titlebar === 'macos') preferences.menuLabels = Object.fromEntries(Object.entries({new:'menu.new',folder:'menu.openFolder',plugins:'cmd.plugins',pet:'cmd.pet',settings:'menu.settings',hide:'mac.hide',
+    'close-document':'toolbar.close',view:'shell.group.view',zen:'menu.zenMode',fullscreen:'toolbar.fullScreen',minimize:'window.minimize','select-all':'mac.selectAll'}).map(([action,key])=>[action,label(key)]));
+  py.window_control('preferences', preferences);
   $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
   if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
 }
+
+// Native menus enter the existing UI workflows. Modal guards, revision checks,
+// workspace permissions and save/recovery remain owned by those workflows.
+window.__readmdNativeMenu = async action => {
+  await window.__readmdSessionReady;
+  if (typeof cmView !== 'undefined' && cmView?.composing) return false;
+  if (window.ReadMDModal?.top()) {
+    if (action === 'close-document') return window.ReadMDModal.closeTop();
+    return false;
+  }
+  switch (action) {
+    case 'new': await newDocument(); break;
+    case 'folder': await openFolder(); break;
+    case 'plugins': await openPluginModal(); break;
+    case 'pet': await openPetSettings(); break;
+    case 'settings': window.ReadMDPalette?.open('settings'); break;
+    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId); break;
+    case 'zen': toggleZenMode(); break;
+    case 'fullscreen': window.ReadMDViewMode?.toggleFullscreen(); break;
+    default: return false;
+  }
+  return true;
+};
 function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;

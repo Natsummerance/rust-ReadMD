@@ -274,7 +274,7 @@ async function refreshPluginListOnce(version) {
 
     if (ffmpegBadge) {
       if (data.ffmpeg) {
-        ffmpegBadge.textContent = _t('plugin.ffmpegReady') || '已就绪';
+        ffmpegBadge.textContent = _t('plugin.onDemand');
         ffmpegBadge.className = 'plugin-badge ready';
       } else {
         ffmpegBadge.textContent = _t('plugin.ffmpegMissing') || '未检测到（音视频转写建议配置）';
@@ -331,7 +331,9 @@ function initPluginTabsOnce() {
   container.addEventListener('keydown', e => {
     if (!['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) return;
     const tabs = [...container.querySelectorAll('.plugin-tab-pill')], index = tabs.indexOf(document.activeElement);
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length;
+    const rtl = getComputedStyle(container).direction === 'rtl';
+    const step = (e.key === 'ArrowLeft' ? -1 : 1) * (rtl ? -1 : 1);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : (index + step + tabs.length) % tabs.length;
     e.preventDefault(); tabs[next].click(); tabs[next].focus();
   });
   container.addEventListener('click', (e) => {
@@ -518,18 +520,22 @@ function renderPluginCards(plugins) {
           ${p.last_log ? `<div class="plugin-log-tip" title="${escapeHtml(p.last_log)}">${escapeHtml(p.last_log)}</div>` : ''}
         </div>
       `;
+    } else if (p.native?.platform_supported === false) {
+      footLeft = `<span class="plugin-status-txt">${escapeHtml(_t('plugin.unsupportedBuild'))}</span>`;
+      if (p.installed) footRight = `<button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>`;
     } else if (p.installed) {
       footLeft = `
         <label class="apple-switch plugin-switch">
           <input type="checkbox" class="plugin-switch-input" ${p.enabled ? 'checked' : ''} data-action="toggle" aria-label="${escapeHtml(title)}">
           <span class="apple-switch-track plugin-switch-track" aria-hidden="true"><span class="apple-switch-thumb plugin-switch-thumb"></span></span>
-          <span class="plugin-status-txt ${p.enabled ? 'active' : ''}">${p.enabled ? _t('plugin.pluggedIn') : _t('plugin.standby')}</span>
+          <span class="plugin-status-txt ${p.enabled ? 'active' : ''}">${p.enabled ? _t('plugin.enabled') : _t('plugin.disabled')}</span>
         </label>
       `;
       footRight = `
         <button class="plugin-action-uninstall-btn" data-action="uninstall">${_t('plugin.uninstall')}</button>
       `;
       if (p.install_error_code) progressHtml = pluginErrorMarkup(p);
+      else if (p.native?.validation === 'on_demand') progressHtml = `<p class="plugin-runtime-note">${escapeHtml(_t('plugin.onDemand'))}</p>`;
     } else if (p.native && p.native.builtin && !p.native.installable) {
       // The Rust kernel already ships this capability; nothing to install.
       footLeft = `

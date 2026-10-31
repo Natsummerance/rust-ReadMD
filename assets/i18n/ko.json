@@ -1,4 +1,7 @@
 {
+  "mac.hide": "ReadMD 가리기",
+  "mac.selectAll": "모두 선택",
+  "plugin.onDemand": "사용 시 검증",
   "rename.groupUnavailable": "이 플랫폼에서는 폴더 안의 링크를 함께 갱신하는 파일 이름 변경을 아직 지원하지 않습니다. 파일이나 링크는 변경되지 않았습니다.",
   "rename.safeUnsupported": "이 파일의 이름을 안전하게 바꿀 수 없습니다. 파일 권한이나 추가 데이터를 확인하세요. 원본은 보존됩니다.",
   "review.accept": "변경 수락",

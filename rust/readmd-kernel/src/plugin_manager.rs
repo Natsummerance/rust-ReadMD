@@ -638,8 +638,12 @@ fn expand_user(sandbox: &Sandbox, path: &str) -> PathBuf {
 /// `load_manifest()` — the per-plugin view the UI renders.
 /// Available Rust engines for each optional, persisted extension profile.
 pub fn native_support(spec: &PluginSpec) -> Value {
+    // A catalog read must never run OCR, load a model or spawn a speech probe.
+    // Platform support describes the adapter; its first real operation owns
+    // readiness verification (and can still fail with a useful runtime error).
+    let supported = native_platform_supported(spec);
     let engine = match spec.capability {
-        "ocr" if crate::ocr::pick_engine().is_some() => Some("system-ocr"),
+        "ocr" => Some(if cfg!(target_os="macos") { "macos-vision" } else { "native-ocr" }),
         "latex" => Some("texmd"),
         "highlight" => Some("code-highlight"),
         "document" => Some("native-converters"),
@@ -648,12 +652,21 @@ pub fn native_support(spec: &PluginSpec) -> Value {
         "encoding" => Some("encoding-detect"),
         "table" => Some("native-table-layout"),
         "keywords" => Some("native-keyphrases"),
-        "audio" if crate::speech::capabilities().get("ok").and_then(Value::as_bool) == Some(true) => Some("system-speech"),
+        "audio" if supported => Some("system-speech"),
         _ => None,
     };
-    json!({ "builtin": engine.is_some(), "engine": engine, "installable": true,
+    let description_id = if cfg!(target_os="macos") && spec.capability=="ocr" { "rapidocr" } else { spec.id };
+    json!({ "builtin": supported && engine.is_some(), "engine": engine, "installable": supported,
+        "platform_supported":supported,
+        "validation":if matches!(spec.capability,"ocr"|"audio") {"on_demand"} else {"builtin"},
         "name_key":format!("plugin.native.{}.name",spec.id),
-        "desc_key":format!("plugin.native.{}.desc",spec.id) })
+        "desc_key":format!("plugin.native.{}.desc",description_id) })
+}
+
+fn native_platform_supported(spec: &PluginSpec) -> bool {
+    // The current speech adapter uses Windows System.Speech. A persisted
+    // profile imported from Windows cannot make it a working Mac engine.
+    spec.capability != "audio" || cfg!(windows)
 }
 
 fn native_profile_path(sandbox: &Sandbox, id: &str) -> PathBuf {
@@ -691,7 +704,7 @@ fn convert_document_inner(sandbox: &Sandbox, path: &str, form_tables: bool, lang
     let manifest = read_manifest_data(sandbox);
     let ext = crate::convert::ext_of(path);
     let ids: Vec<&str> = PLUGIN_SPECS.iter().filter(|s| {
-        native_profile_installed(sandbox,s.id)
+        native_platform_supported(s) && native_profile_installed(sandbox,s.id)
             && manifest.get(s.id).and_then(|p|p.get("enabled")).and_then(Value::as_bool)==Some(true)
             && match s.capability {
                 "keywords"|"encoding" => true,
@@ -814,7 +827,7 @@ pub fn plugin_manifest(sandbox: &Sandbox) -> Map<String, Value> {
         let installed = is_plugin_installed(sandbox, spec.id);
         let cached = native_profile_installed(sandbox, spec.id) || check_model_cached(sandbox, spec.id);
         let saved_enabled = entry.and_then(|value| value.get("enabled")).and_then(Value::as_bool);
-        let enabled = if installed {
+        let enabled = if installed && native_platform_supported(spec) {
             saved_enabled.unwrap_or_else(|| DEFAULT_ENABLED.contains(&spec.id))
         } else {
             false
@@ -836,7 +849,7 @@ pub fn plugin_manifest(sandbox: &Sandbox) -> Map<String, Value> {
         };
         let value = json!({
             "id": spec.id,
-            "runtime_connected": native_profile_installed(sandbox, spec.id),
+            "runtime_connected": native_platform_supported(spec) && native_profile_installed(sandbox, spec.id),
             "name": spec.name,
             "capability": spec.capability,
             "alternatives": alternatives(spec.id),
@@ -954,7 +967,7 @@ fn disable_competing_plugins(manifest: &mut Map<String, Value>, plugin_id: &str)
 /// `set_plugin_enabled`.
 pub fn set_plugin_enabled(sandbox: &Sandbox, plugin_id: &str, enabled: bool) -> bool {
     let _guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
-    if plugin_spec(plugin_id).is_none() || !is_plugin_installed(sandbox, plugin_id) {
+    if plugin_spec(plugin_id).is_none_or(|s|enabled && !native_platform_supported(s)) || !is_plugin_installed(sandbox, plugin_id) {
         return false;
     }
     let mut manifest = read_manifest_data(sandbox);
@@ -1114,7 +1127,7 @@ pub fn uninstall_plugin(sandbox: &Sandbox, plugin_id: &str) -> bool {
 /// Installs the compiled Rust extension profile without network or dependencies.
 pub fn install_plugin_async(sandbox: Sandbox, plugin_id: &str) -> bool {
     let _start_guard = MANIFEST_MUTATIONS.lock().unwrap_or_else(|e| e.into_inner());
-    if plugin_spec(plugin_id).is_none() {
+    if plugin_spec(plugin_id).is_none_or(|s|!native_platform_supported(s)) {
         return false;
     }
 
@@ -1263,6 +1276,9 @@ pub fn h_plugins_toggle(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     if !is_plugin_installed(&sandbox, &plugin_id) {
         return error_code(400, "plugin_not_installed");
     }
+    if enabled && !native_platform_supported(plugin_spec(&plugin_id).unwrap()) {
+        return error_code(400, "plugin_not_integrated");
+    }
     if !set_plugin_enabled(&sandbox, &plugin_id, enabled) {
         return error_code(500, "plugin_toggle_failed");
     }
@@ -1308,6 +1324,9 @@ pub fn h_plugins_install(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return error_code(400, "plugin_id_required");
     }
     if plugin_spec(&plugin_id).is_none() {
+        return error_code(400, "plugin_not_integrated");
+    }
+    if !native_platform_supported(plugin_spec(&plugin_id).unwrap()) {
         return error_code(400, "plugin_not_integrated");
     }
     if !install_plugin_async(sandbox, &plugin_id) {
@@ -1453,7 +1472,7 @@ mod tests {
         assert_eq!(keys.len(), 25);
         assert_eq!(manifest["pymupdf4llm"]["native"]["engine"], "pdf-text");
         assert_eq!(manifest["pymupdf4llm"]["native"]["installable"], true);
-        assert_eq!(manifest["whisper"]["native"]["installable"], true);
+        assert_eq!(manifest["whisper"]["native"]["installable"], cfg!(windows));
         // Nothing is installed in a fresh sandbox, so nothing is enabled.
         assert_eq!(easyocr["installed"], json!(false));
         assert_eq!(easyocr["enabled"], json!(false));
@@ -2054,23 +2073,24 @@ mod tests {
         // its 200 body.  Order matters — install schedules a worker whose
         // `installing` task makes `uninstall_plugin` refuse that same id, so the
         // uninstall runs while the artefacts are still there and untouched.
-        // `whisper` is used here (not `pandoc_bridge`, which the uninstall test
-        // removes) because `_install_tasks` is one process-wide map.
+        // Use a profile with a compiled adapter on this platform. Task records
+        // are process-wide, so avoid ids owned by the other installer tests.
         let (box_, app) = fixture("py-str");
-        fake_installed(&box_, "whisper", "openai-whisper");
-        let padded = "{\"plugin_id\":\"  whisper  \",\"enabled\":true}";
+        let (id,dist)=if cfg!(windows) {("whisper","openai-whisper")} else {("pygments","pygments")};
+        fake_installed(&box_, id, dist);
+        let padded = format!("{{\"plugin_id\":\"  {id}  \",\"enabled\":true}}");
         let toggle =
-            h_plugins_toggle(&app, &hrequest("POST", "/api/plugins/toggle", padded)).unwrap();
+            h_plugins_toggle(&app, &hrequest("POST", "/api/plugins/toggle", &padded)).unwrap();
         let uninstall =
-            h_plugins_uninstall(&app, &hrequest("POST", "/api/plugins/uninstall", padded))
+            h_plugins_uninstall(&app, &hrequest("POST", "/api/plugins/uninstall", &padded))
                 .unwrap();
         let install =
-            h_plugins_install(&app, &hrequest("POST", "/api/plugins/install", padded)).unwrap();
+            h_plugins_install(&app, &hrequest("POST", "/api/plugins/install", &padded)).unwrap();
         assert_eq!(toggle.status, 200);
         assert_eq!(uninstall.status, 200);
         assert_eq!(install.status, 200);
         for res in [&install, &toggle, &uninstall] {
-            assert_eq!(json_of(res)["plugin_id"], json!("whisper"));
+            assert_eq!(json_of(res)["plugin_id"], json!(id));
         }
         // The container probe: Python's `str({'a': 1})` is the dict repr, i.e. a
         // non-empty string that cannot match a member id, so install and toggle
@@ -2112,5 +2132,35 @@ mod tests {
                 "`str({value})` == `{expected}` is non-empty in Python too"
             );
         }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn imported_speech_profile_cannot_claim_an_unimplemented_platform_adapter() {
+        let (box_,app)=fixture("imported-speech-platform");
+        let path=native_profile_path(&box_,"faster_whisper");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let profile=json!({"id":"faster_whisper","capability":"audio","runtime":"readmd-rust","version":"0.0.5"});
+        fs::write(&path,serde_json::to_vec(&profile).unwrap()).unwrap();
+        let saved=serde_json::from_value(json!({"faster_whisper":{"enabled":true}})).unwrap();
+        save_manifest(&box_,&saved);
+        let list=plugins_list_payload_for(&box_);
+        assert_eq!(list["plugins"]["faster_whisper"]["installed"],true);
+        assert_eq!(list["plugins"]["faster_whisper"]["enabled"],false);
+        assert_eq!(list["plugins"]["faster_whisper"]["runtime_connected"],false);
+        assert_eq!(list["plugins"]["faster_whisper"]["native"]["platform_supported"],false);
+        assert_eq!(active_provider(&box_,"audio"),None);
+        let body=r#"{"plugin_id":"faster_whisper","enabled":true}"#;
+        for (handler,route) in [(h_plugins_install as fn(&Arc<App>,&Request)->ApiResult<Response>,"/api/plugins/install"),(h_plugins_toggle,"/api/plugins/toggle")] {
+            let response=handler(&app,&hrequest("POST",route,body)).unwrap();
+            assert_eq!(response.status,400);
+            assert_eq!(json_of(&response)["error_code"],"plugin_not_integrated");
+        }
+        // Refusing activation preserves the imported profile and its original
+        // preference. It remains explicitly removable through the normal API.
+        assert_eq!(serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),profile);
+        assert_eq!(read_manifest_data(&box_)["faster_whisper"]["enabled"],true);
+        let response=h_plugins_uninstall(&app,&hrequest("POST","/api/plugins/uninstall",body)).unwrap();
+        assert_eq!(response.status,200);assert_eq!(json_of(&response)["ok"],true);assert!(!path.exists());
     }
 }

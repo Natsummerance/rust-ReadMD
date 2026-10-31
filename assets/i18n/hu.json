@@ -1,4 +1,7 @@
 {
+  "mac.hide": "ReadMD elrejtése",
+  "mac.selectAll": "Összes kijelölése",
+  "plugin.onDemand": "Ellenőrzés használatkor",
   "rename.groupUnavailable": "A fájl átnevezése a mappa hivatkozásainak frissítésével ezen a platformon még nem érhető el. Egyetlen fájl vagy hivatkozás sem módosult.",
   "rename.safeUnsupported": "A fájl nem nevezhető át biztonságosan. Ellenőrizze a fájl jogosultságait vagy kiegészítő adatait; az eredeti fájl megmarad.",
   "review.accept": "Módosítás elfogadása",

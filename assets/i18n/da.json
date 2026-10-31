@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Skjul ReadMD",
+  "mac.selectAll": "Vælg alt",
+  "plugin.onDemand": "Kontrollér ved brug",
   "rename.groupUnavailable": "Denne platform understøtter endnu ikke omdøbning med opdatering af mappens links. Ingen filer eller links er ændret.",
   "rename.safeUnsupported": "Denne fil kan ikke omdøbes sikkert. Kontrollér filens tilladelser eller ekstra data; originalen er bevaret.",
   "review.accept": "Acceptér ændring",

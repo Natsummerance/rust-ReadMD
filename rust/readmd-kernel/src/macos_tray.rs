@@ -1,14 +1,32 @@
-//! Native menu-bar item and application menu. Both enter the same window and
-//! recovery actions as the reader; Quit never terminates Cocoa directly.
+//! Native menus share the reader's document, task and recovery services.
 use objc2::{
-    define_class, msg_send, rc::Retained, sel, AnyThread, DefinedClass, MainThreadMarker,
-    MainThreadOnly,
+    define_class, msg_send, rc::Retained, runtime::Sel, sel, AnyThread, DefinedClass,
+    MainThreadMarker, MainThreadOnly,
 };
 use objc2_app_kit::{
-    NSApplication, NSEventModifierFlags, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem,
+    NSApplication, NSEventModifierFlags as Modifiers, NSImage, NSMenu, NSMenuItem, NSStatusBar,
+    NSStatusItem,
 };
 use objc2_foundation::{NSData, NSObject, NSObjectProtocol, NSSize, NSString};
+use std::collections::BTreeMap;
 
+const ACTIONS: &[&str] = &[
+    "show",
+    "open",
+    "exit",
+    "save",
+    "save-as",
+    "undo",
+    "redo",
+    "new",
+    "folder",
+    "plugins",
+    "pet",
+    "settings",
+    "close-document",
+    "zen",
+    "fullscreen",
+];
 struct Actions {
     send: Box<dyn Fn(&str)>,
 }
@@ -19,33 +37,24 @@ define_class!(
     struct ReadMDMenuActions;
     unsafe impl NSObjectProtocol for ReadMDMenuActions {}
     impl ReadMDMenuActions {
-        #[unsafe(method(showReadMD:))]
-        fn show(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("show"); }
-        #[unsafe(method(openReadMDFile:))]
-        fn open(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("open"); }
-        #[unsafe(method(quitReadMD:))]
-        fn quit(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("exit"); }
-        #[unsafe(method(saveReadMD:))]
-        fn save(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("save"); }
-        #[unsafe(method(saveReadMDAs:))]
-        fn save_as(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("save-as"); }
-        #[unsafe(method(undoReadMD:))]
-        fn undo(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("undo"); }
-        #[unsafe(method(redoReadMD:))]
-        fn redo(&self, _sender: Option<&NSMenuItem>) { (self.ivars().send)("redo"); }
+        #[unsafe(method(readmdMenuAction:))]
+        fn dispatch(&self, sender: &NSMenuItem) {
+            if let Ok(index) = usize::try_from(sender.tag()) {
+                if let Some(action) = ACTIONS.get(index) { (self.ivars().send)(action); }
+            }
+        }
     }
 );
 
 pub struct Tray {
     bar: Retained<NSStatusBar>,
     item: Retained<NSStatusItem>,
-    _menu: Retained<NSMenu>,
-    labels: Vec<(usize, Retained<NSMenuItem>)>,
-    document_labels: [Retained<NSMenuItem>; 3],
-    edit_labels: Vec<Retained<NSMenuItem>>,
-    // Menu-item targets are weak. Keep our target alive until both menus go.
-    _actions: Retained<ReadMDMenuActions>,
+    entries: BTreeMap<&'static str, Vec<Retained<NSMenuItem>>>,
+    // Targets are weak in AppKit; retain ours until all menus are released.
+    actions: Retained<ReadMDMenuActions>,
     main_menu: Retained<NSMenu>,
+    #[cfg(all(feature = "native-qa", debug_assertions))]
+    dispatch: BTreeMap<&'static str, (Retained<NSMenu>, isize)>,
 }
 impl Tray {
     pub fn new(send: impl Fn(&str) + 'static) -> Option<Self> {
@@ -60,173 +69,223 @@ impl Tray {
             bar.removeStatusItem(&item);
             return None;
         };
-        let data = NSData::with_bytes(include_bytes!("../../../assets/ReadMD.png"));
+        let data = NSData::with_bytes(include_bytes!("../../../assets/ReadMD-status-template.png"));
         if let Some(image) = NSImage::initWithData(NSImage::alloc(), &data) {
             image.setSize(NSSize::new(18.0, 18.0));
+            image.setTemplate(true);
             button.setImage(Some(&image));
         } else {
-            button.setTitle(&NSString::from_str("ReadMD"));
+            button.setTitle(&NSString::from_str("M"));
         }
         button.setToolTip(Some(&NSString::from_str("ReadMD")));
-        let menu = NSMenu::new(main);
-        let application_menu = NSMenu::new(main);
         let main_menu = NSMenu::new(main);
-        let application = NSMenuItem::new(main);
-        application.setTitle(&NSString::from_str("ReadMD"));
-        application.setSubmenu(Some(&application_menu));
-        main_menu.addItem(&application);
-        let mut labels = Vec::new();
-        for (destination, application_only) in [(&menu, false), (&application_menu, true)] {
-            for (index, (title, action, key)) in [
-                ("ReadMD", sel!(showReadMD:), ""),
-                ("Open…", sel!(openReadMDFile:), "o"),
-                ("Quit ReadMD", sel!(quitReadMD:), "q"),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                if application_only && index == 1 {
-                    continue;
-                }
-                if index == 2 {
-                    destination.addItem(&NSMenuItem::separatorItem(main));
-                }
-                let entry = unsafe {
-                    NSMenuItem::initWithTitle_action_keyEquivalent(
-                        NSMenuItem::alloc(main),
-                        &NSString::from_str(title),
-                        Some(action),
-                        &NSString::from_str(key),
-                    )
-                };
-                unsafe {
-                    entry.setTarget(Some(actions.as_ref()));
-                }
-                destination.addItem(&entry);
-                labels.push((index, entry));
-            }
-        }
-        let file_menu = NSMenu::new(main);
-        let file_root = NSMenuItem::new(main);
-        file_root.setTitle(&NSString::from_str("File"));
-        file_root.setSubmenu(Some(&file_menu));
-        main_menu.addItem(&file_root);
-        let mut document_entries = Vec::new();
-        for (index, (title, selector, key)) in [
-            ("Open…", sel!(openReadMDFile:), "o"),
-            ("Save", sel!(saveReadMD:), "s"),
-            ("Save As…", sel!(saveReadMDAs:), "s"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            if index == 1 {
-                file_menu.addItem(&NSMenuItem::separatorItem(main));
-            }
-            let entry = unsafe {
-                NSMenuItem::initWithTitle_action_keyEquivalent(
-                    NSMenuItem::alloc(main),
-                    &NSString::from_str(title),
-                    Some(selector),
-                    &NSString::from_str(key),
-                )
-            };
-            unsafe {
-                entry.setTarget(Some(actions.as_ref()));
-            }
-            if index == 2 {
-                entry.setKeyEquivalentModifierMask(
-                    NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
-                );
-            }
-            file_menu.addItem(&entry);
-            if index == 0 {
-                labels.push((1, entry));
-            } else {
-                document_entries.push(entry);
-            }
-        }
-        let document_labels = [
-            file_root,
-            document_entries.remove(0),
-            document_entries.remove(0),
-        ];
-        let edit_menu = NSMenu::new(main);
-        let edit_root = NSMenuItem::new(main);
-        edit_root.setTitle(&NSString::from_str("Edit"));
-        edit_root.setSubmenu(Some(&edit_menu));
-        main_menu.addItem(&edit_root);
-        let mut edit_labels = vec![edit_root];
-        for (index, (title, selector, key)) in [
-            ("Undo", sel!(undoReadMD:), "z"),
-            ("Redo", sel!(redoReadMD:), "z"),
-            ("Cut", sel!(cut:), "x"),
-            ("Copy", sel!(copy:), "c"),
-            ("Paste", sel!(paste:), "v"),
-        ].into_iter().enumerate() {
-            if index == 2 { edit_menu.addItem(&NSMenuItem::separatorItem(main)); }
-            let entry = unsafe { NSMenuItem::initWithTitle_action_keyEquivalent(
-                NSMenuItem::alloc(main), &NSString::from_str(title), Some(selector), &NSString::from_str(key)) };
-            if index < 2 {
-                // History belongs to the current editor/document service.
-                unsafe { entry.setTarget(Some(actions.as_ref())); }
-                if index == 1 { entry.setKeyEquivalentModifierMask(NSEventModifierFlags::Command | NSEventModifierFlags::Shift); }
-            }
-            // Cut/Copy/Paste use the real native responder chain. No clipboard
-            // reads or writes occur merely by constructing the menu.
-            edit_menu.addItem(&entry);
-            edit_labels.push(entry);
-        }
-        item.setMenu(Some(&menu));
-        NSApplication::sharedApplication(main).setMainMenu(Some(&main_menu));
-        Some(Self {
+        let mut tray = Self {
             bar,
             item,
-            _menu: menu,
-            labels,
-            document_labels,
-            edit_labels,
-            _actions: actions,
+            entries: BTreeMap::new(),
+            actions,
             main_menu,
-        })
+            #[cfg(all(feature = "native-qa", debug_assertions))]
+            dispatch: BTreeMap::new(),
+        };
+        let status = NSMenu::new(main);
+        for (id, title, key) in [
+            ("show", "Open ReadMD", ""),
+            ("open", "Open…", ""),
+            ("folder", "Open Folder…", ""),
+        ] {
+            tray.add(&status, id, title, key, None, None);
+        }
+        status.addItem(&NSMenuItem::separatorItem(main));
+        for (id, title) in [
+            ("plugins", "Plugins…"),
+            ("pet", "Desktop Pet Settings…"),
+            ("settings", "Settings…"),
+        ] {
+            tray.add(&status, id, title, "", None, None);
+        }
+        status.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(&status, "exit", "Quit ReadMD", "", None, None);
+        tray.item.setMenu(Some(&status));
+        // App / File / Edit order remains stable for real menu-key QA.
+        let app = tray.root("app", "ReadMD");
+        for (id, title, key) in [
+            ("show", "Open ReadMD", ""),
+            ("settings", "Settings…", ","),
+            ("plugins", "Plugins…", ""),
+            ("pet", "Desktop Pet Settings…", ""),
+        ] {
+            tray.add(&app, id, title, key, None, None);
+        }
+        app.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(&app, "hide", "Hide ReadMD", "h", Some(sel!(hide:)), None);
+        app.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(&app, "exit", "Quit ReadMD", "q", None, None);
+        let file = tray.root("file", "File");
+        for (id, title, key) in [
+            ("new", "New Document", "n"),
+            ("open", "Open…", "o"),
+            ("folder", "Open Folder…", ""),
+        ] {
+            tray.add(&file, id, title, key, None, None);
+        }
+        file.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(&file, "save", "Save", "s", None, None);
+        tray.add(
+            &file,
+            "save-as",
+            "Save As…",
+            "s",
+            None,
+            Some(Modifiers::Command | Modifiers::Shift),
+        );
+        file.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(&file, "close-document", "Close", "w", None, None);
+        let edit = tray.root("edit", "Edit");
+        tray.add(&edit, "undo", "Undo", "z", None, None);
+        tray.add(
+            &edit,
+            "redo",
+            "Redo",
+            "z",
+            None,
+            Some(Modifiers::Command | Modifiers::Shift),
+        );
+        edit.addItem(&NSMenuItem::separatorItem(main));
+        for (id, title, key, selector) in [
+            ("cut", "Cut", "x", sel!(cut:)),
+            ("copy", "Copy", "c", sel!(copy:)),
+            ("paste", "Paste", "v", sel!(paste:)),
+            ("select-all", "Select All", "a", sel!(selectAll:)),
+        ] {
+            tray.add(&edit, id, title, key, Some(selector), None);
+        }
+        let view = tray.root("view", "View");
+        tray.add(&view, "zen", "Zen Mode", "", None, None);
+        tray.add(
+            &view,
+            "fullscreen",
+            "Fullscreen",
+            "f",
+            None,
+            Some(Modifiers::Command | Modifiers::Control),
+        );
+        view.addItem(&NSMenuItem::separatorItem(main));
+        tray.add(
+            &view,
+            "minimize",
+            "Minimize",
+            "m",
+            Some(sel!(performMiniaturize:)),
+            None,
+        );
+        NSApplication::sharedApplication(main).setMainMenu(Some(&tray.main_menu));
+        Some(tray)
+    }
+    fn root(&mut self, id: &'static str, title: &str) -> Retained<NSMenu> {
+        let main = self.actions.mtm();
+        let menu = NSMenu::new(main);
+        let root = NSMenuItem::new(main);
+        root.setTitle(&NSString::from_str(title));
+        root.setSubmenu(Some(&menu));
+        self.main_menu.addItem(&root);
+        self.entries.entry(id).or_default().push(root);
+        menu
+    }
+    fn add(
+        &mut self,
+        menu: &Retained<NSMenu>,
+        id: &'static str,
+        title: &str,
+        key: &str,
+        native: Option<Sel>,
+        modifiers: Option<Modifiers>,
+    ) {
+        let entry = unsafe {
+            NSMenuItem::initWithTitle_action_keyEquivalent(
+                NSMenuItem::alloc(self.actions.mtm()),
+                &NSString::from_str(title),
+                Some(native.unwrap_or(sel!(readmdMenuAction:))),
+                &NSString::from_str(key),
+            )
+        };
+        if native.is_none() {
+            let tag = ACTIONS
+                .iter()
+                .position(|action| *action == id)
+                .expect("registered native action");
+            entry.setTag(tag as isize);
+            unsafe {
+                entry.setTarget(Some(self.actions.as_ref()));
+            }
+        }
+        if let Some(modifiers) = modifiers {
+            entry.setKeyEquivalentModifierMask(modifiers);
+        }
+        #[cfg(all(feature = "native-qa", debug_assertions))]
+        self.dispatch
+            .entry(id)
+            .or_insert((menu.clone(), menu.numberOfItems()));
+        menu.addItem(&entry);
+        self.entries.entry(id).or_default().push(entry);
     }
     pub fn available(&self) -> bool {
-        self.item.isVisible() && self.item.menu(self._actions.mtm()).is_some()
+        self.item.isVisible() && self.item.menu(self.actions.mtm()).is_some()
     }
     pub fn set_labels(&mut self, labels: [&str; 3]) {
-        for (index, entry) in &self.labels {
-            entry.setTitle(&NSString::from_str(labels[*index]));
+        for (id, label) in ["show", "open", "exit"].into_iter().zip(labels) {
+            self.label(id, label);
         }
     }
     pub fn set_document_labels(&mut self, labels: [&str; 3]) {
-        for (entry, label) in self.document_labels.iter().zip(labels) {
-            entry.setTitle(&NSString::from_str(label));
+        for (id, label) in ["file", "save", "save-as"].into_iter().zip(labels) {
+            self.label(id, label);
         }
     }
     pub fn set_edit_labels(&mut self, labels: [&str; 6]) {
-        for (entry, label) in self.edit_labels.iter().zip(labels) {
-            entry.setTitle(&NSString::from_str(label));
+        for (id, label) in ["edit", "undo", "redo", "cut", "copy", "paste"]
+            .into_iter()
+            .zip(labels)
+        {
+            self.label(id, label);
+        }
+    }
+    pub fn set_extra_labels(&mut self, labels: &serde_json::Value) {
+        if let Some(labels) = labels.as_object() {
+            for (id, label) in labels {
+                if let Some(label) = label.as_str().filter(|s| s.len() <= 512) {
+                    self.label(id, label);
+                }
+            }
+        }
+    }
+    fn label(&self, id: &str, label: &str) {
+        if let Some(entries) = self.entries.get(id) {
+            for entry in entries {
+                entry.setTitle(&NSString::from_str(label));
+            }
         }
     }
     #[cfg(all(feature = "native-qa", debug_assertions))]
     pub fn qa_action(&self, action: &str) -> bool {
-        let index = match action {
-            "show" => 0,
-            "open" => 1,
-            "exit" => 3,
-            _ => return false,
+        let Some((menu, index)) = self.dispatch.get(action) else {
+            return false;
         };
-        self._menu.performActionForItemAtIndex(index);
+        menu.performActionForItemAtIndex(*index);
         true
+    }
+    #[cfg(all(feature = "native-qa", debug_assertions))]
+    pub fn qa_snapshot(&self) -> serde_json::Value {
+        let image = self.item.button(self.actions.mtm()).and_then(|b| b.image());
+        serde_json::json!({"template":image.as_ref().is_some_and(|i|i.isTemplate()),"width":image.as_ref().map(|i|i.size().width),"height":image.as_ref().map(|i|i.size().height),"commands":self.dispatch.keys().collect::<Vec<_>>()})
     }
 }
 impl Drop for Tray {
     fn drop(&mut self) {
         self.item.setMenu(None);
         self.bar.removeStatusItem(&self.item);
-        // Release the main menu before its weak targets.
-        let app = NSApplication::sharedApplication(self._actions.mtm());
-        if app.mainMenu().is_some_and(|menu| menu == self.main_menu) {
+        let app = NSApplication::sharedApplication(self.actions.mtm());
+        if app.mainMenu().is_some_and(|m| m == self.main_menu) {
             app.setMainMenu(None);
         }
     }

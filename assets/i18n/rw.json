@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Hisha ReadMD",
+  "mac.selectAll": "Hitamo byose",
+  "plugin.onDemand": "Genzura igihe ukoresha",
   "rename.groupUnavailable": "Guhindura izina rya dosiye no kuvugurura amahuza yo muri ubu bubiko ntibiraboneka kuri uru rubuga. Nta dosiye cyangwa ihuza byahinduwe.",
   "rename.safeUnsupported": "Ntibishoboka guhindura izina ry’iyi dosiye mu buryo bwizewe. Reba uburenganzira bwayo cyangwa amakuru y’inyongera; dosiye y’umwimerere irabitswe.",
   "review.accept": "Emera impinduka",

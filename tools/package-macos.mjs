@@ -64,7 +64,7 @@ export function packageMacos({binary,pet,output,arch,format='all',env=process.en
     const executable=path.join(contents,'MacOS/ReadMD');
     fs.copyFileSync(binary,executable);fs.chmodSync(executable,0o755);
     fs.cpSync(path.join(root,'assets'),path.join(contents,'Resources/assets'),{recursive:true});
-    const icon=['ReadMD.icns','readmd.icns'].map(n=>path.join(root,'assets',n)).find(n=>fs.existsSync(n));
+    const icon=['ReadMD-macos.icns','ReadMD.icns','readmd.icns'].map(n=>path.join(root,'assets',n)).find(n=>fs.existsSync(n));
     if(icon)fs.copyFileSync(icon,path.join(contents,'Resources/readmd.icns'));
     const petName='ReadMD-Pet-Rust-macos-'+(arch==='arm64'?'aarch64':'x86_64')+'.zip';
     const petReport=preparePet(pet,path.join(contents,'Resources',petName),arch,temporary,env);

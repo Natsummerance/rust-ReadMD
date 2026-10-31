@@ -17,11 +17,11 @@ function manual(files,openWithHuman=true){return String.raw`(async()=>{
  const check=(ok,name)=>{if(!ok)throw Error(name);checks.push(name);};
  const until=async fn=>{const end=Date.now()+35000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,50));}throw Error('manual_panel_condition_timeout');};
  const panel=async(choice,p)=>{const mine=++id;py.window_control('qa_native_dialog',{choice,path:p,id:mine});await until(()=>window.__readmdNativeDialogResult?.id===mine);return window.__readmdNativeDialogResult;};
- const configure=async(p,label)=>{
+ const configure=async(p,label,initialName=false)=>{
   let status;await until(async()=>{status=await panel('status',p);return status.available&&status.visible;});
   // NSOpenPanel has a file-list selection, not the Save panel's filename
   // field. Only the directory is pre-positioned there; the human picks a row.
-  if(!status.open||!status.directory_matches)await panel('configure',p);
+  if(!initialName&&(!status.open||!status.directory_matches))await panel('configure',p);
   try{await until(async()=>{status=await panel('status',p);return status.directory_matches&&(status.open||status.name_matches);});}
   catch(error){checks.push(status?.directory_matches?'native_directory_matches':'native_directory_differs',status?.name_matches?'native_name_matches':'native_name_differs');throw error;}
   progress(label);
@@ -42,7 +42,12 @@ function manual(files,openWithHuman=true){return String.raw`(async()=>{
   check(getActiveTab().content.replace(/\r\n/g,'\n')===${JSON.stringify(before)},'selected_body_exact');
   await toggleEdit();await until(()=>state.editing&&!!cmView);check(!hasUnsavedEditorChanges(),'selected_document_enters_edit_clean');
   cmView.dispatch({changes:{from:cmView.state.doc.length,insert:${JSON.stringify(added)}}});
-  const saving=saveAs();await configure(files.saved,'manual_save_ready');check(await actualChoice(saving)===true,'actual_native_save_as_committed');
+  // Supply the real save service's suggested name before constructing the
+  // secure panel. Post-presentation proxy setters can read back the new name
+  // while the actual PowerBox selection still uses the original filename.
+  const snapshot=documentSaveSnapshot();snapshot.name=${JSON.stringify(path.basename(files.saved))};
+  const saving=ReadMDTask.run('document-save',()=>saveAsSnapshot(snapshot,{retarget:true}),{trigger:['edit-save','btn-saveas']});
+  await configure(files.saved,'manual_save_ready',true);check(await actualChoice(saving)===true,'actual_native_save_as_committed');
   check(getActiveTab().path===files.saved,'save_as_creates_new_identity');check(!hasUnsavedEditorChanges()&&getEditContent().replace(/\r\n/g,'\n')===${JSON.stringify(before+added)},'save_as_keeps_current_visible_text');
   const from=cmView.state.doc.length;cmView.dispatch({changes:{from,insert:'\n专用未保存草稿。\n'}});const dirty=getEditContent(),cancelled=saveAs();await until(async()=>{const s=await panel('status');return s.available&&s.visible;});await panel('cancel');
   check(await cancelled===false&&getEditContent()===dirty&&hasUnsavedEditorChanges(),'native_save_cancel_keeps_user_draft');check(getActiveTab().path===files.saved,'cancel_preserves_new_identity');
@@ -58,7 +63,7 @@ function manual(files,openWithHuman=true){return String.raw`(async()=>{
 async function run(app,out,mode='cancel'){
  assert(['cancel','manual','manual-save'].includes(mode));assert(out.startsWith(workspace+path.sep));fs.mkdirSync(out,{mode:0o700});const docs=path.join(out,'documents'),profile=path.join(out,'profile'),tmp=path.join(out,'tmp'),home=path.join(out,'native-home');for(const d of [docs,profile,tmp,home])fs.mkdirSync(d,{mode:0o700});
  const files={input:path.join(docs,'中文 原件.md'),saved:path.join(docs,'另存为 新文档.md'),ack:path.join(docs,'capture.ack.md'),abort:path.join(docs,'abort.ack.md')};fs.writeFileSync(files.input,encode(before),{flag:'wx'});fs.writeFileSync(path.join(profile,'.readmd-native-qa-owned'),'readmd-synthetic-native-qa-v1',{flag:'wx',mode:0o600});fs.writeFileSync(path.join(profile,'settings.json'),JSON.stringify({lang:'zh-CN',closeToTray:false,autoCheckUpdate:false}));
- const report={nativeHost:'LaunchServices / Cocoa WKWebView / NSOpenPanel / NSSavePanel',defaultAssociationsChanged:false,modelsRequested:false,productionCsp:true,strictAuth:true,chooserShim:false,syntheticConfirmation:false,cancelOnly:mode==='cancel',manualNativeConfirmation:mode!=='cancel',openSelectionCovered:mode==='manual',passiveTransportObserver:mode!=='cancel',harnessSha256:sha(fs.readFileSync(__filename)),driverSha256:sha(fs.readFileSync(require.resolve('./macos-dialog-native.cjs'))),hostSha256:sha(fs.readFileSync(require.resolve('./macos-native-system-host.cjs'))),bootSha256:sha(fs.readFileSync(path.join(root,'assets/readmd.boot.js'))),phases:[],passed:false};
+ const report={nativeHost:'LaunchServices / Cocoa WKWebView / NSOpenPanel / NSSavePanel',defaultAssociationsChanged:false,modelsRequested:false,productionCsp:true,strictAuth:true,chooserShim:false,syntheticConfirmation:false,cancelOnly:mode==='cancel',manualNativeConfirmation:mode!=='cancel',openSelectionCovered:mode==='manual',suggestedNameBeforePanel:mode!=='cancel',passiveTransportObserver:mode!=='cancel',harnessSha256:sha(fs.readFileSync(__filename)),driverSha256:sha(fs.readFileSync(require.resolve('./macos-dialog-native.cjs'))),hostSha256:sha(fs.readFileSync(require.resolve('./macos-native-system-host.cjs'))),bootSha256:sha(fs.readFileSync(path.join(root,'assets/readmd.boot.js'))),phases:[],passed:false};
  try{const host=prepare(app,out,{tmp,home});report.binarySha256=host.binarySha256;for(const phase of ['pick_save','reopen']){
   const script=mode!=='cancel'&&phase==='pick_save'?manual(files,mode==='manual'):driver(phase,files,mode!=='cancel'?'save':'cancel');new vm.Script(script);fs.writeFileSync(path.join(profile,'native-qa.js'),script,{mode:0o600});const resultFile=path.join(profile,'native-qa-result.json'),instance=await host.launch({profile,docs,log:path.join(out,phase+'.log')}),entry={phase,host:instance.receipt,passed:false};report.phases.push(entry);
   try{const waiting=instance.wait(mode!=='cancel'?900000:90000);waiting.catch(()=>{});if(phase==='pick_save'){

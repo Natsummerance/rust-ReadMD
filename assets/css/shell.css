@@ -109,6 +109,18 @@ body.rm-scrolled #toolbar { box-shadow: 0 1px 0 var(--color-border), var(--shado
   .tab-close { width: 32px; height: 32px; }
 }
 @keyframes rm-rise-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+/* Mac extension sheet: compact controls, independent content scrolling, and
+   full hit targets around the existing small switches. */
+body.native-macos #plugin-box { width: min(880px, calc(100vw - 32px)); max-height: calc(100dvh - 40px); min-height: 0; border-radius: 18px; }
+body.native-macos #plugin-box > :not(.plugin-grid) { flex-shrink: 0; }
+body.native-macos #plugin-box .plugin-grid { min-height: 100px; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+body.native-macos #plugin-box .plugin-capability-item { min-width: 0; flex-wrap: wrap; }
+body.native-macos #plugin-box .plugin-discovery { flex-wrap: wrap; }
+body.native-macos #plugin-box .plugin-search { flex: 1 1 200px; min-width: 0; }
+body.native-macos #plugin-box .plugin-switch { min-height: 44px; padding-inline: 4px; }
+body.native-macos #plugin-box button, body.native-macos #plugin-box summary { min-height: 44px; }
+body.native-macos #plugin-box .plugin-card-foot { flex-wrap: wrap; }
+body.native-macos #plugin-box .plugin-runtime-note { color: var(--fg3); font-size: var(--text-xs); margin: 0; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--duration-slow); animation-timing-function: var(--ease-standard); }
 @media (prefers-reduced-motion: reduce) {
   .welcome-inner, .tb-btn, ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; transition: none !important; }

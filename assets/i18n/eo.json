@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Kaŝi ReadMD",
+  "mac.selectAll": "Elekti ĉion",
+  "plugin.onDemand": "Kontroli dum uzo",
   "rename.groupUnavailable": "Alinomado kun ĝisdatigo de la ligiloj en ĉi tiu dosierujo ankoraŭ ne haveblas en ĉi tiu platformo. Neniu dosiero aŭ ligilo estis ŝanĝita.",
   "rename.safeUnsupported": "Ne eblas sekure alinomi ĉi tiun dosieron. Kontrolu ĝiajn permesojn aŭ aldonajn datumojn; la originalo estas konservita.",
   "review.accept": "Akcepti ŝanĝon",

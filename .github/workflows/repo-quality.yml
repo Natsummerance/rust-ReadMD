@@ -64,6 +64,9 @@ jobs:
         # Keep the real test executable while this non-model regression lane
         # filters it instead of initializing recognition services.
         run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner::tests --skip ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption
+      - name: Compile the opt-in native Mac QA host without running models
+        if: runner.os == 'macOS'
+        run: cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
 

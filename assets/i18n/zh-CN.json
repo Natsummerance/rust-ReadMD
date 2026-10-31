@@ -1,4 +1,7 @@
 {
+  "mac.hide": "隐藏 ReadMD",
+  "mac.selectAll": "全选",
+  "plugin.onDemand": "使用时验证",
   "rename.groupUnavailable": "当前平台暂不支持重命名文件并更新资料夹内的引用。文件与链接均未更改。",
   "rename.safeUnsupported": "无法安全重命名此文件。请检查文件权限或附加数据；原文件已保留。",
   "review.accept": "同意此处修改",

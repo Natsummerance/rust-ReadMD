@@ -97,10 +97,36 @@ function syncWindowPreferences() {
   if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
   const t = key => window.i18n?.t(key) || key;
   const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
-  py.window_control('preferences', { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) });
+  const preferences = { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) };
+  if (py.native_titlebar === 'macos') preferences.menuLabels = Object.fromEntries(Object.entries({new:'menu.new',folder:'menu.openFolder',plugins:'cmd.plugins',pet:'cmd.pet',settings:'menu.settings',hide:'mac.hide',
+    'close-document':'toolbar.close',view:'shell.group.view',zen:'menu.zenMode',fullscreen:'toolbar.fullScreen',minimize:'window.minimize','select-all':'mac.selectAll'}).map(([action,key])=>[action,label(key)]));
+  py.window_control('preferences', preferences);
   $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
   if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
 }
+
+// Native menus enter the existing UI workflows. Modal guards, revision checks,
+// workspace permissions and save/recovery remain owned by those workflows.
+window.__readmdNativeMenu = async action => {
+  await window.__readmdSessionReady;
+  if (typeof cmView !== 'undefined' && cmView?.composing) return false;
+  if (window.ReadMDModal?.top()) {
+    if (action === 'close-document') return window.ReadMDModal.closeTop();
+    return false;
+  }
+  switch (action) {
+    case 'new': await newDocument(); break;
+    case 'folder': await openFolder(); break;
+    case 'plugins': await openPluginModal(); break;
+    case 'pet': await openPetSettings(); break;
+    case 'settings': window.ReadMDPalette?.open('settings'); break;
+    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId); break;
+    case 'zen': toggleZenMode(); break;
+    case 'fullscreen': window.ReadMDViewMode?.toggleFullscreen(); break;
+    default: return false;
+  }
+  return true;
+};
 function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;

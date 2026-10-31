@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Ocultar ReadMD",
+  "mac.selectAll": "Selecionar tudo",
+  "plugin.onDemand": "Verificar ao usar",
   "rename.groupUnavailable": "Esta plataforma ainda não permite renomear um ficheiro e atualizar as ligações desta pasta. Nenhum ficheiro ou ligação foi alterado.",
   "rename.safeUnsupported": "Não é possível renomear este arquivo com segurança. Verifique as permissões ou os dados adicionais do arquivo; o original foi preservado.",
   "review.accept": "Aceitar alteração",

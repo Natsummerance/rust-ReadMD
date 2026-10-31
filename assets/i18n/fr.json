@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Masquer ReadMD",
+  "mac.selectAll": "Tout sélectionner",
+  "plugin.onDemand": "Vérifier à l’utilisation",
   "rename.groupUnavailable": "Cette plateforme ne permet pas encore de renommer un fichier en mettant à jour les liens de ce dossier. Aucun fichier ni lien n’a été modifié.",
   "rename.safeUnsupported": "Impossible de renommer ce fichier en toute sécurité. Vérifiez ses autorisations ou ses données supplémentaires ; l’original est conservé.",
   "review.accept": "Accepter la modification",

@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Sembunyikan ReadMD",
+  "mac.selectAll": "Pilih Semua",
+  "plugin.onDemand": "Sahkan semasa digunakan",
   "rename.groupUnavailable": "Penamaan semula fail bersama pengemaskinian pautan dalam folder ini belum tersedia pada platform ini. Tiada fail atau pautan diubah.",
   "rename.safeUnsupported": "Nama fail ini tidak dapat ditukar dengan selamat. Semak kebenaran atau data tambahan fail; fail asal dikekalkan.",
   "review.accept": "Terima perubahan",

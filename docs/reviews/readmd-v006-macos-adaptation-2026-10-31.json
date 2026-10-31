@@ -23,13 +23,74 @@
     "productionManifestSha256": "8700e9e04aaf564bad9b057ee2f2e0aaa87d4694e158163121f5a06805d6c295",
     "binding": "base commit and production source manifest; the containing commit records the candidate source",
     "coreCheckpointCommit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
-    "productionCodeChangedInThisEvidenceUpdate": false
+    "productionCodeChangedInThisEvidenceUpdate": true,
+    "previousVerifiedCheckpoint": "bfa16e817e4372423cbfcd577d32004bcaafa027",
+    "unverifiedMacChanges": {
+      "status": "source_implemented_native_acceptance_pending",
+      "features": [
+        "macOS app icon silhouette, original white M-arrow template",
+        "native menu commands reuse guarded UI workflows",
+        "plugin catalog never initiates OCR or speech inference",
+        "unsupported speech profiles cannot activate a missing adapter"
+      ],
+      "bootSha256": "be7185993519aa41683a14cac1b9c9e820a65c8c8c58a3d9a70fe73f5b1ee349",
+      "localChecks": {
+        "nodePassed": 8,
+        "failed": 0,
+        "rustParser": true,
+        "localeStructure": 46,
+        "sourceGates": [
+          "i18n",
+          "styles",
+          "wiring",
+          "vendored assets",
+          "privacy",
+          "boot bundle"
+        ]
+      },
+      "nativeHostPassed": false,
+      "assets": {
+        "ReadMD-macos.svg": {
+          "bytes": 1517,
+          "sha256": "f0b258a632b92207d1c23edc75fa291ee09b2a96d4c8f6fb9f45072f6f6ca696"
+        },
+        "ReadMD-macos.png": {
+          "bytes": 442538,
+          "sha256": "05a7ad17434039ae88aecec8c0fac95f0bc2ae2dc8e8f0c2b345c98b1b458488"
+        },
+        "ReadMD-macos.icns": {
+          "bytes": 695065,
+          "sha256": "efa4f9b243604fae246534e44dc514ae71b775d6caa8023783499f18dc3ea431"
+        },
+        "ReadMD-status-template.svg": {
+          "bytes": 491,
+          "sha256": "79e62583f84d569b5102405504dd46d84511f30f1d08442e43928726b8600881"
+        },
+        "ReadMD-status-template.png": {
+          "bytes": 1630,
+          "sha256": "09143864e3fb33a95869467441dcb73f3a1479520855268398710d87502281c3"
+        }
+      }
+    }
   },
   "modelServices": {
     "deferred": true,
     "inferenceAfterDeferral": false,
     "filteredVisionTest": "ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption",
-    "testStillExecutable": true
+    "testStillExecutable": true,
+    "userOcrReleaseAcceptance": {
+      "requiresWindowsActualSuccess": true,
+      "requiresMacAdapter": true,
+      "userPermitsEquivalentReleaseAcceptance": true,
+      "macNativeInferenceClaimed": false,
+      "windowsReceiptStillNeedsVersionBinding": true
+    },
+    "memoryProtection": {
+      "noOwnedModelWorkerFound": true,
+      "userLlmUntouched": true,
+      "localHeavyBuildAndNativeTestsDeferred": true,
+      "modelInferenceStartedThisContinuation": false
+    }
   },
   "regressions": {
     "kernelLibrary": {
@@ -552,10 +613,10 @@
     }
   },
   "pending": [
-    "Actual native Save As commit/reopen; first attempt returned false, cancellation/error diagnosis pending",
+    "New native menu / original-mark template / plugin changes: new binary and normal-host acceptance pending; previous receipts remain bound to previous core and boot",
     "Production-package full normal-launch workflow and default file association",
     "Desktop companion global keyboard permission and real authorized input",
-    "OCR/ASR/AI native consumers and managed speech engine",
+    "OCR release equivalence requires matching Windows actual evidence plus Mac adapter binding; native OCR/ASR/AI consumers and managed speech engine remain separately untested",
     "Strict Mac multi-file refactor commit; platform safety guard kept",
     "Native 4K/high-DPI capture and complete movie refresh",
     "Final release gates; no V0.0.6 release or tag created"
@@ -767,6 +828,28 @@
     },
     "automatedScopedChecks": 130,
     "manualNativeSelection": {
+      "status": "native_open_and_actual_save_as_reopen_passed",
+      "openReceipt": "mac-native-system-dialog-manual-2",
+      "saveReceipt": "mac-native-system-save-initial-name",
+      "passed": true,
+      "manualNativeConfirmation": true,
+      "syntheticConfirmation": false,
+      "checks": 19,
+      "binarySha256": "cf00777a67f00b3a0745c9ffafec652a00a9ac19715b3628f05eecf8c07a3b3c",
+      "bootSha256": "15f52f4788e0aa2dc3b2db156816769c12e281d1b91fbd6a16321c8e2ede34d8",
+      "harnessSha256": "5ecb9f27b33fbe4ba93a16fe449fdcc2134b724748778dce253a8697c97acee7",
+      "originalUnchanged": true,
+      "newFileCreated": true,
+      "suggestedNameBeforePanel": true,
+      "firstFailureDiagnosis": "QA attempted to set the save name after PowerBox presentation. The actual commit used the original suggested name. Supplying the snapshot suggestion before panel construction restored the intended new identity without altering production save code."
+    },
+    "registrationCleanup": {
+      "dedicatedQaBundleUnregistered": true,
+      "ownedProcessesRunning": 0,
+      "defaultAssociationsChanged": false,
+      "receipt": "native-system-qa-unregister-after-save-20261031"
+    },
+    "manualNativeSelectionFirstAttempt": {
       "status": "actual_open_passed_save_as_returned_false_pending_diagnosis",
       "receipt": "mac-native-system-dialog-manual-2",
       "nativeOpenSelectionVerified": true,
@@ -776,44 +859,40 @@
       "newFileCreated": false,
       "cancellationVersusFailureKnown": false,
       "passiveTransportObserverPreparedNotYetExecuted": true
-    },
-    "registrationCleanup": {
-      "dedicatedQaBundleUnregistered": true,
-      "ownedProcessesRunning": 0,
-      "defaultAssociationsChanged": false
     }
   },
   "currentCi": {
-    "commit": "3d22b7ba6d7e5b25e54e2e374a38b6799cb54514",
+    "commit": "bfa16e817e4372423cbfcd577d32004bcaafa027",
     "allWorkflowsPassed": true,
+    "newUncommittedProductChangesCovered": false,
     "runs": [
       {
-        "id": 41129594664,
-        "name": "Repo quality",
-        "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594664"
-      },
-      {
-        "id": 41129594676,
-        "name": "Multi-Platform Rust Build and Release",
-        "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594676"
-      },
-      {
-        "id": 41129594695,
+        "id": 41153086942,
         "name": "ReadMD desktop pet Rust quality",
         "status": "completed",
         "conclusion": "success",
-        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594695"
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41153086942"
       },
       {
-        "id": 41129594725,
+        "id": 41153086906,
+        "name": "Repo quality",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41153086906"
+      },
+      {
+        "id": 41153086900,
+        "name": "Multi-Platform Rust Build and Release",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41153086900"
+      },
+      {
+        "id": 41153086897,
         "name": "Website GitHub Pages",
         "status": "completed",
         "conclusion": "success",
-        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41129594725"
+        "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41153086897"
       }
     ]
   },

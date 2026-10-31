@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Ẩn ReadMD",
+  "mac.selectAll": "Chọn tất cả",
+  "plugin.onDemand": "Xác minh khi sử dụng",
   "rename.groupUnavailable": "Nền tảng này chưa hỗ trợ đổi tên tệp đồng thời cập nhật các liên kết trong thư mục này. Không có tệp hay liên kết nào bị thay đổi.",
   "rename.safeUnsupported": "Không thể đổi tên tệp này một cách an toàn. Hãy kiểm tra quyền truy cập hoặc dữ liệu bổ sung của tệp; bản gốc vẫn được giữ lại.",
   "review.accept": "Chấp nhận thay đổi",

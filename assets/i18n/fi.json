@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Kätke ReadMD",
+  "mac.selectAll": "Valitse kaikki",
+  "plugin.onDemand": "Tarkista käytettäessä",
   "rename.groupUnavailable": "Tiedoston nimeäminen ja tämän kansion linkkien päivittäminen ei ole vielä käytettävissä tällä alustalla. Tiedostoja tai linkkejä ei muutettu.",
   "rename.safeUnsupported": "Tiedostoa ei voi nimetä turvallisesti uudelleen. Tarkista tiedoston käyttöoikeudet tai lisätiedot; alkuperäinen on säilytetty.",
   "review.accept": "Hyväksy muutos",

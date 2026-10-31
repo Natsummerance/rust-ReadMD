@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Skrij ReadMD",
+  "mac.selectAll": "Izberi vse",
+  "plugin.onDemand": "Preveri ob uporabi",
   "rename.groupUnavailable": "Preimenovanje datoteke s posodobitvijo povezav v tej mapi na tej platformi še ni na voljo. Nobena datoteka ali povezava ni bila spremenjena.",
   "rename.safeUnsupported": "Te datoteke ni mogoče varno preimenovati. Preverite dovoljenja ali dodatne podatke datoteke; izvirnik je ohranjen.",
   "review.accept": "Sprejmi spremembo",

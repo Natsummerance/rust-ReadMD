@@ -1,4 +1,7 @@
 {
+  "mac.hide": "Hide ReadMD",
+  "mac.selectAll": "Select All",
+  "plugin.onDemand": "Verify when used",
   "rename.groupUnavailable": "Renaming a file and updating links across this folder is not available on this platform yet. No files or links were changed.",
   "rename.safeUnsupported": "Cannot safely rename this file. Check file permissions or additional file data; the original is preserved.",
   "review.accept": "Accept change",
