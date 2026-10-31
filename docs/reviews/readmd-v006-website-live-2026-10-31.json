@@ -1,0 +1,123 @@
+{
+  "checkedAt": "2026-10-31T04:53:17.648Z",
+  "workflow": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41170143606",
+  "websiteSource": "a11a16fed8828bb2b40cc57a14cb65c089b9dd21",
+  "workflowConclusion": "success",
+  "credential": "encrypted GitHub Actions Secret; no plaintext in repository or logs",
+  "domains": [
+    {
+      "host": "readmd.asia",
+      "version": "0.0.6",
+      "releaseTag": "V0.0.6",
+      "assetCount": 11,
+      "pages": [
+        {
+          "route": "/",
+          "httpStatus": 200,
+          "sha256": "598c0d3756286cd7c4d559e90d839ecb8a08c044e2bcf7bfad57d6fd862ddfc2",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/download/",
+          "httpStatus": 200,
+          "sha256": "382d03215e008b9d530709bdda3992f76b488b9b467eca4c90c3180e24136e83",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-cn/",
+          "httpStatus": 200,
+          "sha256": "1ae30c32a7546c63d7d80e89a15461389b505d8d4b96d1a3039d9ccdad9a70c1",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-cn/download/",
+          "httpStatus": 200,
+          "sha256": "535fd85a8a5819051bbf586f5db3501f55e14f5319267ce06595c9e6668ef977",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-tw/",
+          "httpStatus": 200,
+          "sha256": "b285e4d2b2917a1cfd462a3966aab9d907bf64d901e142a8a717d38a4454abe1",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-tw/download/",
+          "httpStatus": 200,
+          "sha256": "2ead8db2f9511f4125e9b3e6a5123e4c458e3ae15c42806ff97780b0508d723d",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/ja/",
+          "httpStatus": 200,
+          "sha256": "865d907351a0643243b1b702f856970fc1303d4f79bf305d317afea98fb98667",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/ja/download/",
+          "httpStatus": 200,
+          "sha256": "dbe32a67f105f1685ecb7a0970a46c81338c09bf3288d17beff6549993d52da1",
+          "matchesPublishedSourceHtml": true
+        }
+      ]
+    },
+    {
+      "host": "rust.readmd.asia",
+      "version": "0.0.6",
+      "releaseTag": "V0.0.6",
+      "assetCount": 11,
+      "pages": [
+        {
+          "route": "/",
+          "httpStatus": 200,
+          "sha256": "598c0d3756286cd7c4d559e90d839ecb8a08c044e2bcf7bfad57d6fd862ddfc2",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/download/",
+          "httpStatus": 200,
+          "sha256": "382d03215e008b9d530709bdda3992f76b488b9b467eca4c90c3180e24136e83",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-cn/",
+          "httpStatus": 200,
+          "sha256": "1ae30c32a7546c63d7d80e89a15461389b505d8d4b96d1a3039d9ccdad9a70c1",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-cn/download/",
+          "httpStatus": 200,
+          "sha256": "535fd85a8a5819051bbf586f5db3501f55e14f5319267ce06595c9e6668ef977",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-tw/",
+          "httpStatus": 200,
+          "sha256": "b285e4d2b2917a1cfd462a3966aab9d907bf64d901e142a8a717d38a4454abe1",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/zh-tw/download/",
+          "httpStatus": 200,
+          "sha256": "2ead8db2f9511f4125e9b3e6a5123e4c458e3ae15c42806ff97780b0508d723d",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/ja/",
+          "httpStatus": 200,
+          "sha256": "865d907351a0643243b1b702f856970fc1303d4f79bf305d317afea98fb98667",
+          "matchesPublishedSourceHtml": true
+        },
+        {
+          "route": "/ja/download/",
+          "httpStatus": 200,
+          "sha256": "dbe32a67f105f1685ecb7a0970a46c81338c09bf3288d17beff6549993d52da1",
+          "matchesPublishedSourceHtml": true
+        }
+      ]
+    }
+  ],
+  "modelsRequested": false,
+  "passed": true
+}
