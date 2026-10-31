@@ -4391,6 +4391,12 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                             if (720.0..=1920.0).contains(&width)&&(480.0..=1200.0).contains(&height) { window.set_inner_size(tao::dpi::LogicalSize::new(width,height)); }
                         }
                     },
+                    #[cfg(all(target_os="macos",feature="native-qa",debug_assertions))]
+                    "qa_capture_frame" if native_qa.is_some() => {
+                        if let (Some(reader),Some(id))=(webview.as_ref(),options["id"].as_u64().filter(|id|*id<9000)) {
+                            native_qa::capture_frame(reader,id);
+                        }
+                    },
                     "minimize" => window.set_minimized(true),
                     "title" => { if let Some(title) = options.get("title").and_then(serde_json::Value::as_str).filter(|s| s.len() < 1024) { window.set_title(title); } },
                     "maximize" => window.set_maximized(!window.is_maximized()),
