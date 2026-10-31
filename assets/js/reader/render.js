@@ -3258,10 +3258,43 @@ function fixLinks(body, selector = 'a') {
   });
 }
 
+const localImageLoads = new WeakMap();
+function loadLocalReaderImage(image, url) {
+  const previous = localImageLoads.get(image);
+  if (previous?.url === url) return;
+  previous?.controller.abort();
+  const load = { url, controller: new AbortController() };
+  localImageLoads.set(image, load);
+  // HTML subresource requests cannot carry the process headers. Read through
+  // the existing authenticated API and keep credentials out of image URLs,
+  // copied markup and referrers. Data URLs are owned by the node and need no
+  // global blob cache or retained object URL after a document closes.
+  image.removeAttribute('src');
+  image.setAttribute('aria-busy', 'true');
+  apiFetch(url, { signal: load.controller.signal }).then(response => {
+    if (!response.ok) throw new Error('local_image_read_failed');
+    return response.blob();
+  }).then(blob => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  })).then(source => {
+    if (localImageLoads.get(image) !== load || !image.isConnected || image.hasAttribute('src')) return;
+    image.removeAttribute('aria-busy');
+    image.src = source;
+  }).catch(error => {
+    if (localImageLoads.get(image) !== load || !image.isConnected || image.hasAttribute('src')) return;
+    image.removeAttribute('aria-busy');
+    if (error?.name !== 'AbortError') image.dispatchEvent(new Event('error'));
+  });
+}
+
 function fixImages(body) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   body.querySelectorAll('img').forEach(im => {
     let src = im.getAttribute('src') || '';
+    if (!src && localImageLoads.has(im)) return;
     if (/^(https?:|data:)/i.test(src)) return;
     let p;
     if (src.startsWith('file:')) {
@@ -3269,15 +3302,15 @@ function fixImages(body) {
     } else if (/^[A-Za-z]:[\\/]/.test(src)) {
       p = src; // 绝对 Windows 路径（如转换器提取的临时图片）
     } else if (src.startsWith('/raw?')) {
-      return; // 已经处理过
+      p = null; // Already resolved; it still needs authenticated bytes.
     } else {
       p = resolvePath(state.dir, src);
     }
-    im.src = '/raw?p=' + encodeURIComponent(p);
     im.onerror = () => {
       im.style.opacity = .45;
       im.alt = (_t('reader.imgLoadFailAlt') || '[图片无法加载] ') + im.alt;
     };
+    loadLocalReaderImage(im, p === null ? src : '/raw?p=' + encodeURIComponent(p));
   });
 }
 

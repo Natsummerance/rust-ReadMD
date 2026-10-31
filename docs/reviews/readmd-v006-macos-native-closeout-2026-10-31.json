@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "date": "2026-10-31",
+  "version": "0.0.6",
+  "sourceParent": "a783ac0c3bc7a4defb87796f6549953f293effab",
+  "binding": "The containing commit binds production source; boot and individual raw report hashes bind native checks.",
+  "host": "LaunchServices / Cocoa / WKWebView",
+  "nativeQaBinarySha256": "be7433d0675707a47d23559475b70eedafa77d1389d89369d1ce3e69d3698e55",
+  "bootSha256": "eeff0bc985e0784885bc722b35b15d58ef290dd0114b3d931070f40570ab7397",
+  "strictAuthentication": true,
+  "productionCsp": true,
+  "modelsRequested": false,
+  "unrelatedProcessesSignalled": false,
+  "passed": true,
+  "totalChecks": 286,
+  "cases": [
+    {
+      "name": "resources",
+      "passed": true,
+      "checks": 8,
+      "reportSha256": "a9e3e9bab54f7501d3698a1445bf4061e0972a175fec2be44a85e1801b855f63",
+      "harnessSha256": "474f43185b6b92e112c109612d71ce13f3f80fae41e9c8237d7614acc578ad75"
+    },
+    {
+      "name": "window",
+      "passed": true,
+      "checks": 30,
+      "reportSha256": "b4006c26430984257a521c1f69813bd082cd7b6502c83dbad2a3f0948eea30b6",
+      "harnessSha256": "aa566785ce7a32799ef8e933756a7ff49f75cf16e84d2d168282360119fece3c"
+    },
+    {
+      "name": "workflow",
+      "passed": true,
+      "checks": 45,
+      "reportSha256": "176ff9958a87d17e162083b8494b5f486ecc3be052a9b5126636131f32401f9b",
+      "harnessSha256": "ee630a13f37b4dede68de1686ce2c8aa46d688909433d3da8139640f045e28b8",
+      "driverSha256": "045da93675ab469e08a8e2de8355f48aaee60c1faa6f536eeeb9badf999ac90f"
+    },
+    {
+      "name": "application",
+      "passed": true,
+      "checks": 35,
+      "reportSha256": "4b9ffc3efa92d31d80ad4795a92f394fe1e72791848517aa916dabe58ddccea8",
+      "harnessSha256": "c3f6d1df94cc6ede4fb77693688230c14775459947da565840628a20a3266c97",
+      "driverSha256": "9a73ff6b189fe7c51c91a87fb53d0d76766d6a1ca457e7c00189825bf89fe3cf"
+    },
+    {
+      "name": "os-open",
+      "passed": true,
+      "checks": 20,
+      "reportSha256": "90af42d039aa09f4e3b3b53e5f4366e72e1a23bd4f0c3956921898c32b0428c4",
+      "harnessSha256": "b528a145bfb5ba503c5626813008d1bd78ddbf8db54ba5a813baffa14ef1b9f4"
+    },
+    {
+      "name": "dialog-cancel",
+      "passed": true,
+      "checks": 19,
+      "reportSha256": "8f02a7e7551c044d6eda15da110cf8aa17a3c37d894d901b14d6f2811d35254d",
+      "harnessSha256": "5ecb9f27b33fbe4ba93a16fe449fdcc2134b724748778dce253a8697c97acee7",
+      "driverSha256": "3f27d6368b1e16ac77c5827e1fad9fab5343f25d6735b3335662e39b53d352fb"
+    },
+    {
+      "name": "exports-cjk",
+      "passed": true,
+      "checks": 19,
+      "reportSha256": "927b49b181121bff42d19cde7de87ecc96335a06d314913da8757c12f886ddf3",
+      "harnessSha256": "46259445def0566b800d7771c3e26147158fc58aea877600ba4a60360943bcf4",
+      "driverSha256": "a7ccbb72557658b4259f0383d9f0f04f0807db5cdf23ccc64d10ece0921ae023"
+    },
+    {
+      "name": "menus",
+      "passed": true,
+      "checks": 76,
+      "reportSha256": "fd26b8ac412f5630bb984de212b9744dff0605b066eea3e6f53a3c1c13c3566a",
+      "harnessSha256": "7dfa65c96b2e26f84ebae33ab266ae6dbd3d2014dc43cebfbe4ebc4c373c4f80"
+    },
+    {
+      "name": "plugin-layout",
+      "passed": true,
+      "checks": 34,
+      "reportSha256": "d9a0d0e8199aa2db6dbc8b2ccf92f7e0e3df0ce6261839a186d3b123ce217d52",
+      "harnessSha256": "06b36441a9717d21bca2e81933d173a8e9c5752d8fdff5661800bde0104cd5fd"
+    }
+  ],
+  "frontendCiSelection": {
+    "tests": 107,
+    "passed": 107,
+    "failed": 0,
+    "logSha256": "d3d6edb7e49b4e2f7e6e1f3fcbc4e296e64d90392319bc2ff54f31015eadd894"
+  },
+  "firstFailure": {
+    "area": "native image subresource",
+    "ordinaryRequestStatus": 403,
+    "authenticatedRequestStatus": 200,
+    "retained": true,
+    "protectionRemoved": false
+  },
+  "limits": {
+    "developerId": false,
+    "notarized": false,
+    "intelNativeExecution": false,
+    "macModelInference": false,
+    "all75CapabilityItemsCertified": false,
+    "promoPending": true
+  }
+}
