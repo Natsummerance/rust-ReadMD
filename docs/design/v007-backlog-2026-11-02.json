@@ -1,0 +1,995 @@
+{
+  "kind": "planning snapshot, not acceptance update",
+  "created": "2026-11-02T18:20:13.328056+08:00",
+  "source": "docs/design/capability-upgrade-acceptance.json",
+  "sourceSha256": "6c94c0af069a39b483c3bd7e6c2c8ca08cf88247aae46e1b2f65d0088b6949c5",
+  "sourceHead": "1021f498505717238b4c68e859fcb1847498b96a",
+  "statusCounts": {
+    "in_progress": 63,
+    "pending": 12
+  },
+  "completeRequirementCount": 0,
+  "requirements": [
+    {
+      "id": "R001",
+      "group": "foundation",
+      "requirement": "Revision-safe content transactions",
+      "workflow": "Edit → undo → save → reopen",
+      "acceptance": "UTF-16 ranges, stale revision rejection, one undo transaction, encoding/EOL preserved",
+      "status": "in_progress",
+      "remaining": [
+        "普通正文稳定身份、修订保护及局部撤销保存重开已限定通过；公式/表格等结构审阅、跨文档统一事务及完整原生故障矩阵继续保留。",
+        "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。",
+        "2026-10-24 C84有限证据已封存：C84 finite authored-citation UTF-16/CRLF transactions, inverse/redo, stale rejection, save and two new-PID reopen generations; full transaction and review acceptance remains open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
+      ]
+    },
+    {
+      "id": "R002",
+      "group": "foundation",
+      "requirement": "Atomic saves and recovery",
+      "workflow": "Open → edit/cancel → save/crash → recover",
+      "acceptance": "No copies or dirty state on open; no overwrite after external change; bounded recovery",
+      "status": "in_progress",
+      "remaining": [
+        "普通正文审阅原文、保存决定独立、正常/异常重开、外改/Windows文件锁/确认编码及存储配额拒绝已限定验证；全部格式磁盘满、全局压力、非Windows与完整启动/任务审阅链仍待验收。",
+        "B3-52当前Windows证据已覆盖Typst/OCR实际进程/MCP和持久暂存、旧OCR兼容、创建五边界、预留预算与公平恢复及4客户端并发；仍须首条持久头前无归属标记的处置、完整启动/任务审阅引用、TeX暂存/AppContainer配置/DOS映射、全部引擎/桌面/MCP/VS Code传输、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。",
+        "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。",
+        "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。",
+        "2026-10-24 C84有限证据已封存：C84 actual Windows resource-lock cancellation/timeout preserves old target bytes and Win32 identity, then explicit new-owner recovery; not full crash, external-change or disk-full acceptance. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
+      ]
+    },
+    {
+      "id": "R003",
+      "group": "foundation",
+      "requirement": "Truthful capability status and offline packs",
+      "workflow": "Install → probe → use → rollback/uninstall",
+      "acceptance": "Engine, resource and actual smoke operation checked; missing resources actionable",
+      "status": "in_progress",
+      "remaining": [
+        "Windows PDFium、Typst、OCR、通用字体四包及核心数学字体已独立交付；TeX隔离开发入口已实测但包未交付，其余引擎、GUI宿主、升级回退和其他平台仍待完成。",
+        "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。",
+        "2026-10-20安装新增空间估算与profile串行准入（含迁移）、真实字体包取消/重复/修复已完成限定验证；跨profile同卷竞争、真实小卷磁盘满/硬配额、完整引擎故障和正式TeX材料仍开放。"
+      ]
+    },
+    {
+      "id": "R004",
+      "group": "foundation",
+      "requirement": "Bounded cancellable tasks",
+      "workflow": "Start → progress → cancel/retry",
+      "acceptance": "Cancel wins before commit; clean task-owned outputs; UI remains responsive",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：原生多轮任务累计预算、持久意图、跨进程OS租约与双槽、拥有者取消及原文档绑定；真实页面暂停迟到与异常进程恢复通过，不计全部任务或长期性能认证。",
+        "已有PDF、TeX及OpenAPI取消不提交证据；PDF取消完成223ms未达到200ms目标，其他长任务生命周期及性能仍待覆盖",
+        "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。",
+        "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。",
+        "2026-10-24 C84有限证据已封存：C84 shared publication resource/cached-key budget and captured cancellation; five real lock faults, two HTTP ack <2ms and retirement <600ms; all inner writer/I/O and UI responsiveness remain open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
+      ]
+    },
+    {
+      "id": "R005",
+      "group": "foundation",
+      "requirement": "Minimal consistent UI",
+      "workflow": "Resize → keyboard/touch → switch theme",
+      "acceptance": "One responsive toolbar, contextual controls, shared checkboxes, 44px targets",
+      "status": "in_progress",
+      "remaining": [
+        "全部内容上下文、44px目标、窄窗口和高DPI工作流布局审查",
+        "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。"
+      ]
+    },
+    {
+      "id": "R006",
+      "group": "foundation",
+      "requirement": "Complete localization",
+      "workflow": "Switch all 46 locales during every workflow",
+      "acceptance": "Localized dynamic UI/errors/accessibility labels; RTL and long-text layout",
+      "status": "in_progress",
+      "remaining": [
+        "新增及现有动态错误的46语言语义审校；长文本、RTL及全部工作流原生验证",
+        "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。"
+      ]
+    },
+    {
+      "id": "R007",
+      "group": "formula",
+      "requirement": "Source-ranged unified math model",
+      "workflow": "Parse → select node → patch → serialize",
+      "acceptance": "LaTeX/UnicodeMath/MathML/OMML adapters; precise nodes, slots and guarded patches",
+      "status": "in_progress",
+      "remaining": [
+        "常用UnicodeMath已使用共享数学树并保留原文UTF-16节点/槽位；完整UTN28构造、MathML精确源码映射、宏及嵌套诊断继续验收",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-20显式函数及可表达列对齐限定流程已验证，不再视为未实现；完整UTN28、复杂跨格/张量/Content MathML、完整源映射与Word/独立阅读器和界面原生仍开放。"
+      ]
+    },
+    {
+      "id": "R008",
+      "group": "formula",
+      "requirement": "In-preview formula editing",
+      "workflow": "Click rendered symbol/slot → type → Tab → accept/undo",
+      "acceptance": "Actual document preview edit; IME safe; duplicate formulas remain distinct",
+      "status": "in_progress",
+      "remaining": [
+        "触控、读屏、复杂输入法及所有结构的原生编辑验收",
+        "共享Rust矢量预览两种结构及槽位交互已有最终Windows证据；继续完整OMML视觉语义、旧LaTeX保真元数据阅读链路、缺字/不可排版回退诊断、任意嵌套和辅助技术/输入法，不把本次子集作为全结构认证。",
+        "文档明确intLim/naryLim的导入、DSL保真、DOCX设置输出及旧保真公式矢量阅读已有Windows证据；继续其余mathPr属性的完整视觉语义、缺省组合、跨来源不可局部表达设置及实际Word逐属性比较。完整OMML、任意嵌套/字体/辅助技术和第三批原有门槛仍未整项验收。",
+        "文档上下限本增量通过不等于完整mathPr支持：其余全局属性/字体/样式、缺省与显式关闭、任意组合、实际Word编辑和独立EPUB阅读器仍需完整验收；B3-51–54资源/正式TeX/冷态及B3-56出版原合同继续有效。",
+        "smallFrac本增量完成显示参数缩放和保存/导出子集；跨来源非局部默认设置仍报告冲突。继续其余mathPr视觉语义、完整缺省组合、任意嵌套/字体/辅助技术、实际Word应用和独立EPUB阅读器；B3-51–54及完整出版门槛保留。既有提示在显示后切换语言未重新翻译，不据本次QA截图认证动态本地化。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office非标准多文本节点运行/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12：标准单m:t运行逐字素修改已验证；非标准多文本运行仍整体编辑，任意嵌套/复杂文字整形/完整Office与跨应用认证保留。MVP优先，不扩大本轮范围。"
+      ]
+    },
+    {
+      "id": "R009",
+      "group": "formula",
+      "requirement": "All OMML objects and properties",
+      "workflow": "Import Word object → edit each property → export → reopen Word",
+      "acceptance": "19 objects,133 elements,12 enums plus related Word properties; semantic and visual evidence",
+      "status": "in_progress",
+      "remaining": [
+        "133 schema条目中含9抽象类型；完整标准属性视觉语义、Word样式/修订及逐项Word往返认证尚未完成",
+        "共享Rust矢量预览两种结构及槽位交互已有最终Windows证据；继续完整OMML视觉语义、旧LaTeX保真元数据阅读链路、缺字/不可排版回退诊断、任意嵌套和辅助技术/输入法，不把本次子集作为全结构认证。",
+        "文档明确intLim/naryLim的导入、DSL保真、DOCX设置输出及旧保真公式矢量阅读已有Windows证据；继续其余mathPr属性的完整视觉语义、缺省组合、跨来源不可局部表达设置及实际Word逐属性比较。完整OMML、任意嵌套/字体/辅助技术和第三批原有门槛仍未整项验收。",
+        "文档上下限本增量通过不等于完整mathPr支持：其余全局属性/字体/样式、缺省与显式关闭、任意组合、实际Word编辑和独立EPUB阅读器仍需完整验收；B3-51–54资源/正式TeX/冷态及B3-56出版原合同继续有效。",
+        "smallFrac本增量完成显示参数缩放和保存/导出子集；跨来源非局部默认设置仍报告冲突。继续其余mathPr视觉语义、完整缺省组合、任意嵌套/字体/辅助技术、实际Word应用和独立EPUB阅读器；B3-51–54及完整出版门槛保留。既有提示在显示后切换语言未重新翻译，不据本次QA截图认证动态本地化。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-20显式函数及可表达列对齐限定流程已验证，不再视为未实现；完整UTN28、复杂跨格/张量/Content MathML、完整源映射与Word/独立阅读器和界面原生仍开放。",
+        "2026-10-21本次mathPr三态/有效默认隔离、载体模式与旧目标保护已有证据；仍缺完整段落继承、可替换MATH字体、TeX原生OfficeMath及实际应用，不以拒绝代替可编辑支持。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。",
+        "2026-10-25 C95有限增量已封存（candidate-95）：mathFont 显式谓词消费（STIX Two Math/Cambria Math 等价名零告警、其它名恰一条真实回退且 actual 恒为 STIX Two Math）与 math run rPrChange 隔离（投影改写即剥离、未改写容器原文保留、作者源与可读 DSL 往返保真 author/date）经真实 stdio 与独立验证通过；同函数 run 字体分支谓词未动。真实 Word/WPS 审阅行为、Cambria/捆绑 STIX 视觉等价（I 域）、字体换入真实几何与完整 M07/M09 仍欠。"
+      ]
+    },
+    {
+      "id": "R010",
+      "group": "formula",
+      "requirement": "Math structure authoring",
+      "workflow": "Insert fractions/matrices/scripts/limits → restructure",
+      "acceptance": "Empty slots, row/column operations, independent draft and undo",
+      "status": "in_progress",
+      "remaining": [
+        "全部结构转换、字号/间距及空槽位键盘/触控/输入法覆盖",
+        "共享Rust矢量预览两种结构及槽位交互已有最终Windows证据；继续完整OMML视觉语义、旧LaTeX保真元数据阅读链路、缺字/不可排版回退诊断、任意嵌套和辅助技术/输入法，不把本次子集作为全结构认证。",
+        "文档明确intLim/naryLim的导入、DSL保真、DOCX设置输出及旧保真公式矢量阅读已有Windows证据；继续其余mathPr属性的完整视觉语义、缺省组合、跨来源不可局部表达设置及实际Word逐属性比较。完整OMML、任意嵌套/字体/辅助技术和第三批原有门槛仍未整项验收。",
+        "文档上下限本增量通过不等于完整mathPr支持：其余全局属性/字体/样式、缺省与显式关闭、任意组合、实际Word编辑和独立EPUB阅读器仍需完整验收；B3-51–54资源/正式TeX/冷态及B3-56出版原合同继续有效。",
+        "smallFrac本增量完成显示参数缩放和保存/导出子集；跨来源非局部默认设置仍报告冲突。继续其余mathPr视觉语义、完整缺省组合、任意嵌套/字体/辅助技术、实际Word应用和独立EPUB阅读器；B3-51–54及完整出版门槛保留。既有提示在显示后切换语言未重新翻译，不据本次QA截图认证动态本地化。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。"
+      ]
+    },
+    {
+      "id": "R011",
+      "group": "formula",
+      "requirement": "Lossless metadata and stale recovery",
+      "workflow": "Save complex formula → external edit → reopen",
+      "acceptance": "Standard semantics remain readable Math DSL; ordinary TeX needs no hidden payload; unknown extension state never overwrites changed source.",
+      "status": "in_progress",
+      "remaining": [
+        "标准旧公式迁移与失配恢复已有证据；本轮新增 v2 未知扩展身份/摘要绑定、邻近编辑保留、过期正文保护及持久恢复。任意复杂组合、通用扩展锚点重映射、关联Word样式/段落/修订及完整故障矩阵仍待验。非法编码保留原注释并诊断，不算自动恢复。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office非标准多文本节点运行/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12：标准单m:t运行逐字素修改已验证；非标准多文本运行仍整体编辑，任意嵌套/复杂文字整形/完整Office与跨应用认证保留。MVP优先，不扩大本轮范围。",
+        "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-21本次mathPr三态/有效默认隔离、载体模式与旧目标保护已有证据；仍缺完整段落继承、可替换MATH字体、TeX原生OfficeMath及实际应用，不以拒绝代替可编辑支持。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。"
+      ]
+    },
+    {
+      "id": "R012",
+      "group": "formula",
+      "requirement": "Symbols and fonts",
+      "workflow": "Search/type Unicode math → preview/export",
+      "acceptance": "Arbitrary legal input, aliases, font coverage and actionable missing glyphs",
+      "status": "in_progress",
+      "remaining": [
+        "STIX核心数学与中文私有静态常规/粗体包已交付，Windows原生和Typst PDF不查系统字体；任意Unicode缺字逐节点定位、全部文字体系及替代目录仍待实现。",
+        "完整数学结构/字体属性、Office真实往返、非Windows原生、性能和长期压力仍待验收。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-25 C95有限增量已封存（candidate-95）：mathPr mathFont 受管理数学族显式谓词消费与真实回退诊断已验证，声明值不虚假换字体；run 字体分支谓词保持原样。宿主字体真实换入、换入后几何与完整字体属性仍欠。"
+      ]
+    },
+    {
+      "id": "R013",
+      "group": "formula",
+      "requirement": "Editable multi-format math",
+      "workflow": "Export DOCX/PDF/EPUB → reopen",
+      "acceptance": "Native OMML, vector PDF and MathML; no raster substitution",
+      "status": "in_progress",
+      "remaining": [
+        "本机Word COM启动失败；完整OMML/MathML导出及实际Word往返待验收",
+        "内置Rust PDF公式交换文字的提取/搜索/非零范围选择、粘回DSL和千公式已实测；Typst/TeX公式语义、所有字体完全嵌入及其他平台仍待验收。",
+        "共享Rust矢量预览两种结构及槽位交互已有最终Windows证据；继续完整OMML视觉语义、旧LaTeX保真元数据阅读链路、缺字/不可排版回退诊断、任意嵌套和辅助技术/输入法，不把本次子集作为全结构认证。",
+        "文档明确intLim/naryLim的导入、DSL保真、DOCX设置输出及旧保真公式矢量阅读已有Windows证据；继续其余mathPr属性的完整视觉语义、缺省组合、跨来源不可局部表达设置及实际Word逐属性比较。完整OMML、任意嵌套/字体/辅助技术和第三批原有门槛仍未整项验收。",
+        "文档上下限本增量通过不等于完整mathPr支持：其余全局属性/字体/样式、缺省与显式关闭、任意组合、实际Word编辑和独立EPUB阅读器仍需完整验收；B3-51–54资源/正式TeX/冷态及B3-56出版原合同继续有效。",
+        "smallFrac本增量完成显示参数缩放和保存/导出子集；跨来源非局部默认设置仍报告冲突。继续其余mathPr视觉语义、完整缺省组合、任意嵌套/字体/辅助技术、实际Word应用和独立EPUB阅读器；B3-51–54及完整出版门槛保留。既有提示在显示后切换语言未重新翻译，不据本次QA截图认证动态本地化。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office非标准多文本节点运行/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12：标准单m:t运行逐字素修改已验证；非标准多文本运行仍整体编辑，任意嵌套/复杂文字整形/完整Office与跨应用认证保留。MVP优先，不扩大本轮范围。",
+        "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。",
+        "2026-10-20显式函数及可表达列对齐限定流程已验证，不再视为未实现；完整UTN28、复杂跨格/张量/Content MathML、完整源映射与Word/独立阅读器和界面原生仍开放。",
+        "2026-10-21本次mathPr三态/有效默认隔离、载体模式与旧目标保护已有证据；仍缺完整段落继承、可替换MATH字体、TeX原生OfficeMath及实际应用，不以拒绝代替可编辑支持。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。"
+      ]
+    },
+    {
+      "id": "R014",
+      "group": "developer",
+      "requirement": "Repository authoring fidelity",
+      "workflow": "Open README → edit → preview/export",
+      "acceptance": "CommonMark/GFM, relative links, diagrams, code, anchors preserved",
+      "status": "in_progress",
+      "remaining": [
+        "复杂仓库材料跨预览/导出一致性仍需回归；本批已修复PDF提示块类型、标题及原始标记，提示块嵌套列表/代码/表格等完整内容输出仍未验收",
+        "2026-10-12 普通脚注复杂块、首段／重复续段局部格式、完整阅读预览和标记折叠、Word嵌套引用拒绝及保存重启已核验；Rust2300／0／3历史忽略，最终前端原生14项／严格CSP25项，前一前端同Rust完整原生65项分别冻结。全部复杂脚注／节／尾注、全出版与OMML、实际Office／独立阅读器、长期压力、非Windows及B3-51–57原门槛继续保留。"
+      ]
+    },
+    {
+      "id": "R015",
+      "group": "developer",
+      "requirement": "Workspace checks and refactors",
+      "workflow": "Search → repair/rename → review → apply",
+      "acceptance": "Link completion, search/replace and reference updates use guarded transactions",
+      "status": "in_progress",
+      "remaining": [
+        "Windows 受支持资料夹的多文件重命名、引用预览、修订保护、保守回滚与新进程恢复已有真实文件／HTTP／正式 CSP headless 限定证据；真实桌面多窗口、断电／实际磁盘满、完整权限及无强身份文件系统仍待验。",
+        "当前只覆盖明确选择范围内 .md/.markdown/.mdown 的同目录同扩展名操作；其他文档语法、跨目录／跨卷、非 Windows 等价租约及完整工作区跨格式流程继续待办，外部进程最终快照后新增非参与引用不受组租约约束。"
+      ]
+    },
+    {
+      "id": "R016",
+      "group": "developer",
+      "requirement": "OpenAPI document synchronization",
+      "workflow": "Import3.0/3.1 → generate → change spec → update",
+      "acceptance": "Source mapping and differences; no duplicate sections",
+      "status": "in_progress",
+      "remaining": [
+        "Windows桌面、真实VS Code及MCP生成/更新、源映射、撤销保存和冲突拒绝已验证；完整字段投影、多文件引用诊断与全平台/全语言人工验收尚未完成"
+      ]
+    },
+    {
+      "id": "R017",
+      "group": "developer",
+      "requirement": "Explicit code execution",
+      "workflow": "Choose runtime/cwd → run/cancel → insert result",
+      "acceptance": "No execution on open; timeout/resources/undo enforced",
+      "status": "in_progress",
+      "remaining": [
+        "检查现有运行环境/目录/超时/取消行为，补齐结果插入的一次撤销及平台原生测试"
+      ]
+    },
+    {
+      "id": "R018",
+      "group": "developer",
+      "requirement": "Shared VS Code and MCP services",
+      "workflow": "Invoke diagnostic/math/export/patch from integrations",
+      "acceptance": "Same Rust implementations, workspace permissions and revision checks",
+      "status": "in_progress",
+      "remaining": [
+        "MCP35工具和OpenAPI真实VS Code原生链路已通过；其余新能力、扩展全46语言及全平台同步覆盖仍待补齐",
+        "2026-10-20显式函数及可表达列对齐限定流程已验证，不再视为未实现；完整UTN28、复杂跨格/张量/Content MathML、完整源映射与Word/独立阅读器和界面原生仍开放。",
+        "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。",
+        "2026-10-21本次源参数、原生清除保护和11条保存重启链已限定验证；完整I10、Extension Host和全部原生界面/故障矩阵继续保留。",
+        "2026-10-24 C73有限stdio/HTTP链路不再视为仅路由存在；完整I10、MCP取消/任务反馈、锁等待及跨传输故障、Extension Host、其它平台继续未验收。"
+      ]
+    },
+    {
+      "id": "R019",
+      "group": "office",
+      "requirement": "Visual tables",
+      "workflow": "Select cell → edit/resize/sort → paste CSV/TSV → export",
+      "acceptance": "Row/column alignment and values preserved; necessary extensions explicit",
+      "status": "in_progress",
+      "remaining": [
+        "可视单元格、行列、排序、CSV/TSV及扩展属性保存重开完整实测"
+      ]
+    },
+    {
+      "id": "R020",
+      "group": "office",
+      "requirement": "Office templates and presentation",
+      "workflow": "Create minutes/report → export Word/PDF/presentation",
+      "acceptance": "Usable rich templates and matching output",
+      "status": "in_progress",
+      "remaining": [
+        "会议/周报/项目报告模板、Word/PDF/演讲完整工作流"
+      ]
+    },
+    {
+      "id": "R021",
+      "group": "office",
+      "requirement": "Real-time collaboration",
+      "workflow": "Host → join → type → disconnect/reconnect",
+      "acceptance": "Yrs protocol convergence, cursor awareness, local undo and offline queue",
+      "status": "in_progress",
+      "remaining": [
+        "Windows原生桌面和浏览器来宾双向同步、个人撤销、进程重启和离线恢复已通过；多原生客户端、系统剪贴板/物理IME、长文性能和长期容量仍待验收"
+      ]
+    },
+    {
+      "id": "R022",
+      "group": "office",
+      "requirement": "Collaboration permissions and review",
+      "workflow": "Invite viewer/reviewer/editor → comment/suggest → accept/revoke",
+      "acceptance": "Server enforced roles; no arbitrary host filesystem access",
+      "status": "in_progress",
+      "remaining": [
+        "全角色、权限变更、评论/建议、授权附件的原生及对抗验收"
+      ]
+    },
+    {
+      "id": "R023",
+      "group": "office",
+      "requirement": "Durable self-hosted sessions",
+      "workflow": "Start server → edit → restart → restore",
+      "acceptance": "Durable acknowledgements, snapshots, backup/upgrade; HTTPS public deployment",
+      "status": "in_progress",
+      "remaining": [
+        "Windows持久化、备份恢复、桌面自动绑定及稳定局域网端口已验证；公网HTTPS、跨版本升级、长期运行和其他平台仍待验收"
+      ]
+    },
+    {
+      "id": "R024",
+      "group": "office",
+      "requirement": "Structural collaboration conflicts",
+      "workflow": "Concurrently edit formula/table → merge/review",
+      "acceptance": "Relative anchors and node revisions; both authors' work recoverable",
+      "status": "in_progress",
+      "remaining": [
+        "非重叠建议相对位置已实现；通用公式/表格等结构节点修订与重叠冲突审阅仍需补齐"
+      ]
+    },
+    {
+      "id": "R025",
+      "group": "academic",
+      "requirement": "Publication metadata and profiles",
+      "workflow": "Set authors/abstract → choose profile → customize/save",
+      "acceptance": "Body/citations/numbering/layout separated; five fully editable profiles",
+      "status": "in_progress",
+      "remaining": [
+        "共享作者/机构/基金/书籍模型、结构化编辑、稀疏覆盖和跨格式元信息已实现并取得本轮证据；继续丰富材料下全部预设参数组合、机构模板、兼容矩阵、复杂分节/局部覆盖及真实应用互操作。",
+        "现有5类书籍、5类学术、3类通用预设有各自历史证据；本轮结构化自定义预设验收不等于重新认证全部13预设的每个参数组合。",
+        "2026-10-18已修复EPUB缺省字号/行距物化及零边距回退；8组最终原生、6实际EPUBCheck、语言与预设持久化通过。剩余全部预设参数矩阵、字体子集、长章策略、版本化继承迁移及完整独立阅读器互操作。",
+        "2026-10-20本轮可携带引用回流、编号和注释模型已限定实测；Word实际编辑／字段更新、完整CSL、复杂默认脚注布局、子图续题、全部出版参数及跨应用仍欠。",
+        "2026-10-21可表达的DOCX当前编号和独立注释参数已完成本次源持久往返；真正不同逐节策略、任意混合行内字号、完整页面几何和实际Word更新仍需实现/验收，未支持输入保持明确诊断与原件。",
+        "2026-10-21逐节footnote位置已限定完成；下一增量为作者行内size/sizeCs独立模型及全部消费者、其他逐节note参数，随后完整页面几何和实际应用。"
+      ]
+    },
+    {
+      "id": "R026",
+      "group": "academic",
+      "requirement": "CSL bibliography",
+      "workflow": "Load BibTeX/CSL JSON → cite → change CSL",
+      "acceptance": "Hayagriva formats locator/multi-citation; missing metadata diagnosed",
+      "status": "in_progress",
+      "remaining": [
+        "源解析、缺项定位、作者模式、富格式及21份固定独立原始用例已取得限定证据；可选cs:intext作者布局已实现并通过实际API，继续完整CSL标准和其他扩展矩阵。",
+        "多配对、嵌套、附加多段display已补共享实现及库测试；本轮跨格式原生验证仍被XeLaTeX实际编译失败阻断，继续完整目标格式布局和可编辑语义验收。",
+        "Light：DOCX/Typst/静态TeX当前明确拒绝，RustPDF有明确损失告警；HTML/EPUB CSS300不证明实际Light字面。继续真实字体/字重与全字符体系验收。",
+        "混合foot/end及逐节beneathText/pageBottom本次实际保存重开通过；继续任意作者行内字号、所有复杂分页/图像注释、其他逐节参数和真实Word返回。",
+        "可携带可编辑引用来源回流已有程序级证据；继续真实Word打开修改保存、完整独立EPUB阅读器、其他平台、人工语言审校、正式TeX包和受控冷态。",
+        "2026-10-20本轮可携带引用回流、编号和注释模型已限定实测；Word实际编辑／字段更新、完整CSL、复杂默认脚注布局、子图续题、全部出版参数及跨应用仍欠。",
+        "2026-10-24 C84有限证据已封存：C84 finite signed complete-family Normal authored-note citation recovery with uniform author axes and exact parsed CSL affixes, current locator/template, eight literal fallback inputs; arbitrary CSL remains open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
+        "2026-10-24 C90有限增量已封存：C90 regression only: finite signed authored citation recovery and current author/template styles, 22 checks/18 outputs/95 tools/24 independent checks; no arbitrary CSL or Word application certification. 以docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md为最新有限范围；本段替代Rust PDF显示编号未实现的旧结论，整项余条件不变。"
+      ]
+    },
+    {
+      "id": "R027",
+      "group": "academic",
+      "requirement": "Cross references",
+      "workflow": "Label/reorder figures/tables/math/headings → export",
+      "acceptance": "Stable identifiers, numbering, DOCX fields/bookmarks and PDF links",
+      "status": "in_progress",
+      "remaining": [
+        "可表达DOCX编号/题注参数和当前原生修改已完成本次源持久往返；自动标题REF仅保留当前可见链接与诊断。真实Word字段更新、完整嵌套、子图/续题与全部位置组合继续开放。"
+      ]
+    },
+    {
+      "id": "R028",
+      "group": "academic",
+      "requirement": "Complete editable document styles",
+      "workflow": "Adjust page/sections/fonts/paragraphs/notes/header/footer → export",
+      "acceptance": "All profile fields actually affect DOCX and academic PDF",
+      "status": "in_progress",
+      "remaining": [
+        "顶层段落/标题/公式/题注的局部属性已实现；任意节、尾注、嵌套容器与全部字体/段落/题注属性仍待完成。",
+        "Windows真实DOCX包/Typst分页已有证据，实际Word启动超时；WPS/LibreOffice、其他平台、完整压力/故障矩阵仍未验收。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 普通脚注复杂块、首段／重复续段局部格式、完整阅读预览和标记折叠、Word嵌套引用拒绝及保存重启已核验；Rust2300／0／3历史忽略，最终前端原生14项／严格CSP25项，前一前端同Rust完整原生65项分别冻结。全部复杂脚注／节／尾注、全出版与OMML、实际Office／独立阅读器、长期压力、非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 文末尾注三格式输出、预设重开和高DPI电子书导航已有证据；每节尾注／完整出版及DOCX注释导入、真实Office／独立阅读器与完整B3-51–57继续保留。MVP优先，不因此等待其他批次。",
+        "2026-10-18普通文字基线限定DOCX/RustPDF/Reader已通过8组原生、6DOCX/3PDF和保存重启；冷排版公式保护已修。Typst水平TrueType普通段落非零基线已于C73有限验证；TeX/HTML/EPUB基线未开放；其余stories、伸缩/边框底纹/通用tab、真实Word版式和完整参数矩阵仍欠。",
+        "2026-10-20文档级编号与本轮四条stdio已限定验证；完整界面、事务／保存故障和全I10工具矩阵继续保留。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。",
+        "2026-10-24 C84有限证据已封存：C84 current note-template and author-size preservation across two native generations plus HTML/EPUB and same-engine PDF controls. Rust PDF raw note IDs/display numbering remain unimplemented; no full style certification. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
+        "2026-10-24 C90有限增量已封存：C90 finite Rust PDF continuous first-use note display, 5 formats/start7, true superscripts and exact per-reference GoTo; 20 checks/15 outputs/43 tools/24 independent checks, two native generations and 3 normal new PIDs. Full P06/P07 and all publication parameters remain open. 以docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md为最新有限范围；本段替代Rust PDF显示编号未实现的旧结论，整项余条件不变。",
+        "2026-10-25 C96有限增量已封存（candidate-96）：P04\"边框底纹\"最小子项完成——ordinary 段落 shading.fill 与四边 border 到 DOCX 原生 pBdr/shd（CT_PPrBase 元素序、1/8pt 取整）与 core PDF 真实绘制几何（背景先于文本、spacePt 偏移、跨页分段），typst/tex/epub/html/reader/preview 显式拒绝且旧目标字节逐字节保护，46 locale 键已登记（en/zh-CN 准确、44 英文兜底，语义审校沿账本另账）；全局预设入口、其余 stories 与格式的真实装饰输出、Word/WPS/LibreOffice 实际渲染与两引擎视觉一致认证仍欠，P04 整项未完成。"
+      ]
+    },
+    {
+      "id": "R029",
+      "group": "academic",
+      "requirement": "Actual-engine export preview",
+      "workflow": "Preview → export → compare",
+      "acceptance": "Preview uses selected final renderer, not separate HTML layout",
+      "status": "in_progress",
+      "remaining": [
+        "Word共享投影已解除Office/TeX依赖并明确引擎；实际Word/WPS/LibreOffice版式与往返仍待验收。",
+        "数学/中文私有字体已交付；完整出版参数、任意嵌套局部版式/源映射、其他文字体系缺字处理、TeX正式服务已接入受管理包；完整TeX分发与非Windows原生仍待完成。",
+        "通用 Rust PDF 仍可能用未嵌入的 Base14 Helvetica/Helvetica-Bold 绘制可见拉丁字母、数字和标点，包括元信息正文及标题，并非仅页码或空白。2026-10-16 独立检查 Metadata-Paper PDF（SHA256 32900d34176817812242cd4420dd94cfc3f216841f97799187a8249a9d68d414）确认两字体的可见字母像素及 FontFile 缺失，证据 .cache/capability-upgrade/publication-structure-inputs-20261015/p15-owned-font-draft-20261016/base14-visible-letters-first.json（SHA256 3c469cdc983f3ea96a92e141575dffa5e23aab163ca46fc21fee40328617d837）。须统一受影响文字的便携字体选择、测量、编码及嵌入注册；既有 CJK/DejaVu 与数学矢量证据不覆盖这些 Base14 runs。保留已通过的元信息内容/布局子项，完整字体、复杂脚本、tagged PDF 及 R029 仍未完成。",
+        "B3-52当前Windows证据已覆盖Typst/OCR实际进程/MCP和持久暂存、旧OCR兼容、创建五边界、预留预算与公平恢复及4客户端并发；仍须首条持久头前无归属标记的处置、完整启动/任务审阅引用、TeX暂存/AppContainer配置/DOS映射、全部引擎/桌面/MCP/VS Code传输、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office多字符/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 普通脚注复杂块、首段／重复续段局部格式、完整阅读预览和标记折叠、Word嵌套引用拒绝及保存重启已核验；Rust2300／0／3历史忽略，最终前端原生14项／严格CSP25项，前一前端同Rust完整原生65项分别冻结。全部复杂脚注／节／尾注、全出版与OMML、实际Office／独立阅读器、长期压力、非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 文末尾注三格式输出、预设重开和高DPI电子书导航已有证据；每节尾注／完整出版及DOCX注释导入、真实Office／独立阅读器与完整B3-51–57继续保留。MVP优先，不因此等待其他批次。",
+        "2026-10-18普通文字基线限定DOCX/RustPDF/Reader已通过8组原生、6DOCX/3PDF和保存重启；冷排版公式保护已修。Typst水平TrueType普通段落非零基线已于C73有限验证；TeX/HTML/EPUB基线未开放；其余stories、伸缩/边框底纹/通用tab、真实Word版式和完整参数矩阵仍欠。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。",
+        "2026-10-24 C84有限证据已封存：C84 actual preview resource-wait cancellation/deadline and fresh-owner engine recovery. Interactive pagination, DOCX application layout and every preview stage remain independently open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。"
+      ]
+    },
+    {
+      "id": "R030",
+      "group": "academic",
+      "requirement": "Offline LaTeX templates",
+      "workflow": "Import template → edit parameters → compile → locate error",
+      "acceptance": "XeLaTeX/pdfLaTeX, locked resources, no default shell escape or online fetch",
+      "status": "in_progress",
+      "remaining": [
+        "Windows正式预览、导出、MCP已共用受管理TeX及OS隔离服务，不搜索系统PATH；完整未发布QA包的11个原生流程及就绪探测后的9项故障检查通过。冷态全量校验仍可能超出任务预算，不能计为生产性能验收；对应源码、4缺失材料/4旧材料记录、许可证审查与正式不可变包仍未完成。",
+        "完整34822文件实际离线安装、双拥有者崩溃/取消及持久卸载已有当前QA证据；正式包修复/升级/回退、完整传输、TeX完整暂存边界及Typst/OCR完整实际崩溃矩阵仍待完成。冷态全树校验139449ms超过120秒预算；B3-53材料/许可和B3-54独立冷态性能分别通过前不得计作正式TeX交付。",
+        "任意导入模板、完整出版参数和资源映射、VS Code完整工作流、复杂故障/长期压力及非Windows原生验证仍待完成。",
+        "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。"
+      ]
+    },
+    {
+      "id": "R031",
+      "group": "academic",
+      "requirement": "Word revision review",
+      "workflow": "Import edited Word → inspect differences → accept",
+      "acceptance": "No silent replacement; unknown formatting explicitly retained/reported",
+      "status": "in_progress",
+      "remaining": [
+        "Word修订导入差异、未知格式报告和选择接受的完整UI及保存重开",
+        "2026-10-25 math run w:rPrChange 源保真与投影隔离已限定实测（candidate-95）：作者源与可读 DSL 往返原样保留 author/date，投影改写型不携带修订记录、未改写容器原文保留，native 导出替换分支剥离、保留分支恢复原文；Word 修订导入差异报告、未知格式报告、接受/拒绝完整 UI、保存重开与真实 Word 审阅互操作仍欠。"
+      ]
+    },
+    {
+      "id": "R032",
+      "group": "conversion",
+      "requirement": "Every current conversion format",
+      "workflow": "Real fixture → convert → inspect/save/reopen",
+      "acceptance": "Content/structure/loss report for every supported extension",
+      "status": "in_progress",
+      "remaining": [
+        "现有全部格式的真实复杂材料覆盖及明确保留/损失报告",
+        "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。"
+      ]
+    },
+    {
+      "id": "R033",
+      "group": "conversion",
+      "requirement": "Batch conversion lifecycle",
+      "workflow": "Collect/deduplicate → cancel/retry → save",
+      "acceptance": "No source directory pollution; uniform output names",
+      "status": "in_progress",
+      "remaining": [
+        "逐项验证去重、取消、重试、命名及输入目录无污染"
+      ]
+    },
+    {
+      "id": "R034",
+      "group": "conversion",
+      "requirement": "Native PDF objects and UI",
+      "workflow": "Open PDF → hit text/image → edit → save → reopen",
+      "acceptance": "PDFium rendering/object edits/annotations/forms/pages; unedited regions preserved",
+      "status": "in_progress",
+      "remaining": [
+        "Windows原生文字/图片、文本批注、基础表单、旋转删除、保存撤销与重启草稿已走通；嵌套XObject、全部表单和页面管理、扫描区域及完整平台验收仍待完成"
+      ]
+    },
+    {
+      "id": "R035",
+      "group": "conversion",
+      "requirement": "PDF preservation and preflight",
+      "workflow": "Edit fonts/overflow/encrypted/signed PDF",
+      "acceptance": "Clear behavior before commit; source recoverable; final output remains PDF",
+      "status": "in_progress",
+      "remaining": [
+        "未修改页、文本区域、中文字体、AES-256分项权限、跨解析器批注、锁文件、外部冲突和历史已验证；有效数字签名样本、复杂PDF完整性及更多生产材料待覆盖"
+      ]
+    },
+    {
+      "id": "R036",
+      "group": "conversion",
+      "requirement": "Scanned PDF regional editing",
+      "workflow": "OCR region → compare original → correct → save PDF",
+      "acceptance": "Regional scan edit distinguished from native text; no whole-page raster replacement",
+      "status": "pending",
+      "remaining": [
+        "扫描PDF区域OCR、原图定位校订与可区分的扫描图像修改尚未实现"
+      ]
+    },
+    {
+      "id": "R037",
+      "group": "conversion",
+      "requirement": "Media selection and timestamps",
+      "workflow": "Select time/track → transcribe → navigate/export SRT/VTT",
+      "acceptance": "Original time offset preserved; decode only selected interval",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27 媒体总时长及行首时间戳显示的有限修复已测；选段原始时间偏移、跨平台受管引擎、字幕及长任务仍待完整实现。",
+        "起止时间、轨道、原始偏移字幕、摘要和回放定位完整流程"
+      ]
+    },
+    {
+      "id": "R038",
+      "group": "conversion",
+      "requirement": "Long local media tasks",
+      "workflow": "Install ASR pack → segment → cancel/resume",
+      "acceptance": "FFmpeg+whisper.cpp, bounded concurrency and deduplicated cache",
+      "status": "in_progress",
+      "remaining": [
+        "whisper.cpp锁定本地包、长媒体分段/续作/去重及取消实测"
+      ]
+    },
+    {
+      "id": "R039",
+      "group": "ai",
+      "requirement": "Uniform reviewed AI edits",
+      "workflow": "Select paragraph/chapter/docs → suggest → diff → accept/undo",
+      "acceptance": "Numbers/citations/math/code/links protected; no stale writes",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：普通正文的多轮工具修改与既有逐块审阅共用Rust服务，输入/后台回执并发及补全撤销队列修复；实际指定模型HTTP400，真实长文和多模态成功仍未验。",
+        "普通正文单文档逐块审阅和真实AI闭环已通过；跨章节/多文档修改、数字/公式/引用语义保护、复杂结构与全部服务商实测仍需完成。"
+      ]
+    },
+    {
+      "id": "R040",
+      "group": "ai",
+      "requirement": "Fast streaming completion",
+      "workflow": "Type/IME → stream → Tab/Esc",
+      "acceptance": "Task-specific model, short context, merge/cancel/stale handling",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：正式CSP实际流式补全、Esc、Tab、真实CtrlZ、手输丢弃灰字及输入法事件通过；使用受控SSE，非本轮实际模型速度/质量认证。",
+        "原生流式/Tab/撤销已有证据；全模型速度路由、输入法、过期和长文性能验收"
+      ]
+    },
+    {
+      "id": "R041",
+      "group": "ai",
+      "requirement": "Public protocol integrations",
+      "workflow": "Fetch models → stream request → handle failure",
+      "acceptance": "OpenAI/Anthropic/Gemini/local services with proxies, pagination and limits",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：OpenAI兼容/Anthropic/Gemini流式工具组装、签名及错误边界契约通过；仅受控实际SSE链路，不代表所有公开服务商认证。",
+        "所有公开协议的代理、分页、限流、取消、半途断流和本地服务真实验收"
+      ]
+    },
+    {
+      "id": "R042",
+      "group": "ai",
+      "requirement": "Authorized AI content interchange",
+      "workflow": "Import shared conversation/file → process → review",
+      "acceptance": "Public interfaces/share links/MCP; no private-cookie dependency",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：readmd_ai_task与readmd_export_snapshot复用Rust服务和四项工具；真实stdio三个进程7项通过，无配置回显、无暗中保存原文件；完整Extension Host及外部网站仍待验。",
+        "新增审阅MCP工具已复用同一Rust服务并完成真实stdio；授权分享链接、文件交接、外部AI应用及完整VS Code Extension Host对接仍需验收。"
+      ]
+    },
+    {
+      "id": "R043",
+      "group": "ai",
+      "requirement": "Real Antigravity validation",
+      "workflow": "Real model success/completion/long text/vision",
+      "acceptance": "Configured actual available models tested; secrets absent from reports",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批真实模型：模型发现成功，指定模型的最小聊天/旧桥/多轮任务均失败；上游HTTP400并明确报告使用地区不受支持。连接恢复前，长文、多模态及新的多轮成功保持待验，不以受控SSE代替。",
+        "真实基础对话/文档动作/补全已测；长文及多模态识别、故障矩阵待测"
+      ]
+    },
+    {
+      "id": "R044",
+      "group": "learning",
+      "requirement": "Assignment-to-PDF",
+      "workflow": "Original homework → AI layout suggestions → validate → PDF",
+      "acceptance": "Original answer protected, formula/citation/page checks passed",
+      "status": "in_progress",
+      "remaining": [
+        "排版要求→AI审阅→公式/引用/分页检查→高规格PDF原生工作流"
+      ]
+    },
+    {
+      "id": "R045",
+      "group": "learning",
+      "requirement": "Teaching variants and mind notes",
+      "workflow": "Lecture → presentation/exercises/answer-hidden version",
+      "acceptance": "Explicit answer blocks and editable diagrams; links/graph shared",
+      "status": "in_progress",
+      "remaining": [
+        "同一讲义的答案版本规则、练习/演讲及可编辑思维图完整流程"
+      ]
+    },
+    {
+      "id": "R046",
+      "group": "learning",
+      "requirement": "Long manuscript management",
+      "workflow": "Reorder chapters → search/book-check → export",
+      "acceptance": "Chapter loading, terminology/characters, reading state and publication",
+      "status": "pending",
+      "remaining": [
+        "章节管理、分章加载、全书一致性/搜索/排序及三格式出版完整流程"
+      ]
+    },
+    {
+      "id": "R047",
+      "group": "learning",
+      "requirement": "Handwriting-to-book workflow",
+      "workflow": "Scan → OCR/vision → aligned review → edit → chapters → EPUB",
+      "acceptance": "Source image anchors, confidence/review, author controls story/spelling",
+      "status": "pending",
+      "remaining": [
+        "原图区域定位、OCR/多模态校订、AI审稿确认及手稿→书稿→电子书完整流程"
+      ]
+    },
+    {
+      "id": "R048",
+      "group": "learning",
+      "requirement": "Validated EPUB",
+      "workflow": "Cover/metadata/navigation/images/math/notes → validate/read",
+      "acceptance": "Validator and actual reader evidence; no broken package links",
+      "status": "in_progress",
+      "remaining": [
+        "真实EPUB导航/封面/元数据/脚注/MathML及官方EPUBCheck八份验证已通过；独立阅读器与全部出版材料矩阵仍待完成",
+        "2026-10-12 普通脚注复杂块、首段／重复续段局部格式、完整阅读预览和标记折叠、Word嵌套引用拒绝及保存重启已核验；Rust2300／0／3历史忽略，最终前端原生14项／严格CSP25项，前一前端同Rust完整原生65项分别冻结。全部复杂脚注／节／尾注、全出版与OMML、实际Office／独立阅读器、长期压力、非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 文末尾注三格式输出、预设重开和高DPI电子书导航已有证据；每节尾注／完整出版及DOCX注释导入、真实Office／独立阅读器与完整B3-51–57继续保留。MVP优先，不因此等待其他批次。",
+        "2026-10-18已修复EPUB缺省字号/行距物化及零边距回退；8组最终原生、6实际EPUBCheck、语言与预设持久化通过。剩余全部预设参数矩阵、字体子集、长章策略、版本化继承迁移及完整独立阅读器互操作。"
+      ]
+    },
+    {
+      "id": "R049",
+      "group": "creative",
+      "requirement": "Reader and notepad lifecycle",
+      "workflow": "Close/reopen app → resume tabs or home → new note/save",
+      "acceptance": "No project requirement or unnecessary quit prompt",
+      "status": "in_progress",
+      "remaining": [
+        "快速打开和会话恢复现有路径的全原生回归、阅读位置和资源预算验收"
+      ]
+    },
+    {
+      "id": "R050",
+      "group": "creative",
+      "requirement": "Pressure drawing and layers",
+      "workflow": "Pen → brush/stabilize → layers/select/fill/mix/erase → undo",
+      "acceptance": "Pressure/tilt host bridge, real draw tools and 60fps reference target",
+      "status": "pending",
+      "remaining": [
+        "压感/倾斜/防抖/笔刷/橡皮/图层/选区/混合的文档内绘画尚未实现"
+      ]
+    },
+    {
+      "id": "R051",
+      "group": "creative",
+      "requirement": "Editable SVG drawing persistence",
+      "workflow": "Draw → save → reopen/edit → PNG/PDF",
+      "acceptance": "Single owned SVG with metadata; drafts do not create adjacent files",
+      "status": "pending",
+      "remaining": [
+        "可编辑SVG、PNG/PDF输出和保存前无旁文件的完整绘画持久化尚未实现"
+      ]
+    },
+    {
+      "id": "R052",
+      "group": "creative",
+      "requirement": "Shared ink for PDF and illustrations",
+      "workflow": "Use same pen tools in PDF and drawing",
+      "acceptance": "Shared Rust brush/input behavior rather than divergent implementations",
+      "status": "pending",
+      "remaining": [
+        "PDF手写与文档插图共用Rust笔刷/输入桥接尚未实现"
+      ]
+    },
+    {
+      "id": "R053",
+      "group": "acceptance",
+      "requirement": "Full automated and native regression",
+      "workflow": "Run all Rust/UI/integration/checks → actual release host",
+      "acceptance": "No new skipped/flaky reliance; formal CSP and native filesystem",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：本批完整Rust4065/0/3既有忽略、前端工具1423/0/0、真实CSP页面19项及stdio7项；原生GUI/外部应用/其它平台/长期不认证。",
+        "本轮限定P01/P07与实际引擎/布局/MCP、完整Rust库及仓库检查有冻结证据；完整前端全部场景、锁文件/真实磁盘满/全部故障/八小时混合压力仍待验收。",
+        "继续46语言人工语义审校、真实Word/独立阅读器、全部原生平台、完整OMML/出版参数、响应式数学和长期性能门槛。",
+        "2026-10-24 C73有限回归及79份真实输出与有界归档回读已通过；前置字体/缓存key期限取消、全部故障、真实磁盘满、八小时、实际外部应用、全I10及其它平台原门槛仍开放。",
+        "2026-10-24 C84有限证据已封存：C84 locked-offline Rust 3841/0/3 existing ignores, frontend 1202/0/0 and six gates; finite actual publication/Windows fault chains, immutable archive readback. No GUI/release-host or full platform acceptance. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
+        "2026-10-24 C90有限增量已封存：C90-source locked/offline Rust3853/0/3 existing ignores, frontend1214/0/0, Python30 controls, six gates; two actual CLI/MCP lanes and immutable archive-only readback. No GUI, release host, all faults, eight-hour or other-platform certification. 以docs/reviews/readmd-v005-batch3-rust-note-numbering-2026-10-24.md为最新有限范围；本段替代Rust PDF显示编号未实现的旧结论，整项余条件不变。"
+      ]
+    },
+    {
+      "id": "R054",
+      "group": "acceptance",
+      "requirement": "All formal desktop platforms",
+      "workflow": "Install/launch/open/edit/export/offline on platform matrix",
+      "acceptance": "Native evidence per platform; cross compilation insufficient",
+      "status": "pending",
+      "remaining": [
+        "用户确认仅有Windows电脑；macOS/Linux/国产Linux原生运行环境缺失，不能以交叉编译认证"
+      ]
+    },
+    {
+      "id": "R055",
+      "group": "acceptance",
+      "requirement": "Stress, faults and 8-hour soak",
+      "workflow": "Huge corpus +3/10/50 peers +disk/network/process faults",
+      "acceptance": "No lost acknowledged content, crashes or unbounded resource growth",
+      "status": "in_progress",
+      "remaining": [
+        "已有并发3/10/50内核测试；千页PDF/小时媒体/百万字、平台性能基线及8小时混合操作尚未验收",
+        "B3-52当前Windows证据已覆盖Typst/OCR实际进程/MCP和持久暂存、旧OCR兼容、创建五边界、预留预算与公平恢复及4客户端并发；仍须首条持久头前无归属标记的处置、完整启动/任务审阅引用、TeX暂存/AppContainer配置/DOS映射、全部引擎/桌面/MCP/VS Code传输、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。",
+        "2026-10-24 C84有限证据已封存：C84 five actual Windows resource-lock fault cases, cumulative no-engine observation, old-target protection and three new-owner actual PDFs; cross-transport worker owners, remaining faults, ENOSPC and eight hours remain open. 见docs/reviews/readmd-v005-batch3-resource-budget-citation-2026-10-24.md；整项验收条件和其它欠项保持。",
+        "2026-10-25 跨传输拥有者矩阵（candidate-94）保持阻塞：capability_packs/space.rs capacity()（:61-72）对 421 字符深长 pack_root 在 readmd.exe 进程内 GetDiskFreeSpaceExW 失败 0x80070003 → 422 space_query，runid-05/06 双重复现，嵌入完整 manifest 的独立探针成功排除 SxS 假设；四阶段 harness、C# 观察器窄扩、node 20 项/python 10 项独立控制、--plan 与定向 Rust 测试已真实验证，矩阵 busy/取消/崩溃收尾/善后卸载阶段未测即未证。space.rs 加 \\\\?\\ 前缀规范化修复落盘并重建门禁后，可用现有候选冻结直接重跑（needs_code_change=true，首败原样保留）。"
+      ]
+    },
+    {
+      "id": "R056",
+      "group": "acceptance",
+      "requirement": "Rich private-safe 4K incremental demos",
+      "workflow": "Record each accepted addition on dedicated materials",
+      "acceptance": "4K actual operations; no user paths/notifications/system windows",
+      "status": "pending",
+      "remaining": [
+        "丰富合成材料、纯软件4K增量录制及视频视觉审核尚未完成"
+      ]
+    },
+    {
+      "id": "R057",
+      "group": "acceptance",
+      "requirement": "Docs, packs, website and rollout",
+      "workflow": "Build offline packs → verify migration → update docs/site",
+      "acceptance": "No version bump, release or social publication until separately chosen",
+      "status": "in_progress",
+      "remaining": [
+        "官网旧、新域名下载入口已切换到V0.0.4并接通正式版本自动同步；其余离线包、迁移/恢复手册、完整证据、已验收网站内容及增量演示仍待交付；目标版本V0.0.5，尚未发布，宣传片先交剧本不制作成片"
+      ]
+    },
+    {
+      "id": "R058",
+      "group": "foundation",
+      "requirement": "Staged resources and folder-shared asset transactions",
+      "workflow": "Preview or insert → edit → save → reopen → save as",
+      "acceptance": "No adjacent files before save; deduplicated readmd-assets; copy dependencies; rollback failure; retain draft/review references",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：快照固定实际资源字节、依赖安全路径及配额，缺引擎字体只绑定缺失资源；HTML自包含、TeX不可变依赖组与原子正文提交；不等于完整另存搬迁/全局资源清理。",
+        "审阅原文/候选/操作中的图片引用已保留；隐藏原文相对图片的跨目录另存当前安全拒绝，第四批补依赖搬迁。HTML图片、移动/打包与引用安全清理、集中暂存容量/过期策略仍需完成。",
+        "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。",
+        "2026-10-20任务退役五边界和未知/替换保护已实际验证；完整首归属、OS资源API到确认窗口、持久审阅、远程卷、磁盘满/硬配额及长期仍欠。"
+      ]
+    },
+    {
+      "id": "R059",
+      "group": "math",
+      "requirement": "Readable versioned Math DSL round-trip",
+      "workflow": "Insert slots → source DSL → compile OMML → edit → reopen",
+      "acceptance": "Block readmd-math v1 and inline :math[]; natural syntax; comments/UTF-16 mapping; all standard Office semantics readable",
+      "status": "in_progress",
+      "remaining": [
+        "可读DSL、19类核心结构、局部源范围改写、可读空槽、属性、HTTP/MCP及多格式输出已有证据；标准粒子/12枚举校验不等于133元素任意嵌套视觉认证",
+        "获支持标准语义使用可读 DSL，仅未知扩展进入 v2 最小载荷；限定叶节点编辑及旧公式迁移保留扩展，失配进入受保护恢复。全部标准属性、任意内部注释/结构转换、未映射 Markdown 容器、Word关联内容和真实应用往返继续开放；未知扩展不认证可编辑或等价呈现。",
+        "第二批独立草稿/集中恢复保留；立即键盘撤销及迟到清理焦点问题已修复。任意内部注释格式、全部结构补全/缺字替代、辅助技术和复杂恢复组合继续验收",
+        "共享Rust矢量预览两种结构及槽位交互已有最终Windows证据；继续完整OMML视觉语义、旧LaTeX保真元数据阅读链路、缺字/不可排版回退诊断、任意嵌套和辅助技术/输入法，不把本次子集作为全结构认证。",
+        "文档明确intLim/naryLim的导入、DSL保真、DOCX设置输出及旧保真公式矢量阅读已有Windows证据；继续其余mathPr属性的完整视觉语义、缺省组合、跨来源不可局部表达设置及实际Word逐属性比较。完整OMML、任意嵌套/字体/辅助技术和第三批原有门槛仍未整项验收。",
+        "文档上下限本增量通过不等于完整mathPr支持：其余全局属性/字体/样式、缺省与显式关闭、任意组合、实际Word编辑和独立EPUB阅读器仍需完整验收；B3-51–54资源/正式TeX/冷态及B3-56出版原合同继续有效。",
+        "smallFrac本增量完成显示参数缩放和保存/导出子集；跨来源非局部默认设置仍报告冲突。继续其余mathPr视觉语义、完整缺省组合、任意嵌套/字体/辅助技术、实际Word应用和独立EPUB阅读器；B3-51–54及完整出版门槛保留。既有提示在显示后切换语言未重新翻译，不据本次QA截图认证动态本地化。",
+        "已验证最小可读主题调色板/角色映射、sRGB/system-lastClr及HSL tint/shade、Word/MathML/矢量有效颜色；视觉单一运行槽位替换保留显式格式，重复定位/撤销/保存重开及实际三格式输出有证据。继续完整字体/主题色变换/复杂文字、完整段落/修订/样式身份、原始Office非标准多文本节点运行/任意嵌套回写、辅助技术、全OMML/完整出版参数及响应式窄列。官方shade示例与明确公式不一致，实际Word颜色对照仍待验；独立EPUB阅读器/完整VS Code及B3-51–54原门槛保留。历史十条QA依赖失败已修复并另存R053证据；其他剩余要求不变。",
+        "2026-10-12字体增量已实测：主题字体/语言、Word字符槽位与同层/跨层优先级、私有常规/粗体轮廓、合成倾斜、EPUB字体/许可证及安装/移除缓存失效。真正斜体、完整复杂文字整形/字符集、缺字节点定位、字体子集、OS文件选择器、实际Word/独立阅读器仍待验；完整OMML嵌套/枚举/辅助技术、出版参数/真实分页与B3-51–54原门槛不变，第三批未完成。",
+        "2026-10-12：标准单m:t运行逐字素修改已验证；非标准多文本运行仍整体编辑，任意嵌套/复杂文字整形/完整Office与跨应用认证保留。MVP优先，不扩大本轮范围。",
+        "2026-10-12注释导入限定增量已验证；不替代全部格式/故障矩阵、全OMML/出版参数、混合脚注尾注与任意节、跨应用/长期/非Windows及B3-51–57完整要求。10条旧QA依赖门槛已在原生验证增量中消除；完整合同继续开放。"
+      ]
+    },
+    {
+      "id": "R060",
+      "group": "ux",
+      "requirement": "Two-level chrome and zen layout",
+      "workflow": "Use global left actions → document More → zen → restore",
+      "acceptance": "Reading settings and zen left; controls right; no duplicate font controls; zero reserved zen height; 44px/RTL/high DPI",
+      "status": "in_progress",
+      "remaining": [
+        "正式CSP回归及Windows中文/RTL两种窗口已有局部证据；全部长文本/触控/高DPI组合和原生禅模式全链路仍需完成"
+      ]
+    },
+    {
+      "id": "R061",
+      "group": "ux",
+      "requirement": "Engine-ready loading and presentation lifecycle",
+      "workflow": "Open PDF/print/slides → loading → actual page → cancel/retry",
+      "acceptance": "Hide stale content and hit targets until engine/decode ready; old results cannot replace new; current draft in presentation",
+      "status": "in_progress",
+      "remaining": [
+        "当前稿、加载等待、过期标识和失败重试已接通；演讲长内容分页/备注和全部PDF/打印解码、取消/重试故障矩阵仍需完成"
+      ]
+    },
+    {
+      "id": "R062",
+      "group": "ai",
+      "requirement": "Automatic source-mapped conversation target",
+      "workflow": "Select body → focus composer → request → follow-up → change selection/tab",
+      "acceptance": "No selection checkbox; stable selection identity; exact source mapping; follow-up target; workspace sources and scoped reads",
+      "status": "in_progress",
+      "remaining": [
+        "普通渲染正文精确选区、追问重定位和恢复保护已限定验证；代码/公式/表格/HTML等变形投影及复杂跨块结构仍保持只读安全上下文；工作区来源展示、完整重开对象和读写授权矩阵继续保留。"
+      ]
+    },
+    {
+      "id": "R063",
+      "group": "ai",
+      "requirement": "Shared visible-body block review engine",
+      "workflow": "AI changes body → manual takeover → save/reopen → accept/revert",
+      "acceptance": "Independent content/review revisions; baselines survive save/expiry; preserve mixed manual edits; multi-round lineage",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：编辑回执与后台审阅共用FIFO，未发送undo/redo保留顺序及发送时CAS，真实快捷键和三条红绿回归通过；结构/协作/Word审阅仍欠。",
+        "普通正文持久审阅已完成本批范围；公式/表格等结构化审阅、协作建议/Word修订回流、多轮依赖复杂接管、原生Wry及跨平台完整证据仍待完成。"
+      ]
+    },
+    {
+      "id": "R064",
+      "group": "export",
+      "requirement": "Snapshot-bound accept-all and export",
+      "workflow": "Pending changes → accept-all/export → failure/cancel/success",
+      "acceptance": "Prompt required; failure/cancel retains pending; only snapshot IDs accepted on success; later changes remain pending",
+      "status": "in_progress",
+      "remaining": [
+        "普通正文五格式及真实内核/MCP/headless流程已经通过；复杂结构与协作/Word建议组合、正式Wry/安装包、物理磁盘满与完整平台矩阵仍待验收，不能以本地限定流程宣布整项认证。"
+      ]
+    },
+    {
+      "id": "R065",
+      "group": "ai",
+      "requirement": "Native autonomous tool Harness and resumable lifecycle",
+      "workflow": "Plan/tools/check/revise → switch/close/tray/quit → resume",
+      "acceptance": "Shared Rust tool registry; scoped/validated/idempotent tools; 64 rounds/30 min; checkpoint stops never reported complete",
+      "status": "in_progress",
+      "remaining": [
+        "本批原生四工具Harness和本地生命周期通过；实际指定连接返回HTTP400，真实多轮长文/补全/多模态成功仍待验。",
+        "复杂结构/跨文档/协作工具、人工接管后自动继续其它范围、原生Wry/托盘/正式安装包、Extension Host与完整平台/故障长期验收仍待完成。"
+      ]
+    },
+    {
+      "id": "R066",
+      "group": "image",
+      "requirement": "Non-destructive Rust image document and local AI tools",
+      "workflow": "Inline rotate → focused adjustments/layers/masks → candidate review → save",
+      "acceptance": "Original/operation/result separate; only current reference changes; shared manual/AI/MCP tools; color/pixel fidelity",
+      "status": "pending",
+      "remaining": [
+        "Rust图像操作栈/图层/蒙版/高级调色修饰与AI本机工具链完整接入"
+      ]
+    },
+    {
+      "id": "R067",
+      "group": "drawing",
+      "requirement": "Shared document/PDF pen and editable asset workflow",
+      "workflow": "Pressure/tilt drawing → layers/selection/blend → SVG/PNG/PDF → reopen",
+      "acceptance": "Shared Rust brush/save model; stabilizer/eraser/fill/picker; staged resources; editable layers recovered",
+      "status": "pending",
+      "remaining": [
+        "完成专业轻绘画及数位板真实证据；沿用R050压感/图层、R051可编辑SVG及R052共享笔输入验收要求"
+      ]
+    },
+    {
+      "id": "R068",
+      "group": "conversion",
+      "requirement": "Original-layout reading with explicit extraction",
+      "workflow": "Open external document → read original → extract or edit PDF → save",
+      "acceptance": "Preserve original layout until user chooses extraction; no source mutation or automatic adjacent resources",
+      "status": "pending",
+      "remaining": [
+        "统一外部文档原排版入口、能力状态及提取交互"
+      ]
+    },
+    {
+      "id": "R069",
+      "group": "academic",
+      "requirement": "Engine-specific interactive paginated publication preview",
+      "workflow": "Enable pagination → select paragraph/formula/caption → edit profile → export",
+      "acceptance": "Existing preview area; actual engine/page output; model-backed local overrides; honest DOCX layout identity",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27第二批限定结果：固定输入的实际PDF、DOCX投影和EPUB预览接入快照身份；PDF预览字节与提交产物相同、字体/引擎/图表变动不得借旧缓存；不冒充Word原生分页。",
+        "真实Typst分页、顶层段落/标题/块公式/题注点击回写、当前修订及保存重开已有Windows证据；嵌套块、纯链接块和任意复杂组合继续补齐。",
+        "Word真实分页及实际程序往返、任意节/尾注/全部出版属性、非Windows原生、干净环境与长期压力仍未验收。",
+        "2026-10-12 MVP增量已核验列表／引用段落与标题局部排版、实际分页、源结构和保存重开；公式重绘点击绑定原修订。最终62项原生、49项严格CSP、Rust2294／0／3历史忽略。完整OMML／出版参数、脚注／嵌套数学、实际Office／独立阅读器、长期压力／非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-12 普通脚注复杂块、首段／重复续段局部格式、完整阅读预览和标记折叠、Word嵌套引用拒绝及保存重启已核验；Rust2300／0／3历史忽略，最终前端原生14项／严格CSP25项，前一前端同Rust完整原生65项分别冻结。全部复杂脚注／节／尾注、全出版与OMML、实际Office／独立阅读器、长期压力、非Windows及B3-51–57原门槛继续保留。",
+        "2026-10-24 C73本轮有限显式默认相容与Typst墨迹子项已验证，以新增证据范围为准；任意Word默认/theme/完整样式、其它出版stories/TeX/HTML/EPUB基线、完整CSL与参数、实际Office/阅读器、长期故障及其它平台继续开放。"
+      ]
+    },
+    {
+      "id": "R070",
+      "group": "collaboration",
+      "requirement": "Server-authorized shared review and recovery",
+      "workflow": "AI suggestion → concurrent reviewers → permission change → restart",
+      "acceptance": "Shared review semantics; server permissions; durable operation ack; preserve both sides of structural conflicts",
+      "status": "pending",
+      "remaining": [
+        "将正文审阅引擎接入Yrs建议、多人审阅与Word回流；执行乱序/断线/重启验证"
+      ]
+    },
+    {
+      "id": "R071",
+      "group": "i18n",
+      "requirement": "Semantic localization of new workflows in 46 languages",
+      "workflow": "Use actions/errors/dynamic states/accessibility in every locale",
+      "acceptance": "Native wording, RTL/long text/high DPI; schema coverage alone does not certify translation",
+      "status": "in_progress",
+      "remaining": [
+        "2026-10-27 Kikongo 文件存在语言混用，71 项含西里尔文字仅为审查线索；46 语言语义审校仍未完成。",
+        "2026-10-27第二批限定结果：新增49词条覆盖46语言，总2929键结构一致；动态任务错误/确认/无障碍接线，两种窗口相关控件44px；完整人工语义、RTL/读屏/高DPI仍待验。",
+        "全部新增动态文案、错误及无障碍名称的46语言人工语义、RTL、长文本、读屏和高DPI仍待统一验收；本批43新词条已提供46语言翻译并通过结构检查。",
+        "本增量五个OCR错误/批处理键已提供46语言字典且结构检查通过；原生语义、RTL、长文本与无障碍仍未审校，不能计为完整本地化通过。",
+        "本轮原生截图仍观察到旧通用打开/重新加载/主题提示中英混用；继续修复全局提示并做46语言人工语义与无障碍审校，新增出版词条通过不等于全界面完成。"
+      ]
+    },
+    {
+      "id": "R072",
+      "group": "delivery",
+      "requirement": "Merged full-scope evidence and production delivery",
+      "workflow": "Complete R001–R072 → native workflows/stress → packages/docs/demos/site",
+      "acceptance": "All previous scope retained; 8h stress; performance values; native platform evidence; 4K privacy-safe demos; cleanup ledger",
+      "status": "in_progress",
+      "remaining": [
+        "八小时混合压力与全性能目标、Windows完整安装验收和其他平台原生证据、离线能力包及官网/增量演示仍需完成"
+      ]
+    },
+    {
+      "id": "R073",
+      "group": "publication",
+      "requirement": "Scientific figure production and original-data export",
+      "workflow": "Insert data/specification → select research styling → preview → export → reopen/inspect",
+      "acceptance": "Legible print dimensions and fonts, honest vector/raster identity, unchanged measurements/statistical semantics, cross-format artifacts and errors, full native platform/engine matrix",
+      "status": "in_progress",
+      "remaining": [
+        "五种统计模板与Windows混合8图输出已验证；全部引擎复杂内容、复合图缩放诊断、后端浏览器引擎快照交接、Word真实打开及其他平台仍需验收。"
+      ]
+    },
+    {
+      "id": "R074",
+      "group": "publication",
+      "requirement": "Scientific three-line tables across output formats",
+      "workflow": "Choose academic preset → customize rules → preview → export → inspect repeated headers",
+      "acceptance": "No vertical/cell grid or ornamental shading; real Word/table/PDF/EPUB/HTML rules, editable settings, multipage headers without overlap, native app/platform evidence",
+      "status": "in_progress",
+      "remaining": [
+        "Windows三线表、实际多格式输出及120行跨页表头已验证；Word真实打开、复杂跨栏合并表与各平台验收仍待完成。"
+      ]
+    },
+    {
+      "id": "R075",
+      "group": "delivery",
+      "requirement": "Contextual capability installation, informed setup preselection and portable dependency delivery",
+      "workflow": "Use unavailable feature → inspect purpose/size → download or import offline pack → real probe → resume original operation → restart/repair/uninstall",
+      "acceptance": "Light core bundled; owned immutable capability repository; platform/length/hash/license locks; no Office/Python/Node dependency for delivered workflows; preselection with sizes/purpose; cancellation and failed network recovery; complete heavy-engine and native-platform delivery without host-specific binding",
+      "status": "in_progress",
+      "remaining": [
+        "四包上下文安装、自有仓库、流式/分块安装已有Windows证据；TeX生产接线及34822文件QA安装/卸载/MCP已验证，源码许可证及正式分发、FFmpeg/whisper.cpp、无界面Vega、PlantUML和GUI宿主仍待交付。",
+        "真实重型QA容量、实际安装继续、字体跨进程保护、持久化事务及TeX双拥有者矩阵已按各自构建归档；2GiB实际极限、三引擎完整传输、完整旧清单恢复及其他引擎暂存、干净安装/升级回退/磁盘满/锁文件、安装器实际执行及非Windows原生仍待验收。",
+        "46语言完整语义审校、八小时压力和完整网络矩阵未完成。",
+        "代码块 Node/Python/R/Go/Rust/C/C++ 解释器或编译器仍有宿主查找，须明确迁移为受管理离线运行包，不能计为软件自带。",
+        "B3-52当前Windows证据增加了已持久确认的TeX AppContainer配置/精确DOS映射及短资源引用回收、真实应用重启9项和真实TeX安装/崩溃/取消/卸载8项；仍须首条持久头前及资源API成功到归属确认间无归属状态的处置、完整启动/任务审阅引用、TeX生成文件暂存、三引擎全传输/VS Code、长暂存/远程/长配置WebView2、完整历史升级、真实磁盘满/硬配额/安装峰值/跨配置卷预算、完整本地化反馈及非Windows/长期验收。34822文件真实卸载的进度、提交前取消和回滚已有Windows证据（反馈12ms）；正常全流程158846ms仍未达性能验收，其他原剩余项保留。",
+        "2026-10-20安装新增空间估算与profile串行准入（含迁移）、真实字体包取消/重复/修复已完成限定验证；跨profile同卷竞争、真实小卷磁盘满/硬配额、完整引擎故障和正式TeX材料仍开放。",
+        "2026-10-25 长路径空间查询缺陷写实：capability_packs/space.rs capacity() 对超过 MAX_PATH 的普通 pack_root 裸 Win32 三连查询失败（0x80070003 → 422 space_query，candidate-94 矩阵 runid-05/06 与 replay 双重复现），阻塞上下文安装真实矩阵与既有 23 项引擎矩阵回归；\\\\?\\ 前缀规范化修复待落盘，未修复前深长 profile 的安装准入不可用。"
+      ]
+    }
+  ]
+}
