@@ -1340,7 +1340,7 @@ async function closeAllTabs() {
       if (initialFile && epoch === documentLoadEpoch) {
         if (window.ReadMDRefactor?.busy?.()) {
           void window.ReadMDRefactor.whenIdle().then(() => openInitialFile(initialFile)).catch(() => failed());
-        } else await openInitialFile(initialFile);
+        } else await openInitialFile(initialFile, { _sessionRestoring: true, _sessionQueued: true });
       }
     } finally {
       ready = true;
@@ -1359,7 +1359,7 @@ async function closeAllTabs() {
       renderTabsBar();
     }
   }
-  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
+  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, restoring: () => !ready, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
     uncertainRename: id => Boolean(id && (confirmedRenames.has(id) ||
       // A replay conflict cannot prove the original request was rejected: its
       // ACK may have been lost before another window adopted this intent.

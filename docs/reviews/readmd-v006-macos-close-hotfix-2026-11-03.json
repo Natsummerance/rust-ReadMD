@@ -1,0 +1,76 @@
+{
+  "version": "0.0.6",
+  "scope": "macOS startup file opening, dirty editor exit and tab/window close",
+  "bootSha256": "02bde1e69c907f5f5a239b81b564135013d5350279fe0034aa818b1816a0bd18",
+  "nativeHost": "LaunchServices / Cocoa WKWebView",
+  "nativeRegression": {
+    "passed": true,
+    "phases": 3,
+    "checks": 26,
+    "reportSha256": "5a8a629a1196b03684fbc8f1e2fd83f37e0167dde50a16d87865ea046218949c"
+  },
+  "firstNativeFailure": {
+    "expected": true,
+    "failedCheck": "finder_open_waited_for_authoritative_restore",
+    "originalBootSha256": "eeff0bc985e0784885bc722b35b15d58ef290dd0114b3d931070f40570ab7397"
+  },
+  "nodeRegression": {
+    "tests": 1776,
+    "passed": 1773,
+    "failed": 0,
+    "skipped": 3,
+    "logSha256": "ca1997c9fa88c0c2b8ae1fd1e597fa0c283d8b7690e28dce7fcd37f24754652a"
+  },
+  "kernel": {
+    "sourceChanged": false,
+    "reusedReleaseTag": "V0.0.6",
+    "reusedSourceCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+    "binariesResignedDuringPackaging": true
+  },
+  "signing": "ad-hoc",
+  "appleNotarized": false,
+  "modelsRequested": false,
+  "contractLedgerChanged": false,
+  "packageVerification": {
+    "passed": true,
+    "packages": [
+      {
+        "arch": "arm64",
+        "kind": "zip",
+        "passed": true,
+        "runtime": "native ARM64",
+        "nativePhases": 2,
+        "binarySha256": "a31e11c54beb36aca66253bea1fa21bcea09aff7919325db95127ba589342699",
+        "reportSha256": "d902d1c3825a2ec936b5c69721e47b433f6e817fa824c3907d4adf05b72db5a5"
+      },
+      {
+        "arch": "arm64",
+        "kind": "dmg",
+        "passed": true,
+        "runtime": "native ARM64",
+        "nativePhases": 2,
+        "binarySha256": "a31e11c54beb36aca66253bea1fa21bcea09aff7919325db95127ba589342699",
+        "reportSha256": "b98616ef4411f730016e20ae18902edf711e789291f1842ce1184f23c67e7d4a"
+      },
+      {
+        "arch": "x64",
+        "kind": "zip",
+        "passed": true,
+        "runtime": "Rosetta x86_64 on ARM64",
+        "nativePhases": 2,
+        "binarySha256": "0378e4cab10b8113b5474e910119ed18e4d9fa18122c9522c8a8822d7255d87c",
+        "reportSha256": "68b810b8b4b8bcb978090ba986d4ea8678c660429b87a722e6f1d15baaac0ea9"
+      },
+      {
+        "arch": "x64",
+        "kind": "dmg",
+        "passed": true,
+        "runtime": "Rosetta x86_64 on ARM64",
+        "nativePhases": 2,
+        "binarySha256": "0378e4cab10b8113b5474e910119ed18e4d9fa18122c9522c8a8822d7255d87c",
+        "reportSha256": "68b810b8b4b8bcb978090ba986d4ea8678c660429b87a722e6f1d15baaac0ea9"
+      }
+    ]
+  },
+  "intelHardwareExecution": false
+}

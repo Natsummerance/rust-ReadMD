@@ -168,6 +168,23 @@ scenario('an explicit initial file is deferred until final group settlement with
   assert.equal(a.state.tabs.length, 3);
 });
 
+scenario('the initial launch file and a queued Finder file do not wait on each other', async () => {
+  const server = backend(session()), request = server.request, entered = deferred(), release = deferred();
+  server.request = async body => {
+    const captured = await request(body);
+    if (!body) { entered.resolve(); await release.promise; }
+    return captured;
+  };
+  const initial = 'C:/Synthetic/Session/Launch.md', incoming = 'C:/Synthetic/Session/Later.md';
+  let a;
+  a = await app({ server, cold: true, reader: true, deferRestore: true, initialFile: initial,
+    initialOpen: (file, options) => a.context.loadFile(file, options) });
+  await entered.promise; const opening = a.context.loadFile(incoming);
+  release.resolve(); await a.window.__readmdSessionReady; await opening;
+  assert.deepEqual(clone(a.state.tabs.map(tab => tab.path)), [A, B, initial, incoming]);
+  assert.equal(await a.window.ReadMDSession.flush(), true);
+});
+
 scenario('single/bulk/forced close and switching are fenced while a group owns the session', async () => {
   const refactor = refactorStub(), a = await app({ refactor }); refactor.setBusy(true);
   const originalTabs = [...a.state.tabs], active = a.state.activeTabId;

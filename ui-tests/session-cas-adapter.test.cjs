@@ -204,6 +204,49 @@ scenario('an interrupted native restore cannot publish a partial workspace', asy
   assert.equal(a.state.tabs[0], a.second); assert.equal(server.value.tabs.length, 2);
 });
 
+scenario('an OS file open during startup preserves restored pages and can subsequently close', async () => {
+  const server = backend(session()), request = server.request, entered = deferred(), release = deferred();
+  server.request = async body => {
+    const captured = await request(body);
+    if (!body) { entered.resolve(); await release.promise; }
+    return captured;
+  };
+  const a = await app({ server, cold: true, reader: true, deferRestore: true });
+  await entered.promise;
+  const incoming = 'C:/Synthetic/Session/Opened-from-Finder.md';
+  const opening = a.context.loadFile(incoming);
+  await turn();
+  assert.deepEqual(a.fileCalls, [], 'the incoming open must not interrupt restoration');
+  assert.equal(a.context.documentLoadEpoch, 0);
+  release.resolve();
+  await a.window.__readmdSessionReady; await opening;
+  assert.deepEqual(clone(a.state.tabs.map(tab => tab.path).sort()), [A, B, incoming].sort());
+  const opened = a.state.tabs.find(tab => tab.path === incoming);
+  await a.context.closeTab(opened.id);
+  assert.deepEqual(clone(a.state.tabs.map(tab => tab.path).sort()), [A, B].sort());
+  assert.equal(await a.window.ReadMDSession.flush(), true);
+  assert.deepEqual(server.value.tabs.map(tab => tab.path).sort(), [A, B].sort());
+});
+
+scenario('several startup file opens arrive in order without cancelling restored documents', async () => {
+  const server = backend(session()), request = server.request, entered = deferred(), release = deferred();
+  server.request = async body => {
+    const captured = await request(body);
+    if (!body) { entered.resolve(); await release.promise; }
+    return captured;
+  };
+  const a = await app({ server, cold: true, reader: true, deferRestore: true }); await entered.promise;
+  const first = 'C:/Synthetic/Session/First.md', last = 'C:/Synthetic/Session/Last.md';
+  const openings = [a.context.loadFile(first), a.context.loadFile(last)];
+  await turn(); assert.deepEqual(a.fileCalls, []);
+  release.resolve(); await Promise.all(openings);
+  assert.deepEqual(clone(a.state.tabs.map(tab => tab.path)), [A, B, first, last]);
+  assert.equal(a.context.getActiveTab().path, last);
+  assert.equal(await a.window.ReadMDSession.flush(), true);
+  await a.context.closeAllTabs(); assert.equal(a.state.tabs.length, 0);
+  assert.equal(server.value.tabs.length, 0);
+});
+
 for (const malformed of ['object', 'duplicate path', 'duplicate key', 'too many', 'invalid pending', 'invalid review']) scenario('unrestorable ' + malformed + ' never grants write eligibility', async () => {
   let value = session();
   if (malformed === 'object') value = {};

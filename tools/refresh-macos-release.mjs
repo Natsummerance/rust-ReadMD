@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {PACKAGE_NAMES,parseChecksums} from './publish-release.mjs';
+const currentTag='V'+fs.readFileSync(new URL('../VERSION',import.meta.url),'utf8').trim();
 export const MAC_NAMES=['ReadMD-macos-arm64.dmg','ReadMD-macos-arm64.zip','ReadMD-macos-x64.dmg','ReadMD-macos-x64.zip'];
 const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const same=(a,b)=>a?.id===b?.id&&a.name===b.name&&a.size===b.size&&a.digest===b.digest&&a.state==='uploaded';
@@ -17,7 +18,7 @@ export function mergedChecksums(before,replacements) {
 }
 export async function refreshMacos({before,directory,sourceCommit,tagCommit,notes,verification,request,checkpoint=()=>{}}) {
   const repo='Natsummerance/rust-ReadMD',base='repos/'+repo;
-  if(!/^[a-f\d]{40}$/.test(sourceCommit)||!/^[a-f\d]{40}$/.test(tagCommit)||!/^V0\.0\.5$/.test(before.tag_name)||before.draft||before.immutable)throw Error('Invalid existing release target');
+  if(!/^[a-f\d]{40}$/.test(sourceCommit)||!/^[a-f\d]{40}$/.test(tagCommit)||before.tag_name!==currentTag||before.draft||before.immutable)throw Error('Invalid existing release target');
   if(verification?.sourceCommit!==sourceCommit||verification.tagCommit!==tagCommit||verification.nativeWorkflow?.passed!==true||verification.signing!=='ad-hoc'||verification.notarized!==false)throw Error('Bound native verification is required');
   const names=[...MAC_NAMES,'SHA256SUMS.txt'];
   if(JSON.stringify(fs.readdirSync(directory).sort())!==JSON.stringify([...names].sort()))throw Error('Only Mac downloads and checksums may be uploaded');

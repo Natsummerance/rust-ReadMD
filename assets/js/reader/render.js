@@ -126,13 +126,19 @@ function deferSessionOperation(action, alreadyQueued) {
   return task;
 }
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
   const defer = () => deferSessionOperation(async () => {
+    if (window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
     if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
-    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true });
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring });
   }, _sessionQueued);
+  // Finder can deliver an Opened event before the saved page set has loaded.
+  // Interrupting that restore correctly revokes session-write eligibility, but
+  // then every later close is refused. Queue the new page without touching the
+  // restoration epoch; only restore's own initial-file dispatcher bypasses it.
+  if (!_sessionRestoring && window.ReadMDSession?.restoring?.()) return defer();
   if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();

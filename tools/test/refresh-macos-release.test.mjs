@@ -11,7 +11,7 @@ function fixture(t,{badUpload=false,failRenameAt=0}={}) {
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'readmd-mac-refresh-'));
   t.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
   const sourceCommit='a'.repeat(40),tagCommit='b'.repeat(40),events=[],checkpoints=[];
-  const before={id:4,tag_name:'V0.0.5',body:'Original release notes',draft:false,immutable:false,upload_url:'https://uploads.github.com/repos/Natsummerance/rust-ReadMD/releases/4/assets{?name}',assets:[...PACKAGE_NAMES,'SHA256SUMS.txt'].map((name,i)=>({id:i+1,name,state:'uploaded',size:3,digest:'sha256:'+sha('old')}))};
+  const before={id:4,tag_name:'V'+fs.readFileSync(new URL('../../VERSION',import.meta.url),'utf8').trim(),body:'Original release notes',draft:false,immutable:false,upload_url:'https://uploads.github.com/repos/Natsummerance/rust-ReadMD/releases/4/assets{?name}',assets:[...PACKAGE_NAMES,'SHA256SUMS.txt'].map((name,i)=>({id:i+1,name,state:'uploaded',size:3,digest:'sha256:'+sha('old')}))};
   const packages=MAC_NAMES.map(name=>{const bytes=Buffer.from('verified '+name);fs.writeFileSync(path.join(directory,name),bytes);return {name,size:bytes.length,sha256:sha(bytes),signatureValid:true,coldStartupPassed:true};});
   fs.writeFileSync(path.join(directory,'SHA256SUMS.txt'),mergedChecksums(before,packages));
   const verification={sourceCommit,tagCommit,nativeWorkflow:{passed:true},signing:'ad-hoc',notarized:false,packages};
@@ -43,6 +43,11 @@ test('Mac replacement stages all five verified files, preserves the original tag
   assert(f.events.every(e=>!e.route.includes('/git/')||e.method==='GET'));
   assert.deepEqual(f.checkpoints.map(j=>j.status).filter((s,i,a)=>i===0||s!==a[i-1]),['staging','replacing','verified','complete']);
   assert.equal(f.release.body,f.notes);
+});
+test('a release for another version cannot receive this version of the app',async t=>{
+  const f=fixture(t);f.before.tag_name='V0.0.1';
+  await assert.rejects(refreshMacos(f),/Invalid existing release target/);
+  assert.equal(f.events.length,0);
 });
 test('a mid-batch failure restores all original public download identities and keeps recovery candidates',async t=>{
   const f=fixture(t,{failRenameAt:5});

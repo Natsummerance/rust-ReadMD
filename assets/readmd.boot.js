@@ -3058,7 +3058,7 @@ async function closeAllTabs() {
       if (initialFile && epoch === documentLoadEpoch) {
         if (window.ReadMDRefactor?.busy?.()) {
           void window.ReadMDRefactor.whenIdle().then(() => openInitialFile(initialFile)).catch(() => failed());
-        } else await openInitialFile(initialFile);
+        } else await openInitialFile(initialFile, { _sessionRestoring: true, _sessionQueued: true });
       }
     } finally {
       ready = true;
@@ -3077,7 +3077,7 @@ async function closeAllTabs() {
       renderTabsBar();
     }
   }
-  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
+  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, restoring: () => !ready, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
     uncertainRename: id => Boolean(id && (confirmedRenames.has(id) ||
       // A replay conflict cannot prove the original request was rejected: its
       // ACK may have been lost before another window adopted this intent.
@@ -6790,13 +6790,19 @@ function deferSessionOperation(action, alreadyQueued) {
   return task;
 }
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
   const defer = () => deferSessionOperation(async () => {
+    if (window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
     if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
-    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true });
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring });
   }, _sessionQueued);
+  // Finder can deliver an Opened event before the saved page set has loaded.
+  // Interrupting that restore correctly revokes session-write eligibility, but
+  // then every later close is refused. Queue the new page without touching the
+  // restoration epoch; only restore's own initial-file dispatcher bypasses it.
+  if (!_sessionRestoring && window.ReadMDSession?.restoring?.()) return defer();
   if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
@@ -32026,10 +32032,10 @@ function syncDesktopControls() {
 /* ----------------------------------------------------------------------------------------------
    初始文件智能分流器 (Smart Initial File Dispatcher)
    ---------------------------------------------------------------------------------------------- */
-async function openInitialFile(path) {
+async function openInitialFile(path, options = {}) {
   if (!path) return;
   // Markdown 文档 -> 直接阅读器加载
-  if (MD_RE.test(path)) return loadFile(path);
+  if (MD_RE.test(path)) return loadFile(path, options);
   // 图片或 PDF 扫描件 -> 触发离线 OCR 识别
   if (IMG_RE.test(path) || /\.pdf$/i.test(path)) return ocrFile(path);
   // Office/Epub/HTML/LaTeX 等 -> 触发万物转 MD 引擎

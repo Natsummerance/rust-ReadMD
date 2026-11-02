@@ -1196,10 +1196,10 @@ function syncDesktopControls() {
 /* ----------------------------------------------------------------------------------------------
    初始文件智能分流器 (Smart Initial File Dispatcher)
    ---------------------------------------------------------------------------------------------- */
-async function openInitialFile(path) {
+async function openInitialFile(path, options = {}) {
   if (!path) return;
   // Markdown 文档 -> 直接阅读器加载
-  if (MD_RE.test(path)) return loadFile(path);
+  if (MD_RE.test(path)) return loadFile(path, options);
   // 图片或 PDF 扫描件 -> 触发离线 OCR 识别
   if (IMG_RE.test(path) || /\.pdf$/i.test(path)) return ocrFile(path);
   // Office/Epub/HTML/LaTeX 等 -> 触发万物转 MD 引擎
