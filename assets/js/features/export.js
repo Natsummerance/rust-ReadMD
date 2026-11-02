@@ -324,7 +324,7 @@ function effectiveExportOptions(options) {return exportProfileSession()?.request
 async function openExportModal() {
   const epoch = ++exportOpenEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome') {
+  if (state.mode === 'welcome' || state.mode === 'unavailable') {
     showToast(_t('toast.openDocumentToUse') || '');
     return;
   }

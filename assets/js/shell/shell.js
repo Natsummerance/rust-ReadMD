@@ -129,7 +129,7 @@ async function runNativeMenu(action) {
     case 'plugins': await openPluginModal(); break;
     case 'pet': await openPetSettings(); break;
     case 'settings': await window.ReadMDPalette?.open('settings'); break;
-    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId); break;
+    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId, false, 'command'); break;
     case 'zen': toggleZenMode(); break;
     case 'fullscreen': await window.ReadMDViewMode?.toggleFullscreen(); break;
     default: return false;

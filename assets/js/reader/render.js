@@ -182,6 +182,10 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     const r = await apiFetch('/api/file?p=' + encodeURIComponent(path));
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
+      if (existingTab?._restoreUnavailable && isDocumentLoadCurrent(loadEpoch) && refreshAllowed()) {
+        existingTab._restoreUnavailable = { status: r.status };
+        if (getActiveTab() === existingTab) await renderActiveTab();
+      }
       showToast((_t('toast.openFailed') || '无法打开：') + (apiMessage(d) || r.status));
       setProgress(0);
       return;
@@ -239,6 +243,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
       Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
+      delete existingTab._restoreUnavailable;
       await window.ReadMDReview?.restore(existingTab);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (wasActive) syncStateFromActiveTab();

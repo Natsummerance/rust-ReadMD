@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "version": "0.0.7",
+  "created": "2026-11-03",
+  "purpose": "P0 lifecycle regression contract; planned requirements are not passing evidence",
+  "acceptanceLedgerModified": false,
+  "publicationAuthorizedByThisPlan": false,
+  "releaseGate": "V7-00 before feature expansion",
+  "oracles": [
+    "Exact ordered or explicitly normalized page identity sets before quit, after process exit, and after next-process stabilization",
+    "Independent original and saved byte expectations including encoding, BOM, newline and resources",
+    "Durable generic recovery plus Rust review identity, generation and decisions",
+    "Actual committed session CAS response and process disappearance, not an IPC send alone",
+    "Final source, index, boot, executable and archive digests bound to each result"
+  ],
+  "cases": [
+    {"id":"LC01","priority":"P0","input":"Nonempty saved session; Finder opens one or five files before restore completes","expected":"All old and new pages preserved in order; no deadlock; subsequent close remains write-eligible","required":"deterministic interleaving + real Mac host + restart"},
+    {"id":"LC02","priority":"P0","input":"Initial launch file and later queued OS file","expected":"Restore's own open does not wait behind external opens; last explicit target is correct","required":"ordering test + native host"},
+    {"id":"LC03","priority":"P0","input":"Unchanged saved file; LF, CRLF, CR, BOM, UTF-16 and empty body","expected":"Open/edit is clean; close needs no save confirmation; original bytes unchanged","required":"real files + native editor + reopen"},
+    {"id":"LC04","priority":"P0","input":"Manual edit then Cancel","expected":"Exact visible draft, target and edit mode remain; later Save or Discard can complete","required":"native input + durable draft + subsequent decision"},
+    {"id":"LC05","priority":"P0","input":"Manual edit then Do not save","expected":"Saved preview restored, original bytes untouched, discarded body recoverable, next tab close succeeds","required":"native decision + actual history read + byte oracle"},
+    {"id":"LC06","priority":"P0","input":"Repeated close/edit-exit/quit while one confirmation is open","expected":"One decision owner; handlers are not replaced; every request settles; no hidden stale focus timer","required":"overlapping promises + real native confirmation"},
+    {"id":"LC07","priority":"P0","input":"Active/inactive, first/last, other/all tab close; buttons, keyboard and menus; background Save with failed activation","expected":"Only explicitly selected identities removed after ACK; cancellation preserves other pages; failed activation never saves the currently visible unrelated page","required":"real session + failed review flush + fixed save target + bounded trigger categories + restart"},
+    {"id":"LC08","priority":"P0","input":"AI/manual edit, undo-to-same-text or document switch while decision/save is pending","expected":"Generation and fixed target prevent losing newer input or mutating a different document","required":"controlled delayed receipts + actual persistence"},
+    {"id":"LC09","priority":"P0","input":"Clean restored file returns 404, 409, 503 or transport failure","expected":"Explicit unavailable page retained; Retry or explicit Close; never create/save/export an invented empty document","required":"controlled failures + real 404 + retry after file becomes available + restart"},
+    {"id":"LC10","priority":"P0","input":"Dirty descriptor but required draft/review original cannot be read","expected":"Authoritative descriptor and necessary originals retained; no clean conversion or destructive session rewrite; actionable recovery","required":"fault injection + new-process recovery; remains pending until independently proven"},
+    {"id":"LC11","priority":"P0","input":"Read/retry/export finishes after switching or closing its page","expected":"Old result discarded; closed page cannot reappear; no previous page displayed under a new title","required":"source/generation races + native consumer"},
+    {"id":"LC12","priority":"P0","input":"External file change, identity replacement, locked target or controlled ENOSPC","expected":"No overwrite of unknown object; failed save/close retains live text and recovery; explicit retry available","required":"real service/files + controlled faults, separate from true power loss"},
+    {"id":"LC13","priority":"P0","input":"Lost session ACK, competing process, invalid receipt or write failure","expected":"Exact idempotent request retained; no refresh-to-latest overwrite; no premature UI removal","required":"existing CAS regressions + true persistence"},
+    {"id":"LC14","priority":"P0","input":"Window red button, tray residency, real Quit, empty and nonempty sessions","expected":"Hide and true exit distinguished; jobs follow their specified lifetime; closed tabs stay closed and remaining pages restore","required":"native OS controls + process exit + next process"},
+    {"id":"LC15","priority":"P0","input":"Same-version overlay installation with an existing WebKit profile and cached script/style URLs","expected":"Changed assets have content-bound revisions; final installed app loads new behavior; defaults, settings and documents preserved","required":"warm profile + package extracted from public release + digest check"},
+    {"id":"LC16","priority":"P0","input":"Narrow/high-DPI/RTL windows and changed language on an unavailable page","expected":"Clear loading/failure/retry states, single-line toolbar, usable 44px targets and translated dynamic feedback","required":"1024x680 + 1160x820 + available high DPI + keyboard/IME + semantic language review"}
+  ],
+  "executionRules": [
+    "Single owner of native desktop input; do not disturb another conversation's models or tasks",
+    "Preserve first failure and classify environment, missing input and product defects separately",
+    "Use production CSP and actual authentication; no test-token or chooser substitutes",
+    "Never edit pinned-source hashes or protected bytes to hide a regression",
+    "Do not publish original user paths, content, credentials or screenshots; use dedicated fixed inputs",
+    "Mac ARM native, Intel via Rosetta, physical Intel, Windows and Linux remain distinct evidence scopes"
+  ]
+}

@@ -1749,7 +1749,7 @@ function syncStateFromActiveTab() {
   state.size = tab.size || 0;
   state.encoding = tab.encoding || 'utf-8';
   state.fixed = tab.content || '';
-  state.original = tab.original ?? tab.content ?? '';
+  state.original = tab._restoreUnavailable ? null : (tab.original ?? tab.content ?? '');
   state.fixes = tab.fixes || [];
   state.stats = tab.stats || {};
   state.webAssets = tab.webAssets || [];
@@ -1854,7 +1854,7 @@ function renderTabsBar() {
     closeBtn.setAttribute('aria-hidden', 'true');
     closeBtn.addEventListener('click', e => {
       e.stopPropagation();
-      closeTab(tab.id);
+      closeTab(tab.id, false, 'button');
     });
     el.appendChild(closeBtn);
 
@@ -1884,7 +1884,7 @@ function renderTabsBar() {
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        closeTab(tab.id);
+        closeTab(tab.id, false, e.key === 'Backspace' ? 'key_backspace' : 'key_delete');
       }
       if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
         e.preventDefault();
@@ -2329,6 +2329,31 @@ async function renderActiveTab({ restoreScroll = false } = {}) {
   await window.ReadMDReview?.restore(nextTab);
   if (getActiveTab() !== nextTab) return;
   syncStateFromActiveTab();
+  if (nextTab._restoreUnavailable) {
+    ++tabRenderEpoch;
+    if (typeof beginReaderRender === 'function') beginReaderRender();
+    Object.assign(state.pagination, { enabled: false, rawContent: null, pages: [], totalPages: 0 });
+    if (typeof showPaginationBar === 'function') showPaginationBar(false);
+    setFixes([], {});
+    const pane = $('content'), t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+    if (pane) {
+      const box = document.createElement('section'); box.className = 'restore-unavailable'; box.setAttribute('role', 'status');
+      const title = document.createElement('h2'); title.textContent = t('toast.openFailed') + (nextTab.title || nextTab.name);
+      const message = document.createElement('p');
+      message.textContent = t('audit.loadFailed', { error: nextTab._restoreUnavailable.status ? 'HTTP ' + nextTab._restoreUnavailable.status : t('audit.invalidResponse') });
+      const actions = document.createElement('div'); actions.className = 'modal-actions';
+      const retry = document.createElement('button'); retry.className = 'tb-btn'; retry.type = 'button'; retry.textContent = t('reader.refresh'); retry.dataset.restoreRetry = '';
+      retry.onclick = async () => { retry.disabled = true; try { await loadFile(nextTab.path, { force: true }); } finally { retry.disabled = false; } };
+      const close = document.createElement('button'); close.className = 'tb-btn'; close.type = 'button'; close.textContent = t('tabs.closeTab');
+      close.onclick = () => closeTab(nextTab.id, false, 'button');
+      actions.append(retry, close); box.append(title, message, actions); pane.replaceChildren(box); pane.classList.remove('hidden');
+    }
+    if (typeof buildToc === 'function') buildToc();
+    document.title = (nextTab.title || nextTab.name) + ' - ReadMD';
+    setFileTitle(nextTab.title || nextTab.name, false, nextTab.path);
+    updateStatus(); renderTabsBar();
+    return;
+  }
   const scrollKey = normalizePath(nextTab.title || nextTab.name || nextTab.path || '');
   if (scrollKey && typeof nextTab.scrollPos === 'number') {
     state.scrollPos[scrollKey] = nextTab.scrollPos;
@@ -2365,9 +2390,14 @@ function syncActiveTabDirty() {
 
 async function activateTabForSave(tabId) {
   if (window.ReadMDSession?.busy?.()) return false;
+  const target = state.tabs.find(tab => tab.id === tabId);
+  if (!target || target._restoreUnavailable) return false;
+  const path = target.path, revision = target.revision;
+  const current = () => state.tabs.includes(target) && target.path === path && target.revision === revision;
   if (state.activeTabId !== tabId) {
     const previousTab = getActiveTab();
     if (previousTab && window.ReadMDReview && !await window.ReadMDReview.flush(previousTab)) return false;
+    if (getActiveTab() !== previousTab || !current()) return false;
     if (previousTab && state.editing) {
       if (hasUnsavedEditorChanges()) {
         previousTab.content = getEditContent();
@@ -2378,16 +2408,24 @@ async function activateTabForSave(tabId) {
     exitEdit();
     state.activeTabId = tabId;
     syncStateFromActiveTab();
-    renderActiveTab();
+    await renderActiveTab();
   }
+  if (getActiveTab() !== target || !current()) return false;
   if (!state.editing) await toggleEdit();
-  const nextTab = getActiveTab();
-  const draft = nextTab ? nextTab.content : '';
+  if (getActiveTab() !== target || !current() || !state.editing) return false;
+  const draft = target.content;
   if (typeof cmView !== 'undefined' && cmView) {
     cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft } });
   } else if ($('edit-area')) {
     $('edit-area').value = draft;
   }
+  return true;
+}
+
+async function saveTabBeforeClose(tab) {
+  if (!await activateTabForSave(tab.id) || getActiveTab() !== tab || !state.editing) return false;
+  if (!await saveEdit({ exitAfterSave: true })) return false;
+  return state.tabs.includes(tab) && getActiveTab() === tab && !tab.isDirty && !state.editing;
 }
 
 async function switchTab(tabId, { _sessionQueued = false } = {}) {
@@ -2446,6 +2484,9 @@ async function switchTab(tabId, { _sessionQueued = false } = {}) {
 }
 
 function promptDirtyClose(tabName) {
+  // One modal owns one decision. Repeated clicks or a simultaneous Quit must
+  // not replace its handlers and strand the first lifecycle operation.
+  if (promptDirtyClose.active) return Promise.resolve('cancel');
   const _t = (k, p) => {
     if (window.i18n && window.i18n.t) {
       const v = window.i18n.t(k, p);
@@ -2455,10 +2496,13 @@ function promptDirtyClose(tabName) {
   };
   return new Promise(resolve => {
     const modal = $('close-confirm-modal');
-    if (!modal) {
+    const saveButton = $('close-confirm-save'), discardButton = $('close-confirm-discard'), cancelButton = $('close-confirm-cancel');
+    if (!modal || !saveButton || !discardButton || !cancelButton) {
       resolve('cancel');
       return;
     }
+    promptDirtyClose.active = true;
+    let settled = false, focusTimer;
     const titleEl = $('close-confirm-title');
     if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '是否保存对文档的修改？';
     const descEl = $('close-confirm-desc');
@@ -2479,24 +2523,27 @@ function promptDirtyClose(tabName) {
     };
 
     const cleanUp = (action) => {
+      if (settled) return;
+      settled = true;
+      promptDirtyClose.active = false;
+      clearTimeout(focusTimer);
       modal.classList.add('hidden');
-      $('close-confirm-save').onclick = null;
-      $('close-confirm-discard').onclick = null;
-      $('close-confirm-cancel').onclick = null;
+      saveButton.onclick = null;
+      discardButton.onclick = null;
+      cancelButton.onclick = null;
       modal.removeEventListener('click', onBackdropClick);
       document.removeEventListener('keydown', onKeyDown);
       resolve(action);
     };
 
-    $('close-confirm-save').onclick = () => cleanUp('save');
-    $('close-confirm-discard').onclick = () => cleanUp('discard');
-    $('close-confirm-cancel').onclick = () => cleanUp('cancel');
+    saveButton.onclick = () => cleanUp('save');
+    discardButton.onclick = () => cleanUp('discard');
+    cancelButton.onclick = () => cleanUp('cancel');
     modal.addEventListener('click', onBackdropClick);
     document.addEventListener('keydown', onKeyDown);
 
     // 聚焦主要行动按钮
-    const cancelBtn = $('close-confirm-cancel');
-    if (cancelBtn) setTimeout(() => cancelBtn.focus(), 30);
+    focusTimer = setTimeout(() => cancelButton.focus(), 30);
   });
 }
 
@@ -2548,7 +2595,7 @@ function askChoice(title, desc, choices) {
 }
 
 
-async function closeTab(tabId, force = false) {
+async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.busy?.()) return;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
@@ -2562,9 +2609,7 @@ async function closeTab(tabId, force = false) {
     if (action === 'cancel') return;
     discardShared=action==='discard';
     if (action === 'save') {
-      await activateTabForSave(tabId);
-      const saved = await saveEdit({ exitAfterSave: true });
-      if (!saved || (getActiveTab()?.id === tabId && state.editing)) return;
+      if (!await saveTabBeforeClose(tab)) return;
     }
   }
   const idx = state.tabs.findIndex(t => t.id === tabId);
@@ -2588,7 +2633,7 @@ async function closeTab(tabId, force = false) {
     }
   };
   if (window.ReadMDSession?.closeTabs) {
-    if (!await window.ReadMDSession.closeTabs([tab], remove, accepted)) return;
+    if (!await window.ReadMDSession.closeTabs([tab], remove, accepted, trigger)) return;
   } else remove();
   // The confirmed session no longer references this page. Until that ACK,
   // its only draft and visible source must survive a failed close.
@@ -2622,10 +2667,8 @@ async function closeOtherTabs(keepTabId) {
         const action = await promptDirtyClose(t.title || t.name);
         if (action === 'cancel') return;
         if (action === 'discard') discardedShared.add(t);
-      if (action === 'save') {
-        await activateTabForSave(t.id);
-        const saved = await saveEdit({ exitAfterSave: true });
-        if (!saved || state.tabs.some(item => item.id === t.id && item.isDirty)) return;
+        if (action === 'save') {
+          if (!await saveTabBeforeClose(t)) return;
         }
       }
       accepted.set(t, text(t));
@@ -2646,7 +2689,7 @@ async function closeOtherTabs(keepTabId) {
     syncStateFromActiveTab();
   };
   if (window.ReadMDSession?.closeTabs) {
-    if (!await window.ReadMDSession.closeTabs(candidates.filter(tab => tab !== keepTab), remove, accepted)) return;
+    if (!await window.ReadMDSession.closeTabs(candidates.filter(tab => tab !== keepTab), remove, accepted, 'others')) return;
   } else remove();
   for (const tab of discardedShared) if (window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
   for (const tab of candidates) if (tab !== keepTab) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
@@ -2668,9 +2711,7 @@ async function closeAllTabs() {
       if (action === 'cancel') return;
       if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
-        await activateTabForSave(t.id);
-        const saved = await saveEdit({ exitAfterSave: true });
-        if (!saved || (getActiveTab()?.isDirty || state.editing)) return;
+        if (!await saveTabBeforeClose(t)) return;
       }
     }
     accepted.set(t, text(t));
@@ -2684,7 +2725,7 @@ async function closeAllTabs() {
   }
   const remove = () => { exitEdit(); state.tabs = []; state.activeTabId = null; resetHome(); };
   if (window.ReadMDSession?.closeTabs) {
-    if (!await window.ReadMDSession.closeTabs(candidates, remove, accepted)) return;
+    if (!await window.ReadMDSession.closeTabs(candidates, remove, accepted, 'all')) return;
   } else remove();
   for (const tab of discardedShared) if (window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
   for (const tab of candidates) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
@@ -2804,7 +2845,8 @@ async function closeAllTabs() {
       // idempotent receipt alone is not a lease over another process's writes.
       if (unconfirmed) await sendCas(unconfirmed);
       if (!force && next.encoded === lastSaved) return true;
-      unconfirmed = { session: next.value, expected_session_version: { ...sessionVersion }, call_id: 'session-' + crypto.randomUUID() };
+      const cause = /^close_(button|key_delete|key_backspace|tab_menu|command|programmatic|others|all|compensation)$/.test(next.cause || '') ? next.cause + '-' : '';
+      unconfirmed = { session: next.value, expected_session_version: { ...sessionVersion }, call_id: 'session-' + cause + crypto.randomUUID() };
       return sendCas(unconfirmed);
     }
     if (hasPy) {
@@ -2814,9 +2856,9 @@ async function closeAllTabs() {
     lastSaved = next.encoded;
     return true;
   }
-  function write(force = false, explicit) {
+  function write(force = false, explicit, cause) {
     clearTimeout(timer);
-    const next = explicit ? { value: explicit, encoded: JSON.stringify(explicit), fence } : pending;
+    const next = explicit ? { value: explicit, encoded: JSON.stringify(explicit), fence, cause } : pending;
     pending = null;
     if (!next) return settingsSaveQueue;
     settingsSaveQueue = settingsSaveQueue.catch(() => false).then(async () => {
@@ -2856,7 +2898,7 @@ async function closeAllTabs() {
     // No await separates publishing the local intent and queueing its CAS.
     return (await write(true, value)) === true;
   }
-  async function closeTabs(tabs, apply, accepted) {
+  async function closeTabs(tabs, apply, accepted, trigger = 'programmatic') {
     if (closing || window.ReadMDRefactor?.busy?.() || tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending || tab._renameInFlight)) return false;
     closing = true; fence++; clearTimeout(timer); pending = null;
     const reserved = [], flags = new Map();
@@ -2883,13 +2925,13 @@ async function closeAllTabs() {
       const stamp = () => JSON.stringify({ session: snapshot(), load: documentLoadEpoch,
         text: state.tabs.map(tab => [tab.id, tab.editGeneration || 0, state.editing && getActiveTab() === tab ? getEditContent() : tab.content]) });
       const before = stamp();
-      if (!value || !await write(true, value)) return false;
+      if (!value || !await write(true, value, 'close_' + trigger)) return false;
       if (stamp() !== before) {
         // An external open or programmatic edit can outlive the UI fence.
         // Retain the actual current pages and drafts, and compensate only
         // against our acknowledged version, never a newly fetched version.
         await window.ReadMDRecovery?.flush();
-        await write(true, snapshot());
+        await write(true, snapshot(), 'close_compensation');
         return failed();
       }
       apply(); // No await between the verified acknowledgement and UI removal.
@@ -2976,9 +3018,9 @@ async function closeAllTabs() {
         // Limit concurrent disk reads; a missing document must not block the rest.
         for (let offset = 0; offset < session.tabs.length; offset += 4) {
           const group = await Promise.all(session.tabs.slice(offset, offset + 4).map(async descriptor => {
-            let file, receipt, pending = descriptor.renamePending;
+            let file, receipt, pending = descriptor.renamePending, unavailableStatus = 0;
             const open = async path => {
-              try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(path)); return response.ok ? await response.json() : null; }
+              try { const response = await apiFetch('/api/file?p=' + encodeURIComponent(path)); unavailableStatus = response.status; return response.ok ? await response.json() : null; }
               catch (_) { return null; }
             };
             if (pending?.refactor) {
@@ -3011,7 +3053,16 @@ async function closeAllTabs() {
             }
             const draft = drafts.get(descriptor.key);
             if ((descriptor.dirty || descriptor.unsavedCreation) && !draft) recoveryComplete = false;
-            if (!file && !draft && !pending) return null;
+            if (!file && !draft && !pending) {
+              // A failed read is not the user's decision to close a page.
+              // Retain clean file identities without inventing an empty body.
+              // Missing dirty recovery still keeps the authoritative session
+              // write-ineligible through recoveryComplete, as before.
+              if (!descriptor.path || descriptor.dirty || descriptor.unsavedCreation) return null;
+              return { ...descriptor, id: 'tab_' + crypto.randomUUID(), recoveryKey: descriptor.key,
+                mode: 'unavailable', source: 'file', title: descriptor.name, content: null, original: null, fixed: null,
+                isDirty: false, isVirtual: false, _restoreUnavailable: { status: unavailableStatus } };
+            }
             const dirty = descriptor.dirty && !!draft;
             const content = (!file || dirty) ? (draft?.content ?? receipt?.review?.content ?? '') : file.content;
             return { id: 'tab_' + crypto.randomUUID(), mode: file ? 'file' : 'virtual', source: file ? 'file' : (descriptor.source || 'recovery'),
@@ -3046,12 +3097,12 @@ async function closeAllTabs() {
         state.activeTabId = active?.id || null;
         if (active) {
           syncStateFromActiveTab();
-          await prepareDocCitations(active.path || active.originPath || '', active.content);
+          if (!active._restoreUnavailable) await prepareDocCitations(active.path || active.originPath || '', active.content);
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
           await renderActiveTab({ restoreScroll: true });
           if (state.activeTabId !== active.id || epoch !== documentLoadEpoch) return;
-          if (state.pagination.enabled && state.pagination.mode === 'paged') renderPage(active.readerPage || 0, null, true);
-          if (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length) await toggleEdit();
+          if (!active._restoreUnavailable && state.pagination.enabled && state.pagination.mode === 'paged') renderPage(active.readerPage || 0, null, true);
+          if (!active._restoreUnavailable && (active.isDirty || (await window.ReadMDRecovery.mathDrafts(active)).length)) await toggleEdit();
         } else resetHome();
       }
       // An explicit OS/file URL open becomes active after restoring older pages.
@@ -3083,6 +3134,7 @@ async function closeAllTabs() {
       // ACK may have been lost before another window adopted this intent.
       unconfirmed?.session?.tabs.some(tab => tab.renamePending?.operation_id === id))) };
   window.addEventListener('pagehide', () => { captureReaderState(getActiveTab()); persist(); write(); });
+  window.addEventListener('readmd:language-changed', () => { if (getActiveTab()?._restoreUnavailable) void renderActiveTab(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { captureReaderState(getActiveTab()); persist(); write(); } });
 })();
 
@@ -3384,7 +3436,7 @@ function updateStatus() {
   }
   if (state.size) parts.push((state.size / 1024).toFixed(1) + ' KB');
   if (state.encoding) parts.push(state.encoding);
-  $('status-right').textContent = parts.join(' · ');
+  $('status-right').textContent = state.mode === 'unavailable' ? _t('toast.openFailed') : parts.join(' · ');
   const isWelcome = state.mode === 'welcome';
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
   const canEdit = hasDoc && !state.editing;
@@ -3399,13 +3451,13 @@ function updateStatus() {
   setUnavailableReason($('btn-saveas'), _t('toast.openDocumentToUse'));
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
-    $('btn-print').disabled = isWelcome || !canExport;
+    $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || !canExport;
     const exportHint = _t('toolbar.export') + ' (Ctrl+P)';
     $('btn-print').title = exportHint;
     $('btn-print').setAttribute('aria-label', exportHint);
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
-  if ($('btn-search')) $('btn-search').disabled = isWelcome;
+  if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable';
   setUnavailableReason($('btn-search'), _t('toast.searchNeedsDocument'));
   if ($('btn-presentation-menu')) $('btn-presentation-menu').disabled = !hasDoc;
   if ($('btn-run-all-chunks')) {
@@ -3911,7 +3963,7 @@ function bindTabContextMenuEvents() {
       if (!tab) return;
 
       if (action === 'close') {
-        closeTab(tabId);
+        closeTab(tabId, false, 'tab_menu');
       } else if (action === 'close-others') {
         closeOtherTabs(tabId);
       } else if (action === 'close-all') {
@@ -4900,7 +4952,7 @@ function buildToc() {
   const list = $('toc-list');
   if (!list) return;
 
-  if (state.mode === 'welcome' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
+  if (state.mode === 'welcome' || state.mode === 'unavailable' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
     list.innerHTML = `
       <div class="side-empty">
         <p>${_t('sidebar.emptyToc') || '（当前文档暂无标题大纲）'}</p>
@@ -6846,6 +6898,10 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     const r = await apiFetch('/api/file?p=' + encodeURIComponent(path));
     if (!r.ok) {
       const d = await r.json().catch(() => ({}));
+      if (existingTab?._restoreUnavailable && isDocumentLoadCurrent(loadEpoch) && refreshAllowed()) {
+        existingTab._restoreUnavailable = { status: r.status };
+        if (getActiveTab() === existingTab) await renderActiveTab();
+      }
       showToast((_t('toast.openFailed') || '无法打开：') + (apiMessage(d) || r.status));
       setProgress(0);
       return;
@@ -6903,6 +6959,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
         : 0;
       const previousScroll = wasActive ? ($('content')?.scrollTop || 0) : (existingTab.scrollPos || 0);
       Object.assign(existingTab, fileFields, { isDirty: false, editorState: null, editorCompartments: null });
+      delete existingTab._restoreUnavailable;
       await window.ReadMDReview?.restore(existingTab);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (wasActive) syncStateFromActiveTab();
@@ -13036,7 +13093,7 @@ window.ReadMDReview = (() => {
     return text;
   }
   function record(tab, initial) {
-    if (!tab) return null;
+    if (!tab || tab._restoreUnavailable) return null;
     let rec = records.get(tab);
     if (!rec) {
       const text = lf(initial ?? source(tab));
@@ -13378,7 +13435,7 @@ window.ReadMDReview = (() => {
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
   async function restore(tab = activeTab()) {
-    if (!tab) return null;
+    if (!tab || tab._restoreUnavailable) return null;
     const existing = records.get(tab);
     if (existing) { refresh(existing); return existing.snapshot || existing.opening; }
     if (!restores.has(tab)) {
@@ -13549,6 +13606,7 @@ window.ReadMDReview = (() => {
     return 'unknown';
   }
   async function prepareSave(tab = activeTab(), expected) {
+    if (tab?._restoreUnavailable) return false;
     if (tab?._renamePending || tab?._renameInFlight) return false;
     const rec = record(tab);
     if (!await flush(tab)) return false;
@@ -21849,7 +21907,7 @@ window.addEventListener('readmd:language-changed', () => {
     return true;
   }
   async function createCopy() {
-    const origin = getActiveTab(); if (!origin) return;
+    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable) return;
     const snap = capture(origin);
     const base = snap.name.replace(/\.[^.]+$/, '');
     let name = base + '-' + t('storage.copySuffix') + '.md', n = 2;
@@ -22009,8 +22067,7 @@ window.addEventListener('readmd:language-changed', () => {
         const action = await promptDirtyClose(tab.title || tab.name);
         if (action === 'cancel') return false;
         if (action === 'save') {
-          await activateTabForSave(tab.id);
-          if (!await saveEdit({ exitAfterSave: true }) || tab.isDirty) return false;
+          if (!await saveTabBeforeClose(tab)) return false;
         } else {
           if (!await discard(tab)) return false;
           discarded.push(tab);
@@ -26472,7 +26529,7 @@ function effectiveExportOptions(options) {return exportProfileSession()?.request
 async function openExportModal() {
   const epoch = ++exportOpenEpoch;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome') {
+  if (state.mode === 'welcome' || state.mode === 'unavailable') {
     showToast(_t('toast.openDocumentToUse') || '');
     return;
   }
@@ -30478,7 +30535,7 @@ async function runNativeMenu(action) {
     case 'plugins': await openPluginModal(); break;
     case 'pet': await openPetSettings(); break;
     case 'settings': await window.ReadMDPalette?.open('settings'); break;
-    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId); break;
+    case 'close-document': if (state.activeTabId) await closeTab(state.activeTabId, false, 'command'); break;
     case 'zen': toggleZenMode(); break;
     case 'fullscreen': await window.ReadMDViewMode?.toggleFullscreen(); break;
     default: return false;

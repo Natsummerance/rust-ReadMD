@@ -317,7 +317,7 @@ function bindTabContextMenuEvents() {
       if (!tab) return;
 
       if (action === 'close') {
-        closeTab(tabId);
+        closeTab(tabId, false, 'tab_menu');
       } else if (action === 'close-others') {
         closeOtherTabs(tabId);
       } else if (action === 'close-all') {

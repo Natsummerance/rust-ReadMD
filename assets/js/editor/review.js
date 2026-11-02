@@ -35,7 +35,7 @@ window.ReadMDReview = (() => {
     return text;
   }
   function record(tab, initial) {
-    if (!tab) return null;
+    if (!tab || tab._restoreUnavailable) return null;
     let rec = records.get(tab);
     if (!rec) {
       const text = lf(initial ?? source(tab));
@@ -377,7 +377,7 @@ window.ReadMDReview = (() => {
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
   async function restore(tab = activeTab()) {
-    if (!tab) return null;
+    if (!tab || tab._restoreUnavailable) return null;
     const existing = records.get(tab);
     if (existing) { refresh(existing); return existing.snapshot || existing.opening; }
     if (!restores.has(tab)) {
@@ -548,6 +548,7 @@ window.ReadMDReview = (() => {
     return 'unknown';
   }
   async function prepareSave(tab = activeTab(), expected) {
+    if (tab?._restoreUnavailable) return false;
     if (tab?._renamePending || tab?._renameInFlight) return false;
     const rec = record(tab);
     if (!await flush(tab)) return false;

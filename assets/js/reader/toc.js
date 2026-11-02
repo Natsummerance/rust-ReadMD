@@ -25,7 +25,7 @@ function buildToc() {
   const list = $('toc-list');
   if (!list) return;
 
-  if (state.mode === 'welcome' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
+  if (state.mode === 'welcome' || state.mode === 'unavailable' || (!state.file && !state.original && !state.fixed && (!state.tabs || !state.tabs.length))) {
     list.innerHTML = `
       <div class="side-empty">
         <p>${_t('sidebar.emptyToc') || '（当前文档暂无标题大纲）'}</p>

@@ -107,7 +107,7 @@
     return true;
   }
   async function createCopy() {
-    const origin = getActiveTab(); if (!origin) return;
+    const origin = getActiveTab(); if (!origin || origin._restoreUnavailable) return;
     const snap = capture(origin);
     const base = snap.name.replace(/\.[^.]+$/, '');
     let name = base + '-' + t('storage.copySuffix') + '.md', n = 2;
@@ -267,8 +267,7 @@
         const action = await promptDirtyClose(tab.title || tab.name);
         if (action === 'cancel') return false;
         if (action === 'save') {
-          await activateTabForSave(tab.id);
-          if (!await saveEdit({ exitAfterSave: true }) || tab.isDirty) return false;
+          if (!await saveTabBeforeClose(tab)) return false;
         } else {
           if (!await discard(tab)) return false;
           discarded.push(tab);

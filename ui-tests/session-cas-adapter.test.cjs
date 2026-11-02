@@ -100,6 +100,10 @@ async function app(options = {}) {
       fileCalls.push(at);
       const file = { path: at, name: at.split('/').pop(), original: BODY, content: BODY, revision: REVISION, disk_revision: REVISION };
       if (options.fileRead) await options.fileRead(at);
+      if (options.fileResponse) {
+        const failure = await options.fileResponse(at);
+        if (failure) return failure;
+      }
       return response(file);
     }
     assert.equal(url, '/api/review');
@@ -125,7 +129,7 @@ async function app(options = {}) {
     requestAnimationFrame() {}, $: id => id === 'btn-reload' ? {} : null, showToast: text => toasts.push(text), busy() {}, updateUnloadGuard() {},
     getEditContent: () => state.tabs.find(owner => owner.id === state.activeTabId)?.content || '',
     prepareDocCitations: async () => {}, renderContent: async () => {}, setFixes() {}, setFileTitle() {}, updateStatus() {}, afterRender() {}, renderPage() {},
-    setProgress() {}, addRecent() {}, pushHistory() {}, saveLastFile() {}, clearAiOutput() {},
+    setProgress() {}, addRecent() {}, pushHistory() {}, saveLastFile() {}, clearAiOutput() {}, apiMessage: value => value?.error_code || value?.code || '',
     beginDocumentLoad: () => ++context.documentLoadEpoch, isDocumentLoadCurrent: epoch => context.documentLoadEpoch === epoch,
     resetHome() {}, openInitialFile: async () => {}, exitEdit() { state.editing = false; }, goHome: async () => { state.mode = 'welcome'; },
     console: { error() {} } });
@@ -202,6 +206,47 @@ scenario('an interrupted native restore cannot publish a partial workspace', asy
   a.emit('pagehide'); release.resolve(); await a.window.__readmdSessionReady;
   assert.equal(await a.window.ReadMDSession.flush(), false); assert.equal(a.posts().length, 0);
   assert.equal(a.state.tabs[0], a.second); assert.equal(server.value.tabs.length, 2);
+});
+
+for (const status of [404, 409, 503]) scenario('a restored file read returning '+status+' keeps an explicit page until retry or close', async () => {
+  const server = backend(session());let unavailable = true;
+  const a = await app({ server, cold: true, reader: true,
+    fileResponse: at => at === A && unavailable ? response({error_code:'document_operation_busy'},status) : null });
+  assert.equal(a.state.tabs.length,2);
+  const retained=a.state.tabs.find(tab=>tab.path===A);
+  assert.ok(retained?._restoreUnavailable);assert.equal(retained.isDirty,false);
+  assert.equal(await a.window.ReadMDReview.capture(retained),null,'an unavailable page is never a new empty document');
+  assert.equal(await a.window.ReadMDSession.flush(),true);
+  assert.deepEqual(server.value.tabs.map(tab=>tab.path).sort(),[A,B].sort());
+  unavailable=false;await a.context.loadFile(A,{force:true});
+  assert.equal(retained._restoreUnavailable,undefined);assert.equal(retained.content,BODY);
+  assert.equal(await a.window.ReadMDSession.flush(),true);
+  await a.context.closeTab(retained.id);assert.equal(a.state.tabs.length,1);assert.equal(server.value.tabs.length,1);
+});
+
+for (const trigger of ['button','key_delete','key_backspace','tab_menu','command']) scenario('close receipt retains only the bounded '+trigger+' trigger',async()=>{
+  const a=await app();await a.context.closeTab(a.first.id,false,trigger);
+  assert.ok(a.posts().at(-1).body.call_id.startsWith('session-close_'+trigger+'-'));
+  assert(!a.posts().at(-1).body.call_id.includes(A));
+});
+
+scenario('an explicit close removes only an unavailable page without creating an empty review document',async()=>{
+  const server=backend(session()),a=await app({server,cold:true,reader:true,fileResponse:at=>at===A?response({},404):null});
+  const missing=a.state.tabs.find(tab=>tab.path===A);assert.ok(missing._restoreUnavailable);
+  assert.equal(server.documents.has(A),false);
+  await a.context.closeTab(missing.id,false,'button');
+  assert.deepEqual(clone(a.state.tabs.map(tab=>tab.path)),[B]);
+  assert.deepEqual(server.value.tabs.map(tab=>tab.path),[B]);assert.equal(server.documents.has(A),false);
+});
+
+scenario('a failed retry preserves its page and cannot grant an empty AI or save source',async()=>{
+  const server=backend(session()),a=await app({server,cold:true,reader:true,fileResponse:at=>at===A?response({},503):null});
+  const missing=a.state.tabs.find(tab=>tab.path===A);
+  await a.context.loadFile(A,{force:true});
+  assert.ok(a.state.tabs.includes(missing));assert.ok(missing._restoreUnavailable);
+  assert.equal(missing.content,null);assert.equal(await a.window.ReadMDReview.capture(missing),null);
+  assert.equal(await a.window.ReadMDReview.prepareSave(missing),false);
+  assert.equal(await a.window.ReadMDSession.flush(),true);assert.equal(server.value.tabs.length,2);
 });
 
 scenario('an OS file open during startup preserves restored pages and can subsequently close', async () => {

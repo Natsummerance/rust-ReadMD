@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const {prepare}=require('./macos-native-system-host.cjs');
 const root=path.resolve(__dirname,'..'),workspace=path.dirname(root),sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-const original='# 中文关闭回归\n\n原件必须保留。🙂\n',saved='\n保存后重新打开。🧭\n',draft='\n仅丢弃这一句。\n';
+const original='# 中文关闭回归\n\n原件必须保留。🙂\n',saved='\n保存后重新打开。🧭\n',draft='\n仅丢弃这一句。\n',incomingSaved='\n后台标签的保存目标。\n';
 const encode=text=>Buffer.from('\ufeff'+text.replace(/\n/g,'\r\n'));
 function driver(phase,files){return String.raw`(async()=>{
  const phase=${JSON.stringify(phase)},files=${JSON.stringify(files)},checks=[];
@@ -27,7 +27,11 @@ function driver(phase,files){return String.raw`(async()=>{
    check(getActiveTab()?.path===files.original,'real_tab_close_activates_previous_page');
    await toggleEdit();check(!hasUnsavedEditorChanges(),'unchanged_edit_starts_clean');
    cmView.dispatch({changes:{from:cmView.state.doc.length,insert:${JSON.stringify(draft)}}});
-   const dirty=getEditContent();check(await choose(confirmExitEdit(),'close-confirm-cancel')===false,'cancel_refuses_editor_exit');
+   const dirty=getEditContent(),firstExit=confirmExitEdit();
+   await until(()=>!$('close-confirm-modal').classList.contains('hidden'));
+   check(await confirmExitEdit()===false,'repeated_exit_does_not_replace_pending_decision');
+   check(!$('close-confirm-modal').classList.contains('hidden'),'first_confirmation_still_visible');
+   $('close-confirm-cancel').click();check(await firstExit===false,'cancel_refuses_editor_exit');
    check(state.editing&&getEditContent()===dirty,'cancel_preserves_exact_visible_draft');
    check(await choose(confirmExitEdit(),'close-confirm-discard')===true,'discard_exit_acknowledged');
    check(!state.editing&&!getActiveTab().isDirty&&text(getActiveTab().content)===${JSON.stringify(original)},'discard_restores_saved_preview');
@@ -42,6 +46,15 @@ function driver(phase,files){return String.raw`(async()=>{
    check(await saveEdit()===true,'real_save_committed');
    const owner=getActiveTab();await closeTab(owner.id);check(!state.tabs.includes(owner),'saved_editor_closes_without_prompt');
    await loadFile(files.original);check(text(getActiveTab().content)===${JSON.stringify(original+saved)},'saved_body_reopens_exactly');
+   const kept=getActiveTab();await loadFile(files.incoming);await toggleEdit();
+   cmView.dispatch({changes:{from:cmView.state.doc.length,insert:${JSON.stringify(incomingSaved)}}});
+   check(await ReadMDReview.flush()===true,'background_draft_review_persisted');
+   syncActiveTabDirty();const background=getActiveTab();exitEdit();await switchTab(kept.id);
+   check(background.isDirty&&getActiveTab()===kept,'dirty_background_target_is_distinct');
+   await choose(closeTab(background.id),'close-confirm-save');
+   check(state.tabs.length===1&&getActiveTab()===kept&&!state.tabs.includes(background),'background_save_closes_only_its_target');
+   const savedBackground=await(await apiFetch('/api/file?p='+encodeURIComponent(files.incoming))).json();
+   check(text(savedBackground.original)===${JSON.stringify('# Incoming\n'+incomingSaved)},'background_save_commits_exact_target_body');
   }else{
    await __readmdSessionReady;
    if(phase==='reopen'){
@@ -81,7 +94,7 @@ async function run(app,out,baselineBoot){
     await instance.wait(60000);const resultFile=path.join(dirs.profile,'native-qa-result.json');const result=JSON.parse(fs.readFileSync(resultFile));fs.renameSync(resultFile,path.join(out,phase+'.json'));
     report.phases.push({phase,result,host:instance.receipt});assert.equal(result.ok,true,result.checks.join(','));
     assert.deepEqual(fs.readFileSync(files.original),encode(original+saved),'saved BOM and CRLF preserved');
-    assert.equal(fs.readFileSync(files.incoming,'utf8'),'# Incoming\n');
+    assert.equal(fs.readFileSync(files.incoming,'utf8'),'# Incoming\n'+incomingSaved);
    }finally{await instance.cleanup();}
    fs.writeFileSync(index,html);
   }

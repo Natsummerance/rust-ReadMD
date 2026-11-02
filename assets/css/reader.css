@@ -4,3 +4,6 @@
    time after startup, to keep the welcome screen light.  Until they are in,
    a freshly rendered article stays invisible so it never flashes unstyled. */
 .rd-article.rd-pending { visibility: hidden; }
+.restore-unavailable { max-width:var(--line-width);margin:var(--space-8) auto;padding:var(--space-6);overflow-wrap:anywhere; }
+.restore-unavailable .modal-actions { justify-content:flex-start;flex-wrap:wrap; }
+.restore-unavailable .tb-btn { min-width:44px;min-height:44px; }
