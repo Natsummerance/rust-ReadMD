@@ -1,0 +1,44 @@
+{
+  "sourceCommit": "b37c5364d97ad5b964891669bc8ab557977c5687",
+  "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+  "indexSha256": "2f71109cd65b07c89629930d56d22d9a7c4400cf0424a0de100ddb9d703f9ee5",
+  "readerCssSha256": "28cee3db5c4ac37dbda20afe3623d5ee711e9f9562d1ca2670428171188bfac9",
+  "node": {
+    "tests": 1797,
+    "passed": 1794,
+    "failed": 0,
+    "skipped": 3,
+    "logSha256": "a7c0349235432725fc12c62c1c4b413cd2b7db7111ea3054150a28db1880682d",
+    "skips": "three Windows-only process/PowerShell checks"
+  },
+  "browser": {
+    "passed": 5,
+    "native": false,
+    "realBackend": true,
+    "authShim": false,
+    "cspRelaxed": false,
+    "logSha256": "a6ad6223916c0ecacc1666ea32e02f7a9a20c72d8651df8c72210707ce22155c"
+  },
+  "nativeFinalCandidate": {
+    "passed": false,
+    "reason": "requires a desktop interval without another operator"
+  },
+  "modelsRequested": false,
+  "status": "candidate_native_pending",
+  "version": "0.0.6",
+  "latestReleasedMacSource": "4fd9bf6e1009967a4cc232a8661dce7e70a81a20",
+  "staticPackageCheck": {
+    "passed": true,
+    "packages": 4,
+    "reportSha256": "407312662cd4201b4ad1f5eaf8160155da77361808596aa053691f4b1d726d24",
+    "nativeExecutionPassed": false
+  },
+  "firstFailureChecks": [
+    "repeated confirmation replaces previous handlers",
+    "failed target activation still saves a different visible page",
+    "clean unreadable restored page silently disappears"
+  ],
+  "contractLedgerChanged": false,
+  "appleNotarized": false,
+  "physicalIntelVerified": false
+}
