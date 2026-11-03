@@ -86,6 +86,17 @@ jobs:
         run: node tools/test/review-version-fence-platform.mjs
       - name: P1 real code cancellation, HTTP and MCP lifecycle
         run: node tools/test/code-lifecycle-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-lifecycle
+      - name: P1 code output, durable history and new MCP processes
+        run: node tools/test/code-output-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-output
+      - name: Retain actual code lifecycle and output receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-lifecycle-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-lifecycle/report.json
+            .cache/p1-code-output/report.json
       - name: Retain version fence receipt and any first failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -225,3 +236,17 @@ jobs:
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
           READMD_PANEL_TEST_THEMES: light,dark,sepia
         run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js --project=desktop --project=mobile
+      - name: P1 real code output in the production browser UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-output-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-output-browser
+      - name: Retain code output browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-output-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-output-browser/report.json
+            .cache/p1-code-output-browser/first-failure.png
+            .cache/p1-code-output-browser/deadline.json

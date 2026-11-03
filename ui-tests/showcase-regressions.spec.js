@@ -97,7 +97,7 @@ test('persisted code output uses editor offsets while retaining Windows file lin
   const source='# Results\r\n\r\n```javascript\r\nconsole.log(3);\r\n```\r\n\r\nKeep this final paragraph.\r\n';
   const file=await open(page,'windows-output.md',source);
   await page.evaluate(()=>toggleEdit());await page.locator('.cm-editor').waitFor();
-  expect(await page.evaluate(()=>persistCodeChunkOutput({dataset:{sourceLine:3}},'3'))).toBe(true);
+  expect(await page.evaluate(()=>persistCodeChunkOutput({dataset:{sourceLine:3,code:encodeURIComponent('console.log(3);')}},'3'))).toBe(true);
   const saved=await fs.readFile(file,'utf8');
   expect(saved).toContain('console.log(3);\r\n```');
   expect(saved).toContain('<!-- code_chunk_output -->\r\n\r\n3');

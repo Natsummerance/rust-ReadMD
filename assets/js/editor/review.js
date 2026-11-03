@@ -408,6 +408,7 @@ window.ReadMDReview = (() => {
   }
   function mount(view, tab, initial) {
     const rec = record(tab, initial); if (!rec) return;
+    window.ReadMDCodeRuns?.mountEditor?.(tab);
     rec.view = view; if (view) views.set(view, rec);
     if (rec.snapshot && rec.local === lf(initial) && rec.snapshot.content === rec.local) refresh(rec);
     void open(rec).then(() => pump(rec));
@@ -447,6 +448,24 @@ window.ReadMDReview = (() => {
   async function propose(edits, stamp, tab = activeTab()) {
     const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
+  }
+  async function codeTarget(sourceLine, code, tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision, source_line: sourceLine, code });
+    const target = snapshot.code_target;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !target ||
+        target.document_id !== stamp.document_id || target.generation !== stamp.generation || target.review_revision !== stamp.review_revision ||
+        target.code !== code || !/^[a-f0-9]{64}$/.test(target.node_id || '') ||
+        !Number.isSafeInteger(target.from) || !Number.isSafeInteger(target.to) || target.from < 0 || target.to < target.from || target.to > stamp.content.length) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), target: Object.freeze(target) });
+  }
+  async function codeOutput(output, context, signal, taskId) {
+    if (!context?.tab || !Array.isArray(state.tabs) || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_output', { body: { target: context.target, output: String(output ?? ''), task_id: taskId }, signal }, context.tab, context.stamp);
   }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
   async function discard(tab = activeTab(), expected) {
@@ -857,7 +876,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();

@@ -1249,6 +1249,9 @@ async function closeAllTabs() {
         await write(true, snapshot(), 'close_compensation');
         return failed();
       }
+      // Mark cancellation before ending review reservations: queued generated
+      // output must not mutate a page whose close was just acknowledged.
+      window.ReadMDCodeRuns?.cancelTabs?.(tabs);
       apply(); // No await between the verified acknowledgement and UI removal.
       fence++;
       try { localStorage.setItem(storageKey, JSON.stringify(snapshot())); } catch (_) {}

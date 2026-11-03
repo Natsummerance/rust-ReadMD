@@ -105,7 +105,7 @@ fn pdf_document_schema()->Value{
 }
 fn review_document_schema()->Value {
     let mut value=schema(json!({
-        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard"]},
+        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard","code_target","code_output"]},
         "path":{"type":"string","minLength":1},"content":{"type":"string"},"document_id":{"type":"string","minLength":1,"maxLength":256},
         "generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
         "call_id":{"type":"string","minLength":1,"maxLength":256},"origin":{"type":"string","enum":["editor","ai"]},
@@ -113,6 +113,11 @@ fn review_document_schema()->Value {
             "from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"insert":{"type":"string"}}}},
         "ids":{"type":"array","minItems":1,"maxItems":4096,"uniqueItems":true,"items":{"type":"string","minLength":1}},"decision":{"type":"string","enum":["accept","withdraw"]},
         "resolution":{"type":"string","enum":["keep_current"]},
+        "source_line":{"type":"integer","minimum":1},"code":{"type":"string","maxLength":200000},"output":{"type":"string","maxLength":400000},
+        "target":{"type":"object","additionalProperties":false,"required":["document_id","generation","review_revision","content_revision","node_id","source_line","from","to","code"],"properties":{
+            "document_id":{"type":"string","minLength":1},"generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
+            "content_revision":{"type":"string","minLength":64,"maxLength":64},"node_id":{"type":"string","minLength":64,"maxLength":64},
+            "source_line":{"type":"integer","minimum":1},"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"code":{"type":"string","maxLength":200000}}},
         "task_id":{"type":"string","minLength":1,"maxLength":128},"confirm":confirm_prop()
     }), &["action","confirm"]);
     // Validate each operation's required fields before it can authorize a file
@@ -121,6 +126,8 @@ fn review_document_schema()->Value {
         {"type":"object","properties":{"action":{"const":"open"}},"required":["path"]},
         {"type":"object","properties":{"action":{"const":"read"}},"required":["document_id"]},
         {"type":"object","properties":{"action":{"enum":["edit","propose"]}},"required":["document_id","generation","review_revision","call_id","edits"]},
+        {"type":"object","properties":{"action":{"const":"code_target"}},"required":["document_id","generation","review_revision","source_line","code"]},
+        {"type":"object","properties":{"action":{"const":"code_output"}},"required":["document_id","generation","review_revision","call_id","target","output"]},
         {"type":"object","properties":{"action":{"const":"resolve"}},"required":["document_id","generation","review_revision","call_id","ids","decision"]},
         {"type":"object","properties":{"action":{"enum":["undo","redo","discard"]}},"required":["document_id","generation","review_revision","call_id"]},
     ]);

@@ -1921,6 +1921,55 @@ function postProcess(container) {
   if (window.ReadMDReader) window.ReadMDReader.afterRender(body);
 }
 
+window.ReadMDCodeRuns = (() => {
+  const active = new Set();
+  const writers = new Set(); let reserved = 0;
+  const wake = () => { for (const resolve of writers) resolve(); writers.clear(); };
+  const id = () => 'code-' + window.crypto.randomUUID();
+  function create(tab) {
+    if (reserved) return null;
+    const job = { tab, taskId: id(), insertTaskId: id(), controller: new AbortController(), phase: 'preparing', cancelled: false, finished: false };
+    job.done = new Promise(resolve => { job.resolve = resolve; }); active.add(job); return job;
+  }
+  function cancel(job) {
+    if (!job || job.finished) return;
+    job.cancelled = true; job.controller.abort();
+    wake();
+    const taskId = job.phase === 'writing' ? job.insertTaskId : job.taskId;
+    if (job.phase !== 'preparing') void window.ReadMDReview?.cancelAi(taskId, () => !job.finished);
+  }
+  function finish(job) { job.finished = true; active.delete(job); job.resolve(); }
+  function mountEditor(tab) {
+    // Incremental widgets belong to one document. The existing editor mount
+    // runs before its preview; equal Markdown in another page must not reuse
+    // old listeners or task output. In-flight old renders keep their guards.
+    const pane = document.getElementById('preview-pane');
+    if (pane && pane._readmdPreviewOwner !== tab) {
+      // Layout can render the textarea draft before CodeMirror mounts. Its
+      // identical text must not certify a pane we are about to clear.
+      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
+      if (typeof pvLast !== 'undefined') pvLast = '';
+      pane._readmdPreviewOwner = tab; pane.replaceChildren();
+    }
+  }
+  function cancelTabs(tabs) { for (const job of active) if (tabs.includes(job.tab)) cancel(job); }
+  function reserveWrites() {
+    reserved++; let released = false;
+    return () => { if (!released) { released = true; reserved--; wake(); } };
+  }
+  async function beforeWrite(job) {
+    while (reserved && !job.cancelled) await new Promise(resolve => writers.add(resolve));
+    if (job.cancelled) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  }
+  async function cancelAll() {
+    const jobs = [...active]; jobs.forEach(cancel);
+    let timer;
+    const stopped = await Promise.race([Promise.all(jobs.map(job => job.done)).then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 2000); })]);
+    clearTimeout(timer); return stopped;
+  }
+  return { create, cancel, finish, mountEditor, cancelTabs, cancelAll, reserveWrites, beforeWrite, busy: () => active.size };
+})();
+
 function renderAllCodeChunks(container) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const cards = (container || document).querySelectorAll('.code-chunk-card');
@@ -1935,37 +1984,60 @@ function renderAllCodeChunks(container) {
     }
   }
   cards.forEach(card => {
-    if (card._bound) return;
+    const owner = typeof getActiveTab === 'function' ? getActiveTab() : null;
+    if (card._bound && card._readmdCodeOwner === owner) return;
+    if (card._bound) {
+      // A reused reading node cannot keep another document's listeners. The
+      // previous task may finish against its detached node and fixed target.
+      const fresh = card.cloneNode(true); card.replaceWith(fresh); card = fresh;
+    }
     card._bound = true;
+    card._readmdCodeOwner = owner;
     const btn = card.querySelector('.code-chunk-run-btn');
     const statusEl = card.querySelector('.code-chunk-status');
     const timerEl = card.querySelector('.code-chunk-timer');
     const outWrap = card.querySelector('.code-chunk-output');
     const stdoutEl = card.querySelector('.code-chunk-stdout');
     const plotEl = card.querySelector('.code-chunk-plot');
+    statusEl.className = 'code-chunk-status'; statusEl.textContent = _t('status.ready'); timerEl.textContent = '';
+    outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren();
+    card.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    btn.textContent = `▶ ${_t('menu.runCode')}`;
 
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
+    let currentJob = null;
 
-    const run = async () => {
+    const run = async ({ batch = false } = {}) => {
+      if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
+      if (!owner || !state.tabs.includes(owner)) return;
+      const job = window.ReadMDCodeRuns.create(owner);
+      if (!job) return;
+      currentJob = job;
+      const wasEditing = Boolean(state.editing && getActiveTab() === owner);
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
       statusEl.className = 'code-chunk-status running';
       statusEl.textContent = _t('reader.codeRunning');
-      btn.disabled = true;
-      btn.textContent = _t('reader.codeRunning');
+      btn.disabled = false;
+      btn.textContent = _t('common.cancel');
+      if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+      outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren();
       const t0 = Date.now();
       const interval = setInterval(() => {
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(1) + 's';
       }, 100);
 
       try {
+        const context = await window.ReadMDReview.codeTarget(Number(card.dataset.sourceLine), code, owner, job.controller.signal);
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+        job.phase = 'running';
         let res;
-        if (hasPy && py.run_code_chunk) {
-          res = await py.run_code_chunk(lang, code, null, 10, true);
-        } else {
+        // Native and browser hosts share the authenticated cancellable route.
+        {
           const r = await apiFetch('/api/code/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lang: lang, code: code, confirm: true })
+            body: JSON.stringify({ lang, code: context.target.code, confirm: true, task_id: job.taskId })
           });
           res = await r.json();
         }
@@ -1973,9 +2045,8 @@ function renderAllCodeChunks(container) {
         clearInterval(interval);
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
 
+        if (job.cancelled || !state.tabs.includes(owner)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
         if (res && res.ok) {
-          statusEl.className = 'code-chunk-status success';
-          statusEl.textContent = _t('convert.statusOk');
           const outputFormat = String(card.dataset.outputFormat || 'text').toLowerCase();
           const outputText = (res.stdout || '') + (res.stderr ? ('\n' + res.stderr) : '');
           // Match MPE's output channel semantics while keeping every path
@@ -2004,9 +2075,13 @@ function renderAllCodeChunks(container) {
           // block only renders into the preview; ``output=true`` adds a
           // bounded marker block after the matching fence and persists it
           // through the editor's normal history/save path.
-          if (card.dataset.output === 'true' && outputFormat !== 'none' && state.editing) {
-            await persistCodeChunkOutput(card, outputText);
+          if (card.dataset.output === 'true' && outputFormat !== 'none' && wasEditing) {
+            await window.ReadMDCodeRuns.beforeWrite(job);
+            job.phase = 'writing';
+            await persistCodeChunkOutput(card, outputText, context, job.controller.signal, job.insertTaskId);
           }
+          statusEl.className = 'code-chunk-status success';
+          statusEl.textContent = _t('convert.statusOk');
         } else {
           statusEl.className = 'code-chunk-status error';
           statusEl.textContent = _t('convert.statusFailed');
@@ -2018,21 +2093,28 @@ function renderAllCodeChunks(container) {
           // the document UI only renders a localized, stable message.  This
           // prevents backend paths, subprocess output or untranslated text
           // from leaking into a document preview.
-          stdoutEl.textContent = _t('toast.unknownError');
+          stdoutEl.textContent = _t(res?.error_code === 'execution_cancelled' ? 'task.cancelled' : 'toast.unknownError');
         }
       } catch (err) {
         clearInterval(interval);
         statusEl.className = 'code-chunk-status error';
-        statusEl.textContent = _t('reader.callFailed');
+        const cancelled = job.cancelled || err?.code === 'cancelled' || err?.code === 'execution_cancelled';
+        statusEl.textContent = _t(cancelled ? 'task.cancelled' : 'reader.callFailed');
         outWrap.classList.remove('hidden');
-        stdoutEl.textContent = _t('toast.unknownError');
+        plotEl.replaceChildren();
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : /stale|conflict/.test(err?.code || '') ? 'review.conflict' : 'toast.unknownError');
       } finally {
+        clearInterval(interval);
+        timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
+        window.ReadMDCodeRuns.finish(job); currentJob = null;
         btn.disabled = false;
         btn.textContent = `▶ ${_t('reader.runAgain')}`;
+        if (copy) copy.disabled = false; if (clear) clear.disabled = false;
       }
     };
 
-    if (btn) btn.addEventListener('click', run);
+    card._readmdRunCode = run;
+    if (btn) btn.addEventListener('click', () => { void run(); });
 
     // 绑定输出区复制与清空交互
     const copyBtn = card.querySelector('.code-chunk-copy-btn');
@@ -2062,50 +2144,21 @@ function renderAllCodeChunks(container) {
 }
 window.renderAllCodeChunks = renderAllCodeChunks;
 
-async function persistCodeChunkOutput(card, outputText) {
-  const sourceLine = Number(card && card.dataset && card.dataset.sourceLine);
-  if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing) return false;
-  // Editor offsets count normalized newlines; preserve file line endings
-  // only when obtaining the save snapshot, not when calculating positions.
-  const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
-  const lines = String(current || '').split('\n');
-  const fenceStart = Math.max(0, Math.min(lines.length - 1, sourceLine - 1));
-  if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
-  let fenceEnd = fenceStart + 1;
-  while (fenceEnd < lines.length && !/^\s*```\s*$/.test(lines[fenceEnd])) fenceEnd += 1;
-  if (fenceEnd >= lines.length) return false;
-
-  const markerStart = '<!-- code_chunk_output -->';
-  const markerEnd = '<!-- /code_chunk_output -->';
-  let outputStart = -1;
-  for (let index = fenceEnd + 1; index < Math.min(lines.length, fenceEnd + 7); index += 1) {
-    if (lines[index].trim() === markerStart) { outputStart = index; break; }
+async function persistCodeChunkOutput(card, outputText, context, signal, taskId) {
+  const tab = context?.tab || (typeof getActiveTab === 'function' ? getActiveTab() : null);
+  if (!tab || !state.tabs.includes(tab)) return false;
+  if (!context) {
+    const sourceLine = Number(card?.dataset?.sourceLine);
+    if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing || typeof card?.dataset?.code !== 'string') return false;
+    context = await window.ReadMDReview.codeTarget(sourceLine, decodeURIComponent(card.dataset.code), tab, signal);
   }
-  let replaceFrom;
-  let replaceTo;
-  if (outputStart >= 0) {
-    let outputEnd = outputStart + 1;
-    while (outputEnd < lines.length && lines[outputEnd].trim() !== markerEnd) outputEnd += 1;
-    if (outputEnd >= lines.length) return false;
-    replaceFrom = outputStart;
-    replaceTo = outputEnd + 1;
-  } else {
-    replaceFrom = fenceEnd + 1;
-    replaceTo = fenceEnd + 1;
+  const snapshot = await window.ReadMDReview.codeOutput(outputText, context, signal, taskId);
+  if (snapshot.code_output_unchanged) return false;
+  // Only the original visible editor can trigger its existing explicit save
+  // path. An inactive target remains a durable draft until its own save.
+  if (getActiveTab() === tab && state.editing && typeof saveEdit === 'function') {
+    if (await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
   }
-  const safeText = String(outputText || '').replace(/\r\n?/g, '\n');
-  const block = [
-    '', markerStart, '', safeText, '', markerEnd, ''
-  ].join('\n');
-  const offsets = [0];
-  for (const line of lines) offsets.push(offsets[offsets.length - 1] + line.length + 1);
-  const from = offsets[replaceFrom];
-  const to = offsets[replaceTo];
-  const existing = lines.slice(replaceFrom, replaceTo).join('\n');
-  if (existing === block.replace(/^\n/, '').replace(/\n$/, '')) return false;
-  if (cmView) cmView.dispatch({ changes: { from, to, insert: block } });
-  else if ($('edit-area')) $('edit-area').setRangeText(block, from, to, 'end');
-  if (typeof saveEdit === 'function') await saveEdit();
   return true;
 }
 window.persistCodeChunkOutput = persistCodeChunkOutput;

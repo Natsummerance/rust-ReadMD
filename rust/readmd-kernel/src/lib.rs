@@ -37,6 +37,7 @@ pub mod publication_pdf_metadata;
 #[cfg(test)]mod publication_export_tests;
 pub mod cross_references;
 pub mod code_chunk_runner;
+mod code_chunk_output;
 pub mod codecs;
 pub mod content;
 pub mod document_history;

@@ -227,6 +227,7 @@
   async function prepareClose() {
     if (closing) return false;
     closing = true;
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
     try {
       if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
@@ -235,6 +236,7 @@
       if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
       if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
       if (!await confirmExitChanges()) return false;
+      if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
       if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
       const unchanged=closeStamp();
       if (await window.ReadMDSession?.flush() === false) return false;
@@ -243,9 +245,11 @@
       if (!unchanged()) return false;
       window.ipc?.postMessage('readmd:quit');
       return true;
-    } finally { closing = false; }
+    } finally { releaseCode?.(); closing = false; }
   }
   async function prepareInstall() {
+    const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
+    try {
     if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
     if (state.editing) syncActiveTabDirty();
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
@@ -253,6 +257,7 @@
     if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
     if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
     if (!await confirmExitChanges()) return false;
+    if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
     if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
     const unchanged=closeStamp();
     if (await window.ReadMDSession?.flush() === false) return false;
@@ -260,6 +265,7 @@
     if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
     if (!unchanged()) return false;
     return true;
+    } finally { releaseCode?.(); }
   }
   function closeStamp() {
     const tabs=[...state.tabs], expected=tabs.map(tab=>({tab,path:tab.path,content:capture(tab).content}));

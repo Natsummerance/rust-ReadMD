@@ -337,6 +337,9 @@ pub fn handle(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return Err(error("review_invalid_request"));
     }
     let action = value["action"].as_str().unwrap_or("").to_string();
+    if matches!(action.as_str(), "code_target" | "code_output") {
+        return crate::code_chunk_output::handle(app, &value);
+    }
     // Keep the same order as save/rename. Drafts have no filesystem endpoint
     // and retain their existing availability without creating an OS gate.
     let physical_open = matches!(action.as_str(), "open"|"resume")

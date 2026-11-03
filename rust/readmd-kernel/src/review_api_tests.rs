@@ -59,6 +59,46 @@ fn save_body(file: &Path, state: &Value) -> Value {
             "generation":state["generation"],"review_revision":state["review_revision"],"call_id":uuid::Uuid::new_v4().to_string()}})
 }
 
+#[path = "review_api_code_tests.rs"]
+mod code_output_tests;
+
+#[test]
+fn durable_code_output_binds_the_second_fence_saves_reopens_and_is_one_undo() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = app(root.path());
+    let file = root.path().join("代码结果 中文😀.md");
+    let source = "# 😀\n\n```sql cmd output=true\nSELECT 42;\n```\n\nSame.\n\n```sql cmd output=true\nSELECT 42;\n```\n\nTail.\n";
+    std::fs::write(&file, format!("\u{feff}{}", source.replace('\n', "\r\n"))).unwrap();
+    let first = open(&runtime, &file);
+    let first = mutate(&runtime, &first, "code-pending", "propose", json!({"edits":[source_edit(&first,"Same.","Pending.",0)],"origin":"ai"}));
+    let context = json!({"document_id":first["document_id"],"generation":first["generation"],"review_revision":first["review_revision"]});
+    let mut prepare = context.clone();
+    prepare.as_object_mut().unwrap().extend(json!({"action":"code_target","source_line":9,"code":"SELECT 42;"}).as_object().unwrap().clone());
+    let (status, prepared) = api(&runtime, "/api/review", &prepare);
+    assert_eq!(status, 200, "{prepared}");
+    let mut request = context.clone();
+    request.as_object_mut().unwrap().extend(json!({"action":"code_output","target":prepared["code_target"],"output":"42","call_id":"code-second-fence"}).as_object().unwrap().clone());
+    let (status, result) = api(&runtime, "/api/review", &request);
+    assert_eq!(status, 200, "{result}");
+    let expected = "# 😀\n\n```sql cmd output=true\nSELECT 42;\n```\n\nPending.\n\n```sql cmd output=true\nSELECT 42;\n```\n\n<!-- code_chunk_output -->\n\n42\n\n<!-- /code_chunk_output -->\n\nTail.\n";
+    assert_eq!(result["content"], expected);
+    assert_eq!(result["changes"][0]["decision"], "pending");
+    assert_eq!(api(&runtime, "/api/review", &request).1, result, "same request recovers the exact receipt");
+    let (status, saved) = api(&runtime, "/api/save", &save_body(&file, &result));
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(std::fs::read(&file).unwrap(), format!("\u{feff}{}", expected.replace('\n', "\r\n")).into_bytes());
+    drop(runtime);
+    let runtime = app(root.path());
+    let reopened = open(&runtime, &file);
+    assert_eq!(reopened["content"], expected);
+    let undone = mutate(&runtime, &reopened, "code-result-undo", "undo", json!({}));
+    assert_eq!(undone["content"], first["content"]);
+    assert_eq!(undone["changes"][0]["decision"], "pending");
+    let redone = mutate(&runtime, &undone, "code-result-redo", "redo", json!({}));
+    assert_eq!(redone["content"], expected);
+    assert_eq!(api(&runtime, "/api/save", &save_body(&file, &redone)).0, 200);
+}
+
 #[test]
 fn durable_api_saves_reopens_and_withdraws_only_selected_duplicate_block() {
     let root = tempfile::tempdir().unwrap();
