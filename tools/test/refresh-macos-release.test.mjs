@@ -121,3 +121,18 @@ test('platform admission uses the latest job attempt and cannot hide a new failu
   await assert.rejects(refreshPlatforms(g),/Required platform job did not pass/);
   assert(g.events.every(e=>e.method==='GET'));
 });
+test('an explicit Ubuntu 24.04 proof requires that exact successful kernel job',async t=>{
+  const f=fixture(t,{platforms:true});f.verification.linuxKernelRunner='ubuntu-24.04';
+  const linux=f.jobs.find(j=>j.name==='Kernel tests · ubuntu-latest');linux.name='Kernel tests · ubuntu-24.04';
+  assert.equal((await refreshPlatforms(f)).status,'complete');
+  const g=fixture(t,{platforms:true});g.verification.linuxKernelRunner='ubuntu-24.04';
+  await assert.rejects(refreshPlatforms(g),/Required platform job did not pass: Kernel tests · ubuntu-24.04/);
+  assert(g.events.every(e=>e.method==='GET'));
+});
+test('a failed pinned Linux job cannot be replaced by a latest-runner success',async t=>{
+  const f=fixture(t,{platforms:true});f.verification.linuxKernelRunner='ubuntu-24.04';
+  f.jobs.push({id:300,name:'Kernel tests · ubuntu-24.04',conclusion:'failure'});
+  await assert.rejects(refreshPlatforms(f),/Required platform job did not pass/);assert(f.events.every(e=>e.method==='GET'));
+  const g=fixture(t,{platforms:true});g.verification.linuxKernelRunner='arbitrary-passing-job';
+  await assert.rejects(refreshPlatforms(g),/Unsupported declared Linux/);assert.equal(g.events.length,0);
+});

@@ -35,6 +35,8 @@ export async function refreshMacos({before,directory,sourceCommit,tagCommit,note
 export async function refreshPlatforms(options) {
   const {sourceCommit,tagCommit,verification}=options;
   if(verification?.sourceCommit!==sourceCommit||verification.tagCommit!==tagCommit||!Number.isSafeInteger(verification.ciRunId)||verification.ciRunId<=0||!/^[a-f\d]{64}$/.test(verification.bootSha256))throw Error('Bound platform CI verification is required');
+  const linuxRunner=verification.linuxKernelRunner??'ubuntu-latest';
+  if(!['ubuntu-latest','ubuntu-24.04'].includes(linuxRunner))throw Error('Unsupported declared Linux kernel runner');
   return refreshSelected(options, {
     names:PLATFORM_NAMES,label:'platform',prefix:'platform',
     proof:proof=>proof.buildRunId===verification.ciRunId&&proof.archiveInspected===true&&(
@@ -48,7 +50,7 @@ export async function refreshPlatforms(options) {
       const inventory=await call('GET',base+'/actions/runs/'+verification.ciRunId+'/jobs?filter=all&per_page=100');
       if(inventory.total_count>100)throw Error('Job history requires explicit pagination review');
       const jobs=inventory.jobs;
-      for(const required of ['Build · Windows x64','Build · Linux x64','Kernel tests · windows-latest','Kernel tests · ubuntu-latest','VS Code and MCP quality','Frontend gates']) {
+      for(const required of ['Build · Windows x64','Build · Linux x64','Kernel tests · windows-latest','Kernel tests · '+linuxRunner,'VS Code and MCP quality','Frontend gates']) {
         const matches=jobs.filter(job=>job.name===required||job.name.endsWith(' / '+required)).sort((a,b)=>b.id-a.id);
         if(!matches.length||matches[0].conclusion!=='success')throw Error('Required platform job did not pass: '+required);
         if(required.startsWith('Build · ')&&!matches[0].steps?.some(step=>step.name==='P0 lifecycle against the actual Windows or Linux release binary'&&step.conclusion==='success'))throw Error('Platform lifecycle regression has not passed');
