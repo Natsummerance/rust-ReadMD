@@ -6,8 +6,10 @@ use std::{
     time::Duration,
 };
 
-// Older kernels must reject this store before ignoring multi-file reservations.
-pub(crate) const SCHEMA_VERSION: i64 = 5;
+// This version also fences semantic payload changes, not just SQL columns.
+// Older kernels must reject before ignoring resource restoration projections
+// or multi-file reservations and persisting a destructive downgrade.
+pub(crate) const SCHEMA_VERSION: i64 = 6;
 pub(crate) const DEFAULT_STORE_BYTES: usize = 64 * 1024 * 1024;
 
 pub(crate) struct Store {

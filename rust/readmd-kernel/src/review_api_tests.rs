@@ -376,7 +376,7 @@ fn durable_api_precise_asset_save_keeps_middle_review_and_rewrites_both_sides() 
 }
 
 #[test]
-fn durable_api_moving_hidden_review_image_refuses_before_file_or_resource_commit() {
+fn durable_api_moving_hidden_review_image_refuses_a_target_owned_by_another_review() {
     let root = tempfile::tempdir().unwrap();
     let runtime = app(root.path());
     let source = root.path().join("source");
@@ -403,7 +403,7 @@ fn durable_api_moving_hidden_review_image_refuses_before_file_or_resource_commit
     let _ = open(&runtime, &target);
     let (status, error) = api(&runtime, "/api/save", &save_body(&target, &proposed));
     assert_eq!(status, 409);
-    assert_eq!(error["error_code"], "review_asset_relocation_required");
+    assert_eq!(error["error_code"], "review_save_conflict");
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "Old target.\n");
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),

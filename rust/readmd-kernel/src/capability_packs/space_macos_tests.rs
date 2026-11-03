@@ -10,12 +10,19 @@ impl Filler {
         let mut filler = Self { path, bytes: 0 };
         let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&filler.path).unwrap();
         let block = vec![0x5a; 1024 * 1024];
+        let mut chunk = block.len();
         loop {
             assert!(filler.bytes < 512 * 1024 * 1024, "owned small-volume bound exceeded");
-            match file.write(&block) {
+            match file.write(&block[..chunk]) {
                 Ok(0) => panic!("zero-byte filler write"),
                 Ok(n) => filler.bytes += n as u64,
-                Err(error) => { assert_eq!(error.raw_os_error(), Some(libc::ENOSPC)); break; }
+                Err(error) => {
+                    assert_eq!(error.raw_os_error(), Some(libc::ENOSPC));
+                    // A failed 1MiB allocation can leave enough room for a
+                    // small document. Exhaust even the last allocatable block
+                    // before claiming that the document consumer sees ENOSPC.
+                    if chunk > 1 { chunk = (chunk / 4).max(1); } else { break; }
+                }
             }
         }
         // HFS+ can report allocation failure on write before flushing. The
@@ -92,6 +99,11 @@ fn native_small_volume_preflight_enospc_cancel_and_reopen() {
     validate(&target, &expected).unwrap(); probe("fonts", &target, &data).unwrap();
 
     // Full volume before admission must fail before creating a staging tree.
+    // Capture the already durable head before exhausting space: opening a WAL
+    // database itself may need disk metadata, and a refused read is not loss.
+    let current = app.review.handle(&json!({"action":"lookup","path":original})).unwrap()["snapshot"].clone();
+    let url = format!("/api/file?p={}", percent_encoding::utf8_percent_encode(&original.to_string_lossy(), percent_encoding::NON_ALPHANUMERIC));
+    assert_eq!(crate::server::call_in_process(&app, "GET", &url, None).0, 200);
     let filler = Filler::full(&root);
     let mut phases = Vec::<String>::new();
     let phases = RefCell::new(&mut phases);
@@ -101,6 +113,11 @@ fn native_small_volume_preflight_enospc_cancel_and_reopen() {
     assert_eq!(denied.status, 507);
     assert!(!phases.borrow().iter().any(|p| p == "extracting"));
     assert_eq!(fs::read(target.join(&font)).unwrap(), font_before);
+    let (save_status, save_failure) = crate::server::call_in_process(&app, "POST", "/api/save", Some(&json!({"path":original,
+        "content":current["content"],"encoding":"utf-8","review_session":{"document_id":current["document_id"],
+        "generation":current["generation"],"review_revision":current["review_revision"],"call_id":"owned-enospc-save"}})));
+    assert_ne!(save_status, 200, "a full-volume save must not claim success: {save_failure}");
+    assert_eq!(fs::read(&original).unwrap(), original_bytes);
     drop(filler);
 
     let cancel_commit = || Err(ApiError::new(422, "cancelled"));
@@ -117,6 +134,7 @@ fn native_small_volume_preflight_enospc_cancel_and_reopen() {
         "capacity":installed["installation_space"],"external_writer_after_admission":true,"native_enospc":true,
         "first_failure_code":failure.code,"old_pack_unchanged":true,"document_unchanged":true,
         "preflight_denied_status":denied.status,"no_stage_on_preflight_denial":true,
-        "cancelled_before_commit":true,"service_reopened":true,"new_process_reopened":false,"model_inference":false,
+        "cancelled_before_commit":true,"document_save_enospc_retained_draft":true,
+        "service_reopened":true,"new_process_reopened":false,"model_inference":false,
         "real_power_loss_certified":false})).unwrap()).unwrap();
 }

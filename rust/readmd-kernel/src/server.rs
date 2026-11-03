@@ -8334,6 +8334,10 @@ fn save_document_copy(app: &Arc<App>, body: &Value, target_str: &str) -> ApiResu
     save_document_assets_locked(app, body, &target_path, None, require_new, &gate, &target_expectation)
 }
 
+#[cfg(test)]
+#[path = "review_resource_save_tests.rs"]
+mod review_resource_save_tests;
+
 /// Save lock is held by the caller through materialization and document commit.
 fn save_document_assets_locked(app: &Arc<App>, body: &Value, target_path: &Path, expected_mtime: Option<f64>, require_new: bool, gate: &crate::document_operations::Guard, target_expectation: &SaveTargetExpectation) -> ApiResult<Response> {
     let content = body.get("content").and_then(Value::as_str).unwrap_or("");
@@ -8353,25 +8357,14 @@ fn save_document_assets_locked(app: &Arc<App>, body: &Value, target_path: &Path,
     }
     if let Some(base) = body.get("base_dir").and_then(Value::as_str).filter(|s| !s.is_empty()) {
         if target_path.parent().map(paths::canonicalize_or_clean).as_ref() != Some(&paths::canonicalize_or_clean(Path::new(base))) {
-            for (_, reference) in crate::document_assets::image_references(content) {
-                if reference.starts_with("data:") || reference.starts_with("blob:") || reference.starts_with("//") || reference.starts_with("/raw?") || reference.contains("://") && !reference.starts_with("file://") { continue; }
-                let source = if reference.starts_with("file://") {
-                    let decoded = percent_encoding::percent_decode_str(&reference[7..]).decode_utf8_lossy();
-                    let mut raw = decoded.strip_prefix("localhost").unwrap_or(&decoded);
-                    if cfg!(windows) && raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') { raw = &raw[1..]; }
-                    PathBuf::from(raw)
-                } else { let p = PathBuf::from(percent_encoding::percent_decode_str(&reference).decode_utf8_lossy().as_ref()); if p.is_absolute() { p } else { Path::new(base).join(p) } };
-                if let Some(name) = source.file_name().and_then(|s| s.to_str()) {
-                    assets.push(crate::document_assets::AssetHandle { path: source.to_string_lossy().into_owned(), name: name.into(), reference });
-                }
-            }
+            assets.extend(crate::document_assets::local_handles(content, Path::new(base)));
         }
     }
     let mut resources = match crate::document_assets::materialize(content, target_path, &assets) {
         Ok(resources) => resources,
         Err(code) => return Ok(Response::json_status(500, &json!({"ok": false, "error_code": code, "error": code}))),
     };
-    let mut review_save=crate::review_api::SaveGuard::prepare(app,body,target_path,&resources.text,&resources.edits)?;
+    let mut review_save=crate::review_api::SaveGuard::prepare_with_assets(app,body,target_path,&resources.text,&resources.edits,&assets)?;
     if let Some(guard)=&review_save {guard.verify_target()?;}
     // Materializing assets can take much longer than the initial preflight.
     // Reject a replaced/moved/changed target before the final file commit.

@@ -92,26 +92,75 @@ fn draft_path(path: &str) -> bool {
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.'))
     })
 }
-fn retained_relative_images(source: &Value) -> bool {
-    source["changes"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|change| change["decision"] != "withdrawn")
-        .any(|change| {
-            crate::document_assets::image_references(change["original"].as_str().unwrap_or(""))
-                .iter()
-                .any(|(_, reference)| {
-                    let text = reference.trim();
-                    !text.is_empty()
-                        && !text.starts_with('#')
-                        && !text.starts_with('/')
-                        && !text.starts_with("data:")
-                        && !text.starts_with("file:")
-                        && !text.contains("://")
-                        && !Path::new(text).is_absolute()
-                })
-        })
+#[derive(Default)]
+struct RetainedResources(Vec<crate::document_assets::Materialized>);
+impl Drop for RetainedResources {
+    fn drop(&mut self) {
+        // A first guard can own the newly created directory. Remove later
+        // guards' files before allowing that first guard to remove the folder.
+        while let Some(guard) = self.0.pop() { drop(guard); }
+    }
+}
+fn resource_restore_projections(
+    source: &Value, target: &Path, asset_text: &str, asset_edits: &[TextEdit],
+    source_assets: &[crate::document_assets::AssetHandle], source_dir: Option<&Path>, moving: bool,
+) -> ApiResult<(Vec<Value>, RetainedResources)> {
+    let content = source["content"].as_str().ok_or_else(|| error("review_invalid_request"))?;
+    let mut projections = Vec::new();
+    let mut guards = RetainedResources::default();
+    let mut copied = std::collections::BTreeSet::new();
+    let mut copied_bytes = 0u64;
+    for change in source["changes"].as_array().into_iter().flatten() {
+        let original = change["restore_original"].as_str().or_else(|| change["original"].as_str())
+            .ok_or_else(|| error("review_invalid_request"))?;
+        let from = change["from"].as_u64().and_then(|v| usize::try_from(v).ok()).ok_or_else(|| error("review_invalid_request"))?;
+        let to = change["to"].as_u64().and_then(|v| usize::try_from(v).ok()).ok_or_else(|| error("review_invalid_request"))?;
+        let images = crate::document_assets::image_references(original);
+        let touched = asset_edits.iter().any(|e| e.from < to && e.to > from);
+        if !(moving && (!images.is_empty() || change["restore_original"].is_string()) || touched) { continue; }
+        if change["taken_over"] == true || change["application"] != "applied" || change["decision"] == "withdrawn" {
+            // These blocks have no authorized withdrawal range. Keep the old
+            // explicit refusal when a move needs a hidden local dependency.
+            if moving && !images.is_empty() { return Err(error("review_asset_relocation_required")); }
+            continue;
+        }
+        if crate::speech::cancelled() { return Err(error("cancelled")); }
+        let restored = tx::apply(content, &ContentTransaction { base_revision: tx::revision(content), origin: "review".into(),
+            edits: vec![TextEdit { from, to, insert: original.into() }] }).map_err(error)?.content;
+        let mut assets = source_assets.to_vec();
+        if let Some(base) = source_dir { assets.extend(crate::document_assets::local_handles(&restored, base)); }
+        else if images.iter().any(|(_, reference)| !reference.contains("://") && !reference.starts_with(['/', '#'])
+            && !reference.starts_with("data:") && !assets.iter().any(|asset| asset.reference == *reference)) {
+            return Err(error("review_asset_relocation_required"));
+        }
+        let mut resources = crate::document_assets::materialize(&restored, target, &assets)
+            .map_err(|_| error("review_asset_relocation_required"))?;
+        let (current_from, current_to) = crate::review::mapped_save_range(from, to, asset_edits);
+        let (restore_from, restore_to) = crate::review::mapped_save_range(from, from + original.encode_utf16().count(), &resources.edits);
+        let current_start = tx::byte_offset(asset_text, current_from).map_err(error)?;
+        let current_end = tx::byte_offset(asset_text, current_to).map_err(error)?;
+        let restore_start = tx::byte_offset(&resources.text, restore_from).map_err(error)?;
+        let restore_end = tx::byte_offset(&resources.text, restore_to).map_err(error)?;
+        if current_from != restore_from || asset_text[..current_start] != resources.text[..restore_start]
+            || asset_text[current_end..] != resources.text[restore_end..] {
+            return Err(error("review_asset_relocation_required"));
+        }
+        let insert = resources.text[restore_start..restore_end].to_string();
+        for asset in &resources.assets {
+            if copied.insert(asset.path.clone()) {
+                copied_bytes = copied_bytes.checked_add(std::fs::metadata(&asset.path).map_err(|_| error("review_asset_relocation_required"))?.len())
+                    .ok_or_else(|| error("review_budget"))?;
+                if copied_bytes > 512 * 1024 * 1024 { return Err(error("review_budget")); }
+            }
+        }
+        projections.push(json!({"id":change["id"],"original_revision":tx::revision(original),
+            "from":current_from,"to":current_to,"content":insert}));
+        // Keep only owned resource identities, not one full document buffer
+        // per review block. Originals remain in the immutable review store.
+        resources.text = String::new(); resources.edits = Vec::new();
+        guards.0.push(resources);
+    }
+    Ok((projections, guards))
 }
 fn authorized(path: &str) -> ApiResult<String> {
     if draft_path(path) {
@@ -488,16 +537,23 @@ pub struct SaveGuard {
     file_committed: bool,
     finished: bool,
     edit_steps: Value,
+    retained_resources: RetainedResources,
 }
 impl SaveGuard {
     /// All source edits are provided by materialization/migration, never inferred
     /// from a broad prefix/suffix diff spanning untouched review blocks.
     pub fn prepare(
+        app: &Arc<App>, body: &Value, target: &Path, asset_text: &str, asset_edits: &[TextEdit],
+    ) -> ApiResult<Option<Self>> {
+        Self::prepare_with_assets(app, body, target, asset_text, asset_edits, &[])
+    }
+    pub(crate) fn prepare_with_assets(
         app: &Arc<App>,
         body: &Value,
         target: &Path,
         asset_text: &str,
         asset_edits: &[TextEdit],
+        source_assets: &[crate::document_assets::AssetHandle],
     ) -> ApiResult<Option<Self>> {
         let Some(review) = body.get("review_session") else {
             // Legacy callers may still save ordinary documents. A file owned
@@ -540,12 +596,23 @@ impl SaveGuard {
             .flatten();
         let moving = source_dir.map(crate::paths::canonicalize_or_clean)
             != target.parent().map(crate::paths::canonicalize_or_clean);
-        if moving && retained_relative_images(&source) {
-            // Retention protects the old bytes, but cannot by itself relocate
-            // hidden originals. Refuse an unsupported image-review move rather
-            // than return a successful save whose later withdrawal is broken.
-            return Err(error("review_asset_relocation_required"));
+        if moving {
+            if let Some(base) = source_dir {
+                // The chooser writer supplies actual visible dependencies.
+                // A legacy direct /save caller cannot move a review head while
+                // leaving its visible relative images at the previous base.
+                for asset in crate::document_assets::local_handles(raw, base) {
+                    if !source_assets.iter().any(|known| known.reference == asset.reference
+                        || known.path == asset.reference || known.path.replace('\\', "/") == asset.reference) {
+                        return Err(error("review_asset_relocation_required"));
+                    }
+                }
+            }
         }
+        let asset_steps = normalized_edits(raw, asset_edits, asset_text)?;
+        if moving || !asset_steps.is_empty() { app.review.validate_resource_save_history(&source).map_err(error)?; }
+        let (mut restore_projections, retained_resources) = resource_restore_projections(
+            &source, target, &normalize(asset_text), &asset_steps, source_assets, source_dir, moving)?;
         let before = if draft_path(path) {
             "missing".into()
         } else {
@@ -570,7 +637,13 @@ impl SaveGuard {
         }
         if let Some(m) = &migration {
             if asset_text != m.content {
-                steps.push(json!({"edits":normalized_edits(asset_text,&m.edits,&m.content)?}));
+                let edits = normalized_edits(asset_text,&m.edits,&m.content)?;
+                for projection in &mut restore_projections {
+                    let (from, to) = crate::review::mapped_save_range(projection["from"].as_u64().unwrap() as usize,
+                        projection["to"].as_u64().unwrap() as usize, &edits);
+                    projection["from"] = json!(from); projection["to"] = json!(to);
+                }
+                steps.push(json!({"edits":edits}));
             }
         }
         let mut projected = normalize(raw);
@@ -602,7 +675,7 @@ impl SaveGuard {
             "action":"prepare_save","document_id":source["document_id"],"generation":review["generation"],
             "review_revision":review["review_revision"],"call_id":call,"content":normalize(raw),
             "disk_revision":before,"expected_disk_revision":expected,"saved_content":normalize(planned),
-            "edit_steps":steps,"encoding":encoding,"line_ending":ending(planned),
+            "edit_steps":steps,"restore_projections":restore_projections,"encoding":encoding,"line_ending":ending(planned),
             "target_path":target.to_string_lossy(),"target_disk_revision":target_before
         })).map_err(error)?;
         let intent = result
@@ -624,6 +697,7 @@ impl SaveGuard {
             file_committed: false,
             finished: false,
             edit_steps: json!(view_steps),
+            retained_resources,
         }))
     }
     pub fn edit_steps(&self) -> Value {
@@ -637,6 +711,9 @@ impl SaveGuard {
     }
     pub fn committed(&mut self) -> ApiResult<Value> {
         self.file_committed = true;
+        // The document has crossed its file commit point. Even a subsequent
+        // database/revision failure must retain resources for intent recovery.
+        for resources in &mut self.retained_resources.0 { resources.commit(); }
         let (actual, _, _) = disk(&self.target)?;
         if actual != self.expected {
             return Err(error("review_needs_recovery"));

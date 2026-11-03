@@ -112,6 +112,27 @@ pub fn image_references(text: &str) -> Vec<(std::ops::Range<usize>, String)> {
     source_image_references(text).map(|images| images.into_iter().map(|(range, url, _)| (range, url)).collect()).unwrap_or_default()
 }
 
+/// Resolve only explicitly referenced local images; never enumerate the
+/// source document's parent or grant it as a workspace root.
+pub(crate) fn local_handles(text: &str, base: &Path) -> Vec<AssetHandle> {
+    image_references(text).into_iter().filter_map(|(_, reference)| {
+        if reference.is_empty() || reference.starts_with('#') || reference.starts_with("data:") || reference.starts_with("blob:")
+            || reference.starts_with("//") || reference.starts_with("/raw?")
+            || reference.contains("://") && !reference.starts_with("file://") { return None; }
+        let source = if let Some(raw) = reference.strip_prefix("file://") {
+            let decoded = percent_encoding::percent_decode_str(raw).decode_utf8_lossy();
+            let mut raw = decoded.strip_prefix("localhost").unwrap_or(&decoded);
+            if cfg!(windows) && raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') { raw = &raw[1..]; }
+            PathBuf::from(raw)
+        } else {
+            let path = PathBuf::from(percent_encoding::percent_decode_str(&reference).decode_utf8_lossy().as_ref());
+            if path.is_absolute() { path } else { base.join(path) }
+        };
+        let name = source.file_name()?.to_str()?.to_string();
+        Some(AssetHandle { path: source.to_string_lossy().into_owned(), name, reference })
+    }).collect()
+}
+
 
 /// This is a strict closed-block proof, not a tolerant HTML interpretation.
 /// Uncertain HTML keeps the existing opaque-scope handling. Nothing inside a
@@ -500,6 +521,7 @@ fn materialize_inner(text: &str, target: &Path, assets: &[AssetHandle], staged_d
     let titles: HashMap<_, _> = images.into_iter().map(|(range, _, title)| (range.start, title)).collect();
     for (range, old) in refs.into_iter().rev() {
         let Some(new) = mappings.get(&old) else { continue; };
+        if new == &old { continue; }
         let raw = &text[range.clone()];
         if let Some(at) = raw.ends_with(')').then(|| raw.rfind("](")).flatten() {
             let after = &raw[at + 2..];

@@ -133,6 +133,7 @@ fn ensure_text_context(tx: &Transaction<'_>, payload: &str) -> Result<(), &'stat
 fn flush_changes(tx: &Transaction<'_>, changes: &[Change]) -> Result<(), &'static str> {
     for change in changes {
         for text in std::iter::once(&change.original)
+            .chain(change.restore_original.iter())
             .chain(std::iter::once(&change.replacement))
             .chain(change.candidate_versions.iter())
         {
@@ -153,6 +154,8 @@ struct Change {
     from: usize,
     to: usize,
     original: ReviewText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restore_original: Option<ReviewText>,
     replacement: ReviewText,
     decision: String,
     application: String,
@@ -211,10 +214,21 @@ struct SaveIntent {
     content: String,
     saved_content: String,
     edit_steps: Vec<Vec<TextEdit>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    restore_projections: Vec<RestoreProjection>,
     encoding: String,
     line_ending: String,
     #[serde(default)]
     reserved_bytes: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct RestoreProjection {
+    id: String,
+    original_revision: String,
+    from: usize,
+    to: usize,
+    content: String,
 }
 
 // A rename is metadata-only. It deliberately does not use finish_intent, which
@@ -279,6 +293,43 @@ impl Service {
         Self {
             store: Store::new(data_dir),
         }
+    }
+
+    /// Read-only proof for resource-moving saves. Image-changing history that
+    /// cannot be projected from an active durable review block stays intact in
+    /// the source session; do not create a copy whose future undo is broken.
+    pub(crate) fn validate_resource_save_history(&self, source: &Value) -> Result<(), &'static str> {
+        self.store.run(|tx| with_text_context(tx, || {
+            let document = load(tx, string(source, "document_id")?)?;
+            if source["generation"].as_u64() != Some(document.generation)
+                || source["review_revision"].as_u64() != Some(document.review_revision) { return Err("review_stale_generation"); }
+            let actions = document.undo.iter().chain(&document.redo).map(|a| (a.event_id, a)).collect::<HashMap<_, _>>();
+            let mut after = document.content.clone();
+            for mapping in document.mappings.iter().rev() {
+                if crate::speech::cancelled() { return Err("cancelled"); }
+                let before = apply(&after, &mapping.inverse)?.content;
+                if let Some(action) = actions.get(&mapping.event_id) {
+                    let touches = |text: &str, edits: &[TextEdit]| {
+                        crate::document_assets::image_references(text).iter().any(|(range, _)| {
+                            let from = text[..range.start].encode_utf16().count();
+                            let to = text[..range.end].encode_utf16().count();
+                            edits.iter().any(|e| if e.from == e.to { e.from > from && e.from < to }
+                                else { e.from < to && e.to > from })
+                        })
+                    };
+                    if touches(&before, &action.edits) || touches(&after, &action.inverse) {
+                        let supported = action.patches.iter().filter_map(|p| p.after.as_ref())
+                            .filter(|old| old.application == "applied" && document.changes.iter().any(|current|
+                                current.id == old.id && current.original == old.original && !current.taken_over
+                                    && current.application == "applied" && current.decision != "withdrawn"))
+                            .count();
+                        if supported == 0 || supported != action.edits.len() { return Err("review_asset_relocation_required"); }
+                    }
+                }
+                after = before;
+            }
+            Ok(())
+        }))
     }
 
     pub fn handle(&self, request: &Value) -> Result<Value, &'static str> {
@@ -457,7 +508,7 @@ impl Service {
                     let original=slice(&before_content,edit.from,edit.to)?.to_string();
                     let from=shifted(edit.from,shift);
                     document.changes.push(Change { id:Uuid::new_v4().to_string(),from,to:from+edit.insert.encode_utf16().count(),
-                        original:ReviewText::new(original),replacement:ReviewText::new(edit.insert.clone()),decision:"pending".into(),application:"applied".into(),
+                        original:ReviewText::new(original),restore_original:None,replacement:ReviewText::new(edit.insert.clone()),decision:"pending".into(),application:"applied".into(),
                         version:next_counter(document.review_revision)?,origin:"ai".into(),task_id:Some(task.into()),taken_over:false,
                         candidate_versions:vec![ReviewText::new(edit.insert.clone())],dependencies:dependencies.iter().cloned().collect(),last_event_id:0 });
                 }
@@ -954,6 +1005,7 @@ fn public_changes(changes: &[Change], content: &str) -> Vec<Value> {
                 "version":change.version,"origin":change.origin,"task_id":change.task_id,"taken_over":change.taken_over,
                 "candidate_versions":change.candidate_versions.iter().map(ReviewText::as_str).collect::<Vec<_>>(),
                 "dependencies":change.dependencies,"last_event_id":change.last_event_id});
+            if let Some(restore) = &change.restore_original { value["restore_original"] = json!(restore.as_str()); }
             value["current"] = json!(slice(content, change.from, change.to).ok());
             value
         })
@@ -1313,6 +1365,14 @@ fn map_geometry(from: &mut usize, to: &mut usize, edits: &[TextEdit]) -> bool {
     }
     touched
 }
+
+/// The save adapter uses exactly the review engine's UTF-16 geometry; resource
+/// rewrites can enlarge a partial image-address change to the whole address.
+pub(crate) fn mapped_save_range(from: usize, to: usize, edits: &[TextEdit]) -> (usize, usize) {
+    let (mut from, mut to) = (from, to);
+    map_geometry(&mut from, &mut to, edits);
+    (from, to)
+}
 fn map_changes(
     document: &mut Document,
     edits: &[TextEdit],
@@ -1479,6 +1539,7 @@ fn edit(
                 from,
                 to,
                 original: ReviewText::new(original),
+                restore_original: None,
                 replacement: ReviewText::new(edit.insert.clone()),
                 decision: "pending".into(),
                 application: application.into(),
@@ -1571,7 +1632,7 @@ fn resolve(
             edits.push(TextEdit {
                 from: change.from,
                 to: change.to,
-                insert: change.original.as_str().into(),
+                insert: change.restore_original.as_ref().unwrap_or(&change.original).as_str().into(),
             });
         }
     }
@@ -1629,7 +1690,17 @@ fn compensate(
             map_geometry(&mut edit.from, &mut edit.to, &mapping.edits);
         }
     }
-    for (edit, expected) in edits.iter().zip(&target.inverse_expected) {
+    for (edit, expected) in edits.iter_mut().zip(&target.inverse_expected) {
+        let projected = target.patches.iter().filter_map(|patch| patch.after.as_ref())
+            .filter_map(|old| document.changes.iter().find(|change| change.id == old.id).map(|current| (old, current)))
+            .find(|(old, current)| !current.taken_over && current.application == "applied"
+                && current.from == edit.from && current.to == edit.to
+                && old.original.as_str() == edit.insert && old.replacement.as_str() == expected
+                && current.restore_original.is_some());
+        let expected = if let Some((_, current)) = projected {
+            edit.insert = current.restore_original.as_ref().unwrap().as_str().into();
+            current.replacement.as_str()
+        } else { expected.as_str() };
         if slice(&document.content, edit.from, edit.to)? != expected {
             return Err("review_conflict");
         }
@@ -1642,6 +1713,9 @@ fn compensate(
     for patch in &target.patches {
         document.changes.retain(|change| change.id != patch.id);
         if let Some(mut restored) = patch.before.clone() {
+            if let Some(current) = before_changes.iter().find(|change| change.id == restored.id && change.original == restored.original) {
+                if current.restore_original.is_some() { restored.restore_original = current.restore_original.clone(); }
+            }
             // Rebase the stored range through the original event, every later
             // mapping and this compensation. No substring search is involved.
             for mapping in document
@@ -1652,6 +1726,16 @@ fn compensate(
                 map_geometry(&mut restored.from, &mut restored.to, &mapping.edits);
             }
             map_geometry(&mut restored.from, &mut restored.to, &edits);
+            if restored.restore_original.is_some() && restored.application == "applied" && !restored.taken_over {
+                // A pre-save metadata-only action can carry the old path
+                // fragment. Its mapped range now owns the complete resource
+                // address; retain that exact current replacement for withdrawal.
+                let replacement = slice(&document.content, restored.from, restored.to)?.to_string();
+                if replacement != restored.replacement.as_str() {
+                    if !restored.candidate_versions.contains(&restored.replacement) { restored.candidate_versions.push(restored.replacement.clone()); }
+                    restored.replacement = ReviewText::new(replacement);
+                }
+            }
             restored.version = next_counter(document.review_revision)?;
             document.changes.push(restored);
         }
@@ -1727,6 +1811,23 @@ fn prepare_save(
     if content != saved_content {
         return Err("review_save_conflict");
     }
+    let restore_projections: Vec<RestoreProjection> = request.get("restore_projections")
+        .map(|v| serde_json::from_value(v.clone())).transpose().map_err(|_| "review_invalid_request")?.unwrap_or_default();
+    if restore_projections.len() > MAX_OPERATIONS
+        || restore_projections.iter().map(|p| &p.id).collect::<BTreeSet<_>>().len() != restore_projections.len() {
+        return Err("review_invalid_request");
+    }
+    for projection in &restore_projections {
+        let change = document.changes.iter().find(|c| c.id == projection.id).ok_or("review_not_found")?;
+        if change.taken_over || change.application != "applied" || change.decision == "withdrawn"
+            || projection.original_revision != change.restore_original.as_ref().unwrap_or(&change.original).hash {
+            return Err("review_save_conflict");
+        }
+        let (mut from, mut to) = (change.from, change.to);
+        for step in &steps { map_geometry(&mut from, &mut to, step); }
+        if (from, to) != (projection.from, projection.to) { return Err("review_save_conflict"); }
+        checked_content(&projection.content)?;
+    }
     checked_content(&saved_content)?;
     let encoding = request
         .get("encoding")
@@ -1762,6 +1863,7 @@ fn prepare_save(
         content: document.content.clone(),
         saved_content,
         edit_steps: steps,
+        restore_projections,
         encoding: encoding.into(),
         line_ending: line_ending.to_ascii_lowercase(),
         reserved_bytes: 0,
@@ -1876,6 +1978,16 @@ fn finish_intent(
     }
     if document.content != intent.saved_content {
         return Err("review_save_conflict");
+    }
+    if !intent.restore_projections.is_empty() {
+        let before_changes = document.changes.clone();
+        for projection in &intent.restore_projections {
+            let change = document.changes.iter_mut().find(|c| c.id == projection.id).ok_or("review_not_found")?;
+            if (change.from, change.to) != (projection.from, projection.to) { return Err("review_save_conflict"); }
+            change.restore_original = Some(ReviewText::new(projection.content.clone()));
+        }
+        let content = document.content.clone();
+        record_action(tx, document, "save_resource_projection", "system", Vec::new(), &content, before_changes, None)?;
     }
     document.path = intent.target_path.clone();
     document.disk_revision = disk.into();
