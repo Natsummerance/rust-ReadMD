@@ -111,13 +111,17 @@
     "binarySha256": "de6c199be109b66d947986932a0209c4a492698e7aace37cb792b0a16b2ae697",
     "bootSha256": "48e709443a84dc088c7c3a3a29411d27d6eeb5fde7ad86ee7d645f4ebeb6de80",
     "actualHeadlessBoundaryChecks": 7,
-    "nativeCocoaAccepted": false
+    "nativeCocoaAccepted": true,
+    "nativeChecks": 75,
+    "nativeReceipt": "readmd-v007-p1-code-native-closeout-2026-11-04.json"
   },
   "v006": {
     "sameIssueIndependentlyReproduced": true,
-    "isolatedBackportSourceCommit": "3b3c9afbddafe389feb64ee4bf9ceb72e08b1b2a",
-    "backportNativeAccepted": false,
-    "releaseReplaced": false
+    "isolatedBackportSourceCommit": "5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4",
+    "backportNativeAccepted": true,
+    "releaseReplaced": false,
+    "backportImplementationCommit": "3b3c9afbddafe389feb64ee4bf9ceb72e08b1b2a",
+    "backportNativeChecks": 68
   },
   "modelsRequested": false,
   "dailyApplicationChangedByP1": false,
