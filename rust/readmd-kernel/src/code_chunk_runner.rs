@@ -39,6 +39,13 @@ use serde_json::{Map, Value};
 use tempfile::TempDir;
 
 mod process_lifecycle;
+mod owned_execution;
+
+/// Close this process's code admission, then wait for its own cancellation and
+/// cleanup. A caller task ID is optional and is not the execution lifetime.
+pub fn stop_owned_executions(timeout: Duration) -> bool {
+    owned_execution::stop(timeout)
+}
 
 /// 与 Python 侧同名常量的权威取值。
 pub const EXECUTION_TIMEOUT: u64 = 10;
@@ -545,6 +552,11 @@ fn stopped_result(code: &str, timeout: u64, sql: bool) -> Map<String, Value> {
 
 /// 底层安全进程调用与 UTF-8 管道捕获（有界流式内存保护与全路径截断）。
 fn run_process(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>) -> Map<String, Value> {
+    owned_execution::run(|| run_process_inner(cmd, cwd, timeout, runtime))
+        .unwrap_or_else(|| stopped_result("execution_cancelled", timeout, false))
+}
+
+fn run_process_inner(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>) -> Map<String, Value> {
     if cmd.is_empty() {
         return exception_dict("invalid_command");
     }
@@ -806,6 +818,13 @@ fn insert_str(res: &mut Map<String, Value>, key: &str, value: &str) {
 /// `_execute_sql_chunk` 的 Rust 原生实现：内置 SQLite 内存库，
 /// 复刻 Python 的行/字符双重有界保护与 `format_cell` 渲染。
 pub fn execute_sql_chunk(code: &str, _cwd: Option<&Path>, timeout: u64) -> Map<String, Value> {
+    owned_execution::run(|| execute_sql_chunk_inner(code, timeout)).unwrap_or_else(|| {
+        let mut result = stopped_result("execution_cancelled", timeout, true);
+        set_lang(&mut result, "sql"); result
+    })
+}
+
+fn execute_sql_chunk_inner(code: &str, timeout: u64) -> Map<String, Value> {
     let timeout = clamp_timeout(timeout);
     let control = SqlControl { check: crate::speech::cancellation_check(), deadline: Instant::now() + Duration::from_secs(timeout), reason: Arc::new(std::sync::atomic::AtomicU8::new(0)), denied: Arc::new(std::sync::atomic::AtomicBool::new(false)) };
     let outcome = if control.stopping() { Err("interrupted".into()) } else { run_sql_statements(code, &control) };
@@ -1579,6 +1598,17 @@ fn path_key(path: &Path) -> String {
 
 /// 公共入口。`Err(..)` 表示 Python 侧会抛出未捕获异常（HTTP 层应回 500）。
 pub fn execute_code_chunk_dict(
+    code: &str,
+    lang: &str,
+    capture_plot: bool,
+    timeout: u64,
+    cwd: Option<&Path>,
+) -> Result<Map<String, Value>, String> {
+    owned_execution::run(|| execute_code_chunk_dict_inner(code, lang, capture_plot, timeout, cwd))
+        .unwrap_or_else(|| Ok(stopped_result("execution_cancelled", timeout, false)))
+}
+
+fn execute_code_chunk_dict_inner(
     code: &str,
     lang: &str,
     capture_plot: bool,

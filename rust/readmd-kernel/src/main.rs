@@ -2055,6 +2055,9 @@ fn shutdown(
     if done.swap(true, Ordering::SeqCst) {
         return if failed { 1 } else { 0 };
     }
+    let code_stopped = readmd_kernel::code_chunk_runner::stop_owned_executions(Duration::from_secs(2));
+    if !code_stopped { eprintln!("code_execution_stop_pending"); }
+    let failed = failed || !code_stopped;
     let _ = tasks.pause_owned();
     // Python leaves the early `return 1` paths without a `_clear_instance()` call
     // even though `start_server` already published the entry; the kernel clears it

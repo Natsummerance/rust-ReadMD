@@ -34,7 +34,7 @@ async function startKernel(binary, profile, workspace) {
       try {
         const page = await fetch(base, { signal: AbortSignal.timeout(1500) });
         const token = (await page.text()).match(/name="readmd-app-token"\s+content="([^"]+)"/)?.[1];
-        if (page.ok && token) return { pid: child.pid, stop, api: (route, request = {}) => fetch(base + route, { ...request,
+        if (page.ok && token) return { pid: child.pid, get exitCode() { return child.exitCode; }, stop, api: (route, request = {}) => fetch(base + route, { ...request,
           headers: { ...request.headers, 'X-ReadMD-App-Token': token, 'X-ReadMD-Token': token }, signal: AbortSignal.timeout(15000) }) };
       } catch (_) { /* The owned server is still starting. */ }
       await delay(100);
