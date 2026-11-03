@@ -78,6 +78,18 @@ jobs:
         run: cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
+      - name: P1 previous released writer cannot downgrade resource history
+        run: node tools/test/review-version-fence-platform.mjs
+      - name: Retain version fence receipt and any first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-version-fence-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-previous-writer/source-fixture.json
+            .cache/p1-previous-writer/result/report.json
+            .cache/p1-previous-writer/result/first-failure.json
 
   frontend:
     name: Frontend gates

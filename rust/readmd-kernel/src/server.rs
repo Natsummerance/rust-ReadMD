@@ -8366,6 +8366,7 @@ fn save_document_assets_locked(app: &Arc<App>, body: &Value, target_path: &Path,
     };
     let mut review_save=crate::review_api::SaveGuard::prepare_with_assets(app,body,target_path,&resources.text,&resources.edits,&assets)?;
     if let Some(guard)=&review_save {guard.verify_target()?;}
+    resources.verify().map_err(|_| crate::review_api::error("review_save_conflict"))?;
     // Materializing assets can take much longer than the initial preflight.
     // Reject a replaced/moved/changed target before the final file commit.
     verify_save_target(app, gate, target_path, target_expectation)?;

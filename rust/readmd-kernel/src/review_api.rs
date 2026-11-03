@@ -118,15 +118,16 @@ fn resource_restore_projections(
         let images = crate::document_assets::image_references(original);
         let touched = asset_edits.iter().any(|e| e.from < to && e.to > from);
         if !(moving && (!images.is_empty() || change["restore_original"].is_string()) || touched) { continue; }
-        if change["taken_over"] == true || change["application"] != "applied" || change["decision"] == "withdrawn" {
-            // These blocks have no authorized withdrawal range. Keep the old
-            // explicit refusal when a move needs a hidden local dependency.
-            if moving && !images.is_empty() { return Err(error("review_asset_relocation_required")); }
-            continue;
-        }
+        let retained_only = change["taken_over"] == true || change["application"] != "applied" || change["decision"] == "withdrawn";
+        // An inactive fragment has no authorized body range to reconstruct.
+        // Complete image originals can be materialized independently, while
+        // the real reachable-history states handle partial address fragments.
+        if retained_only && images.is_empty() { continue; }
         if crate::speech::cancelled() { return Err(error("cancelled")); }
-        let restored = tx::apply(content, &ContentTransaction { base_revision: tx::revision(content), origin: "review".into(),
-            edits: vec![TextEdit { from, to, insert: original.into() }] }).map_err(error)?.content;
+        let restored = if retained_only { original.to_owned() } else {
+            tx::apply(content, &ContentTransaction { base_revision: tx::revision(content), origin: "review".into(),
+                edits: vec![TextEdit { from, to, insert: original.into() }] }).map_err(error)?.content
+        };
         let mut assets = source_assets.to_vec();
         if let Some(base) = source_dir { assets.extend(crate::document_assets::local_handles(&restored, base)); }
         else if images.iter().any(|(_, reference)| !reference.contains("://") && !reference.starts_with(['/', '#'])
@@ -136,16 +137,18 @@ fn resource_restore_projections(
         let mut resources = crate::document_assets::materialize(&restored, target, &assets)
             .map_err(|_| error("review_asset_relocation_required"))?;
         let (current_from, current_to) = crate::review::mapped_save_range(from, to, asset_edits);
-        let (restore_from, restore_to) = crate::review::mapped_save_range(from, from + original.encode_utf16().count(), &resources.edits);
-        let current_start = tx::byte_offset(asset_text, current_from).map_err(error)?;
-        let current_end = tx::byte_offset(asset_text, current_to).map_err(error)?;
-        let restore_start = tx::byte_offset(&resources.text, restore_from).map_err(error)?;
-        let restore_end = tx::byte_offset(&resources.text, restore_to).map_err(error)?;
-        if current_from != restore_from || asset_text[..current_start] != resources.text[..restore_start]
-            || asset_text[current_end..] != resources.text[restore_end..] {
-            return Err(error("review_asset_relocation_required"));
-        }
-        let insert = resources.text[restore_start..restore_end].to_string();
+        let insert = if retained_only { resources.text.clone() } else {
+            let (restore_from, restore_to) = crate::review::mapped_save_range(from, from + original.encode_utf16().count(), &resources.edits);
+            let current_start = tx::byte_offset(asset_text, current_from).map_err(error)?;
+            let current_end = tx::byte_offset(asset_text, current_to).map_err(error)?;
+            let restore_start = tx::byte_offset(&resources.text, restore_from).map_err(error)?;
+            let restore_end = tx::byte_offset(&resources.text, restore_to).map_err(error)?;
+            if current_from != restore_from || asset_text[..current_start] != resources.text[..restore_start]
+                || asset_text[current_end..] != resources.text[restore_end..] {
+                return Err(error("review_asset_relocation_required"));
+            }
+            resources.text[restore_start..restore_end].to_string()
+        };
         for asset in &resources.assets {
             if copied.insert(asset.path.clone()) {
                 copied_bytes = copied_bytes.checked_add(std::fs::metadata(&asset.path).map_err(|_| error("review_asset_relocation_required"))?.len())
@@ -154,13 +157,56 @@ fn resource_restore_projections(
             }
         }
         projections.push(json!({"id":change["id"],"original_revision":tx::revision(original),
-            "from":current_from,"to":current_to,"content":insert}));
+            "from":current_from,"to":current_to,"content":insert,"retained_only":retained_only}));
         // Keep only owned resource identities, not one full document buffer
         // per review block. Originals remain in the immutable review store.
         resources.text = String::new(); resources.edits = Vec::new();
         guards.0.push(resources);
     }
     Ok((projections, guards))
+}
+fn resource_history_projections(
+    app:&Arc<App>,source:&Value,target:&Path,source_assets:&[crate::document_assets::AssetHandle],
+    source_dir:Option<&Path>,moving:bool,
+)->ApiResult<(Value,RetainedResources)>{
+    let mut guards=RetainedResources::default();let mut failure=None;
+    let mut copied=std::collections::BTreeSet::new();let mut total=0u64;
+    let plans=app.review.resource_save_history(source,|state|{
+        let result=(||->ApiResult<crate::review::ResourceState>{
+            let text=state["content"].as_str().ok_or_else(||error("review_invalid_request"))?;
+            let mut assets=source_assets.to_vec();
+            if let Some(base)=source_dir{assets.extend(crate::document_assets::local_handles(text,base));}
+            let mut resources=crate::document_assets::materialize(text,target,&assets).map_err(|_|error("review_asset_relocation_required"))?;
+            let (mut restorations,mut hidden)=resource_restore_projections(state,target,&resources.text,&resources.edits,source_assets,source_dir,moving)?;
+            let mut content=resources.text.clone();let mut steps=Vec::new();
+            if !resources.edits.is_empty(){steps.push(resources.edits.clone());}
+            if matches!(crate::content::ext_of(target).as_str(),"md"|"markdown"|"mkd")&&content.contains("<!--readmd:math:"){
+                let migration=crate::math_migration::plan(&content).map_err(error)?;
+                if migration.content!=content{
+                    let edits=normalized_edits(&content,&migration.edits,&migration.content)?;
+                    for projection in &mut restorations{
+                        let(from,to)=crate::review::mapped_save_range(projection["from"].as_u64().unwrap() as usize,projection["to"].as_u64().unwrap() as usize,&edits);
+                        projection["from"]=json!(from);projection["to"]=json!(to);
+                    }
+                    steps.push(edits);content=migration.content;
+                }
+            }
+            for group in std::iter::once(&resources).chain(hidden.0.iter()){
+                for asset in &group.assets{
+                    if copied.insert(asset.path.clone()){
+                        total=total.checked_add(std::fs::metadata(&asset.path).map_err(|_|error("review_asset_relocation_required"))?.len()).ok_or_else(||error("review_budget"))?;
+                        if total>512*1024*1024{return Err(error("review_budget"));}
+                    }
+                }
+            }
+            resources.text.clear();resources.edits.clear();
+            guards.0.push(resources);guards.0.append(&mut hidden.0);
+            Ok(crate::review::ResourceState{content,steps,restorations})
+        })();
+        result.map_err(|err|{failure=Some(err);"review_asset_relocation_required"})
+    });
+    let plans=plans.map_err(|code|failure.unwrap_or_else(||error(code)))?;
+    Ok((plans,guards))
 }
 fn authorized(path: &str) -> ApiResult<String> {
     if draft_path(path) {
@@ -610,8 +656,7 @@ impl SaveGuard {
             }
         }
         let asset_steps = normalized_edits(raw, asset_edits, asset_text)?;
-        if moving || !asset_steps.is_empty() { app.review.validate_resource_save_history(&source).map_err(error)?; }
-        let (mut restore_projections, retained_resources) = resource_restore_projections(
+        let (mut restore_projections, mut retained_resources) = resource_restore_projections(
             &source, target, &normalize(asset_text), &asset_steps, source_assets, source_dir, moving)?;
         let before = if draft_path(path) {
             "missing".into()
@@ -646,6 +691,10 @@ impl SaveGuard {
                 steps.push(json!({"edits":edits}));
             }
         }
+        let history_projections=if moving||!steps.is_empty(){
+            let(plans,mut resources)=resource_history_projections(app,&source,target,source_assets,source_dir,moving)?;
+            retained_resources.0.append(&mut resources.0);plans
+        }else{json!([])};
         let mut projected = normalize(raw);
         let mut view_steps = Vec::new();
         for step in &steps {
@@ -667,6 +716,11 @@ impl SaveGuard {
         let bytes = crate::text_encoding::encode(planned, encoding)
             .map_err(|_| error("encoding_unrepresentable"))?;
         let expected = digest(&bytes);
+        let visible_receipts = if moving || !steps.is_empty() || !source_assets.is_empty() || !retained_resources.0.is_empty() {
+            crate::document_assets::materialized_resource_receipts(planned, target).map_err(|_| error("review_save_conflict"))?
+        } else { Vec::new() };
+        let resource_receipts = crate::document_assets::merge_resource_receipts(target,
+            std::iter::once(visible_receipts).chain(retained_resources.0.iter().map(|r| r.receipts()))).map_err(|_| error("review_save_conflict"))?;
         let call = review["call_id"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 128)
@@ -675,7 +729,7 @@ impl SaveGuard {
             "action":"prepare_save","document_id":source["document_id"],"generation":review["generation"],
             "review_revision":review["review_revision"],"call_id":call,"content":normalize(raw),
             "disk_revision":before,"expected_disk_revision":expected,"saved_content":normalize(planned),
-            "edit_steps":steps,"restore_projections":restore_projections,"encoding":encoding,"line_ending":ending(planned),
+            "edit_steps":steps,"restore_projections":restore_projections,"history_projections":history_projections,"resource_receipts":resource_receipts,"encoding":encoding,"line_ending":ending(planned),
             "target_path":target.to_string_lossy(),"target_disk_revision":target_before
         })).map_err(error)?;
         let intent = result
@@ -707,6 +761,8 @@ impl SaveGuard {
         if disk(&self.target)?.0 != self.target_before {
             return Err(error("review_save_conflict"));
         }
+        let mut verified = crate::document_assets::ResourceVerification::default();
+        for resources in &self.retained_resources.0 { resources.verify_with(&mut verified).map_err(|_| error("review_save_conflict"))?; }
         Ok(())
     }
     pub fn committed(&mut self) -> ApiResult<Value> {

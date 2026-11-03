@@ -19,6 +19,9 @@ use uuid::Uuid;
 
 #[path = "review_refactor.rs"]
 mod refactor;
+#[path = "review_resource_history.rs"]
+mod resource_history;
+pub(crate) use resource_history::ResourceState;
 
 pub const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_OPERATIONS: usize = 4096;
@@ -185,6 +188,8 @@ struct Action {
     inverse: Vec<TextEdit>,
     inverse_expected: Vec<String>,
     patches: Vec<Patch>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resource_projection: Option<resource_history::CompensationProjection>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -216,6 +221,10 @@ struct SaveIntent {
     edit_steps: Vec<Vec<TextEdit>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     restore_projections: Vec<RestoreProjection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    history_projections: Vec<resource_history::HistoryProjection>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    resource_receipts: Vec<crate::document_assets::ResourceReceipt>,
     encoding: String,
     line_ending: String,
     #[serde(default)]
@@ -229,6 +238,10 @@ struct RestoreProjection {
     from: usize,
     to: usize,
     content: String,
+    // Inactive/taken-over originals remain recovery data. This does not
+    // authorize withdrawal into a range now owned by the user.
+    #[serde(default)]
+    retained_only: bool,
 }
 
 // A rename is metadata-only. It deliberately does not use finish_intent, which
@@ -293,43 +306,6 @@ impl Service {
         Self {
             store: Store::new(data_dir),
         }
-    }
-
-    /// Read-only proof for resource-moving saves. Image-changing history that
-    /// cannot be projected from an active durable review block stays intact in
-    /// the source session; do not create a copy whose future undo is broken.
-    pub(crate) fn validate_resource_save_history(&self, source: &Value) -> Result<(), &'static str> {
-        self.store.run(|tx| with_text_context(tx, || {
-            let document = load(tx, string(source, "document_id")?)?;
-            if source["generation"].as_u64() != Some(document.generation)
-                || source["review_revision"].as_u64() != Some(document.review_revision) { return Err("review_stale_generation"); }
-            let actions = document.undo.iter().chain(&document.redo).map(|a| (a.event_id, a)).collect::<HashMap<_, _>>();
-            let mut after = document.content.clone();
-            for mapping in document.mappings.iter().rev() {
-                if crate::speech::cancelled() { return Err("cancelled"); }
-                let before = apply(&after, &mapping.inverse)?.content;
-                if let Some(action) = actions.get(&mapping.event_id) {
-                    let touches = |text: &str, edits: &[TextEdit]| {
-                        crate::document_assets::image_references(text).iter().any(|(range, _)| {
-                            let from = text[..range.start].encode_utf16().count();
-                            let to = text[..range.end].encode_utf16().count();
-                            edits.iter().any(|e| if e.from == e.to { e.from > from && e.from < to }
-                                else { e.from < to && e.to > from })
-                        })
-                    };
-                    if touches(&before, &action.edits) || touches(&after, &action.inverse) {
-                        let supported = action.patches.iter().filter_map(|p| p.after.as_ref())
-                            .filter(|old| old.application == "applied" && document.changes.iter().any(|current|
-                                current.id == old.id && current.original == old.original && !current.taken_over
-                                    && current.application == "applied" && current.decision != "withdrawn"))
-                            .count();
-                        if supported == 0 || supported != action.edits.len() { return Err("review_asset_relocation_required"); }
-                    }
-                }
-                after = before;
-            }
-            Ok(())
-        }))
     }
 
     pub fn handle(&self, request: &Value) -> Result<Value, &'static str> {
@@ -960,6 +936,7 @@ fn persist(tx: &Transaction<'_>, document: &Document) -> Result<(), &'static str
     flush_changes(tx, &document.changes)?;
     flush_changes(tx, &document.checkpoint.changes)?;
     for action in document.undo.iter().chain(&document.redo) {
+        if let Some(projection)=&action.resource_projection {resource_history::flush(tx,projection)?;}
         for patch in &action.patches {
             if let Some(before) = &patch.before {
                 flush_changes(tx, std::slice::from_ref(before))?;
@@ -969,6 +946,7 @@ fn persist(tx: &Transaction<'_>, document: &Document) -> Result<(), &'static str
             }
         }
     }
+    if let Some(intent)=&document.save_intent {resource_history::flush_plans(tx,&intent.history_projections)?;}
     let payload = serde_json::to_string(document).map_err(|_| "review_persistence_failed")?;
     review_store::put_document(
         tx,
@@ -1181,7 +1159,11 @@ fn open(tx: &Transaction<'_>, request: &Value) -> Result<Value, &'static str> {
         if let Some(intent) = document.save_intent.clone() {
             if requested_path == intent.target_path {
                 if disk == intent.expected_disk_revision && disk_content == intent.saved_content {
-                    finish_intent(tx, &mut document, &intent, disk)?;
+                    if crate::document_assets::verify_resource_receipts(Path::new(&intent.target_path), &intent.resource_receipts).is_ok() {
+                        finish_intent(tx, &mut document, &intent, disk)?;
+                    } else {
+                        document.recovery = Some(json!({"reason":"save_resources_unavailable","intent_id":intent.intent_id,"target_path":intent.target_path}));
+                    }
                 } else if disk == intent.target_disk_revision {
                     // The target never changed. Discard only the file intent;
                     // unsaved content and review lineage remain durable.
@@ -1384,13 +1366,15 @@ fn map_changes(
         let prior = (change.from, change.to);
         let touched = map_geometry(&mut change.from, &mut change.to, edits);
         if touched {
-            if system && change.application == "applied" && !change.taken_over {
-                let replacement = slice(content, change.from, change.to)?.to_string();
-                if replacement != change.replacement.as_str() {
-                    if !change.candidate_versions.contains(&change.replacement) {
-                        change.candidate_versions.push(change.replacement.clone());
+            if system {
+                if change.application == "applied" && !change.taken_over {
+                    let replacement = slice(content, change.from, change.to)?.to_string();
+                    if replacement != change.replacement.as_str() {
+                        if !change.candidate_versions.contains(&change.replacement) {
+                            change.candidate_versions.push(change.replacement.clone());
+                        }
+                        change.replacement = ReviewText::new(replacement);
                     }
-                    change.replacement = ReviewText::new(replacement);
                 }
             } else if change.decision != "withdrawn" {
                 change.taken_over = true;
@@ -1452,6 +1436,7 @@ fn record_action(
         inverse: result.inverse,
         inverse_expected: sorted(&edits).into_iter().map(|edit| edit.insert).collect(),
         patches,
+        resource_projection: None,
     };
     document.mappings.push(Mapping {
         event_id: event,
@@ -1680,6 +1665,11 @@ fn compensate(
     } else {
         document.undo.pop().ok_or("review_undo_unavailable")?
     };
+    let before_content = document.content.clone();
+    let before_changes = document.changes.clone();
+    let edits = if let Some(projection)=&target.resource_projection {
+        resource_history::compensate_projection(document,projection)?
+    } else {
     let mut edits = target.inverse.clone();
     for edit in &mut edits {
         for mapping in document
@@ -1705,8 +1695,6 @@ fn compensate(
             return Err("review_conflict");
         }
     }
-    let before_content = document.content.clone();
-    let before_changes = document.changes.clone();
     let result = apply(&before_content, &edits)?;
     map_changes(document, &edits, &result.content, false)?;
     document.content = result.content;
@@ -1740,7 +1728,10 @@ fn compensate(
             document.changes.push(restored);
         }
     }
-    let action = record_action(
+    edits
+    };
+    let reverse_changes = target.resource_projection.as_ref().map(|_| before_changes.clone());
+    let mut action = record_action(
         tx,
         document,
         if redo { "redo" } else { "undo" },
@@ -1750,6 +1741,9 @@ fn compensate(
         before_changes,
         Some(target.event_id),
     )?;
+    if let Some(changes) = reverse_changes {
+        action.resource_projection = Some(resource_history::reverse(document, &before_content, changes, &action));
+    }
     if redo {
         document.undo.push(action);
     } else {
@@ -1819,7 +1813,8 @@ fn prepare_save(
     }
     for projection in &restore_projections {
         let change = document.changes.iter().find(|c| c.id == projection.id).ok_or("review_not_found")?;
-        if change.taken_over || change.application != "applied" || change.decision == "withdrawn"
+        let active = !change.taken_over && change.application == "applied" && change.decision != "withdrawn";
+        if projection.retained_only == active
             || projection.original_revision != change.restore_original.as_ref().unwrap_or(&change.original).hash {
             return Err("review_save_conflict");
         }
@@ -1828,6 +1823,11 @@ fn prepare_save(
         if (from, to) != (projection.from, projection.to) { return Err("review_save_conflict"); }
         checked_content(&projection.content)?;
     }
+    let history_projections=resource_history::parse(document,request.get("history_projections"))?;
+    resource_history::validate_head(document,&history_projections,&saved_content,&steps,&restore_projections)?;
+    let resource_receipts: Vec<crate::document_assets::ResourceReceipt> = request.get("resource_receipts")
+        .map(|v|serde_json::from_value(v.clone())).transpose().map_err(|_|"review_invalid_request")?.unwrap_or_default();
+    crate::document_assets::validate_resource_receipts(Path::new(target), &resource_receipts).map_err(|_|"review_save_conflict")?;
     checked_content(&saved_content)?;
     let encoding = request
         .get("encoding")
@@ -1864,6 +1864,8 @@ fn prepare_save(
         saved_content,
         edit_steps: steps,
         restore_projections,
+        history_projections,
+        resource_receipts,
         encoding: encoding.into(),
         line_ending: line_ending.to_ascii_lowercase(),
         reserved_bytes: 0,
@@ -1938,6 +1940,7 @@ fn commit_save(
     {
         return Err("review_save_conflict");
     }
+    crate::document_assets::verify_resource_receipts(Path::new(&intent.target_path), &intent.resource_receipts).map_err(|_| "review_needs_recovery")?;
     finish_intent(tx, document, &intent, string(request, "disk_revision")?)
 }
 fn finish_intent(
@@ -1989,6 +1992,7 @@ fn finish_intent(
         let content = document.content.clone();
         record_action(tx, document, "save_resource_projection", "system", Vec::new(), &content, before_changes, None)?;
     }
+    resource_history::attach(document,&intent.history_projections)?;
     document.path = intent.target_path.clone();
     document.disk_revision = disk.into();
     document.encoding = intent.encoding.clone();

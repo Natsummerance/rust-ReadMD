@@ -383,12 +383,83 @@ fn asset_matches(path: &Path, expected: &[u8]) -> std::io::Result<bool> {
     let mut bytes = Vec::new(); file.take(expected.len() as u64 + 1).read_to_end(&mut bytes)?;
     Ok(bytes.len() == expected.len() && Sha256::digest(&bytes) == Sha256::digest(expected))
 }
-struct PendingAssetPublication { path: PathBuf, identity: fs::File, keep: bool }
+#[derive(Clone, PartialEq, Eq)]
+struct AssetFingerprint { bytes: u64, digest: [u8; 32] }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ResourceReceipt { path: PathBuf, bytes: u64, sha256: String }
+impl ResourceReceipt {
+    fn new(path: PathBuf, fingerprint: &AssetFingerprint) -> Self {
+        Self { path, bytes: fingerprint.bytes, sha256: fingerprint.digest.iter().map(|b| format!("{b:02x}")).collect() }
+    }
+}
+pub(crate) fn validate_resource_receipts(target: &Path, receipts: &[ResourceReceipt]) -> Result<(), String> {
+    let folder = target.parent().ok_or("asset_target_invalid")?.join("readmd-assets");
+    let mut total = 0u64; let mut paths = std::collections::HashSet::new();
+    if receipts.len() > 10_000 { return Err("asset_total_limit".into()); }
+    for receipt in receipts {
+        if receipt.path.parent() != Some(folder.as_path()) || receipt.path.file_name().is_none()
+            || receipt.bytes > MAX_ASSET_BYTES as u64 || receipt.sha256.len() != 64 || !receipt.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+            || !paths.insert(&receipt.path) { return Err("asset_reference_invalid".into()); }
+        total = total.checked_add(receipt.bytes).ok_or("asset_total_limit")?;
+        if total > MAX_ASSET_TOTAL as u64 { return Err("asset_total_limit".into()); }
+    }
+    Ok(())
+}
+pub(crate) fn verify_resource_receipts(target: &Path, receipts: &[ResourceReceipt]) -> Result<(), String> {
+    validate_resource_receipts(target, receipts)?;
+    for expected in receipts {
+        plain_asset_metadata(expected.path.parent().ok_or("asset_reference_invalid")?, true)?;
+        let actual = asset_fingerprint_at(&expected.path).map_err(|_| "asset_identity_conflict")?;
+        if ResourceReceipt::new(expected.path.clone(), &actual) != *expected { return Err("asset_identity_conflict".into()); }
+    }
+    Ok(())
+}
+pub(crate) fn materialized_resource_receipts(text: &str, target: &Path) -> Result<Vec<ResourceReceipt>, String> {
+    let base = target.parent().ok_or("asset_target_invalid")?; let mut receipts = Vec::new(); let mut seen = std::collections::HashSet::new();
+    for asset in local_handles(text, base).into_iter().filter(|a| a.reference.starts_with("readmd-assets/")) {
+        let path = PathBuf::from(asset.path); if !seen.insert(path.clone()) { continue; }
+        if path.parent() != Some(base.join("readmd-assets").as_path()) { return Err("asset_reference_invalid".into()); }
+        plain_asset_metadata(path.parent().ok_or("asset_reference_invalid")?, true)?;
+        let fingerprint = asset_fingerprint_at(&path).map_err(|_| "asset_identity_conflict")?;
+        receipts.push(ResourceReceipt::new(path, &fingerprint));
+    }
+    validate_resource_receipts(target, &receipts)?; Ok(receipts)
+}
+pub(crate) fn merge_resource_receipts(target: &Path, groups: impl IntoIterator<Item = Vec<ResourceReceipt>>) -> Result<Vec<ResourceReceipt>, String> {
+    let mut joined = std::collections::BTreeMap::new();
+    for receipt in groups.into_iter().flatten() {
+        if joined.get(&receipt.path).is_some_and(|previous| previous != &receipt) { return Err("asset_identity_conflict".into()); }
+        joined.insert(receipt.path.clone(), receipt);
+    }
+    let receipts = joined.into_values().collect::<Vec<_>>(); validate_resource_receipts(target, &receipts)?; Ok(receipts)
+}
+fn asset_fingerprint(file: &fs::File) -> std::io::Result<AssetFingerprint> {
+    use std::io::{Read, Seek, SeekFrom};
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.len() > MAX_ASSET_BYTES as u64 {
+        return Err(std::io::Error::other("asset identity"));
+    }
+    let mut reader = file.try_clone()?; reader.seek(SeekFrom::Start(0))?;
+    let mut digest = Sha256::new(); let mut bytes = 0u64; let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?; if read == 0 { break; }
+        bytes = bytes.checked_add(read as u64).filter(|n| *n <= MAX_ASSET_BYTES as u64)
+            .ok_or_else(|| std::io::Error::other("asset size"))?;
+        digest.update(&buffer[..read]);
+    }
+    if bytes != metadata.len() { return Err(std::io::Error::other("asset changed")); }
+    Ok(AssetFingerprint { bytes, digest: digest.finalize().into() })
+}
+fn asset_fingerprint_at(path: &Path) -> std::io::Result<AssetFingerprint> { asset_fingerprint(&asset_handle(path)?) }
+struct PendingAssetPublication { path: PathBuf, identity: fs::File, fingerprint: Option<AssetFingerprint>, keep: bool }
 impl Drop for PendingAssetPublication {
     fn drop(&mut self) {
         // Missing identity evidence is a reason to preserve, never to remove
         // an external replacement or an unprovable path.
-        if !self.keep && same_asset_identity(&self.identity, &self.path) { let _ = fs::remove_file(&self.path); }
+        if !self.keep && same_asset_identity(&self.identity, &self.path)
+            && self.fingerprint.as_ref().is_some_and(|expected| asset_fingerprint_at(&self.path).as_ref().is_ok_and(|actual| actual == expected)) {
+            let _ = fs::remove_file(&self.path);
+        }
     }
 }
 fn capture_published_asset(file: fs::File, target: &Path,
@@ -396,9 +467,13 @@ fn capture_published_asset(file: fs::File, target: &Path,
 {
     // persist_noclobber already returned an ownership witness. Retain it even
     // if obtaining the read-only long-lived handle fails.
-    let mut pending = PendingAssetPublication { path: target.to_path_buf(), identity: file, keep: false };
+    let fingerprint = asset_fingerprint(&file).ok();
+    let mut pending = PendingAssetPublication { path: target.to_path_buf(), identity: file, fingerprint, keep: false };
     let identity = capture(target).map_err(|_| "asset_write_failed")?;
-    if !same_asset_handles(&pending.identity, &identity) { return Err("asset_identity_conflict".into()); }
+    if !same_asset_handles(&pending.identity, &identity)
+        || !pending.fingerprint.as_ref().is_some_and(|expected| asset_fingerprint(&identity).as_ref().is_ok_and(|actual| actual == expected)) {
+        return Err("asset_identity_conflict".into());
+    }
     pending.keep = true;
     Ok(identity)
 }
@@ -421,16 +496,37 @@ pub struct Materialized {
     pub text: String,
     pub assets: Vec<AssetHandle>,
     pub edits: Vec<crate::document_transaction::TextEdit>,
-    created: Vec<(PathBuf, fs::File)>,
+    created: Vec<(PathBuf, fs::File, AssetFingerprint)>,
+    observed: Vec<(PathBuf, AssetFingerprint)>,
     folder: Option<(PathBuf, fs::File)>,
     committed: bool,
 }
-impl Materialized { pub fn commit(&mut self) { self.committed = true; } }
+#[derive(Default)]
+pub(crate) struct ResourceVerification(HashMap<PathBuf, AssetFingerprint>);
+impl Materialized {
+    pub fn commit(&mut self) { self.committed = true; }
+    pub(crate) fn receipts(&self) -> Vec<ResourceReceipt> { self.observed.iter().map(|(p,f)| ResourceReceipt::new(p.clone(), f)).collect() }
+    pub(crate) fn verify(&self) -> Result<(), String> { self.verify_with(&mut ResourceVerification::default()) }
+    pub(crate) fn verify_with(&self, verified: &mut ResourceVerification) -> Result<(), String> {
+        if self.folder.as_ref().is_some_and(|(path, identity)| !same_asset_identity(identity, path)) { return Err("asset_identity_conflict".into()); }
+        for (path, expected) in &self.observed {
+            if let Some(previous) = verified.0.get(path) {
+                if previous != expected { return Err("asset_identity_conflict".into()); }
+                continue;
+            }
+            plain_asset_metadata(path.parent().ok_or("asset_reference_invalid")?, true)?;
+            if !asset_fingerprint_at(path).as_ref().is_ok_and(|actual| actual == expected) { return Err("asset_identity_conflict".into()); }
+            verified.0.insert(path.clone(), expected.clone());
+        }
+        Ok(())
+    }
+}
 impl Drop for Materialized {
     fn drop(&mut self) {
         if self.committed { return; }
-        while let Some((path, identity)) = self.created.pop() {
-            if same_asset_identity(&identity, &path) { let _ = fs::remove_file(&path); }
+        while let Some((path, identity, expected)) = self.created.pop() {
+            if same_asset_identity(&identity, &path)
+                && asset_fingerprint_at(&path).as_ref().is_ok_and(|actual| actual == &expected) { let _ = fs::remove_file(&path); }
         }
         if let Some((dir, identity)) = &self.folder {
             if same_asset_identity(identity, dir) { let _ = fs::remove_dir(dir); }
@@ -448,7 +544,7 @@ pub(crate) fn materialize_staged(text: &str, target: &Path, assets: &[AssetHandl
     materialize_inner(text, target, assets, Some(data_dir))
 }
 fn materialize_inner(text: &str, target: &Path, assets: &[AssetHandle], staged_data: Option<&Path>) -> Result<Materialized, String> {
-    let mut result = Materialized { text: text.into(), assets: Vec::new(), edits: Vec::new(), created: Vec::new(), folder: None, committed: false };
+    let mut result = Materialized { text: text.into(), assets: Vec::new(), edits: Vec::new(), created: Vec::new(), observed: Vec::new(), folder: None, committed: false };
     // Ordinary saves acquire no additional source parsing/resource budget.
     if assets.is_empty() { return Ok(result); }
     let images = source_image_references(text)?;
@@ -484,6 +580,7 @@ fn materialize_inner(text: &str, target: &Path, assets: &[AssetHandle], staged_d
         total = total.saturating_add(bytes.len());
         if total > MAX_ASSET_TOTAL { return Err("asset_total_limit".into()); }
         let hash = format!("{:x}", Sha256::digest(&bytes));
+        let fingerprint = AssetFingerprint { bytes: bytes.len() as u64, digest: Sha256::digest(&bytes).into() };
         let raw = Path::new(&asset.name).file_name().and_then(|n| n.to_str()).filter(|n| *n != "." && *n != "..").ok_or("asset_name_invalid")?;
         let stem: String = Path::new(raw).file_stem().and_then(|n| n.to_str()).unwrap_or("image").chars().filter(|c| c.is_alphanumeric() || "-_".contains(*c)).take(64).collect();
         let ext = extension(Path::new(raw).extension().and_then(|n| n.to_str()).unwrap_or("bin"));
@@ -508,13 +605,14 @@ fn materialize_inner(text: &str, target: &Path, assets: &[AssetHandle], staged_d
             if created_directory { result.folder = Some((folder.clone(), directory)); }
             if result.folder.as_ref().is_some_and(|(path, identity)| !same_asset_identity(identity, path)) { return Err("asset_directory_symlink".into()); }
             if let Some(identity) = persist_asset_without_replacement(&folder, &dest, &bytes)? {
-                result.created.push((dest.clone(), identity));
+                result.created.push((dest.clone(), identity, fingerprint.clone()));
             }
         }
         content_hashes.insert((hash, ext.to_string()), dest.clone());
         let reference = format!("readmd-assets/{}", percent_encoding::utf8_percent_encode(&dest.file_name().unwrap().to_string_lossy(), percent_encoding::NON_ALPHANUMERIC));
         for old in aliases { mappings.insert(old, reference.clone()); }
         if !result.assets.iter().any(|a| a.path == dest.to_string_lossy()) {
+            result.observed.push((dest.clone(), fingerprint));
             result.assets.push(AssetHandle { path: dest.to_string_lossy().into_owned(), name: dest.file_name().unwrap().to_string_lossy().into_owned(), reference });
         }
     }
@@ -758,6 +856,16 @@ mod tests {
             } else { assert_eq!(fs::read(&file).unwrap(), b"foreign replacement"); }
             assert!(folder.is_dir());
         }
+    }
+    #[test]
+    fn rollback_preserves_external_bytes_written_into_the_created_identity() {
+        let dir = tempfile::tempdir().unwrap(); let asset = stage(dir.path(), b"owned image", "own", "png").unwrap();
+        let source = staged_markdown(&asset); let found = discover_staged(&source, dir.path()).unwrap();
+        let guard = materialize_staged(&source, &dir.path().join("failed.md"), &found, dir.path()).unwrap();
+        let file = PathBuf::from(&guard.assets[0].path);
+        fs::write(&file, b"external in-place bytes").unwrap();
+        drop(guard);
+        assert_eq!(fs::read(file).unwrap(), b"external in-place bytes");
     }
     #[test]
     fn two_valid_staged_uri_aliases_share_one_readable_permanent_identity() {
