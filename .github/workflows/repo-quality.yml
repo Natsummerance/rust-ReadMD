@@ -273,6 +273,19 @@ jobs:
         env:
           READMD_CODE_BROWSER: chromium
         run: node tools/test/code-batch-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-batch-browser
+      - name: P1 completed code cannot invalidate a pending dirty-close choice
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-close-boundary-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-close-boundary
+      - name: Retain code close-boundary receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-close-boundary-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-close-boundary/report.json
+            .cache/p1-code-close-boundary/first-failure.png
       - name: Retain code batch browser receipt and first failure
         if: always()
         uses: actions/upload-artifact@v4

@@ -8816,6 +8816,7 @@ function renderAllCodeChunks(container) {
         outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren(); timerEl.textContent = '';
         return;
       }
+      if (phase === 'pending') { statusEl.textContent = _t('convert.statusPending'); return; }
       currentJob = null; btn.textContent = `▶ ${_t('reader.runAgain')}`;
       if (copy) copy.disabled = false; if (clear) clear.disabled = false;
       const cancelled = job.cancelled || /cancelled/.test(error?.code || '');
@@ -8835,7 +8836,7 @@ function renderAllCodeChunks(container) {
       if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
       if (!owner || !state.tabs.includes(owner)) return;
       const job = window.ReadMDCodeRuns.create(owner);
-      if (!job) return;
+      if (!job) { showToast(_t('review.busy')); return; }
       currentJob = job;
       const wasEditing = Boolean(state.editing && getActiveTab() === owner);
       const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
@@ -8899,6 +8900,7 @@ function renderAllCodeChunks(container) {
           // bounded marker block after the matching fence and persists it
           // through the editor's normal history/save path.
           if (card.dataset.output === 'true' && outputFormat !== 'none' && wasEditing) {
+            job.phase = 'waiting-to-write'; statusEl.textContent = _t('convert.statusPending');
             await window.ReadMDCodeRuns.beforeWrite(job);
             job.phase = 'writing';
             await persistCodeChunkOutput(card, outputText, context, job.controller.signal, job.insertTaskId);
@@ -9013,6 +9015,7 @@ async function runAllCodeChunks() {
     if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
     if (results.length !== context.batch.items.length) throw Object.assign(new Error('invalid batch result'), { code: 'review_invalid_request' });
     if (wasEditing && context.batch.items.some(item => item.output)) {
+      job.phase = 'waiting-to-write'; cards.forEach(card => card?._readmdBatchState?.(job, 'pending'));
       await window.ReadMDCodeRuns.beforeWrite(job); job.phase = 'writing';
       const outputs = results.map(result => (result.stdout || '') + (result.stderr ? '\n' + result.stderr : ''));
       const snapshot = await window.ReadMDReview.codeBatchOutput(outputs, context, job.controller.signal, job.insertTaskId);
@@ -31190,15 +31193,21 @@ window.ReadMDLifecycle = (() => {
       if (active && !depth || !active && window.ReadMDSession?.restoring?.()) return Promise.resolve(false);
       if (active) return work.apply(this, args);
       const owner = active = { name, target: currentTab(), decisions: new Map() };
+      // A result completed during a close/save decision must not invalidate
+      // the visible body behind that decision. Wait outside the review FIFO
+      // so a nested save/flush never waits on the reserved code write.
+      const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
       let result;
       try { depth++; result = work.apply(this, args); }
       catch (error) { result = Promise.reject(error); }
       finally { depth--; }
       return Promise.resolve(result).finally(() => {
-        if (active !== owner) return;
-        active = null;
-        for (const resolve of waiters) resolve();
-        waiters.clear();
+        if (active === owner) {
+          active = null;
+          for (const resolve of waiters) resolve();
+          waiters.clear();
+        }
+        releaseCode?.();
       });
     };
   }

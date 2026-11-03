@@ -35,6 +35,15 @@ function driver(phase, files) {
     check(ReadMDReview.snapshot(tab).changes[0].original==='Same.'&&ReadMDReview.snapshot(tab).changes[0].decision==='pending','native_batch_preserves_pending_original');
     await history(false);check(cmView.state.doc.toString()===proposed,'native_one_undo_removes_all_batch_outputs');
     await history(true);check(cmView.state.doc.toString()===expected,'native_one_redo_restores_all_batch_outputs');check(await saveEdit()===true,'native_batch_resave');
+    await loadFile(files.boundary);if(!state.editing)await toggleEdit();setPvLayout('right');await renderPreview();
+    const boundary=getActiveTab(),body=cmView.state.doc.toString(),from=body.indexOf('Same.'),manual=body.replace('Same.','Manual.');
+    cmView.dispatch({changes:{from,to:from+5,insert:'Manual.'}});check(await ReadMDReview.flush(boundary),'native_boundary_manual_edit_durable');
+    const executing=runAllCodeChunks(),closing=closeTab(boundary.id);
+    await until(()=>!document.getElementById('close-confirm-modal').classList.contains('hidden'));
+    await until(()=>ReadMDCodeRuns.batchFor(boundary)?.phase==='waiting-to-write');
+    check(cmView.state.doc.toString()===manual,'completed_native_batch_cannot_change_open_close_decision');
+    document.getElementById('close-confirm-discard').click();await closing;check(await executing===false,'discard_cancels_completed_unapplied_batch');
+    check(!state.tabs.includes(boundary)&&state.tabs.length===1,'first_discard_closes_pending_batch_page');
     await loadFile(files.slow);if(!state.editing)await toggleEdit();setPvLayout('right');await renderPreview();
     const stopping=getActiveTab();document.getElementById('btn-run-all-chunks').click();await until(()=>ReadMDCodeRuns.batchFor(stopping)?.phase==='running');
     await closeTab(stopping.id);await until(()=>ReadMDCodeRuns.busy()===0);
@@ -59,8 +68,8 @@ function driver(phase, files) {
 async function run(app, out, assets) {
  assert(out.startsWith(workspace + path.sep)); fs.mkdirSync(out,{mode:0o700});
  const dirs=Object.fromEntries(['documents','profile','tmp','native-home'].map(name=>[name,path.join(out,name)]));for(const dir of Object.values(dirs))fs.mkdirSync(dir,{mode:0o700});
- const files={source:path.join(dirs.documents,'重复代码 中文😀.md'),slow:path.join(dirs.documents,'退出停止.md'),batch:path.join(dirs.documents,'批量历史 中文😀.md')};
- fs.writeFileSync(files.source,encoded(original));fs.writeFileSync(files.slow,encoded(slow));fs.writeFileSync(files.batch,encoded(original));
+ const files={source:path.join(dirs.documents,'重复代码 中文😀.md'),slow:path.join(dirs.documents,'退出停止.md'),batch:path.join(dirs.documents,'批量历史 中文😀.md'),boundary:path.join(dirs.documents,'关闭决定 中文😀.md')};
+ fs.writeFileSync(files.source,encoded(original));fs.writeFileSync(files.slow,encoded(slow));fs.writeFileSync(files.batch,encoded(original));fs.writeFileSync(files.boundary,encoded(original));
  fs.writeFileSync(path.join(dirs.profile,'.readmd-native-qa-owned'),'readmd-synthetic-native-qa-v1',{flag:'wx'});
  fs.writeFileSync(path.join(dirs.profile,'settings.json'),JSON.stringify({lang:'zh-CN',closeToTray:false,autoCheckUpdate:false,petEnabled:false}));
  const report={passed:false,nativeHost:'LaunchServices / Cocoa WKWebView',scriptedUiEntries:true,physicalKeysCertified:false,realInPlaceSave:true,productionCsp:true,strictAuth:true,modelsRequested:false,dailyApplicationChanged:false,
@@ -74,7 +83,7 @@ async function run(app, out, assets) {
    try{
     await instance.wait(60000);const receipt=path.join(dirs.profile,'native-qa-result.json');entry.result=JSON.parse(fs.readFileSync(receipt));fs.renameSync(receipt,path.join(out,phase+'.json'));
     assert.equal(entry.result.ok,true,entry.result.checks.join(','));if(phase==='batch_run_save_quit')batchSaved=true;
-    assert.deepEqual(fs.readFileSync(files.source),encoded(singleExpected));assert.deepEqual(fs.readFileSync(files.slow),encoded(slow));assert.deepEqual(fs.readFileSync(files.batch),encoded(batchSaved?batchExpected:original));entry.passed=true;
+    assert.deepEqual(fs.readFileSync(files.source),encoded(singleExpected));assert.deepEqual(fs.readFileSync(files.slow),encoded(slow));assert.deepEqual(fs.readFileSync(files.batch),encoded(batchSaved?batchExpected:original));assert.deepEqual(fs.readFileSync(files.boundary),encoded(original));entry.passed=true;
    }finally{await instance.cleanup();}
   }
   report.passed=true;

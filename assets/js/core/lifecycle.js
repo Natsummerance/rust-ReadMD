@@ -28,15 +28,21 @@ window.ReadMDLifecycle = (() => {
       if (active && !depth || !active && window.ReadMDSession?.restoring?.()) return Promise.resolve(false);
       if (active) return work.apply(this, args);
       const owner = active = { name, target: currentTab(), decisions: new Map() };
+      // A result completed during a close/save decision must not invalidate
+      // the visible body behind that decision. Wait outside the review FIFO
+      // so a nested save/flush never waits on the reserved code write.
+      const releaseCode = window.ReadMDCodeRuns?.reserveWrites?.();
       let result;
       try { depth++; result = work.apply(this, args); }
       catch (error) { result = Promise.reject(error); }
       finally { depth--; }
       return Promise.resolve(result).finally(() => {
-        if (active !== owner) return;
-        active = null;
-        for (const resolve of waiters) resolve();
-        waiters.clear();
+        if (active === owner) {
+          active = null;
+          for (const resolve of waiters) resolve();
+          waiters.clear();
+        }
+        releaseCode?.();
       });
     };
   }
