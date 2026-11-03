@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "sourceCommit": "7fb5c66155d8934a7d0c4ce61798dea86acdd9e7",
+  "releasePublished": false,
+  "versionStill": "0.0.6",
+  "task": "V7-01B",
+  "status": "scoped_acceptance_passed",
+  "globalContractStatusChanged": false,
+  "dailyAppChanged": false,
+  "modelsLoadedOnUserMac": false,
+  "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+  "nativeBinarySha256": "979b3eb907f32e26e55fd3a37d8a9453882c5521bf75b894b2c31c61555c07cf",
+  "headlessBinarySha256": "5e0c9a3eb2dd6641f3086b9af31eed6b7003a57a2c31d23bf4fa3a9c0d385cf2",
+  "storageSchema": {
+    "old": 6,
+    "new": 7,
+    "actualOldWriterFences": [
+      {
+        "platform": "P1-version-fence-macos-latest",
+        "oldBinarySha256": "3fd87c36b29a4e875e6075eee7051d5586210288cf3c61e05684574f3e06c7e8",
+        "newBinarySha256": "84e0c9ed5242680c0876bb9594e621b23d664d223f5aedd12672fab0fcb2a09d",
+        "checks": 5,
+        "passed": true,
+        "artifactDigest": "sha256:141c3c7a8b00a04b56a38546440dc0be1b521442e15c25bc8a536923da5777fa"
+      },
+      {
+        "platform": "P1-version-fence-ubuntu-latest",
+        "oldBinarySha256": "3dc0f6820eb05b5ce73593b5690a2b3ed6a637206dccd0e0d50b1e5f782a1aba",
+        "newBinarySha256": "74639a523b070921b54490cfd6b98c732e37e8323390bfb254ca3c099b5ace80",
+        "checks": 5,
+        "passed": true,
+        "artifactDigest": "sha256:ddf819c58d36723ff25d04b73009e0c3e888415c2c47920169735a3f4824d96b"
+      },
+      {
+        "platform": "P1-version-fence-windows-latest",
+        "oldBinarySha256": "c7e6fbeeb2e8d1b808093d112cf786877a33c2d1563710fb65e7e01e0ae02c8c",
+        "newBinarySha256": "e1f8b3987c0f6ce66c55f4e4a62c83cbd0cd60b7fea6e48bb0eb4c4db747069c",
+        "checks": 5,
+        "passed": true,
+        "artifactDigest": "sha256:5348f7f41640a7ca934e7c82a5db214c5e760b5a0cd0d1998944f55fabcaa048"
+      }
+    ]
+  },
+  "local": {
+    "library": {
+      "passed": 4151,
+      "failed": 0,
+      "ignored": 8,
+      "filtered": 109,
+      "separateCodeRunnerPassed": 63,
+      "modelsFilteredAfterRunner": 46
+    },
+    "node": {
+      "passed": 1810,
+      "skipped": 3,
+      "failed": 0
+    },
+    "native": {
+      "phases": 3,
+      "checks": 74,
+      "genuineSaveSelection": true,
+      "genuineSaveCancel": true,
+      "oldDirectoryOffline": true,
+      "replayReopensExistingManualSave": true,
+      "explicitCloseThenEmptyRestart": true,
+      "forcedCleanup": false,
+      "chooserSubstitute": false
+    },
+    "stdio": {
+      "reviewProcesses": 3,
+      "reviewChecks": 4,
+      "exportProcesses": 3,
+      "exportChecks": 7
+    },
+    "actualOldWriterChecks": 5
+  },
+  "ci": {
+    "runId": 41658650803,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41658650803",
+    "passed": true,
+    "jobs": [
+      {
+        "id": 125995716721,
+        "name": "Frontend gates",
+        "conclusion": "success"
+      },
+      {
+        "id": 125995717037,
+        "name": "Kernel tests · windows-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 125995717057,
+        "name": "Kernel tests · ubuntu-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 125995717190,
+        "name": "Kernel tests · macos-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 125995717200,
+        "name": "VS Code and MCP quality",
+        "conclusion": "success"
+      },
+      {
+        "id": 125995717442,
+        "name": "UI quality (Playwright)",
+        "conclusion": "success"
+      }
+    ],
+    "kernel": [
+      {
+        "platform": "Kernel tests · windows-latest",
+        "passed": 4328,
+        "ignored": 7,
+        "filtered": 0
+      },
+      {
+        "platform": "Kernel tests · ubuntu-latest",
+        "passed": 4243,
+        "ignored": 7,
+        "filtered": 0
+      },
+      {
+        "platform": "Kernel tests · macos-latest",
+        "passed": 4259,
+        "ignored": 8,
+        "filtered": 1
+      }
+    ]
+  },
+  "firstFailuresRetained": [
+    {
+      "kind": "product",
+      "cause": "Manual image history could only be refused on relocation",
+      "fix": "Reachable undo/redo resource projections"
+    },
+    {
+      "kind": "product",
+      "cause": "Taken-over review state was refused; a system resource rewrite reset accepted ownership",
+      "fix": "Retained-only originals and preservation of trusted system metadata decisions"
+    },
+    {
+      "kind": "product",
+      "cause": "Reverse compensation could re-enter incompatible old geometry",
+      "fix": "Exact reverse projections"
+    },
+    {
+      "kind": "product",
+      "cause": "Rollback removed an externally modified file at the same identity",
+      "fix": "Identity plus full byte digest before cleanup; recheck planned resources before document commit"
+    },
+    {
+      "kind": "product",
+      "cause": "A committed Markdown file completed recovery despite missing historical image bytes",
+      "fix": "Durable resource receipts; keep intent and original body until exact resource verification succeeds"
+    },
+    {
+      "kind": "native_test_input",
+      "cause": "An extra one-character editor event changed the expected next undo; input source unproven",
+      "reproducedOnRetest": false,
+      "productSkippedUserEdit": false
+    },
+    {
+      "kind": "harness",
+      "cause": "A native report exceeded the existing 64-label diagnostic cap",
+      "fix": "All assertions retained; grouped receipt labels and reuse of confirmed save"
+    }
+  ],
+  "limitations": [
+    "Windows/Linux backend and file/service flows ran on their own CI hosts; their native chooser/IME UI remains unverified",
+    "The native acceptance uses an isolated debug QA host, not a new release package",
+    "Capacity, cancellation/performance, external application round trips and remaining P1/P2 tasks remain separate",
+    "Point-in-time resource verification is not a filesystem-wide atomic transaction or a lease against arbitrary external writers",
+    "The first extra editor input has no proven source; retained with the unsuccessful native attempt"
+  ],
+  "evidence": [
+    {
+      "label": "evidence/resource-history-final-library-result.json",
+      "sha256": "58b3ed9ca8e7af94f2b02b0310fd5e13ed8b773b65e31cd5d9882d17d8671dee"
+    },
+    {
+      "label": "evidence/resource-history-code-deadlines-result.json",
+      "sha256": "c2d4333552838f9d4d282f80285c0053710233adbc8703fab15ea822c4875b82"
+    },
+    {
+      "label": "evidence/resource-history-node-result.json",
+      "sha256": "c49484372566360e969c54ba8179c39bbb9e46b4ebe8b9d01833147d42d52511"
+    },
+    {
+      "label": "evidence/resource-history-stdio-result.json",
+      "sha256": "b0ae758ee715affad29e213912b637a3815ce0b175c3659f1936d376d2fc8c17"
+    },
+    {
+      "label": "evidence/resource-history-export-stdio-result.json",
+      "sha256": "2c59dba99f4960fbe7147e468b0b07914b368a431f3b967391ae43d5a4ba08a3"
+    },
+    {
+      "label": "schema6-to7-candidate-7fb5c661/report.json",
+      "sha256": "6eced35292287da06468a903b52c126600a046ee620902d8c075ebda421d0f84"
+    },
+    {
+      "label": "native-history-input-audit/save_as.json",
+      "sha256": "3665ca1733a9168e106d6a4d7a546ad6396ac5d89587a67f061d398e57d40fe1"
+    },
+    {
+      "label": "native-history-input-audit/resume-native/report.json",
+      "sha256": "d47db015117a977fb4655a09679aa11b86fb9c4d958430a7853d044daeb5e5ae"
+    },
+    {
+      "label": "resource-ci-verified.json",
+      "sha256": "a0bf5e996091494e949942d395677785954f8bf999c8c4988d677d17b25078ba"
+    }
+  ],
+  "firstFailureEvidence": [
+    {
+      "label": "evidence/resource-history-first-failure.log",
+      "sha256": "bf867366ce0bb39d2ca4535f715feab9444e615dce8e50656a5e7f6f757a110f"
+    },
+    {
+      "label": "evidence/resource-history-review-interleaving-first.log",
+      "sha256": "188af88e9e2ae86d698a6bebda093bb3974a4ad9a302c44390420e5256531313"
+    },
+    {
+      "label": "evidence/resource-history-review-interleaving-fixed.log",
+      "sha256": "dcf1cc41f5e0b5eae00fa399da8506e20e17b4e9a09654cad24ea526cec4468d"
+    },
+    {
+      "label": "evidence/resource-history-inplace-first.log",
+      "sha256": "b94b001b618623dc6ac7232f3886b3d5c22f9b770b50ace70410be0b828dfca7"
+    },
+    {
+      "label": "evidence/resource-history-precommit-first.log",
+      "sha256": "19f930a82ebf1a571cc884181ebc143cfc2b9fd4b54346909b4bf2e9ee38ea6f"
+    },
+    {
+      "label": "evidence/resource-history-recovery-proof-first.log",
+      "sha256": "97d593b5a43b0b20162e742e76e3893a5f9305c336420c7804e774729e4cda5d"
+    },
+    {
+      "label": "native-history-7fb5c661/reopen_history.json",
+      "sha256": "49058b8545e40b1ffe11c1c83efc9411c524ef38579ee6b83ef95013def6a1d5"
+    },
+    {
+      "label": "native-history-input-audit/report.json",
+      "sha256": "9f7ecbb472879dfd849205511c56044a426c0e7542e41c2700622317f8796063"
+    }
+  ]
+}
