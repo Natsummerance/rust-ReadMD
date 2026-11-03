@@ -47,6 +47,10 @@ pub fn stop_owned_executions(timeout: Duration) -> bool {
     owned_execution::stop(timeout)
 }
 
+pub(crate) fn with_owned_execution<T>(action: impl FnOnce() -> T) -> Option<T> {
+    owned_execution::run(action)
+}
+
 /// 与 Python 侧同名常量的权威取值。
 pub const EXECUTION_TIMEOUT: u64 = 10;
 pub const MAX_OUTPUT_CHARS: usize = 200_000;

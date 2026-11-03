@@ -467,6 +467,38 @@ window.ReadMDReview = (() => {
     if (!context?.tab || !Array.isArray(state.tabs) || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
     return mutate('code_output', { body: { target: context.target, output: String(output ?? ''), task_id: taskId }, signal }, context.tab, context.stamp);
   }
+  async function codeBatchTarget(tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_batch_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision });
+    const items = snapshot.code_batch?.items;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !Array.isArray(items) || items.length > 32 ||
+        items.some(item => typeof item.lang !== 'string' || typeof item.output !== 'boolean' ||
+          item.target?.document_id !== stamp.document_id || item.target.generation !== stamp.generation || item.target.review_revision !== stamp.review_revision ||
+          typeof item.target.code !== 'string' || !/^[a-f0-9]{64}$/.test(item.target.node_id || '') ||
+          !Number.isSafeInteger(item.target.from) || !Number.isSafeInteger(item.target.to) || item.target.from < 0 || item.target.to < item.target.from || item.target.to > stamp.content.length)) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), batch: Object.freeze({ items: Object.freeze(items.map(item => Object.freeze({ ...item, target: Object.freeze(item.target) }))) }) });
+  }
+  async function codeBatchRun(context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    // Execution returns console results, never an editor snapshot. Keep the
+    // durable adapter's stronger snapshot validation on every mutation/read.
+    const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'code_batch_run', confirm: true, document_id: context.stamp.document_id,
+        generation: context.stamp.generation, review_revision: context.stamp.review_revision, batch: context.batch, task_id: taskId }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) throw failure(data.error_code || 'execution_failed');
+    if (typeof data.ok !== 'boolean' || data.source_written !== false || !Array.isArray(data.results) || data.results.length > 32 ||
+        data.results.some(result => result.ok !== true || typeof result.stdout !== 'string')) throw failure('review_invalid_request');
+    return data;
+  }
+  async function codeBatchOutput(outputs, context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_batch_output', { body: { batch: context.batch, outputs, task_id: taskId }, signal }, context.tab, context.stamp);
+  }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
   async function discard(tab = activeTab(), expected) {
     const rec = record(tab); if (!rec || rec.unsupported) return true;
@@ -876,7 +908,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();

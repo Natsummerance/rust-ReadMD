@@ -8726,9 +8726,9 @@ window.ReadMDCodeRuns = (() => {
   const writers = new Set(); let reserved = 0;
   const wake = () => { for (const resolve of writers) resolve(); writers.clear(); };
   const id = () => 'code-' + window.crypto.randomUUID();
-  function create(tab) {
-    if (reserved) return null;
-    const job = { tab, taskId: id(), insertTaskId: id(), controller: new AbortController(), phase: 'preparing', cancelled: false, finished: false };
+  function create(tab, batch = false) {
+    if (reserved || [...active].some(job => job.tab === tab && (batch || job.batch))) return null;
+    const job = { tab, batch, taskId: id(), insertTaskId: id(), controller: new AbortController(), phase: 'preparing', cancelled: false, finished: false };
     job.done = new Promise(resolve => { job.resolve = resolve; }); active.add(job); return job;
   }
   function cancel(job) {
@@ -8767,7 +8767,7 @@ window.ReadMDCodeRuns = (() => {
     const stopped = await Promise.race([Promise.all(jobs.map(job => job.done)).then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), 2000); })]);
     clearTimeout(timer); return stopped;
   }
-  return { create, cancel, finish, mountEditor, cancelTabs, cancelAll, reserveWrites, beforeWrite, busy: () => active.size };
+  return { create, cancel, finish, mountEditor, cancelTabs, cancelAll, reserveWrites, beforeWrite, batchFor: tab => [...active].find(job => job.tab === tab && job.batch), busy: () => active.size };
 })();
 
 function renderAllCodeChunks(container) {
@@ -8807,6 +8807,29 @@ function renderAllCodeChunks(container) {
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
     let currentJob = null;
+
+    card._readmdBatchState = (job, phase, result, error) => {
+      const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
+      if (phase === 'start') {
+        currentJob = job; statusEl.className = 'code-chunk-status running'; statusEl.textContent = _t('status.loading');
+        btn.textContent = _t('common.cancel'); if (copy) copy.disabled = true; if (clear) clear.disabled = true;
+        outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren(); timerEl.textContent = '';
+        return;
+      }
+      currentJob = null; btn.textContent = `▶ ${_t('reader.runAgain')}`;
+      if (copy) copy.disabled = false; if (clear) clear.disabled = false;
+      const cancelled = job.cancelled || /cancelled/.test(error?.code || '');
+      statusEl.className = 'code-chunk-status ' + (phase === 'success' ? 'success' : 'error');
+      statusEl.textContent = _t(phase === 'success' ? 'convert.statusOk' : cancelled ? 'task.cancelled' : 'reader.callFailed');
+      if (result && String(card.dataset.outputFormat || '').toLowerCase() !== 'none') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = (result.stdout || '') + (result.stderr ? '\n' + result.stderr : '');
+        if (!stdoutEl.textContent.trim()) stdoutEl.textContent = _t('reader.noConsoleOutput');
+      } else if (phase !== 'success') {
+        outWrap.classList.remove('hidden');
+        stdoutEl.textContent = _t(cancelled ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError');
+      }
+    };
 
     const run = async ({ batch = false } = {}) => {
       if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
@@ -8965,18 +8988,45 @@ window.persistCodeChunkOutput = persistCodeChunkOutput;
 
 async function runAllCodeChunks() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const cards = document.querySelectorAll('.code-chunk-card');
-  if (!cards.length) {
-    showToast(_t('toast.noRunnableChunks'));
-    return;
-  }
-  showToast(_t('toast.batchRunStarted', { count: cards.length }), 1500);
-  for (const card of cards) {
-    const btn = card.querySelector('.code-chunk-run-btn');
-    if (btn) {
-      btn.click();
-      await new Promise(r => setTimeout(r, 150));
+  const tab = getActiveTab(); if (!tab || !state.tabs.includes(tab)) return false;
+  const running = window.ReadMDCodeRuns.batchFor(tab);
+  if (running) { window.ReadMDCodeRuns.cancel(running); await running.done; return false; }
+  const job = window.ReadMDCodeRuns.create(tab, true);
+  if (!job) { showToast(_t('review.busy')); return false; }
+  const wasEditing = Boolean(state.editing), button = $('btn-run-all-chunks');
+  const label = button?.querySelector('span') || button, oldLabel = label?.textContent;
+  let cards = [], results = [];
+  try {
+    if (label) label.textContent = _t('common.cancel');
+    const context = await window.ReadMDReview.codeBatchTarget(tab, job.controller.signal);
+    if (!context.batch.items.length) { showToast(_t('toast.noRunnableChunks')); return false; }
+    const pane = $(wasEditing ? 'preview-pane' : 'md-body');
+    const visible = [...(pane?.querySelectorAll('.code-chunk-card') || [])].filter(card => card._readmdCodeOwner === tab);
+    cards = context.batch.items.map(item => visible.find(card => Number(card.dataset.sourceLine) === item.target.source_line && decodeURIComponent(card.dataset.code || '') === item.target.code));
+    cards.forEach(card => card?._readmdBatchState?.(job, 'start'));
+    showToast(_t('toast.batchRunStarted', { count: context.batch.items.length }), 1500);
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    job.phase = 'running';
+    const response = await window.ReadMDReview.codeBatchRun(context, job.controller.signal, job.taskId);
+    results = response.results || [];
+    if (response.ok !== true) throw Object.assign(new Error('batch failed'), { code: response.error_code || 'execution_failed' });
+    if (job.cancelled || !state.tabs.includes(tab)) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+    if (results.length !== context.batch.items.length) throw Object.assign(new Error('invalid batch result'), { code: 'review_invalid_request' });
+    if (wasEditing && context.batch.items.some(item => item.output)) {
+      await window.ReadMDCodeRuns.beforeWrite(job); job.phase = 'writing';
+      const outputs = results.map(result => (result.stdout || '') + (result.stderr ? '\n' + result.stderr : ''));
+      const snapshot = await window.ReadMDReview.codeBatchOutput(outputs, context, job.controller.signal, job.insertTaskId);
+      if (!snapshot.code_output_unchanged && getActiveTab() === tab && state.editing && await saveEdit() === false) throw Object.assign(new Error('review_persistence_failed'), { code: 'review_persistence_failed' });
     }
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'success', results[index]));
+    return true;
+  } catch (error) {
+    cards.forEach((card, index) => card?._readmdBatchState?.(job, 'error', results[index], error));
+    showToast(_t(job.cancelled || /cancelled/.test(error?.code || '') ? 'task.cancelled' : error?.code === 'capability_pack_unavailable' ? 'error.capability_pack_unavailable' : /stale|conflict/.test(error?.code || '') ? 'review.conflict' : /budget/.test(error?.code || '') ? 'review.limit' : 'toast.unknownError'));
+    return false;
+  } finally {
+    window.ReadMDCodeRuns.finish(job);
+    if (label && label.textContent === _t('common.cancel')) label.textContent = oldLabel;
   }
 }
 window.runAllCodeChunks = runAllCodeChunks;
@@ -13676,6 +13726,38 @@ window.ReadMDReview = (() => {
     if (!context?.tab || !Array.isArray(state.tabs) || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
     return mutate('code_output', { body: { target: context.target, output: String(output ?? ''), task_id: taskId }, signal }, context.tab, context.stamp);
   }
+  async function codeBatchTarget(tab = activeTab(), signal) {
+    const stamp = await capture(tab), rec = records.get(tab);
+    if (signal?.aborted) throw failure('cancelled');
+    if (!stamp || !rec || !isCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const snapshot = await request('/api/review', { action: 'code_batch_target', document_id: stamp.document_id,
+      generation: stamp.generation, review_revision: stamp.review_revision });
+    const items = snapshot.code_batch?.items;
+    if (signal?.aborted) throw failure('cancelled');
+    if (!isCurrent(rec, stamp) || snapshot.content !== stamp.content || !Array.isArray(items) || items.length > 32 ||
+        items.some(item => typeof item.lang !== 'string' || typeof item.output !== 'boolean' ||
+          item.target?.document_id !== stamp.document_id || item.target.generation !== stamp.generation || item.target.review_revision !== stamp.review_revision ||
+          typeof item.target.code !== 'string' || !/^[a-f0-9]{64}$/.test(item.target.node_id || '') ||
+          !Number.isSafeInteger(item.target.from) || !Number.isSafeInteger(item.target.to) || item.target.from < 0 || item.target.to < item.target.from || item.target.to > stamp.content.length)) throw failure('review_stale_generation');
+    return Object.freeze({ tab, stamp: Object.freeze(stamp), batch: Object.freeze({ items: Object.freeze(items.map(item => Object.freeze({ ...item, target: Object.freeze(item.target) }))) }) });
+  }
+  async function codeBatchRun(context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    // Execution returns console results, never an editor snapshot. Keep the
+    // durable adapter's stronger snapshot validation on every mutation/read.
+    const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'code_batch_run', confirm: true, document_id: context.stamp.document_id,
+        generation: context.stamp.generation, review_revision: context.stamp.review_revision, batch: context.batch, task_id: taskId }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) throw failure(data.error_code || 'execution_failed');
+    if (typeof data.ok !== 'boolean' || data.source_written !== false || !Array.isArray(data.results) || data.results.length > 32 ||
+        data.results.some(result => result.ok !== true || typeof result.stdout !== 'string')) throw failure('review_invalid_request');
+    return data;
+  }
+  async function codeBatchOutput(outputs, context, signal, taskId) {
+    if (!context?.tab || !state.tabs.includes(context.tab) || signal?.aborted) throw failure('cancelled');
+    return mutate('code_batch_output', { body: { batch: context.batch, outputs, task_id: taskId }, signal }, context.tab, context.stamp);
+  }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
   async function discard(tab = activeTab(), expected) {
     const rec = record(tab); if (!rec || rec.unsupported) return true;
@@ -14085,7 +14167,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();

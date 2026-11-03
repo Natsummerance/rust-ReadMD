@@ -88,6 +88,15 @@ jobs:
         run: node tools/test/code-lifecycle-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-lifecycle
       - name: P1 code output, durable history and new MCP processes
         run: node tools/test/code-output-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-output
+      - name: P1 bounded SQL batches, one undo and new MCP processes
+        run: node tools/test/code-batch-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-batch
+      - name: Retain actual code batch receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-batch-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-code-batch/report.json
       - name: P1 real Unix host exit stops its owned code worker
         if: runner.os != 'Windows'
         run: node tools/test/code-host-exit-unix.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-host-exit
@@ -244,6 +253,20 @@ jobs:
         env:
           READMD_CODE_BROWSER: chromium
         run: node tools/test/code-output-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-output-browser
+      - name: P1 bounded SQL batch in the production browser UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-batch-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-batch-browser
+      - name: Retain code batch browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-batch-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-code-batch-browser/report.json
+            .cache/p1-code-batch-browser/first-failure.png
+            .cache/p1-code-batch-browser/deadline.json
       - name: Retain code output browser receipt and first failure
         if: always()
         uses: actions/upload-artifact@v4

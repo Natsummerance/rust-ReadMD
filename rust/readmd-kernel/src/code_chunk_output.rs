@@ -15,6 +15,8 @@ const BUDGET: &str = "review_budget";
 #[cfg(test)]
 #[path = "code_chunk_output_tests.rs"]
 mod tests;
+#[path = "code_chunk_batch.rs"]
+mod batch;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -37,6 +39,43 @@ fn text(value: &Value) -> Result<&str, &'static str> {
 }
 fn revision(source: &str) -> String {
     crate::document_transaction::revision(source)
+}
+
+// Parser events, rather than raw substring searches, keep literal markers in
+// code examples inert. A complete generated output is never executable source.
+fn output_ranges(content: &str) -> Result<Vec<Range<usize>>, &'static str> {
+    if content.len() > 4 * 1024 * 1024 {
+        return Err(BUDGET);
+    }
+    let mut start = None;
+    let mut ranges = Vec::new();
+    for (index, (event, span)) in Parser::new_ext(content, crate::md_ast::options())
+        .into_offset_iter()
+        .enumerate()
+    {
+        if index >= 262_144 {
+            return Err(BUDGET);
+        }
+        if index % 1024 == 0 && crate::speech::cancelled() {
+            return Err("cancelled");
+        }
+        if !matches!(event, Event::Html(_) | Event::InlineHtml(_)) {
+            continue;
+        }
+        match content[span.clone()].trim_end_matches('\n') {
+            START => {
+                if start.replace(span.start).is_some() {
+                    return Err(CONFLICT);
+                }
+            }
+            END => ranges.push(start.take().ok_or(CONFLICT)?..span.end),
+            _ => (),
+        }
+    }
+    if start.is_some() {
+        return Err(CONFLICT);
+    }
+    Ok(ranges)
 }
 
 fn fence(content: &str, line: usize, expected: &str) -> Result<Range<usize>, &'static str> {
@@ -62,6 +101,12 @@ fn fence(content: &str, line: usize, expected: &str) -> Result<Range<usize>, &'s
     let line_end = content[line_start..]
         .find('\n')
         .map_or(content.len(), |at| line_start + at + 1);
+    if output_ranges(content)?
+        .iter()
+        .any(|range| range.start <= line_start && line_start < range.end)
+    {
+        return Err(CONFLICT);
+    }
     let mut containers = 0usize;
     let mut selected: Option<(Range<usize>, String)> = None;
     for (index, (event, span)) in Parser::new_ext(content, crate::md_ast::options())
@@ -240,6 +285,9 @@ fn handle_inner(
 ) -> ApiResult<crate::server::Response> {
     let source = review_api::snapshot(app, value)?;
     let action = text(&value["action"]).map_err(review_api::error)?;
+    if matches!(action, "code_batch_target" | "code_batch_run" | "code_batch_output") {
+        return batch::handle(app, value, source, task);
+    }
     let supplied = if action == "code_output" {
         Some(
             serde_json::from_value::<Target>(value["target"].clone())

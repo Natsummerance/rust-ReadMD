@@ -337,7 +337,7 @@ pub fn handle(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return Err(error("review_invalid_request"));
     }
     let action = value["action"].as_str().unwrap_or("").to_string();
-    if matches!(action.as_str(), "code_target" | "code_output") {
+    if matches!(action.as_str(), "code_target" | "code_output" | "code_batch_target" | "code_batch_run" | "code_batch_output") {
         return crate::code_chunk_output::handle(app, &value);
     }
     // Keep the same order as save/rename. Drafts have no filesystem endpoint

@@ -105,7 +105,7 @@ fn pdf_document_schema()->Value{
 }
 fn review_document_schema()->Value {
     let mut value=schema(json!({
-        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard","code_target","code_output"]},
+        "action":{"type":"string","enum":["open","read","edit","propose","resolve","undo","redo","discard","code_target","code_output","code_batch_target","code_batch_run","code_batch_output"]},
         "path":{"type":"string","minLength":1},"content":{"type":"string"},"document_id":{"type":"string","minLength":1,"maxLength":256},
         "generation":{"type":"integer","minimum":0},"review_revision":{"type":"integer","minimum":0},
         "call_id":{"type":"string","minLength":1,"maxLength":256},"origin":{"type":"string","enum":["editor","ai"]},
@@ -120,6 +120,11 @@ fn review_document_schema()->Value {
             "source_line":{"type":"integer","minimum":1},"from":{"type":"integer","minimum":0},"to":{"type":"integer","minimum":0},"code":{"type":"string","maxLength":200000}}},
         "task_id":{"type":"string","minLength":1,"maxLength":128},"confirm":confirm_prop()
     }), &["action","confirm"]);
+    let target=value["properties"]["target"].clone();
+    value["properties"]["batch"]=json!({"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":{
+        "type":"array","minItems":1,"maxItems":32,"items":{"type":"object","additionalProperties":false,"required":["target","lang","output"],"properties":{
+            "target":target,"lang":{"type":"string","maxLength":128},"output":{"type":"boolean"}}}}}});
+    value["properties"]["outputs"]=json!({"type":"array","minItems":1,"maxItems":32,"items":{"type":"string","maxLength":400000}});
     // Validate each operation's required fields before it can authorize a file
     // or create the durable store. The outer schema owns all property types.
     value["oneOf"]=json!([
@@ -128,6 +133,9 @@ fn review_document_schema()->Value {
         {"type":"object","properties":{"action":{"enum":["edit","propose"]}},"required":["document_id","generation","review_revision","call_id","edits"]},
         {"type":"object","properties":{"action":{"const":"code_target"}},"required":["document_id","generation","review_revision","source_line","code"]},
         {"type":"object","properties":{"action":{"const":"code_output"}},"required":["document_id","generation","review_revision","call_id","target","output"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_target"}},"required":["document_id","generation","review_revision"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_run"}},"required":["document_id","generation","review_revision","batch"]},
+        {"type":"object","properties":{"action":{"const":"code_batch_output"}},"required":["document_id","generation","review_revision","call_id","batch","outputs"]},
         {"type":"object","properties":{"action":{"const":"resolve"}},"required":["document_id","generation","review_revision","call_id","ids","decision"]},
         {"type":"object","properties":{"action":{"enum":["undo","redo","discard"]}},"required":["document_id","generation","review_revision","call_id"]},
     ]);
@@ -644,7 +652,8 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
         "readmd_academic_document" => Ok(json_result(&api(app,"POST","/api/academic/document",Some(args))?)),
         "readmd_openapi_document" => crate::cancel::with_external(cancel,||Ok(json_result(&api(app,"POST","/api/developer/openapi",Some(args))?))),
         "readmd_review_document" | "readmd_review_ai" => {
-            let mut body=args.clone();body.as_object_mut().unwrap().remove("confirm");
+            let mut body=args.clone();
+            if body["action"]!="code_batch_run" { body.as_object_mut().unwrap().remove("confirm"); }
             if name=="readmd_review_document" && body["action"]=="open" {
                 let path=arg_str(&body,"path","");
                 if !path.starts_with("draft:") {
