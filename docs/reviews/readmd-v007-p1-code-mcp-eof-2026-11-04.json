@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-04",
+  "scope": "MCP EOF stops owned SQL and script workers",
+  "sourceCommit": "7b9d6fa7cc0d1ec60f5442ce3786c9c3b40d68fd",
+  "ci": {
+    "runId": 41721389885,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41721389885",
+    "allEightJobsPassed": true,
+    "artifactDigestsVerified": true
+  },
+  "platforms": [
+    {
+      "platform": "macos-latest",
+      "binarySha256": "92486e7d632a01eba19298e989a46ac47997fb85256ea0ba392685a511c00ef3",
+      "artifactDigest": "sha256:31da8eb5a531ed6d586ef58e8d64e98e6be0d8d0ed7a60a04f190d0842486679",
+      "checks": [
+        {
+          "kind": "sql",
+          "passed": true,
+          "eofToExitMs": 157.692792,
+          "workerObserved": false,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        },
+        {
+          "kind": "node",
+          "passed": true,
+          "eofToExitMs": 241.48908400000005,
+          "workerObserved": true,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        }
+      ]
+    },
+    {
+      "platform": "ubuntu-latest",
+      "binarySha256": "e91f67ec2917245cc9192cbb4bffe96c2888298ff12f65942d149c75c1d8ad31",
+      "artifactDigest": "sha256:69f6e132df35c6d0e5b46b5e8f7c3950916c9050d7c5c6561cabadb01ddfd9c7",
+      "checks": [
+        {
+          "kind": "sql",
+          "passed": true,
+          "eofToExitMs": 74.74812800000007,
+          "workerObserved": false,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        },
+        {
+          "kind": "node",
+          "passed": true,
+          "eofToExitMs": 86.22555899999998,
+          "workerObserved": true,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        }
+      ]
+    },
+    {
+      "platform": "windows-latest",
+      "binarySha256": "36436afa5eb525ecc546e4a2eed030714a0c12de3af8645b5248cdc695405d88",
+      "artifactDigest": "sha256:b28938db02923bf2f18dd63eebbad28ce6b256e7ec1c0ec50fcdcbe6670d6017",
+      "checks": [
+        {
+          "kind": "sql",
+          "passed": true,
+          "eofToExitMs": 77.46340000000001,
+          "workerObserved": false,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        },
+        {
+          "kind": "node",
+          "passed": true,
+          "eofToExitMs": 104.9991,
+          "workerObserved": true,
+          "workerStopped": true,
+          "temporaryScriptRemoved": true,
+          "ownHostStopped": true,
+          "forcedCleanup": false
+        }
+      ]
+    }
+  ],
+  "firstFailure": {
+    "sourceCommit": "5cf7bd5135c02780f32c879c60f44d5f4b9bc6e5",
+    "actualLongSqlEofToExitMs": 9918.74475,
+    "retained": true
+  },
+  "boundedDrainMs": 50,
+  "ownedCodeStopBudgetMs": 2000,
+  "nativeCocoaCertified": false,
+  "managedRuntimesCertified": false,
+  "unixHardKillCertified": false,
+  "wholeV705Accepted": false,
+  "wholeP1Accepted": false,
+  "releasePublished": false,
+  "modelsRequested": false,
+  "remaining": [
+    "Unknown side effects and durable execution checkpoints",
+    "Unix hard crash worker ownership and recovery",
+    "Other MCP tool and transport shutdown policies",
+    "Managed runtime matrix and native host closeout"
+  ]
+}

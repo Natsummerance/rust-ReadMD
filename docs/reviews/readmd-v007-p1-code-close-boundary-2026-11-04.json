@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-04",
+  "scope": "Code result writes respect pending lifecycle decisions",
+  "sourceCommit": "7a83480b2adc4399953b0d1c959490a2bdd9cca0",
+  "bootSha256": "48e709443a84dc088c7c3a3a29411d27d6eeb5fde7ad86ee7d645f4ebeb6de80",
+  "ci": {
+    "runId": 41731253250,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41731253250",
+    "allEightJobsPassed": true,
+    "artifactDigestsVerified": true,
+    "verifiedArtifacts": 15
+  },
+  "firstFailure": {
+    "runtimeSourceCommit": "7b9d6fa7cc0d1ec60f5442ce3786c9c3b40d68fd",
+    "decisionBodyChanged": true,
+    "firstDiscardLeftTabOpen": true,
+    "realSqlResultDeliveryDelayedOnly": true,
+    "retained": true
+  },
+  "closeBrowser": {
+    "platform": "Linux headless Chromium",
+    "binarySha256": "67e668140a9e97ea041767fc089b5ac5213cfeb703c63710c5112aa8062eed9d",
+    "artifactDigest": "sha256:7d4f1925ccbe11bb0b243c7d465c9eac2c0e36dff8a242a225a806cfe4cd8410",
+    "checks": [
+      {
+        "mode": "single",
+        "choice": "discard",
+        "passed": true
+      },
+      {
+        "mode": "single",
+        "choice": "cancel",
+        "passed": true
+      },
+      {
+        "mode": "single",
+        "choice": "save",
+        "passed": true
+      },
+      {
+        "mode": "batch",
+        "choice": "discard",
+        "passed": true
+      },
+      {
+        "mode": "batch",
+        "choice": "cancel",
+        "passed": true
+      },
+      {
+        "mode": "batch",
+        "choice": "save",
+        "passed": true
+      },
+      {
+        "newProcessExplicitClosesAndNoCodeResume": true
+      }
+    ],
+    "observations": [
+      {
+        "mode": "single",
+        "choice": "discard",
+        "decisionBodyStable": true,
+        "tabStillOpen": false
+      },
+      {
+        "mode": "single",
+        "choice": "cancel",
+        "decisionBodyStable": true,
+        "tabStillOpen": true
+      },
+      {
+        "mode": "single",
+        "choice": "save",
+        "decisionBodyStable": true,
+        "tabStillOpen": false
+      },
+      {
+        "mode": "batch",
+        "choice": "discard",
+        "decisionBodyStable": true,
+        "tabStillOpen": false
+      },
+      {
+        "mode": "batch",
+        "choice": "cancel",
+        "decisionBodyStable": true,
+        "tabStillOpen": true
+      },
+      {
+        "mode": "batch",
+        "choice": "save",
+        "decisionBodyStable": true,
+        "tabStillOpen": false
+      }
+    ],
+    "productionCsp": true,
+    "strictAuth": true,
+    "nativeUiCertified": false
+  },
+  "regressions": {
+    "actualCodeServicePlatforms": 3,
+    "actualBoundedSqlBatchPlatforms": 3,
+    "actualMcpEofPlatforms": 3,
+    "actualVersionFencePlatforms": 3,
+    "singleBrowserChecks": 7,
+    "batchBrowserChecks": 5
+  },
+  "signedMacCandidate": {
+    "binarySha256": "de6c199be109b66d947986932a0209c4a492698e7aace37cb792b0a16b2ae697",
+    "bootSha256": "48e709443a84dc088c7c3a3a29411d27d6eeb5fde7ad86ee7d645f4ebeb6de80",
+    "actualHeadlessBoundaryChecks": 7,
+    "nativeCocoaAccepted": false
+  },
+  "v006": {
+    "sameIssueIndependentlyReproduced": true,
+    "isolatedBackportSourceCommit": "3b3c9afbddafe389feb64ee4bf9ceb72e08b1b2a",
+    "backportNativeAccepted": false,
+    "releaseReplaced": false
+  },
+  "modelsRequested": false,
+  "dailyApplicationChangedByP1": false,
+  "wholeV705Accepted": false,
+  "wholeP1Accepted": false,
+  "v007Published": false,
+  "remaining": [
+    "Cocoa closeout on the frozen candidate",
+    "Managed runtimes and durable execution checkpoints",
+    "Unknown side effects, hard crashes and other transport shutdown policies",
+    "Remaining P1 and P2 acceptance gates"
+  ]
+}
