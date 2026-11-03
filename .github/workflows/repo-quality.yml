@@ -59,14 +59,16 @@ jobs:
         if: always() && runner.os == 'Linux'
         run: node tools/prepare-linux-svg-worker.mjs clean
       # Exercise every subprocess test once, without competing with the large
-      # entropy/storage lane. Keep the production five-second timeouts intact.
+      # entropy/storage lane. Include the parity adapter's subprocess tests too;
+      # filtering only ::tests leaves those in the competing lane. Production
+      # timeout limits and oversized-output expectations remain unchanged.
       - name: Native subprocess deadline lane
-        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner::tests -- --test-threads=1
+        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner:: -- --test-threads=1
       - name: Test kernel and xtask
         # Vision model acceptance remains a separate explicit invocation.
         # Keep the real test executable while this non-model regression lane
         # filters it instead of initializing recognition services.
-        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner::tests --skip ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption
+        run: cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel -p xtask -- --skip code_chunk_runner:: --skip ocr_macos::tests::actual_vision_recognizes_owned_probe_and_rejects_corruption
       - name: Compile the opt-in native Mac QA host without running models
         if: runner.os == 'macOS'
         run: cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa

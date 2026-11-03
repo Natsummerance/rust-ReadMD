@@ -1,0 +1,49 @@
+name: Refresh existing V0.0.6 platform downloads
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful release.yml candidate run
+        required: true
+        type: string
+      source_commit:
+        description: Exact candidate commit (runtime must match the native Mac P0 proof)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: readmd-release-downloads-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Inspect exact build artifacts and transactionally refresh six downloads
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_RUN: ${{ inputs.run_id }}
+          CANDIDATE_COMMIT: ${{ inputs.source_commit }}
+        run: node tools/refresh-platform-release.mjs "$CANDIDATE_RUN" "$CANDIDATE_COMMIT"
+      - name: Retain receipts and any recovery journal
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V006-platform-refresh-receipts
+          if-no-files-found: error
+          path: |
+            .cache/platform-refresh/*.json
+            .cache/platform-refresh/*.md
+            .cache/platform-refresh/*.txt

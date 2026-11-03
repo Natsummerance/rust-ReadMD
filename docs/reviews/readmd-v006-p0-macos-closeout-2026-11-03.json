@@ -1,0 +1,243 @@
+{
+  "date": "2026-11-03",
+  "version": "0.0.6",
+  "sourceCommit": "fb6eaa74247ba3435a3b7dd11a4b643056a4a178",
+  "tagCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+  "tagMoved": false,
+  "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+  "indexSha256": "5fa1642cb9a5497e3a0e49830671869d6910c08c1009ceb42423b0760e72d4fa",
+  "native": {
+    "host": "Cocoa/WKWebView + LaunchServices",
+    "qaBinarySha256": "f0b80006e7fe1c0df4a516d1089597bd113cd0e1fa267e8a727d8ca7d8ba5117",
+    "productionCsp": true,
+    "strictAuth": true,
+    "groups": [
+      {
+        "group": "window",
+        "passed": true,
+        "checks": 31,
+        "reportSha256": "8b142c64f2a38d7b29a02384ed04faf941aaa8921eb2cf5f0f683e9168433d1a"
+      },
+      {
+        "group": "close",
+        "passed": true,
+        "checks": 32,
+        "reportSha256": "4dca625700109364ce96d7a7ead2b722f9b71530719a78adace04ca3ca7298d4"
+      },
+      {
+        "group": "unavailable",
+        "passed": true,
+        "checks": 24,
+        "reportSha256": "242c32bfddb2c00dc87c730d5cb32bdd8dee4e90f12281b5258fe3064ec81da8"
+      },
+      {
+        "group": "protected",
+        "passed": true,
+        "checks": 35,
+        "reportSha256": "d5c349d897b31028980cebf5d6deec1355ed1fe96b897931cc01b60b601bfd31"
+      },
+      {
+        "group": "application",
+        "passed": true,
+        "checks": 35,
+        "reportSha256": "3813eede02a9357523d9bd5e9f69ffb000278471e4744d2e8d0b3fb0691278da"
+      },
+      {
+        "group": "workflow",
+        "passed": true,
+        "checks": 45,
+        "reportSha256": "581f7861da7b4700094f142ac2a11674ab172fcf2bfbaf982c29188f620ef4f9"
+      },
+      {
+        "group": "os-encoding",
+        "passed": true,
+        "checks": 45,
+        "reportSha256": "820ac222e40ca490244abc67fe05dcb730d1a4f91f2ef48feb311309fdcb97a1"
+      },
+      {
+        "group": "resources",
+        "passed": true,
+        "checks": 27,
+        "reportSha256": "60cd02258d2c62eb9bc9c28bedb29c4d32441c20e5c1d67db0b3f36c0da2c15d"
+      }
+    ],
+    "checks": 274,
+    "manualSaveAsConfirmed": true,
+    "manualReplyIsNotChooserResult": true
+  },
+  "rust": {
+    "passed": 4202,
+    "failed": 0,
+    "ignored": 8,
+    "filtered": 46,
+    "modelTestsRun": false,
+    "smallVolumeRunSeparately": true
+  },
+  "node": {
+    "passed": 1804,
+    "failed": 0,
+    "skippedWindowsOnly": 3,
+    "total": 1807
+  },
+  "productionBinaryHeadless": {
+    "passed": 30,
+    "failed": 0,
+    "nativeChooserEvidence": false
+  },
+  "oldRealBinaryFormatFence": {
+    "passed": 5,
+    "oldSchema": 5,
+    "newSchema": 6,
+    "oldWritesRejected": true
+  },
+  "nativeSmallVolume": {
+    "passed": true,
+    "genuine_locked_fonts": true,
+    "capacity": {
+      "expanded_bytes": 50899313,
+      "allocation_bytes": 50917376,
+      "directory_bytes": 24576,
+      "metadata_bytes": 53248,
+      "safety_bytes": 33554432,
+      "additional_bytes": 84549632,
+      "allocation_unit": 4096,
+      "available_bytes": 261820416
+    },
+    "external_writer_after_admission": true,
+    "native_enospc": true,
+    "first_failure_code": "capability_pack_invalid",
+    "old_pack_unchanged": true,
+    "document_unchanged": true,
+    "preflight_denied_status": 507,
+    "no_stage_on_preflight_denial": true,
+    "cancelled_before_commit": true,
+    "document_save_enospc_retained_draft": true,
+    "service_reopened": true,
+    "new_process_reopened": true,
+    "model_inference": false,
+    "real_power_loss_certified": false,
+    "pending_review_retained": true,
+    "kernel_test_sha256": "f0faeb2bc3b41e85d4563429b44a7fec179172c8eef766f3a13f02254545da25",
+    "offline_pack_sha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+    "duration_ms": 7650
+  },
+  "packages": [
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 68675809,
+      "sha256": "59de34aea128752e96bf554a6590290e1e8c50f1e3906d6b653eecb6bed9afa5",
+      "signatureValid": true,
+      "coldStartupPassed": true,
+      "execution": "native ARM64"
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 77009215,
+      "sha256": "dd8798481f0a4b1da94a1c9f5e0aed056e887f13b21785be39897c5175efd7a3",
+      "signatureValid": true,
+      "coldStartupPassed": true,
+      "execution": "native ARM64"
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 69628534,
+      "sha256": "1b16804170d99e5f3096bc05459d806c9e721307ec889be5b6c8a74244db51ec",
+      "signatureValid": true,
+      "coldStartupPassed": true,
+      "execution": "Rosetta x86_64 on ARM64"
+    },
+    {
+      "name": "ReadMD-macos-x64.dmg",
+      "size": 77589117,
+      "sha256": "60a15d1d0f0d7b79d65e894d0ae768eb2a277814b7e9133ea53741b3d3ee9472",
+      "signatureValid": true,
+      "coldStartupPassed": true,
+      "execution": "Rosetta x86_64 on ARM64"
+    }
+  ],
+  "productionColdStarts": {
+    "passed": true,
+    "packages": [
+      {
+        "arch": "arm64",
+        "kind": "zip",
+        "passed": true,
+        "binarySha256": "3fd87c36b29a4e875e6075eee7051d5586210288cf3c61e05684574f3e06c7e8",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "normalNativeColdAndReopenPhases": 2,
+        "durationMs": 2692
+      },
+      {
+        "arch": "arm64",
+        "kind": "dmg",
+        "passed": true,
+        "binarySha256": "3fd87c36b29a4e875e6075eee7051d5586210288cf3c61e05684574f3e06c7e8",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "normalNativeColdAndReopenPhases": 2,
+        "durationMs": 2307
+      },
+      {
+        "arch": "x64",
+        "kind": "zip",
+        "passed": true,
+        "binarySha256": "e66ce97feb67968eec468187468a1728b0482cc6b9541aae230d11b68904d08c",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "normalNativeColdAndReopenPhases": 2,
+        "durationMs": 4827
+      },
+      {
+        "arch": "x64",
+        "kind": "dmg",
+        "passed": true,
+        "binarySha256": "e66ce97feb67968eec468187468a1728b0482cc6b9541aae230d11b68904d08c",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "normalNativeColdAndReopenPhases": 2,
+        "durationMs": 4783
+      }
+    ],
+    "modelsRequested": false,
+    "intelHardwareExecution": "Rosetta on Apple Silicon; physical Intel remains unverified"
+  },
+  "installed": {
+    "installed": true,
+    "version": "0.0.6",
+    "sourceCommit": "fb6eaa74247ba3435a3b7dd11a4b643056a4a178",
+    "binarySha256": "3fd87c36b29a4e875e6075eee7051d5586210288cf3c61e05684574f3e06c7e8",
+    "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+    "forcedTermination": false,
+    "oldApplicationAndProfileRetainedForRollback": true,
+    "beforePages": 0,
+    "afterStartupPages": 0,
+    "availableOriginalsChecked": 0,
+    "actualNativeWindowObserved": true,
+    "newContentRevisionServed": true,
+    "recoveryGuardCapabilityAdvertised": true,
+    "workspaceFallbackUpdated": true,
+    "modelsRequested": false,
+    "realSessionWasEmpty": true,
+    "privateProfileBackedUp": true,
+    "originalFileCheck": "not applicable: actual installed session was empty"
+  },
+  "anonymousPublicDownload": {
+    "passed": true,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.zip",
+    "bytes": 68675809,
+    "sha256": "59de34aea128752e96bf554a6590290e1e8c50f1e3906d6b653eecb6bed9afa5",
+    "signatureValid": true,
+    "installedExecutableAndAssetsMatchPublicDownload": true,
+    "sourceCommit": "fb6eaa74247ba3435a3b7dd11a4b643056a4a178",
+    "originalTagPreserved": true,
+    "modelsRequested": false
+  },
+  "publicRelease": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+  "modelsRequested": false,
+  "desktopReleased": true,
+  "limitations": [
+    "Free ad-hoc signature; no Developer ID or notarization",
+    "Intel packages executed under Rosetta; physical Intel unverified",
+    "Manual image undo/redo histories without exact resource projection safely refuse cross-directory Save As",
+    "Strict non-Windows group rename remains disabled",
+    "Native Windows/Linux UI, real IME, all-language semantics and long-duration performance not certified",
+    "75-item acceptance ledger unchanged"
+  ]
+}
