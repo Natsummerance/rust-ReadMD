@@ -9,16 +9,21 @@ const original='😀\n\n![one](old.svg)\n\n重复正文。\n重复正文。\n\n!
 const images={old:'<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>',candidate:'<svg xmlns="http://www.w3.org/2000/svg"><circle r="8"/></svg>',manual:'<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8"/></svg>'};
 const encoded=s=>Buffer.from('\ufeff'+s.replace(/\n/g,'\r\n'));
 function driver(phase,files){return String.raw`(async()=>{
- const phase=${JSON.stringify(phase)},files=${JSON.stringify(files)},images=${JSON.stringify(images)},checks=[];let dialogId=0;
+ const phase=${JSON.stringify(phase)},files=${JSON.stringify(files)},images=${JSON.stringify(images)},checks=[],inputs=[];let dialogId=0;
+ // Diagnostics belong only to the synthetic QA editor. Record no key, text,
+ // clipboard, filename or input from another app/window.
+ document.addEventListener('beforeinput',event=>{
+  if(typeof cmView!=='undefined'&&cmView?.dom.contains(event.target)&&inputs.length<40)inputs.push({trusted:event.isTrusted,type:event.inputType||'',length:typeof event.data==='string'?event.data.length:null,ms:Math.round(performance.now())});
+ },true);
  const check=(ok,label)=>{if(!ok)throw Error(label);checks.push(label);};
  const until=async fn=>{const end=Date.now()+300000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,50));}throw Error('native_history_condition_timeout');};
  const panel=async choice=>{const id=++dialogId;py.window_control('qa_native_dialog',{choice,path:files.target,id});await until(()=>window.__readmdNativeDialogResult?.id===id);return window.__readmdNativeDialogResult;};
- const report=ok=>window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok,phase,checks}}));
+ const report=ok=>window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok,phase,checks,editorInputEvents:inputs}}));
  const verifyImages=async(expected,label)=>{
   const text=cmView.state.doc.toString(),urls=[...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map(m=>m[1]);check(urls.length===expected.length,label+'_count');
   for(let i=0;i<urls.length;i++){check(urls[i].startsWith('readmd-assets/'),label+'_new_directory_'+i);const r=await apiFetch('/raw?p='+encodeURIComponent(files.dest+'/'+decodeURIComponent(urls[i])));check(r.ok&&await r.text()===images[expected[i]],label+'_actual_bytes_'+i);}
  };
- const history=async redo=>{const tab=getActiveTab(),revision=ReadMDReview.snapshot(tab).review_revision;check(ReadMDReview.history(redo)===true,redo?'redo_command_accepted':'undo_command_accepted');await until(()=>!ReadMDReview.busy(tab)&&ReadMDReview.snapshot(tab).review_revision>revision);return ReadMDReview.snapshot(tab);};
+ const history=async redo=>{const tab=getActiveTab(),revision=ReadMDReview.snapshot(tab).review_revision;check(ReadMDReview.history(redo)===true,redo?'redo_command_accepted':'undo_command_accepted');await until(()=>!ReadMDReview.busy(tab)&&ReadMDReview.snapshot(tab).review_revision>revision);const head=ReadMDReview.snapshot(tab);check(head.review_revision===revision+1,'one_review_event_per_history_command');return head;};
  try{
   await __readmdSessionReady;check(hasPy&&document.body.classList.contains('native-macos'),'actual_cocoa_wkwebview_host');
   if(phase==='save_as'){
