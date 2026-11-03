@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-04",
+  "task": "V7-02B",
+  "scopedAccepted": true,
+  "wholeTaskAccepted": false,
+  "sourceCommit": "03cde708fb427c8970af600d91b2452d3cc47810",
+  "ci": {
+    "id": 41674795681,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41674795681",
+    "allJobsPassed": true,
+    "kernelTests": [
+      {
+        "platform": "Kernel tests · windows-latest",
+        "jobId": 126055478784,
+        "results": [
+          {
+            "passed": 63,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 4279
+          },
+          {
+            "passed": 4271,
+            "failed": 0,
+            "ignored": 8,
+            "filtered": 63
+          },
+          {
+            "passed": 116,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 12,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          }
+        ]
+      },
+      {
+        "platform": "Kernel tests · ubuntu-latest",
+        "jobId": 126055478799,
+        "results": [
+          {
+            "passed": 63,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 4198
+          },
+          {
+            "passed": 4189,
+            "failed": 0,
+            "ignored": 9,
+            "filtered": 63
+          },
+          {
+            "passed": 113,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 12,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          }
+        ]
+      },
+      {
+        "platform": "Kernel tests · macos-latest",
+        "jobId": 126055478847,
+        "results": [
+          {
+            "passed": 63,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 4208
+          },
+          {
+            "passed": 4199,
+            "failed": 0,
+            "ignored": 8,
+            "filtered": 64
+          },
+          {
+            "passed": 113,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 12,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          },
+          {
+            "passed": 0,
+            "failed": 0,
+            "ignored": 0,
+            "filtered": 0
+          }
+        ]
+      }
+    ],
+    "versionFences": [
+      {
+        "name": "P1-version-fence-windows-latest",
+        "artifactDigest": "sha256:50660c96699135bb8f7f879747593c131e440d5dd0a22e7e1f3107c437689bd7",
+        "checks": [
+          "actual_released_writer_created_version_6_pending_review",
+          "actual_new_writer_migrates_without_losing_identity_original_or_decision",
+          "actual_released_reader_refuses_new_semantic_format",
+          "old_review_and_legacy_saves_refuse_without_mutating_document_or_database",
+          "new_writer_reopens_and_commits_visible_pending_body_after_old_writer_rejection"
+        ],
+        "oldSchema": 6,
+        "newSchema": 7
+      },
+      {
+        "name": "P1-version-fence-macos-latest",
+        "artifactDigest": "sha256:6524a79724a545d1ae127ad91d5157cd62c75106be9f9eaad59db79cd7ca717e",
+        "checks": [
+          "actual_released_writer_created_version_6_pending_review",
+          "actual_new_writer_migrates_without_losing_identity_original_or_decision",
+          "actual_released_reader_refuses_new_semantic_format",
+          "old_review_and_legacy_saves_refuse_without_mutating_document_or_database",
+          "new_writer_reopens_and_commits_visible_pending_body_after_old_writer_rejection"
+        ],
+        "oldSchema": 6,
+        "newSchema": 7
+      },
+      {
+        "name": "P1-version-fence-ubuntu-latest",
+        "artifactDigest": "sha256:649b8289ebb47db10f60bc5bbd44b8f343f24df0feb5b8bdd91eb5298b7bfc53",
+        "checks": [
+          "actual_released_writer_created_version_6_pending_review",
+          "actual_new_writer_migrates_without_losing_identity_original_or_decision",
+          "actual_released_reader_refuses_new_semantic_format",
+          "old_review_and_legacy_saves_refuse_without_mutating_document_or_database",
+          "new_writer_reopens_and_commits_visible_pending_body_after_old_writer_rejection"
+        ],
+        "oldSchema": 6,
+        "newSchema": 7
+      }
+    ]
+  },
+  "nativeVolumes": [
+    {
+      "platform": "ubuntu",
+      "artifactDigest": "sha256:e89f0a51944c2cafb8c616db805345576635d5467cfb6b23ae783d3ec9f8f672",
+      "kernelTestSha256": "0b434b34342da77a7b370027a1b4186ca8d397df38686e278a945b540577a133",
+      "offlinePackSha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+      "nativeEnospc": true,
+      "postAdmissionExternalWriter": true,
+      "originalAndOldPackPreserved": true,
+      "saveDraftRetained": true,
+      "newProcessReopened": true,
+      "pendingReviewRetained": true,
+      "extra": {
+        "passed": true,
+        "bind_mount_same_device_inode_changed_identity": true,
+        "inode_enospc": true,
+        "byte_headroom_sufficient": true,
+        "temporary_inode_files_removed": 2022,
+        "old_pack_and_document_unchanged": true,
+        "model_inference": false
+      }
+    },
+    {
+      "platform": "windows",
+      "artifactDigest": "sha256:b228e291da019d7cda0782a2e4f8e67e71e936375300e572c583387b51ac4cec",
+      "kernelTestSha256": "38a136f15fcf7e82902d21eaf1571a8dc54a159bf68425868c5f2448cb3bdebb",
+      "offlinePackSha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+      "nativeEnospc": true,
+      "postAdmissionExternalWriter": true,
+      "originalAndOldPackPreserved": true,
+      "saveDraftRetained": true,
+      "newProcessReopened": true,
+      "pendingReviewRetained": true,
+      "extra": {
+        "passed": true,
+        "real_ntfs_hard_quota": true,
+        "genuine_locked_fonts": true,
+        "physical_available_bytes": 254357504,
+        "caller_available_bytes": 67108864,
+        "preflight_denied_status": 507,
+        "original_unchanged": true,
+        "pending_review_retained": true,
+        "new_process_reopened": true,
+        "model_inference": false,
+        "undo_redo_and_document_save_after_quota_refusal": true
+      }
+    }
+  ],
+  "macNative": {
+    "sourceHead": "e1f2024582a293b7ffb291bcc184c8a352acd031",
+    "sourceTreeSha256": "51851acb8c1ef4bb79340be549aa122dffe61af6c4fbded59d196f8218b6adf4",
+    "kernelTestSha256": "8d475f135305764807bd7a229633833f7c32871d653532a08bbf145c9953736f",
+    "offlinePackSha256": "037e01665e90fde0fc81adb8cda2093e5862c491794dcbe95544660479f07a69",
+    "temporaryImageRemoved": true,
+    "nativeEnospc": true,
+    "postAdmissionExternalWriter": true,
+    "oldPackAndOriginalPreserved": true,
+    "saveDraftRetained": true,
+    "cancelledBeforeCommit": true,
+    "newProcessReopened": true,
+    "pendingReviewRetained": true
+  },
+  "firstFailures": [
+    {
+      "candidate": "ab79ad5ee8eafcaf403a05e53c6ec1347e01cbb8",
+      "area": "Windows quota fixture",
+      "cause": "Runner administrator did not observe the requested individual hard quota; assertion correctly refused certification.",
+      "fix": "Use a fresh ordinary CI account with an in-memory password; verify real caller capacity before accepting the test.",
+      "retained": true
+    },
+    {
+      "area": "Unknown resource replacement",
+      "cause": "Opening a FIFO replacement could block verification and rollback.",
+      "fix": "Nonblocking regular-file observation; unknown object is retained.",
+      "retained": true
+    }
+  ],
+  "remaining": [
+    "Linux real user/project hard quotas are not certified.",
+    "Post-admission ENOSPC currently preserves state but can report a generic invalid-pack code; improve the diagnostic separately.",
+    "This is native CLI/service/filesystem evidence, not a native UI or all filesystem/power-loss certificate."
+  ],
+  "modelsLoaded": false,
+  "localVmInstalled": false,
+  "dailyAppChanged": false,
+  "releasePublished": false
+}
