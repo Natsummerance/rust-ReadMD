@@ -17,6 +17,11 @@ if ((Test-Path -LiteralPath $image) -or (Test-Path -LiteralPath $tmp) -or (Test-
 New-Item -ItemType Directory -Path $tmp | Out-Null
 $created = $false
 $attached = $false
+$quotaUser = $null
+$quotaIdentity = $null
+$quotaPassword = $null
+$quotaProfile = Join-Path $out 'quota-profile'
+if (Test-Path -LiteralPath $quotaProfile) { throw 'Do not reuse a quota profile' }
 $phase = 'preparation'
 function Disk-Part([string]$label, [string[]]$commands) {
     $script = Join-Path $out ($label + '.diskpart')
@@ -30,13 +35,26 @@ function Quota([string[]]$arguments) {
     $text = (& $fsutil @arguments 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { [IO.File]::WriteAllText((Join-Path $out 'quota-command-failure.log'), $text); throw 'Owned volume quota setup failed' }
 }
-function Consumer([string]$label, [string]$volumeRoot, [string]$report, [hashtable]$extra) {
+function Consumer([string]$label, [string]$volumeRoot, [string]$report, [hashtable]$extra, [bool]$standardUser = $false) {
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $binary
     $info.WorkingDirectory = $repo
     $info.UseShellExecute = $false
     $info.RedirectStandardOutput = $true
     $info.RedirectStandardError = $true
+    if ($standardUser) {
+        # A runner administrator's default file owner is the Administrators
+        # group. Its apparent free space cannot certify an individual quota.
+        # Use a fresh unprivileged CI identity, with an in-memory password.
+        $info.UserName = $quotaUser.Name
+        $info.Domain = $env:COMPUTERNAME
+        $info.Password = $quotaPassword
+        $info.LoadUserProfile = $false
+        $info.Environment['USERPROFILE'] = $quotaProfile
+        $info.Environment['HOME'] = $quotaProfile
+        $info.Environment['LOCALAPPDATA'] = Join-Path $quotaProfile 'AppData/Local'
+        $info.Environment['APPDATA'] = Join-Path $quotaProfile 'AppData/Roaming'
+    }
     foreach ($key in @($info.Environment.Keys)) { if ($key -match 'TOKEN|SECRET|CREDENTIAL|API_KEY') { $info.Environment.Remove($key) | Out-Null } }
     foreach ($name in @('READMD_SPACE_REOPEN_ONLY', 'READMD_SPACE_QUOTA_ONLY', 'READMD_SPACE_QUOTA_REOPEN_ONLY')) { $info.Environment.Remove($name) | Out-Null }
     $values = @{ TEMP=$tmp; TMP=$tmp; SQLITE_TMPDIR=$tmp; READMD_SPACE_OWNED_VOLUME=$volumeRoot; READMD_SPACE_INSTALL_ASSETS=$assets; READMD_SPACE_INSTALL_PACK=$pack; READMD_SPACE_REPORT_PATH=$report }
@@ -83,12 +101,26 @@ try {
     $quotaRoot = Join-Path $volume 'quota-fixture'
     $mainRoot = Join-Path $volume 'enospc-fixture'
     foreach ($root in @($quotaRoot, $mainRoot)) { New-Item -ItemType Directory -Path $root | Out-Null; [IO.File]::WriteAllText((Join-Path $root '.readmd-owned-small-volume-v1'), "ReadMD P0 capacity evidence only`n", [Text.UTF8Encoding]::new($false)) }
+    $phase = 'fresh_standard_quota_caller'
+    $name = 'RdP1Quota' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    if (Get-LocalUser -Name $name -ErrorAction SilentlyContinue) { throw 'Do not reuse an existing CI identity' }
+    $quotaPassword = ConvertTo-SecureString ('Rd1!' + [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')) -AsPlainText -Force
+    $quotaUser = New-LocalUser -Name $name -Password $quotaPassword -Description 'Ephemeral ReadMD owned-volume acceptance only' -AccountNeverExpires
+    $quotaIdentity = $env:COMPUTERNAME + '\' + $name
+    Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $quotaIdentity
+    New-Item -ItemType Directory -Path $quotaProfile | Out-Null
+    # Only the disposable public CI checkout and this owned volume are granted
+    # access. No account password or credential is saved in scripts or logs.
+    foreach ($entry in @(@($repo, 'RX'), @($out, 'M'), @($quotaRoot, 'M'))) {
+        & (Join-Path $env:SystemRoot 'System32/icacls.exe') $entry[0] /grant ($quotaIdentity + ':(OI)(CI)' + $entry[1]) /q | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Owned fixture ACL setup failed' }
+    }
     $phase = 'real_caller_hard_quota'
     Quota @('quota', 'enforce', $volume)
-    Quota @('quota', 'modify', $volume, '67108864', '67108864', $identity)
+    Quota @('quota', 'modify', $volume, '67108864', '67108864', $quotaIdentity)
     $quotaReport = Join-Path $out 'native-quota.json'
-    Consumer 'quota-first-process' $quotaRoot $quotaReport @{ READMD_SPACE_QUOTA_ONLY='1' }
-    Consumer 'quota-reopen-process' $quotaRoot $quotaReport @{ READMD_SPACE_QUOTA_REOPEN_ONLY='1' }
+    Consumer 'quota-first-process' $quotaRoot $quotaReport @{ READMD_SPACE_QUOTA_ONLY='1' } $true
+    Consumer 'quota-reopen-process' $quotaRoot $quotaReport @{ READMD_SPACE_QUOTA_REOPEN_ONLY='1' } $true
     $quotaResult = Get-Content -LiteralPath $quotaReport -Raw | ConvertFrom-Json
     if (!$quotaResult.passed -or !$quotaResult.real_ntfs_hard_quota -or !$quotaResult.new_process_reopened -or !$quotaResult.undo_redo_and_document_save_after_quota_refusal) { throw 'Missing actual quota proof' }
     $phase = 'native_enospc_and_recovery'
@@ -109,5 +141,12 @@ try {
     if ($attached) { Dismount-DiskImage -ImagePath $image; if ((Get-DiskImage -ImagePath $image).Attached) { throw 'Preserve still-attached owned VHD' }; $attached=$false }
     if ($created) { $item=Get-Item -LiteralPath $image; if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.CreationTimeUtc -ne $imageBirth) { throw 'Preserve changed VHD identity' }; Remove-Item -LiteralPath $image }
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse }
+    if ($quotaUser) {
+        $currentUser = Get-LocalUser -Name $quotaUser.Name -ErrorAction SilentlyContinue
+        if ($currentUser -and $currentUser.SID -ne $quotaUser.SID) { throw 'Preserve changed CI user identity' }
+        if ($currentUser) { Remove-LocalUser -SID $quotaUser.SID }
+    }
+    if (Test-Path -LiteralPath $quotaProfile) { Remove-Item -LiteralPath $quotaProfile -Recurse }
+    if ($quotaPassword) { $quotaPassword.Dispose() }
 }
 Write-Output '{"passed":true,"nativeWindowsEnospc":true,"realCallerQuota":true,"newProcessReopened":true,"ownedImageRemoved":true,"modelsRequested":false}'
