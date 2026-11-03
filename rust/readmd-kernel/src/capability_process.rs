@@ -33,23 +33,23 @@ pub(crate) fn install_admission(data:&Path)->ApiResult<Guard> {
         .ok_or_else(||ApiError::new(409,"capability_install_busy"))
 }
 
-#[cfg(target_os="macos")]
-mod macos_admission;
-/// Mac APFS volumes can share a container's free space. Serialize managed
-/// installation writers across profiles for this user, independently of readers.
+#[cfg(any(windows,target_os="linux",target_os="macos"))]
+mod shared_admission;
+/// Profiles can share a volume/quota and APFS volumes can share a container.
+/// Serialize managed writers for this user, independently of resource readers.
 pub(crate) struct SharedInstallAdmission {
-    #[cfg(target_os="macos")]
-    guard: macos_admission::Admission,
+    #[cfg(any(windows,target_os="linux",target_os="macos"))]
+    guard: shared_admission::Admission,
 }
 impl SharedInstallAdmission {
     pub(crate) fn acquire()->ApiResult<Self> {
         Ok(Self {
-            #[cfg(target_os="macos")]
-            guard: macos_admission::Admission::acquire()?,
+            #[cfg(any(windows,target_os="linux",target_os="macos"))]
+            guard: shared_admission::Admission::acquire()?,
         })
     }
     pub(crate) fn verify(&self)->ApiResult<()> {
-        #[cfg(target_os="macos")]
+        #[cfg(any(windows,target_os="linux",target_os="macos"))]
         self.guard.verify()?;
         Ok(())
     }

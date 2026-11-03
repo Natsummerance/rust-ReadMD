@@ -23,10 +23,10 @@ jobs:
     # Native subprocess deadlines are tested separately from the explicit
     # concurrency/stress lanes. Do not oversubscribe a small shared runner.
     env:
-      # Mac installation admission intentionally coordinates every profile of
+      # Installation admission intentionally coordinates every profile of
       # one user. Independent unit fixtures must not race over that real gate;
       # explicit cross-process contention tests still exercise concurrency.
-      RUST_TEST_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '4' }}
+      RUST_TEST_THREADS: 1
       CARGO_BUILD_JOBS: 2
       CARGO_INCREMENTAL: 0
     strategy:

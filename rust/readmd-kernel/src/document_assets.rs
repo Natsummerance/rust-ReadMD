@@ -330,7 +330,7 @@ fn asset_handle(path: &Path) -> std::io::Result<fs::File> {
     }
     #[cfg(unix)] {
         use std::os::unix::fs::OpenOptionsExt;
-        open.custom_flags(libc::O_NOFOLLOW);
+        open.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     let file = open.open(path)?;
     let metadata = file.metadata()?;
@@ -866,6 +866,31 @@ mod tests {
         fs::write(&file, b"external in-place bytes").unwrap();
         drop(guard);
         assert_eq!(fs::read(file).unwrap(), b"external in-place bytes");
+    }
+    #[cfg(unix)]
+    #[test]
+    fn fifo_replacement_cannot_block_resource_verification_or_rollback() {
+        const CHILD:&str="READMD_ASSET_FIFO_PROBE";
+        if let Some(root)=std::env::var_os(CHILD) {
+            use std::os::unix::ffi::OsStrExt;
+            let root=PathBuf::from(root);assert_eq!(fs::read(root.join(".readmd-fifo-probe-owned-v1")).unwrap(),b"owned FIFO regression only");
+            let asset=stage(&root,b"owned image","own","png").unwrap();
+            let source=staged_markdown(&asset);let found=discover_staged(&source,&root).unwrap();
+            let guard=materialize_staged(&source,&root.join("failed.md"),&found,&root).unwrap();
+            let path=PathBuf::from(&guard.assets[0].path);let held=root.join("held-original.png");fs::rename(&path,&held).unwrap();
+            let name=std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();assert_eq!(unsafe{libc::mkfifo(name.as_ptr(),0o600)},0);
+            assert!(guard.verify().is_err());drop(guard);
+            use std::os::unix::fs::FileTypeExt;
+            assert!(fs::symlink_metadata(&path).unwrap().file_type().is_fifo());assert_eq!(fs::read(held).unwrap(),b"owned image");return;
+        }
+        struct Child(std::process::Child);
+        impl Drop for Child{fn drop(&mut self){let _=self.0.kill();let _=self.0.wait();}}
+        let root=tempfile::tempdir().unwrap();fs::write(root.path().join(".readmd-fifo-probe-owned-v1"),b"owned FIFO regression only").unwrap();
+        let mut child=Child(std::process::Command::new(std::env::current_exe().unwrap()).args(["--exact","document_assets::tests::fifo_replacement_cannot_block_resource_verification_or_rollback","--test-threads=1"])
+            .env(CHILD,root.path()).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::inherit()).spawn().unwrap());
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(3);
+        loop{if let Some(status)=child.0.try_wait().unwrap(){assert!(status.success());break;}
+            assert!(std::time::Instant::now()<deadline,"a non-file occupant blocked the owned resource worker");std::thread::sleep(std::time::Duration::from_millis(10));}
     }
     #[test]
     fn two_valid_staged_uri_aliases_share_one_readable_permanent_identity() {
