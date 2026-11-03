@@ -21,13 +21,15 @@
 //! - 输出按字符截断到 200_000 并给出 `output_truncated` 警告。
 //!
 //! 与 Python 的已知实现差异全部记录在交付报告的「未解决」小节。
+//! P1 adds request cancellation and owned process cleanup. SQLite runs in the
+//! request with VM progress interruption; it never outlives a timeout in a
+//! detached thread. Static source checks are not an OS security sandbox.
 
 use std::env;
 use std::ffi::OsString;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -35,6 +37,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde_json::{Map, Value};
 use tempfile::TempDir;
+
+mod process_lifecycle;
 
 /// 与 Python 侧同名常量的权威取值。
 pub const EXECUTION_TIMEOUT: u64 = 10;
@@ -475,12 +479,12 @@ fn pump_pipe<R: Read + Send + 'static>(mut reader: R, sink: Arc<Mutex<PipeSink>>
     }
 }
 
-fn wait_for_sinks(sinks: &[&Arc<Mutex<PipeSink>>], budget: Duration) {
+fn wait_for_sinks(sinks: &[&Arc<Mutex<PipeSink>>], budget: Duration) -> bool {
     let deadline = Instant::now() + budget;
     loop {
         let finished = sinks.iter().all(|s| s.lock().map(|g| g.done).unwrap_or(true));
         if finished || Instant::now() >= deadline {
-            return;
+            return finished;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -527,20 +531,16 @@ fn child_env(runtime: Option<&str>) -> Vec<(String, String)> {
     out
 }
 
-/// 超时后的进程树清理：Windows 使用原生 Win32 API 遍历子树，再兜底 kill 直接子进程。
-fn terminate_tree(child: &mut Child) {
-    if child.id() != 0 {
-        #[cfg(target_os = "windows")]
-        {
-            let _ = crate::pet_launcher::terminate_tree(child.id());
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = child.kill();
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+fn stopped_result(code: &str, timeout: u64, sql: bool) -> Map<String, Value> {
+    let message = match code {
+        "execution_cancelled" => "代码执行已取消".to_string(),
+        "execution_stop_pending" => "代码执行资源仍待回收".to_string(),
+        _ if sql => format!("SQL 执行超时 (超过 {timeout} 秒限制)"),
+        _ => format!("代码执行超时 (超过 {timeout} 秒限制)"),
+    };
+    Dict::default().set("ok", Value::Bool(false)).text("error_code", code)
+        .text("error", &message).text("stdout", "").text("stderr", "")
+        .set("images", empty_images()).set("exit_code", Value::from(-1i64)).build()
 }
 
 /// 底层安全进程调用与 UTF-8 管道捕获（有界流式内存保护与全路径截断）。
@@ -549,82 +549,98 @@ fn run_process(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Opti
         return exception_dict("invalid_command");
     }
     let timeout = clamp_timeout(timeout);
+    if crate::speech::cancelled() { return stopped_result("execution_cancelled", timeout, false); }
 
-    let mut spawned = command(&cmd[0]);
+    #[cfg(windows)]
+    let program = if Path::new(&cmd[0]).is_absolute() { Some(cmd[0].clone()) } else { which(&cmd[0].to_string_lossy()).map(PathBuf::into_os_string) };
+    #[cfg(windows)]
+    let Some(program) = program else { return exception_dict("FileNotFoundError: code runtime unavailable"); };
+    #[cfg(not(windows))]
+    let program = cmd[0].clone();
+    let mut spawned = command(&program);
     spawned
         .args(&cmd[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env_clear()
-        .envs(child_env(runtime));
+        .env_clear();
+    for (key, value) in child_env(runtime) {
+        // The shared Windows worker creates its own isolated bootstrap/home
+        // and sets job membership before the process can execute user code.
+        #[cfg(windows)]
+        if matches!(key.as_str(), "PATH" | "SYSTEMROOT" | "WINDIR" | "TEMP" | "TMP" | "HOME" | "USERPROFILE" | "APPDATA" | "LOCALAPPDATA") { continue; }
+        spawned.env(key, value);
+    }
     if let Some(dir) = cwd {
         spawned.current_dir(dir);
     }
 
-    let mut child = match spawned.spawn() {
+    let mut child = match process_lifecycle::OwnedChild::spawn(spawned, cwd) {
         Ok(child) => child,
         Err(e) => return exception_dict(&format!("FileNotFoundError: {e}")),
     };
 
     let stdout_sink = Arc::new(Mutex::new(PipeSink::default()));
     let stderr_sink = Arc::new(Mutex::new(PipeSink::default()));
+    let mut readers = Vec::new();
     if let Some(pipe) = child.stdout.take() {
         let sink = Arc::clone(&stdout_sink);
-        let _ = std::thread::Builder::new()
+        if let Ok(reader) = std::thread::Builder::new()
             .name("readmd-code-stdout".into())
-            .spawn(move || pump_pipe(pipe, sink));
+            .spawn(move || pump_pipe(pipe, sink)) { readers.push(reader); }
     } else if let Ok(mut guard) = stdout_sink.lock() {
         guard.done = true;
     }
     if let Some(pipe) = child.stderr.take() {
         let sink = Arc::clone(&stderr_sink);
-        let _ = std::thread::Builder::new()
+        if let Ok(reader) = std::thread::Builder::new()
             .name("readmd-code-stderr".into())
-            .spawn(move || pump_pipe(pipe, sink));
+            .spawn(move || pump_pipe(pipe, sink)) { readers.push(reader); }
     } else if let Ok(mut guard) = stderr_sink.lock() {
         guard.done = true;
     }
 
     let deadline = Instant::now() + Duration::from_secs(timeout);
-    let mut timed_out = false;
+    let mut stopped = None;
     let mut exit_code: i64 = -1;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                exit_code = status.code().unwrap_or(-1) as i64;
+                exit_code = status;
                 break;
             }
             Ok(None) => {
+                if crate::speech::cancelled() {
+                    stopped = Some("execution_cancelled");
+                    break;
+                }
                 if Instant::now() >= deadline {
-                    timed_out = true;
-                    terminate_tree(&mut child);
+                    stopped = Some("execution_timeout");
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
             Err(_) => {
                 // Python: `except Exception: exit_code = -1`，仍然继续回收进程树。
-                terminate_tree(&mut child);
                 break;
             }
         }
     }
+    if child.stop().is_err() { stopped = Some("execution_stop_pending"); }
 
-    wait_for_sinks(&[&stdout_sink, &stderr_sink], Duration::from_secs(1));
+    if wait_for_sinks(&[&stdout_sink, &stderr_sink], Duration::from_secs(1)) {
+        for reader in readers { let _ = reader.join(); }
+    } else { stopped = Some("execution_stop_pending"); }
     let stdout = take_sink(&stdout_sink);
     let stderr = take_sink(&stderr_sink);
 
-    if timed_out {
-        return Dict::default()
-            .set("ok", Value::Bool(false))
-            .text("error_code", "execution_timeout")
-            .text("error", &format!("代码执行超时 (超过 {timeout} 秒限制)"))
-            .text("stdout", &bounded_strip(&stdout.text))
-            .text("stderr", &bounded_strip(&stderr.text))
-            .set("images", empty_images())
-            .set("exit_code", Value::from(-1i64))
-            .build();
+    if let Some(code) = stopped {
+        let mut result = stopped_result(code, timeout, false);
+        if code == "execution_timeout" {
+            insert_str(&mut result, "stdout", &bounded_strip(&stdout.text));
+            insert_str(&mut result, "stderr", &bounded_strip(&stderr.text));
+        }
+        return result;
     }
 
     let truncated = stdout.truncated
@@ -791,32 +807,14 @@ fn insert_str(res: &mut Map<String, Value>, key: &str, value: &str) {
 /// 复刻 Python 的行/字符双重有界保护与 `format_cell` 渲染。
 pub fn execute_sql_chunk(code: &str, _cwd: Option<&Path>, timeout: u64) -> Map<String, Value> {
     let timeout = clamp_timeout(timeout);
-    let script = code.to_string();
-    let (tx, rx) = mpsc::channel();
-    let _ = std::thread::Builder::new()
-        .name("readmd-sql".into())
-        .spawn(move || {
-            let _ = tx.send(run_sql_statements(&script));
-        });
-
-    let outcome = match rx.recv_timeout(Duration::from_secs(timeout)) {
-        Ok(outcome) => outcome,
-        Err(_) => {
-            // 对应「子进程被强杀」：error_code 由 _run_process 给出，
-            // _execute_sql_chunk 再把诊断文本换成 SQL 版本。
-            let mut res = Dict::default()
-                .set("ok", Value::Bool(false))
-                .text("error_code", "execution_timeout")
-                .text("error", &format!("SQL 执行超时 (超过 {timeout} 秒限制)"))
-                .text("stdout", "")
-                .text("stderr", "")
-                .set("images", empty_images())
-                .set("exit_code", Value::from(-1i64))
-                .build();
-            set_lang(&mut res, "sql");
-            return res;
-        }
-    };
+    let control = SqlControl { check: crate::speech::cancellation_check(), deadline: Instant::now() + Duration::from_secs(timeout), reason: Arc::new(std::sync::atomic::AtomicU8::new(0)), denied: Arc::new(std::sync::atomic::AtomicBool::new(false)) };
+    let outcome = if control.stopping() { Err("interrupted".into()) } else { run_sql_statements(code, &control) };
+    if control.stopping() {
+        let mut res = stopped_result(if control.reason.load(std::sync::atomic::Ordering::Acquire) == 1 { "execution_cancelled" } else { "execution_timeout" }, timeout, true);
+        set_lang(&mut res, "sql");
+        return res;
+    }
+    if control.denied.load(std::sync::atomic::Ordering::Acquire) { return denied_dict("path_access_not_allowed", "sql"); }
 
     let mut res = match outcome {
         Ok((out_text, any_truncated)) => {
@@ -878,16 +876,45 @@ enum SqlStatementOutcome {
 }
 
 /// 子进程版的 `run_sql()`：返回 (stdout 文本, 是否有行截断) 或错误消息。
-fn run_sql_statements(code: &str) -> Result<(String, bool), String> {
+#[derive(Clone)]
+struct SqlControl {
+    check: Arc<dyn Fn() -> bool + Send + Sync>,
+    deadline: Instant,
+    reason: Arc<std::sync::atomic::AtomicU8>,
+    denied: Arc<std::sync::atomic::AtomicBool>,
+}
+impl SqlControl {
+    fn stopping(&self) -> bool {
+        use std::sync::atomic::Ordering;
+        let reason = if (self.check)() { 1 } else if Instant::now() >= self.deadline { 2 } else { 0 };
+        if reason != 0 { let _ = self.reason.compare_exchange(0, reason, Ordering::AcqRel, Ordering::Acquire); }
+        self.reason.load(Ordering::Acquire) != 0
+    }
+}
+fn run_sql_statements(code: &str, control: &SqlControl) -> Result<(String, bool), String> {
     let conn = match rusqlite::Connection::open_in_memory() {
         Ok(conn) => conn,
         Err(e) => return Err(sqlite_error_text(&e)),
     };
+    let progress = control.clone();
+    conn.progress_handler(1000, Some(move || progress.stopping())).map_err(|e| sqlite_error_text(&e))?;
+    let denied = control.denied.clone();
+    conn.authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+        use rusqlite::hooks::{AuthAction, Authorization};
+        let forbidden = match context.action {
+            AuthAction::Attach { filename } => filename != ":memory:",
+            AuthAction::Pragma { pragma_name, pragma_value: Some(_) } => matches!(pragma_name.to_ascii_lowercase().as_str(), "temp_store_directory" | "data_store_directory"),
+            AuthAction::Function { function_name } => function_name.eq_ignore_ascii_case("load_extension"),
+            _ => false,
+        };
+        if forbidden { denied.store(true, std::sync::atomic::Ordering::Release); Authorization::Deny } else { Authorization::Allow }
+    })).map_err(|e| sqlite_error_text(&e))?;
     let statements = split_sql_statements(code);
     let mut results: Vec<String> = Vec::new();
     let mut any_truncated = false;
 
     for stmt in &statements {
+        if control.stopping() { return Err("interrupted".into()); }
         if py_trim(stmt).is_empty() {
             continue;
         }
@@ -1558,6 +1585,7 @@ pub fn execute_code_chunk_dict(
     timeout: u64,
     cwd: Option<&Path>,
 ) -> Result<Map<String, Value>, String> {
+    if crate::speech::cancelled() { return Ok(stopped_result("execution_cancelled", timeout, false)); }
     let source = code.to_string();
     let cleaned = strip_literals_and_comments(&source, lang);
     if NETWORK_PATTERNS.iter().any(|re| re.is_match(&cleaned)) {
@@ -1602,6 +1630,9 @@ pub fn execute_code_chunk(
 
 #[path = "parity_code.rs"]
 pub mod parity_code;
+
+#[cfg(test)]
+mod lifecycle_tests;
 
 #[cfg(test)]
 mod tests {

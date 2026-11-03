@@ -928,7 +928,7 @@ fn dispatch_tool_with_profile(app: &Arc<App>, name: &str, args: &Value, cancel: 
                 "capture_plot": arg_bool(args, "capture_plot", true),
                 "confirm": true,
             });
-            Ok(json_result(&api(app, "POST", "/api/code/run", Some(&body))?))
+            crate::cancel::with_external(cancel, || Ok(json_result(&api(app, "POST", "/api/code/run", Some(&body))?)))
         }
         "readmd_pdf_audit" => {
             let path = existing_file(&arg_str(args, "pdf_path", ""))?;

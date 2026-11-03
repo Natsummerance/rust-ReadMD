@@ -84,6 +84,8 @@ jobs:
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
       - name: P1 previous released writer cannot downgrade resource history
         run: node tools/test/review-version-fence-platform.mjs
+      - name: P1 real code cancellation, HTTP and MCP lifecycle
+        run: node tools/test/code-lifecycle-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-lifecycle
       - name: Retain version fence receipt and any first failure
         if: always()
         uses: actions/upload-artifact@v4

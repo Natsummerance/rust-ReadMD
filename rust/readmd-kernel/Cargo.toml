@@ -33,7 +33,7 @@ mobile-ffi = []
 pdfium-worker = ["dep:pdfium-render"]
 
 [dependencies]
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
+rusqlite = { version = "=0.40.2", features = ["bundled", "hooks"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 # `preserve_order`: CPython's `json.dumps` emits object keys in dict insertion
 # order; the default `Map` is a `BTreeMap` and emits them alphabetically.

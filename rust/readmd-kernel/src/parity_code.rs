@@ -108,17 +108,36 @@ pub fn code_run_response(req: &Request) -> Response {
     };
     let effective = effective_timeout(timeout);
 
+    // Keep the outer MCP cancellation context when no HTTP task is supplied.
+    let task = match obj.get("task_id") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(id)) if id.is_empty() => None,
+        Some(Value::String(id)) => match crate::cancel::register(id) {
+            Some(task) => Some(task),
+            None => return api_error(400, "invalid_task_id"),
+        },
+        Some(_) => return api_error(400, "invalid_task_id"),
+    };
+    let external = crate::speech::cancellation_check();
+    let outer = external.clone();
+    let task_check = task.as_ref().map(crate::cancel::TaskGuard::checker);
+    let check = Arc::new(move || outer() || task_check.as_ref().is_some_and(|check| check()));
     // 9) 执行 + 边界清洗
-    let mut res = match super::execute_code_chunk_dict(
+    let mut res = match crate::speech::with_cancel(check, || super::execute_code_chunk_dict(
         &code,
         &lang,
         true,
         effective,
         cwd_text.as_ref().map(|p| Path::new(p.as_str())),
-    ) {
+    )) {
         Ok(map) => map,
         Err(_) => return internal_failed(),
     };
+    if res.get("ok").map(py_truthy).unwrap_or(false)
+        && (external() || task.as_ref().is_some_and(|task| !task.try_commit()))
+    {
+        res = super::stopped_result("execution_cancelled", effective, false);
+    }
 
     let ok = res.get("ok").map(py_truthy).unwrap_or(false);
     if !ok {
@@ -309,6 +328,41 @@ mod tests {
     }
 
     // ---------------------------------------------------------------- allow
+
+    #[test]
+    fn task_cancel_reaches_a_running_sql_request_and_releases_registration() {
+        let id = "code-sql-cancel-fixed-input";
+        std::thread::scope(|scope| {
+            let signal = scope.spawn(|| {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+                loop {
+                    if crate::cancel::cancel(id) == crate::cancel::CancelState::Cancelling { break; }
+                    assert!(std::time::Instant::now() < deadline, "code request was never registered");
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            });
+            let response = code_run_response(&json_post(json!({"confirm":true,"lang":"sql","code":"WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n;","task_id":id})));
+            signal.join().unwrap();
+            assert_eq!(response.status, 200);
+            let body = body_of(&response);
+            assert_eq!(body["ok"], false);
+            assert_eq!(body["error_code"], "execution_cancelled");
+            assert_eq!(body["stdout"], "");
+            assert!(body.get("stderr").is_none());
+        });
+        assert_eq!(crate::cancel::cancel(id), crate::cancel::CancelState::Unknown);
+    }
+
+    #[test]
+    fn external_cancel_and_invalid_task_ids_keep_the_public_boundaries() {
+        let response = crate::speech::with_cancel(Arc::new(|| true), || code_run_response(&json_post(json!({"confirm":true,"lang":"sql","code":"SELECT 42;"}))));
+        assert_eq!(body_of(&response)["error_code"], "execution_cancelled");
+        for id in [json!("../invalid"), json!(3)] {
+            let response = code_run_response(&json_post(json!({"confirm":true,"lang":"sql","code":"SELECT 42;","task_id":id})));
+            assert_eq!(response.status, 400);
+            assert_eq!(body_of(&response)["error_code"], "invalid_task_id");
+        }
+    }
 
     #[test]
     fn allowed_run_returns_pythons_seven_keys() {
