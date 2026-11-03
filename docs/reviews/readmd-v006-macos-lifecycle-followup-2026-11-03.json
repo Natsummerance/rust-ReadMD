@@ -20,18 +20,37 @@
     "logSha256": "a6ad6223916c0ecacc1666ea32e02f7a9a20c72d8651df8c72210707ce22155c"
   },
   "nativeFinalCandidate": {
-    "passed": false,
-    "reason": "requires a desktop interval without another operator"
+    "passed": true,
+    "host": "LaunchServices / Cocoa WKWebView",
+    "osVersion": "27.2",
+    "hardwareArchitecture": "arm64",
+    "phases": 6,
+    "checks": 56,
+    "flows": [
+      {
+        "flow": "native-close-retry",
+        "passed": true,
+        "phases": 3,
+        "checks": 32,
+        "reportSha256": "4f7b8c99933ec3417d95410253a439ec759364da4e71c5cde0ca6895e142e4b9"
+      },
+      {
+        "flow": "native-recovery",
+        "passed": true,
+        "phases": 3,
+        "checks": 24,
+        "reportSha256": "9f4b67af08c1346b54b3c4ffa36ac2fa6ec32f1108d27323b79898862f803c02"
+      }
+    ],
+    "testDriverSha256": "ac3de0bdd782a29689ed0b7304cae4eec36b7524d9c803b95bf1f16bc4ad7f4a"
   },
   "modelsRequested": false,
-  "status": "candidate_native_pending",
+  "status": "native_verified_ready_for_asset_refresh",
   "version": "0.0.6",
-  "latestReleasedMacSource": "4fd9bf6e1009967a4cc232a8661dce7e70a81a20",
   "staticPackageCheck": {
     "passed": true,
     "packages": 4,
-    "reportSha256": "407312662cd4201b4ad1f5eaf8160155da77361808596aa053691f4b1d726d24",
-    "nativeExecutionPassed": false
+    "reportSha256": "407312662cd4201b4ad1f5eaf8160155da77361808596aa053691f4b1d726d24"
   },
   "firstFailureChecks": [
     "repeated confirmation replaces previous handlers",
@@ -40,5 +59,89 @@
   ],
   "contractLedgerChanged": false,
   "appleNotarized": false,
-  "physicalIntelVerified": false
+  "physicalIntelVerified": false,
+  "previousReleasedMacSource": "4fd9bf6e1009967a4cc232a8661dce7e70a81a20",
+  "packageVerification": {
+    "passed": true,
+    "packages": [
+      {
+        "arch": "arm64",
+        "kind": "zip",
+        "passed": true,
+        "runtime": "native ARM64",
+        "phases": 2,
+        "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+        "indexSha256": "2f71109cd65b07c89629930d56d22d9a7c4400cf0424a0de100ddb9d703f9ee5",
+        "binarySha256": "c0f299c66c6e0252dca7cdbb740f56870eb4c099b91211cdbc4cabb94445db80",
+        "reportSha256": "9deede32d044553a6a90b37fb860ebb2676c000740937ce8ac5d4788f024927b"
+      },
+      {
+        "arch": "arm64",
+        "kind": "dmg",
+        "passed": true,
+        "runtime": "native ARM64",
+        "phases": 2,
+        "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+        "indexSha256": "2f71109cd65b07c89629930d56d22d9a7c4400cf0424a0de100ddb9d703f9ee5",
+        "binarySha256": "c0f299c66c6e0252dca7cdbb740f56870eb4c099b91211cdbc4cabb94445db80",
+        "reportSha256": "0096f1fb7780bac97fd9ba35fc6f39c06a84b23a8a4f71fb7901239467dfb435"
+      },
+      {
+        "arch": "x64",
+        "kind": "zip",
+        "passed": true,
+        "runtime": "Rosetta x86_64 on ARM64",
+        "phases": 2,
+        "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+        "indexSha256": "2f71109cd65b07c89629930d56d22d9a7c4400cf0424a0de100ddb9d703f9ee5",
+        "binarySha256": "54e26aa1af5476abf319d96f8331f04c92a930b87594a4baf2be41cca92579b2",
+        "reportSha256": "77b3902c5120eb035287458c0798f8da4e344d0b14b7d2322afd82ee01588437"
+      },
+      {
+        "arch": "x64",
+        "kind": "dmg",
+        "passed": true,
+        "runtime": "Rosetta x86_64 on ARM64",
+        "phases": 2,
+        "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+        "indexSha256": "2f71109cd65b07c89629930d56d22d9a7c4400cf0424a0de100ddb9d703f9ee5",
+        "binarySha256": "54e26aa1af5476abf319d96f8331f04c92a930b87594a4baf2be41cca92579b2",
+        "reportSha256": "119ce8b9b88327fb44de22ef3a948e1b1ff2ae5698a9e23c9ca0e5b529c0fb0e"
+      }
+    ],
+    "modelsRequested": false,
+    "intelHardwareExecution": false,
+    "archiveColdAndReopenPhases": 8,
+    "globalInput": false,
+    "forcedTermination": false
+  },
+  "installedApplication": {
+    "installed": true,
+    "version": "0.0.6",
+    "implementationCommit": "b37c5364d97ad5b964891669bc8ab557977c5687",
+    "bootSha256": "13de007b8d6db087df65fb097708d7fa1c259e532f983a867f1f9aa54518e8f0",
+    "binarySha256": "c0f299c66c6e0252dca7cdbb740f56870eb4c099b91211cdbc4cabb94445db80",
+    "normalQuit": true,
+    "forcedTermination": false,
+    "backupRetained": true,
+    "profileAndRecoveryRetained": true,
+    "beforePages": 4,
+    "afterQuitPages": 4,
+    "afterStartupPages": 4,
+    "originalFilesUnchanged": true,
+    "actualNativeWindowObserved": true,
+    "newContentRevisionServed": true,
+    "workspaceFallbackUpdated": true,
+    "modelsRequested": false
+  },
+  "nativeHarnessFirstFailure": {
+    "check": "background_save_commits_exact_target_body",
+    "cause": "Test used the optional API original field; disk bytes already matched the independent expected body. Corrected the assertion to the API content field and reran all phases.",
+    "retainedReportSha256": "4847ecd56da0a9bef5141d1db904d75ff7da824f7fb928b4c2d6e7744d3fc5a3",
+    "productAssetsChangedByCorrection": false
+  },
+  "publication": {
+    "status": "pending",
+    "tag": "V0.0.6"
+  }
 }

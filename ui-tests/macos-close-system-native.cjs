@@ -54,7 +54,7 @@ function driver(phase,files){return String.raw`(async()=>{
    await choose(closeTab(background.id),'close-confirm-save');
    check(state.tabs.length===1&&getActiveTab()===kept&&!state.tabs.includes(background),'background_save_closes_only_its_target');
    const savedBackground=await(await apiFetch('/api/file?p='+encodeURIComponent(files.incoming))).json();
-   check(text(savedBackground.original)===${JSON.stringify('# Incoming\n'+incomingSaved)},'background_save_commits_exact_target_body');
+   check(text(savedBackground.content)===${JSON.stringify('# Incoming\n'+incomingSaved)},'background_save_commits_exact_target_body');
   }else{
    await __readmdSessionReady;
    if(phase==='reopen'){
