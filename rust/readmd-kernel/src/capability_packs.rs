@@ -21,6 +21,8 @@ mod legacy;
 mod history;
 mod paths;
 mod space;
+#[cfg(all(test, target_os = "macos"))]
+mod space_macos_tests;
 static INSTALL: Mutex<()> = Mutex::new(());
 // Resource scopes enter under the same lock as install/repair/uninstall, then
 // publish their busy lease before releasing it. A file-path lease must not
@@ -1115,12 +1117,14 @@ fn operate(
     // capability writers in another process must not both spend the same
     // observed free bytes. Resource readers keep their independent leases.
     let _space_admission = crate::capability_process::install_admission(&app.paths.data_dir)?;
+    let shared_admission = crate::capability_process::SharedInstallAdmission::acquire()?;
     hooks.check()?;
     managed_parent(&app.paths.data_dir, selected, true)?;
     let space_result = space::check(&pack_root, &expected);
     // Cancellation wins even when it arrives during the native quota query.
     hooks.check()?;
     let installation_space = space_result?;
+    shared_admission.verify()?;
     (hooks.phase)("extracting");
     let staging = match pack {
         Input::Stream { mut reader, header } => {
@@ -1270,6 +1274,8 @@ fn operate(
     let unchanged =
         target.exists() && validate(&target, &expected).is_ok() && probe(&target).is_ok();
     hooks.check()?;
+    shared_admission.verify()?;
+    space::verify(&installation_space)?;
     (hooks.committing)()?;
     if unchanged {
         let cleanup = staging.cleanup();

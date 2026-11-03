@@ -32,6 +32,28 @@ pub(crate) fn install_admission(data:&Path)->ApiResult<Guard> {
     try_key(data,"installation",Key::InstallAdmission,Mode::Exclusive)?
         .ok_or_else(||ApiError::new(409,"capability_install_busy"))
 }
+
+#[cfg(target_os="macos")]
+mod macos_admission;
+/// Mac APFS volumes can share a container's free space. Serialize managed
+/// installation writers across profiles for this user, independently of readers.
+pub(crate) struct SharedInstallAdmission {
+    #[cfg(target_os="macos")]
+    guard: macos_admission::Admission,
+}
+impl SharedInstallAdmission {
+    pub(crate) fn acquire()->ApiResult<Self> {
+        Ok(Self {
+            #[cfg(target_os="macos")]
+            guard: macos_admission::Admission::acquire()?,
+        })
+    }
+    pub(crate) fn verify(&self)->ApiResult<()> {
+        #[cfg(target_os="macos")]
+        self.guard.verify()?;
+        Ok(())
+    }
+}
 // Fixed names coordinate all current clients of one profile. Do not make the
 // number a caller argument: clients using different limits would overcommit.
 const WORKER_SLOTS:usize=2;

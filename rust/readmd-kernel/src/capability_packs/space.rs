@@ -14,6 +14,13 @@ pub(super) struct Plan {
     pub safety_bytes: u64,
     pub additional_bytes: u64,
     pub allocation_unit: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_identity: Option<String>,
+    #[cfg(target_os = "macos")]
+    #[serde(skip)]
+    anchor: Option<macos::Anchor>,
 }
 
 fn round_allocation(bytes: u64, unit: u64) -> ApiResult<u64> {
@@ -44,7 +51,75 @@ fn estimate(lock: &Value, allocation_unit: u64) -> ApiResult<Plan> {
     let additional_bytes = allocation_bytes.checked_add(directory_bytes)
         .and_then(|n| n.checked_add(metadata_bytes)).and_then(|n| n.checked_add(SAFETY_BYTES)).ok_or_else(error)?;
     Ok(Plan { expanded_bytes, allocation_bytes, directory_bytes, metadata_bytes,
-        safety_bytes: SAFETY_BYTES, additional_bytes, allocation_unit })
+        safety_bytes: SAFETY_BYTES, additional_bytes, allocation_unit,
+        available_bytes: None, volume_identity: None,
+        #[cfg(target_os = "macos")]
+        anchor: None })
+}
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use super::*;
+    use std::os::{fd::AsRawFd, unix::fs::{MetadataExt, OpenOptionsExt}};
+
+    fn query_error(operation: &str) -> ApiError {
+        ApiError::new(422, "capability_install_failed").noted("reason", "space_query").noted("operation", operation)
+    }
+    fn open(directory: &Path) -> ApiResult<fs::File> {
+        real_directory(directory)?;
+        fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+            .open(directory).map_err(|_| query_error("open_directory"))
+    }
+    fn stat(file: &fs::File) -> ApiResult<libc::statfs> {
+        let mut value = std::mem::MaybeUninit::<libc::statfs>::uninit();
+        if unsafe { libc::fstatfs(file.as_raw_fd(), value.as_mut_ptr()) } != 0 {
+            return Err(query_error("fstatfs"));
+        }
+        Ok(unsafe { value.assume_init() })
+    }
+    // fsid_t's fields are private on some libc versions. Copy only its two
+    // documented 32-bit words, never padding or mount paths into a receipt.
+    fn fsid(stat: &libc::statfs) -> [i32; 2] {
+        let mut words = [0i32; 2];
+        unsafe { std::ptr::copy_nonoverlapping((&stat.f_fsid as *const libc::fsid_t).cast::<u8>(), words.as_mut_ptr().cast::<u8>(), 8); }
+        words
+    }
+    #[derive(Debug)]
+    pub(super) struct Anchor {
+        directory: PathBuf,
+        file: fs::File,
+        device: u64,
+        inode: u64,
+        fsid: [i32; 2],
+    }
+    impl Anchor {
+        pub(super) fn read(directory: &Path) -> ApiResult<(Self, u64, u64, String)> {
+            // Reject the caller's final symlink before canonicalizing. Keep
+            // the selected canonical namespace and its opened identity.
+            let file = open(directory)?;
+            let canonical = directory.canonicalize().map_err(|_| query_error("canonicalize"))?;
+            let metadata = file.metadata().map_err(|_| query_error("metadata"))?;
+            let stat = stat(&file)?;
+            let unit = u64::from(stat.f_bsize);
+            let available = stat.f_bavail.checked_mul(unit).ok_or_else(|| query_error("available_bytes"))?;
+            if unit == 0 || unit > 16 * 1024 * 1024 { return Err(query_error("allocation_unit")); }
+            let id = fsid(&stat);
+            let identity = format!("macos:{}:{:08x}:{:08x}", metadata.dev(), id[0], id[1]);
+            let anchor = Self { directory: canonical, file, device: metadata.dev(), inode: metadata.ino(), fsid: id };
+            anchor.verify()?;
+            Ok((anchor, available, unit, identity))
+        }
+        pub(super) fn verify(&self) -> ApiResult<()> {
+            let current = open(&self.directory)?;
+            let metadata = current.metadata().map_err(|_| query_error("metadata"))?;
+            if metadata.dev() != self.device || metadata.ino() != self.inode
+                || self.directory.canonicalize().map_err(|_| query_error("canonicalize"))? != self.directory
+                || fsid(&stat(&current)?) != self.fsid || fsid(&stat(&self.file)?) != self.fsid {
+                return Err(query_error("volume_identity_changed"));
+            }
+            Ok(())
+        }
+    }
 }
 
 fn fits(plan: &Plan, available_bytes: u64) -> ApiResult<()> {
@@ -99,16 +174,34 @@ fn capacity(directory: &Path) -> ApiResult<(u64, u64)> {
 pub(super) fn check(directory: &Path, lock: &Value) -> ApiResult<Option<Plan>> {
     #[cfg(windows)] {
         let (available, unit) = capacity(directory)?;
-        let plan = estimate(lock, unit)?;
+        let mut plan = estimate(lock, unit)?;
         fits(&plan, available)?;
+        plan.available_bytes = Some(available);
         Ok(Some(plan))
     }
-    #[cfg(not(windows))] {
+    #[cfg(target_os = "macos")] {
+        let (anchor, available, unit, identity) = macos::Anchor::read(directory)?;
+        let mut plan = estimate(lock, unit)?;
+        fits(&plan, available)?;
+        plan.available_bytes = Some(available);
+        plan.volume_identity = Some(identity);
+        plan.anchor = Some(anchor);
+        Ok(Some(plan))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))] {
         // Other platforms retain their existing transactional writer. This
         // Windows quota-aware preflight does not certify their disk admission.
         let _ = (directory, lock);
         Ok(None)
     }
+}
+
+pub(super) fn verify(plan: &Option<Plan>) -> ApiResult<()> {
+    #[cfg(target_os = "macos")]
+    if let Some(plan) = plan { plan.anchor.as_ref().ok_or_else(error)?.verify()?; }
+    #[cfg(not(target_os = "macos"))]
+    let _ = plan;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -141,6 +234,46 @@ mod tests {
         assert!(round_allocation(u64::MAX, 4096).is_err());
         let mut invalid = fixture();invalid["files"][0]["path"] = json!("../outside");
         assert!(estimate(&invalid, 4096).is_err());
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn installation_space_macos_reads_actual_volume_and_fundamental_allocation_unit() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("existing-runtime"), b"keep original").unwrap();
+        let plan = check(dir.path(), &fixture()).unwrap().unwrap();
+        let name = std::ffi::CString::new(dir.path().as_os_str().as_bytes()).unwrap();
+        let mut other = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        assert_eq!(unsafe { libc::statvfs(name.as_ptr(), other.as_mut_ptr()) }, 0);
+        let other = unsafe { other.assume_init() };
+        assert_eq!(plan.allocation_unit, other.f_frsize);
+        assert!(plan.available_bytes.unwrap() > 0);
+        assert!(plan.volume_identity.as_deref().unwrap().starts_with("macos:"));
+        assert!(plan.additional_bytes > plan.expanded_bytes);
+        let mut too_large = estimate(&fixture(), plan.allocation_unit).unwrap();
+        too_large.additional_bytes = plan.available_bytes.unwrap().checked_add(plan.allocation_unit).unwrap();
+        assert_eq!(fits(&too_large, plan.available_bytes.unwrap()).unwrap_err().status, 507);
+        verify(&Some(plan)).unwrap();
+        assert_eq!(fs::read(dir.path().join("existing-runtime")).unwrap(), b"keep original");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(check(&dir.path().join("missing"), &fixture()).is_err());
+    }
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn installation_space_macos_refuses_replaced_directory_and_symlink_without_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("runtime"); fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("old-pack"), b"old bytes").unwrap();
+        let plan = check(&directory, &fixture()).unwrap();
+        let moved = root.path().join("moved"); fs::rename(&directory, &moved).unwrap();
+        fs::create_dir(&directory).unwrap(); fs::write(directory.join("outside"), b"occupant").unwrap();
+        assert!(verify(&plan).is_err());
+        assert_eq!(fs::read(moved.join("old-pack")).unwrap(), b"old bytes");
+        assert_eq!(fs::read(directory.join("outside")).unwrap(), b"occupant");
+        let link = root.path().join("redirect");
+        std::os::unix::fs::symlink(&moved, &link).unwrap();
+        assert!(check(&link, &fixture()).is_err());
+        assert_eq!(fs::read_dir(&moved).unwrap().count(), 1);
     }
     #[cfg(windows)]
     #[test]

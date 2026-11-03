@@ -79,6 +79,7 @@ fn migrate_with(
     // explicit install and must share its profile-wide space admission.
     check()?;
     let _space_admission = crate::capability_process::install_admission(data)?;
+    let shared_admission = crate::capability_process::SharedInstallAdmission::acquire()?;
     check()?;
     let base = data.canonicalize().map_err(|_| error())?;
     let mut origin = base.clone();
@@ -107,7 +108,8 @@ fn migrate_with(
     let parent = managed_parent(data, selected, true)?;
     let space_result = space::check(&parent, lock);
     check()?;
-    space_result?;
+    let installation_space = space_result?;
+    shared_admission.verify()?;
     let stage = staging::Stage::create(&parent, lock)?;
     #[cfg(windows)]
     if selected.id == "latex" {
@@ -173,6 +175,8 @@ fn migrate_with(
     result.map_err(|_| error().noted("stage", "migration-probe"))?;
     log::debug!(target:"readmd::capability::transaction", "legacy migration probed");
     check()?;
+    shared_admission.verify()?;
+    space::verify(&installation_space)?;
     replacement::commit(stage.path(), &parent.join(selected.version), lock)?;
     // The valid committed tree can be used even if the post-commit receipt
     // write fails. Explicit uninstall always persists an opt-out first.
