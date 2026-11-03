@@ -14,4 +14,10 @@ for (const part of ['.cache', 'kernel-temp']) {
 directory = fs.realpathSync.native(directory);
 if (/[\r\n]/.test(directory)) throw Error('Invalid test temporary root');
 fs.appendFileSync(process.env.GITHUB_ENV, ['TMPDIR', 'TMP', 'TEMP'].map(name => name + '=' + directory + '\n').join(''));
+if (process.platform === 'darwin') {
+  const home = path.join(directory, 'native-home');
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  if (fs.lstatSync(home).isSymbolicLink()) throw Error('Native test home cannot be a symlink');
+  fs.appendFileSync(process.env.GITHUB_ENV, 'CFFIXED_USER_HOME=' + fs.realpathSync.native(home) + '\n');
+}
 console.log('Configured canonical workspace-owned test temporary directory');

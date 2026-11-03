@@ -143,6 +143,30 @@ jobs:
       - name: Build release binary with Cargo
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --target ${{ matrix.platform.target }}
 
+      - name: Canonical owned lifecycle temporary directory
+        if: runner.os != 'macOS'
+        run: node tools/ci-test-temp.mjs
+
+      - name: Prepare pinned lifecycle browser
+        if: runner.os != 'macOS'
+        run: |
+          npm ci --ignore-scripts --prefix ui-tests
+          node ui-tests/node_modules/@playwright/test/cli.js install --with-deps chromium
+
+      - name: P0 lifecycle against the actual Windows or Linux release binary
+        if: runner.os != 'macOS'
+        env:
+          READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
+        run: node ui-tests/node_modules/@playwright/test/cli.js test --config ui-tests/p0-lifecycle.config.cjs
+
+      - name: Upload lifecycle results and failure traces
+        if: always() && runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P0-lifecycle-${{ matrix.platform.asset_name }}
+          if-no-files-found: ignore
+          path: .cache/p0-lifecycle
+
       - name: Build and verify desktop pet package
         shell: bash
         run: |

@@ -21,7 +21,10 @@ jobs:
     # Native subprocess deadlines are tested separately from the explicit
     # concurrency/stress lanes. Do not oversubscribe a small shared runner.
     env:
-      RUST_TEST_THREADS: 4
+      # Mac installation admission intentionally coordinates every profile of
+      # one user. Independent unit fixtures must not race over that real gate;
+      # explicit cross-process contention tests still exercise concurrency.
+      RUST_TEST_THREADS: ${{ matrix.os == 'macos-latest' && '1' || '4' }}
       CARGO_BUILD_JOBS: 2
       CARGO_INCREMENTAL: 0
     strategy:
@@ -102,6 +105,8 @@ jobs:
         run: node tools/privacy-scan.mjs
       - name: Node tests
         run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/local-image-auth.test.cjs tools/test/native-picker.test.mjs tools/test/deferred-model-modules.test.cjs tools/test/native-capability-ready.test.cjs tools/test/native-window-preferences.test.cjs tools/test/plugin-panel-readiness.test.cjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs
+      - name: P0 lifecycle ownership and recovery guards
+        run: node --test ui-tests/close-confirm-adapter.test.cjs ui-tests/close-save-target-adapter.test.cjs ui-tests/lifecycle-order-adapter.test.cjs ui-tests/session-cas-adapter.test.cjs ui-tests/session-load-barrier.test.cjs ui-tests/durable-review-adapter.test.cjs
 
   integrations:
     name: VS Code and MCP quality
