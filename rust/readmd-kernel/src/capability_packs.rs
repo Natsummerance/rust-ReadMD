@@ -21,8 +21,8 @@ mod legacy;
 mod history;
 mod paths;
 mod space;
-#[cfg(all(test, target_os = "macos"))]
-mod space_macos_tests;
+#[cfg(all(test, any(windows, target_os = "macos", target_os = "linux")))]
+mod space_volume_tests;
 static INSTALL: Mutex<()> = Mutex::new(());
 // Resource scopes enter under the same lock as install/repair/uninstall, then
 // publish their busy lease before releasing it. A file-path lease must not

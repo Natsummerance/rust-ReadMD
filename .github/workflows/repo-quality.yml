@@ -17,6 +17,10 @@ permissions:
   contents: read
 
 jobs:
+  native-space-consumers:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/p1-space-acceptance.yml
+
   kernel:
     name: Kernel tests · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
