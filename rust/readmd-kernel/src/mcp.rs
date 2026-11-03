@@ -1263,8 +1263,9 @@ pub fn handle_line(app: &Arc<App>, out: &Out, busy: &Arc<AtomicUsize>, cancelled
     }
 }
 
-/// Serve MCP on stdin/stdout until stdin closes; waits for running tools.
-pub fn run_stdio(app: Arc<App>) {
+/// EOF closes code admission and stops this process's code resources. Other
+/// tools retain their existing safe completion path, including committed I/O.
+pub fn run_stdio(app: Arc<App>) -> bool {
     let out = Out::new(Box::new(std::io::stdout()));
     let busy = Arc::new(AtomicUsize::new(0));
     let cancelled = Arc::new(Mutex::new(HashMap::new()));
@@ -1278,9 +1279,19 @@ pub fn run_stdio(app: Arc<App>) {
             Err(_) => break,
         }
     }
+    let closing = std::time::Instant::now();
+    // Give already finishing short calls a small bounded drain window. EOF is
+    // still shutdown, not permission to run the rest of a long code batch.
+    while busy.load(Ordering::SeqCst) > 0 && closing.elapsed() < std::time::Duration::from_millis(50) {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    let code_stopped = crate::code_chunk_runner::stop_owned_executions(
+        std::time::Duration::from_secs(2).saturating_sub(closing.elapsed()),
+    );
     while busy.load(Ordering::SeqCst) > 0 {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
+    code_stopped
 }
 
 #[cfg(test)]

@@ -4771,9 +4771,10 @@ fn main() {
     // `--mcp`: no listener, no window, no single-instance hand-off; stdio only.
     if opts.mcp {
         eprintln!("readmd {} MCP server on stdio", server::VERSION);
-        readmd_kernel::mcp::run_stdio(app.clone());
+        let code_stopped = readmd_kernel::mcp::run_stdio(app.clone());
         let _ = app.ai_tasks.pause_owned();
-        exit(0);
+        if !code_stopped { eprintln!("code_execution_stop_pending"); }
+        exit(if code_stopped { 0 } else { 1 });
     }
 
     // ------------------------------------------------------ single instance

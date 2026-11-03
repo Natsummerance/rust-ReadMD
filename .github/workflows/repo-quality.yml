@@ -80,6 +80,13 @@ jobs:
       - name: Compile the opt-in native Mac QA host without running models
         if: runner.os == 'macOS'
         run: cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa
+      - name: Parse native batch phase scripts without launching an App
+        if: runner.os == 'macOS'
+        run: |
+          node - <<'JS'
+          const vm = require('node:vm'), { driver } = require('./ui-tests/macos-code-batch-system-native.cjs');
+          for (const phase of ['run_save_quit','reopen_undo_close','batch_run_save_quit','batch_reopen_undo_close','empty']) new vm.Script(driver(phase, { source:'/owned/source.md', slow:'/owned/slow.md', batch:'/owned/batch.md' }));
+          JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
       - name: P1 previous released writer cannot downgrade resource history
@@ -90,6 +97,15 @@ jobs:
         run: node tools/test/code-output-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-output
       - name: P1 bounded SQL batches, one undo and new MCP processes
         run: node tools/test/code-batch-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-batch
+      - name: P1 MCP EOF stops owned SQL and actual Node worker
+        run: node tools/test/code-mcp-eof.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-mcp-eof
+      - name: Retain actual MCP EOF receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-code-mcp-eof-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-code-mcp-eof/report.json
       - name: Retain actual code batch receipt
         if: always()
         uses: actions/upload-artifact@v4

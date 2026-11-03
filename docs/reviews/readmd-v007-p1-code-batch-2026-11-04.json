@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "date": "2026-11-04",
+  "task": "V7-05",
+  "scope": "root-fence in-memory SQLite batches; one durable output transaction and saved history",
+  "sourceCommit": "5cf7bd5135c02780f32c879c60f44d5f4b9bc6e5",
+  "ciRun": 41715318531,
+  "allEightJobsPassed": true,
+  "artifactDigestsVerified": true,
+  "wholeTaskAccepted": false,
+  "nativeMacUiAccepted": false,
+  "pureInMemorySqlOnly": true,
+  "managedOtherLanguagesAccepted": false,
+  "releasePublished": false,
+  "dailyApplicationChanged": false,
+  "modelsLoadedOnUserMac": false,
+  "bootSha256": "ef0e6e66027401a519163827a8c94a215e612eb1247819bc3fe7324d653e446e",
+  "platforms": [
+    {
+      "os": "ubuntu-latest",
+      "libraryPassed": 4280,
+      "engineExistingHelpersIgnoredThenInvoked": 2,
+      "remainingLibraryIgnored": 9,
+      "actualBatchChecks": 5,
+      "actualProcesses": 3,
+      "cancelResponseMs": 0.3571599999997943,
+      "mcpCancelAndEofMs": 23.190601000000015,
+      "binarySha256": "0bfdafc08e4a354ff55ced690e7cef21ec9a3b9059307d710a73ed33c488bc77",
+      "artifactDigest": "sha256:315a78c38375c5931df4c72375ea9c38939883887e78307cae6f3877ff94a8f8"
+    },
+    {
+      "os": "windows-latest",
+      "libraryPassed": 4364,
+      "engineExistingHelpersIgnoredThenInvoked": 2,
+      "remainingLibraryIgnored": 8,
+      "actualBatchChecks": 5,
+      "actualProcesses": 3,
+      "cancelResponseMs": 0.42269999999996344,
+      "mcpCancelAndEofMs": 28.073399999999992,
+      "binarySha256": "f0377e26004b9cb745d87f1565ca5aa5bb763da91d95bc72c23cdc0bfdf610d8",
+      "artifactDigest": "sha256:e6f37019adae38d2d3fde72b96bdd40d9022bf9ae7c925d16f06e8a72bb39eeb"
+    },
+    {
+      "os": "macos-latest",
+      "libraryPassed": 4291,
+      "engineExistingHelpersIgnoredThenInvoked": 2,
+      "remainingLibraryIgnored": 8,
+      "actualBatchChecks": 5,
+      "actualProcesses": 3,
+      "cancelResponseMs": 1.2256250000000364,
+      "mcpCancelAndEofMs": 74.07487500000002,
+      "binarySha256": "5fe38d9b10dc3b7722105ccb83810ab04b0a449c6cde6aeb0db34bcc4ced57ca",
+      "artifactDigest": "sha256:00d2c336297462be5483d979646615485a738676683148d33c50adcf5725fb2f"
+    }
+  ],
+  "actualLinuxBrowserChecks": 5,
+  "actualLinuxPreviousSingleBrowserChecks": 7,
+  "browserNativeCertified": false,
+  "localLibrary": {
+    "passed": 4183,
+    "ignored": 8,
+    "filtered": 111,
+    "filters": [
+      "code_chunk_runner::",
+      "ocr_",
+      "speech::"
+    ],
+    "coreOcrGuardsDidNotStartAWorker": true,
+    "modelInferenceCertified": false
+  },
+  "localFrontend": {
+    "passed": 1810,
+    "platformSkipped": 3
+  },
+  "localEnginePassed": 77,
+  "localHttpMcpChecks": 5,
+  "localHttpMcpProcesses": 3,
+  "localBrowserChecks": 5,
+  "localPreviousSingleBrowserChecks": 7,
+  "localNormalUnixExitPassed": true,
+  "firstCacheRevisionFailureRetained": true,
+  "inactiveCrLfAssertionFailureRetained": true,
+  "zeroTestFilterExcludedFromAcceptance": true,
+  "remaining": [
+    "Mac Cocoa five-phase candidate",
+    "other managed languages and durable unknown side effects",
+    "MCP EOF follow-up source",
+    "Unix owner crash containment",
+    "whole P1/P2 release gates"
+  ]
+}
