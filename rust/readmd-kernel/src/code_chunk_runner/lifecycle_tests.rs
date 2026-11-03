@@ -3,6 +3,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 const LONG_SQL: &str = "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<3000000) SELECT sum(x) FROM n;";
 
+#[cfg(windows)]
+#[test]
+fn cmd_keeps_the_actual_owned_working_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let result = execute_code_chunk("cd", "cmd", false, 5, Some(root.path()));
+    assert!(is_truthy(&result), "{result:?}");
+    assert_eq!(
+        get_str(&result, "stdout"),
+        dunce::simplified(&root.path().canonicalize().unwrap()).to_string_lossy()
+    );
+}
+
 #[test]
 fn already_cancelled_request_does_not_create_a_script_or_run_sql() {
     let result = crate::speech::with_cancel(Arc::new(|| true), || {
