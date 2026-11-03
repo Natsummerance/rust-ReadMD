@@ -217,8 +217,35 @@ fn session_fingerprint(expected: &SessionVersion, session: &Value) -> String {
     use sha2::Digest;
     format!("{:x}",sha2::Sha256::digest(canonical(&json!({"expected_session_version":expected,"session":session})).to_string().as_bytes()))
 }
+fn guarded_fingerprint(expected: &SessionVersion, session: &Value, preserved: Option<&Value>) -> String {
+    let Some(preserved) = preserved else { return session_fingerprint(expected,session); };
+    use sha2::Digest;
+    format!("{:x}",sha2::Sha256::digest(canonical(&json!({"expected_session_version":expected,"session":session,"preserved_tabs":preserved})).to_string().as_bytes()))
+}
+fn preserved_rows(request: &Value) -> Result<Option<&Value>,SessionError> {
+    let Some(value) = request.get("preserved_tabs") else { return Ok(None); };
+    let rows=value.as_array().ok_or_else(SessionError::invalid)?;
+    if rows.len()>100 || serde_json::to_vec(value).map_err(|_|SessionError::invalid())?.len() as u64>MAX_SETTINGS_BYTES { return Err(SessionError::invalid()); }
+    let mut keys=std::collections::HashSet::new();
+    for row in rows {
+        let key=row.get("key").and_then(Value::as_str).filter(|key|!key.is_empty() && key.len()<=32768).ok_or_else(SessionError::invalid)?;
+        if !row.is_object() || !keys.insert(key) { return Err(SessionError::invalid()); }
+    }
+    Ok(Some(value))
+}
+fn check_preserved_rows(current: &Value, next: &Value, preserved: Option<&Value>) -> Result<(),SessionError> {
+    for row in preserved.and_then(Value::as_array).into_iter().flatten() {
+        let key=&row["key"];
+        for session in [current,next] {
+            let rows=session.get("tabs").and_then(Value::as_array).ok_or_else(SessionError::conflict)?;
+            let matching=rows.iter().filter(|item|item.get("key")==Some(key)).collect::<Vec<_>>();
+            if matching.len()!=1 || matching[0]!=row { return Err(SessionError::conflict()); }
+        }
+    }
+    Ok(())
+}
 fn session_response(session: &Value, version: &SessionVersion, call_id: Option<&str>) -> Value {
-    let mut response=json!({"ok":true,"protocol":"readmd-session-cas-v1","session":session,"session_version":version});
+    let mut response=json!({"ok":true,"protocol":"readmd-session-cas-v1","recovery_guards":true,"session":session,"session_version":version});
     if let Some(call_id)=call_id {response["persisted"]=json!(true);response["call_id"]=json!(call_id);}
     response
 }
@@ -246,7 +273,8 @@ pub(crate) fn write_session(path: &Path, request: &Value, defaults: &Value) -> R
     let expected=SessionVersion::parse(expected)?;
     let session=request.get("session").ok_or_else(SessionError::invalid)?;
     if !session.is_null() && !session.is_object() {return Err(SessionError::invalid());}
-    let fingerprint=session_fingerprint(&expected,session);
+    let preserved=preserved_rows(request)?;
+    let fingerprint=guarded_fingerprint(&expected,session,preserved);
     let mut locked=open_locked(path,defaults)?;
     let (current,mut receipts)=session_metadata(&locked.current)?.ok_or_else(SessionError::conflict)?;
     if let Some(receipt)=receipts.iter().find(|receipt|receipt.call_id==call_id) {
@@ -256,7 +284,7 @@ pub(crate) fn write_session(path: &Path, request: &Value, defaults: &Value) -> R
         // A historical success must not certify that a superseded recovery
         // intent is still the current durable session.
         if receipt.session_version!=current {return Err(SessionError::conflict());}
-        if session_fingerprint(&expected,locked.current.get("session").unwrap_or(&Value::Null))!=fingerprint {
+        if guarded_fingerprint(&expected,locked.current.get("session").unwrap_or(&Value::Null),preserved)!=fingerprint {
             return Err(SessionError::invalid());
         }
         // Re-publish unchanged data to settle a previous post-replace sync
@@ -266,6 +294,7 @@ pub(crate) fn write_session(path: &Path, request: &Value, defaults: &Value) -> R
         return Ok(SessionCommit {settings:locked.current,response});
     }
     if expected!=current {return Err(SessionError::conflict());}
+    check_preserved_rows(locked.current.get("session").unwrap_or(&Value::Null),session,preserved)?;
     let next=current.generation.parse::<u64>().map_err(|_|SessionError::invalid())?.checked_add(1).ok_or_else(SessionError::invalid)?;
     let version=SessionVersion {epoch:current.epoch,generation:next.to_string()};
     receipts.push(SessionReceipt {call_id:call_id.into(),fingerprint,expected_session_version:expected,session_version:version.clone()});

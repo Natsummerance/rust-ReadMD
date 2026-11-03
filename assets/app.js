@@ -365,6 +365,8 @@ function bindEvents() {
   // 编辑保存与退出
   $('edit-save').addEventListener('click', saveEdit);
   $('edit-area').addEventListener('input', () => {
+    const tab = getActiveTab();
+    if (tab) { tab.editGeneration = (tab.editGeneration || 0) + 1; tab.inputGeneration = (tab.inputGeneration || 0) + 1; }
     updateUnloadGuard();
     if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
     if (!$('search-bar').classList.contains('hidden')) syncSearchMode();
@@ -1212,6 +1214,7 @@ async function openInitialFile(path, options = {}) {
 let startupServicesStarted = false;
 
 async function init() {
+  window.ReadMDLifecycle?.install();
   // 1. Make the already-parsed welcome shell interactive before optional preferences arrive.
   bindPy();
   applySettings();

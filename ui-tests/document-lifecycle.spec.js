@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const { randomUUID } = require('node:crypto');
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":false}' }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
@@ -9,10 +10,10 @@ test.beforeEach(async ({ page }) => {
   await expect.poll(()=>page.evaluate(()=>Boolean(window.ReadMDRecovery&&typeof saveAs==='function'))).toBe(true);
 });
 async function file(page, text = '# Original\n') {
-  return page.evaluate(async text => {
-    const path = await uploadFile(new File([text], 'lifecycle.md', { type: 'text/markdown' }));
+  return page.evaluate(async ({text,name}) => {
+    const path = await uploadFile(new File([text], name, { type: 'text/markdown' }));
     await loadFile(path); await toggleEdit(); return path;
-  }, text);
+  }, {text,name:'lifecycle-'+randomUUID()+'.md'});
 }
 async function change(page, text) { await page.evaluate(text => cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: text } }), text); }
 const current = page => page.evaluate(() => getEditContent());
@@ -24,7 +25,7 @@ test('saving preserves undo and a central version without sibling backups', asyn
   expect(await fs.readFile(source, 'utf8')).toBe('# Saved\n');
   expect((await history(page)).some(e => e.kind === 'version' && e.path === source)).toBe(true);
   await expect(fs.access(source + '.bak')).rejects.toThrow();
-  await page.evaluate(() => cmUndo()); expect(await current(page)).toBe('# Original\n');
+  await page.evaluate(() => cmUndo()); await expect.poll(() => current(page)).toBe('# Original\n');
   expect(await page.evaluate(() => getActiveTab().isDirty)).toBe(true);
 });
 test('a late save acknowledges only submitted text and retains newer input', async ({ page }) => {
@@ -80,6 +81,7 @@ test('recovery draft survives reload and opens safely without rewriting its sour
   await page.evaluate(() => ReadMDRecovery.open());
   const row = page.locator('[data-history-id="' + entry.id + '"]');
   await row.getByRole('button', { name: 'Open as copy', exact: true }).click();
+  await expect.poll(()=>page.evaluate(()=>({path:state.file,source:getActiveTab()?.source}))).toEqual({path:null,source:'recovery'});
   await expect.poll(() => current(page)).toBe('RECOVER ME');
   expect(await page.evaluate(() => state.file)).toBe(null);
   expect(await fs.readFile(source, 'utf8')).toBe('# Original\n');
@@ -89,7 +91,7 @@ test('restoring a saved version is one undoable edit and does not write until Sa
   await page.evaluate(() => ReadMDRecovery.open());
   await page.locator('.document-history-row').filter({ hasText: source }).filter({ hasText: 'Previous saved version' }).getByRole('button', { name: 'Apply to current editor' }).click();
   await expect.poll(() => current(page)).toBe('# Original\n'); expect(await fs.readFile(source, 'utf8')).toBe('AFTER SAVE');
-  await page.evaluate(() => cmUndo()); expect(await current(page)).toBe('AFTER SAVE');
+  await page.evaluate(() => cmUndo()); await expect.poll(() => current(page)).toBe('AFTER SAVE');
 });
 test('closing with discard retains a recoverable draft and native-close cancellation preserves the editor', async ({ page }) => {
   const source = await file(page); await change(page, 'DISCARDED DRAFT');
@@ -106,7 +108,7 @@ test('undo history survives switching away and reopening an edited tab', async (
   await file(page); const id = await page.evaluate(() => state.activeTabId); await change(page, 'CHANGED');
   await page.evaluate(async () => { await renderVirtual('clipboard', 'other.md', '', 'Other', []); });
   await page.evaluate(async id => { await switchTab(id); await toggleEdit(); }, id);
-  await page.evaluate(() => cmUndo()); expect(await current(page)).toBe('# Original\n');
+  await page.evaluate(() => cmUndo()); await expect.poll(() => current(page)).toBe('# Original\n');
 });
 test('single conversion preview writes nothing, explicit overwrite keeps the earlier Markdown', async ({ page, request }) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'readmd-convert-lifecycle-'));
@@ -142,7 +144,7 @@ test('Save As retargets to acknowledged asset paths and keeps the operation undo
   });
   expect(await current(page)).toBe('![image](new.assets/image.png)');
   expect(await page.evaluate(() => ({ original: state.original, path: state.file, dirty: getActiveTab().isDirty }))).toEqual({ original: '![image](new.assets/image.png)', path: 'C:/chosen/new.md', dirty: false });
-  await page.evaluate(() => cmUndo()); expect(await current(page)).toBe('![image](temporary/image.png)');
+  await page.evaluate(() => cmUndo()); await expect.poll(() => current(page)).toBe('![image](temporary/image.png)');
   expect(await page.evaluate(() => getActiveTab().isDirty)).toBe(true);
 });
 

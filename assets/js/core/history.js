@@ -354,12 +354,13 @@ function updateStatus() {
 
 let goingHome = false;
 async function goHome(options = {}) {
+  const lifecycleOwner = window.ReadMDLifecycle?.owner();
   if (goingHome) return false;
   goingHome = true;
   const tabId = state.activeTabId;
   try {
     if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
-    if (!options.discardConfirmed && state.editing && !await confirmExitEdit()) return false;
+    if (!options.discardConfirmed && state.editing && !await (lifecycleOwner ? window.ReadMDLifecycle.within(lifecycleOwner, () => confirmExitEdit()) : confirmExitEdit())) return false;
     if (state.activeTabId !== tabId) return false;
     return resetHome();
   } finally { goingHome = false; }

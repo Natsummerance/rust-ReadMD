@@ -72,7 +72,8 @@ function driver(file,ack){return String.raw`(async()=>{
   cmView.dispatch({changes:{from:cmView.state.doc.length,insert:'\nOwned unsaved sentence.\n'}});
   await until(()=>host().chrome.documentEdited===true);check(true,'native_unsaved_indicator_tracks_real_edit');
   await click('close');await until(()=>!$('close-confirm-modal').classList.contains('hidden'));
-  $('close-confirm-cancel').click();await until(()=>$('close-confirm-modal').classList.contains('hidden'));
+  $('close-confirm-cancel').click();await until(()=>$('close-confirm-modal').classList.contains('hidden')&&!window.ReadMDLifecycle?.busy());
+  check(true,'native_cancel_transition_settled');
   check(getEditContent().includes('Owned unsaved sentence.')&&getActiveTab().isDirty,'actual_native_red_cancel_preserves_document');
   check(await saveEdit()===true,'native_save_after_close_cancel');await until(()=>host().chrome.documentEdited===false);check(true,'native_unsaved_indicator_clears_after_save');
   await toggleEdit();await until(()=>!state.editing);

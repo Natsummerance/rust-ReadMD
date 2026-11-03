@@ -15,6 +15,7 @@ const switchCode = tabsSource.slice(tabsSource.indexOf('async function switchTab
 function deferred() { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; }
 function fixture() {
   let busy = false, idle = deferred(), calls = 0, firstResponse = null;
+  const firstRequest = deferred();
   const session = { busy: () => busy, whenIdle: () => idle.promise };
   const state = { tabs: [], activeTabId: null, editing: false, mode: 'welcome', file: null,
     pagination: { enabled: false, totalPages: 1 } };
@@ -31,12 +32,12 @@ function fixture() {
     documentLoadEpoch: 0,
     beginDocumentLoad() { return ++context.documentLoadEpoch; },
     isDocumentLoadCurrent(epoch) { return epoch === context.documentLoadEpoch; },
-    async apiFetch(url) { calls++; if (firstResponse && calls === 1) await firstResponse.promise;
+    async apiFetch(url) { calls++; if (calls === 1) firstRequest.resolve(); if (firstResponse && calls === 1) await firstResponse.promise;
       const name = new URL(url, 'http://localhost').searchParams.get('p') || doc.path;
       return { ok: true, async json() { return { ...doc, path: name, name }; } }; },
   };
   vm.createContext(context); vm.runInContext(fileCode + '\n' + virtualCode, context);
-  return { context, state, calls: () => calls, block() { busy = true; idle = deferred(); },
+  return { context, state, calls: () => calls, firstRequested: firstRequest.promise, block() { busy = true; idle = deferred(); },
     release() { busy = false; idle.resolve(); }, delayFirstResponse() { firstResponse = deferred(); return firstResponse; } };
 }
 
@@ -49,7 +50,7 @@ test('an OS file open waits for the session close and then actually opens', asyn
 
 test('a delayed open response is retried after a close instead of mutating its snapshot', async () => {
   const f = fixture(), response = f.delayFirstResponse(); const work = f.context.loadFile('synthetic.md');
-  await Promise.resolve(); assert.equal(f.calls(), 1);
+  await f.firstRequested; assert.equal(f.calls(), 1);
   f.block(); response.resolve(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.state.tabs.length, 0); assert.equal(f.calls(), 1);
   f.release(); await work;

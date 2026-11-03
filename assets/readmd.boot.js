@@ -2340,13 +2340,21 @@ async function renderActiveTab({ restoreScroll = false } = {}) {
       const box = document.createElement('section'); box.className = 'restore-unavailable'; box.setAttribute('role', 'status');
       const title = document.createElement('h2'); title.textContent = t('toast.openFailed') + (nextTab.title || nextTab.name);
       const message = document.createElement('p');
-      message.textContent = t('audit.loadFailed', { error: nextTab._restoreUnavailable.status ? 'HTTP ' + nextTab._restoreUnavailable.status : t('audit.invalidResponse') });
+      message.textContent = nextTab._restoreDescriptor ? t('error.review_needs_recovery') : t('audit.loadFailed', { error: nextTab._restoreUnavailable.status ? 'HTTP ' + nextTab._restoreUnavailable.status : t('audit.invalidResponse') });
       const actions = document.createElement('div'); actions.className = 'modal-actions';
       const retry = document.createElement('button'); retry.className = 'tb-btn'; retry.type = 'button'; retry.textContent = t('reader.refresh'); retry.dataset.restoreRetry = '';
-      retry.onclick = async () => { retry.disabled = true; try { await loadFile(nextTab.path, { force: true }); } finally { retry.disabled = false; } };
+      retry.onclick = async () => { retry.disabled = true; try {
+        if (nextTab._restoreDescriptor) await window.ReadMDSession.retryRecovery(nextTab);
+        else await loadFile(nextTab.path, { force: true });
+      } finally { retry.disabled = false; } };
       const close = document.createElement('button'); close.className = 'tb-btn'; close.type = 'button'; close.textContent = t('tabs.closeTab');
       close.onclick = () => closeTab(nextTab.id, false, 'button');
+      if (nextTab._restoreDescriptor) { close.disabled = true; close.title = t('error.review_needs_recovery'); }
       actions.append(retry, close); box.append(title, message, actions); pane.replaceChildren(box); pane.classList.remove('hidden');
+      if (nextTab._restoreDescriptor) {
+        const history = document.createElement('button'); history.type = 'button'; history.className = 'tb-btn'; history.textContent = t('storage.history');
+        history.onclick = () => window.ReadMDRecovery.open(); actions.append(history);
+      }
     }
     if (typeof buildToc === 'function') buildToc();
     document.title = (nextTab.title || nextTab.name) + ' - ReadMD';
@@ -2415,7 +2423,8 @@ async function activateTabForSave(tabId) {
   if (getActiveTab() !== target || !current() || !state.editing) return false;
   const draft = target.content;
   if (typeof cmView !== 'undefined' && cmView) {
-    cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft } });
+    if (cmView.state.doc.toString() !== String(draft).replace(/\r\n?/g, '\n'))
+      cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft } });
   } else if ($('edit-area')) {
     $('edit-area').value = draft;
   }
@@ -2423,12 +2432,15 @@ async function activateTabForSave(tabId) {
 }
 
 async function saveTabBeforeClose(tab) {
+  const lifecycleOwner = window.ReadMDLifecycle?.owner();
   if (!await activateTabForSave(tab.id) || getActiveTab() !== tab || !state.editing) return false;
-  if (!await saveEdit({ exitAfterSave: true })) return false;
+  const saved = lifecycleOwner ? await window.ReadMDLifecycle.within(lifecycleOwner, () => saveEdit({ exitAfterSave: true })) : await saveEdit({ exitAfterSave: true });
+  if (!saved) return false;
   return state.tabs.includes(tab) && getActiveTab() === tab && !tab.isDirty && !state.editing;
 }
 
 async function switchTab(tabId, { _sessionQueued = false } = {}) {
+  const lifecycleOwner = window.ReadMDLifecycle?.owner();
   if (window.ReadMDSession?.busy?.()) return;
   if (state.activeTabId === tabId) return;
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
@@ -2467,7 +2479,7 @@ async function switchTab(tabId, { _sessionQueued = false } = {}) {
   renderTabsBar();
   if (nextTabState?.externalChanged && nextTabState.path && !nextTabState.isDirty) {
     nextTabState.externalChanged = false;
-    await loadFile(nextTabState.path, { force: true, _sessionQueued });
+    await loadFile(nextTabState.path, { force: true, _sessionQueued, _lifecycleOwner: lifecycleOwner });
     return;
   }
   const preferredPage = Number(nextTabState?.readerPage || 0);
@@ -2483,10 +2495,11 @@ async function switchTab(tabId, { _sessionQueued = false } = {}) {
   });
 }
 
-function promptDirtyClose(tabName) {
+function promptDirtyClose(tabName, owner = typeof getActiveTab === 'function' ? getActiveTab() : null) {
   // One modal owns one decision. Repeated clicks or a simultaneous Quit must
   // not replace its handlers and strand the first lifecycle operation.
   if (promptDirtyClose.active) return Promise.resolve('cancel');
+  const decision = window.ReadMDLifecycle?.mark(owner);
   const _t = (k, p) => {
     if (window.i18n && window.i18n.t) {
       const v = window.i18n.t(k, p);
@@ -2524,6 +2537,7 @@ function promptDirtyClose(tabName) {
 
     const cleanUp = (action) => {
       if (settled) return;
+      if (action !== 'cancel' && window.ReadMDLifecycle && !window.ReadMDLifecycle.accept(owner, decision, action)) action = 'cancel';
       settled = true;
       promptDirtyClose.active = false;
       clearTimeout(focusTimer);
@@ -2599,13 +2613,14 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (window.ReadMDSession?.busy?.()) return;
   const tab = state.tabs.find(t => t.id === tabId);
   if (!tab) return;
+  if (tab._restoreDescriptor) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
-    const action = await promptDirtyClose(tab.title || tab.name);
+    const action = await promptDirtyClose(tab.title || tab.name, tab);
     if (action === 'cancel') return;
     discardShared=action==='discard';
     if (action === 'save') {
@@ -2655,7 +2670,7 @@ async function closeOtherTabs(keepTabId) {
   if (window.ReadMDSession?.busy?.()) return;
   const keepTab = state.tabs.find(t => t.id === keepTabId);
   if (!keepTab) return;
-  if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight))) { showToast(window.i18n.t('review.busy')); return; }
+  if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight || tab._restoreDescriptor))) { showToast(window.i18n.t('error.review_needs_recovery')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
   if (state.editing) syncActiveTabDirty();
@@ -2664,7 +2679,7 @@ async function closeOtherTabs(keepTabId) {
   for (const t of candidates) {
     if (t.id !== keepTabId) {
       if (t.isDirty) {
-        const action = await promptDirtyClose(t.title || t.name);
+        const action = await promptDirtyClose(t.title || t.name, t);
         if (action === 'cancel') return;
         if (action === 'discard') discardedShared.add(t);
         if (action === 'save') {
@@ -2693,12 +2708,14 @@ async function closeOtherTabs(keepTabId) {
   } else remove();
   for (const tab of discardedShared) if (window.ReadMDRecovery) await window.ReadMDRecovery.discard(tab);
   for (const tab of candidates) if (tab !== keepTab) await window.ReadMDCollaborationShare?.detach(tab,discardedShared.has(tab));
+  await renderActiveTab({ restoreScroll: true });
   renderTabsBar();
   } finally { for (const tab of pausedTabs) window.ReadMDAiHarness?.releaseTab(tab); }
 }
 
 async function closeAllTabs() {
   if (window.ReadMDSession?.busy?.()) return;
+  if (state.tabs.some(tab => tab._restoreDescriptor)) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
   if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
@@ -2707,7 +2724,7 @@ async function closeAllTabs() {
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
   for (const t of candidates) {
     if (t.isDirty) {
-      const action = await promptDirtyClose(t.title || t.name);
+      const action = await promptDirtyClose(t.title || t.name, t);
       if (action === 'cancel') return;
       if (action === 'discard') discardedShared.add(t);
       if (action === 'save') {
@@ -2739,6 +2756,8 @@ async function closeAllTabs() {
   const storageKey = 'readmd-session';
   let ready = false, timer, pending, lastSaved = '', notified = false;
   let sessionVersion = null, eligible = false, conflicted = false, unconfirmed = null;
+  let recoveryGuards = false, baseEligible = false;
+  const protectedDescriptors = new Map();
   let fence = 0, closing = false;
   const confirmedRenames = new Set();
   function rememberRenames(value) {
@@ -2802,7 +2821,14 @@ async function closeAllTabs() {
       reviewPath: tab.reviewPath || '',
       dirty: !!tab.isDirty, unsavedCreation: !!tab.unsavedCreation, readerMode: tab.readerMode,
       readerPage: tab.readerPage, scrollPos: tab.scrollPos, renamePending: tab._renamePending || null }));
-    return bounded({ version: 1, tabs, active: activeKey ?? getActiveTab()?.recoveryKey ?? '', folder: state.folder || '' });
+    const result = bounded({ version: 1, tabs, active: activeKey ?? getActiveTab()?.recoveryKey ?? '', folder: state.folder || '' });
+    if (!result) return null;
+    for (const [key, descriptor] of protectedDescriptors) {
+      const index = result.tabs.findIndex(tab => tab.key === key);
+      if (index < 0) return null;
+      result.tabs[index] = JSON.parse(JSON.stringify(descriptor));
+    }
+    return result;
   }
   function persist() {
     if (!ready || closing) return;
@@ -2824,6 +2850,7 @@ async function closeAllTabs() {
     // session/version returned with HTTP 200. Decimal strings stay exact even
     // beyond Number.MAX_SAFE_INTEGER; JSON object ordering is immaterial.
     const bound = result?.protocol === 'readmd-session-cas-v1' && result.call_id === request.call_id &&
+      (!request.preserved_tabs?.length || result.recovery_guards === true) &&
       acknowledged && expected && acknowledged.epoch === expected.epoch &&
       BigInt(acknowledged.generation) === BigInt(expected.generation) + 1n &&
       JSON.stringify(canonical(result.session)) === JSON.stringify(canonical(request.session));
@@ -2840,13 +2867,19 @@ async function closeAllTabs() {
   async function save(next, force) {
     if (nativeCas()) {
       if (!eligible || conflicted || !sessionVersion) return failed();
+      const preserved = [...protectedDescriptors.values()];
+      if (preserved.length && (!recoveryGuards || preserved.some(row => {
+        const matches = next.value.tabs.filter(tab => tab.key === row.key);
+        return matches.length !== 1 || JSON.stringify(canonical(matches[0])) !== JSON.stringify(canonical(row));
+      }))) return failed();
       // An uncertain acknowledgement must settle its exact request first.
       // A new strict CAS afterwards proves this head is still current; an old
       // idempotent receipt alone is not a lease over another process's writes.
       if (unconfirmed) await sendCas(unconfirmed);
       if (!force && next.encoded === lastSaved) return true;
       const cause = /^close_(button|key_delete|key_backspace|tab_menu|command|programmatic|others|all|compensation)$/.test(next.cause || '') ? next.cause + '-' : '';
-      unconfirmed = { session: next.value, expected_session_version: { ...sessionVersion }, call_id: 'session-' + cause + crypto.randomUUID() };
+      unconfirmed = { session: next.value, expected_session_version: { ...sessionVersion }, call_id: 'session-' + cause + crypto.randomUUID(),
+        ...(preserved.length ? { preserved_tabs: preserved.map(row => JSON.parse(JSON.stringify(row))) } : {}) };
       return sendCas(unconfirmed);
     }
     if (hasPy) {
@@ -2899,7 +2932,7 @@ async function closeAllTabs() {
     return (await write(true, value)) === true;
   }
   async function closeTabs(tabs, apply, accepted, trigger = 'programmatic') {
-    if (closing || window.ReadMDRefactor?.busy?.() || tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending || tab._renameInFlight)) return false;
+    if (closing || window.ReadMDRefactor?.busy?.() || tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending || tab._renameInFlight || tab._restoreDescriptor)) return false;
     closing = true; fence++; clearTimeout(timer); pending = null;
     const reserved = [], flags = new Map();
     const body = document.body, inert = body?.inert;
@@ -2952,6 +2985,66 @@ async function closeAllTabs() {
       persist();
     }
   }
+  function recoveredTab(descriptor, file, draft, receipt, pending) {
+    const dirty = descriptor.dirty && !!draft;
+    const content = (!file || dirty) ? (draft?.content ?? receipt?.review?.content ?? '') : file.content;
+    return { id: 'tab_' + crypto.randomUUID(), mode: file ? 'file' : 'virtual', source: file ? 'file' : (descriptor.source || 'recovery'),
+      path: file?.path || null, dir: file?.dir || draft?.entry.context?.dir || descriptor.dir,
+      name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
+      content, fixed: content, original: file?.original ?? file?.content ?? (dirty || descriptor.unsavedCreation ? '' : content),
+      revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
+      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+      is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
+      isVirtual: !file, isDirty: dirty, unsavedCreation: !file && (descriptor.unsavedCreation || dirty),
+      originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
+      reviewPath: descriptor.reviewPath || (/^draft:[A-Za-z0-9_.-]{1,180}$/.test(descriptor.key) ? descriptor.key : ''),
+      _recoveryContent: draft?.content, _recoveryReview: draft?.entry.context?.review,
+      _reviewRestorePending: Boolean(window.ReadMDReview && draft),
+      _renamePending: pending || undefined,
+      _renameSettlement: descriptor.renamePending && !pending ? descriptor.renamePending : undefined,
+      _renameInFlight: Boolean(descriptor.renamePending && !pending),
+      webAssets: Array.isArray(draft?.entry.context?.assets) ? draft.entry.context.assets : [],
+      externalChanged: dirty && !!file && descriptor.revision !== file.revision,
+      readerMode: descriptor.readerMode, readerPage: descriptor.readerPage, scrollPos: descriptor.scrollPos,
+      continuousScroll: descriptor.scrollPos };
+  }
+  function protectedTab(descriptor, raw = descriptor, id = 'tab_' + crypto.randomUUID()) {
+    const original = JSON.parse(JSON.stringify(raw));
+    protectedDescriptors.set(descriptor.key, original);
+    return { ...descriptor, id, path: descriptor.path || null, recoveryKey: descriptor.key,
+      mode: 'unavailable', source: descriptor.source || 'recovery', title: descriptor.name,
+      content: null, original: null, fixed: null, isDirty: true, isVirtual: !descriptor.path,
+      _restoreUnavailable: { recovery: true }, _restoreDescriptor: original };
+  }
+  async function retryRecovery(tab) {
+    const descriptor = tab?._restoreDescriptor;
+    if (!descriptor || tab._recoveryRetrying || !state.tabs.includes(tab)) return false;
+    tab._recoveryRetrying = true;
+    try {
+      const drafts = await window.ReadMDRecovery.sessionDrafts([descriptor.key]), draft = drafts.get(descriptor.key);
+      if (typeof draft?.content !== 'string') return false;
+      let file = null;
+      if (descriptor.path) {
+        const response = await apiFetch('/api/file?p=' + encodeURIComponent(descriptor.path));
+        if (!response.ok) return false;
+        file = await response.json();
+      }
+      const restored = recoveredTab(descriptor, file, draft, null, null);
+      restored.id = tab.id;
+      await window.ReadMDReview?.restore(restored);
+      if (restored._reviewRestorePending || !state.tabs.includes(tab) || protectedDescriptors.get(descriptor.key) !== descriptor) return false;
+      state.tabs[state.tabs.indexOf(tab)] = restored;
+      protectedDescriptors.delete(descriptor.key);
+      eligible = !nativeCas() || (baseEligible && (!protectedDescriptors.size || recoveryGuards));
+      if (state.activeTabId === restored.id) {
+        await renderActiveTab({ restoreScroll: true });
+        if (typeof toggleEdit === 'function' && restored.isDirty && getActiveTab() === restored) await toggleEdit();
+      }
+      renderTabsBar();
+      return true;
+    } catch (_) { return false; }
+    finally { delete tab._recoveryRetrying; }
+  }
   async function restore(initialFile) {
     const epoch = documentLoadEpoch;
     const untouched = () => epoch === documentLoadEpoch && state.tabs.length === 0 && state.mode === 'welcome';
@@ -2964,6 +3057,7 @@ async function closeAllTabs() {
           const result = await response.json();
           const current = version(result?.session_version);
           if (response.ok && result?.ok === true && result.protocol === 'readmd-session-cas-v1' && current && Object.hasOwn(result, 'session')) {
+            recoveryGuards = result.recovery_guards === true;
             stored = result.session; sessionVersion = current; nativeRead = true;
             rememberRenames(result.session);
           }
@@ -2976,6 +3070,7 @@ async function closeAllTabs() {
         try { stored = JSON.parse(localStorage.getItem(storageKey) || 'null'); } catch (_) {}
       }
       const session = bounded(stored);
+      const originalRows = new Map((session?.tabs || []).map((row, index) => [row.key, stored.tabs[index]]));
       faithful = stored == null || Boolean(session && session.tabs.length === stored.tabs.length &&
         ['active', 'folder'].every(key => stored[key] === undefined || typeof stored[key] === 'string' && stored[key].length <= 32768) &&
         new Set(session.tabs.map(tab => tab.key)).size === session.tabs.length &&
@@ -2997,7 +3092,7 @@ async function closeAllTabs() {
         let drafts = new Map();
         let recoveryComplete = true;
         try { drafts = await window.ReadMDRecovery.sessionDrafts(session.tabs.map(tab => tab.key)); }
-        catch (_) { recoveryComplete = !session.tabs.some(tab => tab.dirty || tab.unsavedCreation || tab.renamePending); }
+        catch (_) { /* Missing required rows get immutable, visible placeholders below. */ }
         if (!untouched()) return;
         const restored = [];
         // Reconcile each group before ANY member is opened. Parallel source /
@@ -3052,45 +3147,29 @@ async function closeAllTabs() {
               file = await open(descriptor.path);
             }
             const draft = drafts.get(descriptor.key);
+            if (!pending && (((descriptor.dirty || descriptor.unsavedCreation) && !draft) || (descriptor.dirty && descriptor.path && !file)))
+              return protectedTab(descriptor, originalRows.get(descriptor.key));
             if ((descriptor.dirty || descriptor.unsavedCreation) && !draft) recoveryComplete = false;
             if (!file && !draft && !pending) {
               // A failed read is not the user's decision to close a page.
               // Retain clean file identities without inventing an empty body.
-              // Missing dirty recovery still keeps the authoritative session
-              // write-ineligible through recoveryComplete, as before.
+              // Dirty recovery uses protected descriptors, never this clean view.
               if (!descriptor.path || descriptor.dirty || descriptor.unsavedCreation) return null;
               return { ...descriptor, id: 'tab_' + crypto.randomUUID(), recoveryKey: descriptor.key,
                 mode: 'unavailable', source: 'file', title: descriptor.name, content: null, original: null, fixed: null,
                 isDirty: false, isVirtual: false, _restoreUnavailable: { status: unavailableStatus } };
             }
-            const dirty = descriptor.dirty && !!draft;
-            const content = (!file || dirty) ? (draft?.content ?? receipt?.review?.content ?? '') : file.content;
-            return { id: 'tab_' + crypto.randomUUID(), mode: file ? 'file' : 'virtual', source: file ? 'file' : (descriptor.source || 'recovery'),
-              path: file?.path || null, dir: file?.dir || draft?.entry.context?.dir || descriptor.dir,
-              name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
-              content, fixed: content, original: file?.original ?? file?.content ?? content,
-              revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
-              size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
-              is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
-              isVirtual: !file, isDirty: dirty, unsavedCreation: !file && descriptor.unsavedCreation,
-              originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
-              reviewPath: descriptor.reviewPath || (/^draft:[A-Za-z0-9_.-]{1,180}$/.test(descriptor.key) ? descriptor.key : ''),
-              _recoveryContent: draft?.content, _recoveryReview: draft?.entry.context?.review,
-              _reviewRestorePending: Boolean(window.ReadMDReview && draft),
-              _renamePending: pending || undefined,
-              _renameSettlement: descriptor.renamePending && !pending ? descriptor.renamePending : undefined,
-              _renameInFlight: Boolean(descriptor.renamePending && !pending),
-              webAssets: Array.isArray(draft?.entry.context?.assets) ? draft.entry.context.assets : [],
-              externalChanged: dirty && !!file && descriptor.revision !== file.revision,
-              readerMode: descriptor.readerMode, readerPage: descriptor.readerPage, scrollPos: descriptor.scrollPos,
-              continuousScroll: descriptor.scrollPos };
+            return recoveredTab(descriptor, file, draft, receipt, pending);
           }));
           if (!untouched()) return;
           restored.push(...group.filter(Boolean));
         }
         state.tabs = restored;
+        // A known generic body remains visible if preserving its competing
+        // review view fails. Its existing recovery barriers keep it protected.
+        if (window.ReadMDReview) for (const tab of restored)
+          if (!tab._renamePending && !tab._restoreUnavailable) await window.ReadMDReview.restore(tab);
         applied = recoveryComplete;
-        if (window.ReadMDReview) for (const tab of restored) if (!tab._renamePending) await window.ReadMDReview.restore(tab);
         if (epoch !== documentLoadEpoch) return;
         state.folder = session.folder;
         const active = restored.find(tab => tab.recoveryKey === session.active) || (session.active ? restored.at(-1) : null);
@@ -3113,7 +3192,8 @@ async function closeAllTabs() {
       }
     } finally {
       ready = true;
-      eligible = !nativeCas() || (nativeRead && applied && faithful);
+      baseEligible = nativeRead && applied && faithful;
+      eligible = !nativeCas() || (baseEligible && (!protectedDescriptors.size || recoveryGuards));
       const settled = state.tabs.filter(tab => tab._renameSettlement);
       if (settled.length) {
         persist();
@@ -3128,7 +3208,7 @@ async function closeAllTabs() {
       renderTabsBar();
     }
   }
-  window.ReadMDSession = { persist, flush, prepareRename, restore, closeTabs, whenIdle, restoring: () => !ready, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
+  window.ReadMDSession = { persist, flush, prepareRename, restore, retryRecovery, closeTabs, whenIdle, restoring: () => !ready, busy: () => closing || Boolean(window.ReadMDRefactor?.busy?.()),
     uncertainRename: id => Boolean(id && (confirmedRenames.has(id) ||
       // A replay conflict cannot prove the original request was rejected: its
       // ACK may have been lost before another window adopted this intent.
@@ -3495,12 +3575,13 @@ function updateStatus() {
 
 let goingHome = false;
 async function goHome(options = {}) {
+  const lifecycleOwner = window.ReadMDLifecycle?.owner();
   if (goingHome) return false;
   goingHome = true;
   const tabId = state.activeTabId;
   try {
     if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return false;
-    if (!options.discardConfirmed && state.editing && !await confirmExitEdit()) return false;
+    if (!options.discardConfirmed && state.editing && !await (lifecycleOwner ? window.ReadMDLifecycle.within(lifecycleOwner, () => confirmExitEdit()) : confirmExitEdit())) return false;
     if (state.activeTabId !== tabId) return false;
     return resetHome();
   } finally { goingHome = false; }
@@ -6842,22 +6923,25 @@ function deferSessionOperation(action, alreadyQueued) {
   return task;
 }
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false, _lifecycleOwner = null } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(_lifecycleOwner) || (discardConfirmed && window.ReadMDLifecycle?.saveReload(path));
+  const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
     if (window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
+    await window.ReadMDLifecycle?.whenIdle(ownsLifecycle() ? window.ReadMDLifecycle.owner() : null);
     if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
-    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring });
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring, _lifecycleOwner });
   }, _sessionQueued);
   // Finder can deliver an Opened event before the saved page set has loaded.
   // Interrupting that restore correctly revokes session-write eligibility, but
   // then every later close is refused. Queue the new page without touching the
   // restoration epoch; only restore's own initial-file dispatcher bypasses it.
   if (!_sessionRestoring && window.ReadMDSession?.restoring?.()) return defer();
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   const renameReserved = () => state.tabs.some(tab => {
     const pendingPath = tab._renamePending?.old_path;
     return (tab._renameInFlight || tab._renamePending) &&
@@ -6866,6 +6950,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
   });
   if (renameReserved()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
   const existingTab = findTabByPath(path);
+  if (existingTab?._restoreDescriptor) { showToast(_t('error.review_needs_recovery')); return; }
   const refreshRevision = existingTab?.revision;
   const refreshAllowed = () => !renameReserved() && (!existingTab || (state.tabs.includes(existingTab)
     && normalizePath(existingTab.path || '') === normalizePath(path))) && (!backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
@@ -6885,10 +6970,10 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     // If switchTab refreshes an externally changed target, its nested load is
     // part of this same queued action and must not wait behind itself.
     await switchTab(existingTab.id, { _sessionQueued });
-    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+    if (blocked()) return defer();
     if (state.activeTabId !== existingTab.id) return;
   }
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   // Opening an already-open clean path is an explicit refresh request.  Start
   // the load only after tab switching, because switching invalidates older
   // document epochs by design.
@@ -6907,7 +6992,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       return;
     }
     const d = await r.json();
-    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) {
+    if (blocked()) {
       setProgress(0);
       return defer();
     }
@@ -6922,7 +7007,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     // Its staged images are committed by the normal explicit Save As flow.
     if (d.converted) {
       await renderVirtual('convert', d.name, d.dir, d.content, d.fixes,
-        { assets: d.assets, originPath: d.path }, _sessionQueued);
+        { assets: d.assets, originPath: d.path, _lifecycleOwner }, _sessionQueued);
       return;
     }
     const isBrowserCopy = force && browserCopy === null
@@ -6983,6 +7068,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (!backgroundRefresh) showToast(_t('toolbar.reload') + ': ' + d.name);
     } else {
       if (!isDocumentLoadCurrent(loadEpoch)) return;
+      // Detach the current editor while it still belongs to its source page.
+      // Assigning the new active id first would put the old selection/history
+      // on a different file, especially when both files contain equal text.
+      const previousTab = state.tabs.find(tab => tab.id === state.activeTabId);
+      if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+      if (previousTab && typeof captureReaderState === 'function') captureReaderState(previousTab);
+      exitEdit();
       const newTab = {
         id: 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         ...fileFields,
@@ -7011,7 +7103,6 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       addRecent(d.path);
       pushHistory(d.path);
       saveLastFile(d.path);
-      exitEdit();
       clearAiOutput();
       updateStatus();
       setProgress(100);
@@ -10050,13 +10141,17 @@ function openPath(p) {
 
 async function renderVirtual(source, name, dir, content, fixes, extras, _sessionQueued = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const lifecycleOwner = extras?._lifecycleOwner;
+  const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(lifecycleOwner);
+  const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
+    await window.ReadMDLifecycle?.whenIdle(lifecycleOwner);
     if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
     return renderVirtual(source, name, dir, content, fixes, extras, true);
   }, _sessionQueued);
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();
@@ -13444,7 +13539,10 @@ window.ReadMDReview = (() => {
         const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resume', path }) });
         const data = await response.json();
         if (!response.ok || data.ok === false || data.error) throw failure(data.error_code || data.code || 'review_persistence_failed');
-        if (!data.found) { tab._reviewRestorePending = false; if (tab === activeTab()) statusContext(null); return null; }
+        if (!data.found) {
+          if (tab._recoveryReview) throw failure('review_needs_recovery');
+          tab._reviewRestorePending = false; if (tab === activeTab()) statusContext(null); return null;
+        }
         // Entering Edit can race this read. Its initial text and queued input
         // then belong to that record and must win over this hydration callback.
         const live = records.get(tab);
@@ -13504,10 +13602,10 @@ window.ReadMDReview = (() => {
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
   }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
-  async function discard(tab = activeTab()) {
+  async function discard(tab = activeTab(), expected) {
     const rec = record(tab); if (!rec || rec.unsupported) return true;
     try {
-      const snapshot = await mutate('discard', {}, tab);
+      const snapshot = await mutate('discard', {}, tab, expected);
       // New typing after the explicit discard request remains a live draft.
       // Callers must leave that editor open instead of clearing it on exit.
       return rec.local === snapshot.content;
@@ -21863,7 +21961,7 @@ window.addEventListener('readmd:language-changed', () => {
       try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; tab._recoveryReview = undefined; }
       catch (_) { /* Retry during maintenance. */ }
     }
-    const pending = state.tabs.filter(tab => (tab.isDirty || !tab.path || tab._reviewRestorePending) && !tab._recoveryDiscarding);
+    const pending = state.tabs.filter(tab => !tab._restoreUnavailable && (tab.isDirty || !tab.path || tab._reviewRestorePending) && !tab._recoveryDiscarding);
     for (const tab of pending) {
       if (tab._reviewRestorePending) { complete = false; continue; }
       const snapshot = capture(tab);
@@ -21896,14 +21994,21 @@ window.addEventListener('readmd:language-changed', () => {
   }
   async function discard(tab) {
     if (!tab?.isDirty) return true;
+    const lifecycle = window.ReadMDLifecycle, decision = lifecycle?.decision(tab);
+    const expected = decision?.action === 'discard' ? decision.stamp : lifecycle?.mark(tab);
+    if (lifecycle && !lifecycle.matches(expected)) return false;
+    const started = Date.now();
     tab._recoveryDiscarding = true;
     const snapshot = capture(tab);
     const entry = await record(snapshot, 'discarded', 'discard');
     if (!entry) { tab._recoveryDiscarding = false; return false; }
     if (capture(tab).content !== snapshot.content) { tab._recoveryDiscarding = false; showToast(t('storage.savedEarlier')); return false; }
-    if (window.ReadMDReview && !await window.ReadMDReview.discard(tab)) { tab._recoveryDiscarding = false; return false; }
-    try { await enqueue({ op: 'clear_draft', key: keyFor(tab) }); } catch (_) { /* stored discarded copy remains */ }
+    if (lifecycle && !lifecycle.matches(expected)) { tab._recoveryDiscarding = false; return false; }
+    if (window.ReadMDReview && !await window.ReadMDReview.discard(tab, lifecycle?.reviewStamp(expected))) { tab._recoveryDiscarding = false; return false; }
+    const afterReview = lifecycle?.mark(tab);
+    try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: snapshot.content, before: started }); } catch (_) { /* stored discarded copy remains */ }
     tab._recoveryDiscarding = false;
+    if (lifecycle && !lifecycle.matches(afterReview)) { schedule(); return false; }
     return true;
   }
   async function createCopy() {
@@ -22063,8 +22168,9 @@ window.addEventListener('readmd:language-changed', () => {
     const candidates = [...state.tabs], discarded = [], accepted = new Map();
     const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
     for (const tab of candidates) {
+      if (tab._restoreDescriptor) { accepted.set(tab, text(tab)); continue; }
       if (tab.isDirty) {
-        const action = await promptDirtyClose(tab.title || tab.name);
+        const action = await promptDirtyClose(tab.title || tab.name, tab);
         if (action === 'cancel') return false;
         if (action === 'save') {
           if (!await saveTabBeforeClose(tab)) return false;
@@ -30892,6 +30998,130 @@ const ReadMDInlineCompletion = (() => {
 
 ;
 'use strict';
+// Frontend ordering only. Rust still owns identity, revisions and every write.
+window.ReadMDLifecycle = (() => {
+  let active = null, depth = 0, installed = false, applyingSave = null;
+  const waiters = new Set();
+  const currentTab = () => typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const text = tab => state.editing && currentTab() === tab ? getEditContent() : tab?.content;
+  const review = tab => {
+    const head = window.ReadMDReview?.snapshot(tab);
+    return head ? { document_id: head.document_id, generation: head.generation, review_revision: head.review_revision, revision: head.revision } : null;
+  };
+  function mark(tab) {
+    return tab ? { tab, path: tab.path, revision: tab.revision, editGeneration: tab.editGeneration || 0, content: text(tab), review: review(tab) } : null;
+  }
+  function matches(stamp) {
+    if (!stamp) return true;
+    const now = mark(stamp.tab);
+    return now.path === stamp.path && now.revision === stamp.revision && now.editGeneration === stamp.editGeneration &&
+      now.content === stamp.content && JSON.stringify(now.review) === JSON.stringify(stamp.review);
+  }
+  function accept(tab, stamp, action) {
+    if (!matches(stamp)) return false;
+    if (active && tab) active.decisions.set(tab, { stamp, action });
+    return true;
+  }
+  function guard(name, work) {
+    return function (...args) {
+      if (active && !depth || !active && window.ReadMDSession?.restoring?.()) return Promise.resolve(false);
+      if (active) return work.apply(this, args);
+      const owner = active = { name, target: currentTab(), decisions: new Map() };
+      let result;
+      try { depth++; result = work.apply(this, args); }
+      catch (error) { result = Promise.reject(error); }
+      finally { depth--; }
+      return Promise.resolve(result).finally(() => {
+        if (active !== owner) return;
+        active = null;
+        for (const resolve of waiters) resolve();
+        waiters.clear();
+      });
+    };
+  }
+  function within(owner, action) {
+    if (!owner || owner !== active) return Promise.resolve(false);
+    try { depth++; return action(); } finally { depth--; }
+  }
+  const isOwner = owner => Boolean(owner && owner === active);
+  async function whenIdle(owner) {
+    while (active && !isOwner(owner)) await new Promise(resolve => waiters.add(resolve));
+  }
+  function saveReload(path) {
+    const tab = currentTab(), decision = active?.decisions.get(tab);
+    return Boolean(active && tab?.path && normalizePath(tab.path) === normalizePath(path) && decision?.action === 'save');
+  }
+  function reviewStamp(stamp) {
+    return stamp?.review ? { ...stamp.review, tabId: stamp.tab.id, content: window.ReadMDReview.lf(stamp.content), editGeneration: stamp.editGeneration } : undefined;
+  }
+  function install() {
+    if (installed) return;
+    installed = true;
+    const originalEditorUpdate = window.ReadMDReview.onEditorUpdate;
+    window.ReadMDReview.onEditorUpdate = update => {
+      const tab = currentTab();
+      if (tab && update.docChanged && applyingSave !== tab) tab.inputGeneration = (tab.inputGeneration || 0) + 1;
+      return originalEditorUpdate(update);
+    };
+    const originalCommit = commitDocumentSave, originalSave = saveEdit;
+    commitDocumentSave = function (snapshot, ...args) {
+      const previous = applyingSave;
+      // The existing commit projects approved path/asset changes before its
+      // first await. Those synchronous transactions are part of this save.
+      applyingSave = snapshot.tab;
+      try { return originalCommit.call(this, snapshot, ...args); }
+      finally { applyingSave = previous; }
+    };
+    const guardedSave = guard('save', async (options = {}) => {
+      const tab = currentTab(), inputGeneration = tab?.inputGeneration || 0;
+      const saved = await originalSave({ ...options, exitAfterSave: false });
+      if (!options.exitAfterSave) return saved;
+      if (!saved || !tab || currentTab() !== tab || !state.editing || tab.isDirty || (tab.inputGeneration || 0) !== inputGeneration) return false;
+      exitEdit();
+      await renderActiveTab({ restoreScroll: true });
+      return true;
+    });
+    saveEdit = function (options) {
+      // An ordinary save already carries a document snapshot. Reading or
+      // writing another page can continue while that snapshot is committed.
+      if (!active && !options?.exitAfterSave) return originalSave(options);
+      if (active && !depth) {
+        const decision = active.decisions.get(currentTab());
+        if (decision?.action !== 'save' || decision.consumed || !matches(decision.stamp)) return Promise.resolve(false);
+        decision.consumed = true;
+        return within(active, () => guardedSave(options));
+      }
+      return guardedSave(options);
+    };
+    // Keep the byte-pinned editor implementation behind this action boundary.
+    confirmExitEdit = guard('exit-edit', confirmExitEdit);
+    closeTab = guard('close-tab', closeTab);
+    closeOtherTabs = guard('close-others', closeOtherTabs);
+    closeAllTabs = guard('close-all', closeAllTabs);
+    switchTab = guard('switch-tab', switchTab);
+    goHome = guard('home', goHome);
+    window.ReadMDSession.retryRecovery = guard('recover-page', window.ReadMDSession.retryRecovery);
+    newDocument = guard('new-document', async () => {
+      const owner = active;
+      if (state.editing && !await within(owner, () => confirmExitEdit())) return false;
+      await renderVirtual('', '', '', '', [], { _lifecycleOwner: owner });
+      const created = currentTab();
+      if (!created || !isOwner(owner)) return false;
+      await toggleEdit();
+      return currentTab() === created && state.editing;
+    });
+    if (window.ReadMDRecovery) {
+      window.ReadMDRecovery.prepareClose = guard('quit', window.ReadMDRecovery.prepareClose);
+      window.ReadMDRecovery.prepareInstall = guard('install', window.ReadMDRecovery.prepareInstall);
+    }
+  }
+  return { install, guard, within, owner: () => active, busy: () => Boolean(active), isOwner, whenIdle, saveReload,
+    mark, matches, accept, decision: tab => active?.decisions.get(tab), reviewStamp,
+    applyingSave: tab => applyingSave === tab };
+})();
+
+;
+'use strict';
 
 function syncSelectAccessibleName(el) {
   const selected = el.selectedOptions && el.selectedOptions[0];
@@ -31258,6 +31488,8 @@ function bindEvents() {
   // 编辑保存与退出
   $('edit-save').addEventListener('click', saveEdit);
   $('edit-area').addEventListener('input', () => {
+    const tab = getActiveTab();
+    if (tab) { tab.editGeneration = (tab.editGeneration || 0) + 1; tab.inputGeneration = (tab.inputGeneration || 0) + 1; }
     updateUnloadGuard();
     if (typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
     if (!$('search-bar').classList.contains('hidden')) syncSearchMode();
@@ -32105,6 +32337,7 @@ async function openInitialFile(path, options = {}) {
 let startupServicesStarted = false;
 
 async function init() {
+  window.ReadMDLifecycle?.install();
   // 1. Make the already-parsed welcome shell interactive before optional preferences arrive.
   bindPy();
   applySettings();

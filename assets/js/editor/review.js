@@ -386,7 +386,10 @@ window.ReadMDReview = (() => {
         const response = await apiFetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'resume', path }) });
         const data = await response.json();
         if (!response.ok || data.ok === false || data.error) throw failure(data.error_code || data.code || 'review_persistence_failed');
-        if (!data.found) { tab._reviewRestorePending = false; if (tab === activeTab()) statusContext(null); return null; }
+        if (!data.found) {
+          if (tab._recoveryReview) throw failure('review_needs_recovery');
+          tab._reviewRestorePending = false; if (tab === activeTab()) statusContext(null); return null;
+        }
         // Entering Edit can race this read. Its initial text and queued input
         // then belong to that record and must win over this hydration callback.
         const live = records.get(tab);
@@ -446,10 +449,10 @@ window.ReadMDReview = (() => {
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
   }
   function resolve(ids, decision, tab = activeTab(), resolution) { return mutate('resolve', { ids: [...ids], decision, resolution }, tab); }
-  async function discard(tab = activeTab()) {
+  async function discard(tab = activeTab(), expected) {
     const rec = record(tab); if (!rec || rec.unsupported) return true;
     try {
-      const snapshot = await mutate('discard', {}, tab);
+      const snapshot = await mutate('discard', {}, tab, expected);
       // New typing after the explicit discard request remains a live draft.
       // Callers must leave that editor open instead of clearing it on exit.
       return rec.local === snapshot.content;

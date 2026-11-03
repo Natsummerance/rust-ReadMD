@@ -63,7 +63,7 @@
       try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: tab._recoveryContent }); tab._recoveryContent = undefined; tab._recoveryReview = undefined; }
       catch (_) { /* Retry during maintenance. */ }
     }
-    const pending = state.tabs.filter(tab => (tab.isDirty || !tab.path || tab._reviewRestorePending) && !tab._recoveryDiscarding);
+    const pending = state.tabs.filter(tab => !tab._restoreUnavailable && (tab.isDirty || !tab.path || tab._reviewRestorePending) && !tab._recoveryDiscarding);
     for (const tab of pending) {
       if (tab._reviewRestorePending) { complete = false; continue; }
       const snapshot = capture(tab);
@@ -96,14 +96,21 @@
   }
   async function discard(tab) {
     if (!tab?.isDirty) return true;
+    const lifecycle = window.ReadMDLifecycle, decision = lifecycle?.decision(tab);
+    const expected = decision?.action === 'discard' ? decision.stamp : lifecycle?.mark(tab);
+    if (lifecycle && !lifecycle.matches(expected)) return false;
+    const started = Date.now();
     tab._recoveryDiscarding = true;
     const snapshot = capture(tab);
     const entry = await record(snapshot, 'discarded', 'discard');
     if (!entry) { tab._recoveryDiscarding = false; return false; }
     if (capture(tab).content !== snapshot.content) { tab._recoveryDiscarding = false; showToast(t('storage.savedEarlier')); return false; }
-    if (window.ReadMDReview && !await window.ReadMDReview.discard(tab)) { tab._recoveryDiscarding = false; return false; }
-    try { await enqueue({ op: 'clear_draft', key: keyFor(tab) }); } catch (_) { /* stored discarded copy remains */ }
+    if (lifecycle && !lifecycle.matches(expected)) { tab._recoveryDiscarding = false; return false; }
+    if (window.ReadMDReview && !await window.ReadMDReview.discard(tab, lifecycle?.reviewStamp(expected))) { tab._recoveryDiscarding = false; return false; }
+    const afterReview = lifecycle?.mark(tab);
+    try { await enqueue({ op: 'clear_draft', key: keyFor(tab), content: snapshot.content, before: started }); } catch (_) { /* stored discarded copy remains */ }
     tab._recoveryDiscarding = false;
+    if (lifecycle && !lifecycle.matches(afterReview)) { schedule(); return false; }
     return true;
   }
   async function createCopy() {
@@ -263,8 +270,9 @@
     const candidates = [...state.tabs], discarded = [], accepted = new Map();
     const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
     for (const tab of candidates) {
+      if (tab._restoreDescriptor) { accepted.set(tab, text(tab)); continue; }
       if (tab.isDirty) {
-        const action = await promptDirtyClose(tab.title || tab.name);
+        const action = await promptDirtyClose(tab.title || tab.name, tab);
         if (action === 'cancel') return false;
         if (action === 'save') {
           if (!await saveTabBeforeClose(tab)) return false;

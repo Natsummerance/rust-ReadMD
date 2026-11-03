@@ -126,22 +126,25 @@ function deferSessionOperation(action, alreadyQueued) {
   return task;
 }
 
-async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false } = {}) {
+async function loadFile(path, { force = false, browserCopy = null, discardConfirmed = false, backgroundRefresh = null, _sessionQueued = false, _sessionRestoring = false, _lifecycleOwner = null } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!path) return;
+  const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(_lifecycleOwner) || (discardConfirmed && window.ReadMDLifecycle?.saveReload(path));
+  const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
     if (window.ReadMDSession?.restoring?.()) await window.__readmdSessionReady;
+    await window.ReadMDLifecycle?.whenIdle(ownsLifecycle() ? window.ReadMDLifecycle.owner() : null);
     if (!await waitForSessionTransition()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
-    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring });
+    return loadFile(path, { force, browserCopy, discardConfirmed, backgroundRefresh, _sessionQueued: true, _sessionRestoring, _lifecycleOwner });
   }, _sessionQueued);
   // Finder can deliver an Opened event before the saved page set has loaded.
   // Interrupting that restore correctly revokes session-write eligibility, but
   // then every later close is refused. Queue the new page without touching the
   // restoration epoch; only restore's own initial-file dispatcher bypasses it.
   if (!_sessionRestoring && window.ReadMDSession?.restoring?.()) return defer();
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
   if(!backgroundRefresh&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   const renameReserved = () => state.tabs.some(tab => {
     const pendingPath = tab._renamePending?.old_path;
     return (tab._renameInFlight || tab._renamePending) &&
@@ -150,6 +153,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
   });
   if (renameReserved()) { if (!backgroundRefresh) showToast(_t('review.busy')); return; }
   const existingTab = findTabByPath(path);
+  if (existingTab?._restoreDescriptor) { showToast(_t('error.review_needs_recovery')); return; }
   const refreshRevision = existingTab?.revision;
   const refreshAllowed = () => !renameReserved() && (!existingTab || (state.tabs.includes(existingTab)
     && normalizePath(existingTab.path || '') === normalizePath(path))) && (!backgroundRefresh || (backgroundRefresh() && existingTab && state.tabs.includes(existingTab)
@@ -169,10 +173,10 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     // If switchTab refreshes an externally changed target, its nested load is
     // part of this same queued action and must not wait behind itself.
     await switchTab(existingTab.id, { _sessionQueued });
-    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+    if (blocked()) return defer();
     if (state.activeTabId !== existingTab.id) return;
   }
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   // Opening an already-open clean path is an explicit refresh request.  Start
   // the load only after tab switching, because switching invalidates older
   // document epochs by design.
@@ -191,7 +195,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       return;
     }
     const d = await r.json();
-    if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) {
+    if (blocked()) {
       setProgress(0);
       return defer();
     }
@@ -206,7 +210,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
     // Its staged images are committed by the normal explicit Save As flow.
     if (d.converted) {
       await renderVirtual('convert', d.name, d.dir, d.content, d.fixes,
-        { assets: d.assets, originPath: d.path }, _sessionQueued);
+        { assets: d.assets, originPath: d.path, _lifecycleOwner }, _sessionQueued);
       return;
     }
     const isBrowserCopy = force && browserCopy === null
@@ -267,6 +271,13 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (!backgroundRefresh) showToast(_t('toolbar.reload') + ': ' + d.name);
     } else {
       if (!isDocumentLoadCurrent(loadEpoch)) return;
+      // Detach the current editor while it still belongs to its source page.
+      // Assigning the new active id first would put the old selection/history
+      // on a different file, especially when both files contain equal text.
+      const previousTab = state.tabs.find(tab => tab.id === state.activeTabId);
+      if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
+      if (previousTab && typeof captureReaderState === 'function') captureReaderState(previousTab);
+      exitEdit();
       const newTab = {
         id: 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
         ...fileFields,
@@ -295,7 +306,6 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       addRecent(d.path);
       pushHistory(d.path);
       saveLastFile(d.path);
-      exitEdit();
       clearAiOutput();
       updateStatus();
       setProgress(100);
@@ -3334,13 +3344,17 @@ function openPath(p) {
 
 async function renderVirtual(source, name, dir, content, fixes, extras, _sessionQueued = false) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const lifecycleOwner = extras?._lifecycleOwner;
+  const ownsLifecycle = () => window.ReadMDLifecycle?.isOwner(lifecycleOwner);
+  const blocked = () => window.ReadMDSession?.busy?.() || (window.ReadMDLifecycle?.busy() && !ownsLifecycle()) || (!ownsLifecycle() && !_sessionQueued && deferredSessionOperationCount);
   const defer = () => deferSessionOperation(async () => {
+    await window.ReadMDLifecycle?.whenIdle(lifecycleOwner);
     if (!await waitForSessionTransition()) { showToast(_t('review.busy')); return; }
     return renderVirtual(source, name, dir, content, fixes, extras, true);
   }, _sessionQueued);
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if ((!_sessionQueued && !ownsLifecycle()) || blocked()) return defer();
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDSession?.busy?.() || (!_sessionQueued && deferredSessionOperationCount)) return defer();
+  if (blocked()) return defer();
   // Import/AI results create another tab; keep the current editor draft intact.
   if (state.editing && typeof syncActiveTabDirty === 'function') syncActiveTabDirty();
   exitEdit();

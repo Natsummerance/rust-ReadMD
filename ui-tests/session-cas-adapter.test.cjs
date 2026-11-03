@@ -22,7 +22,7 @@ function descriptor(at, extra = {}) {
   return { key: 'file:' + at, path: at, name: at.split('/').pop(), revision: 'synthetic-revision', ...extra };
 }
 function session(rows = [descriptor(A), descriptor(B)]) { return { version: 1, tabs: rows, active: rows[0]?.key || '', folder: 'C:/Synthetic/Session' }; }
-function backend(initial = null) {
+function backend(initial = null, { recoveryGuards = true } = {}) {
   const receipts = new Map(), calls = [], documents = new Map(), recovery = new Map();
   let serial = 0, barrier;
   const service = { value: clone(initial), version: { epoch: randomUUID(), generation: '9007199254740993' },
@@ -33,7 +33,7 @@ function backend(initial = null) {
       if (!body) {
         calls.push({ method: 'GET' });
         if (service.failRead) throw new Error('Synthetic session read failure');
-        return response({ ok: true, protocol: 'readmd-session-cas-v1', session: clone(service.value), session_version: clone(service.version) });
+        return response({ ok: true, protocol: 'readmd-session-cas-v1', recovery_guards: recoveryGuards, session: clone(service.value), session_version: clone(service.version) });
       }
       calls.push({ method: 'POST', body: clone(body) });
       const hold = barrier?.predicate(body) ? barrier : null;
@@ -48,7 +48,7 @@ function backend(initial = null) {
       if (JSON.stringify(body.expected_session_version) !== JSON.stringify(service.version)) return response({ ok: false, error_code: 'session_conflict' }, 409);
       if (service.fail?.(body)) return response({ ok: false, error_code: 'session_persistence_failed' }, 507);
       service.external(body.session);
-      const result = { ok: true, persisted: true, protocol: 'readmd-session-cas-v1', call_id: body.call_id,
+      const result = { ok: true, persisted: true, protocol: 'readmd-session-cas-v1', recovery_guards: recoveryGuards, call_id: body.call_id,
         session: clone(body.session), session_version: clone(service.version) };
       receipts.set(body.call_id, { encoded, result });
       if (hold?.stage === 'after') { hold.entered.resolve(body); await hold.release.promise; }
@@ -80,7 +80,7 @@ async function app(options = {}) {
     ReadMDRecovery: {
       schedule() {},
       async flush() {
-        for (const owner of state.tabs) if (owner.isDirty) {
+        for (const owner of state.tabs) if (owner.isDirty && !owner._restoreUnavailable) {
           const review = clone(window.ReadMDReview?.snapshot(owner));
           drafts.set(owner.id, { content: owner.content, review });
           if (owner.recoveryKey) server.recovery.set(owner.recoveryKey, { content: owner.content, entry: { context: { review } } });
@@ -304,10 +304,47 @@ for (const malformed of ['object', 'duplicate path', 'duplicate key', 'too many'
   assert.equal(await a.window.ReadMDSession.flush(), false); assert.equal(a.posts().length, 0);
 });
 
-scenario('failed draft lookup for a dirty descriptor leaves the native snapshot intact', async () => {
+scenario('failed draft lookup preserves the exact dirty descriptor through a guarded acknowledgement', async () => {
   const value = session([descriptor(A, { dirty: true })]), server = backend(value);
   const a = await app({ server, cold: true, draftFailure: true });
-  assert.equal(await a.window.ReadMDSession.flush(), false); assert.equal(a.posts().length, 0); assert.deepEqual(server.value, value);
+  assert.equal(await a.window.ReadMDSession.flush(), true); assert.equal(a.posts().length, 1);
+  assert.deepEqual(server.value.tabs,value.tabs);assert.deepEqual(a.posts()[0].body.preserved_tabs,value.tabs);
+});
+
+scenario('an older backend without the recovery guard keeps missing drafts write-ineligible',async()=>{
+  const value=session([descriptor(A,{dirty:true})]),server=backend(value,{recoveryGuards:false});
+  const a=await app({server,cold:true,draftFailure:true});assert.ok(a.state.tabs[0]._restoreDescriptor);
+  assert.equal(await a.window.ReadMDSession.flush(),false);assert.equal(a.posts().length,0);assert.deepEqual(server.value,value);
+});
+
+scenario('a missing unsaved body stays visible and cannot become an empty review or ordinary close',async()=>{
+  const row=descriptor('',{key:'draft:owned-missing',name:'Synthetic missing draft.md',dirty:true,unsavedCreation:true}),server=backend(session([row]));
+  const a=await app({server,cold:true});
+  assert.equal(a.state.tabs.length,1);const held=a.state.tabs[0];
+  assert.ok(held._restoreDescriptor);assert.equal(held.content,null);assert.equal(held.original,null);
+  assert.equal(await a.window.ReadMDReview.capture(held),null);
+  await a.context.closeTab(held.id,true);assert.equal(a.state.tabs.length,1);
+  assert.equal(await a.window.ReadMDSession.flush(),true);
+  assert.deepEqual(server.value.tabs[0],row);assert.deepEqual(a.posts().at(-1).body.preserved_tabs,[row]);
+});
+
+scenario('closing another page preserves an unavailable dirty descriptor exactly',async()=>{
+  const row=descriptor(A,{dirty:true}),server=backend(session([row,descriptor(B)]));
+  const a=await app({server,cold:true});const held=a.state.tabs.find(tab=>tab.path===A),other=a.state.tabs.find(tab=>tab.path===B);
+  assert.ok(held._restoreDescriptor);await a.context.closeTab(other.id,true);
+  assert.equal(a.state.tabs.length,1);assert.deepEqual(server.value.tabs,[row]);
+  a.state.tabs=[];assert.equal(await a.window.ReadMDSession.flush(),false,'a partial UI cannot omit the protected descriptor');
+  assert.deepEqual(server.value.tabs,[row]);
+});
+
+scenario('a returned real draft repairs its held identity without adopting a newer session version',async()=>{
+  const row=descriptor(A,{dirty:true}),server=backend(session([row]));const a=await app({server,cold:true});
+  const held=a.state.tabs[0];assert.ok(held._restoreDescriptor);
+  server.review(A).content=BODY+'Recovered draft\n';
+  server.recovery.set(row.key,{content:BODY+'Recovered draft\n',entry:{context:{}}});
+  assert.equal(await a.window.ReadMDSession.retryRecovery(held),true);
+  const restored=a.state.tabs[0];assert.equal(restored.id,held.id);assert.equal(restored.content,BODY+'Recovered draft\n');assert.equal(restored.isDirty,true);
+  assert.equal(a.server.calls.filter(c=>c.method==='GET').length,1,'retry must not fetch a fresh CAS version');
 });
 
 for (const kind of ['single', 'other', 'all']) scenario(kind + ' close waits for ACK and rejects reentry without reviving pages', async () => {

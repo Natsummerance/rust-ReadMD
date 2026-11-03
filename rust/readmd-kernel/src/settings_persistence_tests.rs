@@ -252,6 +252,28 @@ fn session_stale_instances_cannot_erase_a_durable_recovery_intent() {
 }
 
 #[test]
+fn session_preserved_recovery_rows_cannot_be_removed_or_rewritten() {
+    let (_root,path,mut settings)=fixture();
+    let initial=settings.read_session_checked().unwrap();
+    let held=json!({"key":"draft:owned-missing","path":"","name":"Synthetic missing draft.md","dirty":true,"unsavedCreation":true,"reviewPath":"draft:owned-missing"});
+    let opened=settings.write_session_checked(&session_request(&initial["session_version"],"guard-seed",json!({"version":1,"tabs":[held.clone(),{"key":"file:other","path":"synthetic-other.md"}]}))).unwrap();
+    let mut keep=session_request(&opened["session_version"],"guard-keep",json!({"version":1,"tabs":[held.clone()]}));
+    keep["preserved_tabs"]=json!([held.clone()]);
+    let saved=settings.write_session_checked(&keep).unwrap();
+    assert_eq!(saved["session"]["tabs"][0],held);
+    assert_eq!(settings.write_session_checked(&keep).unwrap(),saved,"the exact guarded receipt is replayable");
+    for (index,next) in [json!([]),json!([{ "key":"draft:owned-missing","dirty":false }]),json!([held.clone(),held.clone()])].into_iter().enumerate() {
+        let before=fs::read(&path).unwrap();
+        let mut request=session_request(&saved["session_version"],&format!("guard-reject-{index}"),json!({"version":1,"tabs":next}));
+        request["preserved_tabs"]=json!([held.clone()]);
+        session_error(settings.write_session_checked(&request),409,"session_version_conflict");
+        assert_eq!(fs::read(&path).unwrap(),before,"rejection preserves the entire settings object");
+    }
+    let mut changed_guard=keep.clone();changed_guard["preserved_tabs"]=json!([]);
+    session_error(settings.write_session_checked(&changed_guard),409,"session_request_conflict");
+}
+
+#[test]
 fn session_generation_and_epoch_prevent_aba() {
     let (_root, path, mut settings) = fixture();
     let initial=settings.read_session_checked().unwrap();
