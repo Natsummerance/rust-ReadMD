@@ -45,7 +45,7 @@
     "testDriverSha256": "ac3de0bdd782a29689ed0b7304cae4eec36b7524d9c803b95bf1f16bc4ad7f4a"
   },
   "modelsRequested": false,
-  "status": "native_verified_ready_for_asset_refresh",
+  "status": "published_and_installed",
   "version": "0.0.6",
   "staticPackageCheck": {
     "passed": true,
@@ -132,7 +132,12 @@
     "actualNativeWindowObserved": true,
     "newContentRevisionServed": true,
     "workspaceFallbackUpdated": true,
-    "modelsRequested": false
+    "modelsRequested": false,
+    "defaultMarkdownHandlerConfirmed": true,
+    "observedModelModules": {
+      "ocr": "idle",
+      "transcribe": "idle"
+    }
   },
   "nativeHarnessFirstFailure": {
     "check": "background_save_commits_exact_target_body",
@@ -141,7 +146,46 @@
     "productAssetsChangedByCorrection": false
   },
   "publication": {
-    "status": "pending",
-    "tag": "V0.0.6"
+    "status": "complete",
+    "sourceCommit": "635a6538aea2de256501b121426743b60be27d25",
+    "tag": "V0.0.6",
+    "tagCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+    "releaseUrl": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+    "replacedMacAssets": 4,
+    "otherPlatformAssetsPreserved": true,
+    "originalTagPreserved": true,
+    "packages": [
+      {
+        "name": "ReadMD-macos-arm64.dmg",
+        "size": 77807136,
+        "sha256": "3fd3364cdfa04bef589651488953287f0d9198134b29c87a54bcda40949ce739"
+      },
+      {
+        "name": "ReadMD-macos-arm64.zip",
+        "size": 68651299,
+        "sha256": "88e7518dad35af4b799d528125edb2b436a3ddce6a8353b0cf1e3d67038422b4"
+      },
+      {
+        "name": "ReadMD-macos-x64.dmg",
+        "size": 77416014,
+        "sha256": "2523dced8f25b44122a59908e028f0d2639574dcfa80cc54c345a1b805573205"
+      },
+      {
+        "name": "ReadMD-macos-x64.zip",
+        "size": 69590943,
+        "sha256": "056594e8636981f22e7fbd79fad8b971a59752349ef55c4047f50c8b882cd117"
+      }
+    ],
+    "publicArmDownloadVerified": {
+      "passed": true,
+      "url": "https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/ReadMD-macos-arm64.zip",
+      "bytes": 68651299,
+      "sha256": "88e7518dad35af4b799d528125edb2b436a3ddce6a8353b0cf1e3d67038422b4",
+      "signatureValid": true,
+      "installedExecutableAndAssetsMatchPublicDownload": true,
+      "sourceCommit": "635a6538aea2de256501b121426743b60be27d25",
+      "originalTagPreserved": true,
+      "modelsRequested": false
+    }
   }
 }
