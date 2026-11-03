@@ -408,6 +408,14 @@ window.ReadMDReview = (() => {
   }
   function mount(view, tab, initial) {
     const rec = record(tab, initial); if (!rec) return;
+    // Identical Markdown in another document cannot certify cached widgets
+    // and listeners from the previous owner. Keep the protected preview code.
+    const pane = typeof document === 'undefined' ? null : document.getElementById?.('preview-pane');
+    if (pane && pane._readmdPreviewOwner !== tab) {
+      if (typeof pvRenderEpoch !== 'undefined') pvRenderEpoch++;
+      if (typeof pvLast !== 'undefined') pvLast = '';
+      pane._readmdPreviewOwner = tab; pane.replaceChildren();
+    }
     rec.view = view; if (view) views.set(view, rec);
     if (rec.snapshot && rec.local === lf(initial) && rec.snapshot.content === rec.local) refresh(rec);
     void open(rec).then(() => pump(rec));

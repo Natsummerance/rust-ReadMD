@@ -76,8 +76,33 @@ jobs:
       - name: Compile the opt-in native Mac QA host without running models
         if: runner.os == 'macOS'
         run: cargo check --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --bin readmd --features native-qa
+      - name: Parse native close scripts without opening a window
+        if: runner.os == 'macOS'
+        run: |
+          node - <<'JS'
+          const vm = require('node:vm'), {driver} = require('./ui-tests/macos-code-close-system-native.cjs');
+          for (const phase of ['decisions','reopen']) new vm.Script(driver(phase, {}));
+          JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
+      - name: Locked browser driver for real close and save boundaries
+        run: npm ci --prefix ui-tests
+      - name: Prepare owned headless browser
+        run: npx --prefix ui-tests playwright install --with-deps chromium
+      - name: Real code results respect close, edit exit, undo and external saves
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/code-close-boundary-browser.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/code-close-boundaries
+      - name: Retain real code close and save receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: V006-code-close-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            .cache/code-close-boundaries/report.json
+            .cache/code-close-boundaries/first-failure.png
+            .cache/code-close-boundaries/deadline.json
 
   frontend:
     name: Frontend gates

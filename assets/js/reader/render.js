@@ -1935,19 +1935,33 @@ function renderAllCodeChunks(container) {
     }
   }
   cards.forEach(card => {
-    if (card._bound) return;
+    const owner = typeof getActiveTab === 'function' ? getActiveTab() : null;
+    if (card._bound && card._readmdCodeOwner === owner) return;
+    if (card._bound) {
+      const fresh = card.cloneNode(true); card.replaceWith(fresh); card = fresh;
+    }
     card._bound = true;
+    card._readmdCodeOwner = owner;
     const btn = card.querySelector('.code-chunk-run-btn');
     const statusEl = card.querySelector('.code-chunk-status');
     const timerEl = card.querySelector('.code-chunk-timer');
     const outWrap = card.querySelector('.code-chunk-output');
     const stdoutEl = card.querySelector('.code-chunk-stdout');
     const plotEl = card.querySelector('.code-chunk-plot');
+    statusEl.className = 'code-chunk-status'; statusEl.textContent = _t('status.ready'); timerEl.textContent = '';
+    outWrap.classList.add('hidden'); stdoutEl.textContent = ''; plotEl.replaceChildren();
+    card.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    btn.textContent = `▶ ${_t('menu.runCode')}`;
 
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
+    let running = false;
 
     const run = async () => {
+      if (running || !owner || getActiveTab() !== owner || !state.tabs.includes(owner) || window.ReadMDLifecycle?.busy()) return;
+      running = true;
+      const context = { tab: owner, wasEditing: Boolean(state.editing), inputGeneration: owner.inputGeneration || 0,
+        sourceLine: Number(card.dataset.sourceLine), code, stamp: null };
       statusEl.className = 'code-chunk-status running';
       statusEl.textContent = _t('reader.codeRunning');
       btn.disabled = true;
@@ -1958,6 +1972,9 @@ function renderAllCodeChunks(container) {
       }, 100);
 
       try {
+        if (context.wasEditing && (!await window.ReadMDReview.flush(owner) || !state.editing || getActiveTab() !== owner ||
+            context.inputGeneration !== (owner.inputGeneration || 0) || window.ReadMDLifecycle?.busy())) throw Error('code_target_stale');
+        context.stamp = window.ReadMDLifecycle.mark(owner);
         let res;
         if (hasPy && py.run_code_chunk) {
           res = await py.run_code_chunk(lang, code, null, 10, true);
@@ -1974,8 +1991,6 @@ function renderAllCodeChunks(container) {
         timerEl.textContent = ((Date.now() - t0) / 1000).toFixed(2) + 's';
 
         if (res && res.ok) {
-          statusEl.className = 'code-chunk-status success';
-          statusEl.textContent = _t('convert.statusOk');
           const outputFormat = String(card.dataset.outputFormat || 'text').toLowerCase();
           const outputText = (res.stdout || '') + (res.stderr ? ('\n' + res.stderr) : '');
           // Match MPE's output channel semantics while keeping every path
@@ -2004,9 +2019,16 @@ function renderAllCodeChunks(container) {
           // block only renders into the preview; ``output=true`` adds a
           // bounded marker block after the matching fence and persists it
           // through the editor's normal history/save path.
-          if (card.dataset.output === 'true' && outputFormat !== 'none' && state.editing) {
-            await persistCodeChunkOutput(card, outputText);
+          if (card.dataset.output === 'true' && outputFormat !== 'none' && context.wasEditing) {
+            statusEl.textContent = _t('convert.statusPending');
+            if (!await persistCodeChunkOutput(card, outputText, context)) {
+              statusEl.className = 'code-chunk-status error';
+              statusEl.textContent = _t('review.conflict');
+              return;
+            }
           }
+          statusEl.className = 'code-chunk-status success';
+          statusEl.textContent = _t('convert.statusOk');
         } else {
           statusEl.className = 'code-chunk-status error';
           statusEl.textContent = _t('convert.statusFailed');
@@ -2027,6 +2049,8 @@ function renderAllCodeChunks(container) {
         outWrap.classList.remove('hidden');
         stdoutEl.textContent = _t('toast.unknownError');
       } finally {
+        clearInterval(interval);
+        running = false;
         btn.disabled = false;
         btn.textContent = `▶ ${_t('reader.runAgain')}`;
       }
@@ -2062,24 +2086,33 @@ function renderAllCodeChunks(container) {
 }
 window.renderAllCodeChunks = renderAllCodeChunks;
 
-async function persistCodeChunkOutput(card, outputText) {
-  const sourceLine = Number(card && card.dataset && card.dataset.sourceLine);
-  if (!Number.isInteger(sourceLine) || sourceLine < 1 || !state.editing) return false;
+async function persistCodeChunkOutput(card, outputText, context) {
+  // Stay outside the review FIFO while a close/save decision is pending.
+  // Its nested save must never wait for this result to release that decision.
+  await window.ReadMDLifecycle.whenIdle();
+  if (!context?.stamp || !context.wasEditing || !state.tabs.includes(context.tab) || getActiveTab() !== context.tab ||
+      !state.editing || context.inputGeneration !== (context.tab.inputGeneration || 0) ||
+      !window.ReadMDLifecycle.matches(context.stamp)) return false;
+  const sourceLine = context.sourceLine;
+  if (!Number.isInteger(sourceLine) || sourceLine < 1) return false;
   // Editor offsets count normalized newlines; preserve file line endings
   // only when obtaining the save snapshot, not when calculating positions.
   const current = cmView ? cmView.state.doc.toString() : ($('edit-area')?.value || '');
   const lines = String(current || '').split('\n');
-  const fenceStart = Math.max(0, Math.min(lines.length - 1, sourceLine - 1));
+  if (sourceLine > lines.length) return false;
+  const fenceStart = sourceLine - 1;
   if (!/^\s*```/.test(lines[fenceStart] || '')) return false;
   let fenceEnd = fenceStart + 1;
   while (fenceEnd < lines.length && !/^\s*```\s*$/.test(lines[fenceEnd])) fenceEnd += 1;
   if (fenceEnd >= lines.length) return false;
+  if (lines.slice(fenceStart + 1, fenceEnd).join('\n') !== context.code.replace(/\r\n?/g, '\n').replace(/\n$/, '')) return false;
 
   const markerStart = '<!-- code_chunk_output -->';
   const markerEnd = '<!-- /code_chunk_output -->';
   let outputStart = -1;
   for (let index = fenceEnd + 1; index < Math.min(lines.length, fenceEnd + 7); index += 1) {
     if (lines[index].trim() === markerStart) { outputStart = index; break; }
+    if (lines[index].trim()) break;
   }
   let replaceFrom;
   let replaceTo;
@@ -2102,17 +2135,16 @@ async function persistCodeChunkOutput(card, outputText) {
   const from = offsets[replaceFrom];
   const to = offsets[replaceTo];
   const existing = lines.slice(replaceFrom, replaceTo).join('\n');
-  if (existing === block.replace(/^\n/, '').replace(/\n$/, '')) return false;
+  if (existing === block.replace(/^\n/, '').replace(/\n$/, '')) return typeof saveEdit === 'function' && await saveEdit() === true;
   if (cmView) cmView.dispatch({ changes: { from, to, insert: block } });
   else if ($('edit-area')) $('edit-area').setRangeText(block, from, to, 'end');
-  if (typeof saveEdit === 'function') await saveEdit();
-  return true;
+  return typeof saveEdit === 'function' && await saveEdit() === true;
 }
 window.persistCodeChunkOutput = persistCodeChunkOutput;
 
 async function runAllCodeChunks() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const cards = document.querySelectorAll('.code-chunk-card');
+  const cards = (state.editing ? $('preview-pane') : $('content'))?.querySelectorAll('.code-chunk-card') || [];
   if (!cards.length) {
     showToast(_t('toast.noRunnableChunks'));
     return;
