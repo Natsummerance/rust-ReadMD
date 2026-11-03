@@ -10,6 +10,8 @@ async function bounded(promise, label, ms = 10000) { let timer; try { return awa
 async function until(check, label, ms = 15000) { const end = Date.now() + ms; while (Date.now() < end) { if (await check()) return; await pause(25); } throw Error('Deadline: ' + label); }
 async function main() {
   const args = options(process.argv.slice(2)); assert(args.bin && !args.base);
+  const keyboardPlatform = process.env.READMD_CODE_TEST_PLATFORM || process.platform;
+  assert(['darwin', 'linux', 'win32'].includes(keyboardPlatform));
   const profile = path.join(args.evidence, 'profile'), docs = path.join(args.evidence, 'documents');
   for (const dir of [profile, docs, path.join(args.evidence, 'browser-home'), path.join(args.evidence, 'tmp')]) fs.mkdirSync(dir);
   const sql = 'SELECT 42 AS result;', single = '# Code 😀\n\n```sql cmd output=true\n' + sql + '\n```\n\nTail.\n';
@@ -17,7 +19,7 @@ async function main() {
   const longSql = 'WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n;';
   const fixtures = { '重复代码 中文😀.md': duplicate, 'async-A.md': single, 'async-B.md': single, 'stale.md': single, 'quit-cancel.md': single, 'cancel.md': single.replace(sql, longSql) };
   for (const [name, text] of Object.entries(fixtures)) fs.writeFileSync(path.join(docs, name), '\ufeff' + text.replaceAll('\n', '\r\n'));
-  const report = { passed: false, headless: true, nativeUiCertified: false, nativeBridge: 'settings bootstrap only; real authenticated Rust session/save/code routes', productionCsp: true, strictAuth: true, modelInference: false, checks: [], pageErrors: [], kernelPids: [], binarySha256: sha(fs.readFileSync(args.bin)), bootSha256: sha(fs.readFileSync(path.join(ROOT, 'assets/readmd.boot.js'))) };
+  const report = { passed: false, headless: true, nativeUiCertified: false, nativeBridge: 'settings bootstrap only; real authenticated Rust session/save/code routes', keyboardPlatform, simulatedKeyboardPlatform: keyboardPlatform !== process.platform, productionCsp: true, strictAuth: true, modelInference: false, checks: [], pageErrors: [], historyRequests: [], kernelPids: [], binarySha256: sha(fs.readFileSync(args.bin)), bootSha256: sha(fs.readFileSync(path.join(ROOT, 'assets/readmd.boot.js'))) };
   const { chromium } = require(args.playwright || require.resolve('playwright', { paths: [path.join(ROOT, 'ui-tests')] }));
   let host, browser, page, phase = 'startup';
   function mark(value) { phase = value; console.log(JSON.stringify({ phase })); }
@@ -34,8 +36,21 @@ async function main() {
     browser = await chromium.launch({ channel: channel === 'chromium' ? undefined : channel, headless: true, env: safeEnv, args: ['--disable-crash-reporter', '--disable-breakpad'] });
     page = await browser.newPage({ viewport: { width: 1160, height: 820 }, bypassCSP: false, serviceWorkers: 'block' });
     page.setDefaultTimeout(10000);
+    page.on('request', request => {
+      if (new URL(request.url()).pathname !== '/api/review') return;
+      const body = request.postDataJSON();
+      if (['undo', 'redo'].includes(body?.action)) report.historyRequests.push({ action: body.action, generation: body.generation, reviewRevision: body.review_revision });
+    });
     page.on('pageerror', error => report.pageErrors.push(error.message.replaceAll(args.evidence, '<evidence>').slice(0, 500)));
     await page.route('**/*', route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
+    await page.addInitScript(({ emulated, platform }) => {
+      if (emulated) Object.defineProperty(navigator, 'platform', { value: platform, configurable: true });
+      window.__codeHistoryKeys = [];
+      document.addEventListener('keydown', event => {
+        if (!(event.ctrlKey || event.metaKey) || !['z', 'Z', 'y', 'Y'].includes(event.key)) return;
+        setTimeout(() => { if (window.__codeHistoryKeys.length < 8) window.__codeHistoryKeys.push({ key: event.key, code: event.code, ctrl: event.ctrlKey, meta: event.metaKey, shift: event.shiftKey, prevented: event.defaultPrevented, editorTarget: Boolean(event.target?.closest?.('.cm-editor')) }); }, 0);
+      }, true);
+    }, { emulated: keyboardPlatform !== process.platform, platform: { darwin: 'MacIntel', linux: 'Linux x86_64', win32: 'Win32' }[keyboardPlatform] });
     // The desktop session adapter is selected by the host bridge. Supply only
     // its bootstrap envelope; session CAS, file/save and code work remain real
     // authenticated requests. This is not native host/chooser evidence.
@@ -70,9 +85,18 @@ async function main() {
     await page.locator('#preview-pane .code-chunk-run-btn').nth(1).click(); await idle();
     const expected = '# Code 😀\n\n```sql cmd output=true\n' + sql + '\n```\n\nSame.\n\n```sql cmd output=true\n' + sql + '\n```\n\n<!-- code_chunk_output -->\n\nresult\n------\n42\n\n<!-- /code_chunk_output -->\n\nTail.\n';
     assert.equal(await text(), expected); assert.equal(fs.readFileSync(path.join(docs, '重复代码 中文😀.md'), 'utf8'), '\ufeff' + expected.replaceAll('\n', '\r\n'));
-    await page.locator('.cm-content').click(); await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+    // Physical key codes preserve the shifted key value. A literal lower-case
+    // "z" plus Shift produces an artificial event on non-Mac hosts.
+    const mod = keyboardPlatform === 'darwin' ? 'Meta' : 'Control';
+    await page.locator('.cm-content').click(); await page.keyboard.press(mod + '+KeyZ');
     await until(async () => await text() === duplicate, 'single actual undo');
-    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+z' : 'Control+Shift+z'); await until(async () => await text() === expected, 'actual redo');
+    await page.keyboard.press(mod + '+Shift+KeyZ'); await until(async () => await text() === expected, 'actual redo');
+    assert.deepEqual(report.historyRequests.slice(0, 2).map(r => r.action), ['undo', 'redo']);
+    if (keyboardPlatform !== 'darwin') {
+      await page.keyboard.press('Control+KeyZ'); await until(async () => await text() === duplicate, 'alternate shortcut undo');
+      await page.keyboard.press('Control+KeyY'); await until(async () => await text() === expected, 'alternate shortcut redo');
+      assert.deepEqual(report.historyRequests.slice(2, 4).map(r => r.action), ['undo', 'redo']);
+    }
     await page.evaluate(() => saveEdit());
     report.checks.push('actual second duplicate run, BOM/CRLF save and keyboard single undo/redo');
     mark('switch while real HTTP result waits'); await edit('async-A.md'); const delayed = delayedCode();
@@ -136,7 +160,8 @@ async function main() {
   } catch (error) { report.phase = phase; report.failure = { name: error.name, message: String(error.message).replaceAll(args.evidence, '<evidence>').replaceAll(ROOT, '<repo>').slice(0, 1200) }; process.exitCode = 1;
     if (page) report.ui = await page.evaluate(() => ({ modalVisible: Boolean(document.getElementById('close-confirm-modal')?.getClientRects().length && !document.getElementById('close-confirm-modal')?.classList.contains('hidden')),
       modalTitle: document.getElementById('close-confirm-title')?.textContent, jobs: window.ReadMDCodeRuns?.busy(), lifecycleBusy: window.ReadMDLifecycle?.busy(),
-      tabs: state.tabs.map(tab => ({ name: tab.name, active: tab.id === state.activeTabId, dirty: tab.isDirty, reviewBusy: window.ReadMDReview?.busy(tab), generation: window.ReadMDReview?.snapshot(tab)?.generation })) })).catch(() => ({ unavailable: true }));
+      historyKeys: window.__codeHistoryKeys, focusedEditor: Boolean(document.activeElement?.closest?.('.cm-editor')),
+      tabs: state.tabs.map(tab => ({ name: tab.name, active: tab.id === state.activeTabId, dirty: tab.isDirty, reviewBusy: window.ReadMDReview?.busy(tab), generation: window.ReadMDReview?.snapshot(tab)?.generation, canRedo: window.ReadMDReview?.snapshot(tab)?.can_redo, canUndo: window.ReadMDReview?.snapshot(tab)?.can_undo })) })).catch(() => ({ unavailable: true }));
     if (page) await page.screenshot({ path: path.join(args.evidence, 'first-failure.png') }).catch(() => {});
   } finally {
     clearTimeout(watchdog); if (browser) await browser.close(); if (host) await host.stop();

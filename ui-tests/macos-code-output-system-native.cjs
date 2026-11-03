@@ -54,7 +54,7 @@ function driver(phase, files) { return String.raw`(async()=>{
   check(await ReadMDSession.flush()===true,'session_persistence_acknowledged');report(true);await py.request_quit();
  }catch(error){checks.push('failed_'+(/^[a-z_0-9]{1,110}$/.test(error.message)?error.message:'native_code_operation'));report(false);window.ipc.postMessage('readmd:quit');}
 })();`; }
-async function run(app, out) {
+async function run(app, out, assets = path.join(repo, 'assets')) {
   assert(out.startsWith(workspace + path.sep)); fs.mkdirSync(out, { mode: 0o700 });
   const dirs = Object.fromEntries(['documents', 'profile', 'tmp', 'native-home'].map(name => [name, path.join(out, name)]));
   for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { mode: 0o700 });
@@ -63,9 +63,9 @@ async function run(app, out) {
   fs.writeFileSync(path.join(dirs.profile, '.readmd-native-qa-owned'), 'readmd-synthetic-native-qa-v1', { flag: 'wx' });
   fs.writeFileSync(path.join(dirs.profile, 'settings.json'), JSON.stringify({ lang: 'zh-CN', closeToTray: false, autoCheckUpdate: false, petEnabled: false }));
   const report = { passed: false, nativeHost: 'LaunchServices / Cocoa WKWebView', scriptedUiEntries: true, realInPlaceSave: true, strictAuth: true, productionCsp: true,
-    modelsRequested: false, dailyApplicationChanged: false, binarySha256: null, bootSha256: sha(fs.readFileSync(path.join(repo, 'assets/readmd.boot.js'))), harnessSha256: sha(fs.readFileSync(__filename)), phases: [] };
+    modelsRequested: false, dailyApplicationChanged: false, binarySha256: null, bootSha256: sha(fs.readFileSync(path.join(assets, 'readmd.boot.js'))), harnessSha256: sha(fs.readFileSync(__filename)), phases: [] };
   try {
-    const host = prepare(app, out, { tmp: dirs.tmp, home: dirs['native-home'] }); report.binarySha256 = host.binarySha256;
+    const host = prepare(app, out, { tmp: dirs.tmp, home: dirs['native-home'], assets }); report.binarySha256 = host.binarySha256;
     for (const phase of ['run_save_quit', 'reopen_undo_close', 'empty']) {
       const script = driver(phase, files); new (require('node:vm').Script)(script); fs.writeFileSync(path.join(dirs.profile, 'native-qa.js'), script);
       const instance = await host.launch({ profile: dirs.profile, docs: dirs.documents, log: path.join(out, phase + '.log') });
@@ -83,5 +83,5 @@ async function run(app, out) {
   }
   console.log(JSON.stringify({ passed: report.passed, phases: report.phases.length, checks: report.phases.reduce((n, p) => n + (p.result?.checks.length || 0), 0) }));
 }
-if (require.main === module) { const [app, out] = process.argv.slice(2); run(path.resolve(app), path.resolve(out)).catch(() => { console.error('Native code output acceptance failed; inspect the owned receipt.'); process.exitCode = 1; }); }
+if (require.main === module) { const [app, out, assets] = process.argv.slice(2); run(path.resolve(app), path.resolve(out), assets ? path.resolve(assets) : undefined).catch(() => { console.error('Native code output acceptance failed; inspect the owned receipt.'); process.exitCode = 1; }); }
 module.exports = { driver };
