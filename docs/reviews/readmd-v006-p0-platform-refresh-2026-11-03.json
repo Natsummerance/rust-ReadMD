@@ -1,0 +1,377 @@
+{
+  "date": "2026-11-03",
+  "version": "0.0.6",
+  "status": "published-and-verified",
+  "release": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+  "source": {
+    "mac": "fb6eaa74247ba3435a3b7dd11a4b643056a4a178",
+    "otherPlatforms": "adf7ac455a24d5542b13c3bdc74cc24ce8fee66a",
+    "runtimeGitTreeUnchanged": true,
+    "publicationHelper": "d325866dfb8111ea98ba19fca631ecfb828f6dc7",
+    "originalTag": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+    "tagMoved": false
+  },
+  "build": {
+    "runId": 41633639030,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41633639030",
+    "conclusion": "success",
+    "attempt": 2,
+    "firstWindowsFailurePreserved": true
+  },
+  "productionLifecycle": [
+    {
+      "platform": "windows-x64",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 44450.979,
+      "nativeHostCertified": false
+    },
+    {
+      "platform": "linux-x86_64",
+      "passed": 30,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 44839.784,
+      "nativeHostCertified": false
+    }
+  ],
+  "rustLibrary": [
+    {
+      "platform": "Windows x64",
+      "isolatedDeadlinePassed": 34,
+      "remainingPassed": 4282,
+      "failed": 0,
+      "ignored": 7,
+      "totalPassed": 4316
+    },
+    {
+      "platform": "Linux x86_64",
+      "isolatedDeadlinePassed": 34,
+      "remainingPassed": 4197,
+      "failed": 0,
+      "ignored": 7,
+      "totalPassed": 4231
+    },
+    {
+      "platform": "Mac CI",
+      "isolatedDeadlinePassed": 34,
+      "remainingPassed": 4213,
+      "failed": 0,
+      "ignored": 8,
+      "excludedNativeVisionProbe": 1,
+      "totalPassed": 4247
+    }
+  ],
+  "additionalQuality": {
+    "uiPlaywrightPassed": 152,
+    "integrationsPassed": true,
+    "frontendPassed": true,
+    "headlessAllThreePlatformsBuilt": true,
+    "localNode": {
+      "total": 1813,
+      "passed": 1810,
+      "failed": 0,
+      "windowsOnlySkipped": 3,
+      "logSha256": "b99bc57c1288425a2c21ff79c07a4926e982b0587393172d636911761f27746a"
+    }
+  },
+  "macNative": {
+    "details": "readmd-v006-p0-macos-closeout-2026-11-03.json",
+    "checks": 274,
+    "productionColdAndReopenPhases": 8,
+    "installedMatchesPublic": true,
+    "physicalIntelCertified": false
+  },
+  "artifactInspection": {
+    "sourceCommit": "adf7ac455a24d5542b13c3bdc74cc24ce8fee66a",
+    "ciRunId": 41633639030,
+    "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+    "packages": [
+      {
+        "name": "ReadMD-linux-x86_64.deb",
+        "size": 56978168,
+        "sha256": "bcf415026ee5a3e939e335143f2c51c7c82d3796e8e87cfd0b37bb7646d00a81",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "sourceBootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "assetSha256": {
+          "assets/index.html": "5fa1642cb9a5497e3a0e49830671869d6910c08c1009ceb42423b0760e72d4fa",
+          "assets/readmd.boot.js": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+          "assets/js/core/lifecycle.js": "062309ab6f460fe7aba40f5d7af5665785b74c8e8737954a957ade3543586372"
+        },
+        "sourceByteVariants": {
+          "assets/index.html": "exact Git bytes",
+          "assets/readmd.boot.js": "exact Git bytes",
+          "assets/js/core/lifecycle.js": "exact Git bytes"
+        },
+        "binarySha256": "3dc0f6820eb05b5ce73593b5690a2b3ed6a637206dccd0e0d50b1e5f782a1aba"
+      },
+      {
+        "name": "ReadMD-linux-x86_64.tar.gz",
+        "size": 68159085,
+        "sha256": "7f87a6c46787fa3a3710489bb559375b56067572af633fe26412a0cc9210b1cf",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "sourceBootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "bootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "assetSha256": {
+          "assets/index.html": "5fa1642cb9a5497e3a0e49830671869d6910c08c1009ceb42423b0760e72d4fa",
+          "assets/readmd.boot.js": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+          "assets/js/core/lifecycle.js": "062309ab6f460fe7aba40f5d7af5665785b74c8e8737954a957ade3543586372"
+        },
+        "sourceByteVariants": {
+          "assets/index.html": "exact Git bytes",
+          "assets/readmd.boot.js": "exact Git bytes",
+          "assets/js/core/lifecycle.js": "exact Git bytes"
+        },
+        "binarySha256": "3dc0f6820eb05b5ce73593b5690a2b3ed6a637206dccd0e0d50b1e5f782a1aba"
+      },
+      {
+        "name": "ReadMD-windows-x64.zip",
+        "size": 68588556,
+        "sha256": "0bf93a24dc57d3dd02c7cea6a8be943387968c744c0605113a7dc60d1a3c669f",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "sourceBootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "bootSha256": "40bbdec8b5149b3384398bfcba877957a6d0fc672ec932da2d5bbc656de0ffcf",
+        "assetSha256": {
+          "assets/index.html": "8977123a29dae54285f5457022af25b96a4a1f113a9b358e8b7851ec85b30129",
+          "assets/readmd.boot.js": "40bbdec8b5149b3384398bfcba877957a6d0fc672ec932da2d5bbc656de0ffcf",
+          "assets/js/core/lifecycle.js": "67b877f5140f81681bac4b8416653075ef8b7aec99fa03c38ff79d4f0b043275"
+        },
+        "sourceByteVariants": {
+          "assets/index.html": "exact Windows CRLF checkout",
+          "assets/readmd.boot.js": "exact Windows CRLF checkout",
+          "assets/js/core/lifecycle.js": "exact Windows CRLF checkout"
+        },
+        "binarySha256": "c7e6fbeeb2e8d1b808093d112cf786877a33c2d1563710fb65e7e01e0ae02c8c"
+      },
+      {
+        "name": "ReadMDSetup-windows-x64.exe",
+        "size": 65177475,
+        "sha256": "90840b890a52c9340cc561913036f27a3feccd4aacb4519330ad3f47517eed0b",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "sourceBootSha256": "0870e8a96c02a4fa7170865d434b8887586f1a9ac4eb6a880c66c76d1ea85b3d",
+        "bootSha256": "40bbdec8b5149b3384398bfcba877957a6d0fc672ec932da2d5bbc656de0ffcf",
+        "assetSha256": {
+          "assets/index.html": "8977123a29dae54285f5457022af25b96a4a1f113a9b358e8b7851ec85b30129",
+          "assets/readmd.boot.js": "40bbdec8b5149b3384398bfcba877957a6d0fc672ec932da2d5bbc656de0ffcf",
+          "assets/js/core/lifecycle.js": "67b877f5140f81681bac4b8416653075ef8b7aec99fa03c38ff79d4f0b043275"
+        },
+        "sourceByteVariants": {
+          "assets/index.html": "exact Windows CRLF checkout",
+          "assets/readmd.boot.js": "exact Windows CRLF checkout",
+          "assets/js/core/lifecycle.js": "exact Windows CRLF checkout"
+        },
+        "binarySha256": "c7e6fbeeb2e8d1b808093d112cf786877a33c2d1563710fb65e7e01e0ae02c8c"
+      },
+      {
+        "name": "readmd-vscode-0.0.6.vsix",
+        "size": 14039557,
+        "sha256": "000871d99f9c34fb72310fc7f68385d0029c269d62a409703fb31667f10e131c",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "integrationFilesVerified": true
+      },
+      {
+        "name": "readmd-mcp-server-0.0.6.zip",
+        "size": 7055,
+        "sha256": "eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595",
+        "buildRunId": 41633639030,
+        "archiveInspected": true,
+        "integrationFilesVerified": true
+      }
+    ],
+    "checks": [
+      {
+        "name": "ReadMD-windows-x64.zip",
+        "sourceAssetsMatch": true,
+        "sourceByteVariants": {
+          "assets/index.html": "exact Windows CRLF checkout",
+          "assets/readmd.boot.js": "exact Windows CRLF checkout",
+          "assets/js/core/lifecycle.js": "exact Windows CRLF checkout"
+        },
+        "executableArchitecture": "PE x86_64",
+        "nativeHostCertified": false
+      },
+      {
+        "name": "ReadMDSetup-windows-x64.exe",
+        "sourceAssetsMatch": true,
+        "sourceByteVariants": {
+          "assets/index.html": "exact Windows CRLF checkout",
+          "assets/readmd.boot.js": "exact Windows CRLF checkout",
+          "assets/js/core/lifecycle.js": "exact Windows CRLF checkout"
+        },
+        "executableArchitecture": "PE x86_64",
+        "nativeHostCertified": false
+      },
+      {
+        "name": "ReadMD-linux-x86_64.tar.gz",
+        "sourceAssetsMatch": true,
+        "sourceByteVariants": {
+          "assets/index.html": "exact Git bytes",
+          "assets/readmd.boot.js": "exact Git bytes",
+          "assets/js/core/lifecycle.js": "exact Git bytes"
+        },
+        "executableArchitecture": "ELF x86_64",
+        "nativeHostCertified": false
+      },
+      {
+        "name": "ReadMD-linux-x86_64.deb",
+        "sourceAssetsMatch": true,
+        "sourceByteVariants": {
+          "assets/index.html": "exact Git bytes",
+          "assets/readmd.boot.js": "exact Git bytes",
+          "assets/js/core/lifecycle.js": "exact Git bytes"
+        },
+        "executableArchitecture": "ELF x86_64",
+        "nativeHostCertified": false
+      },
+      {
+        "name": "readmd-vscode-0.0.6.vsix",
+        "version": "0.0.6",
+        "compiledIntegrationPresent": true,
+        "containsDesktopKernel": false
+      },
+      {
+        "name": "readmd-mcp-server-0.0.6.zip",
+        "sourceFilesMatch": true,
+        "kit": "documentation and configuration; kernel supplied by desktop/server executable"
+      }
+    ],
+    "installerMatchesPortable": true,
+    "debianMatchesTarball": true,
+    "foreignExecutablesLaunched": false
+  },
+  "publication": {
+    "status": "complete",
+    "sourceCommit": "adf7ac455a24d5542b13c3bdc74cc24ce8fee66a",
+    "ciRunId": 41633639030,
+    "tagPreserved": true,
+    "macPackagesPreserved": true,
+    "packagesReplaced": 6,
+    "publicDownloadsVerified": 7,
+    "retainedBackups": 0,
+    "release": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+    "publicationRunId": 41639269079,
+    "helperCommit": "d325866dfb8111ea98ba19fca631ecfb828f6dc7",
+    "allCanonicalAssetsVerified": 10,
+    "publicManifestVerified": true,
+    "originalTagCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+    "localAndRemoteSixPackageDigestsMatch": true,
+    "receiptArtifact": {
+      "id": 13232720355,
+      "sha256": "sha256:b5a8e2c4e4905c922dd4990803761c0d1830fc9872b9902baf4c71bb85719af8"
+    },
+    "publicDownloads": [
+      {
+        "name": "ReadMD-linux-x86_64.deb",
+        "size": 56978168,
+        "sha256": "bcf415026ee5a3e939e335143f2c51c7c82d3796e8e87cfd0b37bb7646d00a81",
+        "passed": true
+      },
+      {
+        "name": "ReadMD-linux-x86_64.tar.gz",
+        "size": 68159085,
+        "sha256": "7f87a6c46787fa3a3710489bb559375b56067572af633fe26412a0cc9210b1cf",
+        "passed": true
+      },
+      {
+        "name": "ReadMD-windows-x64.zip",
+        "size": 68588556,
+        "sha256": "0bf93a24dc57d3dd02c7cea6a8be943387968c744c0605113a7dc60d1a3c669f",
+        "passed": true
+      },
+      {
+        "name": "ReadMDSetup-windows-x64.exe",
+        "size": 65177475,
+        "sha256": "90840b890a52c9340cc561913036f27a3feccd4aacb4519330ad3f47517eed0b",
+        "passed": true
+      },
+      {
+        "name": "readmd-vscode-0.0.6.vsix",
+        "size": 14039557,
+        "sha256": "000871d99f9c34fb72310fc7f68385d0029c269d62a409703fb31667f10e131c",
+        "passed": true
+      },
+      {
+        "name": "readmd-mcp-server-0.0.6.zip",
+        "size": 7055,
+        "sha256": "eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595",
+        "passed": true
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "size": 903,
+        "sha256": "5e7c5b007ffa5231a5dff51878fa0901c5c59dc21edbae0f37fae714236d1023",
+        "passed": true
+      }
+    ]
+  },
+  "latestLocalDelivery": {
+    "packages": 10,
+    "allChecksumsPassed": true,
+    "installedMacExecutableUnchangedSinceAcceptance": true,
+    "mediaAndAndroidUntouched": true
+  },
+  "firstFailures": [
+    {
+      "kind": "Mac CI fixture contention",
+      "result": "Native global install gate correctly returned capability_install_busy; serial scheduling retains cross-process contention tests"
+    },
+    {
+      "kind": "Windows CI oversized output timeout",
+      "result": "First run failed; full unchanged candidate rerun passed; product timeout and data expectations unchanged. Subsequent CI is configured to cover the entire code runner including parity tests in its isolated deadline lane"
+    },
+    {
+      "kind": "Package byte audit expected LF",
+      "result": "Windows Git checkout was exact CRLF. Source and physical asset digests are recorded separately; no arbitrary normalization or protected hash changes"
+    },
+    {
+      "kind": "CI YAML namespace filter syntax",
+      "result": "Command ending in double colon required a literal YAML block. Fixed, parsed locally and retained failed workflow; no runtime/package change"
+    }
+  ],
+  "cleanup": {
+    "ownedDuplicateLogicalBytesRemoved": 1135622708,
+    "symlinkTargetsFollowed": false,
+    "canonicalPackagesEvidenceRecoveryInputsAndPrivateRollbackRetained": true
+  },
+  "modelsLoadedLocally": false,
+  "virtualMachinesInstalled": false,
+  "virtualMachineResearch": "../design/cross-platform-vm-options-2026-11-03.md",
+  "v007Gate": "All P1 and P2 complete and accepted before V0.0.7",
+  "wholeCapabilityLedgerChanged": false,
+  "remaining": [
+    "Windows/Linux native window/chooser/IME evidence is not claimed; this P0 release accepts actual CI and source reasoning",
+    "Mac Intel is Rosetta, not physical Intel; free ad-hoc signature is not Developer ID/notarization",
+    "Manual image undo/redo resource histories still safely refuse unsupported cross-directory Save As; P1 will complete exact mapping",
+    "Strict non-Windows group rename remains unavailable; no weakened ordinary rename fallback",
+    "Linux install capacity preflight and cross-platform budget coordination require follow-up",
+    "Language semantics, long-duration performance and full 75-item acceptance remain separate"
+  ],
+  "websiteDownloadEntrances": {
+    "passed": true,
+    "directLiveFetch": true,
+    "entries": [
+      {
+        "host": "readmd.asia",
+        "status": 200,
+        "canonicalV006Links": 11,
+        "retiredDownloadLink": false,
+        "passed": true
+      },
+      {
+        "host": "rust.readmd.asia",
+        "status": 200,
+        "canonicalV006Links": 11,
+        "retiredDownloadLink": false,
+        "passed": true
+      }
+    ]
+  },
+  "verifiedAt": "2026-11-03T13:10:29.308Z"
+}
