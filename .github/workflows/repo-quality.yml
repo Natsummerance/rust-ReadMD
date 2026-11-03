@@ -8,7 +8,9 @@ on:
   workflow_call:
 
 concurrency:
-  group: repo-quality-${{ github.ref }}
+  # A documentation push must not cancel an already frozen release candidate's
+  # reusable quality run. Superseded pushes/candidates still cancel in their own lane.
+  group: repo-quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
