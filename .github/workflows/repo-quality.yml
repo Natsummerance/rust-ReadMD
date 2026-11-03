@@ -32,7 +32,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # The locked browser supports Ubuntu 24.04. ubuntu-latest has moved
+        # to 26.04; keep the browser host explicit instead of bypassing its
+        # platform checks or downloading an unreviewed replacement driver.
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,7 +91,7 @@ jobs:
       - name: Locked browser driver for real close and save boundaries
         run: npm ci --prefix ui-tests
       - name: Prepare owned headless browser
-        run: npx --prefix ui-tests playwright install --with-deps chromium
+        run: node ui-tests/node_modules/@playwright/test/cli.js install --with-deps chromium
       - name: Real code results respect close, edit exit, undo and external saves
         env:
           READMD_CODE_BROWSER: chromium
