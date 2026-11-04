@@ -13,6 +13,13 @@ async function main(){
   const args=options(process.argv.slice(2));assert(args.bin&&!args.base);const proof=nodePack();
   const profile=path.join(args.evidence,'profile'),docs=path.join(args.evidence,'documents'),tmp=path.join(args.evidence,'tmp'),poison=path.join(args.evidence,'poison-path');for(const dir of [profile,docs,tmp,poison])fs.mkdirSync(dir);
   Object.assign(process.env,{TMPDIR:tmp,TMP:tmp,TEMP:tmp});
+  function assertNoProbeCopies(directory=tmp){
+    for(const item of fs.readdirSync(directory,{withFileTypes:true})){
+      const file=path.join(directory,item.name);assert(!item.isSymbolicLink(),'unexpected link in owned temporary fixture');
+      if(item.isDirectory())assertNoProbeCopies(file);
+      else assert(!['node','node.exe'].includes(item.name),'a completed probe retained its executable copy');
+    }
+  }
   fs.writeFileSync(path.join(poison,process.platform==='win32'?'node.cmd':'node'),process.platform==='win32'?'@echo UNMANAGED_NODE_SHOULD_NOT_RUN\r\n':"#!/bin/sh\nprintf UNMANAGED_NODE_SHOULD_NOT_RUN\n",{mode:0o700});
   const file=path.join(docs,'受管代码 中文😀.md');fs.writeFileSync(file,encoded(SOURCE));
   const report={passed:false,platform:process.platform,modelsRequested:false,strictAuth:true,productionCsp:true,nativeUiCertified:false,binarySha256:sha(fs.readFileSync(args.bin)),bootSha256:sha(fs.readFileSync(path.join(ROOT,'assets/readmd.boot.js'))),packSha256:proof.sha256,manifestSha256:proof.manifestSha256,checks:[],processes:[]};
@@ -32,10 +39,11 @@ async function main(){
     const damaged=Buffer.from(fs.readFileSync(proof.file));damaged[damaged.length-5]^=0x40;
     const badResponse=await host.api('/api/capabilities/upload?id=node',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:damaged}),bad=await badResponse.json();assert.notEqual(badResponse.status,200);assert.equal(bad.ok,false);assert.equal((await run('console.log(42)')).body.error_code,'capability_pack_unavailable');assert.deepEqual(fs.readFileSync(file),encoded(SOURCE));
     report.checks.push('actual damaged streamed pack refuses installation and preserves document bytes');
-    report.installed=await installNodePack(host,proof);assert.equal((await pack({action:'status',id:'node'})).body.ready,true);
+    report.installed=await installNodePack(host,proof);assert.equal((await pack({action:'status',id:'node'})).body.ready,true);assertNoProbeCopies();
     const good=await run('console.log(6*7)');assert.equal(good.body.ok,true);assert.equal(good.body.stdout,'42');assert.deepEqual(good.body.runtime,{id:'node',version:'24.22.2',manifest_sha256:proof.manifestSha256});
     const unicode=await run("console.log('中文😀')");assert.equal(unicode.body.stdout,'中文😀');
     const restricted=await run("const f=require('no'+'de:fs');try{f.writeFileSync('forbidden.tmp','x');console.log('WRITE_ALLOWED')}catch(e){console.log(e.code==='ERR_ACCESS_DENIED'?'WRITE_BLOCKED':'OTHER_ERROR')}");assert.equal(restricted.body.ok,true);assert.equal(restricted.body.stdout,'WRITE_BLOCKED');
+    assertNoProbeCopies();report.completedProbeCopiesRetained=0;
     report.checks.push('authenticated chunk import runs the genuine version/Unicode probe; pinned Node works with poisoned PATH and denies ungranted file writes');
     const task=crypto.randomUUID(),running=run("setTimeout(()=>console.log('LATE'),60000)",{task_id:task});let busy;
     for(const end=Date.now()+3000;Date.now()<end;){busy=(await pack({action:'status',id:'node'})).body;if(busy.busy)break;await pause(10);}assert.equal(busy.busy,true);
@@ -62,7 +70,7 @@ async function main(){
     const startUpload=await pack({action:'upload_start',id:'node',format:'stream-v2',total:proof.size,request_key:crypto.randomUUID()});assert.equal(startUpload.status,200);
     const cancelledUpload=await pack({action:'cancel_download',job:startUpload.body.job});assert.equal(cancelledUpload.body.phase,'cancelled');assert.equal((await run('console.log(42)')).body.error_code,'capability_pack_unavailable');
     report.checks.push('third real process uninstalls only pinned objects, preserves the unknown note and saved document; cancelled upload cannot silently reinstall');
-    await host.stop();host=null;report.passed=true;
+    await host.stop();host=null;assertNoProbeCopies();report.passed=true;
   }catch(error){report.failure={name:error.name,message:String(error.message).replaceAll(args.evidence,'<evidence>').replaceAll(ROOT,'<repo>').slice(0,1000)};process.exitCode=1;}
   finally{if(host)await host.stop();if(mcp)await mcp.stop();fs.writeFileSync(path.join(args.evidence,'report.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));}
 }

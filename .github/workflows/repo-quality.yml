@@ -56,16 +56,7 @@ jobs:
       - name: Canonical owned test temporary directory
         run: node tools/ci-test-temp.mjs
       - name: Prepare reviewed native Node input and immutable offline pack
-        run: |
-          node - <<'JS'
-          const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process');
-          const platform={darwin:'macos',win32:'windows',linux:'linux'}[process.platform]+'-'+process.arch;
-          const inputs=path.resolve('.cache/p1-node-inputs'),output=path.resolve('.cache/p1-node-pack');fs.mkdirSync(inputs,{recursive:true});
-          const run=args=>execFileSync(process.execPath,args,{stdio:'inherit'});
-          run(['tools/prepare-node-runtime.mjs','download','--inputs',inputs,'--platform',platform]);
-          run(['tools/prepare-node-runtime.mjs','build','--inputs',inputs,'--output',output,'--platform',platform]);
-          run(['tools/verify-node-pack.mjs',output,'--github-env']);
-          JS
+        run: node tools/ci-prepare-node-runtime.mjs
       - name: Prepare pinned Linux SVG source and dependencies
         if: runner.os == 'Linux'
         run: node tools/prepare-linux-svg-worker.mjs prepare

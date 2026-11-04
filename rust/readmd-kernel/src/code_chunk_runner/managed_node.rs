@@ -93,11 +93,13 @@ pub(crate) fn probe_directory(directory: &Path, data: &Path) -> Result<(), Strin
     if !platform_supported() { return Err("capability_pack_unavailable".into()); }
     if crate::speech::cancelled() { return Err("cancelled".into()); }
     let task = crate::task_workspace::Workspace::create(data, "node-probe").map_err(|_| "capability_install_failed")?;
-    task.scope(|| {
+    let mut can_retire = true;
+    let result = task.scope(|| {
         let program = task.path().join(binary_name());
         crate::task_workspace::copy(&directory.join("bin").join(binary_name()), &program).map_err(|_| "capability_pack_invalid")?;
         let source = "console.log(JSON.stringify({version:process.version,sum:[6,7].reduce((a,b)=>a*b,1),unicode:'中文😀',write:process.permission.has('fs.write')}))";
         let result = run_process(&[program.into_os_string(), os("--permission"), os("--eval"), os(source)], Some(task.path()), 8, Some("node"));
+        can_retire = get_str(&result, "error_code") != "execution_stop_pending";
         if crate::speech::cancelled() { return Err("cancelled".into()); }
         let expected = serde_json::json!({"version":format!("v{VERSION}"),"sum":42,"unicode":"中文😀","write":false});
         if !is_truthy(&result) || result.get("exit_code").and_then(Value::as_i64) != Some(0)
@@ -106,7 +108,12 @@ pub(crate) fn probe_directory(directory: &Path, data: &Path) -> Result<(), Strin
             return Err("capability_pack_invalid".into());
         }
         Ok(())
-    })
+    });
+    // The private executable copy has no recovery payload once the owned
+    // process/pipes have stopped. Incomplete termination still retains its
+    // journal; never make Drop delete a potentially running worker's files.
+    if can_retire { task.finish().map_err(|_| "capability_install_failed")?; }
+    result
 }
 
 #[cfg(test)]

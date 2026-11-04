@@ -86,6 +86,7 @@ fn running_sql_observes_cancel_instead_of_returning_late_sum() {
 fn running_process_observes_cancel_and_reaps_owned_child() {
     let cancel = Arc::new(AtomicBool::new(false));
     let sent = Arc::new(Mutex::new(None));
+    let observed = Arc::new(Mutex::new(None));
     std::thread::scope(|scope| {
         let flag = cancel.clone();
         let at = sent.clone();
@@ -96,8 +97,15 @@ fn running_process_observes_cancel_and_reaps_owned_child() {
         });
         let exe = std::env::current_exe().unwrap().into_os_string();
         let started = Instant::now();
+        let observation = observed.clone();
         let result =
-            crate::speech::with_cancel(Arc::new(move || cancel.load(Ordering::Acquire)), || {
+            crate::speech::with_cancel(Arc::new(move || {
+                let cancelled = cancel.load(Ordering::Acquire);
+                if cancelled {
+                    observation.lock().unwrap().get_or_insert_with(Instant::now);
+                }
+                cancelled
+            }), || {
                 run_process(
                     &[
                         exe,
@@ -111,12 +119,20 @@ fn running_process_observes_cancel_and_reaps_owned_child() {
                     None,
                 )
             });
-        println!("Process cancel total_ms={}", started.elapsed().as_millis());
+        let sent = sent.lock().unwrap().unwrap();
+        let observed = observed.lock().unwrap().expect("driver must observe cancellation");
+        println!("Process cancel observed_ms={}, stop_ms={}, total_ms={}",
+            observed.duration_since(sent).as_millis(), sent.elapsed().as_millis(),
+            started.elapsed().as_millis());
         assert_eq!(get_str(&result, "error_code"), "execution_cancelled");
+        // Response observation and complete owned worker/pipe retirement have
+        // separate contracts. A synchronous caller returns after both; do not
+        // count that cleanup as the driver's first cancellation observation.
         assert!(
-            sent.lock().unwrap().unwrap().elapsed() < Duration::from_millis(200),
+            observed.duration_since(sent) < Duration::from_millis(200),
             "cancel observation exceeded 200ms"
         );
+        assert!(sent.elapsed() < Duration::from_secs(2), "owned worker stop exceeded two seconds");
         assert!(!get_str(&result, "stdout").contains("LATE"));
     });
 }
