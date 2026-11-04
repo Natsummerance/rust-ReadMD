@@ -56,6 +56,19 @@ function captureReaderState(tab) {
     : (tab.scrollPos || 0);
 }
 
+function revealTabInTrack(container, tab) {
+  if (!container || !tab) return;
+  const vertical = container.getAttribute('aria-orientation') === 'vertical';
+  const size = vertical ? container.clientHeight : container.clientWidth;
+  if (!size) return;
+  const containerRect = container.getBoundingClientRect(), tabRect = tab.getBoundingClientRect();
+  const scroll = vertical ? 'scrollTop' : 'scrollLeft';
+  const start = (vertical ? tabRect.top - containerRect.top : tabRect.left - containerRect.left) + container[scroll];
+  const end = start + (vertical ? tab.offsetHeight : tab.offsetWidth);
+  if (start < container[scroll] + 8) container[scroll] = Math.max(0, start - 8);
+  else if (end > container[scroll] + size - 8) container[scroll] = end - size + 8;
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
@@ -92,14 +105,14 @@ function renderTabsBar() {
     }
   }
 
-  const createTabEl = (tab) => {
+  const createTabEl = (tab, container) => {
     const el = document.createElement('div');
     el.className = 'tab-item' + (tab.id === state.activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', tab.id === state.activeTabId ? 'true' : 'false');
     el.setAttribute('aria-controls', 'content');
-    el.setAttribute('aria-keyshortcuts', 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
+    el.setAttribute('aria-keyshortcuts', (container?.getAttribute('aria-orientation') === 'vertical' ? 'ArrowUp ArrowDown ' : '') + 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
@@ -142,6 +155,12 @@ function renderTabsBar() {
 
     el.addEventListener('click', () => switchTab(tab.id));
     el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (el.parentElement?.getAttribute('aria-orientation') !== 'vertical' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
+        moveTabFocus(tab.id, e.key === 'ArrowUp' ? 'ArrowLeft' : 'ArrowRight');
+        return;
+      }
       if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const index = state.tabs.findIndex(item => item.id === tab.id);
@@ -199,8 +218,9 @@ function renderTabsBar() {
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       const rect = el.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      const isRight = e.clientX > mid;
+      const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const isRight = (vertical ? e.clientY : e.clientX) > mid;
       el.classList.toggle('tab-drag-over-left', !isRight);
       el.classList.toggle('tab-drag-over-right', isRight);
     });
@@ -214,7 +234,8 @@ function renderTabsBar() {
       const srcId = e.dataTransfer.getData('application/x-readmd-tab') || e.dataTransfer.getData('text/plain');
       if (srcId && srcId !== tab.id) {
         const rect = el.getBoundingClientRect();
-        const isRight = e.clientX > (rect.left + rect.width / 2);
+        const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+        const isRight = vertical ? e.clientY > rect.top + rect.height / 2 : e.clientX > rect.left + rect.width / 2;
         reorderTabs(srcId, tab.id, isRight);
       }
     });
@@ -230,7 +251,7 @@ function renderTabsBar() {
 
   if (bar) {
     bar.innerHTML = '';
-    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab)));
+    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab, bar)));
   }
 
   if (dropdown) {
@@ -268,16 +289,7 @@ function renderTabsBar() {
 
   const revealActiveTab = (container) => {
     const active = container?.querySelector('.tab-item.active');
-    if (!active) return;
-    const containerRect = container.getBoundingClientRect();
-    const activeRect = active.getBoundingClientRect();
-    const left = activeRect.left - containerRect.left + container.scrollLeft;
-    const right = left + active.offsetWidth;
-    if (left < container.scrollLeft + 8) {
-      container.scrollLeft = Math.max(0, left - 8);
-    } else if (right > container.scrollLeft + container.clientWidth - 8) {
-      container.scrollLeft = right - container.clientWidth + 8;
-    }
+    revealTabInTrack(container, active);
   };
   revealActiveTab(bar);
   revealActiveTab(secBar);
@@ -285,7 +297,7 @@ function renderTabsBar() {
   if (secBar) {
     if (window.innerWidth < 650 && state.tabs.length > 0) {
       secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab)));
+      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab, secBar)));
       secBar.classList.remove('hidden');
       if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
     } else {
@@ -299,7 +311,10 @@ function focusVisibleTab(tabId) {
   requestAnimationFrame(() => {
     const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
     const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next && document.activeElement !== next) next.focus({ preventScroll: true });
+    if (next) {
+      revealTabInTrack(next.parentElement, next);
+      if (document.activeElement !== next) next.focus({ preventScroll: true });
+    }
   });
 }
 
@@ -320,6 +335,7 @@ function moveTabFocus(activeTabId, key) {
 function startTabInlineRename(tab, titleSpan, tabEl) {
   if (tab?._renamePending) { void recoverPendingRename(tab); return; }
   if (renameBlocked(tab)) return;
+  tabEl.closest?.('#side')?.classList.remove('hidden');
   if (tabEl.querySelector('.tab-title-input') || tabEl.querySelector('.tab-rename-wrap')) return;
   const currentTitle = tab.title || tab.name || '';
   const dot = currentTitle.lastIndexOf('.');

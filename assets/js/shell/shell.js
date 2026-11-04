@@ -140,11 +140,7 @@ function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;
   actions.dataset.initialized = 'true';
-  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-zen']) {
-    if ($(id)) actions.appendChild($(id));
-  }
-  const ai = $('btn-ai');
-  if (ai && $('btn-more')) ai.before($('btn-more'));
+  initSingleChromeNavigation();
   const title = $('window-title');
   const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
@@ -152,6 +148,7 @@ function initWindowChrome() {
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
+    syncChromeDocumentDisclosure();
     command('title', { title: document.title });
   };
   new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true, characterData: true });
@@ -205,6 +202,100 @@ function initWindowChrome() {
   };
   syncWindowPreferences();
   window.addEventListener('readmd:language-changed', syncWindowPreferences);
+}
+
+// This layer projects the existing document/tab services into the shell. It
+// never clones a tab, installs a second close handler or changes editor state.
+function syncChromeDocumentDisclosure() {
+  const button = $('titlebar-documents'), side = $('side'), section = $('side-documents');
+  if (!button || !side) return;
+  const tabs = state.tabs || [];
+  const legacy = $('file-title');
+  const available = tabs.length > 0 || !!(legacy && !legacy.classList.contains('hidden') && legacy.textContent);
+  button.disabled = !available;
+  button.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
+  $('btn-toc')?.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
+  const label = window.i18n?.t('tabs.openDocs') || 'tabs.openDocs';
+  const name = $('window-title')?.textContent || document.title;
+  button.setAttribute('aria-label', `${label}: ${name}${tabs.length > 1 ? ` (${tabs.length})` : ''}`);
+  button.title = `${name}\n${label}`;
+  if (section) section.hidden = !available;
+  const icon = $('titlebar-document-icon'); if (icon) icon.hidden = !available;
+  const count = $('titlebar-tab-count');
+  if (count) { count.textContent = String(tabs.length); count.classList.toggle('hidden', tabs.length < 2); }
+  const active = tabs.find(tab => tab.id === state.activeTabId);
+  $('titlebar-dirty')?.classList.toggle('hidden', !active?.isDirty && !active?.externalChanged);
+  if (active?.isDirty || active?.externalChanged) button.setAttribute('aria-description', window.i18n?.t(active.externalChanged ? 'toast.saveConflict' : 'tabs.dirty') || '');
+  else button.removeAttribute('aria-description');
+}
+
+function initSingleChromeNavigation() {
+  const side = $('side'), disclosure = $('titlebar-documents'), toolbar = $('toolbar');
+  if (!side || !disclosure || disclosure.dataset.bound) return;
+  disclosure.dataset.bound = 'true';
+  let opener = $('btn-toc'), lastFocus = document.activeElement;
+  document.addEventListener('focusin', event => { lastFocus = event.target; });
+  disclosure.addEventListener('click', () => {
+    opener = disclosure;
+    side.classList.remove('hidden');
+    syncChromeDocumentDisclosure();
+    if (state.tabs?.length) focusVisibleTab(state.activeTabId || state.tabs[0].id);
+    else $('file-title')?.focus();
+  });
+  $('btn-toc')?.setAttribute('aria-controls', 'side');
+  $('btn-toc')?.addEventListener('pointerdown', () => { opener = $('btn-toc'); });
+  new MutationObserver(() => {
+    syncChromeDocumentDisclosure();
+    if (side.classList.contains('hidden') && (side.contains(document.activeElement) || document.activeElement === document.body && side.contains(lastFocus))) {
+      const target = opener && !opener.disabled ? opener : $('btn-toc');
+      target?.focus({ preventScroll: true });
+    }
+  }).observe(side, { attributes: true, attributeFilter: ['class'] });
+  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
+    const bar = $(id);
+    if (bar) new MutationObserver(syncChromeDocumentDisclosure).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+  }
+  if ($('file-title')) new MutationObserver(syncChromeDocumentDisclosure).observe($('file-title'), { childList: true, attributes: true, attributeFilter: ['class'] });
+  side.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229 || event.key !== 'Escape' || window.ReadMDModal?.top()) return;
+    if (event.defaultPrevented) {
+      event.stopPropagation();
+      if (event.target.matches('.tab-title-input')) event.composedPath().find(node => node instanceof HTMLElement && node.matches('.tab-item'))?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    event.preventDefault(); event.stopPropagation();
+    side.classList.add('hidden');
+  });
+  // These are the same menu buttons and business listeners. Close their menu
+  // and expose a visible opener before the existing action opens its dialog.
+  const relayMenuAction = event => {
+    const action = event.target.closest('[data-shell-menu-action]');
+    if (!action || event.type === 'contextmenu' && action.id !== 'btn-zen') return;
+    closeMoreMenu();
+    $('btn-more')?.focus({ preventScroll: true });
+  };
+  for (const type of ['click','contextmenu']) $('more-menu')?.addEventListener(type, relayMenuAction, true);
+  const shortcuts = () => {
+    const mac = !!window.ReadMDKeys?.isMac;
+    for (const el of [...toolbar.querySelectorAll('.tb-btn[title],.tb-btn[aria-label]'), ...side.querySelectorAll('#side-file-actions .tb-btn[title], #side-close-btn[title]')]) {
+      for (const attribute of ['title','aria-label']) {
+        const old = el.getAttribute(attribute);
+        const next = mac && old ? old.replace(/\bCtrl\b/g, 'Cmd') : old;
+        if (old !== next) el.setAttribute(attribute, next);
+      }
+    }
+    const command = $('btn-palette'), hint = $('shell-command-hint');
+    if (command && hint) {
+      const label = command.getAttribute('aria-label') || window.i18n?.t('editor.command') || '';
+      const title = `${label} (${mac ? 'Cmd' : 'Ctrl'}+K / ${mac ? 'Cmd' : 'Ctrl'}+Shift+P)`;
+      if (command.hasAttribute('title') && command.title !== title) command.title = title;
+      if (hint.textContent !== title) hint.textContent = title;
+    }
+  };
+  if (toolbar) new MutationObserver(shortcuts).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['title', 'aria-label'] });
+  window.addEventListener('readmd:language-changed', () => { shortcuts(); syncChromeDocumentDisclosure(); });
+  shortcuts(); syncChromeDocumentDisclosure();
 }
 
 function initMacWindowChrome(command) {

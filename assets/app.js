@@ -915,7 +915,8 @@ function bindEvents() {
     if (!document.body.classList.contains('zen-mode')) return;
     const toolbar = $('toolbar');
     if (!toolbar) return;
-    if (e.clientY <= 10) {
+    if (e.clientY > 12) document.body.classList.remove('zen-toolbar-suppressed');
+    if (e.clientY <= 10 && !document.body.classList.contains('zen-toolbar-suppressed')) {
       toolbar.classList.add('zen-toolbar-revealed');
     } else if (e.clientY > 54) {
       toolbar.classList.remove('zen-toolbar-revealed');

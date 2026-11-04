@@ -57,7 +57,7 @@
   window.ReadMDShortcuts = stub('Shortcuts', ['open', 'close', 'toggle', 'isOpen']);
   window.openMdCommandPalette = () => window.ReadMDPalette.open();
 
-  const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   const KEY_LABEL = {
     Mod: IS_MAC ? '⌘' : 'Ctrl', Ctrl: IS_MAC ? '⌃' : 'Ctrl', Shift: IS_MAC ? '⇧' : 'Shift',
     Alt: IS_MAC ? '⌥' : 'Alt', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
