@@ -236,3 +236,18 @@ html[dir="rtl"] body.shell-single-chrome #toolbar .tb-right { flex-direction:row
   body.shell-single-chrome #app-titlebar { gap:4px; padding-right:8px; padding-left:8px; }
   body.shell-single-chrome.native-macos #app-titlebar { padding-left:var(--native-controls-leading,88px); }
 }
+
+/* The original controls move into this menu only at the compact breakpoint. */
+body.shell-single-chrome #shell-compact-group[hidden],
+body.shell-single-chrome #shell-compact-group .shell-compact-action[hidden] { display:none !important; }
+body.shell-single-chrome #more-menu #shell-compact-group .tb-btn { width:100%; justify-content:flex-start; padding:0 10px; }
+body.shell-single-chrome #shell-compact-group .shell-command-hint { display:none; }
+html[dir="rtl"] body.shell-single-chrome #shell-compact-group { direction:rtl; }
+@media (max-width:600px) {
+  body.shell-single-chrome #toolbar { gap:0; justify-content:flex-start; }
+  body.shell-single-chrome #toolbar .tb-group { width:auto; }
+  body.shell-single-chrome #toolbar .tb-left { border:0; padding-inline-end:0; }
+  body.shell-single-chrome .titlebar-identity { min-width:90px; }
+  body.shell-single-chrome #window-drag-region { min-width:44px; }
+  body.shell-single-chrome #more-menu { position:fixed; top:56px; left:auto; right:8px; width:min(320px,calc(100vw - 16px)); min-width:0; max-width:none; max-height:calc(100dvh - 72px); }
+}

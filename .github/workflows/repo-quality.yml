@@ -443,6 +443,67 @@ jobs:
         env:
           READMD_CODE_BROWSER: chromium
         run: node tools/test/v007-openapi-baseline.cjs --bin rust/target/debug/readmd --evidence .cache/p1-openapi-baseline
+      - name: P1 single chrome, original document services and live locale preservation
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          mkdir -p .cache/p1-shell-browser
+          node ui-tests/shell-single-chrome-browser.cjs --case shell --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/shell" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node ui-tests/shell-single-chrome-browser.cjs --case rtl --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/rtl" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node -e "const a=require('node:assert/strict');for(const n of ['shell','rtl']){const r=require('./.cache/p1-shell-browser/'+n+'/report.json');a.equal(r.passed,true);a.equal(r.runtimeSourceUnchanged,true);a.equal(r.inferenceRequests.length,0);a.equal(r.pageErrors.length,0);a.equal(r.nativeUiCertified,false);a(r.checks.length>=5);a(r.checks.every(c=>c.passed));}"
+      - name: P1 compact shell retains every original action
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node ui-tests/shell-compact-browser.cjs --source-test
+          node ui-tests/shell-compact-browser.cjs --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-compact-browser" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-shell-compact-browser/report.json');for(const k of ['passed','realCspAndToken','actualHeadlessBrowser','sourceUnchanged','ownedScratchRemoved'])a.equal(r[k],true);a.equal(r.modelsRequested,false);a.equal(r.nativeCertified,false);a.equal(r.cases.length,12);a.equal(r.checks.length,20);a.equal(r.focusProjections.length,10);a(r.focusProjections.every(p=>p.modalOpen&&p.focusInModal&&p.headerOverflow<=1&&!p.menuOpen&&p.width===p.expectedWidth));a.deepEqual(r.forbiddenRequests,[]);a.deepEqual(r.pageErrors,[]);a.deepEqual(r.aiPreconditions,{emptyCurrent:true,noConnections:true,automaticCompletion:false});"
+      - name: P1 document repair, pending review, saved bytes and explicit restart
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/reader-fix-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-reader-fix-browser
+      - name: P1 repair dialog geometry and real menu focus return
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node ui-tests/fix-dialog-visual.cjs --bin rust/target/debug/readmd --evidence .cache/p1-fix-dialog-browser --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-fix-dialog-browser/report.json');a.equal(r.passed,true);a.equal(r.menuFocusReturnPassed,true);a.equal(r.visualScopePassed,true);a.equal(r.sourceUnchanged,true);a.equal(r.cases.length,5);a.equal(r.pageErrors.length,0);"
+      - name: Retain single chrome browser receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-shell-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-shell-browser/*/report.json
+            .cache/p1-shell-browser/*/*.png
+      - name: Retain compact chrome browser receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-shell-compact-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-shell-compact-browser/report.json
+            .cache/p1-shell-compact-browser/*.png
+      - name: Retain document repair browser receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-reader-fix-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-reader-fix-browser/report.json
+            .cache/p1-reader-fix-browser/*.png
+      - name: Retain repair dialog and real focus receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-fix-dialog-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-fix-dialog-browser/report.json
+            .cache/p1-fix-dialog-browser/*.png
       - name: Retain OpenAPI baseline receipt and first failure
         if: always()
         uses: actions/upload-artifact@v4

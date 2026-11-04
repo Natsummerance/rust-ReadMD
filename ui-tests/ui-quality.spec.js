@@ -26,7 +26,9 @@ const MODALS = [
 for (const [id, open] of MODALS) {
   test(`${id}: focus stays inside, Esc closes and focus returns`, async ({ page }) => {
     await openDoc(page);
-    await page.locator('#btn-search').focus();
+    const opener = page.locator('#btn-more');
+    await opener.focus();
+    await expect(opener).toBeFocused();
     await page.evaluate(open);
     const modal = page.locator('#' + id);
     await expect(modal).toBeVisible();
@@ -38,7 +40,7 @@ for (const [id, open] of MODALS) {
     await page.keyboard.press('Escape');
     await expect(modal).toBeHidden();
     expect(await page.evaluate(() => document.querySelectorAll('[data-rm-inert]').length)).toBe(0);
-    await expect(page.locator('#btn-search')).toBeFocused();
+    await expect(opener).toBeFocused();
   });
 }
 

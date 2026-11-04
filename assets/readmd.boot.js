@@ -31232,6 +31232,122 @@ function initSingleChromeNavigation() {
     $('btn-more')?.focus({ preventScroll: true });
   };
   for (const type of ['click','contextmenu']) $('more-menu')?.addEventListener(type, relayMenuAction, true);
+  // Compact chrome relocates the original controls, including their business
+  // listeners. Keep its header out of the desktop menu's keyboard item list.
+  const compactGroup = $('shell-compact-group'), compactActions = $('shell-compact-actions');
+  if (compactGroup && compactActions) {
+    const compact = window.matchMedia('(max-width: 600px)');
+    const groupAnchor = document.createComment('compact menu position');
+    compactGroup.before(groupAnchor);
+    const placements = [
+      ['btn-open', 'toolbar.open'], ['btn-palette', 'editor.command'],
+      ['btn-search', 'toolbar.search'], ['btn-ai', 'toolbar.ai'], ['btn-graph', 'graph.title'],
+    ].map(([id, key]) => {
+      const button = $(id);
+      if (!button) return null;
+      const anchor = document.createComment(id + ' desktop position');
+      button.before(anchor);
+      const wrapper = document.createElement('div'), label = document.createElement('span');
+      wrapper.className = 'shell-menu-action shell-compact-action';
+      wrapper.dataset.shellCompact = id;
+      label.className = 'shell-menu-label';
+      label.dataset.i18n = key;
+      label.setAttribute('aria-hidden', 'true');
+      wrapper.append(label);
+      compactActions.append(wrapper);
+      return { button, anchor, wrapper, label, key, role: button.getAttribute('role'),
+        menuItem: button.classList.contains('more-item'), menuAction: button.hasAttribute('data-shell-menu-action') };
+    }).filter(Boolean);
+    const modalOpeners = new WeakMap();
+    let pendingFocus = null;
+    window.addEventListener('readmd:modal-opened', () => {
+      const modal = window.ReadMDModal?.top();
+      if (!modal) return;
+      const origin = placements.find(({ button }) => button === document.activeElement || button.contains(document.activeElement));
+      if (origin) modalOpeners.set(modal, origin.button);
+      else modalOpeners.delete(modal);
+    });
+    const watchMovedOpener = modal => {
+      if (pendingFocus) {
+        pendingFocus.observer.disconnect();
+        if (pendingFocus.frame !== null) cancelAnimationFrame(pendingFocus.frame);
+      }
+      const pending = { observer: null, frame: null };
+      pending.observer = new MutationObserver(() => {
+        if (pending.frame !== null) return;
+        pending.frame = requestAnimationFrame(() => {
+          pending.frame = null;
+          if (pendingFocus !== pending || modal.isConnected && !modal.classList.contains('hidden') && getComputedStyle(modal).display !== 'none') return;
+          pending.observer.disconnect(); pendingFocus = null;
+          // The original manager/caller owns close and any explicit editor
+          // focus transfer. Repair only an unusable result after it finishes.
+          if (window.ReadMDModal?.top()) return;
+          const active = document.activeElement;
+          const usable = active && active !== document.body && active.isConnected && !active.disabled &&
+            !active.closest('[inert],.hidden,[hidden]') && active.getClientRects().length && getComputedStyle(active).visibility !== 'hidden';
+          if (!usable) $('btn-more')?.focus({ preventScroll: true });
+        });
+      });
+      pendingFocus = pending;
+      pending.observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+    };
+    const labels = () => {
+      for (const { button, label, key } of placements) {
+        const value = window.i18n?.t(key);
+        const text = value && value !== key ? value : button.getAttribute('aria-label') || button.title || '';
+        label.textContent = window.ReadMDKeys?.isMac ? text.replace(/\bCtrl\b/g, 'Cmd') : text;
+      }
+      const heading = compactGroup.querySelector('[data-i18n="shell.group.general"]');
+      const value = window.i18n?.t('shell.group.general');
+      if (heading && value && value !== 'shell.group.general') heading.textContent = value;
+    };
+    const visibility = () => {
+      for (const { button, wrapper, menuItem } of placements) {
+        const hidden = button.hidden || button.classList.contains('hidden') || button.getAttribute('aria-hidden') === 'true';
+        if (wrapper.hidden !== hidden) wrapper.hidden = hidden;
+        // The original menu's arrow-key selector uses .more-item, not computed
+        // visibility. Exclude a service-hidden graph without changing its state.
+        const item = menuItem || compact.matches && !hidden;
+        if (button.classList.contains('more-item') !== item) button.classList.toggle('more-item', item);
+        if (hidden && wrapper.contains(document.activeElement)) $('btn-more')?.focus({ preventScroll: true });
+      }
+    };
+    const project = () => {
+      const active = document.activeElement;
+      const modal = window.ReadMDModal?.top(), modalOpener = modal && modalOpeners.get(modal);
+      const openerParent = modalOpener?.parentNode;
+      const movedFocus = placements.find(({ button }) => button === active || button.contains(active));
+      const menuFocused = $('more-menu')?.contains(active);
+      const menuOpen = $('more-menu')?.classList.contains('open');
+      if (menuOpen) closeMoreMenu();
+      if (compact.matches) {
+        groupAnchor.after(compactGroup);
+        compactGroup.hidden = false;
+        for (const { button, wrapper } of placements) {
+          wrapper.prepend(button);
+          button.setAttribute('role', 'menuitem');
+          button.setAttribute('data-shell-menu-action', '');
+        }
+      } else {
+        for (const { button, anchor, role, menuAction } of placements) {
+          anchor.after(button);
+          if (role === null) button.removeAttribute('role');
+          else button.setAttribute('role', role);
+          if (!menuAction) button.removeAttribute('data-shell-menu-action');
+        }
+        compactGroup.hidden = true;
+        compactGroup.remove();
+      }
+      labels(); visibility();
+      if (modalOpener && modalOpener.parentNode !== openerParent) watchMovedOpener(modal);
+      if (!compact.matches && movedFocus && !movedFocus.button.disabled && !movedFocus.button.classList.contains('hidden')) movedFocus.button.focus({ preventScroll: true });
+      else if (movedFocus || menuFocused) $('btn-more')?.focus({ preventScroll: true });
+    };
+    for (const { button } of placements) new MutationObserver(visibility).observe(button, { attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden'] });
+    compact.addEventListener('change', project);
+    window.addEventListener('readmd:language-changed', labels);
+    project();
+  }
   const shortcuts = () => {
     const mac = !!window.ReadMDKeys?.isMac;
     for (const el of [...toolbar.querySelectorAll('.tb-btn[title],.tb-btn[aria-label]'), ...side.querySelectorAll('#side-file-actions .tb-btn[title], #side-close-btn[title]')]) {
