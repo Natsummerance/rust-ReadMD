@@ -8,6 +8,12 @@ use std::{cell::Cell, path::PathBuf, process::{Command, Stdio}};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stage { BeforeFileSync, BeforeReplace, BeforeDirectorySync }
 thread_local! { static FAILURE: Cell<Option<Stage>> = const { Cell::new(None) }; }
+thread_local! {
+    static IO_STAGE: Cell<&'static str> = const { Cell::new("prepare") };
+    static IO_FAILURE: Cell<Option<(&'static str,io::ErrorKind,Option<i32>)>> = const { Cell::new(None) };
+}
+pub(super) fn io_stage(stage:&'static str) { IO_STAGE.with(|value|value.set(stage)); }
+pub(super) fn record_io(error:&io::Error) { IO_FAILURE.with(|value|value.set(Some((IO_STAGE.with(Cell::get),error.kind(),error.raw_os_error())))); }
 pub(super) fn fault(stage: Stage) -> io::Result<()> {
     FAILURE.with(|failure| {
         if failure.get() == Some(stage) {
@@ -458,18 +464,21 @@ fn session_two_processes_with_one_expected_version_have_exactly_one_winner() {
     let token=uuid::Uuid::new_v4().to_string();fs::write(root.path().join("probe.marker"),token.as_bytes()).unwrap();
     fs::write(root.path().join("cas-version.json"),serde_json::to_vec(&initial["session_version"]).unwrap()).unwrap();
     let children=["a","b"].into_iter().map(|id| {
-        Command::new(std::env::current_exe().unwrap()).arg("--exact")
+        (id,Command::new(std::env::current_exe().unwrap()).arg("--exact")
             .arg("settings_persistence::tests::session_cas_probe").arg("--ignored").arg("--nocapture")
             .env("READMD_SETTINGS_PROBE_ROOT",root.path()).env("READMD_SETTINGS_PROBE_TOKEN",&token)
-            .env("READMD_SETTINGS_PROBE_ID",id).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()
+            .env("READMD_SETTINGS_PROBE_ID",id).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap())
     }).collect::<Vec<_>>();
-    for mut child in children {
+    let mut failures=Vec::new();
+    for (id,mut child) in children {
         let start=Instant::now();loop {
-            if let Some(status)=child.try_wait().unwrap() {assert!(status.success(),"Synthetic session CAS child failed");break;}
-            if start.elapsed()>Duration::from_secs(10) {let _=child.kill();let _=child.wait();panic!("Synthetic session CAS child timed out");}
+            if let Some(status)=child.try_wait().unwrap() {if !status.success(){failures.push(format!("{id}:exit={:?}",status.code()));}break;}
+            if start.elapsed()>Duration::from_secs(10) {let _=child.kill();let _=child.wait();failures.push(format!("{id}:timeout"));break;}
             std::thread::sleep(Duration::from_millis(10));
         }
     }
+    let diagnostics=["a","b"].map(|id|fs::read(root.path().join(format!("cas-{id}.diagnostic.json"))).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).unwrap_or(Value::Null));
+    assert!(failures.is_empty(),"Synthetic session CAS child failed: {failures:?}; safe diagnostics: {diagnostics:?}");
     let mut outcomes=["a","b"].map(|id|fs::read_to_string(root.path().join(format!("cas-{id}.result"))).unwrap());
     outcomes.sort();assert_eq!(outcomes,["200","409"]);
     let persisted=disk(&path);assert_eq!(persisted[SESSION_VERSION]["generation"],"1");
@@ -486,6 +495,9 @@ fn session_cas_probe() {
     let id=std::env::var("READMD_SETTINGS_PROBE_ID").unwrap();assert!(matches!(id.as_str(),"a"|"b"));
     let version=disk(&root.join("cas-version.json"));let mut settings=Settings::load(&root.join("settings.json"));
     let result=settings.write_session_checked(&session_request(&version,&format!("child-{id}"),json!({"writer":id})));
-    let status=match result {Ok(_)=>200,Err(error)=>{assert_eq!(error.code(),"session_version_conflict");error.status()}};
+    let (status,code)=match &result {Ok(_)=>(200,"ok"),Err(error)=>(error.status(),error.code())};
+    let io=IO_FAILURE.with(Cell::get).map(|(stage,kind,os)|json!({"stage":stage,"kind":format!("{kind:?}"),"os":os}));
+    fs::write(root.join(format!("cas-{id}.diagnostic.json")),serde_json::to_vec(&json!({"status":status,"code":code,"io":io})).unwrap()).unwrap();
+    if let Err(error)=result {assert_eq!(error.code(),"session_version_conflict");}
     fs::write(root.join(format!("cas-{id}.result")),status.to_string()).unwrap();
 }

@@ -73,6 +73,17 @@ jobs:
       - name: Native subprocess deadline lane
         run: |
           cargo test --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --lib code_chunk_runner:: -- --test-threads=1
+      - name: Actual two-process session CAS, with sanitized first-failure diagnostics
+        run: node tools/test/session-cas-native.mjs
+      - name: Retain actual session CAS receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-session-CAS-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-session-cas/report.json
+            .cache/p1-session-cas/first-failure.log
       - name: Test kernel and xtask
         # Vision model acceptance remains a separate explicit invocation.
         # Keep the real test executable while this non-model regression lane
