@@ -4621,18 +4621,24 @@ fn ai_complete_owned(app:&Arc<App>,req:&Request,transport:Option<&dyn ai_provide
             Ok(Some(line))
         }
     }
-    fn budget(body: &str, url: &str) -> String {
+    fn budget(body: &str, url: &str, completion_protocol: bool) -> String {
         let mut value: Value = serde_json::from_str(body).unwrap_or(json!({}));
-        if url.trim_end_matches('/').ends_with("/responses") { value["max_output_tokens"] = json!(128); }
-        else { value["max_tokens"] = json!(128); }
+        // Chat providers can count internal reasoning against output tokens.
+        // 128 exhausted that budget before a single useful insertion in the
+        // real connection check. Keep FIM at 128; chat gets bounded headroom,
+        // while the original deadlines, visible limits and ready-unit stop
+        // still apply. Token exhaustion remains a failure, never a cache hit.
+        let tokens = if completion_protocol { 128 } else { 512 };
+        if url.trim_end_matches('/').ends_with("/responses") { value["max_output_tokens"] = json!(tokens); }
+        else { value["max_tokens"] = json!(tokens); }
         value.to_string()
     }
     impl ai_providers::Transport for Bounded<'_> {
         fn post_json(&self, url: &str, headers: &ai_providers::Headers, body: &str) -> Result<String, ai_providers::HttpError> {
-            self.0.post_json(url, headers, &budget(body,url))
+            self.0.post_json(url, headers, &budget(body,url,self.1))
         }
         fn open_stream(&self, url: &str, headers: &ai_providers::Headers, body: &str) -> Result<Box<dyn ai_providers::LineStream>, ai_providers::HttpError> {
-            let stream = self.0.open_stream(url, headers, &budget(body,url))?;
+            let stream = self.0.open_stream(url, headers, &budget(body,url,self.1))?;
             if self.1 { Ok(Box::new(CompletionLines(stream))) } else { Ok(stream) }
         }
     }
@@ -7302,7 +7308,7 @@ mod tests {
         assert_eq!(result["completion"],"比较解释");
         let wire=fake.recorded();
         let payload:Value=serde_json::from_str(&wire[0].body).unwrap();
-        assert_eq!(payload["max_tokens"],128); assert_eq!(payload["stream"],true);
+        assert_eq!(payload["max_tokens"],512); assert_eq!(payload["stream"],true);
         assert!(!wire[0].body.contains("must-not"));
         assert!(!app.paths.data_dir.join("chat_history.json").exists());
         let mut settings:Value=serde_json::from_str(&std::fs::read_to_string(app.paths.data_dir.join("ai.json")).unwrap()).unwrap();
@@ -7313,6 +7319,7 @@ mod tests {
         let reply=ai_complete(&app,&request("POST","/api/ai/complete",body.as_bytes()),&fim).unwrap();
         assert_eq!(serde_json::from_slice::<Value>(&reply.body).unwrap()["completion"],"提出问题");
         let wire=fim.recorded();let p:Value=serde_json::from_str(&wire[0].body).unwrap();
+        assert_eq!(p["max_tokens"],128,"FIM keeps its small non-reasoning budget");
         assert_eq!(p["prompt"],"<|fim_prefix|>研究方法：<|fim_suffix|>。<|fim_middle|>");
         assert!(wire[0].url.ends_with("/completions"));
         assert!(ai_complete(&app,&request("GET","/api/ai/complete",b"{}"),&fim).is_err());

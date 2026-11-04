@@ -23,6 +23,7 @@ jobs:
 
   kernel:
     name: Kernel tests · ${{ matrix.os }}
+    timeout-minutes: 90
     runs-on: ${{ matrix.os }}
     # Native subprocess deadlines are tested separately from the explicit
     # concurrency/stress lanes. Do not oversubscribe a small shared runner.
@@ -104,6 +105,9 @@ jobs:
           JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
+      - name: Build independent maintenance PDF inspector offline in the same target
+        timeout-minutes: 5
+        run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features --example table_pdf_inspector
       - name: P1 previous released writer cannot downgrade resource history
         run: node tools/test/review-version-fence-platform.mjs
       - name: P1 real code cancellation, HTTP and MCP lifecycle
@@ -170,8 +174,103 @@ jobs:
             .cache/p1-previous-writer/result/report.json
             .cache/p1-previous-writer/result/first-failure.json
 
+      - name: P1 actual completion streaming, cancellation and strict protocol cases
+        timeout-minutes: 5
+        run: |
+          node tools/test/ai-completion-stream-http.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-ai-completion-stream
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-ai-completion-stream/report.json');a.equal(r.passed,true);a(r.cases.length>0);a(r.cases.every(c=>c.passed));a.equal(r.productionAuth,true);a.equal(r.rustSourcesUnchanged,true);a.equal(r.binaryUnchanged,true);console.log(JSON.stringify({cases:r.cases.length,passed:r.cases.filter(c=>c.passed).length}));"
+      - name: Retain actual completion streaming receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-completion-stream-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-ai-completion-stream/report.json
+      # This strict native process overlap has an observable window on Mac.
+      # A short probe window remains a diagnostic failure; no threshold is relaxed.
+      # All three OSes retain the regular managed Node and Rust lock-guard lanes.
+      - name: P1 actual Node status probe and timer overlap, busy resampling and cancellation
+        if: runner.os == 'macOS'
+        timeout-minutes: 5
+        run: node tools/test/node-runtime-status-fairness.cjs --bin rust/target/debug/readmd --evidence .cache/p1-node-status-fairness
+      - name: Retain actual Node status fairness receipt
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-node-status-fairness-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-node-status-fairness/report.json
+      - name: P1 actual editable PPTX tables and frozen snapshot preview
+        timeout-minutes: 5
+        run: |
+          node tools/test/v007-pptx-table-style.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-pptx-table-style
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-pptx-table-style/report.json');a.equal(r.passed,true);a.equal(r.exports.length,5);a(r.checks.every(c=>c.pass));a(r.exports.every(c=>c.previewUsesFrozenSnapshot));a.equal(r.binaryUnchanged,true);a.equal(r.sourceUnchanged,true);a.equal(r.officePixelsCertified,false);"
+      - name: Retain actual PPTX files, fixed inputs and frozen preview evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-pptx-table-style-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-pptx-table-style/report.json
+            .cache/p1-pptx-table-style/first-failure.json
+            .cache/p1-pptx-table-style/fixed-inputs.json
+            .cache/p1-pptx-table-style/*-slides.xml
+            .cache/p1-pptx-table-style/*-preview.html
+            .cache/p1-pptx-table-style/documents/*.pptx
+            .cache/p1-pptx-table-style/documents/*.md
+      - name: P1 actual DOCX and native PDF HTML table safety through independent reader
+        timeout-minutes: 5
+        env:
+          READMD_TEST_PDF_INSPECTOR: ${{ github.workspace }}/rust/target/debug/examples/table_pdf_inspector${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: |
+          node tools/test/v007-table-export-safety.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-table-export-safety
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-table-export-safety/report.json');a.equal(r.passed,true);a.equal(r.checks.length,96);a(r.checks.every(c=>c.pass));a.equal(r.pdfInspections.length,5);a.equal(r.pdfInspectorExecutableUnchanged,true);a.equal(r.binaryUnchanged,true);a.equal(r.sourceUnchanged,true);"
+      - name: Retain original HTML table matrix, physical exports and independent reader receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-table-export-safety-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-table-export-safety/report.json
+            .cache/p1-table-export-safety/first-failure.json
+            .cache/p1-table-export-safety/independent-expectations.json
+            .cache/p1-table-export-safety/*-docx.xml
+            .cache/p1-table-export-safety/*-pdf-text.json
+            .cache/p1-table-export-safety/documents/*.docx
+            .cache/p1-table-export-safety/documents/*.pdf
+            .cache/p1-table-export-safety/documents/*.md
+      # Keep this exact physical-PDF unit distinct from the 96-check real
+      # HTTP matrix. Both use independent locked Rust pdf_extract, without
+      # calling product PDF import/OCR.
+      - name: P1 native HTML table physical PDF cells through independent Rust reader
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),cp=require('node:child_process'),assert=require('node:assert/strict');
+          const root='.cache/p1-native-table-pdf',name='md_ast::html_table_tests::native_html_table_rust_pdf_uses_existing_native_table_json_and_retains_all_body_markers';
+          fs.mkdirSync(root,{recursive:true});
+          const result=cp.spawnSync('cargo',['test','--offline','--locked','--manifest-path','rust/Cargo.toml','-p','readmd-kernel','--lib',name,'--','--exact','--test-threads=1'],{encoding:'utf8',maxBuffer:8*1048576});
+          const log=(result.stdout||'')+(result.stderr||'');fs.writeFileSync(root+'/test.log',log,{flag:'wx'});process.stdout.write(log);
+          const passed=result.status===0&&/test result: ok\. 1 passed; 0 failed; 0 ignored/.test(log);
+          fs.writeFileSync(root+'/report.json',JSON.stringify({passed,test:name,reader:'locked Rust pdf_extract',physicalPdf:true,http96Certified:false,productPdfImportUsed:false,modelsRequested:false,status:result.status,signal:result.signal,error:result.error?.code||null},null,2)+'\n',{flag:'wx'});
+          assert(passed,'exact physical-PDF test must run once and pass; empty selection is invalid');
+          JS
+      - name: Retain independent physical PDF test receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-native-table-pdf-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-native-table-pdf/report.json
+            .cache/p1-native-table-pdf/test.log
+
   frontend:
     name: Frontend gates
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -208,6 +307,19 @@ jobs:
         run: node --test tools/test/node-runtime-preparation.test.mjs tools/test/stream-capability-pack.test.mjs tools/test/capability-publication.test.mjs
       - name: Strict chat stream and conversation ownership regressions
         run: node --test --test-timeout=10000 ui-tests/ai-chat-stream.test.cjs ui-tests/ai-harness-adapter.test.cjs
+
+      - name: Strict inline completion protocol and ownership VM regressions
+        timeout-minutes: 2
+        run: |
+          node -e "require('node:fs').mkdirSync('.cache',{recursive:true})"
+          node --test --test-timeout=10000 --test-reporter=tap --test-reporter-destination=.cache/p1-ai-inline-vm.tap ui-tests/ai-inline-stream.test.cjs
+      - name: Retain strict inline completion VM TAP receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-inline-vm
+          if-no-files-found: ignore
+          path: .cache/p1-ai-inline-vm.tap
 
   integrations:
     name: VS Code and MCP quality
@@ -277,6 +389,7 @@ jobs:
 
   ui:
     name: UI quality (Playwright)
+    timeout-minutes: 60
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -297,15 +410,15 @@ jobs:
       - name: Install Playwright
         working-directory: ui-tests
         run: |
-          npm ci
-          npx playwright install --with-deps chromium
+          npm ci --ignore-scripts
+          npx --no-install playwright install --with-deps chromium
       - name: Modal, task and layout checks
         working-directory: ui-tests
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
           READMD_PANEL_TEST_LOCALES: zh-CN,en,zh-TW,de,ar
           READMD_PANEL_TEST_THEMES: light,dark,sepia
-        run: npx playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js --project=desktop --project=mobile
+        run: npx --no-install playwright test ui-quality.spec.js interaction-regressions.spec.js ai-model-discovery.spec.js all-panels-layout.spec.js editor-layout-production.spec.js language-production.spec.js panel-ux-production.spec.js community-upgrade.spec.js document-intelligence.spec.js --project=desktop --project=mobile
       - name: P1 real code output in the production browser UI
         env:
           READMD_CODE_BROWSER: chromium
@@ -387,3 +500,20 @@ jobs:
             .cache/p1-code-output-browser/report.json
             .cache/p1-code-output-browser/first-failure.png
             .cache/p1-code-output-browser/deadline.json
+
+      - name: P1 real inline completion, production CSP and authenticated browser lifecycle
+        timeout-minutes: 5
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: |
+          node tools/test/ai-inline-browser.cjs --bin rust/target/debug/readmd --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright/index.js" --evidence .cache/p1-ai-inline-browser
+          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-ai-inline-browser/report.json');a.equal(r.passed,true);a.equal(r.productionAuthAndCsp,true);a.equal(r.headless,true);a.equal(r.nativeUiCertified,false);a.equal(r.checks.length,7);a.equal(r.scratchAbsent,true);"
+      - name: Retain actual inline completion browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-inline-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-ai-inline-browser/report.json
+            .cache/p1-ai-inline-browser/first-failure.png

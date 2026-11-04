@@ -17,7 +17,7 @@ async function providerFixture(){
    finish();return;
   }
   assert.equal(req.method,'POST');assert(['/v1/chat/completions','/v1/completions'].includes(req.url));let text='';for await(const chunk of req){text+=chunk;assert(Buffer.byteLength(text)<=1048576);}
-  const body=JSON.parse(text);assert.equal(body.max_tokens,128);let context;
+  const body=JSON.parse(text);assert.equal(body.max_tokens,req.url==='/v1/completions'?128:512);let context;
   if(body.messages){const user=body.messages.find(message=>message.role==='user');context=JSON.parse(user.content).prefix;}else context=body.prompt;
   const name=context.match(/OWNED_INLINE_([a-z0-9_]+)/)?.[1];assert(name);const state=plan(name);state.count++;
   const row={name,model:body.model,stream:body.stream===true,url:req.url,closed:false,receivedAt:Date.now(),writes:[]};state.rows.push(row);requests.push(row);state.received.resolve();res.once('close',()=>{row.closed=true;row.closedAt=Date.now();state.closed.resolve();});
@@ -34,6 +34,7 @@ async function providerFixture(){
   if(name==='timeout_fast'&&state.count>1){json();return;}
   if(name==='held_headers'||name.startsWith('cancel_headers')||name==='timeout_fast'){state.pending.add(()=>{if(!res.destroyed){start();delta('test the evidence.');end();}});return;}
   start();
+  if(name==='reasoning_budget'){frame({choices:[{delta:{reasoning_content:'OWNED_REASONING_MUST_STAY_HIDDEN '.repeat(8)}}]});delta('test the evidence.');end();return;}
   if(name==='bad_utf8'){res.write(Buffer.concat([Buffer.from('data: {"choices":[{"delta":{"content":"bad'),Buffer.from([0xc0,0xaf]),Buffer.from('text"}}]}\n\n')]));res.end('data: [DONE]\n\n');return;}
   if(name==='transport_budget'){res.end(':'+('X'.repeat(70000))+'\n\n');return;}
   if(name==='raw_budget'){delta('X'.repeat(16001));end();return;}

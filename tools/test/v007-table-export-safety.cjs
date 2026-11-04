@@ -9,9 +9,18 @@ const zipParts=require('../../ui-tests/zip-parts.cjs');
 const ROOT=path.resolve(__dirname,'../..'),sha=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const encoded=text=>Buffer.from('\ufeff'+text.replaceAll('\n','\r\n'));
 const UNSUPPORTED='publication_table_unsupported';
+const EXPECTED_CHECKS=96,EXPECTED_PDF_INSPECTIONS=5;
+function pdfInspection(child){
+ assert.equal(child.status,0,'Independent PDF reader failed: '+(child.error?.code||child.signal||child.status));
+ const parsed=JSON.parse(child.stdout);
+ assert(parsed&&typeof parsed==='object'&&!Array.isArray(parsed),'Independent PDF reader JSON object required');
+ assert.equal(typeof parsed.text,'string','Independent PDF reader text required');
+ assert(parsed.text.trim().length>0,'Independent PDF reader returned empty text');
+ return parsed;
+}
 async function main(){
  const args=options(process.argv.slice(2));assert(args.bin&&!args.base);
- const python=process.env.READMD_TEST_PDF_PYTHON;assert(python&&path.isAbsolute(python)&&fs.statSync(python).isFile(),'Explicit bundled Python with pypdf required');
+ const inspector=process.env.READMD_TEST_PDF_INSPECTOR,python=process.env.READMD_TEST_PDF_PYTHON,reader=inspector||python;
  const out=args.evidence,fixtureRoot=path.join(ROOT,'tests/fixtures/table-safety');
  const paths=Object.fromEntries(['profile','documents','tmp','home'].map(name=>[name,path.join(out,name)]));for(const directory of Object.values(paths))fs.mkdirSync(directory,{mode:0o700});
  const scratch=['tmp','home'].map(name=>({path:paths[name],stat:fs.lstatSync(paths[name])}));Object.assign(process.env,{TMPDIR:paths.tmp,TMP:paths.tmp,TEMP:paths.tmp,CFFIXED_USER_HOME:paths.home,READMD_EXTRA_ROOTS:''});
@@ -28,12 +37,23 @@ async function main(){
   {id:'ragged',source:simple.replace('<td align="right"></td>',''),reject:true},
  ];
  const binding=()=>['md_ast.rs','docx_writer.rs','mdexport.rs','publication_profile.rs','api_codes.rs','md_ast_html_table_tests.rs'].map(file=>({file:'rust/readmd-kernel/src/'+file,sha256:sha(fs.readFileSync(path.join(ROOT,'rust/readmd-kernel/src',file)))}));
- const report={passed:false,head:execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim(),sourceBinding:binding(),binarySha256:sha(fs.readFileSync(args.bin)),binaryOrigin:'Explicit frozen prebuilt candidate; final source/compiled binding requires root build receipts.',driverSha256:sha(fs.readFileSync(__filename)),nativeUiCertified:false,modelsRequested:false,renderedPixelsCertified:false,pdfInspector:'bundled pypdf text only',expectations:{declaredBeforeExecution:true,ordinaryHtmlUsesNativeTable:true,spanOneSupported:true,mergedAndUnknownStructuresRefuseBeforeOutput:true,codeAndCommentsDoNotCauseTableRefusal:true,oldTargetsAndSourceBytesPreserved:true},inputs:cases.map(row=>({id:row.id,sha256:sha(Buffer.from(row.source)),reject:Boolean(row.reject)})),checks:[],exports:[]};
+ const report={passed:false,head:execFileSync('git',['rev-parse','HEAD'],{cwd:ROOT,encoding:'utf8'}).trim(),sourceBinding:binding(),binarySha256:sha(fs.readFileSync(args.bin)),binaryOrigin:'Explicit frozen prebuilt candidate; final source/compiled binding requires root build receipts.',driverSha256:sha(fs.readFileSync(__filename)),nativeUiCertified:false,modelsRequested:false,renderedPixelsCertified:false,pdfInspector:inspector?'locked Rust pdf_extract standalone example':'bundled pypdf text only',expectations:{declaredBeforeExecution:true,ordinaryHtmlUsesNativeTable:true,spanOneSupported:true,mergedAndUnknownStructuresRefuseBeforeOutput:true,codeAndCommentsDoNotCauseTableRefusal:true,oldTargetsAndSourceBytesPreserved:true,checkCount:EXPECTED_CHECKS,pdfInspections:EXPECTED_PDF_INSPECTIONS},inputs:cases.map(row=>({id:row.id,sha256:sha(Buffer.from(row.source)),reject:Boolean(row.reject)})),checks:[],exports:[],pdfInspections:[]};
  fs.writeFileSync(path.join(out,'independent-expectations.json'),JSON.stringify(report.expectations,null,2)+'\n',{flag:'wx'});
  let host,phase='start';const check=(name,pass,extra={})=>report.checks.push({name,pass:Boolean(pass),...extra});
  async function api(route,body){const response=await host.api(route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return{status:response.status,body:await response.json()};}
- function pdfText(file){const code='import json,sys,pypdf; r=pypdf.PdfReader(sys.argv[1]); print(json.dumps({"pages":len(r.pages),"text":"\\n".join(p.extract_text() or "" for p in r.pages)}))';const child=spawnSync(python,['-c',code,file],{cwd:paths.tmp,env:{PATH:process.env.PATH,LANG:'en_US.UTF-8',TMPDIR:paths.tmp,TMP:paths.tmp,TEMP:paths.tmp,PYTHONDONTWRITEBYTECODE:'1',CFFIXED_USER_HOME:paths.home},encoding:'utf8',maxBuffer:1024*1024,timeout:15000});assert.equal(child.status,0,'Bundled PDF reader failed');return JSON.parse(child.stdout);}
+ function pdfText(file){
+  const code='import json,sys,pypdf; r=pypdf.PdfReader(sys.argv[1]); print(json.dumps({"pages":len(r.pages),"text":"\\n".join(p.extract_text() or "" for p in r.pages)}))';
+  const at=performance.now(),child=spawnSync(reader,inspector?[file]:['-c',code,file],{cwd:paths.tmp,env:{PATH:process.env.PATH,LANG:'en_US.UTF-8',TMPDIR:paths.tmp,TMP:paths.tmp,TEMP:paths.tmp,PYTHONDONTWRITEBYTECODE:'1',CFFIXED_USER_HOME:paths.home},encoding:'utf8',maxBuffer:1024*1024,timeout:15000});
+  report.pdfInspections.push({file:path.basename(file),inputSha256:sha(fs.readFileSync(file)),elapsedMs:performance.now()-at,status:child.status,signal:child.signal,error:child.error?.code||null});
+  return pdfInspection(child);
+ }
  try{
+  phase='independent PDF reader preflight';assert(Boolean(inspector)!==Boolean(python),'Set exactly one explicit READMD_TEST_PDF_INSPECTOR or READMD_TEST_PDF_PYTHON; no reader fallback');
+  assert(path.isAbsolute(reader),'Independent PDF reader executable must be absolute');
+  const readerMetadata=inspector?fs.lstatSync(reader):fs.statSync(reader);assert(readerMetadata.isFile()&&(!inspector||!readerMetadata.isSymbolicLink()),'Independent PDF inspector must be an ordinary executable');
+  report.pdfInspectorExecutableSha256=sha(fs.readFileSync(reader));
+  if(inspector)report.pdfInspectorSourceSha256=sha(fs.readFileSync(path.join(ROOT,'rust/readmd-kernel/examples/table_pdf_inspector.rs')));
+  phase='start';
   host=await startKernel(args.bin,paths.profile,paths.documents);report.pid=host.pid;
   for(const row of cases){
    const sourceFile=path.join(paths.documents,row.id+'.md');fs.writeFileSync(sourceFile,encoded(row.source),{flag:'wx'});
@@ -82,11 +102,14 @@ async function main(){
   // HTML/EPUB consumers, which retain HTML markup rather than dropping cells.
   for(const format of ['html','epub']){const target=path.join(paths.documents,'merged-control.'+format),result=await api('/api/export',{format,content:merged,baseDir:paths.documents,out_path:target,options:{frontMatter:{mode:'none'}}});check(format+'/not-blocked-by-native-table-guard',result.body.error_code!==UNSUPPORTED,{ok:result.body.ok,errorCode:result.body.error_code});}
   const modules=await(await host.api('/api/modules')).json();check('ocr-transcribe-idle',modules.modules.ocr==='idle'&&modules.modules.transcribe==='idle');
+  assert.equal(report.checks.length,EXPECTED_CHECKS,'All fixed table safety assertions must execute');
+  assert.equal(report.pdfInspections.length,EXPECTED_PDF_INSPECTIONS,'Every successful physical PDF needs its independent reader');
   report.passed=report.checks.every(row=>row.pass);if(!report.passed)process.exitCode=1;
  }catch(error){report.harnessFailure={phase,name:error.name,message:String(error.message).replaceAll(out,'<owned>').replaceAll(ROOT,'<repo>').slice(0,1000)};process.exitCode=2;}
  finally{
   if(host)await host.stop();for(const item of scratch){const now=fs.lstatSync(item.path);assert(now.isDirectory()&&!now.isSymbolicLink()&&now.ino===item.stat.ino&&now.dev===item.stat.dev);fs.rmSync(item.path,{recursive:true});}
   report.scratchRemoved=true;report.binaryUnchanged=sha(fs.readFileSync(args.bin))===report.binarySha256;assert(report.binaryUnchanged);report.sourceBindingAfter=binding();report.sourceUnchanged=JSON.stringify(report.sourceBinding)===JSON.stringify(report.sourceBindingAfter);
+  if(report.pdfInspectorExecutableSha256){report.pdfInspectorExecutableUnchanged=sha(fs.readFileSync(reader))===report.pdfInspectorExecutableSha256;assert(report.pdfInspectorExecutableUnchanged);}
   const failures=report.checks.filter(row=>!row.pass);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});if(failures.length||report.harnessFailure)fs.writeFileSync(path.join(out,'first-failure.json'),JSON.stringify({failures,harnessFailure:report.harnessFailure},null,2)+'\n',{flag:'wx'});
   console.log(JSON.stringify({passed:report.passed,checks:report.checks.length,failures:failures.length,harnessFailure:report.harnessFailure,binarySha256:report.binarySha256,binaryUnchanged:report.binaryUnchanged}));
  }
