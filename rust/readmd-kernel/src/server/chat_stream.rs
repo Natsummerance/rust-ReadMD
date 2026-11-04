@@ -4,11 +4,11 @@ use crate::ai_providers::{Headers, HttpError, LineStream, Transport};
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
-struct Peer {
-    lost: Arc<AtomicBool>, finished: Arc<AtomicBool>, worker: Option<std::thread::JoinHandle<()>>,
+pub(super) struct Peer {
+    pub(super) lost: Arc<AtomicBool>, finished: Arc<AtomicBool>, worker: Option<std::thread::JoinHandle<()>>,
 }
 impl Peer {
-    fn watch(socket: &TcpStream) -> ApiResult<Self> {
+    pub(super) fn watch(socket: &TcpStream) -> ApiResult<Self> {
         let socket=socket.try_clone().map_err(|_|ApiError::new(409,"cancelled"))?;
         socket.set_nonblocking(false).and_then(|_|socket.set_read_timeout(Some(Duration::from_millis(50))))
             .map_err(|_|ApiError::new(409,"cancelled"))?;
@@ -32,7 +32,7 @@ impl Drop for Peer {
     fn drop(&mut self) { self.finished.store(true,Ordering::Release);if let Some(worker)=self.worker.take(){let _=worker.join();} }
 }
 
-fn write_event_bytes(writer:&mut TcpStream,mut bytes:&[u8],cancelled:&dyn Fn()->bool,budget:Duration)->ApiResult<()> {
+pub(super) fn write_event_bytes(writer:&mut TcpStream,mut bytes:&[u8],cancelled:&dyn Fn()->bool,budget:Duration)->ApiResult<()> {
     let deadline=Instant::now()+budget;
     writer.set_write_timeout(Some(Duration::from_millis(50))).map_err(|_|ApiError::new(409,"cancelled"))?;
     while !bytes.is_empty() {
@@ -126,7 +126,7 @@ fn safe_error(error:ApiError)->ApiError {
         _=>ApiError::new(502,"ai_invalid_response"),
     }
 }
-fn provider_error(error:ai_providers::AiError,cancelled:bool)->ApiError {
+pub(super) fn provider_error(error:ai_providers::AiError,cancelled:bool)->ApiError {
     if cancelled{return ApiError::new(409,"cancelled");}
     if let Some(rest)=error.message.strip_prefix("HTTP ") {
         let status=rest.chars().take_while(char::is_ascii_digit).collect::<String>();
@@ -141,7 +141,7 @@ fn provider_error(error:ai_providers::AiError,cancelled:bool)->ApiError {
     ApiError::new(502,code)
 }
 
-struct StrictTransport<'a>(&'a dyn Transport);
+pub(super) struct StrictTransport<'a>(pub(super) &'a dyn Transport);
 impl Transport for StrictTransport<'_> {
     fn post_json(&self,url:&str,headers:&Headers,body:&str)->Result<String,HttpError>{
         let text=self.0.post_json(url,headers,body)?;

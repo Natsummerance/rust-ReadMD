@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Serviciul IA a returnat un răspuns nevalid.",
   "error.ai_network_error": "Conectarea la serviciul IA nu a reușit.",
   "error.ai_not_configured": "Configurează o conexiune IA înainte de revizuire.",
+  "error.ai_session_save_failed": "AI finalizat, dar salvarea sesiunii a eșuat; pot încerca din nou în istorie",
   "error.ai_task_failed": "Revizuirea cu IA a eșuat. Încearcă din nou.",
   "error.author_inline_text_budget": "Formatarea textului depășește limita de procesare. Reduceți dimensiunea sau imbricarea.",
   "error.author_inline_text_invalid": "Formatarea locală este nevalidă sau neacceptată pentru acest bloc. Verificați valorile înainte de a continua.",

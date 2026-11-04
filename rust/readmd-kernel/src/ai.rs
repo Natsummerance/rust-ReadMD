@@ -540,6 +540,14 @@ impl AIClient {
         self.list_models_budget(Some(std::time::Duration::from_secs(2)))
     }
 
+    /// Same cold-start discovery and credential parsing, with request-owned
+    /// sockets. A cancelled resolver cannot connect to a later fallback URL.
+    pub(crate) fn completion_models_owned(mut self,resolver:impl ureq::Resolver+'static)->Result<Vec<String>,ApiError>{
+        self.agent=AgentBuilder::new().resolver(resolver).timeout_connect(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(2)).redirects(0).build();
+        self.list_models_budget(Some(std::time::Duration::from_secs(2)))
+    }
+
     fn list_models_budget(&self, budget: Option<std::time::Duration>) -> Result<Vec<String>, ApiError> {
         let started=std::time::Instant::now();
         // `ai.py:885-887`

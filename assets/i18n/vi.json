@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Dịch vụ AI trả về phản hồi không hợp lệ.",
   "error.ai_network_error": "Không thể kết nối với dịch vụ AI.",
   "error.ai_not_configured": "Hãy cấu hình kết nối AI trước khi duyệt.",
+  "error.ai_session_save_failed": "AI hoàn thành, nhưng lưu phiên thất bại; có thể thử lại trong lịch sử",
   "error.ai_task_failed": "Duyệt bằng AI thất bại. Hãy thử lại.",
   "error.author_inline_text_budget": "Định dạng chữ vượt giới hạn xử lý. Giảm kích thước hoặc mức lồng nhau.",
   "error.author_inline_text_invalid": "Định dạng cục bộ không hợp lệ hoặc không được hỗ trợ cho khối này. Kiểm tra các giá trị trước khi tiếp tục.",

@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Der KI-Dienst hat eine ungültige Antwort zurückgegeben.",
   "error.ai_network_error": "Die Verbindung zum KI-Dienst ist fehlgeschlagen.",
   "error.ai_not_configured": "Richten Sie vor der Prüfung eine KI-Verbindung ein.",
+  "error.ai_session_save_failed": "AI abgeschlossen, aber das Speichern der Sitzung ist fehlgeschlagen. Kann es in der Geschichte noch einmal versuchen",
   "error.ai_task_failed": "Die KI-Prüfung ist fehlgeschlagen. Versuchen Sie es erneut.",
   "error.author_inline_text_budget": "Die Textformatierung überschreitet das Verarbeitungslimit. Größe oder Verschachtelung reduzieren.",
   "error.author_inline_text_invalid": "Die lokale Formatierung ist für diesen Block ungültig oder wird nicht unterstützt. Überprüfen Sie die Werte, bevor Sie fortfahren.",

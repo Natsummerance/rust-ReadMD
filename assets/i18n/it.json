@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Il servizio IA ha restituito una risposta non valida.",
   "error.ai_network_error": "Impossibile connettersi al servizio IA.",
   "error.ai_not_configured": "Configura una connessione IA prima della revisione.",
+  "error.ai_session_save_failed": "AI completata, ma salvataggio della sessione non riuscito; riprova dalla cronologia",
   "error.ai_task_failed": "La revisione con IA non è riuscita. Riprova.",
   "error.author_inline_text_budget": "La formattazione supera il limite di elaborazione. Riduci dimensione o annidamento.",
   "error.author_inline_text_invalid": "La formattazione locale non è valida o non è supportata per questo blocco. Controlla i suoi valori prima di continuare.",

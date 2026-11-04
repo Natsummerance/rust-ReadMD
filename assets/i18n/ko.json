@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI 서비스가 잘못된 응답을 반환했습니다.",
   "error.ai_network_error": "AI 서비스에 연결하지 못했습니다.",
   "error.ai_not_configured": "검토하기 전에 AI 연결을 설정하세요.",
+  "error.ai_session_save_failed": "AI가 완료되었지만 세션 저장에 실패했습니다. 기록에서 다시 시도할 수 있습니다.",
   "error.ai_task_failed": "AI 검토에 실패했습니다. 다시 시도하세요.",
   "error.author_inline_text_budget": "텍스트 서식이 처리 한도를 초과합니다. 크기나 중첩을 줄이세요.",
   "error.author_inline_text_invalid": "이 블록의 로컬 서식이 잘못되었거나 지원되지 않습니다. 계속하기 전에 값을 확인하세요.",

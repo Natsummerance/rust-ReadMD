@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "The AI service returned an invalid response.",
   "error.ai_network_error": "Could not connect to the AI service.",
   "error.ai_not_configured": "Configure an AI connection before reviewing.",
+  "error.ai_session_save_failed": "AI completed, but session save failed; retry from history",
   "error.ai_task_failed": "AI review failed. Try again.",
   "error.author_inline_text_budget": "Text formatting exceeds the processing limit. Reduce its size or nesting.",
   "error.author_inline_text_invalid": "Local formatting is invalid or unsupported for this block. Check its values before continuing.",

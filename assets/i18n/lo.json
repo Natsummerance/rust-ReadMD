@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "ບໍລິການ AI ສົ່ງຄືນຄຳຕອບທີ່ບໍ່ຖືກຕ້ອງ.",
   "error.ai_network_error": "ບໍ່ສາມາດເຊື່ອມຕໍ່ບໍລິການ AI ໄດ້.",
   "error.ai_not_configured": "ກະລຸນາຕັ້ງຄ່າການເຊື່ອມຕໍ່ AI ກ່ອນກວດທານ.",
+  "error.ai_session_save_failed": "AI ສໍາເລັດ, ແຕ່ session save ລົ້ມເຫລວ; ສາມາດລອງອີກຄັ້ງໃນປະຫວັດສາດ",
   "error.ai_task_failed": "ການກວດທານດ້ວຍ AI ລົ້ມເຫຼວ. ກະລຸນາລອງອີກຄັ້ງ.",
   "error.author_inline_text_budget": "ຮູບແບບຂໍ້ຄວາມເກີນຂີດຈຳກັດ. ຫຼຸດຂະໜາດ ຫຼືການຊ້ອນ.",
   "error.author_inline_text_invalid": "ການຈັດຮູບແບບທ້ອງຖິ່ນບໍ່ຖືກຕ້ອງ ຫຼື ບໍ່ຮອງຮັບສຳລັບບລັອກນີ້. ກວດສອບຄ່າຂອງມັນກ່ອນສືບຕໍ່.",

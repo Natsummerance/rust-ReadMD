@@ -64,6 +64,7 @@ pub const SOURCES: &[&str] = &[
     "js/features/graph.js",
     "js/shell/command-palette.js",
     "js/shell/shell.js",
+    "js/features/ai-inline-stream.js",
     "js/features/ai-inline.js",
     "js/features/pet-stage.js",
     "js/core/lifecycle.js",

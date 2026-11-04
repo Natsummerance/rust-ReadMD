@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Serivisi ya AI yagaruye igisubizo kitari cyo.",
   "error.ai_network_error": "Ntibyashobotse guhuza na serivisi ya AI.",
   "error.ai_not_configured": "Shyiraho ihuza rya AI mbere yo gusuzuma.",
+  "error.ai_session_save_failed": "AI yarangije, ariko isomo ryo kubika ryarananiranye; irashobora kongera kugerageza mumateka",
   "error.ai_task_failed": "Isuzuma rya AI ryanze. Ongera ugerageze.",
   "error.author_inline_text_budget": "Imiterere y’inyandiko irenze urugero rwo gutunganya. Gabanya ingano cyangwa inzego.",
   "error.author_inline_text_invalid": "Imiterere yihariye ifite ikibazo cyangwa ntiyemewe kuri uyu mwanya. Reba agaciro kayo mbere yo gukomeza.",

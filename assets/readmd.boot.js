@@ -22114,6 +22114,7 @@ function bindAiResize() {
 function aiErrorHint(error) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const raw = error?.status ? 'HTTP ' + error.status : String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  if (error?.code === 'ai_session_save_failed' || /ai_session_save_failed/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('error.ai_session_save_failed') };
   if (/provider_model_unavailable/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('ai.selectModel') };
   if (/401|403|auth|key|token|鉴权|密钥/i.test(raw)) return { kind: 'error', summary: _t('ai.authFailSummary') || '', message: _t('ai.authFailMsg') || '' };
   if (/429|rate.?limit|限流|too many/i.test(raw)) return { kind: 'warn', summary: _t('ai.rateLimitSummary') || '', message: _t('ai.rateLimitMsg') || '' };
@@ -31112,6 +31113,100 @@ function initMacWindowChrome(command) {
 
 ;
 'use strict';
+// Completion snapshots have their own protocol; no document mutation happens
+// here. A terminal result requires a complete SSE frame and request identity.
+window.ReadMDCompletionStream = (() => {
+  const reasons = new Set(['provider_finished', 'ready_unit', 'cached']);
+  function failure(code = 'invalid_completion_stream') {
+    if (code === 'cancelled') return new DOMException('cancelled', 'AbortError');
+    const error = new Error(code); error.code = code; return error;
+  }
+  async function revision(prefix, suffix) {
+    const encoder = new TextEncoder(), length = encoder.encode(prefix).byteLength;
+    const bytes = await window.crypto.subtle.digest('SHA-256', encoder.encode(length + ':' + prefix + suffix));
+    return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  function text(value) {
+    if (typeof value !== 'string' || value.includes('\0') || Array.from(value).length > 1000) throw failure();
+  }
+  function identity(value, { taskId, contextRevision }, required) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure();
+    for (const [key, expected] of [['task_id', taskId], ['context_revision', contextRevision]]) {
+      if ((required || value[key] !== undefined) && value[key] !== expected) throw failure();
+    }
+    if (value.model !== undefined && (typeof value.model !== 'string' || value.model.length > 256)) throw failure();
+  }
+  function result(value, options, required = false) {
+    identity(value, options, required);
+    if (value.ok !== true || (required || value.finish_reason !== undefined) && !reasons.has(value.finish_reason)) throw failure();
+    text(value.completion);
+    return value;
+  }
+  async function consume(response, { signal, taskId, contextRevision, onSuggestion } = {}) {
+    if (signal?.aborted) throw failure('cancelled');
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(taskId || '') || !/^[a-f0-9]{64}$/.test(contextRevision || '')) throw failure();
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('text/event-stream') || !response.body) throw failure();
+    const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
+    let buffer = '', data = [], terminal = null, bytes = 0, frameUnits = 0;
+    const abort = () => { void reader.cancel().catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    function frame() {
+      if (signal?.aborted) throw failure('cancelled');
+      if (!data.length) return;
+      let value;
+      try { value = JSON.parse(data.join('\n')); } catch (_) { throw failure(); }
+      data = []; frameUnits = 0;
+      identity(value, { taskId, contextRevision }, true);
+      if (value.type === 'error' || value.ok === false) {
+        throw failure(/^[a-z][a-z0-9_]{0,95}$/.test(value.error_code || '') ? value.error_code : 'invalid_completion_stream');
+      }
+      if (value.type === 'suggestion') {
+        text(value.completion); onSuggestion?.(value);
+      } else if (value.type === 'done') terminal = result(value, { taskId, contextRevision }, true);
+      else throw failure();
+    }
+    function lines(eof = false) {
+      for (;;) {
+        const at = buffer.search(/[\r\n]/);
+        if (at < 0 || !eof && buffer[at] === '\r' && at + 1 === buffer.length) return;
+        const line = buffer.slice(0, at), skip = buffer[at] === '\r' && buffer[at + 1] === '\n' ? 2 : 1;
+        buffer = buffer.slice(at + skip);
+        if (!line) { frame(); if (terminal) return; }
+        else if (line.startsWith('data:')) {
+          frameUnits += line.length;
+          if (frameUnits > 32768) throw failure();
+          data.push(line.slice(5).replace(/^ /, ''));
+        } else if (!line.startsWith(':') && !/^(event|id|retry):/.test(line)) throw failure();
+      }
+    }
+    try {
+      while (!terminal) {
+        if (signal?.aborted) throw failure('cancelled');
+        const next = await reader.read();
+        if (signal?.aborted) throw failure('cancelled');
+        if (next.done) { buffer += decoder.decode(); lines(true); if (!terminal) throw failure('incomplete_completion_stream'); break; }
+        bytes += next.value.byteLength;
+        if (bytes > 2 * 1024 * 1024) throw failure();
+        buffer += decoder.decode(next.value, { stream: true }); lines();
+        if (buffer.length > 32768) throw failure();
+      }
+      if (signal?.aborted) throw failure('cancelled');
+      return terminal;
+    } catch (error) {
+      if (signal?.aborted) throw failure('cancelled');
+      if (error?.name === 'TypeError') throw failure();
+      throw error;
+    } finally {
+      signal?.removeEventListener('abort', abort);
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+  return Object.freeze({ revision, result, consume });
+})();
+
+;
+'use strict';
 
 // Ghost text is never part of the document until Tab accepts it. Cache remains
 // in memory; only bounded cursor context enters Rust, never paths or history.
@@ -31120,6 +31215,11 @@ const ReadMDInlineCompletion = (() => {
   let sequence = 0;
   const t = key => window.i18n ? window.i18n.t(key) : key;
   const enabled = () => !!editorPrefs.aiCompletion;
+  const activeTab = () => typeof getActiveTab === 'function' ? getActiveTab() : state.tabs?.find(tab => tab.id === state.activeTabId);
+  const documentIdentity = tab => {
+    const stamp = window.ReadMDReview?.snapshot?.(tab) || tab?.reviewSession;
+    return JSON.stringify([stamp?.document_id || null, stamp?.generation ?? null, stamp?.review_revision ?? null]);
+  };
   const identity = () => {
     const current = state.ai?.config?.current || {};
     const provider = state.ai?.providers?.find(p => p.id === (current.provider_id || current.provider));
@@ -31155,6 +31255,7 @@ const ReadMDInlineCompletion = (() => {
         this.view=view; this.generation=0; this.timer=0; this.pending=null;
         this.suggestion=null; this.disposed=false; this.pausedUntil=0; this.lastInput=0; this.typingInterval=200; this.latency=0;
         this.revealTimer=0; this.revealed=''; this.revealTarget=''; this.model='';
+        this.context=null;
         instances.set(view,this);
       }
       status(key) {
@@ -31164,9 +31265,9 @@ const ReadMDInlineCompletion = (() => {
       cancel() {
         clearTimeout(this.timer); this.timer=0; this.generation++;
         clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';this.revealTarget='';
+        this.context=null;
         if (this.pending) {
-          const {abort,task}=this.pending; this.pending=null; abort.abort();
-          apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})}).catch(()=>{});
+          const pending=this.pending; this.pending=null; pending.abort.abort();
         }
       }
       clear() {
@@ -31184,16 +31285,29 @@ const ReadMDInlineCompletion = (() => {
         prefix=prefix.replace(/^[\uDC00-\uDFFF]/,''); suffix=suffix.replace(/[\uD800-\uDBFF]$/,'');
         prefix=Array.from(prefix).slice(-3000).join(''); suffix=Array.from(suffix).slice(0,750).join('');
         if (Array.from(prefix.trim()).length<4) return null;
-        return {doc,pos,prefix,suffix,provider:identity(),tab:state.activeTabId};
+        const tabOwner=activeTab();
+        return {doc,pos,prefix,suffix,provider:identity(),tab:state.activeTabId,tabOwner,revision:documentIdentity(tabOwner),epoch:this.generation};
       }
-      current(s) {
-        return !this.disposed && enabled() && this.view.hasFocus && !this.view.composing && !document.hidden
-          && this.view.state.doc===s.doc && this.view.state.selection.main.empty
-          && this.view.state.selection.main.head===s.pos && state.activeTabId===s.tab && identity()===s.provider;
+      localCurrent(s) {
+        return !this.disposed && enabled() && state.editing && this.view.hasFocus && !this.view.composing && !document.hidden
+          && s.epoch===this.generation && this.view.state.doc===s.doc && this.view.state.selection.ranges.length===1 && this.view.state.selection.main.empty
+          && this.view.state.selection.main.head===s.pos && state.activeTabId===s.tab && activeTab()===s.tabOwner
+          && identity()===s.provider
+          && !(typeof slash!=='undefined' && slash.open) && !CM.completionStatus(this.view.state);
+      }
+      current(s) { return this.localCurrent(s) && documentIdentity(s.tabOwner)===s.revision; }
+      async settled(s,generation) {
+        if (generation!==this.generation || !this.localCurrent(s)) return null;
+        // Local typing already has its own review write queued. Capture the
+        // acknowledged revision, rather than cancelling the next suggestion
+        // merely because that expected write receives its acknowledgement.
+        try { if (window.ReadMDReview?.flush && !await window.ReadMDReview.flush(s.tabOwner)) return null; }
+        catch (_) { return null; }
+        return generation===this.generation && this.localCurrent(s) ? this.snapshot() : null;
       }
       show(s,text,streaming=false) {
         if (!text || !this.current(s)) return;
-        this.suggestion={...s,text}; this.view.dispatch({effects:effect.of({pos:s.pos,text,streaming})}); this.status('editor.aiCompletionAccept');
+        this.context=s; this.suggestion={...s,text}; this.view.dispatch({effects:effect.of({pos:s.pos,text,streaming})}); this.status('editor.aiCompletionAccept');
         const status=document.getElementById('status-ai-completion');
         if(status && this.model)status.title=window.i18n?window.i18n.t('ai.autocompleteActiveModel',{model:this.model}):this.model;
         // A wrapped candidate can extend beyond the last visible line. Reveal
@@ -31225,55 +31339,53 @@ const ReadMDInlineCompletion = (() => {
         this.cancel(); if (Date.now()<this.pausedUntil && !manual) return;
         const s=this.snapshot(); if (!s) return;
         const generation=this.generation;
-        const item=cache.get(JSON.stringify([s.provider,s.prefix,s.suffix]));
-        if(item && Date.now()-item.time<60000){this.model=item.model||'';this.show(s,item.text);return;}
         // A slow provider should not add a second long wait before sending.
         const delay=Math.max(180,Math.min(650,this.typingInterval*1.8-Math.min(this.latency/12,180)));
-        this.timer=setTimeout(()=>this.request(s,generation),manual?0:delay);
+        this.timer=setTimeout(()=>{this.timer=0;void this.settled(s,generation).then(next=>next && this.request(next,generation)).catch(()=>{});},manual?0:delay);
       }
       async request(s,generation) {
         if (generation!==this.generation || !this.current(s)) return;
+        this.context=s;
         const key=JSON.stringify([s.provider,s.prefix,s.suffix]);
         if (cache.has(key)) {
           const item=cache.get(key); cache.delete(key);
           if(Date.now()-item.time<60000){cache.set(key,item);this.model=item.model||'';this.show(s,item.text);return;}
         }
         const abort=new AbortController(), task='inline-'+Date.now()+'-'+(++sequence);
-        this.pending={abort,task}; this.status('editor.aiCompletionLoading');
+        const pending={abort,task,started:false,running:true,cancelPromise:null};
+        this.pending=pending; this.status('editor.aiCompletionLoading');
+        const cancel=()=>{
+          if (!pending.started) return;
+          pending.cancelPromise ||= Promise.resolve(window.ReadMDReview?.cancelAi
+            ? window.ReadMDReview.cancelAi(task,()=>pending.running)
+            : apiFetch('/api/task/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:task})})).catch(()=>{});
+        };
+        abort.signal.addEventListener('abort',cancel,{once:true});
+        const ensure=()=>{if(abort.signal.aborted || this.pending!==pending || generation!==this.generation || !this.current(s)){abort.abort();throw new DOMException('cancelled','AbortError');}};
         const began=Date.now(),deadline=setTimeout(()=>abort.abort(),35000);
+        let response=null;
         try {
-          const response=await apiFetch('/api/ai/complete',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
-            body:JSON.stringify({prefix:s.prefix,suffix:s.suffix,task_id:task}),signal:abort.signal});
+          const contextRevision=await window.ReadMDCompletionStream.revision(s.prefix,s.suffix);
+          ensure(); pending.started=true;
+          response=await apiFetch('/api/ai/complete',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+            body:JSON.stringify({prefix:s.prefix,suffix:s.suffix,task_id:task,context_revision:contextRevision}),signal:abort.signal});
+          ensure();
           let body;
-          const streaming=response.ok && (response.headers.get('content-type')||'').includes('text/event-stream');
+          const streaming=response.ok && (response.headers.get('content-type')||'').toLowerCase().includes('text/event-stream');
           if(streaming){
-            const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finished=false;
-            const frame=line=>{
-              if(!line.startsWith('data:'))return;
-              const event=JSON.parse(line.slice(5).trim());
-              if(event.type==='error' || event.ok===false)throw new Error(event.error_code||'ai_request_failed');
-              if(event.type==='done'){body=event;finished=true;return;}
-              if(event.type==='suggestion' && generation===this.generation && this.current(s)){
-                const text=typeof event.completion==='string'?event.completion:'';
+            body=await window.ReadMDCompletionStream.consume(response,{signal:abort.signal,taskId:task,contextRevision,onSuggestion:event=>{
+                ensure(); const text=event.completion;
                 this.model=event.model||'';
                 if(text)this.reveal(s,text);
                 else{clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';this.suggestion=null;this.view.dispatch({effects:effect.of(null)});this.status('editor.aiCompletionLoading');}
-              }
-            };
-            try{
-              while(!finished){
-                const {done,value}=await reader.read();
-                buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});
-                let end;while((end=buffer.indexOf('\n'))>=0){frame(buffer.slice(0,end).trimEnd());buffer=buffer.slice(end+1);}
-                if(buffer.length>32768)throw new Error('invalid_completion_stream');
-                if(done){if(buffer.trim())frame(buffer.trim());break;}
-              }
-              if(!finished)throw new Error('incomplete_completion_stream');
-            }finally{await reader.cancel().catch(()=>{});}
-          }else{body=await response.json();}
-          if (generation!==this.generation || !this.current(s)) return;
-          if (!response.ok || !body.ok) throw new Error(body.error_code||'ai_request_failed');
-          const text=typeof body.completion==='string'?body.completion:'';
+            }});
+          }else{
+            body=await response.json(); ensure();
+            if (!response.ok || !body?.ok) throw new Error(body?.error_code||'ai_request_failed');
+            window.ReadMDCompletionStream.result(body,{taskId:task,contextRevision});
+          }
+          ensure();
+          const text=body.completion;
           this.latency=Date.now()-began;
           cache.set(key,{text,model:body.model||'',time:Date.now()}); while (cache.size>24) cache.delete(cache.keys().next().value);
           this.model=body.model||'';
@@ -31281,12 +31393,18 @@ const ReadMDInlineCompletion = (() => {
           if(streaming && !body.cached && text)this.reveal(s,text,true);
           else this.show(s,text);
         } catch(error) {
+          abort.abort();
           if (generation===this.generation && !this.disposed) {
             clearTimeout(this.revealTimer);this.revealTimer=0;this.revealed='';
             this.suggestion=null;this.view.dispatch({effects:effect.of(null)});
             this.status(error.name==='AbortError'?'':'editor.aiCompletionUnavailable'); this.pausedUntil=Date.now()+10000;
           }
-        } finally { clearTimeout(deadline); if (this.pending?.task===task) this.pending=null; }
+        } finally {
+          clearTimeout(deadline); abort.signal.removeEventListener('abort',cancel);
+          if (response?.body && !response.body.locked) await response.body.cancel().catch(()=>{});
+          if (pending.cancelPromise) await pending.cancelPromise;
+          pending.running=false; if (this.pending===pending) this.pending=null;
+        }
       }
       update(u) {
         if (u.docChanged || u.selectionSet || u.focusChanged) {
@@ -31297,7 +31415,7 @@ const ReadMDInlineCompletion = (() => {
             const change=changes[0];
             if(changes.length===1 && change.from===previous.pos && change.to===previous.pos && previous.text.startsWith(change.text)){
               const next=this.snapshot(),remaining=previous.text.slice(change.text.length);
-              if(next && remaining)queueMicrotask(()=>this.show(next,remaining));
+              if(next && remaining){const generation=this.generation;queueMicrotask(()=>{void this.settled(next,generation).then(current=>current && this.show(current,remaining)).catch(()=>{});});}
               return;
             }
           }
@@ -31305,10 +31423,17 @@ const ReadMDInlineCompletion = (() => {
             const now=Date.now();if(this.lastInput && now-this.lastInput<1500)this.typingInterval=.7*this.typingInterval+.3*(now-this.lastInput);
             this.lastInput=now;this.schedule();
           }
+        } else if (this.context && !this.current(this.context)) {
+          // Review acknowledgements can change revision without changing the
+          // immutable CodeMirror document. Dispatch after this plugin update.
+          this.cancel(); this.suggestion=null; this.status('');
+          const generation=this.generation;
+          queueMicrotask(()=>{if(!this.disposed && this.generation===generation)this.view.dispatch({effects:effect.of(null)});});
         }
       }
       accept() {
-        const s=this.suggestion; if (!s || !this.current(s)) return false;
+        const s=this.suggestion; if (!s) return false;
+        if (!this.current(s)) { this.clear(); return false; }
         this.cancel(); this.suggestion=null; this.status('');
         this.view.dispatch({changes:{from:s.pos,insert:s.text},selection:{anchor:s.pos+s.text.length},effects:effect.of(null),userEvent:'input.complete'});
         return true;

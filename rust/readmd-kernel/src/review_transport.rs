@@ -2,7 +2,7 @@
 //! Network threads never receive document/store handles and cannot commit edits.
 use crate::ai_providers::{Headers, HttpError, LineStream, Transport};
 mod network;
-use network::NetworkOwner;
+pub(crate) use network::NetworkOwner;
 use std::{
     io::{BufRead, BufReader, Read},
     sync::{
@@ -26,6 +26,8 @@ impl Drop for Permit {
 pub(crate) struct ReviewTransport<'a> {
     cancelled: CancelCheck<'a>,
     deadline: Instant,
+    request_timeout: Duration,
+    response_limit: usize,
 }
 enum CancelCheck<'a> {
     Borrowed(&'a dyn Fn() -> bool),
@@ -36,6 +38,7 @@ impl<'a> ReviewTransport<'a> {
         Self {
             cancelled: CancelCheck::Borrowed(cancelled),
             deadline: Instant::now() + Duration::from_secs(180),
+            request_timeout: Duration::from_secs(90), response_limit: RESPONSE_LIMIT,
         }
     }
     fn stopped(&self) -> bool {
@@ -45,7 +48,10 @@ impl<'a> ReviewTransport<'a> {
 }
 impl ReviewTransport<'static> {
     pub(crate) fn new_owned(cancelled: Arc<dyn Fn() -> bool + Send + Sync>) -> Self {
-        Self { cancelled: CancelCheck::Owned(cancelled), deadline: Instant::now() + Duration::from_secs(7200) }
+        Self { cancelled: CancelCheck::Owned(cancelled), deadline: Instant::now() + Duration::from_secs(7200), request_timeout: Duration::from_secs(90), response_limit: RESPONSE_LIMIT }
+    }
+    pub(crate) fn bounded_owned(cancelled:Arc<dyn Fn()->bool+Send+Sync>,timeout:Duration,deadline:Instant,response_limit:usize)->Self {
+        Self { cancelled:CancelCheck::Owned(cancelled), deadline:deadline.min(Instant::now()+timeout), request_timeout:timeout.min(Duration::from_secs(90)), response_limit:response_limit.min(RESPONSE_LIMIT) }
     }
 }
 
@@ -97,8 +103,9 @@ impl Transport for ReviewTransport<'_> {
         let headers = headers.clone();
         let body = body.to_owned();
         let (send, receive) = mpsc::sync_channel(1);
-        let network = match &self.cancelled {CancelCheck::Owned(check)=>NetworkOwner::with_cancel(check.clone()),_=>NetworkOwner::new()};
+        let network = match &self.cancelled {CancelCheck::Owned(check)=>NetworkOwner::with_deadline(check.clone(),self.deadline.min(Instant::now()+self.request_timeout)),_=>NetworkOwner::new()};
         let resolver = network.resolver();
+        let timeout=self.request_timeout;let response_limit=self.response_limit;
         std::thread::Builder::new()
             .name("readmd-review-request".into())
             .spawn(move || {
@@ -106,10 +113,10 @@ impl Transport for ReviewTransport<'_> {
                 let result = (|| {
                     let agent = ureq::AgentBuilder::new()
                         .resolver(resolver)
-                        .timeout(Duration::from_secs(90))
-                        .timeout_connect(Duration::from_secs(10))
-                        .timeout_read(Duration::from_secs(90))
-                        .timeout_write(Duration::from_secs(10))
+                        .timeout(timeout)
+                        .timeout_connect(timeout.min(Duration::from_secs(10)))
+                        .timeout_read(timeout)
+                        .timeout_write(timeout.min(Duration::from_secs(10)))
                         .redirects(0)
                         .build();
                     let mut request = agent.post(&url);
@@ -129,10 +136,10 @@ impl Transport for ReviewTransport<'_> {
                     let mut data = Vec::new();
                     response
                         .into_reader()
-                        .take((RESPONSE_LIMIT + 1) as u64)
+                        .take((response_limit + 1) as u64)
                         .read_to_end(&mut data)
                         .map_err(|_| HttpError::Network("ai_network_error".into()))?;
-                    if data.len() > RESPONSE_LIMIT {
+                    if data.len() > response_limit {
                         return Err(HttpError::Network("review_ai_budget".into()));
                     }
                     String::from_utf8(data)
@@ -167,14 +174,15 @@ impl Transport for ReviewTransport<'_> {
         let (opened_tx,opened_rx)=mpsc::sync_channel(1);
         let (send,receive)=mpsc::sync_channel(4);
         let stopped=Arc::new(AtomicBool::new(false)); let worker_stopped=stopped.clone();
-        let network=NetworkOwner::with_cancel(check.clone()); let resolver=network.resolver();
-        let worker_cancelled=check.clone();let worker_deadline=self.deadline.min(Instant::now()+Duration::from_secs(90));
+        let network=NetworkOwner::with_deadline(check.clone(),self.deadline.min(Instant::now()+self.request_timeout)); let resolver=network.resolver();
+        let worker_cancelled=check.clone();let worker_deadline=self.deadline.min(Instant::now()+self.request_timeout);
+        let timeout=self.request_timeout;let response_limit=self.response_limit;
         let url=url.to_owned();let headers=headers.clone();let body=body.to_owned();
         std::thread::Builder::new().name("readmd-task-stream".into()).spawn(move||{
             let _permit=permit;
             let should_stop=||worker_stopped.load(Ordering::Acquire)||worker_cancelled()||Instant::now()>=worker_deadline;
-            let agent=ureq::AgentBuilder::new().resolver(resolver).timeout(Duration::from_secs(90)).timeout_connect(Duration::from_secs(10))
-                .timeout_read(Duration::from_secs(90)).timeout_write(Duration::from_secs(10)).redirects(0).build();
+            let agent=ureq::AgentBuilder::new().resolver(resolver).timeout(timeout).timeout_connect(timeout.min(Duration::from_secs(10)))
+                .timeout_read(timeout).timeout_write(timeout.min(Duration::from_secs(10))).redirects(0).build();
             let mut request=agent.post(&url);for(name,value)in &headers{request=request.set(name,value);}
             let response=match request.send_string(&body){
                 Ok(value)=>value,
@@ -183,13 +191,13 @@ impl Transport for ReviewTransport<'_> {
             };
             let content_type=response.header("Content-Type").unwrap_or("").to_string();
             if opened_tx.send(Ok(content_type)).is_err(){return;}
-            let mut reader=BufReader::new(response.into_reader().take((RESPONSE_LIMIT+1)as u64));let mut total=0usize;
+            let mut reader=BufReader::new(response.into_reader().take((response_limit+1)as u64));let mut total=0usize;
             loop{
                 if should_stop(){return;}
                 let mut bytes=Vec::new();
                 match reader.read_until(b'\n',&mut bytes){
                     Ok(0)=>{send_line(&send,&should_stop,Ok(None));return;},
-                    Ok(n)=>{total=total.saturating_add(n);if total>RESPONSE_LIMIT{send_line(&send,&should_stop,Err("review_ai_budget".into()));return;}},
+                    Ok(n)=>{total=total.saturating_add(n);if total>response_limit{send_line(&send,&should_stop,Err("review_ai_budget".into()));return;}},
                     Err(_)=>{send_line(&send,&should_stop,Err("ai_network_error".into()));return;},
                 }
                 let text=match String::from_utf8(bytes){Ok(value)=>value,Err(_)=>{send_line(&send,&should_stop,Err("ai_invalid_response".into()));return;}};

@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Tekoälypalvelu palautti virheellisen vastauksen.",
   "error.ai_network_error": "Tekoälypalveluun ei voitu muodostaa yhteyttä.",
   "error.ai_not_configured": "Määritä tekoäly-yhteys ennen tarkistusta.",
+  "error.ai_session_save_failed": "AI valmis, mutta istunnon tallennus epäonnistui; voi yrittää uudelleen historiassa",
   "error.ai_task_failed": "Tekoälytarkistus epäonnistui. Yritä uudelleen.",
   "error.author_inline_text_budget": "Tekstin muotoilu ylittää käsittelyrajan. Vähennä kokoa tai sisäkkäisyyttä.",
   "error.author_inline_text_invalid": "Paikallinen muotoilu on virheellinen tai sitä ei tueta tälle lohkolle. Tarkista arvot ennen jatkamista.",

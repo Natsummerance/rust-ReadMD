@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI-tjänsten returnerade ett ogiltigt svar.",
   "error.ai_network_error": "Det gick inte att ansluta till AI-tjänsten.",
   "error.ai_not_configured": "Konfigurera en AI-anslutning före granskningen.",
+  "error.ai_session_save_failed": "AI slutförd, men sessionslagring misslyckades; kan försöka igen i historien",
   "error.ai_task_failed": "AI-granskningen misslyckades. Försök igen.",
   "error.author_inline_text_budget": "Textformateringen överskrider gränsen. Minska storlek eller nästling.",
   "error.author_inline_text_invalid": "Lokal formatering är ogiltig eller stöds inte för detta block. Kontrollera dess värden innan du fortsätter.",

@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI 服务返回的响应无效。",
   "error.ai_network_error": "无法连接 AI 服务。",
   "error.ai_not_configured": "请先配置 AI 连接，再进行审阅。",
+  "error.ai_session_save_failed": "AI 完成，但会话保存失败；可在历史中重试",
   "error.ai_task_failed": "AI 审阅失败，请重试。",
   "error.author_inline_text_budget": "文字格式超过处理限额，请减少大小或嵌套层级。",
   "error.author_inline_text_invalid": "局部排版参数无效或不适用于当前内容块，请检查后继续。",

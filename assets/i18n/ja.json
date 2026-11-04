@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AIサービスから無効な応答が返されました。",
   "error.ai_network_error": "AIサービスに接続できませんでした。",
   "error.ai_not_configured": "レビューの前にAI接続を設定してください。",
+  "error.ai_session_save_failed": "AI は完了しましたが、セッションの保存に失敗しました。履歴内で再試行できます",
   "error.ai_task_failed": "AIレビューに失敗しました。再試行してください。",
   "error.author_inline_text_budget": "文字書式が処理上限を超えています。サイズや入れ子を減らしてください。",
   "error.author_inline_text_invalid": "このブロックのローカル書式設定が無効であるか、サポートされていません。続行する前に値を確認してください。",
