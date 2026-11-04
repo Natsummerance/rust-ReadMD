@@ -187,9 +187,10 @@ jobs:
           if-no-files-found: ignore
           path: .cache/p1-ai-completion-stream/report.json
       # This strict native process overlap has an observable window on Mac.
-      # A short probe window remains a diagnostic failure; no threshold is relaxed.
+      # One status-first task must supply its owned copy, actual probe and full
+      # independent digest. Original timing budgets remain unchanged.
       # All three OSes retain the regular managed Node and Rust lock-guard lanes.
-      - name: P1 actual Node status probe and timer overlap, busy resampling and cancellation
+      - name: P1 status-first Node Run admission, busy resampling and cancellation
         if: runner.os == 'macOS'
         timeout-minutes: 5
         run: node tools/test/node-runtime-status-fairness.cjs --bin rust/target/debug/readmd --evidence .cache/p1-node-status-fairness
@@ -283,6 +284,8 @@ jobs:
           workspaces: rust
       - name: Prepare locked Rust dependencies
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Status-first observation and deadline controls
+        run: node --test tools/test/node-runtime-status-observer.test.cjs
       - name: Boot bundle is up to date
         run: cargo run --offline --locked --quiet --manifest-path rust/Cargo.toml -p xtask -- bundle-boot --check
       - name: i18n keys and literals
@@ -457,7 +460,18 @@ jobs:
         run: |
           node ui-tests/shell-compact-browser.cjs --source-test
           node ui-tests/shell-compact-browser.cjs --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-compact-browser" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
-          node -e "const a=require('node:assert/strict'),r=require('./.cache/p1-shell-compact-browser/report.json');for(const k of ['passed','realCspAndToken','actualHeadlessBrowser','sourceUnchanged','ownedScratchRemoved'])a.equal(r[k],true);a.equal(r.modelsRequested,false);a.equal(r.nativeCertified,false);a.equal(r.cases.length,12);a.equal(r.checks.length,20);a.equal(r.focusProjections.length,10);a(r.focusProjections.every(p=>p.modalOpen&&p.focusInModal&&p.headerOverflow<=1&&!p.menuOpen&&p.width===p.expectedWidth));a.deepEqual(r.forbiddenRequests,[]);a.deepEqual(r.pageErrors,[]);a.deepEqual(r.aiPreconditions,{emptyCurrent:true,noConnections:true,automaticCompletion:false});"
+          node - <<'JS'
+          const a=require('node:assert/strict'),r=require('./.cache/p1-shell-compact-browser/report.json');
+          for(const k of ['passed','realCspAndToken','actualHeadlessBrowser','sourceUnchanged','ownedScratchRemoved'])a.equal(r[k],true);
+          a.equal(r.modelsRequested,false);a.equal(r.nativeCertified,false);
+          const expected=['390-welcome','360-reading','390-reading','412-reading','600-reading','640-reading','390-reading-ar-dark','641-reading-graph','360-editing','390-editing','412-editing','1024-editing','1160-editing-mac','390-roundtrip'];
+          a.deepEqual(r.cases.map(c=>c.label).sort(),expected.sort());a.equal(r.checks.length,22);
+          const lower=r.cases.find(c=>c.label==='640-reading'),upper=r.cases.find(c=>c.label==='641-reading-graph');
+          a.equal(lower.compact,true);a.equal(upper.compact,false);a(upper.buttons.some(b=>b.id==='btn-graph'));
+          for(const c of [lower,upper]){a.equal(c.overflow,0);a(c.header.overflow<=1);}
+          a.equal(r.focusProjections.length,10);a(r.focusProjections.every(p=>p.modalOpen&&p.focusInModal&&p.headerOverflow<=1&&!p.menuOpen&&p.width===p.expectedWidth));
+          a.deepEqual(r.forbiddenRequests,[]);a.deepEqual(r.pageErrors,[]);a.deepEqual(r.aiPreconditions,{emptyCurrent:true,noConnections:true,automaticCompletion:false});
+          JS
       - name: P1 document repair, pending review, saved bytes and explicit restart
         env:
           READMD_CODE_BROWSER: chromium

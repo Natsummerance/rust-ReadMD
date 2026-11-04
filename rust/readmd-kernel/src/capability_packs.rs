@@ -468,6 +468,7 @@ fn validate_files_partition(dir:&Path,files:&[Value],lane:usize,lanes:usize,chec
         // shared directory set. The immutable manifest is borrowed throughout.
         let file = dir.join(name);
         let (reader,actual_size)=resource_file(&file)?;
+        #[cfg(test)] let reader=status_read_tests::observed_reader(&file,reader);
         let size = item["size"].as_u64().ok_or_else(error)?;
         if actual_size != size || item["sha256"].as_str() != Some(hash_reader(reader, size, check)?.as_str()) {
             return Err(error());

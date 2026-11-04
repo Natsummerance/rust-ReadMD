@@ -5757,7 +5757,12 @@ function closeSearch({ restoreFocus = false } = {}) {
   editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
   if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
   if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
-  if (restoreFocus && $('btn-search')) $('btn-search').focus({ preventScroll: true });
+  if (restoreFocus) {
+    const target = [$('btn-search'), $('btn-more'), $('content')].find(node => node &&
+      !node.disabled && !node.closest('[inert], [hidden], .hidden') &&
+      node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+    target?.focus({ preventScroll: true });
+  }
 }
 
 function consumeInitialSearchJump() {
