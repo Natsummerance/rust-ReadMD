@@ -111,3 +111,5 @@ async function main() {
   }
 }
 if (require.main === module) main().catch(() => { console.error('Code MCP EOF acceptance failed; inspect the owned report.'); process.exitCode = 1; });
+// Read-only OS observations, reusable without starting a host or worker.
+module.exports = { processes, sameWorker, ps };

@@ -23,6 +23,8 @@ mod paths;
 mod space;
 #[cfg(all(test, any(windows, target_os = "macos", target_os = "linux")))]
 mod space_volume_tests;
+#[cfg(test)]
+mod status_read_tests;
 static INSTALL: Mutex<()> = Mutex::new(());
 // Resource scopes enter under the same lock as install/repair/uninstall, then
 // publish their busy lease before releasing it. A file-path lease must not
@@ -574,6 +576,60 @@ pub(crate) fn lease_reserved<T>(data: &Path, assets: &Path, id: &str, check: &(d
 fn busy_error(id:&str)->&'static str {
     match id { ID=>"pdf_busy","typst"=>"typst_busy","latex"=>"latex_busy",_=>"capability_install_busy" }
 }
+// A status reader pins the same OS resource as execution, without publishing
+// an execution lease that would make its own readiness check appear busy.
+// Worker admission is separate: one real probe uses one existing engine slot.
+struct StatusRead {
+    selected: Spec,
+    directory: PathBuf,
+    _process: crate::capability_process::Guard,
+    _probe_slot: Option<crate::capability_process::Guard>,
+    busy: Option<&'static str>,
+}
+impl StatusRead {
+    fn valid(&self, assets: &Path, expected: &Value) -> ApiResult<bool> {
+        // A different process may have left a blocking transaction between
+        // Exclusive and Shared. Both checks must use the pinned read scope.
+        Ok(!transactions_blocking(self.directory.parent().ok_or_else(error)?, assets, self.selected, expected)?
+            && validate(&self.directory, expected).is_ok())
+    }
+}
+fn status_read(
+    install: std::sync::MutexGuard<'static, ()>,
+    data: &Path,
+    selected: Spec,
+    process: crate::capability_process::Guard,
+    process_busy: bool,
+    busy: Option<&'static str>,
+) -> ApiResult<Option<StatusRead>> {
+    let process = if process_busy {
+        process
+    } else {
+        // Windows share modes cannot atomically downgrade a handle. Keep
+        // INSTALL through the transition; a writer in another process may
+        // win this gap, in which case no validation or probe is permitted.
+        drop(process);
+        let Some(shared) = crate::capability_process::try_acquire(
+            data, selected.id, crate::capability_process::Mode::Shared,
+        )? else { return Ok(None); };
+        shared
+    };
+    let mut busy = busy.or_else(|| process_busy.then_some(busy_error(selected.id)));
+    let probe_slot = if busy.is_none() && matches!(selected.id, "node" | "typst" | "ocr" | "latex") {
+        match crate::capability_process::try_worker_slot(data, selected.id)? {
+            Some(slot) => Some(slot),
+            None => {
+                busy = Some(busy_error(selected.id));
+                None
+            }
+        }
+    } else { None };
+    let reader = StatusRead { selected, directory:root_for(data,selected).join(selected.version), _process: process, _probe_slot: probe_slot, busy };
+    // Pin both resource identity and any probe admission before allowing
+    // another local reader or installer to enter. Never probe a bare path.
+    drop(install);
+    Ok(Some(reader))
+}
 fn local_busy_code(app: &App, id: &str) -> Option<&'static str> {
     let selected = spec(id).ok()?;
     let leased = leases()
@@ -706,8 +762,8 @@ fn probe(id: &str, directory: &Path, data: &Path) -> Result<(), String> {
     }
 }
 pub(crate) fn ready(app: &Arc<App>, id: &str) -> bool {
-    let _guard = resource_guard();
-    let Ok(Some(_process))=crate::capability_process::try_acquire(&app.paths.data_dir,id,crate::capability_process::Mode::Exclusive) else { return false; };
+    let guard = resource_guard();
+    let Ok(Some(process))=crate::capability_process::try_acquire(&app.paths.data_dir,id,crate::capability_process::Mode::Exclusive) else { return false; };
     if local_busy_code(app, id).is_some() {
         return false;
     }
@@ -719,11 +775,15 @@ pub(crate) fn ready(app: &Arc<App>, id: &str) -> bool {
     };
     if recover_locked(&app.paths.data_dir,&app.paths.assets_dir,selected,&lock,&||Ok(())).is_err() { return false; }
     if legacy::migrate(&app.paths.data_dir,selected,&lock,&||Ok(())).is_err() { return false; }
+    let Ok(Some(reader))=status_read(guard,&app.paths.data_dir,selected,process,false,None) else { return false; };
+    if reader.busy.is_some() { return false; }
     let target = root_for(&app.paths.data_dir, selected).join(selected.version);
-    if validate(&target, &lock).is_err() {
+    if !reader.valid(&app.paths.assets_dir,&lock).unwrap_or(false) {
         return false;
     }
-    probe(id, &target, &app.paths.data_dir).is_ok()
+    local_busy_code(app,id).is_none()
+        && probe(id, &target, &app.paths.data_dir).is_ok()
+        && local_busy_code(app,id).is_none()
 }
 struct Removal {
     unknown: bool,
@@ -1075,9 +1135,24 @@ fn operate(
         }
     }
     if action == "status" {
-        let busy = local_busy_code(app,id).or_else(||process_busy.then_some(busy_error(id)));
-        let valid = !transactions_blocking(&root_for(&app.paths.data_dir,selected),&app.paths.assets_dir,selected,&expected)? && validate(&target, &expected).is_ok();
-        let ready = valid && busy.is_none() && probe(&target).is_ok();
+        let initial_busy = local_busy_code(app,id);
+        let Some(reader)=status_read(_lock,&app.paths.data_dir,selected,_process,process_busy,initial_busy)? else {
+            return ok_json(json!({"ok":true,"id":selected.id,"version":selected.version,"platform":selected.platform,
+                "installed":false,"ready":false,"busy":true,"busy_code":busy_error(id),"present":target.exists()}));
+        };
+        // Recovery/migration used Exclusive. Validation and real probing now
+        // use the pinned read lease, so Run can enter Shared concurrently.
+        // Recheck blocking transactions after the cross-process transition.
+        let valid = reader.valid(&app.paths.assets_dir,&expected)?;
+        let busy_before_probe=reader.busy.or_else(||local_busy_code(app,id));
+        let probed=if valid && busy_before_probe.is_none() { Some(probe(&target)) } else { None };
+        let probe_busy=probed.as_ref().and_then(|result|result.as_ref().err()).filter(|code|
+            matches!(code.as_str(),"capability_install_busy"|"pdf_busy"|"ocr_busy"|"typst_busy"|"latex_busy"))
+            .map(|_|busy_error(id));
+        // This is an advisory hint, never authorization for a later writer.
+        // In-process execution can start after the initial busy observation.
+        let busy=busy_before_probe.or(probe_busy).or_else(||local_busy_code(app,id));
+        let ready = probed.is_some_and(|result|result.is_ok()) && busy.is_none();
         let installed = ready || (valid && busy.is_some());
         if !installed && busy.is_none() {
             set_pdf(false);
