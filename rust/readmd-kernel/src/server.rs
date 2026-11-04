@@ -544,7 +544,17 @@ fn handle_connection(stream: TcpStream, app: Arc<App>) {
         }
         let mut keep_alive = req.wants_keep_alive() && reader.buffer().len() < MAX_HEADER;
         let head_only = req.method == "HEAD";
-        let res = match dispatch_guarded(&app, &req, peer_is_loopback) {
+        let completion_peer=if req.method=="POST"&&req.path.trim_end_matches('/')=="/api/ai/complete" {
+            match chat_stream::Peer::watch(&writer){Ok(peer)=>Some(peer),Err(error)=>{let _=write_response(&mut writer,&error_response(error),false,false);break;}}
+        }else{None};
+        // The JSON compatibility route uses the same owned cancellation as
+        // SSE, while retaining the ordinary guarded dispatch and response.
+        let dispatched=if let Some(peer)=completion_peer.as_ref(){
+            let lost=peer.lost.clone();let inherited=crate::speech::cancellation_check();
+            crate::speech::with_cancel(Arc::new(move||lost.load(Ordering::Acquire)||inherited()),||dispatch_guarded(&app,&req,peer_is_loopback))
+        }else{dispatch_guarded(&app,&req,peer_is_loopback)};
+        if completion_peer.is_some(){drop(completion_peer);let _=writer.set_read_timeout(Some(Duration::from_secs(60)));}
+        let res = match dispatched {
             Ok(res) => res,
             Err(res) => {
                 // A handler panicked: its shared state is suspect, so answer and
@@ -4489,39 +4499,51 @@ pub(crate) fn review_task_connection(app:&Arc<App>,body:&Value,route:&ai_provide
 }
 
 fn h_ai_complete(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
-    ai_complete_events(app, req, None, &mut |_| Ok(()))
+    ai_complete_owned(app,req,None,crate::speech::cancellation_check(),&mut |_,_|Ok(()))
 }
 
 /// Same authenticated endpoint and engine as JSON/MCP. Frames carry complete
 /// sanitized candidate snapshots so retries can replace, not concatenate text.
 fn serve_completion_stream(app: &Arc<App>, req: &Request, writer: &mut TcpStream) {
+    let identity=(||->ApiResult<(String,String)>{
+        let body=req.json()?;let context=crate::ai_completion::Context::parse(&body)?;
+        let id=body["task_id"].as_str().filter(|id|crate::cancel::valid_id(id)).ok_or_else(||ApiError::bad_request("invalid_task_id"))?;
+        Ok((id.to_string(),context.revision))
+    })();
+    let (task_id,context_revision)=match identity{Ok(value)=>value,Err(error)=>{let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false);return;}};
+    let peer=match chat_stream::Peer::watch(writer){Ok(peer)=>peer,Err(error)=>{let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false);return;}};
     let started = std::cell::Cell::new(false);
     let outcome;
     {
-        let mut emit = |event: Value| -> ApiResult<()> {
+        let mut emit = |mut event: Value,cancelled:&dyn Fn()->bool| -> ApiResult<()> {
+            event["task_id"]=json!(task_id);event["context_revision"]=json!(context_revision);
+            let budget=if event["type"]=="error"{Duration::from_millis(50)}else{Duration::from_secs(5)};
             if !started.get() {
-                writer.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nX-Accel-Buffering: no\r\nConnection: close\r\n\r\n")
-                    .map_err(|_| ApiError::new(409,"cancelled"))?;
+                chat_stream::write_event_bytes(writer,b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\nCache-Control: no-store\r\nX-Accel-Buffering: no\r\nConnection: close\r\n\r\n",cancelled,budget)?;
                 started.set(true);
             }
-            write!(writer,"data: {}\n\n",event).and_then(|_| writer.flush()).map_err(|_| ApiError::new(409,"cancelled"))
+            chat_stream::write_event_bytes(writer,format!("data: {event}\n\n").as_bytes(),cancelled,budget)
         };
         outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let result = ai_complete_events(app,req,None,&mut emit);
+            let lost=peer.lost.clone();
+            let result = ai_complete_owned(app,req,None,Arc::new(move||lost.load(Ordering::Acquire)),&mut emit);
             match result {
                 Ok(response) => {
                     let mut value: Value=serde_json::from_slice(&response.body).unwrap_or(json!({}));
-                    value["type"]=json!("done"); emit(value)
+                    value["type"]=json!("done"); emit(value,&||peer.lost.load(Ordering::Acquire))
                 }
-                Err(error) if started.get() => emit(json!({"type":"error","ok":false,"error_code":error.code})),
+                Err(error) if started.get() => {
+                    let mut value:Value=serde_json::from_slice(&error_response(error).body).unwrap_or_else(|_|json!({"ok":false,"error_code":"internal_error"}));
+                    value["type"]=json!("error");emit(value,&||peer.lost.load(Ordering::Acquire))
+                },
                 Err(error) => Err(error),
             }
         }));
     }
     match outcome {
-        Ok(Err(error)) if !started.get() => { let _=write_response(writer,&error_response(error),false,false); }
-        Err(_) if !started.get() => { let _=write_response(writer,&internal_error_response(),false,false); }
-        Err(_) => { let _=writer.write_all(b"data: {\"type\":\"error\",\"ok\":false,\"error_code\":\"internal_error\"}\n\n"); }
+        Ok(Err(error)) if !started.get() => { let _=writer.set_nonblocking(true);let _=write_response(writer,&error_response(error),false,false); }
+        Err(_) if !started.get() => { let _=writer.set_nonblocking(true);let _=write_response(writer,&internal_error_response(),false,false); }
+        Err(_) => { let value=json!({"type":"error","ok":false,"error_code":"internal_error","task_id":task_id,"context_revision":context_revision});let _=chat_stream::write_event_bytes(writer,format!("data: {value}\n\n").as_bytes(),&||peer.lost.load(Ordering::Acquire),Duration::from_millis(50)); }
         _ => {}
     }
 }
@@ -4532,13 +4554,19 @@ fn ai_complete(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Tran
 }
 
 fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_providers::Transport>, emit: &mut dyn FnMut(Value) -> ApiResult<()>) -> ApiResult<Response> {
+    ai_complete_owned(app,req,transport,Arc::new(||false),&mut |value,_|emit(value))
+}
+
+fn ai_complete_owned(app:&Arc<App>,req:&Request,transport:Option<&dyn ai_providers::Transport>,lost:Arc<dyn Fn()->bool+Send+Sync>,emit:&mut dyn FnMut(Value,&dyn Fn()->bool)->ApiResult<()>)->ApiResult<Response>{
     if req.method != "POST" { return Err(ApiError::new(405, "method_not_allowed")); }
     if req.body.len() > 50000 { return Err(ApiError::bad_request("completion_context_too_large")); }
     let body = req.json()?;
     let context = crate::ai_completion::Context::parse(&body)?;
-    let task_id = body.get("task_id").and_then(Value::as_str).unwrap_or("");
-    let task = if task_id.is_empty() { None } else { Some(crate::cancel::register(task_id).ok_or_else(|| ApiError::bad_request("invalid_task_id"))?) };
-    let cancelled = || task.as_ref().is_some_and(|t| t.is_cancelled());
+    let task_id=match body.get("task_id"){None=>uuid::Uuid::new_v4().to_string(),Some(Value::String(id))if crate::cancel::valid_id(id)=>id.clone(),_=>return Err(ApiError::bad_request("invalid_task_id"))};
+    let task=crate::cancel::register(&task_id).ok_or_else(||ApiError::bad_request("invalid_task_id"))?;
+    let check=task.checker();let cancelled:Arc<dyn Fn()->bool+Send+Sync>=Arc::new(move||lost()||check());
+    let began=std::time::Instant::now();let overall_deadline=began+Duration::from_secs(30);
+    if cancelled(){return Err(ApiError::new(409,"cancelled"));}
     let directory = AiProviderDirectory::new(app);
     use ai_providers::ProviderDirectory as _;
     let current = directory.current_config();
@@ -4551,8 +4579,10 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
         && crate::ai_completion::normalize_settings(provider.get("autocomplete"))["mode"] == "auto";
     if automatic && provider.get("models").and_then(Value::as_array).is_none_or(Vec::is_empty) && provider.is_object() {
         let models=if let Some(models)=app.completion.catalog(&scope) { models } else if let Ok(_discovery)=app.completion.catalog_discovery.try_lock() {
+            let network=crate::review_transport::NetworkOwner::with_deadline(cancelled.clone(),std::time::Instant::now()+Duration::from_secs(2));
             let models=crate::ai::AIClient::for_model_request(&json!({"provider":provider_id}),&directory)
-                .ok().and_then(|client| client.completion_models().ok()).unwrap_or_default();
+                .ok().and_then(|client| client.completion_models_owned(network.resolver()).ok()).unwrap_or_default();
+            if cancelled(){return Err(ApiError::new(409,"cancelled"));}
             app.completion.remember_catalog(scope.clone(),models.clone()); models
         } else { Vec::new() };
         if !models.is_empty() { provider["models"]=json!(models); }
@@ -4606,7 +4636,6 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
             if self.1 { Ok(Box::new(CompletionLines(stream))) } else { Ok(stream) }
         }
     }
-    let began = std::time::Instant::now();
     let mut last_error = None;
     let mut permit = None;
     for model in plan.models.iter().take(if plan.automatic { 2 } else { 1 }) {
@@ -4614,7 +4643,7 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
         if began.elapsed() > Duration::from_secs(16) { break; }
         let mut payload = prompt_context.payload(&body, &instructions);
         payload["model"] = json!(model);
-        let mut route = ai_providers::resolve_chat(&payload, &directory, &AiSkillService { app }).map_err(ai_chat_failure)?;
+        let mut route = ai_providers::resolve_chat(&payload, &directory, &AiSkillService { app }).map_err(|error|chat_stream::provider_error(error,cancelled()))?;
         if route.args.base_url.is_empty() { return Err(ApiError::bad_request("ai_not_configured")); }
         if protocol != "chat" {
             if route.target != ai_providers::RouteTarget::Completion { return Err(ApiError::bad_request("fim_requires_completion_provider")); }
@@ -4624,23 +4653,42 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
         // replacement invalidates old entries. Never keep or return that input.
         let cache_key = crate::ai_completion::fingerprint(&json!([scope,context.revision,model,protocol,instructions,route.args.api_key]));
         if let Some(text) = app.completion.cached(&cache_key) {
-            return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"model":model,"selection":plan.selection,"cached":true}));
+            if std::time::Instant::now()>=overall_deadline{return Err(ApiError::new(504,"ai_completion_timeout"));}
+            if cancelled()||!task.try_commit(){return Err(ApiError::new(409,"cancelled"));}
+            return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"task_id":task_id,"model":model,"selection":plan.selection,"cached":true,"finish_reason":"cached"}));
         }
         if permit.is_none() { permit = Some(crate::ai_completion::Permit::acquire()?); }
         route.args.stream = provider.get("autocomplete").and_then(|p| p.get("stream")).and_then(Value::as_bool).unwrap_or(true);
-        let transport=transport.unwrap_or_else(|| if plan.automatic && model!=current_model { &app.completion.fast_transport } else { &app.completion.transport });
-        let bounded = Bounded(transport,route.target == ai_providers::RouteTarget::Completion);
         let started = std::time::Instant::now();
-        let response = (|| -> ApiResult<String> {
+        let timeout=Duration::from_secs(if plan.automatic&&model!=current_model{8}else{20});
+        let attempt_deadline=overall_deadline.min(started+timeout);
+        let owned=crate::review_transport::ReviewTransport::bounded_owned(cancelled.clone(),timeout,attempt_deadline,65536);
+        let strict=chat_stream::StrictTransport(transport.unwrap_or(&owned));
+        let bounded = Bounded(&strict,route.target == ai_providers::RouteTarget::Completion);
+        let checkpoint=||->ApiResult<()>{
+            if cancelled(){Err(ApiError::new(409,"cancelled"))}
+            else if std::time::Instant::now()>=attempt_deadline||std::time::Instant::now()>=overall_deadline{Err(ApiError::new(504,"ai_completion_timeout"))}
+            else{Ok(())}
+        };
+        let mut send=|value:Value|->ApiResult<()>{
+            checkpoint()?;
+            let stopped=||cancelled()||std::time::Instant::now()>=attempt_deadline||std::time::Instant::now()>=overall_deadline;
+            let sent=emit(value,&stopped);
+            // A callback/write may cross the deadline after producing a legal
+            // ready unit. It must not turn that expired unit into a cache hit.
+            checkpoint()?;sent
+        };
+        let map_error=|error|if cancelled(){ApiError::new(409,"cancelled")}else if std::time::Instant::now()>=attempt_deadline{ApiError::new(504,"ai_completion_timeout")}else{chat_stream::provider_error(error,false)};
+        let response = (|| -> ApiResult<(String,&'static str)> {
             let mut stream = match ai_providers::dispatch_chat(&route, &bounded) {
                 Ok(stream) => stream,
                 Err(error) if route.args.stream && ["HTTP 400", "HTTP 405", "HTTP 415"].iter().any(|s| error.message.starts_with(s)) => {
                     // A saved compatible gateway may not implement SSE. Retry
                     // once on the SAME model; never silently switch a fixed one.
                     route.args.stream = false;
-                    ai_providers::dispatch_chat(&route, &bounded).map_err(ai_chat_failure)?
+                    ai_providers::dispatch_chat(&route, &bounded).map_err(&map_error)?
                 }
-                Err(error) => return Err(ai_chat_failure(error)),
+                Err(failure) => return Err(map_error(failure)),
             };
             let mut raw = String::new();
             let mut last_sent = String::new();
@@ -4648,33 +4696,50 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
             for event in &mut stream {
                 if cancelled() { return Err(ApiError::new(409, "cancelled")); }
                 if began.elapsed() > Duration::from_secs(30) { return Err(ApiError::new(504, "ai_completion_timeout")); }
-                if let ai_providers::ChatEvent::Delta(Value::String(delta)) = event.map_err(ai_chat_failure)? {
+                let delta=match event.map_err(&map_error)?{
+                    ai_providers::ChatEvent::Delta(Value::String(delta))=>delta,
+                    ai_providers::ChatEvent::Delta(_)=>return Err(ApiError::new(502,"ai_invalid_response")),
+                    _=>continue,
+                };
+                {
+                    if raw.len().saturating_add(delta.len())>16000{return Err(ApiError::new(422,"review_ai_budget"));}
                     raw.push_str(&delta);
                     let ready = prompt_context.ready(&raw);
                     let candidate = ready.clone().unwrap_or_else(|| prompt_context.preview(&raw));
                     if candidate.chars().count() >= 2 && candidate != last_sent
                         && (last_sent.is_empty() || ready.is_some() || sent_at.elapsed() >= Duration::from_millis(35)) {
-                        emit(json!({"type":"suggestion","completion":candidate,"model":model,"context_revision":context.revision}))?;
+                        send(json!({"type":"suggestion","completion":candidate,"model":model,"context_revision":context.revision,"task_id":task_id}))?;
                         last_sent = candidate; sent_at = std::time::Instant::now();
                     }
-                    if let Some(text) = ready { return Ok(text); }
-                    if raw.len() > 16000 { break; }
+                    if let Some(text) = ready { return Ok((text,"ready_unit")); }
                 }
             }
-            Ok(prompt_context.clean(&raw))
+            Ok((prompt_context.clean(&raw),"provider_finished"))
         })();
+        drop(send);
+        let response=response.and_then(|value|{checkpoint()?;Ok(value)});
         if cancelled() { return Err(ApiError::new(409, "cancelled")); }
+        if std::time::Instant::now()>=overall_deadline{return Err(ApiError::new(504,"ai_completion_timeout"));}
         match response {
-            Ok(text) if crate::ai_completion::usable(&text) => {
+            Ok((text,finish_reason)) if crate::ai_completion::usable(&text) => {
+                checkpoint()?;
+                if !task.try_commit(){return Err(ApiError::new(409,"cancelled"));}
+                checkpoint()?;
                 app.completion.observe(&scope,model,started.elapsed(),true);
                 app.completion.remember(cache_key,text.clone());
-                return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"model":model,"selection":plan.selection,"cached":false,"elapsed_ms":began.elapsed().as_millis()}));
+                return ok_json(json!({"ok":true,"completion":text,"context_revision":context.revision,"task_id":task_id,"model":model,"selection":plan.selection,"cached":false,"finish_reason":finish_reason,"elapsed_ms":began.elapsed().as_millis()}));
             }
             Ok(_) => { last_error = Some(ApiError::new(502,"ai_completion_empty")); }
             Err(error) if error.code == "cancelled" => { return Err(error); }
             Err(error) => { last_error = Some(error); }
         }
-        emit(json!({"type":"suggestion","completion":"","model":model,"context_revision":context.revision}))?;
+        // A timed-out automatic model may still fall back within the original
+        // overall budget. Its empty withdrawal uses that remaining budget.
+        let stopped=||cancelled()||std::time::Instant::now()>=overall_deadline;
+        let sent=emit(json!({"type":"suggestion","completion":"","model":model,"context_revision":context.revision,"task_id":task_id}),&stopped);
+        if cancelled(){return Err(ApiError::new(409,"cancelled"));}
+        if std::time::Instant::now()>=overall_deadline{return Err(ApiError::new(504,"ai_completion_timeout"));}
+        sent?;
         app.completion.observe(&scope,model,started.elapsed(),false);
     }
     Err(last_error.unwrap_or_else(|| ApiError::new(504,"ai_completion_timeout")))
@@ -7212,8 +7277,15 @@ mod tests {
         assert!(dir.find_provider_by_credential(&format!("cred:{}", "x".repeat(130))).is_none());
     }
 
+    static COMPLETION_TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn completion_fake(lines:&[&str])->FakeTransport {
+        let framed=lines.iter().flat_map(|line|[format!("{line}\n"),"\n".into()]).collect::<Vec<String>>();
+        FakeTransport::new(&framed.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
     #[test]
     fn completion_wire_is_bounded_ephemeral_and_supports_real_fim() {
+        let _serial=COMPLETION_TEST_SERIAL.lock().unwrap_or_else(|e|e.into_inner());
         let app = sample_app("completion-wire");
         let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
         std::fs::create_dir_all(&skill).unwrap();
@@ -7223,7 +7295,7 @@ mod tests {
             "providers":[{"id":"local-completion","name":"Completion","base_url":"http://127.0.0.1:1/v1","category":"local","format":"openai","mode":"chat","models":["test"]}],
             "current":{"provider_id":"local-completion","model":"test"}
         }).to_string()).unwrap();
-        let fake = FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"比较解释，再检查反例。"}}]}"#, "data: [DONE]"]);
+        let fake = completion_fake(&[r#"data: {"choices":[{"delta":{"content":"比较解释，再检查反例。"}}]}"#, "data: [DONE]"]);
         let body = json!({"prefix":"研究方法：","suffix":"，再检查反例。","api_key":"must-not-forward","session":"must-not-save"}).to_string();
         let reply = ai_complete(&app,&request("POST","/api/ai/complete",body.as_bytes()),&fake).unwrap();
         let result:Value=serde_json::from_slice(&reply.body).unwrap();
@@ -7236,7 +7308,7 @@ mod tests {
         let mut settings:Value=serde_json::from_str(&std::fs::read_to_string(app.paths.data_dir.join("ai.json")).unwrap()).unwrap();
         settings["providers"][0]["mode"]=json!("completion");
         std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
-        let fim=FakeTransport::new(&[r#"data: {"choices":[{"text":"提出问题<|endoftext|>junk"}]}"#, "data: [DONE]"]);
+        let fim=completion_fake(&[r#"data: {"choices":[{"text":"提出问题<|endoftext|>junk"}]}"#, "data: [DONE]"]);
         let body=json!({"prefix":"研究方法：","suffix":"。","protocol":"qwen"}).to_string();
         let reply=ai_complete(&app,&request("POST","/api/ai/complete",body.as_bytes()),&fim).unwrap();
         assert_eq!(serde_json::from_slice::<Value>(&reply.body).unwrap()["completion"],"提出问题");
@@ -7248,6 +7320,7 @@ mod tests {
 
     #[test]
     fn completion_stream_stops_at_useful_unit_and_cache_invalidates_with_policy() {
+        let _serial=COMPLETION_TEST_SERIAL.lock().unwrap_or_else(|e|e.into_inner());
         let app = sample_app("completion-stream-cache");
         let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
         std::fs::create_dir_all(&skill).unwrap();
@@ -7257,7 +7330,7 @@ mod tests {
                 "models":["claude-sonnet-4-6","claude-haiku-4-5"],"autocomplete":{"mode":"auto"}}],
             "current":{"provider_id":"custom:local","model":"claude-sonnet-4-6"}});
         std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
-        let fake=FakeTransport::new(&[
+        let fake=completion_fake(&[
             r#"data: {"choices":[{"delta":{"content":"主动核对原始证据，"}}]}"#,
             r#"data: {"choices":[{"delta":{"content":"并用反例检验每个结论。"}}]}"#,
             // Reading the rest of the stream would cause a failure.
@@ -7279,14 +7352,14 @@ mod tests {
         let fixed:Value=serde_json::from_slice(&ai_complete(&app,&req,&fake).unwrap().body).unwrap();
         assert_eq!(fixed["model"],"claude-sonnet-4-6");assert_eq!(fixed["selection"],"fixed");assert_eq!(fake.recorded().len(),2);
         assert_eq!(ai_settings(&app).ensure_config().unwrap()["current"]["model"],"claude-sonnet-4-6");
-        let retired=FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
+        let retired=completion_fake(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
         let failed_body=json!({"prefix":"这是一段不同的研究文字，我们应该"}).to_string();
         let failed_req=request("POST","/api/ai/complete",failed_body.as_bytes());
         assert_eq!(ai_complete(&app,&failed_req,&retired).err().unwrap().code,"ai_completion_empty");
         assert_eq!(retired.recorded().len(),1,"A fixed model cannot silently fail over");
         settings["providers"][0]["autocomplete"]=json!({"mode":"auto"});
         std::fs::write(app.paths.data_dir.join("ai.json"),settings.to_string()).unwrap();
-        let retired_auto=FakeTransport::new(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
+        let retired_auto=completion_fake(&[r#"data: {"choices":[{"delta":{"content":"Gemini 3.5 Flash has been retired. Please switch models."}}]}"#,"data: [DONE]"]);
         assert!(ai_complete(&app,&failed_req,&retired_auto).is_err());
         assert_eq!(retired_auto.recorded().len(),2,"Automatic retries are bounded to two models");
         let cancelled_body=json!({"prefix":"取消测试的研究文字，我们应该","model":"claude-sonnet-4-6","task_id":"completion-stream-cancel-test"}).to_string();
@@ -7295,6 +7368,40 @@ mod tests {
             crate::cancel::cancel("completion-stream-cancel-test");Ok(())
         }).err().unwrap();
         assert_eq!(failure.code,"cancelled");
+    }
+
+    #[test]
+    fn completion_strict_eof_failure_does_not_enter_the_cache(){
+        let _serial=COMPLETION_TEST_SERIAL.lock().unwrap_or_else(|e|e.into_inner());
+        let app=sample_app("completion-strict-eof");let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
+        std::fs::create_dir_all(&skill).unwrap();std::fs::write(skill.join("SKILL.md"),include_str!("../../../assets/skills/readmd-autocomplete/SKILL.md")).unwrap();
+        std::fs::write(app.paths.data_dir.join("ai.json"),json!({"schema_version":crate::ai::CONFIG_SCHEMA_VERSION,"providers":[{"id":"custom:strict-completion","name":"Strict","category":"local","base_url":"http://127.0.0.1:1/v1","models":["synthetic"],"autocomplete":{"mode":"current"}}],"current":{"provider_id":"custom:strict-completion","model":"synthetic"}}).to_string()).unwrap();
+        let fake=completion_fake(&[r#"data: {"choices":[{"delta":{"content":"unfinished"}}]}"#]);
+        let body=json!({"prefix":"A synthetic unfinished writing context","task_id":"strict-completion-eof"}).to_string();let req=request("POST","/api/ai/complete",body.as_bytes());
+        for _ in 0..2{assert_eq!(ai_complete(&app,&req,&fake).err().unwrap().code,"ai_invalid_response");}
+        assert_eq!(fake.recorded().len(),2,"a failed stream cannot become a cached success");
+    }
+
+    #[test]
+    fn completion_expired_ready_emit_does_not_commit_or_cache_the_old_model(){
+        let _serial=COMPLETION_TEST_SERIAL.lock().unwrap_or_else(|e|e.into_inner());
+        let app=sample_app("completion-expired-emit");let skill=app.paths.assets_dir.join("skills/readmd-autocomplete");
+        std::fs::create_dir_all(&skill).unwrap();std::fs::write(skill.join("SKILL.md"),include_str!("../../../assets/skills/readmd-autocomplete/SKILL.md")).unwrap();
+        std::fs::write(app.paths.data_dir.join("ai.json"),json!({"schema_version":crate::ai::CONFIG_SCHEMA_VERSION,"providers":[{"id":"custom:deadline-completion","name":"Deadline","category":"local","base_url":"http://127.0.0.1:1/v1","models":["claude-haiku-budget","owned-current"],"autocomplete":{"mode":"auto"}}],"current":{"provider_id":"custom:deadline-completion","model":"owned-current"}}).to_string()).unwrap();
+        let fake=completion_fake(&[r#"data: {"choices":[{"delta":{"content":"A complete writing unit contains enough detail to finish here."}}]}"#]);
+        let body=json!({"prefix":"A unique delayed completion context, continue here: ","task_id":"expired-ready-automatic"});
+        let mut delayed=false;
+        let first=ai_complete_events(&app,&request("POST","/api/ai/complete",body.to_string().as_bytes()),Some(&fake),&mut |value|{
+            if !delayed&&value["completion"].as_str().is_some_and(|text|!text.is_empty()) {delayed=true;std::thread::sleep(Duration::from_millis(8100));}
+            Ok(())
+        });
+        let first=first.ok().and_then(|response|serde_json::from_slice::<Value>(&response.body).ok()).unwrap_or(Value::Null);
+        let fresh=completion_fake(&[r#"data: {"choices":[{"delta":{"content":"A fresh writing unit now carries a separately requested conclusion."}}]}"#]);
+        let mut retry=body;retry["task_id"]=json!("expired-ready-explicit-retry");retry["model"]=json!("claude-haiku-budget");
+        let replay=ai_complete(&app,&request("POST","/api/ai/complete",retry.to_string().as_bytes()),&fresh).unwrap();
+        let replay:Value=serde_json::from_slice(&replay.body).unwrap();
+        assert!(first["model"]=="owned-current"&&fake.recorded().len()==2&&replay["cached"]==false&&fresh.recorded().len()==1,
+            "expired ready emit became success/cache: first_model={}, attempts={}, replay_cached={}, fresh_calls={}",first["model"],fake.recorded().len(),replay["cached"],fresh.recorded().len());
     }
 
     #[test]

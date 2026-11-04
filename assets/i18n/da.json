@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI-tjenesten returnerede et ugyldigt svar.",
   "error.ai_network_error": "Der kunne ikke oprettes forbindelse til AI-tjenesten.",
   "error.ai_not_configured": "Konfigurer en AI-forbindelse før gennemgangen.",
+  "error.ai_session_save_failed": "AI fuldført, men sessionslagring mislykkedes; kan prøve igen i historien",
   "error.ai_task_failed": "AI-gennemgangen mislykkedes. Prøv igen.",
   "error.author_inline_text_budget": "Tekstformateringen overskrider grænsen. Reducer størrelse eller indlejring.",
   "error.author_inline_text_invalid": "Lokal formatering er ugyldig eller ikke understøttet for denne blok. Kontroller dens værdier, før du fortsætter.",

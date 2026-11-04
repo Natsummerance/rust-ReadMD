@@ -162,6 +162,9 @@ impl Context {
         }
         if prefix.trim().chars().count() < 4 { return Err(ApiError::bad_request("completion_context_too_short")); }
         let revision = format!("{:x}", Sha256::digest(format!("{}:{prefix}{suffix}", prefix.len()).as_bytes()));
+        if body.get("context_revision").is_some_and(|value|value.as_str()!=Some(revision.as_str())) {
+            return Err(ApiError::bad_request("invalid_completion_context"));
+        }
         Ok(Self { prefix: prefix.into(), suffix: suffix.into(), revision })
     }
     pub fn payload(&self, body: &Value, instructions: &str) -> Value {
@@ -256,6 +259,10 @@ impl Context {
         assert!(Context::parse(&json!({"prefix":"文".repeat(8001)})).is_err());
         assert!(Context::parse(&json!({"prefix":"abc"})).is_err());
         assert!(Context::parse(&json!({"prefix":"hello","suffix":"x".repeat(2001)})).is_err());
+        let mut body=json!({"prefix":"文😀 exact context","suffix":"TAIL"});
+        body["context_revision"]=json!(Context::parse(&body).unwrap().revision);
+        assert!(Context::parse(&body).is_ok());
+        body["context_revision"]=json!("wrong");assert!(Context::parse(&body).is_err());
     }
     #[test] fn unicode_overlap_and_echo() {
         let x = c("哲学的方法：", "，再审视结论。");

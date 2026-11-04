@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Kisalu ya AI me vutula mvutu yina me fwana ve.",
   "error.ai_network_error": "Kuwakana na kisalu ya AI me nunga ve.",
   "error.ai_not_configured": "Yidika kuwakana ya AI na ntwala ya kutala diaka.",
+  "error.ai_session_save_failed": "AI me manisa, kansi disolo me bumbana ve; lenda meka diaka na masolo ya me luta",
   "error.ai_task_failed": "Kutala diaka na AI me nunga ve. Meka diaka.",
   "error.author_inline_text_budget": "Nkadilu ya masonuku meluta ndilu ya kusala. Kitisa nene to bitini ya kati.",
   "error.author_inline_text_invalid": "Mitóng ya kisika ke na mbote ve to ke ndima ve sambu na blok yai. Tala ba valere na yo na ntwala ya kulanda.",

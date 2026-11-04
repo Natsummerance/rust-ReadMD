@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Yapay zekâ hizmeti geçersiz yanıt döndürdü.",
   "error.ai_network_error": "Yapay zekâ hizmetine bağlanılamadı.",
   "error.ai_not_configured": "İncelemeden önce bir yapay zekâ bağlantısı yapılandırın.",
+  "error.ai_session_save_failed": "Yapay zeka tamamlandı ancak oturum kaydedilemedi; geçmişten tekrar deneyebilirsiniz",
   "error.ai_task_failed": "Yapay zekâ incelemesi başarısız oldu. Yeniden deneyin.",
   "error.author_inline_text_budget": "Metin biçimlendirmesi işleme sınırını aşıyor. Boyutu veya iç içe düzeyini azaltın.",
   "error.author_inline_text_invalid": "Yerel biçimlendirme bu blok için geçersiz veya desteklenmiyor. Devam etmeden önce değerlerini kontrol edin.",

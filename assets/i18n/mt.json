@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Is-servizz tal-intelliġenza artifiċjali irritorna tweġiba mhux valida.",
   "error.ai_network_error": "Ma setgħetx issir konnessjoni mas-servizz tal-intelliġenza artifiċjali.",
   "error.ai_not_configured": "Ikkonfigura konnessjoni tal-intelliġenza artifiċjali qabel ir-reviżjoni.",
+  "error.ai_session_save_failed": "AI tlestiet, iżda s-salvataġġ tas-sessjoni falla; jista' jerġa' jipprova fl-istorja",
   "error.ai_task_failed": "Ir-reviżjoni bl-intelliġenza artifiċjali falliet. Erġa’ pprova.",
   "error.author_inline_text_budget": "Il-format tat-test jaqbeż il-limitu tal-ipproċessar. Naqqas id-daqs jew it-tbejjit.",
   "error.author_inline_text_invalid": "Il-formatjar lokali mhux validu jew mhux appoġġjat għal dan il-blokk. Iċċekkja l-valuri tiegħu qabel tkompli.",

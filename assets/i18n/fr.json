@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Le service d’IA a renvoyé une réponse non valide.",
   "error.ai_network_error": "Impossible de se connecter au service d’IA.",
   "error.ai_not_configured": "Configurez une connexion d’IA avant la révision.",
+  "error.ai_session_save_failed": "AI terminée, mais la sauvegarde de la session a échoué ; je peux réessayer dans l'histoire",
   "error.ai_task_failed": "La révision par IA a échoué. Réessayez.",
   "error.author_inline_text_budget": "La mise en forme dépasse la limite de traitement. Réduisez la taille ou l’imbrication.",
   "error.author_inline_text_invalid": "Le formatage local n'est pas valide ou n'est pas pris en charge pour ce bloc. Vérifiez ses valeurs avant de continuer.",

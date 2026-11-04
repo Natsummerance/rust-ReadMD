@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "A mesterségesintelligencia-szolgáltatás érvénytelen választ adott.",
   "error.ai_network_error": "Nem sikerült kapcsolódni a mesterségesintelligencia-szolgáltatáshoz.",
   "error.ai_not_configured": "Ellenőrzés előtt állítson be mesterségesintelligencia-kapcsolatot.",
+  "error.ai_session_save_failed": "AI kész, de a munkamenet mentése sikertelen; az előzményekből újra megkísérelhető",
   "error.ai_task_failed": "A mesterséges intelligenciával végzett ellenőrzés sikertelen. Próbálja újra.",
   "error.author_inline_text_budget": "A szövegformázás túllépi a feldolgozási korlátot. Csökkentse a méretet vagy a beágyazást.",
   "error.author_inline_text_invalid": "A helyi formázás érvénytelen vagy nem támogatott ehhez a blokkhoz. Folytatás előtt ellenőrizze az értékeit.",

@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI-mik sullissivik atorsinnaanngitsumik akissuteqarpoq.",
   "error.ai_network_error": "AI-mik sullissivimmut attaveqartoqarsinnaanngilaq.",
   "error.ai_not_configured": "Misissuinnginninni AI-mut attaveqaat aaqqiguk.",
+  "error.ai_session_save_failed": "AI naammassivoq, kisianni session save iluatsinngilaq; oqaluttuarisaanermi misileqqissinnaavoq",
   "error.ai_task_failed": "AI atorlugu misissuineq iluatsinngilaq. Misileqqiguk.",
   "error.author_inline_text_budget": "Allakkat ilusilersornerat suliarineqarsinnaasumut killigititaq qaangerpaa. Angissuseq imaluunniit ilioqqakkat ikilisikkit.",
   "error.author_inline_text_invalid": "Najugami ilusilersuineq kukkusoq imaluunniit blokkimut uunga tapersersorneqanngilaq. Naliteriarlugu nangissaguit misissoruk.",

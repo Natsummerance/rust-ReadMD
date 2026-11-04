@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "La servo de artefarita intelekto redonis nevalidan respondon.",
   "error.ai_network_error": "Ne eblis konekti al la servo de artefarita intelekto.",
   "error.ai_not_configured": "Agordu konekton al artefarita intelekto antaŭ ol revizii.",
+  "error.ai_session_save_failed": "AI finite, sed konservado de sesio malsukcesis; reprovu el historio",
   "error.ai_task_failed": "La revizio per artefarita intelekto malsukcesis. Reprovu.",
   "error.author_inline_text_budget": "Tekstoformato superas la prilaboran limon. Reduktu grandecon aŭ nestadon.",
   "error.author_inline_text_invalid": "Loka formatado estas nevalida aŭ nesubtenata por ĉi tiu bloko. Kontrolu ĝiajn valorojn antaŭ ol daŭrigi.",

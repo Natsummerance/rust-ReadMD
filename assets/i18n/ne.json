@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI सेवाले अमान्य जवाफ फर्कायो।",
   "error.ai_network_error": "AI सेवामा जडान गर्न सकिएन।",
   "error.ai_not_configured": "समीक्षा गर्नुअघि AI जडान कन्फिगर गर्नुहोस्।",
+  "error.ai_session_save_failed": "AI सम्पन्न भयो, तर सत्र बचत गर्न असफल भयो; इतिहासबाट पुन: प्रयास गर्नुहोस्",
   "error.ai_task_failed": "AI समीक्षा असफल भयो। फेरि प्रयास गर्नुहोस्।",
   "error.author_inline_text_budget": "पाठको ढाँचाले प्रशोधन सीमा नाघ्यो। आकार वा तह घटाउनुहोस्।",
   "error.author_inline_text_invalid": "यो ब्लकको लागि स्थानीय ढाँचा अवैध वा असमर्थित छ। जारी राख्नु अघि यसका मानहरू जाँच गर्नुहोस्।",

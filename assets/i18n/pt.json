@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "O serviço de IA devolveu uma resposta inválida.",
   "error.ai_network_error": "Não foi possível ligar ao serviço de IA.",
   "error.ai_not_configured": "Configure uma ligação de IA antes da revisão.",
+  "error.ai_session_save_failed": "IA concluída, mas falha no salvamento da sessão; pode tentar novamente na história",
   "error.ai_task_failed": "A revisão com IA falhou. Tente novamente.",
   "error.author_inline_text_budget": "A formatação excede o limite de processamento. Reduza o tamanho ou o aninhamento.",
   "error.author_inline_text_invalid": "A formatação local é inválida ou não é suportada para este bloco. Verifique os respetivos valores antes de continuar.",

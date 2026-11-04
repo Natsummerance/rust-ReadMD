@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Layanan AI mengembalikan tanggapan yang tidak valid.",
   "error.ai_network_error": "Tidak dapat terhubung ke layanan AI.",
   "error.ai_not_configured": "Konfigurasikan koneksi AI sebelum meninjau.",
+  "error.ai_session_save_failed": "AI selesai, tetapi gagal menyimpan sesi; Anda dapat mencoba lagi dari riwayat",
   "error.ai_task_failed": "Peninjauan AI gagal. Coba lagi.",
   "error.author_inline_text_budget": "Format teks melampaui batas pemrosesan. Kurangi ukuran atau tingkat penyarangan.",
   "error.author_inline_text_invalid": "Pemformatan lokal tidak valid atau tidak didukung untuk blok ini. Periksa nilainya sebelum melanjutkan.",

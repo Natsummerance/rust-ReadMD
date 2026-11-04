@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Nagbalik ang serbisyo ng AI ng hindi wastong tugon.",
   "error.ai_network_error": "Hindi makakonekta sa serbisyo ng AI.",
   "error.ai_not_configured": "Mag-configure ng koneksiyon sa AI bago magsuri.",
+  "error.ai_session_save_failed": "Nakumpleto ang AI, ngunit nabigo ang pag-save ng sesyon; maaaring subukang muli mula sa kasaysayan",
   "error.ai_task_failed": "Nabigo ang pagsusuri ng AI. Subukan muli.",
   "error.author_inline_text_budget": "Lampas sa limitasyon ang pormat ng teksto. Bawasan ang laki o pagkakapatong.",
   "error.author_inline_text_invalid": "Ang lokal na pag-format ay hindi balido o hindi sinusuportahan para sa blokeng ito. Suriin ang mga halaga nito bago magpatuloy.",

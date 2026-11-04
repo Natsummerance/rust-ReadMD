@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Storitev umetne inteligence je vrnila neveljaven odgovor.",
   "error.ai_network_error": "Povezava s storitvijo umetne inteligence ni uspela.",
   "error.ai_not_configured": "Pred pregledom nastavite povezavo z umetno inteligenco.",
+  "error.ai_session_save_failed": "AI je zaključil, vendar seje ni bilo mogoče shraniti; poskusite znova v zgodovini",
   "error.ai_task_failed": "Pregled z umetno inteligenco ni uspel. Poskusite znova.",
   "error.author_inline_text_budget": "Oblikovanje besedila presega omejitev obdelave. Zmanjšajte velikost ali gnezdenje.",
   "error.author_inline_text_invalid": "Lokalno oblikovanje je neveljavno ali nepodprto za ta blok. Pred nadaljevanjem preverite njegove vrednosti.",

@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "AI 服務傳回的回應無效。",
   "error.ai_network_error": "無法連線至 AI 服務。",
   "error.ai_not_configured": "請先設定 AI 連線，再進行審閱。",
+  "error.ai_session_save_failed": "AI 完成，但對話儲存失敗；可在歷史中重試",
   "error.ai_task_failed": "AI 審閱失敗，請重試。",
   "error.author_inline_text_budget": "文字格式超過處理上限，請減少大小或巢狀層級。",
   "error.author_inline_text_invalid": "此區塊的本地格式設定無效或不支援。請在繼續之前檢查其數值。",

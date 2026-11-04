@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "El servicio de IA devolvió una respuesta no válida.",
   "error.ai_network_error": "No se pudo conectar con el servicio de IA.",
   "error.ai_not_configured": "Configure una conexión de IA antes de revisar.",
+  "error.ai_session_save_failed": "La IA se completó, pero falló el guardado de la sesión; puede intentarlo de nuevo en la historia",
   "error.ai_task_failed": "Falló la revisión con IA. Inténtelo de nuevo.",
   "error.author_inline_text_budget": "El formato supera el límite de procesamiento. Reduzca tamaño o anidamiento.",
   "error.author_inline_text_invalid": "El formato local no es válido o no es compatible con este bloque. Verifique sus valores antes de continuar.",

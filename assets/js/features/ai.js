@@ -2710,6 +2710,7 @@ function bindAiResize() {
 function aiErrorHint(error) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const raw = error?.status ? 'HTTP ' + error.status : String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  if (error?.code === 'ai_session_save_failed' || /ai_session_save_failed/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('error.ai_session_save_failed') };
   if (/provider_model_unavailable/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('ai.selectModel') };
   if (/401|403|auth|key|token|鉴权|密钥/i.test(raw)) return { kind: 'error', summary: _t('ai.authFailSummary') || '', message: _t('ai.authFailMsg') || '' };
   if (/429|rate.?limit|限流|too many/i.test(raw)) return { kind: 'warn', summary: _t('ai.rateLimitSummary') || '', message: _t('ai.rateLimitMsg') || '' };

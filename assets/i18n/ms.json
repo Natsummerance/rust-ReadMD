@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "Perkhidmatan AI memulangkan respons yang tidak sah.",
   "error.ai_network_error": "Tidak dapat menyambung kepada perkhidmatan AI.",
   "error.ai_not_configured": "Konfigurasikan sambungan AI sebelum menyemak.",
+  "error.ai_session_save_failed": "AI selesai, tetapi penyelamatan sesi gagal; boleh cuba lagi dalam sejarah",
   "error.ai_task_failed": "Semakan AI gagal. Cuba lagi.",
   "error.author_inline_text_budget": "Format teks melebihi had pemprosesan. Kurangkan saiz atau penyarangan.",
   "error.author_inline_text_invalid": "Pemformatan tempatan tidak sah atau tidak disokong untuk blok ini. Semak nilainya sebelum meneruskan.",

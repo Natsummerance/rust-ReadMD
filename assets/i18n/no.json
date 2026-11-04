@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "KI-tjenesten returnerte et ugyldig svar.",
   "error.ai_network_error": "Kunne ikke koble til KI-tjenesten.",
   "error.ai_not_configured": "Konfigurer en KI-tilkobling før gjennomgangen.",
+  "error.ai_session_save_failed": "AI fullført, men øktlagring mislyktes; kan prøve igjen i historien",
   "error.ai_task_failed": "KI-gjennomgangen mislyktes. Prøv igjen.",
   "error.author_inline_text_budget": "Tekstformateringen overskrider grensen. Reduser størrelse eller nøsting.",
   "error.author_inline_text_invalid": "Lokal formatering er ugyldig eller støttes ikke for denne blokken. Sjekk verdiene før du fortsetter.",

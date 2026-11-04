@@ -587,6 +587,7 @@
   "error.ai_invalid_response": "D’fhill an tseirbhís intleachta saorga freagra neamhbhailí.",
   "error.ai_network_error": "Níorbh fhéidir ceangal leis an tseirbhís intleachta saorga.",
   "error.ai_not_configured": "Cumraigh nasc intleachta saorga sula ndéanann tú athbhreithniú.",
+  "error.ai_session_save_failed": "AI críochnaithe, ach theip ar shábháil seisiún; is féidir triail eile a bhaint as sa stair",
   "error.ai_task_failed": "Theip ar an athbhreithniú le hintleacht shaorga. Bain triail eile as.",
   "error.author_inline_text_budget": "Sáraíonn formáidiú an téacs an teorainn. Laghdaigh an méid nó an neadú.",
   "error.author_inline_text_invalid": "Tá an formáidiú áitiúil neamhbhailí یا gan tacaíocht don bhloc seo. Seiceáil a luachanna sula leanann tú ar aghaidh.",

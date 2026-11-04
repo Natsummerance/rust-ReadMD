@@ -10,7 +10,7 @@ use std::{
 static DNS_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 const POLL: Duration = Duration::from_millis(10);
 
-pub(super) struct NetworkOwner(Arc<State>);
+pub(crate) struct NetworkOwner(Arc<State>);
 struct State {
     stopped: AtomicBool,
     sockets: Mutex<Vec<TcpStream>>,
@@ -20,16 +20,19 @@ struct State {
     deadline: Instant,
 }
 #[derive(Clone)]
-pub(super) struct Resolver(Arc<State>);
+pub(crate) struct Resolver(Arc<State>);
 impl NetworkOwner {
     pub(super) fn new() -> Self {
         Self::with_cancel(Arc::new(||false))
     }
     pub(super) fn with_cancel(cancelled:Arc<dyn Fn()->bool+Send+Sync>) -> Self {
-        Self(Arc::new(State { stopped: AtomicBool::new(false), sockets: Mutex::new(Vec::new()),
-            connections: AtomicUsize::new(0), workers: AtomicUsize::new(0), cancelled, deadline: Instant::now() + Duration::from_secs(90) }))
+        Self::with_deadline(cancelled,Instant::now()+Duration::from_secs(90))
     }
-    pub(super) fn resolver(&self) -> Resolver { Resolver(self.0.clone()) }
+    pub(crate) fn with_deadline(cancelled:Arc<dyn Fn()->bool+Send+Sync>,deadline:Instant) -> Self {
+        Self(Arc::new(State { stopped: AtomicBool::new(false), sockets: Mutex::new(Vec::new()),
+            connections: AtomicUsize::new(0), workers: AtomicUsize::new(0), cancelled, deadline }))
+    }
+    pub(crate) fn resolver(&self) -> Resolver { Resolver(self.0.clone()) }
     pub(super) fn stop(&self) { self.0.stop(); }
 }
 impl Drop for NetworkOwner { fn drop(&mut self) { self.stop(); } }
