@@ -1155,16 +1155,24 @@
   </div>
 </div>
 
-<div id="fix-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="fix-title">
+<div id="fix-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="fix-title" aria-describedby="fix-note">
   <div id="fix-box">
-    <h3 id="fix-title"><span data-i18n="dialog.fixTitle">本次自动修正详情</span> <span id="fix-count"></span></h3>
-    <ul id="fix-list"></ul>
-    <div class="fix-actions">
-      <button id="fix-ai-btn" class="tb-btn primary" data-i18n="fixes.aiFix">AI 深度修复</button>
-      <button id="fix-save" class="tb-btn" data-i18n="app.saveAs">另存为修正后文件</button>
-      <button id="fix-close" class="tb-btn" data-i18n="toolbar.close">关闭</button>
+    <div class="fix-header">
+      <h3 id="fix-title"><span data-i18n="dialog.fixTitle">本次自动修正详情</span></h3>
+      <span id="fix-count"></span>
     </div>
-    <p class="fix-note" data-i18n="fixes.note">修正仅用于本次阅读，不会改写原文件。</p>
+    <p id="fix-note" class="fix-note" data-i18n="fixes.note">修正仅用于本次阅读，不会改写原文件。</p>
+    <ul id="fix-list" tabindex="0" aria-labelledby="fix-title"></ul>
+    <div class="fix-actions">
+      <div class="fix-ai-action">
+        <button id="fix-ai-btn" class="tb-btn" aria-describedby="fix-review-hint" data-i18n="fixes.aiFix">AI 深度修复</button>
+        <span id="fix-review-hint" data-i18n="review.pending">待审阅</span>
+      </div>
+      <div class="fix-confirm-actions">
+        <button id="fix-close" class="tb-btn" data-i18n="toolbar.close">关闭</button>
+        <button id="fix-save" class="tb-btn accent primary" data-i18n="app.saveAs">另存为修正后文件</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1740,7 +1748,7 @@
   </div>
 </div>
 
-<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=7d2d06aa47ec"></script>
+<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=6c8e22ed4d01"></script>
 <script defer src="/assets/js/platform/harmony.js?v=0.0.5"></script>
 </body>
 </html>
