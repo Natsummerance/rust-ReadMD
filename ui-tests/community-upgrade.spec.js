@@ -12,6 +12,9 @@ test('editing search uses the current draft; replace all is undoable and never c
     await loadFile(uploaded); state.pvLayout = 'none'; if(!state.editing)await toggleEdit();
     cmView.dispatch({ changes: { from: cmView.state.doc.length, insert: '\nDraftNeedle draftneedle DRAFTNEEDLE [literal].\n' } });
   }, original);
+  if (await page.locator('#btn-search').evaluate(button => button.closest('#more-menu') && !document.getElementById('more-menu').classList.contains('open'))) {
+    await page.locator('#btn-more').click();
+  }
   await page.locator('#btn-search').click();
   await page.locator('#search-input').fill('draftneedle');
   await expect(page.locator('#search-count')).toHaveText('1/3');
@@ -52,6 +55,9 @@ test('textarea fallback searches the draft and replaces literally with a single 
   await page.goto('/'); await waitForPage(page, () => window.__readmdAppReady);
   await page.evaluate(async () => { await renderVirtual('clipboard', 'fallback-search.md', '', '# Original', []); await toggleEdit(); });
   await page.locator('#edit-area').fill('Needle one needle two [literal]');
+  if (await page.locator('#btn-search').evaluate(button => button.closest('#more-menu') && !document.getElementById('more-menu').classList.contains('open'))) {
+    await page.locator('#btn-more').click();
+  }
   await page.locator('#btn-search').click(); await page.locator('#search-input').fill('needle');
   await expect(page.locator('#search-count')).toHaveText('1/2');
   await page.locator('#search-next').click();

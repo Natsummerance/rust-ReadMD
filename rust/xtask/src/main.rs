@@ -136,9 +136,26 @@ mod root_tests {
     fn an_explicit_bundle_root_is_checked_and_unrelated_directories_fail_closed() {
         let directory = tempfile::tempdir().unwrap(); let a = directory.path().join("a"); fixture(&a, "OWNED_A");
         assert_eq!(bundle_root(directory.path(), Some(&a)).unwrap(), a);
-        assert!(bundle_root(directory.path(), None).is_err());
+        // TMPDIR may deliberately be inside the checkout. Use a nonexistent
+        // direct child of the filesystem root so no repository ancestor can
+        // make this negative fixture valid. This path is never created.
+        let filesystem_root = directory.path().ancestors().last().unwrap();
+        assert!(filesystem_root.is_absolute());
+        assert!(bundle_root(filesystem_root, None).is_err());
+        let unrelated = filesystem_root.join(format!("readmd-xtask-unrelated-{}-{}",
+            std::process::id(), directory.path().file_name().unwrap().to_string_lossy()));
+        assert!(unrelated.is_absolute());
+        assert!(matches!(std::fs::symlink_metadata(&unrelated), Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound));
+        assert!(bundle_root(&unrelated, None).is_err());
         assert!(bundle_root(directory.path(), Some(std::path::Path::new("a"))).is_err());
         assert!(bundle_root(directory.path(), Some(&directory.path().join("absent"))).is_err());
+    }
+    #[test]
+    fn a_temp_directory_inside_a_fixture_uses_its_repository_ancestor() {
+        let directory = tempfile::tempdir().unwrap(); let a = directory.path().join("a"); fixture(&a, "OWNED_ANCESTOR");
+        let nested = tempfile::Builder::new().prefix("inside-repository-").tempdir_in(a.join("rust/xtask")).unwrap();
+        assert_eq!(bundle_root(nested.path(), None).unwrap(), a);
     }
     #[test]
     fn explicit_root_is_removed_without_becoming_a_version_or_release_argument() {

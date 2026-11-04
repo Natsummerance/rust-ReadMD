@@ -6,7 +6,7 @@ use serde_json::json;
 use std::{cell::Cell, path::PathBuf, process::{Command, Stdio}};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Stage { BeforeFileSync, BeforeReplace, BeforeDirectorySync }
+pub(super) enum Stage { BeforeFileSync, BeforeReplace, BeforeDirectorySync, #[cfg(windows)] BeforePublishedFileSync }
 thread_local! { static FAILURE: Cell<Option<Stage>> = const { Cell::new(None) }; }
 thread_local! {
     static IO_STAGE: Cell<&'static str> = const { Cell::new("prepare") };
@@ -449,18 +449,45 @@ fn session_failed_or_uncertain_commit_can_retry_same_call_without_double_advance
 #[test]
 fn session_windows_denied_replace_cannot_acknowledge_or_advance_memory() {
     use std::os::windows::fs::OpenOptionsExt;
-    let (_root,path,mut settings)=fixture();
+    let (root,path,mut settings)=fixture();
+    let unrelated=root.path().join("unknown-neighbor");fs::write(&unrelated,b"PRESERVE UNKNOWN").unwrap();
     let initial=settings.read_session_checked().unwrap();let memory=settings.all();let before=fs::read(&path).unwrap();
     let request=session_request(&initial["session_version"],"denied-replace",json!({"pending":"synthetic"}));
     let held=fs::OpenOptions::new().read(true).share_mode(1).open(&path).unwrap();
     session_error(settings.write_session_checked(&request),507,"settings_persistence_failed");
-    assert_eq!(settings.all(),memory);assert_eq!(fs::read(&path).unwrap(),before);drop(held);
+    assert_eq!(settings.all(),memory);assert_eq!(fs::read(&path).unwrap(),before);
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());drop(held);
     assert_eq!(settings.write_session_checked(&request).unwrap()["session_version"]["generation"],"1");
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
 }
 
 #[test]
 fn session_two_processes_with_one_expected_version_have_exactly_one_winner() {
+    two_process_session_cas(false);
+    // The existing exact CI target also executes every Windows control.
+    // None is ignored or converted into a passing retry.
+    #[cfg(windows)] {
+        session_windows_shared_delete_reader_exposes_legacy_failure_and_allows_owned_commit();
+        session_windows_shared_delete_reader_two_processes_have_exactly_one_winner();
+        session_windows_denied_replace_cannot_acknowledge_or_advance_memory();
+        session_windows_shared_delete_reader_post_replace_sync_failure_replays_once();
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn session_windows_shared_delete_reader_two_processes_have_exactly_one_winner() {
+    two_process_session_cas(true);
+}
+
+fn two_process_session_cas(hold_reader: bool) {
     let (root,path,mut settings)=fixture();let initial=settings.read_session_checked().unwrap();
+    let before=fs::read(&path).unwrap();
+    #[cfg(windows)]
+    let mut held=hold_reader.then(||fs::File::open(&path).unwrap());
+    #[cfg(not(windows))]
+    let _=hold_reader;
+    let unrelated=root.path().join("unknown-neighbor");fs::write(&unrelated,b"PRESERVE UNKNOWN").unwrap();
     let token=uuid::Uuid::new_v4().to_string();fs::write(root.path().join("probe.marker"),token.as_bytes()).unwrap();
     fs::write(root.path().join("cas-version.json"),serde_json::to_vec(&initial["session_version"]).unwrap()).unwrap();
     let children=["a","b"].into_iter().map(|id| {
@@ -480,10 +507,17 @@ fn session_two_processes_with_one_expected_version_have_exactly_one_winner() {
     let diagnostics=["a","b"].map(|id|fs::read(root.path().join(format!("cas-{id}.diagnostic.json"))).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).unwrap_or(Value::Null));
     assert!(failures.is_empty(),"Synthetic session CAS child failed: {failures:?}; safe diagnostics: {diagnostics:?}");
     let mut outcomes=["a","b"].map(|id|fs::read_to_string(root.path().join(format!("cas-{id}.result"))).unwrap());
+    let winner=if outcomes[0]=="200" {"a"} else {"b"};
     outcomes.sort();assert_eq!(outcomes,["200","409"]);
     let persisted=disk(&path);assert_eq!(persisted[SESSION_VERSION]["generation"],"1");
     assert_eq!(persisted[SESSION_RECEIPTS].as_array().unwrap().len(),1);
     assert_eq!(persisted["keep"],json!({"nested":true}));
+    #[cfg(windows)]
+    if let Some(reader)=held.as_mut() {let mut old=Vec::new();reader.read_to_end(&mut old).unwrap();assert_eq!(old,before);}
+    #[cfg(not(windows))]
+    let _=before;
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
+    session_readback_in_new_process(root.path(),&token,&initial["session_version"],json!({"writer":winner}));
 }
 
 #[test]
@@ -500,4 +534,87 @@ fn session_cas_probe() {
     fs::write(root.join(format!("cas-{id}.diagnostic.json")),serde_json::to_vec(&json!({"status":status,"code":code,"io":io})).unwrap()).unwrap();
     if let Err(error)=result {assert_eq!(error.code(),"session_version_conflict");}
     fs::write(root.join(format!("cas-{id}.result")),status.to_string()).unwrap();
+}
+
+
+#[cfg(windows)]
+#[test]
+fn session_windows_shared_delete_reader_exposes_legacy_failure_and_allows_owned_commit() {
+    use std::os::windows::{ffi::OsStrExt,fs::OpenOptionsExt};
+    use windows::{core::PCWSTR,Win32::Storage::FileSystem::{MoveFileExW,MOVEFILE_REPLACE_EXISTING,MOVEFILE_WRITE_THROUGH}};
+    let (root,path,mut settings)=fixture();let initial=settings.read_session_checked().unwrap();
+    let before=fs::read(&path).unwrap();
+    let unrelated=root.path().join("unknown-neighbor");fs::write(&unrelated,b"PRESERVE UNKNOWN").unwrap();
+    let mut reader=fs::OpenOptions::new().read(true).share_mode(1|2|4).open(&path).unwrap();
+    {
+        let mut stage=tempfile::Builder::new().prefix(".readmd-settings-legacy-").tempfile_in(root.path()).unwrap();
+        stage.write_all(b"OWNED LEGACY CONTROL").unwrap();stage.as_file().sync_all().unwrap();
+        let stage=stage.into_temp_path();
+        let from=stage.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+        let to=path.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+        let legacy=unsafe {MoveFileExW(PCWSTR(from.as_ptr()),PCWSTR(to.as_ptr()),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)};
+        assert_eq!(legacy.unwrap_err().code().0,0x80070005u32 as i32,"fixed shared-delete reader must expose the legacy denial");
+        assert_eq!(fs::read(&path).unwrap(),before);assert_eq!(fs::read(&stage).unwrap(),b"OWNED LEGACY CONTROL");
+    }
+    no_temporary(root.path());
+    let request=session_request(&initial["session_version"],"shared-delete",json!({"writer":"shared-delete"}));
+    let response=settings.write_session_checked(&request).unwrap();assert_eq!(response["session_version"]["generation"],"1");
+    assert_eq!(disk(&path)[SESSION_RECEIPTS].as_array().unwrap().len(),1);assert_eq!(disk(&path)["keep"],json!({"nested":true}));
+    let mut old=Vec::new();reader.read_to_end(&mut old).unwrap();assert_eq!(old,before);
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
+    let token=uuid::Uuid::new_v4().to_string();fs::write(root.path().join("probe.marker"),token.as_bytes()).unwrap();
+    session_readback_in_new_process(root.path(),&token,&initial["session_version"],json!({"writer":"shared-delete"}));
+}
+
+#[cfg(windows)]
+#[test]
+fn session_windows_shared_delete_reader_post_replace_sync_failure_replays_once() {
+    let (root,path,mut settings)=fixture();let initial=settings.read_session_checked().unwrap();
+    let memory=settings.all();let before=fs::read(&path).unwrap();let mut reader=fs::File::open(&path).unwrap();
+    let unrelated=root.path().join("unknown-neighbor");fs::write(&unrelated,b"PRESERVE UNKNOWN").unwrap();
+    let request=session_request(&initial["session_version"],"shared-delete-uncertain",json!({"writer":"post-sync"}));
+    let _fault=fail(Stage::BeforePublishedFileSync);
+    session_error(settings.write_session_checked(&request),507,"settings_persistence_failed");
+    assert_eq!(IO_FAILURE.with(Cell::get),Some(("sync_published",io::ErrorKind::Other,None)));
+    assert_eq!(settings.all(),memory);assert_eq!(disk(&path)[SESSION_VERSION]["generation"],"1");
+    assert_eq!(disk(&path)[SESSION_RECEIPTS].as_array().unwrap().len(),1);
+    let mut old=Vec::new();reader.read_to_end(&mut old).unwrap();assert_eq!(old,before);
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
+    let replay=settings.write_session_checked(&request).unwrap();assert_eq!(replay["session_version"]["generation"],"1");
+    assert_eq!(settings.write_session_checked(&request).unwrap(),replay);
+    assert_eq!(disk(&path)[SESSION_RECEIPTS].as_array().unwrap().len(),1);
+    assert_eq!(disk(&path)["keep"],json!({"nested":true}));
+    assert_eq!(fs::read(&unrelated).unwrap(),b"PRESERVE UNKNOWN");no_temporary(root.path());
+    let token=uuid::Uuid::new_v4().to_string();fs::write(root.path().join("probe.marker"),token.as_bytes()).unwrap();
+    session_readback_in_new_process(root.path(),&token,&initial["session_version"],json!({"writer":"post-sync"}));
+}
+
+fn session_readback_in_new_process(root:&Path,token:&str,initial:&Value,session:Value) {
+    let expected=json!({"session_version":{"epoch":initial["epoch"],"generation":"1"},"session":session});
+    fs::write(root.join("cas-readback-expected.json"),serde_json::to_vec(&expected).unwrap()).unwrap();
+    let mut child=Command::new(std::env::current_exe().unwrap()).arg("--exact")
+        .arg("settings_persistence::tests::session_readback_probe").arg("--ignored").arg("--nocapture")
+        .env("READMD_SETTINGS_PROBE_ROOT",root).env("READMD_SETTINGS_PROBE_TOKEN",token)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+    let start=Instant::now();let status=loop {
+        if let Some(status)=child.try_wait().unwrap() {break status;}
+        if start.elapsed()>Duration::from_secs(10) {let _=child.kill();let _=child.wait();panic!("Synthetic session readback child timed out");}
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(status.success(),"Synthetic session readback child failed");
+    assert_eq!(fs::read(root.join("cas-readback-passed")).unwrap(),b"verified");
+}
+
+#[test]
+#[ignore = "Spawned only by the owned synthetic session readback test"]
+fn session_readback_probe() {
+    let Some(root)=std::env::var_os("READMD_SETTINGS_PROBE_ROOT").map(PathBuf::from) else {return;};
+    assert!(root.file_name().unwrap().to_string_lossy().starts_with("readmd-settings-probe-"));
+    assert_eq!(fs::read(root.join("probe.marker")).unwrap(),std::env::var("READMD_SETTINGS_PROBE_TOKEN").unwrap().as_bytes());
+    let expected=disk(&root.join("cas-readback-expected.json"));let path=root.join("settings.json");
+    let mut settings=Settings::load(&path);let current=settings.read_session_checked().unwrap();
+    assert_eq!(current["session_version"],expected["session_version"]);assert_eq!(current["session"],expected["session"]);
+    let persisted=disk(&path);assert_eq!(persisted[SESSION_RECEIPTS].as_array().unwrap().len(),1);
+    assert_eq!(persisted["keep"],json!({"nested":true}));no_temporary(&root);
+    fs::write(root.join("cas-readback-passed"),b"verified").unwrap();
 }

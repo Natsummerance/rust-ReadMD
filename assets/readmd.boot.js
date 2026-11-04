@@ -31236,7 +31236,7 @@ function initSingleChromeNavigation() {
   // listeners. Keep its header out of the desktop menu's keyboard item list.
   const compactGroup = $('shell-compact-group'), compactActions = $('shell-compact-actions');
   if (compactGroup && compactActions) {
-    const compact = window.matchMedia('(max-width: 600px)');
+    const compact = window.matchMedia('(max-width: 640px)');
     const groupAnchor = document.createComment('compact menu position');
     compactGroup.before(groupAnchor);
     const placements = [

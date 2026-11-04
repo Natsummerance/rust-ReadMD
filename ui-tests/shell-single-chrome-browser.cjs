@@ -65,7 +65,7 @@ async function main(){
   await page.locator('#titlebar-documents').click();await until(()=>page.locator('#side').isVisible(),'title disclosure opens sidebar');await until(()=>page.evaluate(id=>document.activeElement?.dataset.tabId===id,ids.c),'active original tab focus');assert.equal(await page.locator('#doc-tabs-bar').getAttribute('aria-orientation'),'vertical');assert.equal(await page.locator('#side .tab-item:visible').count(),3);check('same original tablist and duplicate titles retain durable identities',{ids});
   if(arg('--case')==='rtl'){
     phase='targeted RTL sidebar';await page.setViewportSize({width:1024,height:680});await page.evaluate(async()=>{await i18n.setLanguage('ar',false);document.body.classList.add('native-macos');document.body.style.setProperty('--native-controls-leading','88px');});
-    const strings=JSON.parse(read('assets/i18n/ar.json').toString('utf8')),expect=require(path.join(path.dirname(playwright),'@playwright/test')).expect;report.rtlTabs=[];
+    const strings=JSON.parse(read('assets/i18n/ar.json').toString('utf8')),expect=require(require.resolve('@playwright/test',{paths:[playwright||__dirname,__dirname]})).expect;report.rtlTabs=[];
     const closeLabels=await page.locator('#side .tab-close').evaluateAll(nodes=>nodes.map(node=>node.title));report.rtlCloseLabels=closeLabels;assert(closeLabels.length>0);assert(closeLabels.every(label=>label===strings['tabs.closeTab']), 'existing tab close labels follow a live language change');
     const activeRow=page.locator('#side .tab-item.active');await activeRow.focus();await page.keyboard.press('F2');
     const rename=page.locator('#side .tab-title-input');await rename.waitFor({state:'visible'});await rename.fill('Uncommitted owned filename');

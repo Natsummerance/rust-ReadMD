@@ -4702,11 +4702,11 @@ body[data-theme="dark"] .conn-status { color: var(--fg3); }
 .update-dot.hidden { display: none !important; }
 
 /* ---------------- 标签页拖拽排序视觉指示 ---------------- */
-.tab-item.tab-drag-over-left {
+:is(.doc-tabs-bar,.doc-tabs-secondary-bar):not([aria-orientation="vertical"]) .tab-item.tab-drag-over-left {
   border-left: 2.5px solid var(--accent) !important;
   transform: translateX(1px);
 }
-.tab-item.tab-drag-over-right {
+:is(.doc-tabs-bar,.doc-tabs-secondary-bar):not([aria-orientation="vertical"]) .tab-item.tab-drag-over-right {
   border-right: 2.5px solid var(--accent) !important;
   transform: translateX(-1px);
 }
@@ -4822,8 +4822,8 @@ body[data-theme="dark"] .conn-status { color: var(--fg3); }
   padding-right: 2px;
   font-family: inherit;
 }
-#doc-tabs-bar.tab-renaming-mode .tab-item:not(.tab-renaming-active),
-.doc-tabs-bar.tab-renaming-mode .tab-item:not(.tab-renaming-active) {
+#doc-tabs-bar:not([aria-orientation="vertical"]).tab-renaming-mode .tab-item:not(.tab-renaming-active),
+.doc-tabs-bar:not([aria-orientation="vertical"]).tab-renaming-mode .tab-item:not(.tab-renaming-active) {
   flex: 0 1 45px !important;
   min-width: 36px !important;
   max-width: 55px !important;
@@ -4831,7 +4831,7 @@ body[data-theme="dark"] .conn-status { color: var(--fg3); }
   overflow: hidden;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.tab-item.tab-renaming-active {
+:is(.doc-tabs-bar,.doc-tabs-secondary-bar):not([aria-orientation="vertical"]) .tab-item.tab-renaming-active {
   flex: 1 0 auto !important;
   min-width: 160px !important;
   max-width: 380px !important;
@@ -5813,7 +5813,8 @@ body.zen-mode .zen-hover-trigger {
   display: block;
 }
 
-body.zen-mode #toolbar {
+/* The single-row shell nests this toolbar inside the revealing titlebar. */
+body.zen-mode:not(.shell-single-chrome) #toolbar {
   position: fixed !important;
   top: var(--window-titlebar-height, 0px) !important;
   left: 0 !important;

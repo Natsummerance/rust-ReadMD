@@ -126,10 +126,17 @@ fn publish(&self, current: &Value) -> io::Result<()> {
     #[cfg(test)] tests::io_stage("sync_file");
     temporary.as_file().sync_all()?;
     #[cfg(test)] tests::fault(tests::Stage::BeforeReplace)?;
-    // Close the synchronized temporary before the Windows replace. Never copy
-    // into or truncate the destination as a fallback after a failed replace.
+    // Keep the original shared-delete Windows file handle for a checked
+    // post-rename sync if the legacy replacement needs the std POSIX fallback.
+    // Never copy into or truncate the destination after a failed replace.
+    #[cfg(windows)]
+    let (staged_file, temporary) = temporary.into_parts();
+    #[cfg(not(windows))]
     let temporary = temporary.into_temp_path();
     #[cfg(test)] tests::io_stage("replace");
+    #[cfg(windows)]
+    native::replace(temporary.as_ref(), &self.target, &staged_file)?;
+    #[cfg(not(windows))]
     native::replace(temporary.as_ref(), &self.target)?;
     #[cfg(test)] tests::fault(tests::Stage::BeforeDirectorySync)?;
     #[cfg(test)] tests::io_stage("sync_directory");
@@ -361,14 +368,35 @@ mod native {
         Ok(information.nNumberOfLinks == 1 && file.metadata()?.file_attributes() & 0x400 == 0)
     }
     pub(super) fn unlock(_file: &fs::File) {}
-    pub(super) fn replace(from: &Path, to: &Path) -> io::Result<()> {
-        let from = from.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-        let to = to.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
-        unsafe { MoveFileExW(PCWSTR(from.as_ptr()), PCWSTR(to.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) }
-            .map_err(|_| io::Error::last_os_error())
+    pub(super) fn replace(from: &Path, to: &Path, staged_file: &fs::File) -> io::Result<()> {
+        let from_wide = from.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+        let to_wide = to.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+        match unsafe { MoveFileExW(PCWSTR(from_wide.as_ptr()), PCWSTR(to_wide.as_ptr()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) } {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                // Capture the API's error, not a later thread-local LastError.
+                let code = error.code().0;
+                if code != 0x80070005u32 as i32 {
+                    return Err(io::Error::from_raw_os_error(code & 0xffff));
+                }
+                // A target reader sharing DELETE can still deny legacy
+                // MoveFileEx replacement. Rust >= our 1.88 MSRV uses
+                // FileRenameInfoEx/POSIX on this precise ACCESS_DENIED case.
+                // Unsupported filesystems/OSes and deny-DELETE readers fail;
+                // there is no target deletion, truncation or retry loop.
+                fs::rename(from, to)?;
+                #[cfg(test)] tests::io_stage("sync_published");
+                #[cfg(test)] tests::fault(tests::Stage::BeforePublishedFileSync)?;
+                // This is the original staged object, still held across the
+                // rename. A sync error is post-publication uncertainty and
+                // must propagate; session replay settles it without advancing.
+                staged_file.sync_all()
+            }
+        }
     }
-    // MoveFileExW uses WRITE_THROUGH; Windows read-only directory handles do
-    // not support FlushFileBuffers. The temporary file was synchronized above.
+    // The normal rename uses WRITE_THROUGH; its POSIX fallback checks the
+    // original staged file's post-move sync. Neither certifies directory fsync
+    // or power-loss behavior on Windows.
     pub(super) fn sync_directory(_path: &Path) -> io::Result<()> { Ok(()) }
 }
 

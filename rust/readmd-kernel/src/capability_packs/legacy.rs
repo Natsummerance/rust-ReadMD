@@ -196,8 +196,20 @@ mod tests {
         fs::write(origin.join("user-note"), b"preserve legacy extra").unwrap();
         (selected, lock, origin)
     }
+    fn migrate_with_install_guard(
+        data: &Path,
+        selected: Spec,
+        lock: &Value,
+        check: &dyn Fn() -> ApiResult<()>,
+        probe_copy: &dyn Fn(&Path) -> Result<(), String>,
+    ) -> ApiResult<()> {
+        // Direct fixtures must follow operate's INSTALL discipline: distinct
+        // profiles still share one user-wide installation admission gate.
+        let _install = resource_guard();
+        migrate_with(data, selected, lock, check, probe_copy)
+    }
     fn migrate_fixture(data: &Path, selected: Spec, lock: &Value) -> ApiResult<()> {
-        migrate_with(data, selected, lock, &|| Ok(()), &|p| {
+        migrate_with_install_guard(data, selected, lock, &|| Ok(()), &|p| {
             validate(p, lock).map_err(|e| e.code)
         })
     }
@@ -262,12 +274,13 @@ mod tests {
                 fs::write(origin.join(first), b"damaged").unwrap();
             }
             let before = fs::read(origin.join(first)).unwrap();
-            assert!(
-                migrate_with(data.path(), selected, &lock, &|| Ok(()), &|_| Err(
-                    "actual probe rejected".into()
-                ))
-                .is_err()
-            );
+            let probe_calls = std::cell::Cell::new(0usize);
+            let err = migrate_with_install_guard(data.path(), selected, &lock, &|| Ok(()), &|_| {
+                probe_calls.set(probe_calls.get() + 1);
+                Err("actual probe rejected".into())
+            }).unwrap_err();
+            assert_eq!(err.code, "capability_pack_invalid");
+            assert_eq!(probe_calls.get(), if corruption { 0 } else { 1 });
             assert!(!root_for(data.path(), selected)
                 .join(selected.version)
                 .exists());
@@ -286,7 +299,7 @@ mod tests {
         let data = tempfile::tempdir().unwrap();
         let (selected, lock, origin) = fixture(data.path());
         let calls = std::cell::Cell::new(0);
-        let err = migrate_with(
+        let err = migrate_with_install_guard(
             data.path(),
             selected,
             &lock,

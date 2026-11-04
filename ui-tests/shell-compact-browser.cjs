@@ -7,7 +7,7 @@ const argv = process.argv.slice(2), arg = name => { const at = argv.indexOf(name
 const read = name => fs.readFileSync(path.join(ROOT, name));
 const IDS = ['btn-open', 'btn-palette', 'btn-search', 'btn-ai', 'btn-graph'];
 const KEYS = ['toolbar.open', 'editor.command', 'toolbar.search', 'toolbar.ai', 'graph.title'];
-const sourceFiles = ['assets/index.html', 'assets/css/shell.css', 'assets/js/shell/shell.js', 'assets/readmd.boot.js',
+const sourceFiles = ['assets/index.html', 'assets/style.css', 'assets/css/shell.css', 'assets/js/shell/shell.js', 'assets/readmd.boot.js',
   'assets/app.js', 'assets/js/core/tabs.js', 'assets/js/core/modal.js', 'assets/js/editor/review.js',
   'assets/js/reader/enhance.js', 'assets/css/panels.css'];
 const binding = () => Object.fromEntries(sourceFiles.map(file => [file, sha(read(file))]));
@@ -56,7 +56,7 @@ function sourceChecks() {
   let language = 'zh-CN', activeModal = null, frameId = 0;
   const context = { document, $: id => nodes.get(id), getComputedStyle: node => ({ display: node.closest('.hidden,[hidden]') ? 'none' : 'block', visibility: node.visibility || 'visible' }), requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; }, cancelAnimationFrame(id) { frames.delete(id); },
     MutationObserver: class { constructor(fn) { this.fn = fn; this.records = []; } observe(target) { const record = { target, fn: this.fn, active: true }; this.records.push(record); observers.push(record); } disconnect() { this.records.forEach(record => { record.active = false; }); } },
-    closeMoreMenu() { menu.classList.remove('open'); }, window: { ReadMDKeys: { isMac: true }, matchMedia: query => { assert.equal(query, '(max-width: 600px)'); return media; },
+    closeMoreMenu() { menu.classList.remove('open'); }, window: { ReadMDKeys: { isMac: true }, matchMedia: query => { assert.equal(query, '(max-width: 640px)'); return media; },
       ReadMDModal: { top: () => activeModal }, i18n: { t: key => JSON.parse(read('assets/i18n/' + language + '.json'))[key] }, addEventListener(type, listener) { (events[type] ??= []).push(listener); } } };
   const start = source.indexOf('  const compactGroup ='), end = source.indexOf('  const shortcuts =', start);
   assert(start >= 0 && end > start); vm.runInNewContext(source.slice(start, end), context);
@@ -112,7 +112,7 @@ async function browserCheck() {
     async function more() { if (await page.locator('#btn-more').getAttribute('aria-expanded') !== 'true') await page.locator('#btn-more').click(); if (!await page.locator('#shell-compact-group').evaluate(node => node.classList.contains('open'))) await page.locator('#shell-compact-group > .more-group-header').click(); }
     async function modalProjection(width) {
       await until(() => page.evaluate(({ ids, width }) => {
-        const compact = width <= 600, group = $('shell-compact-group');
+        const compact = width <= 640, group = $('shell-compact-group');
         return innerWidth === width && (compact ? group && !group.hidden && $('more-menu').contains(group) : !group) && ids.every(id => {
           const button = $(id);
           return compact ? button.closest('#shell-compact-actions') && button.getAttribute('role') === 'menuitem'
@@ -121,7 +121,7 @@ async function browserCheck() {
       }, { ids: IDS, width }), 'actual compact/desktop parent and ARIA projection at ' + width);
       const value = await page.evaluate(width => {
         const header = $('app-titlebar'), palette = $('btn-palette'), r = palette.getBoundingClientRect(), modal = ReadMDModal.top();
-        return { width: innerWidth, expectedWidth: width, compact: matchMedia('(max-width:600px)').matches,
+        return { width: innerWidth, expectedWidth: width, compact: matchMedia('(max-width:640px)').matches,
           headerOverflow: header.scrollWidth - header.clientWidth, modalOpen: ReadMDPalette.isOpen(),
           focusInModal: !!modal && modal.contains(document.activeElement), active: document.activeElement.id || document.activeElement.tagName,
           palette: { parent: palette.parentElement.className, visible: !!palette.getClientRects().length, x: r.x, right: r.right },
@@ -129,8 +129,8 @@ async function browserCheck() {
       }, width);
       (report.focusProjections ??= []).push({ phase, ...value });
       assert.equal(value.width, width); assert(value.headerOverflow <= 1); assert(value.modalOpen && value.focusInModal, 'Resize preserves the open original modal and its focused field');
-      assert.equal(value.compact, width <= 600); assert.equal(value.menuOpen, false);
-      if (width > 600) assert(value.palette.visible && value.palette.parent === 'tb-group tb-left' && value.palette.x >= 0 && value.palette.right <= width, 'Stable desktop original palette is restored and in viewport before closing');
+      assert.equal(value.compact, width <= 640); assert.equal(value.menuOpen, false);
+      if (width > 640) assert(value.palette.visible && value.palette.parent === 'tb-group tb-left' && value.palette.x >= 0 && value.palette.right <= width, 'Stable desktop original palette is restored and in viewport before closing');
     }
     async function geometry(label, width, height, { lang = 'zh-CN', theme = 'light', mac = false } = {}) {
       phase = label;
@@ -145,7 +145,7 @@ async function browserCheck() {
           return { id: node.id, ...r, disabled: node.disabled, hit: !!hit && (node === hit || node.contains(hit)), name: node.getAttribute('aria-label') || node.title || node.textContent.trim() };
         });
         return { width: innerWidth, height: innerHeight, header: { ...rect(header), overflow: header.scrollWidth - header.clientWidth },
-          overflow: document.documentElement.scrollWidth - innerWidth, buttons, compact: matchMedia('(max-width:600px)').matches,
+          overflow: document.documentElement.scrollWidth - innerWidth, buttons, compact: matchMedia('(max-width:640px)').matches,
           identity: rect(document.querySelector('.titlebar-identity')), actions: rect($('titlebar-actions')) };
       });
       report.cases.push({ label, ...value });
@@ -175,7 +175,7 @@ async function browserCheck() {
     await geometry('390-welcome', 390, 844);
     await page.evaluate(file => loadFile(file), path.join(test.documents, 'mobile-owned.md'));
     await until(() => page.locator('#toast').evaluate(node => node.classList.contains('hidden')), 'file toast expiry');
-    for (const [width, height] of [[360, 740], [390, 844], [412, 844], [600, 820]]) await geometry(width + '-reading', width, height);
+    for (const [width, height] of [[360, 740], [390, 844], [412, 844], [600, 820], [640, 820]]) await geometry(width + '-reading', width, height);
     await geometry('390-reading-ar-dark', 390, 844, { lang: 'ar', theme: 'dark' });
     phase = 'original search menu handler'; await more(); await page.locator('#btn-search').click(); assert(await page.locator('#search-bar').isVisible()); assert.equal(await page.locator('#more-menu').evaluate(node => node.classList.contains('open')), false); await page.locator('#search-input').fill('target'); await page.keyboard.press('Escape'); report.checks.push('Original search handler opens its real field from compact More');
     phase = 'original command menu handler'; await more(); await page.locator('#btn-palette').click(); await until(() => page.evaluate(() => ReadMDPalette.isOpen()), 'real command palette'); await page.keyboard.press('Escape'); assert.equal(await page.evaluate(() => document.activeElement.id), 'btn-more'); report.checks.push('Original command handler and visible More opener focus return');
@@ -184,7 +184,11 @@ async function browserCheck() {
     assert.equal(await page.evaluate(() => editorPrefs.aiCompletion), false, 'Automatic completion remains disabled before AI panel entry'); report.aiPreconditions = { emptyCurrent: true, noConnections: true, automaticCompletion: false };
     phase = 'original AI menu handler'; await more(); await page.locator('#btn-ai').click(); assert.equal(await page.locator('#more-menu').evaluate(node => node.classList.contains('open')), false); await until(() => page.locator('#ai-panel').isVisible(), 'real AI panel opens without sending'); await page.locator('#ai-close').click(); report.checks.push('Original AI panel entry only; no inference or replacement handler');
     phase = 'reader prefs stays by Edit'; await page.locator('#rd-prefs-btn').click(); assert(await page.locator('#rd-prefs').isVisible()); await page.keyboard.press('Escape'); assert.equal(await page.evaluate(() => $('rd-tools').closest('#shell-compact-actions') === null), true); report.checks.push('Original reader preferences remain outside hidden menu and open normally');
-    phase = 'real graph visibility'; await page.evaluate(file => loadFile(file), path.join(test.documents, 'graph-owned.md')); await until(() => page.locator('#btn-graph').evaluate(node => !node.classList.contains('hidden')), 'real wikilink graph entry'); await more(); assert.equal(await page.locator('[data-shell-compact="btn-graph"]').evaluate(node => node.hidden), false); await page.locator('#btn-graph').click(); await until(() => page.locator('#graph-modal').isVisible(), 'original graph entry opens'); await page.locator('#graph-btn-close').click(); await until(() => page.locator('#graph-modal').isHidden(), 'original graph closes');
+    phase = 'real graph visibility'; await page.evaluate(file => loadFile(file), path.join(test.documents, 'graph-owned.md')); await until(() => page.locator('#btn-graph').evaluate(node => !node.classList.contains('hidden')), 'real wikilink graph entry');
+    await geometry('641-reading-graph', 641, 820);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await until(() => page.evaluate(() => $('shell-compact-actions')?.contains($('btn-graph'))), 'original graph returns to compact menu');
+    await more(); assert.equal(await page.locator('[data-shell-compact="btn-graph"]').evaluate(node => node.hidden), false); await page.locator('#btn-graph').click(); await until(() => page.locator('#graph-modal').isVisible(), 'original graph entry opens'); await page.locator('#graph-btn-close').click(); await until(() => page.locator('#graph-modal').isHidden(), 'original graph closes');
     await page.evaluate(file => loadFile(file), path.join(test.documents, 'mobile-owned.md')); await until(() => page.locator('[data-shell-compact="btn-graph"]').evaluate(node => node.hidden), 'real graph entry hidden again'); report.checks.push('Real document graph visibility tracks wrapper with no blank menu item');
     await page.evaluate(async () => { await toggleEdit(); setPvLayout('none'); });
     for (const [width, height] of [[360, 740], [390, 820], [412, 844]]) await geometry(width + '-editing', width, height);
@@ -203,7 +207,7 @@ async function browserCheck() {
     for (let i = 0; i < 8; i++) { const width = i % 2 === 0 ? 390 : 1024; await page.setViewportSize({ width, height: width === 390 ? 844 : 680 }); await modalProjection(width); }
     await page.keyboard.press('Escape'); await until(() => page.evaluate(() => document.activeElement.id === 'btn-palette'), 'original visible desktop opener after repeated resize'); assert.equal(await page.evaluate(() => window.__compactMoreFocus.length), 0); report.checks.push('Repeated and inverse resize retains original visible opener; VM separately counts one active temporary observer');
     await page.setViewportSize({ width: 1024, height: 680 }); await page.locator('#btn-search').focus();
-    await page.setViewportSize({ width: 390, height: 844 }); await until(() => page.evaluate(() => $('shell-compact-actions').contains($('btn-search'))), 'compact return'); assert.equal(await page.evaluate(() => document.activeElement.id), 'btn-more');
+    await page.setViewportSize({ width: 390, height: 844 }); await until(() => page.evaluate(() => $('shell-compact-actions')?.contains($('btn-search'))), 'compact return'); assert.equal(await page.evaluate(() => document.activeElement.id), 'btn-more');
     await geometry('390-roundtrip', 390, 844); assert.deepEqual(report.forbiddenRequests, []); assert.deepEqual(test.errors, []); report.passed = true;
   } catch (error) { report.failure = { phase, message: error.message, stack: error.stack }; if (test) { report.failure.focus = await test.page.evaluate(() => ({ active: document.activeElement.id || document.activeElement.tagName, activeVisible: !!document.activeElement.getClientRects().length, modal: ReadMDModal.top()?.id || null, menuOpen: $('more-menu').classList.contains('open') })).catch(() => null); await test.page.screenshot({ path: path.join(output, 'first-failure.png') }).catch(() => {}); } process.exitCode = 1; }
   finally { if (test) { report.pageErrors = test.errors; await test.close(); } report.sourceAfter = binding(); report.sourceUnchanged = JSON.stringify(report.sourceBefore) === JSON.stringify(report.sourceAfter); report.ownedScratchRemoved = ['tmp', 'home', 'browser-profile'].every(name => !fs.existsSync(path.join(output, name))); fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n'); console.log(JSON.stringify({ passed: report.passed, cases: report.cases.length, failure: report.failure, sourceUnchanged: report.sourceUnchanged, scratchRemoved: report.ownedScratchRemoved })); }
