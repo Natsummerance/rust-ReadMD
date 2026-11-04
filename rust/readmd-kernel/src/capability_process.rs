@@ -101,7 +101,7 @@ impl LocalWorker {
 impl Drop for LocalWorker { fn drop(&mut self) { self.active.fetch_sub(1,Ordering::AcqRel); } }
 pub(crate) struct WorkerReservation { _local:LocalWorker,_process:Guard }
 fn worker_busy(id:&str)->ApiResult<&'static str> {
-    match id { "latex"=>Ok("latex_busy"),"typst"=>Ok("typst_busy"),"ocr"=>Ok("ocr_busy"),_=>Err(invalid()) }
+    match id { "latex"=>Ok("latex_busy"),"typst"=>Ok("typst_busy"),"ocr"=>Ok("ocr_busy"),"node"=>Ok("capability_install_busy"),_=>Err(invalid()) }
 }
 pub(crate) fn reserve_worker(data:&Path,id:&str,active:&'static AtomicUsize)->ApiResult<WorkerReservation> {
     let code=worker_busy(id)?;
@@ -125,8 +125,8 @@ fn location(data:&Path,id:&str,key:Key)->ApiResult<(PathBuf,PathBuf)> {
     // Callers additionally resolve a fixed capability Spec. Keep this module
     // incapable of naming arbitrary paths even when invoked incorrectly.
     let name=match key {
-        Key::Resource if matches!(id,"pdfium"|"typst"|"ocr"|"fonts"|"latex")=>format!("{id}.lock"),
-        Key::Worker(index) if index<WORKER_SLOTS&&matches!(id,"latex"|"typst"|"ocr")=>format!("{id}.worker-{index}.lock"),
+        Key::Resource if matches!(id,"pdfium"|"typst"|"ocr"|"fonts"|"latex"|"node")=>format!("{id}.lock"),
+        Key::Worker(index) if index<WORKER_SLOTS&&matches!(id,"latex"|"typst"|"ocr"|"node")=>format!("{id}.worker-{index}.lock"),
         Key::TransferGate if id=="transfers"=>"transfer-v1.gate.lock".into(),
         Key::TransferCount(index) if id=="transfers"&&index<TRANSFER_SLOTS=>format!("transfer-v1.count-{index}.lock"),
         Key::TransferBytes(index) if id=="transfers"&&index<TRANSFER_BYTES_SLOTS=>format!("transfer-v1.bytes-{index}.lock"),

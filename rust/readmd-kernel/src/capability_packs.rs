@@ -72,6 +72,11 @@ fn spec(id: &str) -> ApiResult<Spec> {
             version: "0.15.1",
             platform: platform(),
         }),
+        "node" if platform() != "unsupported" => Ok(Spec {
+            id: "node",
+            version: crate::code_chunk_runner::managed_node::VERSION,
+            platform: platform(),
+        }),
         "ocr" if platform() != "unsupported" => Ok(Spec {
             id: "ocr",
             version: "5.5.3-r1",
@@ -696,6 +701,7 @@ fn probe(id: &str, directory: &Path, data: &Path) -> Result<(), String> {
         "ocr" => crate::ocr_portable::probe_directory(directory,data),
         "fonts" => crate::publication_fonts::probe_directory(directory),
         "latex" => crate::latex_compile::probe_directory(directory,data),
+        "node" => crate::code_chunk_runner::managed_node::probe_directory(directory,data),
         _ => crate::typst_compile::probe_directory(directory,data),
     }
 }

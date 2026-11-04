@@ -24,18 +24,24 @@ export function validateManifest(manifest,allowUnprepared=false){
   if(expanded>MAX_EXPANDED||(!allowUnprepared&&compressed>MAX_DOWNLOAD))throw Error('Pack exceeds streaming budget');
 }
 async function writeAll(file,bytes){let at=0;while(at<bytes.length){const {bytesWritten}=await file.write(bytes,at,bytes.length-at);if(!bytesWritten)throw Error('Short package write');at+=bytesWritten;}}
-async function compress(runtime,entry,output){
+async function compress(runtime,entry,output,gzipOS){
   const file=path.resolve(runtime,...entry.path.split('/'));
   const [real,metadata]=await Promise.all([fs.promises.realpath(file),fs.promises.lstat(file)]),relative=path.relative(runtime,real);
   if(!relative||relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative)||metadata.isSymbolicLink()||!metadata.isFile()||metadata.size!==entry.size)throw Error('Runtime entry differs from lock');
   const digest=crypto.createHash('sha256');let size=0,compressed=0;
   const check=new Transform({highWaterMark:BUFFER,transform(chunk,_encoding,next){size+=chunk.length;if(size>entry.size){next(Error('Runtime grew during compression'));return;}digest.update(chunk);next(null,chunk);}});
   const sink=new Writable({highWaterMark:BUFFER,write(chunk,_encoding,next){compressed+=chunk.length;if(compressed>MAX_FILE+1048576){next(Error('Compressed entry budget'));return;}if(output)writeAll(output,chunk).then(()=>next(),next);else next();}});
-  await pipeline(fs.createReadStream(file,{highWaterMark:BUFFER}),check,zlib.createGzip({level:9,chunkSize:BUFFER}),sink);
+  let position=0;
+  const header=new Transform({transform(chunk,_encoding,next){
+    if(gzipOS!==undefined&&position<=9&&position+chunk.length>9){chunk=Buffer.from(chunk);chunk[9-position]=gzipOS;}
+    position+=chunk.length;next(null,chunk);
+  }});
+  await pipeline(fs.createReadStream(file,{highWaterMark:BUFFER}),check,zlib.createGzip({level:9,chunkSize:BUFFER}),header,sink);
   if(size!==entry.size||digest.digest('hex')!==entry.sha256)throw Error('Runtime digest differs from reviewed lock');
   return compressed;
 }
-export async function build({manifestPath,runtime,output,writeLock=false,onProgress=()=>{}}){
+export async function build({manifestPath,runtime,output,writeLock=false,onProgress=()=>{},gzipOS}){
+  if(gzipOS!==undefined&&gzipOS!==255)throw Error('Only the platform-neutral gzip OS header is supported');
   const metadata=fs.statSync(manifestPath);if(metadata.size>MAX_MANIFEST)throw Error('Manifest budget');
   const expected=JSON.parse(fs.readFileSync(manifestPath));validateManifest(expected,writeLock);
   runtime=fs.realpathSync(runtime);output=path.resolve(output);
@@ -48,7 +54,7 @@ export async function build({manifestPath,runtime,output,writeLock=false,onProgr
   await Promise.all(Array.from({length:Math.min(4,manifest.files.length)},async()=>{
     while(!failed&&next<manifest.files.length){
       const entry=manifest.files[next++];
-      try{const compressed=await compress(runtime,entry);if(!writeLock&&entry.compressedSize!==compressed)throw Error('Compressed bytes differ from lock');entry.compressedSize=compressed;completed++;if(completed%2000===0||completed===manifest.files.length)onProgress({phase:'sizing',files:completed,total:manifest.files.length});}
+      try{const compressed=await compress(runtime,entry,undefined,gzipOS);if(!writeLock&&entry.compressedSize!==compressed)throw Error('Compressed bytes differ from lock');entry.compressedSize=compressed;completed++;if(completed%2000===0||completed===manifest.files.length)onProgress({phase:'sizing',files:completed,total:manifest.files.length});}
       catch(error){failed??=error;}
     }
   }));
@@ -59,7 +65,7 @@ export async function build({manifestPath,runtime,output,writeLock=false,onProgr
   try{
     file=await fs.promises.open(temporary,'wx');const length=Buffer.alloc(4);length.writeUInt32LE(header.length);await writeAll(file,Buffer.from('RMDPKG2\n'));await writeAll(file,length);await writeAll(file,header);
     let written=0;
-    for(const entry of manifest.files){const compressed=await compress(runtime,entry,file);if(compressed!==entry.compressedSize)throw Error('Runtime changed between compression passes');written++;if(written%2000===0||written===manifest.files.length)onProgress({phase:'writing',files:written,total:manifest.files.length});}
+    for(const entry of manifest.files){const compressed=await compress(runtime,entry,file,gzipOS);if(compressed!==entry.compressedSize)throw Error('Runtime changed between compression passes');written++;if(written%2000===0||written===manifest.files.length)onProgress({phase:'writing',files:written,total:manifest.files.length});}
     await file.sync();await file.close();file=null;
     // Exclusive same-filesystem publication; never rename over an old asset.
     await fs.promises.link(temporary,output);

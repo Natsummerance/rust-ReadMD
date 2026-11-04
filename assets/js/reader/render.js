@@ -2007,6 +2007,7 @@ function renderAllCodeChunks(container) {
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
     let currentJob = null;
+    let ensuringRuntime = false;
 
     card._readmdBatchState = (job, phase, result, error) => {
       const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
@@ -2034,7 +2035,17 @@ function renderAllCodeChunks(container) {
 
     const run = async ({ batch = false } = {}) => {
       if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
-      if (!owner || !state.tabs.includes(owner)) return;
+      if (ensuringRuntime || !owner || !state.tabs.includes(owner)) return;
+      if (/^(?:javascript|js|node)$/i.test(lang.trim().replace(/^\.+/, ''))) {
+        const generation = owner.inputGeneration || 0, editing = state.editing;
+        ensuringRuntime = true;
+        try { if (!await window.ReadMDCapabilities.ensure('node')) return; }
+        finally { ensuringRuntime = false; }
+        // Installing is a separate operation. Closing/switching/editing while
+        // its dialog is open must never start a stale code request afterwards.
+        if (currentJob || !card.isConnected || getActiveTab() !== owner || !state.tabs.includes(owner) ||
+            generation !== (owner.inputGeneration || 0) || state.editing !== editing) return;
+      }
       const job = window.ReadMDCodeRuns.create(owner);
       if (!job) { showToast(_t('review.busy')); return; }
       currentJob = job;

@@ -40,6 +40,7 @@ use tempfile::TempDir;
 
 mod process_lifecycle;
 mod owned_execution;
+pub(crate) mod managed_node;
 
 /// Close this process's code admission, then wait for its own cancellation and
 /// cleanup. A caller task ID is optional and is not the execution lifetime.
@@ -556,16 +557,22 @@ fn stopped_result(code: &str, timeout: u64, sql: bool) -> Map<String, Value> {
 
 /// 底层安全进程调用与 UTF-8 管道捕获（有界流式内存保护与全路径截断）。
 fn run_process(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>) -> Map<String, Value> {
-    owned_execution::run(|| run_process_inner(cmd, cwd, timeout, runtime))
+    run_process_until(cmd, cwd, timeout, runtime, None)
+}
+
+fn run_process_until(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>, deadline: Option<Instant>) -> Map<String, Value> {
+    owned_execution::run(|| run_process_inner(cmd, cwd, timeout, runtime, deadline))
         .unwrap_or_else(|| stopped_result("execution_cancelled", timeout, false))
 }
 
-fn run_process_inner(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>) -> Map<String, Value> {
+fn run_process_inner(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime: Option<&str>, deadline: Option<Instant>) -> Map<String, Value> {
     if cmd.is_empty() {
         return exception_dict("invalid_command");
     }
     let timeout = clamp_timeout(timeout);
     if crate::speech::cancelled() { return stopped_result("execution_cancelled", timeout, false); }
+    let deadline = deadline.unwrap_or_else(|| Instant::now() + Duration::from_secs(timeout));
+    if Instant::now() >= deadline { return stopped_result("execution_timeout", timeout, false); }
 
     #[cfg(windows)]
     let program = if Path::new(&cmd[0]).is_absolute() { Some(cmd[0].clone()) } else { which(&cmd[0].to_string_lossy()).map(PathBuf::into_os_string) };
@@ -616,7 +623,6 @@ fn run_process_inner(cmd: &[OsString], cwd: Option<&Path>, timeout: u64, runtime
         guard.done = true;
     }
 
-    let deadline = Instant::now() + Duration::from_secs(timeout);
     let mut stopped = None;
     let mut exit_code: i64 = -1;
     loop {
@@ -1275,6 +1281,7 @@ fn execute_code_chunk_internal(
     capture_plot: bool,
     timeout: u64,
     cwd: Option<&Path>,
+    paths: Option<&crate::paths::AppPaths>,
 ) -> Map<String, Value> {
     let normalized = normalize_lang(lang);
 
@@ -1285,6 +1292,11 @@ fn execute_code_chunk_internal(
     }
 
     if normalized == "javascript" || normalized == "js" || normalized == "node" {
+        if let Some(paths) = paths {
+            return managed_node::execute(paths, code, &normalized, timeout, cwd);
+        }
+        // The low-level compatibility entry remains available to parity tests.
+        // Desktop and MCP always supply their actual application paths below.
         let node = which("node").map(|p| p.into_os_string());
         let Some(node) = node else {
             return runtime_missing(
@@ -1608,7 +1620,19 @@ pub fn execute_code_chunk_dict(
     timeout: u64,
     cwd: Option<&Path>,
 ) -> Result<Map<String, Value>, String> {
-    owned_execution::run(|| execute_code_chunk_dict_inner(code, lang, capture_plot, timeout, cwd))
+    owned_execution::run(|| execute_code_chunk_dict_inner(code, lang, capture_plot, timeout, cwd, None))
+        .unwrap_or_else(|| Ok(stopped_result("execution_cancelled", timeout, false)))
+}
+
+pub(crate) fn execute_managed_code_chunk_dict(
+    paths: &crate::paths::AppPaths,
+    code: &str,
+    lang: &str,
+    capture_plot: bool,
+    timeout: u64,
+    cwd: Option<&Path>,
+) -> Result<Map<String, Value>, String> {
+    owned_execution::run(|| execute_code_chunk_dict_inner(code, lang, capture_plot, timeout, cwd, Some(paths)))
         .unwrap_or_else(|| Ok(stopped_result("execution_cancelled", timeout, false)))
 }
 
@@ -1618,6 +1642,7 @@ fn execute_code_chunk_dict_inner(
     capture_plot: bool,
     timeout: u64,
     cwd: Option<&Path>,
+    paths: Option<&crate::paths::AppPaths>,
 ) -> Result<Map<String, Value>, String> {
     if crate::speech::cancelled() { return Ok(stopped_result("execution_cancelled", timeout, false)); }
     let source = code.to_string();
@@ -1638,7 +1663,7 @@ fn execute_code_chunk_dict_inner(
         Err(e) => return Err(format!("OSError: {e}")),
     };
     let run_cwd = explicit.clone().unwrap_or_else(|| sandbox.path().to_path_buf());
-    let mut res = execute_code_chunk_internal(&source, lang, capture_plot, timeout, Some(&run_cwd));
+    let mut res = execute_code_chunk_internal(&source, lang, capture_plot, timeout, Some(&run_cwd), paths);
     if !res.contains_key("lang") {
         set_lang(&mut res, lang_or_python(lang));
     }

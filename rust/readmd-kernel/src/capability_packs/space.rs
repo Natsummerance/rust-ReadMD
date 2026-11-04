@@ -12,6 +12,7 @@ pub(super) struct Plan {
     pub directory_bytes: u64,
     pub metadata_bytes: u64,
     pub safety_bytes: u64,
+    pub probe_bytes: u64,
     pub additional_bytes: u64,
     pub allocation_unit: u64,
     pub additional_inodes: u64,
@@ -57,11 +58,17 @@ fn estimate(lock: &Value, allocation_unit: u64) -> ApiResult<Plan> {
     // replacement. Also reserve one allocation unit per file for metadata.
     let metadata_bytes = round_allocation(manifest_bytes, allocation_unit)?.checked_mul(2)
         .and_then(|n| n.checked_add((files.len() as u64 + 4).checked_mul(allocation_unit)?)).ok_or_else(error)?;
+    // Node's executable can exceed the general 32 MiB margin. Its readiness
+    // probe uses a journalled worker copy; that worker also checks/reserves its
+    // actual temporary volume independently before copying any bytes.
+    let probe_bytes = if lock["id"] == "node" { files.iter().filter(|f| f["executable"] == true)
+        .try_fold(0u64, |n, f| n.checked_add(round_allocation(f["size"].as_u64().ok_or_else(error)?, allocation_unit)?).ok_or_else(error))? } else { 0 };
     let additional_bytes = allocation_bytes.checked_add(directory_bytes)
-        .and_then(|n| n.checked_add(metadata_bytes)).and_then(|n| n.checked_add(SAFETY_BYTES)).ok_or_else(error)?;
+        .and_then(|n| n.checked_add(metadata_bytes)).and_then(|n| n.checked_add(SAFETY_BYTES))
+        .and_then(|n| n.checked_add(probe_bytes)).ok_or_else(error)?;
     let additional_inodes = (files.len() as u64).checked_add(directories.len() as u64).and_then(|n|n.checked_add(16)).ok_or_else(error)?;
     Ok(Plan { expanded_bytes, allocation_bytes, directory_bytes, metadata_bytes,
-        safety_bytes: SAFETY_BYTES, additional_bytes, allocation_unit,
+        safety_bytes: SAFETY_BYTES, probe_bytes, additional_bytes, allocation_unit,
         additional_inodes, available_inodes: None, available_bytes: None, volume_identity: None,
         #[cfg(any(windows, target_os = "linux", target_os = "macos"))]
         anchor: None })
@@ -256,6 +263,18 @@ mod tests {
         assert!(plan.metadata_bytes >= 9 * 4096);
         assert_eq!(plan.additional_bytes, plan.allocation_bytes + plan.directory_bytes + plan.metadata_bytes + SAFETY_BYTES);
         assert!(estimate(&fixture(), 65536).unwrap().additional_bytes > plan.additional_bytes);
+    }
+    #[test]
+    fn node_probe_copy_is_reserved_in_addition_to_the_installation() {
+        let mut lock = fixture();
+        let ordinary = estimate(&lock, 4096).unwrap();
+        lock["id"] = json!("node"); lock["files"][1]["executable"] = json!(true);
+        let node = estimate(&lock, 4096).unwrap();
+        assert_eq!(node.probe_bytes, 8192);
+        assert_eq!(ordinary.probe_bytes, 0);
+        assert_eq!(node.additional_bytes, node.allocation_bytes + node.directory_bytes + node.metadata_bytes + node.safety_bytes + 8192);
+        assert_eq!(fits(&node, node.additional_bytes - 1).unwrap_err().status, 507);
+        assert!(fits(&node, node.additional_bytes).is_ok());
     }
     #[test]
     fn installation_space_rejects_underflow_and_keeps_exact_boundary() {

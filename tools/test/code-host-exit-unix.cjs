@@ -3,6 +3,7 @@
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto'), assert = require('node:assert/strict');
 const { execFileSync, spawnSync } = require('node:child_process');
 const { startKernel } = require('./v006-refactor-host.cjs');
+const { installNodePack } = require('./node-runtime-fixture.cjs');
 const { options } = require('./v006-table-clipboard-kernel.cjs');
 const ROOT = path.resolve(__dirname, '../..');
 async function main() {
@@ -20,6 +21,7 @@ function ps(pid, field) { const r = spawnSync('/bin/ps', ['-ww', '-p', String(pi
 function sameWorker() { return worker && ps(worker.pid, 'lstart') === worker.birth && ps(worker.pid, 'args') === worker.args; }
 try {
   host = await startKernel(binary, profile, docs); report.hostPid = host.pid;
+  report.managedNode = await installNodePack(host); report.hostNodeTestFixture = false;
   pending = host.api('/api/code/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: true, lang: 'javascript', code, timeout: 10, task_id: 'owned-host-exit-probe' }) }).then(r => r.json()).catch(() => ({ transportClosed: true }));
   const end = Date.now() + 3000;
   while (!worker && Date.now() < end) {
@@ -37,7 +39,7 @@ try {
   const deadline = Date.now() + 2000; while (sameWorker() && Date.now() < deadline) await pause(25);
   report.workerStoppedWithinTwoSeconds = !sameWorker();
   if (!report.workerStoppedWithinTwoSeconds) throw Error('Owned code worker survived normal host exit');
-  assert.notEqual((await pending).ok, true, 'exit must not return a successful late result'); report.passed = true;
+  assert.notEqual((await pending).ok, true, 'exit must not return a successful late result'); report.passed = true; report.managedRuntimeCertified = true;
 } catch (error) { report.failure = String(error.message).replaceAll(output, '<evidence>').replaceAll(ROOT, '<repo>'); process.exitCode = 1; }
 finally {
   if (host) await host.stop();

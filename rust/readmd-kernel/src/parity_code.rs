@@ -41,12 +41,16 @@ const KNOWN_ERROR_CODES: [&str; 5] = [
 ];
 
 /// 接线后的入口（`server::ROUTES` 指向这里）。
-pub fn h_code_run(_app: &Arc<crate::App>, req: &Request) -> ApiResult<Response> {
-    Ok(code_run_response(req))
+pub fn h_code_run(app: &Arc<crate::App>, req: &Request) -> ApiResult<Response> {
+    Ok(code_run_response_with_paths(req, Some(&app.paths)))
 }
 
 /// 独立出来便于单测：永不返回 `Err`，所有失败都用 Python 自己的信封表达。
 pub fn code_run_response(req: &Request) -> Response {
+    code_run_response_with_paths(req, None)
+}
+
+fn code_run_response_with_paths(req: &Request, paths: Option<&crate::paths::AppPaths>) -> Response {
     // 1) Content-Length —— `int(self.headers.get('Content-Length', 0) or 0)`
     let declared = match py_int_from_str(req.header("content-length").unwrap_or("0")) {
         Some(n) => n,
@@ -123,13 +127,14 @@ pub fn code_run_response(req: &Request) -> Response {
     let task_check = task.as_ref().map(crate::cancel::TaskGuard::checker);
     let check = Arc::new(move || outer() || task_check.as_ref().is_some_and(|check| check()));
     // 9) 执行 + 边界清洗
-    let mut res = match crate::speech::with_cancel(check, || super::execute_code_chunk_dict(
-        &code,
-        &lang,
-        true,
-        effective,
-        cwd_text.as_ref().map(|p| Path::new(p.as_str())),
-    )) {
+    let mut res = match crate::speech::with_cancel(check, || {
+        let cwd = cwd_text.as_ref().map(|p| Path::new(p.as_str()));
+        if let Some(paths) = paths {
+            super::execute_managed_code_chunk_dict(paths, &code, &lang, true, effective, cwd)
+        } else {
+            super::execute_code_chunk_dict(&code, &lang, true, effective, cwd)
+        }
+    }) {
         Ok(map) => map,
         Err(_) => return internal_failed(),
     };

@@ -15,6 +15,12 @@ test('valid catalog and every payload are verified locally', () => { const f = f
 test('arbitrary repository, URL and duplicate identities are refused', () => {
   for (const alter of [f => { f.catalog.repository = 'other/tool'; }, f => { f.entry.url = 'https://example.com/engine'; }, f => { f.catalog.packs.push({ ...f.entry }); }, f => { f.entry.version = '../engine'; }]) { const f = fixture(); alter(f); assert.throws(() => validateCatalog(f.catalog)); }
 });
+test('offline Node metadata cannot grant download URLs or duplicate an online identity', () => {
+  const f=fixture(),entry={id:'node',version:'24.22.2',platform:'macos-arm64',format:'stream-v2',delivery:'offline-only',downloadBytes:100,installedBytes:200,sha256:'a'.repeat(64),manifestSha256:'b'.repeat(64)};
+  f.catalog.offlinePacks=[entry];assert.equal(validateCatalog(f.catalog),f.catalog);
+  for(const change of [e=>{e.url='https://example.com/runtime';},e=>{e.manifestSha256='';},e=>{e.id='fonts';},e=>{e.format='json-v1';}]){const c=structuredClone(f.catalog);change(c.offlinePacks[0]);assert.throws(()=>validateCatalog(c));}
+  f.catalog.offlinePacks.push({...entry});assert.throws(()=>validateCatalog(f.catalog));
+});
 test('full-package tampering fails before publication', () => { const f = fixture(); f.bytes[0] ^= 1; assert.throws(() => verifyLocalPack(f.bytes, f.lock, f.entry)); });
 test('new package hash cannot bless a changed payload under an old file lock', () => { const f = fixture(); f.pack.payload['bin/engine.exe'] = Buffer.from('modified').toString('base64'); f.bytes = Buffer.from(JSON.stringify(f.pack)); f.entry.sha256 = sha256(f.bytes); f.entry.downloadBytes = f.bytes.length; assert.throws(() => verifyLocalPack(f.bytes, f.lock, f.entry), /Payload differs/); });
 test('extra payload and missing payload cannot be published', () => { for (const extra of [true, false]) { const f = fixture(); if (extra) f.pack.payload.extra = ''; else delete f.pack.payload['bin/engine.exe']; f.bytes = Buffer.from(JSON.stringify(f.pack)); Object.assign(f.entry, { sha256: sha256(f.bytes), downloadBytes: f.bytes.length }); assert.throws(() => verifyLocalPack(f.bytes, f.lock, f.entry)); } });

@@ -1615,7 +1615,7 @@ async function ensureModule(name, timeoutMs) {
   async function upload(file,id='',hooks={}){
     if(!Number.isSafeInteger(file.size)||file.size<=0||file.size>2*1024*1024*1024)throw Error('capability_pack_invalid');
     const prefix=new Uint8Array(await file.slice(0,12).arrayBuffer()),stream=prefix.length===12&&new TextDecoder().decode(prefix.slice(0,8))==='RMDPKG2\n';
-    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
+    if(stream){const length=new DataView(prefix.buffer).getUint32(8,true);if(!length||length>8*1024*1024||length+12>file.size)throw Error('capability_pack_invalid');let manifest;try{manifest=JSON.parse(await file.slice(12,12+length).text());}catch(_){throw Error('capability_pack_invalid');}if(manifest.schema!==2||!['pdfium','typst','ocr','fonts','latex','node'].includes(manifest.id)||(id&&manifest.id!==id))throw Error('capability_pack_invalid');id=manifest.id;}
     // Old generic JSON imports retain their existing contract; feature-entry
     // imports know their engine ID and use bounded chunks for either format.
     if(!id){if(file.size>128*1024*1024)throw Error('capability_pack_invalid');
@@ -1652,15 +1652,16 @@ async function ensureModule(name, timeoutMs) {
     let resolve;const promise=new Promise(r=>{resolve=r;});active={id,promise};
     const modal=document.createElement('div');modal.id='capability-install-modal';modal.className='modal hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','capability-install-title');
     const box=document.createElement('section');box.className='capability-install-box';
-    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:t(entry.labelKey)});
+    const title=document.createElement('h2');title.id='capability-install-title';title.textContent=t('capability.installTitle',{name:entry.name||t(entry.labelKey)});
     const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);
     const summary=document.createElement('p');summary.className='capability-install-summary';summary.textContent=t('capability.sizes',{download:size(entry.downloadBytes),installed:size(entry.installedBytes)});
-    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license;details.append(about,license);
-    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t('capability.installHint');
+    const details=document.createElement('details'),about=document.createElement('summary'),license=document.createElement('p');about.textContent=t('capability.details');license.textContent=entry.version+' · '+entry.platform+' · '+entry.license+(entry.minimumPlatform?' · '+entry.minimumPlatform:'');details.append(about,license);
+    const hint=document.createElement('p');hint.className='capability-install-hint';hint.textContent=t(entry.delivery==='offline-only'?'capability.offlineImport':'capability.installHint');
     const status=document.createElement('p');status.id='capability-install-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const progress=document.createElement('progress');progress.hidden=true;progress.max=100;progress.setAttribute('aria-label',t('plugin.installing'));
     const actions=document.createElement('div');actions.className='capability-install-actions';
     const cancel=document.createElement('button'),offline=document.createElement('button'),install=document.createElement('button');for(const b of [cancel,offline,install]){b.type='button';b.className='tb-btn';}cancel.textContent=t('common.cancel');offline.textContent=t('capability.offlineImport');install.textContent=t('capability.installContinue');install.classList.add('accent');actions.append(cancel,offline,install);
+    install.hidden=entry.delivery==='offline-only';install.classList.toggle('hidden',install.hidden);
     box.append(title,purpose,summary,details,hint,progress,status,actions);modal.append(box);document.body.append(modal);
     let busy=false,job=null,finished=false,cancelRequested=false,abortUpload=null;
     function finish(value){if(finished)return;finished=true;window.ReadMDModal.close(modal);window.ReadMDModal.setGuard(modal.id,null);modal.remove();active=null;if(value)ready(id);resolve(value);}
@@ -8807,6 +8808,7 @@ function renderAllCodeChunks(container) {
     const lang = card.dataset.lang || 'python';
     const code = decodeURIComponent(card.dataset.code || '');
     let currentJob = null;
+    let ensuringRuntime = false;
 
     card._readmdBatchState = (job, phase, result, error) => {
       const copy = card.querySelector('.code-chunk-copy-btn'), clear = card.querySelector('.code-chunk-clear-btn');
@@ -8834,7 +8836,17 @@ function renderAllCodeChunks(container) {
 
     const run = async ({ batch = false } = {}) => {
       if (currentJob) { if (!batch) window.ReadMDCodeRuns.cancel(currentJob); return currentJob.done; }
-      if (!owner || !state.tabs.includes(owner)) return;
+      if (ensuringRuntime || !owner || !state.tabs.includes(owner)) return;
+      if (/^(?:javascript|js|node)$/i.test(lang.trim().replace(/^\.+/, ''))) {
+        const generation = owner.inputGeneration || 0, editing = state.editing;
+        ensuringRuntime = true;
+        try { if (!await window.ReadMDCapabilities.ensure('node')) return; }
+        finally { ensuringRuntime = false; }
+        // Installing is a separate operation. Closing/switching/editing while
+        // its dialog is open must never start a stale code request afterwards.
+        if (currentJob || !card.isConnected || getActiveTab() !== owner || !state.tabs.includes(owner) ||
+            generation !== (owner.inputGeneration || 0) || state.editing !== editing) return;
+      }
       const job = window.ReadMDCodeRuns.create(owner);
       if (!job) { showToast(_t('review.busy')); return; }
       currentJob = job;
@@ -29359,7 +29371,7 @@ function exportPaperSize(page) {
     for(let i=0;i<results.length;i++){
       const result=results[i],item=document.createElement('div');item.className='plugin-capability-item';row.append(item);
       if(result.status!=='fulfilled'){item.textContent=t('error.'+result.reason.message);continue;}
-      const data=result.value,entry=entries[i],engine=t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
+      const data=result.value,entry=entries[i],engine=entry.name||t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
       if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(await window.ReadMDCapabilities.ensure(data.id))await window.refreshOfflineCapabilityPack();};item.append(install);}
       if(data.present){const remove=document.createElement('button');remove.type='button';remove.className='tb-btn';remove.id=data.id==='pdfium'?'plugin-capability-uninstall':'plugin-capability-uninstall-'+data.id;remove.textContent=t('plugin.uninstall');remove.onclick=async()=>{
         if(!await confirmAction({title:t('plugin.uninstall'),message:t('capability.uninstallConfirm',{name:engine}),confirmText:t('plugin.uninstall'),cancelText:t('common.cancel'),danger:true}))return;

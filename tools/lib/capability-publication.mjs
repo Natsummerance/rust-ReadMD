@@ -18,6 +18,14 @@ export function validateCatalog(catalog) {
     const name = `readmd-${p.id}-${p.version}-${p.platform}.readmd-pack`;
     if (p.url !== `https://github.com/${repository}/releases/download/${catalog.release}/${name}`) throw Error('Capability URL differs from owned immutable release');
   }
+  if (catalog.offlinePacks !== undefined) {
+    if (!Array.isArray(catalog.offlinePacks)) throw Error('Invalid offline capability catalog');
+    for (const p of catalog.offlinePacks) {
+      const identity=p.id+':'+p.platform;
+      if(p.id!=='node'||p.delivery!=='offline-only'||p.format!=='stream-v2'||p.url!==undefined||!safe(p.version)||!safe(p.platform)||!digest(p.sha256)||!digest(p.manifestSha256)||!Number.isSafeInteger(p.downloadBytes)||p.downloadBytes<=0||p.downloadBytes>2*1073741824||!Number.isSafeInteger(p.installedBytes)||p.installedBytes<=0||identities.has(identity))throw Error('Invalid offline capability identity or size');
+      identities.add(identity);
+    }
+  }
   return catalog;
 }
 

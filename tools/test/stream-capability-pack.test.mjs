@@ -29,6 +29,12 @@ test('changed runtime and missing compression review produce no archive',async t
 test('existing output is immutable and retained',async t=>{
   const f=fixture(t);fs.writeFileSync(f.output,'existing release');await assert.rejects(build({...f,writeLock:true}),/already exists/);assert.equal(fs.readFileSync(f.output,'utf8'),'existing release');
 });
+test('optional neutral gzip header preserves data and does not rewrite existing pack conventions',async t=>{
+  const f=fixture(t);await build({...f,writeLock:true,gzipOS:255});
+  const bytes=fs.readFileSync(f.output),size=bytes.readUInt32LE(8),payload=bytes.subarray(12+size);
+  assert.equal(payload[9],255);assert.deepEqual(zlib.gunzipSync(payload),f.bytes);
+  await assert.rejects(build({...f,output:path.join(f.root,'invalid.readmd-pack'),gzipOS:3}),/platform-neutral/);
+});
 test('unsafe paths, duplicate names and file-parent conflicts are refused',async t=>{
   const f=fixture(t);
   for(const name of ['../outside','a:b','CON.txt','CON .txt','a/COM1 .exe','a"b','/outside','a\\b','end.']){const m=structuredClone(f.manifest);m.files[0].path=name;fs.writeFileSync(f.manifestPath,JSON.stringify(m));await assert.rejects(build({...f,writeLock:true}),/Invalid v2 file entry/);}

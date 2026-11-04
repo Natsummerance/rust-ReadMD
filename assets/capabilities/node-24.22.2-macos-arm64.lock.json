@@ -1,0 +1,42 @@
+{
+  "schema": 2,
+  "id": "node",
+  "version": "24.22.2",
+  "platform": "macos-arm64",
+  "files": [
+    {
+      "path": "bin/node",
+      "size": 122564432,
+      "sha256": "b6fb419f0f43bb2fbca273700294dd2f3b685a64b60e8417c295f47646a70e4a",
+      "executable": true,
+      "compressedSize": 40467600
+    },
+    {
+      "path": "licenses/NODE-LICENSE.txt",
+      "size": 157609,
+      "sha256": "5888dbb9a1d2b18f2c3e6c5f6af1b39de658372b402a0577b002777f14c62ace",
+      "executable": false,
+      "compressedSize": 24312
+    },
+    {
+      "path": "NOTICE",
+      "size": 474,
+      "sha256": "80f654327879148823d4dfe2b7859b6c9cef52d44a353118429b5651cbe697c7",
+      "executable": false,
+      "compressedSize": 353
+    }
+  ],
+  "review": {
+    "source": "https://nodejs.org/en/blog/release/v24.22.2",
+    "inputSha256": "1f5ac075be50bed4780ea3be19a007fda95ea4d527d28d76d0b91de47d915115",
+    "minimumPlatform": "macOS 13.5",
+    "license": "MIT and bundled third-party notices",
+    "unchangedOfficialBinary": true,
+    "npmIncluded": false,
+    "compression": {
+      "node": "24.22.2",
+      "zlib": "1.3.2.1-motley-285e94b",
+      "gzipOS": 255
+    }
+  }
+}

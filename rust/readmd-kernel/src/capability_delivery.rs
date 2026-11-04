@@ -60,6 +60,7 @@ fn catalog_at(assets: &Path) -> ApiResult<Value> {
         serde_json::from_slice(&fs::read(file).map_err(|_| failure("capability_catalog_invalid"))?)
             .map_err(|_| failure("capability_catalog_invalid"))?;
     if catalog["schema"] != 1 || catalog["repository"] != REPOSITORY || !catalog["packs"].is_array()
+        || catalog.get("offlinePacks").is_some_and(|entries| !entries.is_array())
     {
         return Err(failure("capability_catalog_invalid"));
     }
@@ -67,17 +68,20 @@ fn catalog_at(assets: &Path) -> ApiResult<Value> {
 }
 pub(crate) fn checked_entry(assets: &Path, id: &str) -> ApiResult<Value> {
     let catalog = catalog_at(assets)?;
-    let entry = catalog["packs"]
+    let mut entries = catalog["packs"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|p| {
+        .chain(catalog["offlinePacks"].as_array().into_iter().flatten())
+        .filter(|p| {
             p["id"] == id
                 && (p["platform"] == crate::capability_packs::platform()
                     || p["platform"] == "universal")
-        })
+        });
+    let entry = entries.next()
         .ok_or_else(|| failure("capability_pack_unavailable"))?
         .clone();
+    if entries.next().is_some() { return Err(failure("capability_catalog_invalid")); }
     validate_entry(&entry)?;
     let lock = crate::capability_packs::resource_lock(assets, id)
         .map_err(|_| failure("capability_catalog_invalid"))?;
@@ -113,6 +117,11 @@ pub(crate) fn checked_entry(assets: &Path, id: &str) -> ApiResult<Value> {
 }
 fn validate_entry(entry: &Value) -> ApiResult<()> {
     let sha = entry["sha256"].as_str().unwrap_or("");
+    let offline = entry["delivery"] == "offline-only";
+    if entry.get("delivery").is_some() && !offline { return Err(failure("capability_catalog_invalid")); }
+    if offline && (entry["id"] != "node" || entry["format"] != "stream-v2" || entry.get("url").is_some()) {
+        return Err(failure("capability_catalog_invalid"));
+    }
     let url = entry["url"].as_str().unwrap_or("");
     let prefix = format!("https://github.com/{REPOSITORY}/releases/download/");
     let tail = url.strip_prefix(&prefix).unwrap_or("");
@@ -129,7 +138,7 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
     };
     if !matches!(
         entry["id"].as_str(),
-        Some("pdfium" | "typst" | "ocr" | "fonts" | "latex")
+        Some("pdfium" | "typst" | "ocr" | "fonts" | "latex" | "node")
     ) || !entry["version"].as_str().is_some_and(|s| {
         !s.is_empty()
             && s.bytes()
@@ -140,7 +149,7 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
             .as_u64()
             .filter(|n| *n > 0 && *n <= maximum)
             .is_none()
-        || tail.split('/').count() != 2
+        || (!offline && (tail.split('/').count() != 2
         || tail.split('/').any(|s| {
             s.is_empty()
                 || s == "."
@@ -149,7 +158,7 @@ fn validate_entry(entry: &Value) -> ApiResult<()> {
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
         })
-        || !tail.ends_with(".readmd-pack")
+        || !tail.ends_with(".readmd-pack")))
     {
         return Err(failure("capability_catalog_invalid"));
     }
@@ -380,6 +389,7 @@ pub fn endpoint(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
             .as_array()
             .unwrap()
             .iter()
+            .chain(catalog["offlinePacks"].as_array().into_iter().flatten())
             .filter(|p| {
                 p["platform"] == crate::capability_packs::platform() || p["platform"] == "universal"
             })
@@ -421,6 +431,9 @@ pub fn endpoint(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
     }
     let engine = v["id"].as_str().unwrap_or("");
     let entry = checked_entry(&app.paths.assets_dir, engine)?;
+    if action == "download" && entry["delivery"] == "offline-only" {
+        return Err(failure("capability_pack_unavailable"));
+    }
     {
         let map = jobs().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(job) = map
@@ -552,6 +565,7 @@ pub fn install_cli(id: &str, assets: Option<&Path>) -> Result<(), String> {
     if crate::capability_packs::ready(&app, id) {
         return Ok(());
     }
+    if entry["delivery"] == "offline-only" { return Err("capability_pack_unavailable".into()); }
     let transfer=crate::capability_process::reserve_transfer(&app.paths.data_dir,
         entry["downloadBytes"].as_u64().unwrap()).map_err(|e|e.code)?;
     let job = Job {
@@ -610,16 +624,30 @@ mod tests {
         }
     }
     #[test]
+    fn offline_node_delivery_keeps_digest_gates_and_cannot_become_a_network_source() {
+        let valid = json!({"id":"node","version":"24.22.2","delivery":"offline-only","format":"stream-v2",
+            "sha256":"a".repeat(64),"manifestSha256":"b".repeat(64),"downloadBytes":100});
+        assert!(validate_entry(&valid).is_ok());
+        for (key, value) in [("url",json!("https://example.com/node")),("id",json!("fonts")),
+            ("format",json!("json-v1")),("delivery",json!("anything")),("manifestSha256",json!("")),("downloadBytes",json!(0))] {
+            let mut invalid = valid.clone(); invalid[key] = value;
+            assert!(validate_entry(&invalid).is_err(), "{key}");
+        }
+    }
+    #[test]
     fn catalog_describes_only_reviewed_platform_bytes() {
         let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let catalog = catalog_at(&assets).unwrap();
-        for entry in catalog["packs"].as_array().unwrap() {
+        for entry in catalog["packs"].as_array().unwrap().iter().chain(catalog["offlinePacks"].as_array().into_iter().flatten()) {
             validate_entry(entry).unwrap();
             assert!(entry["installedBytes"].as_u64().unwrap() > 0);
         }
         if cfg!(all(windows, target_arch = "x86_64")) {
             assert!(checked_entry(&assets, "typst").is_ok());
             assert!(checked_entry(&assets, "pdfium").is_ok());
+        }
+        if crate::capability_packs::platform() != "unsupported" {
+            assert!(checked_entry(&assets, "node").is_ok(), "Node catalog must match the existing ordered manifest protocol");
         }
         assert!(checked_entry(&assets, "unknown").is_err());
     }

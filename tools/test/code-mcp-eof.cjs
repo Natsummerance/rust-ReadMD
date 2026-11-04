@@ -1,4 +1,6 @@
 'use strict';
+const { installNodePack } = require('./node-runtime-fixture.cjs');
+const { startKernel } = require('./v006-refactor-host.cjs');
 // Actual stdio shutdown on all three platforms. The only external worker is
 // our fixed Node timer, with verified script bytes and parent/birth identity.
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto'), assert = require('node:assert/strict');
@@ -27,6 +29,11 @@ async function fixture(args, kind) {
   const dirs = Object.fromEntries(['profile', 'documents', 'tmp', 'home'].map(name => [name, path.join(root, name)])); for (const dir of Object.values(dirs)) fs.mkdirSync(dir);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/TOKEN|SECRET|CREDENTIAL|API_KEY|PROXY/i.test(key)));
   Object.assign(env, { READMD_DATA_DIR: dirs.profile, TMPDIR: dirs.tmp, TMP: dirs.tmp, TEMP: dirs.tmp, CFFIXED_USER_HOME: dirs.home });
+  let managedNode;
+  if (kind === 'node') {
+    const preparing = await startKernel(args.bin, dirs.profile, dirs.documents);
+    try { managedNode = await installNodePack(preparing); } finally { await preparing.stop(); }
+  }
   const child = spawn(args.bin, ['--mcp', '--data-dir', dirs.profile, '--workspace', dirs.documents, '--assets', path.join(ROOT, 'assets')], { cwd: ROOT, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   const closed = new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
   let initialize, init = new Promise(resolve => { initialize = resolve; }), buffer = '', outcome, outcomeCount = 0, worker, protocolError, stderrBytes = 0, forced = false;
@@ -40,7 +47,7 @@ async function fixture(args, kind) {
     } catch (_) { protocolError = 'invalid_protocol_output'; child.stdin.end(); }
   });
   const send = message => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
-  const row = { kind, hostPid: child.pid, passed: false, modelsRequested: false, workerObserved: false };
+  const row = { kind, hostPid: child.pid, passed: false, modelsRequested: false, workerObserved: false, ...(managedNode ? {managedNode} : {}) };
   const fixtureStarted = Date.now();
   const watchdog = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) { forced = true; child.kill(); } }, 20000);
   try {
@@ -94,10 +101,11 @@ async function fixture(args, kind) {
 async function main() {
   const args = options(process.argv.slice(2)); assert(args.bin && !args.base);
   const report = { passed: false, platform: process.platform, modelsRequested: false, nativeUiCertified: false, managedRuntimeCertified: false,
-    hostNodeTestFixture: true, binarySha256: sha(fs.readFileSync(args.bin)), checks: [] };
+    hostNodeTestFixture: false, binarySha256: sha(fs.readFileSync(args.bin)), checks: [] };
   try {
     for (const kind of ['sql', 'node']) report.checks.push(await fixture(args, kind));
     report.passed = report.checks.length === 2 && report.checks.every(check => check.passed && !check.forcedCleanup && check.workerStopped && check.ownHostStopped);
+    report.managedRuntimeCertified = report.passed && !!report.checks.find(check => check.kind === 'node')?.managedNode;
   } finally {
     fs.writeFileSync(path.join(args.evidence, 'report.json'), JSON.stringify(report, null, 2) + '\n', { flag: 'wx' }); console.log(JSON.stringify({ passed: report.passed, checks: report.checks })); if (!report.passed) process.exitCode = 1;
   }
