@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Kích thước trang hoặc cột của phần không hợp lệ.",
   "error.publication_section_invalid": "Thiết lập phần không hợp lệ.",
   "error.publication_sections_require_paged_engine": "Dùng bộ máy PDF Typst hoặc TeX cho tài liệu có nhiều phần.",
+  "error.publication_table_unsupported": "Bảng: Thao tác này không thể giữ nguyên định dạng chữ. Bản gốc chưa thay đổi.",
   "error.publication_tracking_unsupported": "Đầu ra hoặc bản xem trước này không hỗ trợ các thiết lập khoảng cách ký tự này. Hãy bỏ thiết lập hoặc chọn một định dạng được hỗ trợ. Mã nguồn gốc được giữ nguyên.",
   "error.review_ai_budget": "Nội dung duyệt vượt quá giới hạn xử lý.",
   "error.review_ai_interrupted": "Tác vụ AI đã bị gián đoạn. Tiếp tục tác vụ để làm tiếp.",

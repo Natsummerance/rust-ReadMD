@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Seksjonens side- eller spaltemål er ugyldige.",
   "error.publication_section_invalid": "Seksjonsinnstillingene er ugyldige.",
   "error.publication_sections_require_paged_engine": "Bruk PDF-motoren Typst eller TeX for dokumenter med seksjoner.",
+  "error.publication_table_unsupported": "Tabell: Denne handlingen kan ikke bevare tekstformateringen. Originalen er uendret.",
   "error.publication_tracking_unsupported": "Disse innstillingene for tegnavstand støttes ikke av dette utdataformatet eller denne forhåndsvisningen. Fjern innstillingen, eller velg et støttet format. Den opprinnelige kilden bevares.",
   "error.review_ai_budget": "Gjennomgangen overskrider behandlingsgrensen.",
   "error.review_ai_interrupted": "KI-oppgaven ble avbrutt. Fortsett den for å arbeide videre.",

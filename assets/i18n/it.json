@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Le dimensioni della pagina o della colonna della sezione non sono valide.",
   "error.publication_section_invalid": "Le impostazioni della sezione non sono valide.",
   "error.publication_sections_require_paged_engine": "Usa il motore PDF Typst o TeX per i documenti con sezioni.",
+  "error.publication_table_unsupported": "Tabella: Questa operazione non può conservare la formattazione del testo. L’originale è invariato.",
   "error.publication_tracking_unsupported": "Questa uscita o anteprima non supporta queste impostazioni di spaziatura tra caratteri. Rimuovi l’impostazione o scegli un formato supportato. Il sorgente originale viene conservato.",
   "error.review_ai_budget": "La revisione supera il limite di elaborazione.",
   "error.review_ai_interrupted": "L’attività IA è stata interrotta. Riprendila per continuare.",

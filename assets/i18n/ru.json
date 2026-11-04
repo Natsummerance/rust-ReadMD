@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Недопустимые размеры страницы или колонок раздела.",
   "error.publication_section_invalid": "Недопустимые параметры раздела.",
   "error.publication_sections_require_paged_engine": "Для документов с разделами используйте движок PDF Typst или TeX.",
+  "error.publication_table_unsupported": "Таблица: Операция не может сохранить форматирование текста. Оригинал не изменён.",
   "error.publication_tracking_unsupported": "Этот вывод или предпросмотр не поддерживает указанные настройки межзнакового интервала. Удалите настройку или выберите поддерживаемый формат. Исходный текст сохраняется.",
   "error.review_ai_budget": "Проверка превышает лимит обработки.",
   "error.review_ai_interrupted": "Задание ИИ было прервано. Возобновите его, чтобы продолжить.",

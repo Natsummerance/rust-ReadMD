@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Biteso ya lukaya to ya kolone ya kitini kele mbote ve.",
   "error.publication_section_invalid": "Bimpanga ya kitini kele mbote ve.",
   "error.publication_sections_require_paged_engine": "Na mikanda ya kele na bitini, sadila motere ya PDF Typst to TeX.",
+  "error.publication_table_unsupported": "Tablo: Kisalu yai lenda ve kubumba nkadilu ya masonuku. Mukanda ya ntete mebaluka ve.",
   "error.publication_tracking_unsupported": "Kubasisa to kutala na ntwala yai ke sadilaka ve bansiku yai ya ntanganu ya bisoneke. Katula nsiku yango to sola mutindu yina ke na lusadisu. Masonama ya kisina ke bumbama.",
   "error.review_ai_budget": "Kutala diaka me luta ndilu ya kisalu.",
   "error.review_ai_interrupted": "Kisalu ya AI me zenga. Landa yo diaka sambu na kulanda kisalu.",

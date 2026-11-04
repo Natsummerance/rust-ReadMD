@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "ຂະໜາດໜ້າ ຫຼືຖັນຂອງພາກສ່ວນບໍ່ຖືກຕ້ອງ.",
   "error.publication_section_invalid": "ການຕັ້ງຄ່າພາກສ່ວນບໍ່ຖືກຕ້ອງ.",
   "error.publication_sections_require_paged_engine": "ໃຊ້ເຄື່ອງຈັກ PDF Typst ຫຼື TeX ສຳລັບເອກະສານທີ່ມີພາກສ່ວນ.",
+  "error.publication_table_unsupported": "ຕາຕະລາງ: ການດຳເນີນການນີ້ຮັກສາຮູບແບບຂໍ້ຄວາມບໍ່ໄດ້. ຕົ້ນສະບັບບໍ່ປ່ຽນແປງ.",
   "error.publication_tracking_unsupported": "ການສົ່ງອອກ ຫຼືການເບິ່ງຕົວຢ່າງນີ້ບໍ່ຮອງຮັບຄ່າໄລຍະຫ່າງຕົວອັກສອນເຫຼົ່ານີ້. ກະລຸນາລຶບຄ່ານີ້ ຫຼືເລືອກຮູບແບບທີ່ຮອງຮັບ. ຈະຮັກສາຕົ້ນສະບັບໄວ້.",
   "error.review_ai_budget": "ການກວດທານເກີນຂີດຈຳກັດການປະມວນຜົນ.",
   "error.review_ai_interrupted": "ວຽກ AI ຖືກຂັດຈັງຫວະ. ສືບຕໍ່ວຽກເພື່ອເຮັດຕໍ່.",

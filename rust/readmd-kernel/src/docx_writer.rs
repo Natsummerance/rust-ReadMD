@@ -1907,6 +1907,10 @@ pub fn build(doc: &Document, style: &Value, source_name: &str, images: ImageLoad
     }
 }
 pub(crate) fn build_with_lines(doc: &Document, style: &Value, source_name: &str, images: ImageLoader, line_context: crate::publication_typography::LineContext) -> DocxPackage {
+    let tables = match crate::md_ast::native_table_document(doc) {
+        Ok(value) => value, Err(code) => return DocxPackage { parts: Vec::new(), warns: vec![code.into()] },
+    };
+    let doc = tables.as_ref();
     let resolved_math = match crate::math_document_defaults::DocumentDefaultsPlan::analyze(doc)
         .and_then(|plan| plan.render_document(doc)) {
         Ok(value) => value,

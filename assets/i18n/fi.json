@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Osan sivun tai palstan mitat ovat virheelliset.",
   "error.publication_section_invalid": "Osan asetukset ovat virheelliset.",
   "error.publication_sections_require_paged_engine": "Käytä osia sisältäville asiakirjoille Typst- tai TeX-PDF-moottoria.",
+  "error.publication_table_unsupported": "Taulukko: Toiminto ei voi säilyttää tekstin muotoilua. Alkuperäinen on ennallaan.",
   "error.publication_tracking_unsupported": "Tämä tuloste tai esikatselu ei tue näitä merkkiväliasetuksia. Poista asetus tai valitse tuettu muoto. Alkuperäinen lähde säilytetään.",
   "error.review_ai_budget": "Tarkistus ylittää käsittelyrajan.",
   "error.review_ai_interrupted": "Tekoälytehtävä keskeytyi. Jatka sitä jatkaaksesi työtä.",

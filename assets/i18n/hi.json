@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "अनुभाग के पृष्ठ या स्तंभ का आकार अमान्य है।",
   "error.publication_section_invalid": "अनुभाग की सेटिंग अमान्य हैं।",
   "error.publication_sections_require_paged_engine": "अनुभाग वाले दस्तावेज़ों के लिए Typst या TeX PDF इंजन उपयोग करें।",
+  "error.publication_table_unsupported": "तालिका: इस क्रिया में पाठ का प्रारूप सुरक्षित नहीं रह सकता। मूल अपरिवर्तित है।",
   "error.publication_tracking_unsupported": "यह आउटपुट या पूर्वावलोकन अक्षरों के बीच दूरी की इन सेटिंग का समर्थन नहीं करता। सेटिंग हटाएँ या समर्थित प्रारूप चुनें। मूल स्रोत सुरक्षित रहता है।",
   "error.review_ai_budget": "समीक्षा प्रसंस्करण सीमा से अधिक है।",
   "error.review_ai_interrupted": "एआई कार्य बाधित हो गया। जारी रखने के लिए उसे फिर शुरू करें।",

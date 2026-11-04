@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Dimensi halaman atau lajur bahagian tidak sah.",
   "error.publication_section_invalid": "Tetapan bahagian tidak sah.",
   "error.publication_sections_require_paged_engine": "Gunakan enjin PDF Typst atau TeX untuk dokumen berbahagian.",
+  "error.publication_table_unsupported": "Jadual: Operasi ini tidak dapat mengekalkan format teks. Fail asal tidak berubah.",
   "error.publication_tracking_unsupported": "Output atau pratonton ini tidak menyokong tetapan jarak aksara ini. Alih keluar tetapan atau pilih format yang disokong. Sumber asal dikekalkan.",
   "error.review_ai_budget": "Semakan melebihi had pemprosesan.",
   "error.review_ai_interrupted": "Tugas AI telah terganggu. Sambung tugas untuk meneruskan kerja.",

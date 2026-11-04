@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Les dimensions de page ou de colonne de la section sont invalides.",
   "error.publication_section_invalid": "Les paramètres de section sont invalides.",
   "error.publication_sections_require_paged_engine": "Utilisez le moteur PDF Typst ou TeX pour les documents comportant des sections.",
+  "error.publication_table_unsupported": "Tableau: Cette opération ne peut pas préserver la mise en forme du texte. L’original est inchangé.",
   "error.publication_tracking_unsupported": "Ces réglages d’espacement des caractères ne sont pas pris en charge par cette sortie ou cet aperçu. Supprimez le réglage ou choisissez un format compatible. La source d’origine est conservée.",
   "error.review_ai_budget": "La révision dépasse la limite de traitement.",
   "error.review_ai_interrupted": "La tâche IA a été interrompue. Reprenez-la pour continuer.",

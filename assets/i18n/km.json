@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "ទំហំទំព័រ ឬជួរឈររបស់ផ្នែកមិនត្រឹមត្រូវ។",
   "error.publication_section_invalid": "ការកំណត់ផ្នែកមិនត្រឹមត្រូវ។",
   "error.publication_sections_require_paged_engine": "សូមប្រើម៉ាស៊ីន PDF Typst ឬ TeX សម្រាប់ឯកសារដែលមានផ្នែក។",
+  "error.publication_table_unsupported": "តារាង: ប្រតិបត្តិការនេះមិនអាចរក្សាទ្រង់ទ្រាយអត្ថបទបានទេ។ ឯកសារដើមមិនបានផ្លាស់ប្តូរ។",
   "error.publication_tracking_unsupported": "ទម្រង់ចេញ ឬការមើលជាមុននេះមិនគាំទ្រការកំណត់គម្លាតតួអក្សរទាំងនេះទេ។ សូមលុបការកំណត់នេះ ឬជ្រើសរើសទ្រង់ទ្រាយដែលគាំទ្រ។ ប្រភពដើមត្រូវបានរក្សាទុក។",
   "error.review_ai_budget": "ការពិនិត្យលើសដែនកំណត់ដំណើរការ។",
   "error.review_ai_interrupted": "កិច្ចការ AI ត្រូវបានរំខាន។ សូមបន្តកិច្ចការដើម្បីធ្វើបន្ត។",

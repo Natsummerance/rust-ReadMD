@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "Ukuran halaman atau kolom bagian tidak valid.",
   "error.publication_section_invalid": "Pengaturan bagian tidak valid.",
   "error.publication_sections_require_paged_engine": "Gunakan mesin PDF Typst atau TeX untuk dokumen dengan bagian.",
+  "error.publication_table_unsupported": "Tabel: Operasi ini tidak dapat mempertahankan format teks. Berkas asli tidak berubah.",
   "error.publication_tracking_unsupported": "Keluaran atau pratinjau ini tidak mendukung pengaturan jarak antarkarakter ini. Hapus pengaturan atau pilih format yang didukung. Sumber asli tetap dipertahankan.",
   "error.review_ai_budget": "Peninjauan melebihi batas pemrosesan.",
   "error.review_ai_interrupted": "Tugas AI terputus. Lanjutkan tugas untuk meneruskan pekerjaan.",

@@ -2767,6 +2767,13 @@ pub fn export_pdf(
 fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value,source_name:&str,assets_dir:&Path,
     lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
 {
+    crate::publication_profile::validate_pdf_engine(options).map_err(|error|error.code)?;
+    // Direct native calls cannot bypass the source guard by naming another
+    // engine in style options. This path always consumes Rust's table model.
+    if crate::md_ast::native_table_source_candidate(content) {
+        let source_document = crate::md_ast::parse(content);
+        crate::md_ast::native_table_document(&source_document).map_err(str::to_string)?;
+    }
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::RustPdf,content,options).map_err(str::to_string)?;
     crate::pdf_render::validate_caption_author_source(content,options)?;
     crate::math_word_projection::validate_source_at_width(content,"rust",Some(crate::pdf_render::DocGeometry::from_style(&crate::export_styles::sanitize(options)).avail))?;
@@ -2787,7 +2794,17 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     // The shared AST carries fence languages, table alignment, task markers,
     // list starts and nesting, which the old line parser dropped.
     let (doc,citation_warnings)=publication_document(content,base_dir,options)?;
-    let (doc,mut style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(&doc,options,source_name,"pdf")?;
+    let tables = crate::md_ast::native_table_document(&doc).map_err(str::to_string)?;
+    if matches!(&tables, std::borrow::Cow::Owned(_)) {
+        // Numeric HTML entities may introduce CJK absent from the raw source.
+        // Keep missing-font failure explicit before staging or writing output.
+        let mut text = String::new();
+        crate::md_ast::walk_inlines(&tables.blocks, &mut |inline| match inline {
+            crate::md_ast::Inline::Text(value)|crate::md_ast::Inline::Code(value) => text.push_str(value), _ => (),
+        });
+        crate::publication_fonts::require_cjk(&text)?;
+    }
+    let (doc,mut style,metadata,front_count)=crate::publication_metadata_formats::prepare_with_front_count(tables.as_ref(),options,source_name,"pdf")?;
     crate::publication_typography::baseline::validate_document(&doc, &style,
         crate::publication_typography::baseline::Consumer::RustPdf).map_err(str::to_string)?;
     crate::publication_sections::resolve(&doc,&style).map_err(str::to_string)?;

@@ -741,6 +741,7 @@
   "error.publication_section_geometry": "La paĝaj aŭ kolumnaj dimensioj de la sekcio estas nevalidaj.",
   "error.publication_section_invalid": "La agordoj de la sekcio estas nevalidaj.",
   "error.publication_sections_require_paged_engine": "Uzu la PDF-motoron Typst aŭ TeX por dokumentoj kun sekcioj.",
+  "error.publication_table_unsupported": "Tabelo: La ago ne povas konservi la tekstoformaton. La originalo restas senŝanĝa.",
   "error.publication_tracking_unsupported": "Ĉi tiu eligo aŭ antaŭrigardo ne subtenas ĉi tiujn signospacajn agordojn. Forigu la agordon aŭ elektu subtenatan formaton. La originala fonto estas konservata.",
   "error.review_ai_budget": "La revizio superas la prilaboran limon.",
   "error.review_ai_interrupted": "La tasko de artefarita intelekto estis interrompita. Daŭrigu ĝin por plu labori.",
