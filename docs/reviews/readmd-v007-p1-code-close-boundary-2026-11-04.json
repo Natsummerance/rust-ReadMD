@@ -119,9 +119,13 @@
     "sameIssueIndependentlyReproduced": true,
     "isolatedBackportSourceCommit": "5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4",
     "backportNativeAccepted": true,
-    "releaseReplaced": false,
+    "releaseReplaced": true,
     "backportImplementationCommit": "3b3c9afbddafe389feb64ee4bf9ceb72e08b1b2a",
-    "backportNativeChecks": 68
+    "backportNativeChecks": 68,
+    "packagesReplaced": 10,
+    "anonymousDownloadsVerified": 11,
+    "dailyApplicationUpdated": true,
+    "publicationReceipt": "https://github.com/Natsummerance/rust-ReadMD/blob/e3bd838606ace3170bdda718848d9b0424a731fb/docs/reviews/readmd-v006-code-close-published-2026-11-04.json"
   },
   "modelsRequested": false,
   "dailyApplicationChangedByP1": false,
@@ -129,7 +133,6 @@
   "wholeP1Accepted": false,
   "v007Published": false,
   "remaining": [
-    "Cocoa closeout on the frozen candidate",
     "Managed runtimes and durable execution checkpoints",
     "Unknown side effects, hard crashes and other transport shutdown policies",
     "Remaining P1 and P2 acceptance gates"
