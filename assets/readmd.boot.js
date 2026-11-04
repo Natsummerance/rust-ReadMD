@@ -1775,6 +1775,19 @@ function captureReaderState(tab) {
     : (tab.scrollPos || 0);
 }
 
+function revealTabInTrack(container, tab) {
+  if (!container || !tab) return;
+  const vertical = container.getAttribute('aria-orientation') === 'vertical';
+  const size = vertical ? container.clientHeight : container.clientWidth;
+  if (!size) return;
+  const containerRect = container.getBoundingClientRect(), tabRect = tab.getBoundingClientRect();
+  const scroll = vertical ? 'scrollTop' : 'scrollLeft';
+  const start = (vertical ? tabRect.top - containerRect.top : tabRect.left - containerRect.left) + container[scroll];
+  const end = start + (vertical ? tab.offsetHeight : tab.offsetWidth);
+  if (start < container[scroll] + 8) container[scroll] = Math.max(0, start - 8);
+  else if (end > container[scroll] + size - 8) container[scroll] = end - size + 8;
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
@@ -1811,14 +1824,14 @@ function renderTabsBar() {
     }
   }
 
-  const createTabEl = (tab) => {
+  const createTabEl = (tab, container) => {
     const el = document.createElement('div');
     el.className = 'tab-item' + (tab.id === state.activeTabId ? ' active' : '');
     el.dataset.tabId = tab.id;
     el.setAttribute('role', 'tab');
     el.setAttribute('aria-selected', tab.id === state.activeTabId ? 'true' : 'false');
     el.setAttribute('aria-controls', 'content');
-    el.setAttribute('aria-keyshortcuts', 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
+    el.setAttribute('aria-keyshortcuts', (container?.getAttribute('aria-orientation') === 'vertical' ? 'ArrowUp ArrowDown ' : '') + 'Alt+Left Arrow Alt+Right Arrow Delete Backspace');
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
@@ -1861,6 +1874,12 @@ function renderTabsBar() {
 
     el.addEventListener('click', () => switchTab(tab.id));
     el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        if (el.parentElement?.getAttribute('aria-orientation') !== 'vertical' || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        e.preventDefault();
+        moveTabFocus(tab.id, e.key === 'ArrowUp' ? 'ArrowLeft' : 'ArrowRight');
+        return;
+      }
       if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
         e.preventDefault();
         const index = state.tabs.findIndex(item => item.id === tab.id);
@@ -1918,8 +1937,9 @@ function renderTabsBar() {
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       const rect = el.getBoundingClientRect();
-      const mid = rect.left + rect.width / 2;
-      const isRight = e.clientX > mid;
+      const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const isRight = (vertical ? e.clientY : e.clientX) > mid;
       el.classList.toggle('tab-drag-over-left', !isRight);
       el.classList.toggle('tab-drag-over-right', isRight);
     });
@@ -1933,7 +1953,8 @@ function renderTabsBar() {
       const srcId = e.dataTransfer.getData('application/x-readmd-tab') || e.dataTransfer.getData('text/plain');
       if (srcId && srcId !== tab.id) {
         const rect = el.getBoundingClientRect();
-        const isRight = e.clientX > (rect.left + rect.width / 2);
+        const vertical = el.parentElement?.getAttribute('aria-orientation') === 'vertical';
+        const isRight = vertical ? e.clientY > rect.top + rect.height / 2 : e.clientX > rect.left + rect.width / 2;
         reorderTabs(srcId, tab.id, isRight);
       }
     });
@@ -1949,7 +1970,7 @@ function renderTabsBar() {
 
   if (bar) {
     bar.innerHTML = '';
-    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab)));
+    state.tabs.forEach(tab => bar.appendChild(createTabEl(tab, bar)));
   }
 
   if (dropdown) {
@@ -1987,16 +2008,7 @@ function renderTabsBar() {
 
   const revealActiveTab = (container) => {
     const active = container?.querySelector('.tab-item.active');
-    if (!active) return;
-    const containerRect = container.getBoundingClientRect();
-    const activeRect = active.getBoundingClientRect();
-    const left = activeRect.left - containerRect.left + container.scrollLeft;
-    const right = left + active.offsetWidth;
-    if (left < container.scrollLeft + 8) {
-      container.scrollLeft = Math.max(0, left - 8);
-    } else if (right > container.scrollLeft + container.clientWidth - 8) {
-      container.scrollLeft = right - container.clientWidth + 8;
-    }
+    revealTabInTrack(container, active);
   };
   revealActiveTab(bar);
   revealActiveTab(secBar);
@@ -2004,7 +2016,7 @@ function renderTabsBar() {
   if (secBar) {
     if (window.innerWidth < 650 && state.tabs.length > 0) {
       secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab)));
+      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab, secBar)));
       secBar.classList.remove('hidden');
       if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
     } else {
@@ -2018,7 +2030,10 @@ function focusVisibleTab(tabId) {
   requestAnimationFrame(() => {
     const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
     const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next && document.activeElement !== next) next.focus({ preventScroll: true });
+    if (next) {
+      revealTabInTrack(next.parentElement, next);
+      if (document.activeElement !== next) next.focus({ preventScroll: true });
+    }
   });
 }
 
@@ -2039,6 +2054,7 @@ function moveTabFocus(activeTabId, key) {
 function startTabInlineRename(tab, titleSpan, tabEl) {
   if (tab?._renamePending) { void recoverPendingRename(tab); return; }
   if (renameBlocked(tab)) return;
+  tabEl.closest?.('#side')?.classList.remove('hidden');
   if (tabEl.querySelector('.tab-title-input') || tabEl.querySelector('.tab-rename-wrap')) return;
   const currentTitle = tab.title || tab.name || '';
   const dot = currentTitle.lastIndexOf('.');
@@ -30814,7 +30830,7 @@ async function applyReadyUpdate() {
   window.ReadMDShortcuts = stub('Shortcuts', ['open', 'close', 'toggle', 'isOpen']);
   window.openMdCommandPalette = () => window.ReadMDPalette.open();
 
-  const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  const IS_MAC = /Mac|iPhone|iPad|iPod/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   const KEY_LABEL = {
     Mod: IS_MAC ? '⌘' : 'Ctrl', Ctrl: IS_MAC ? '⌃' : 'Ctrl', Shift: IS_MAC ? '⇧' : 'Shift',
     Alt: IS_MAC ? '⌥' : 'Alt', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
@@ -30989,11 +31005,7 @@ function initWindowChrome() {
   const actions = $('titlebar-actions');
   if (!actions || actions.dataset.initialized) return;
   actions.dataset.initialized = 'true';
-  for (const id of ['btn-open', 'btn-folder', 'btn-recent', 'btn-palette', 'btn-theme', 'btn-zen']) {
-    if ($(id)) actions.appendChild($(id));
-  }
-  const ai = $('btn-ai');
-  if (ai && $('btn-more')) ai.before($('btn-more'));
+  initSingleChromeNavigation();
   const title = $('window-title');
   const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
@@ -31001,6 +31013,7 @@ function initWindowChrome() {
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
+    syncChromeDocumentDisclosure();
     command('title', { title: document.title });
   };
   new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true, characterData: true });
@@ -31054,6 +31067,100 @@ function initWindowChrome() {
   };
   syncWindowPreferences();
   window.addEventListener('readmd:language-changed', syncWindowPreferences);
+}
+
+// This layer projects the existing document/tab services into the shell. It
+// never clones a tab, installs a second close handler or changes editor state.
+function syncChromeDocumentDisclosure() {
+  const button = $('titlebar-documents'), side = $('side'), section = $('side-documents');
+  if (!button || !side) return;
+  const tabs = state.tabs || [];
+  const legacy = $('file-title');
+  const available = tabs.length > 0 || !!(legacy && !legacy.classList.contains('hidden') && legacy.textContent);
+  button.disabled = !available;
+  button.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
+  $('btn-toc')?.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
+  const label = window.i18n?.t('tabs.openDocs') || 'tabs.openDocs';
+  const name = $('window-title')?.textContent || document.title;
+  button.setAttribute('aria-label', `${label}: ${name}${tabs.length > 1 ? ` (${tabs.length})` : ''}`);
+  button.title = `${name}\n${label}`;
+  if (section) section.hidden = !available;
+  const icon = $('titlebar-document-icon'); if (icon) icon.hidden = !available;
+  const count = $('titlebar-tab-count');
+  if (count) { count.textContent = String(tabs.length); count.classList.toggle('hidden', tabs.length < 2); }
+  const active = tabs.find(tab => tab.id === state.activeTabId);
+  $('titlebar-dirty')?.classList.toggle('hidden', !active?.isDirty && !active?.externalChanged);
+  if (active?.isDirty || active?.externalChanged) button.setAttribute('aria-description', window.i18n?.t(active.externalChanged ? 'toast.saveConflict' : 'tabs.dirty') || '');
+  else button.removeAttribute('aria-description');
+}
+
+function initSingleChromeNavigation() {
+  const side = $('side'), disclosure = $('titlebar-documents'), toolbar = $('toolbar');
+  if (!side || !disclosure || disclosure.dataset.bound) return;
+  disclosure.dataset.bound = 'true';
+  let opener = $('btn-toc'), lastFocus = document.activeElement;
+  document.addEventListener('focusin', event => { lastFocus = event.target; });
+  disclosure.addEventListener('click', () => {
+    opener = disclosure;
+    side.classList.remove('hidden');
+    syncChromeDocumentDisclosure();
+    if (state.tabs?.length) focusVisibleTab(state.activeTabId || state.tabs[0].id);
+    else $('file-title')?.focus();
+  });
+  $('btn-toc')?.setAttribute('aria-controls', 'side');
+  $('btn-toc')?.addEventListener('pointerdown', () => { opener = $('btn-toc'); });
+  new MutationObserver(() => {
+    syncChromeDocumentDisclosure();
+    if (side.classList.contains('hidden') && (side.contains(document.activeElement) || document.activeElement === document.body && side.contains(lastFocus))) {
+      const target = opener && !opener.disabled ? opener : $('btn-toc');
+      target?.focus({ preventScroll: true });
+    }
+  }).observe(side, { attributes: true, attributeFilter: ['class'] });
+  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
+    const bar = $(id);
+    if (bar) new MutationObserver(syncChromeDocumentDisclosure).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+  }
+  if ($('file-title')) new MutationObserver(syncChromeDocumentDisclosure).observe($('file-title'), { childList: true, attributes: true, attributeFilter: ['class'] });
+  side.addEventListener('keydown', event => {
+    if (event.isComposing || event.keyCode === 229 || event.key !== 'Escape' || window.ReadMDModal?.top()) return;
+    if (event.defaultPrevented) {
+      event.stopPropagation();
+      if (event.target.matches('.tab-title-input')) event.composedPath().find(node => node instanceof HTMLElement && node.matches('.tab-item'))?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    event.preventDefault(); event.stopPropagation();
+    side.classList.add('hidden');
+  });
+  // These are the same menu buttons and business listeners. Close their menu
+  // and expose a visible opener before the existing action opens its dialog.
+  const relayMenuAction = event => {
+    const action = event.target.closest('[data-shell-menu-action]');
+    if (!action || event.type === 'contextmenu' && action.id !== 'btn-zen') return;
+    closeMoreMenu();
+    $('btn-more')?.focus({ preventScroll: true });
+  };
+  for (const type of ['click','contextmenu']) $('more-menu')?.addEventListener(type, relayMenuAction, true);
+  const shortcuts = () => {
+    const mac = !!window.ReadMDKeys?.isMac;
+    for (const el of [...toolbar.querySelectorAll('.tb-btn[title],.tb-btn[aria-label]'), ...side.querySelectorAll('#side-file-actions .tb-btn[title], #side-close-btn[title]')]) {
+      for (const attribute of ['title','aria-label']) {
+        const old = el.getAttribute(attribute);
+        const next = mac && old ? old.replace(/\bCtrl\b/g, 'Cmd') : old;
+        if (old !== next) el.setAttribute(attribute, next);
+      }
+    }
+    const command = $('btn-palette'), hint = $('shell-command-hint');
+    if (command && hint) {
+      const label = command.getAttribute('aria-label') || window.i18n?.t('editor.command') || '';
+      const title = `${label} (${mac ? 'Cmd' : 'Ctrl'}+K / ${mac ? 'Cmd' : 'Ctrl'}+Shift+P)`;
+      if (command.hasAttribute('title') && command.title !== title) command.title = title;
+      if (hint.textContent !== title) hint.textContent = title;
+    }
+  };
+  if (toolbar) new MutationObserver(shortcuts).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['title', 'aria-label'] });
+  window.addEventListener('readmd:language-changed', () => { shortcuts(); syncChromeDocumentDisclosure(); });
+  shortcuts(); syncChromeDocumentDisclosure();
 }
 
 function initMacWindowChrome(command) {
@@ -32505,7 +32612,8 @@ function bindEvents() {
     if (!document.body.classList.contains('zen-mode')) return;
     const toolbar = $('toolbar');
     if (!toolbar) return;
-    if (e.clientY <= 10) {
+    if (e.clientY > 12) document.body.classList.remove('zen-toolbar-suppressed');
+    if (e.clientY <= 10 && !document.body.classList.contains('zen-toolbar-suppressed')) {
       toolbar.classList.add('zen-toolbar-revealed');
     } else if (e.clientY > 54) {
       toolbar.classList.remove('zen-toolbar-revealed');

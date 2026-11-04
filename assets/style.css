@@ -5866,8 +5866,8 @@ body.zen-mode #content {
 /* ---------- 演示文稿全屏模态框与悬浮定制工具栏 (Presentation Toolbar) ---------- */
 /* Native Mac traffic lights share the existing header, with measured physical
    left clearance even in RTL. AppKit retains their appearance and hit areas. */
-body.native-macos #app-titlebar { padding-left: var(--native-controls-leading, 88px); direction: ltr; flex-direction: row-reverse; justify-content: flex-start; }
-body.native-macos #titlebar-actions { flex-direction: row-reverse; margin: 0; }
+body.native-macos #app-titlebar { padding-left: var(--native-controls-leading, 88px); direction: ltr; }
+body.native-macos #titlebar-actions { margin: 0; }
 body.native-macos #window-title { unicode-bidi: plaintext; }
 body.native-macos #window-controls { display: none; }
 body.native-macos.window-inactive #window-title { opacity: .64; }
