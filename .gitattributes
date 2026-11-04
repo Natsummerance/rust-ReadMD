@@ -21,6 +21,12 @@ rust/readmd-kernel/src/fixtures/** -text
 # Native PDF fixtures contain byte offsets and must survive Windows checkout.
 rust/readmd-kernel/tests/fixtures/** -text
 rust/readmd-kernel/tests/fixtures/*.pdf binary
+# Table HTTP inputs already own their BOM/CRLF encoding. Preserve the original
+# LF fixture blobs so Windows checkout cannot encode their newlines twice.
+tests/fixtures/table-safety/simple.html.md -text
+tests/fixtures/table-safety/merged.html.md -text
+tests/fixtures/table-safety/gfm.md -text
+tests/fixtures/table-safety/literal.md -text
 
 # Hash-bound acceptance evidence must have identical bytes on every host.
 docs/reviews/readmd-v005-batch3-math-managed-font-revision-2026-10-24.md -text

@@ -10,20 +10,48 @@ const ROOT=path.resolve(__dirname,'../..'),pause=ms=>new Promise(resolve=>setTim
 const TIMER="setTimeout(()=>console.log('LATE'),60000)";
 const PROBE="console.log(JSON.stringify({version:process.version,sum:[6,7].reduce((a,b)=>a*b,1),unicode:'中文😀',write:process.permission.has('fs.write')}))";
 function size(directory){let n=0;try{for(const name of fs.readdirSync(directory)){const file=path.join(directory,name);try{const m=fs.lstatSync(file);n+=m.isDirectory()&&!m.isSymbolicLink()?size(file):m.size;}catch(e){if(e.code!=='ENOENT')throw e;}}}catch(e){if(e.code!=='ENOENT')throw e;}return n;}
-function probeWorker(parent,tmp,proof){
+function probeWorker(parent,tmp,proof,observe=()=>{}){
   const name=process.platform==='win32'?'node.exe':'node',entry=proof.manifest.files.find(f=>f.path==='bin/'+name);
-  for(const candidate of processes(parent)){
+  const scanAt=performance.now(),children=processes(parent),identityScanMs=performance.now()-scanAt;
+  for(const candidate of children){
     if(!candidate.args?.includes('--permission --eval')||!candidate.args.endsWith(PROBE))continue;
     const match=candidate.args.match(/^(?:"([^"]+)"|(\S+))\s+--permission\s+--eval\s/),program=match?.[1]||match?.[2];if(!program)continue;
+    const observation={pid:candidate.pid,birth:candidate.birth,argsSha256:sha(candidate.args),identityScanMs,program:path.relative(tmp,program)};
+    observe({...observation,stage:'candidate_seen'});
+    if(!candidate.birth){observe({...observation,stage:'birth_not_observable'});continue;}
     try{
       const m=fs.lstatSync(program),canonical=fs.realpathSync(program),prefix=fs.realpathSync(tmp)+path.sep;
       assert(m.isFile()&&!m.isSymbolicLink());assert(process.platform==='win32'?canonical.toLowerCase().startsWith(prefix.toLowerCase()):canonical.startsWith(prefix));
-      assert.equal(m.size,entry.size);assert.equal(sha(fs.readFileSync(program)),entry.sha256);assert(candidate.birth);
-      if(process.platform!=='win32')assert.equal(Number(ps(candidate.pid,'pgid')),candidate.pid);
+      assert.equal(m.size,entry.size);const hashAt=performance.now();observation.programSha256=sha(fs.readFileSync(program));observation.hashMs=performance.now()-hashAt;
+      assert.equal(observation.programSha256,entry.sha256);assert(candidate.birth);
+      const groupAt=performance.now();
+      if(process.platform!=='win32'){
+        const group=ps(candidate.pid,'pgid');
+        if(!group){observe({...observation,stage:'group_not_observable',groupReadMs:performance.now()-groupAt});continue;}
+        assert.equal(Number(group),candidate.pid);
+      }
+      observation.groupReadMs=performance.now()-groupAt;observe({...observation,stage:'private_probe_verified'});
       return{...candidate,program};
-    }catch(e){if(e.code!=='ENOENT')throw e;}
+    }catch(e){observe({...observation,stage:e.code==='ENOENT'?'copy_retired_before_verification':'verification_failed',error:e.code||e.name});if(e.code!=='ENOENT')throw e;}
   }
   return null;
+}
+// Retry only read-only preparation, before a Run exists. A verified copy can
+// finish while ps/hash/identity observations are in flight. Every lost window
+// remains evidence, and exhausting this bound is an inconclusive failure.
+async function observableProbe({find,live,pending,record,now=()=>performance.now(),sleep=pause}){
+  const end=now()+6000;let candidates=0;
+  while(now()<end&&candidates<6){
+    const worker=find(),anchor=pending();
+    if(!worker){record({stage:'no_verified_probe_observed'});await sleep(10);continue;}
+    candidates++;const recheckAt=now(),alive=Boolean(live(worker)),elapsedMs=now()-recheckAt;
+    const accepted=Boolean(anchor&&!anchor.settled&&alive&&now()<end);
+    record({stage:'precondition_identity_recheck',candidate:candidates,pid:worker.pid,birth:worker.birth,argsSha256:sha(worker.args),statusIndex:anchor?.index??null,identityConfirmed:alive,identityRecheckMs:elapsedMs,anchorPending:Boolean(anchor&&!anchor.settled),preparationDeadlineReached:now()>=end,accepted});
+    if(accepted)return{worker,anchor,candidates};
+    await sleep(10);
+  }
+  const error=Error('No stable genuine probe window within the original 6s preparation bound; Run was not requested');
+  error.code='probe_observation_window_unavailable';throw error;
 }
 function files(directory,proof){return proof.manifest.files.map(f=>{const p=path.join(directory,...f.path.split('/')),m=fs.lstatSync(p);assert(m.isFile()&&!m.isSymbolicLink());return{path:f.path,size:m.size,sha256:sha(fs.readFileSync(p))};});}
 function noProbeCopies(directory){for(const name of fs.readdirSync(directory)){const file=path.join(directory,name),m=fs.lstatSync(file);assert(!m.isSymbolicLink(),'retain unexpected link in owned scratch');if(m.isDirectory())noProbeCopies(file);else assert(!['node','node.exe'].includes(name),'retain a probe copy whose retirement is not confirmed');}}
@@ -32,7 +60,7 @@ async function main(){
   const dirs=Object.fromEntries(['profile','documents','tmp'].map(n=>[n,path.join(args.evidence,n)]));for(const d of Object.values(dirs))fs.mkdirSync(d);
   Object.assign(process.env,{TMPDIR:dirs.tmp,TMP:dirs.tmp,TEMP:dirs.tmp});
   const sentinel=path.join(dirs.documents,'owned-sentinel.md'),source=Buffer.from('# Synthetic Node status fairness\r\n\r\nNo model or user file.\r\n');fs.writeFileSync(sentinel,source);
-  const report={passed:false,platform:process.platform,arch:process.arch,modelsRequested:false,nativeUiCertified:false,binarySha256:sha(fs.readFileSync(args.bin)),bootSha256:sha(fs.readFileSync(path.join(ROOT,'assets/readmd.boot.js'))),driverSha256:sha(fs.readFileSync(__filename)),packSha256:proof.sha256,manifestSha256:proof.manifestSha256,timerSha256:sha(TIMER),probeSourceSha256:sha(PROBE),checks:[],statuses:[],cleanupErrors:[]};
+  const report={passed:false,platform:process.platform,arch:process.arch,modelsRequested:false,nativeUiCertified:false,binarySha256:sha(fs.readFileSync(args.bin)),bootSha256:sha(fs.readFileSync(path.join(ROOT,'assets/readmd.boot.js'))),driverSha256:sha(fs.readFileSync(__filename)),packSha256:proof.sha256,manifestSha256:proof.manifestSha256,timerSha256:sha(TIMER),probeSourceSha256:sha(PROBE),checks:[],statuses:[],probeObservations:[],probeSchedulingSignalsUsed:false,cleanupErrors:[]};
   const started=performance.now(),at=()=>Math.round((performance.now()-started)*1000)/1000,safe=s=>String(s).replaceAll(args.evidence,'<evidence>').replaceAll(ROOT,'<repo>');
   let host,task,running,timerWorker,observedProbe,statusLoop,stopStatus=false,phase='startup',installed=false,tmpBlocked=false;
   const mark=value=>{phase=value;console.log(JSON.stringify({phase,atMs:at()}));};
@@ -44,11 +72,13 @@ async function main(){
     const before=files(directory,proof);report.installedFiles=before;
     mark('continuous real status begins before Run');
     statusLoop=(async()=>{while(!stopStatus){const row={index:report.statuses.length,requestedAtMs:at(),settled:false};report.statuses.push(row);try{const result=await pack({action:'status',id:'node'});Object.assign(row,{settled:true,settledAtMs:at(),...result});}catch(e){Object.assign(row,{settled:true,settledAtMs:at(),error:safe(e.message)});throw e;}await pause(10);}})();statusLoop.catch(()=>{});
-    const probeDeadline=Date.now()+6000;
-    while(Date.now()<probeDeadline&&!observedProbe){observedProbe=probeWorker(host.pid,dirs.tmp,proof);if(!observedProbe)await pause(10);}
-    assert(observedProbe,'a genuine private-copy --eval probe must be independently observed');
+    report.precondition={mode:'bounded read-only natural-window observation',budgetMs:6000,maxVerifiedCandidates:6,outcome:'pending'};
+    const pending=()=>report.statuses.find(row=>!row.settled),record=value=>report.probeObservations.push({atMs:at(),statusIndex:pending()?.index??null,...value});
+    const selected=await observableProbe({find:()=>probeWorker(host.pid,dirs.tmp,proof,record),live:sameWorker,pending,record});
+    observedProbe=selected.worker;const anchor=selected.anchor;
+    Object.assign(report.precondition,{outcome:'stable_probe_observed',verifiedCandidates:selected.candidates,acceptedAtMs:at()});
     report.probeWorker={pid:observedProbe.pid,birth:observedProbe.birth,argsSha256:sha(observedProbe.args),program:path.relative(dirs.tmp,observedProbe.program),programSha256:proof.manifest.files.find(f=>f.path.startsWith('bin/')).sha256,observedAtMs:at()};
-    const anchor=report.statuses.find(row=>!row.settled);assert(anchor,'the observed probe belongs to a pending real status request');assert(sameWorker(observedProbe),'the independently identified probe is still active before Run');report.anchorStatus=anchor.index;
+    report.anchorStatus=anchor.index;
     mark('timer must start during continuous real status');task=crypto.randomUUID();report.running={taskId:task,requestedAtMs:at(),settled:false};
     running=api('/api/code/run',{confirm:true,lang:'javascript',code:TIMER,task_id:task}).then(receipt=>{Object.assign(report.running,{settled:true,settledAtMs:at(),receipt});return receipt;},e=>{Object.assign(report.running,{settled:true,settledAtMs:at(),error:safe(e.message)});throw e;});running.catch(()=>{});
     const deadline=Date.now()+3000;
@@ -80,7 +110,7 @@ async function main(){
     report.recoveredProbe=await pack({action:'status',id:'node'});assert.equal(report.recoveredProbe.body.ready,true);assert.deepEqual(fs.readFileSync(sentinel),source);
     report.checks.push('valid installed bytes plus failed private probe preparation do not claim readiness; unknown obstruction survives; fresh real probe recovers');
     mark('real uninstall preserves owned source');report.uninstall=await pack({action:'uninstall_start',id:'node'});assert.equal(report.uninstall.status,200);report.removed=await settle(host,report.uninstall.body);assert.equal(report.removed.phase,'removed');installed=false;report.runtimeRemoved=true;assert.equal((await pack({action:'status',id:'node'})).body.ready,false);assert.deepEqual(fs.readFileSync(sentinel),source);report.passed=true;
-  }catch(e){report.failure={phase,name:e.name,message:safe(e.message),stack:safe(e.stack||'').slice(0,6000)};process.exitCode=1;}
+  }catch(e){if(report.precondition?.outcome==='pending')report.precondition.outcome=e.code==='probe_observation_window_unavailable'?'inconclusive':'verification_failed';report.failure={phase,code:e.code||null,name:e.name,message:safe(e.message),stack:safe(e.stack||'').slice(0,6000)};process.exitCode=1;}
   finally{
     stopStatus=true;if(statusLoop)try{await statusLoop;}catch(e){report.cleanupErrors.push(safe(e.message));}
     if(running&&!report.running.settled&&host)try{report.cleanupCancel=await api('/api/task/cancel',{id:task});await running;}catch(e){report.cleanupErrors.push(safe(e.message));}
@@ -90,9 +120,10 @@ async function main(){
     if(host&&(installed||report.installAttempted&&!report.runtimeRemoved))try{const start=await pack({action:'uninstall_start',id:'node'});assert.equal(start.status,200);report.cleanupUninstall=await settle(host,start.body);assert.equal(report.cleanupUninstall.phase,'removed');report.runtimeRemoved=true;}catch(e){report.cleanupErrors.push(safe(e.message));}
     if(host)try{await host.stop();}catch(e){report.cleanupErrors.push(safe(e.message));}
     if(!report.cleanupErrors.length){try{noProbeCopies(dirs.tmp);fs.rmSync(dirs.tmp,{recursive:true});report.ownedTmpRemoved=true;}catch(e){report.cleanupErrors.push(safe(e.message));}}
+    report.runRequested=Boolean(report.running);report.statusObservationWindows=report.statuses.map(row=>({statusIndex:row.index,requestedAtMs:row.requestedAtMs,settledAtMs:row.settledAtMs,candidates:report.probeObservations.filter(o=>o.statusIndex===row.index&&o.stage==='candidate_seen').length,verified:report.probeObservations.filter(o=>o.statusIndex===row.index&&o.stage==='private_probe_verified').length,rechecks:report.probeObservations.filter(o=>o.statusIndex===row.index&&o.stage==='precondition_identity_recheck')}));
     clearInterval(sampler);sample();report.storage.retainedBytes=size(args.evidence);if(report.storage.peakObservedBytes>report.storage.transientBudgetBytes||report.storage.retainedBytes>report.storage.retainedBudgetBytes)report.cleanupErrors.push('owned storage budget exceeded');
     if(report.cleanupErrors.length){report.passed=false;process.exitCode=1;}fs.writeFileSync(path.join(args.evidence,'report.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(report));
   }
 }
 if(require.main===module)main().catch(e=>{console.error(e.message);process.exitCode=1;});
-module.exports={main,probeWorker};
+module.exports={main,probeWorker,observableProbe};
