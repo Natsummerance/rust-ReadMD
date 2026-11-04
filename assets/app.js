@@ -492,16 +492,8 @@ function bindEvents() {
   /* --- 10. 目录大纲与自动修正查看 [联动: reader/toc.js, reader/fixes.js] --- */
   $('btn-toc').addEventListener('click', () => toggleSide('toc'));
   $('btn-fix').addEventListener('click', showFixModal);
-  if ($('fix-ai-btn')) $('fix-ai-btn').addEventListener('click', () => { if (typeof handleAiDocumentFix === 'function') handleAiDocumentFix(); });
   $('fix-close').addEventListener('click', () => $('fix-modal').classList.add('hidden'));
-  $('fix-save').addEventListener('click', async () => {
-    const content = state.fixed || '';
-    if (!content) return;
-    if (state.mode === 'virtual' || !state.file) { await saveAs(); return; }
-    if (!hasPy) { showToast(_t('toast.browserUseSaveAs')); return; }
-    const out = await py.save_fixed(state.file, content);
-    showToast(out ? (_t('toast.savedPrefix') + out) : _t('toast.saveFailedSimple'));
-  });
+  $('fix-save').addEventListener('click', handleSaveDocumentFix);
   $('fix-modal').addEventListener('click', e => { if (e.target === $('fix-modal')) $('fix-modal').classList.add('hidden'); });
 
   /* --- 11. 全文搜索、主题外观与字号缩放 [联动: reader/search.js, core/settings.js] --- */
