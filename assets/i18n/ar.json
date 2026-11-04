@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "أبعاد صفحة المقطع أو أعمدته غير صالحة.",
   "error.publication_section_invalid": "إعدادات المقطع غير صالحة.",
   "error.publication_sections_require_paged_engine": "استخدم محرّك PDF من Typst أو TeX للمستندات التي تحتوي على مقاطع.",
+  "error.publication_table_unsupported": "جدول: لا يمكن لهذه العملية الحفاظ على تنسيق النص. لم يتغير الأصل.",
   "error.publication_tracking_unsupported": "لا يدعم هذا الإخراج أو هذه المعاينة إعدادات تباعد الأحرف هذه. أزل الإعداد أو اختر تنسيقًا مدعومًا. يُحفظ النص المصدري الأصلي.",
   "error.review_ai_budget": "تتجاوز المراجعة حد المعالجة.",
   "error.review_ai_interrupted": "انقطعت مهمة الذكاء الاصطناعي. استأنفها للمتابعة.",

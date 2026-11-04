@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "分節頁面或欄尺寸無效。",
   "error.publication_section_invalid": "分節設定無效。",
   "error.publication_sections_require_paged_engine": "分節文件請使用 Typst 或 TeX PDF 引擎。",
+  "error.publication_table_unsupported": "表：此操作暫時無法完整保留文字格式，原件未變更。",
   "error.publication_tracking_unsupported": "目前的輸出或預覽不支援這些字距設定。請清除此設定或選擇支援的格式；原始碼會保留。",
   "error.review_ai_budget": "審閱內容超出處理限額。",
   "error.review_ai_interrupted": "AI 工作已中斷，請手動繼續工作。",

@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Mere strani ali stolpca odseka niso veljavne.",
   "error.publication_section_invalid": "Nastavitve odseka niso veljavne.",
   "error.publication_sections_require_paged_engine": "Za dokumente z odseki uporabite mehanizem PDF Typst ali TeX.",
+  "error.publication_table_unsupported": "Tabela: To dejanje ne more ohraniti oblikovanja besedila. Izvirnik ni spremenjen.",
   "error.publication_tracking_unsupported": "Ta izhod ali predogled ne podpira teh nastavitev razmika med znaki. Odstranite nastavitev ali izberite podprto obliko. Izvirni vir se ohrani.",
   "error.review_ai_budget": "Pregled presega omejitev obdelave.",
   "error.review_ai_interrupted": "Opravilo umetne inteligence je bilo prekinjeno. Nadaljujte ga za nadaljnje delo.",

@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Immikkoortup quppernerata imaluunniit titarnerisa silissusiat atorsinnaanngilaq.",
   "error.publication_section_invalid": "Immikkoortup inissititernera atorsinnaanngilaq.",
   "error.publication_sections_require_paged_engine": "Immikkoortulinnut allagaasunut Typst imaluunniit TeX PDF-motor atorlugu.",
+  "error.publication_table_unsupported": "Takussutissiaq: Suliaq manna allakkat ilusaat allanngortinnagu suliarisinnaanngilaq. Aallaqqaataasoq allanngunngilaq.",
   "error.publication_tracking_unsupported": "Annitsinermi imaluunniit siumut takusassiani matumani naqinnerit akuttussusaannut inissititat uku atorneqarsinnaanngillat. Inissititsineq peeruk imaluunniit ilusissaq atorneqarsinnaasoq toqqaruk. Allaqqaarfik allanngortinnagu toqqorneqassaaq.",
   "error.review_ai_budget": "Misissuineq suliarineqarsinnaasup killinganik qaangiivoq.",
   "error.review_ai_interrupted": "AI-p suliassaa kipitinneqarpoq. Ingerlaqqinniaruit suliassaq ingerlateqqiguk.",

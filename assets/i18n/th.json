@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "ขนาดหน้าหรือคอลัมน์ของส่วนไม่ถูกต้อง",
   "error.publication_section_invalid": "การตั้งค่าส่วนไม่ถูกต้อง",
   "error.publication_sections_require_paged_engine": "ใช้กลไก PDF ของ Typst หรือ TeX สำหรับเอกสารที่มีการแบ่งส่วน",
+  "error.publication_table_unsupported": "ตาราง: การทำงานนี้ไม่สามารถเก็บรูปแบบข้อความได้ครบถ้วน ต้นฉบับไม่เปลี่ยนแปลง",
   "error.publication_tracking_unsupported": "เอาต์พุตหรือการแสดงตัวอย่างนี้ไม่รองรับการตั้งค่าระยะห่างระหว่างอักขระเหล่านี้ โปรดลบการตั้งค่าหรือเลือกรูปแบบที่รองรับ โดยจะเก็บรักษาซอร์สต้นฉบับไว้",
   "error.review_ai_budget": "การตรวจทานเกินขีดจำกัดการประมวลผล",
   "error.review_ai_interrupted": "งาน AI ถูกขัดจังหวะ โปรดดำเนินงานต่อเพื่อทำต่อให้เสร็จ",

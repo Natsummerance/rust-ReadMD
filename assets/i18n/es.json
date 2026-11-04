@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Las dimensiones de página o columna de la sección no son válidas.",
   "error.publication_section_invalid": "La configuración de la sección no es válida.",
   "error.publication_sections_require_paged_engine": "Usa el motor PDF Typst o TeX para documentos con secciones.",
+  "error.publication_table_unsupported": "Tabla: Esta operación no puede conservar el formato del texto. El original no ha cambiado.",
   "error.publication_tracking_unsupported": "Esta salida o vista previa no admite estos ajustes de espaciado entre caracteres. Elimina el ajuste o elige un formato compatible. Se conserva el código fuente original.",
   "error.review_ai_budget": "La revisión supera el límite de procesamiento.",
   "error.review_ai_interrupted": "La tarea de IA se interrumpió. Reanúdela para continuar.",

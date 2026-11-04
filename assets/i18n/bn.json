@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "বিভাগের পৃষ্ঠা বা কলামের মাপ অবৈধ।",
   "error.publication_section_invalid": "বিভাগের সেটিংস অবৈধ।",
   "error.publication_sections_require_paged_engine": "বিভাগযুক্ত নথির জন্য Typst বা TeX PDF ইঞ্জিন ব্যবহার করুন।",
+  "error.publication_table_unsupported": "সারণি: এই প্রক্রিয়ায় লেখার বিন্যাস অক্ষুণ্ণ রাখা যাচ্ছে না। মূলটি অপরিবর্তিত।",
   "error.publication_tracking_unsupported": "এই আউটপুট বা পূর্বরূপ অক্ষরের ব্যবধানের এই সেটিংগুলো সমর্থন করে না। সেটিংটি সরিয়ে দিন অথবা সমর্থিত বিন্যাস বেছে নিন। মূল উৎস সংরক্ষিত থাকে।",
   "error.review_ai_budget": "পর্যালোচনা প্রক্রিয়াকরণের সীমা ছাড়িয়েছে।",
   "error.review_ai_interrupted": "এআই কাজটি বাধাপ্রাপ্ত হয়েছে। চালিয়ে যেতে সেটি আবার শুরু করুন।",

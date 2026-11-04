@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "A szakasz oldal- vagy hasábméretei érvénytelenek.",
   "error.publication_section_invalid": "A szakasz beállításai érvénytelenek.",
   "error.publication_sections_require_paged_engine": "Szakaszokat tartalmazó dokumentumokhoz használja a Typst vagy TeX PDF-motort.",
+  "error.publication_table_unsupported": "Táblázat: Ez a művelet nem tudja megőrizni a szövegformázást. Az eredeti változatlan.",
   "error.publication_tracking_unsupported": "Ez a kimenet vagy előnézet nem támogatja ezeket a betűközbeállításokat. Távolítsa el a beállítást, vagy válasszon támogatott formátumot. Az eredeti forrás megmarad.",
   "error.review_ai_budget": "Az ellenőrzés túllépi a feldolgozási korlátot.",
   "error.review_ai_interrupted": "Az MI-feladat megszakadt. Folytassa a továbblépéshez.",

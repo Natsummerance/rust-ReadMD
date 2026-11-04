@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Sektionens side- eller spaltedimensioner er ugyldige.",
   "error.publication_section_invalid": "Sektionsindstillingerne er ugyldige.",
   "error.publication_sections_require_paged_engine": "Brug PDF-motoren Typst eller TeX til dokumenter med sektioner.",
+  "error.publication_table_unsupported": "Tabel: Handlingen kan ikke bevare tekstformateringen. Originalen er uændret.",
   "error.publication_tracking_unsupported": "Dette output eller denne forhåndsvisning understøtter ikke disse indstillinger for tegnafstand. Fjern indstillingen, eller vælg et understøttet format. Den oprindelige kilde bevares.",
   "error.review_ai_budget": "Gennemgangen overskrider behandlingsgrænsen.",
   "error.review_ai_interrupted": "AI-opgaven blev afbrudt. Genoptag den for at fortsætte.",

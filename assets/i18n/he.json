@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "מידות העמוד או הטורים במקטע אינן תקינות.",
   "error.publication_section_invalid": "הגדרות המקטע אינן תקינות.",
   "error.publication_sections_require_paged_engine": "למסמכים עם מקטעים יש להשתמש במנוע PDF של Typst או TeX.",
+  "error.publication_table_unsupported": "טבלה: הפעולה אינה יכולה לשמר את עיצוב הטקסט. המקור לא השתנה.",
   "error.publication_tracking_unsupported": "הפלט או התצוגה המקדימה אינם תומכים בהגדרות ריווח תווים אלה. יש להסיר את ההגדרה או לבחור פורמט נתמך. המקור נשמר ללא שינוי.",
   "error.review_ai_budget": "הבדיקה חורגת ממגבלת העיבוד.",
   "error.review_ai_interrupted": "משימת הבינה המלאכותית הופסקה. יש להמשיך אותה כדי להתקדם.",

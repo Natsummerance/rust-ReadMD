@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "セクションの用紙または段の寸法が無効です。",
   "error.publication_section_invalid": "セクションの設定が無効です。",
   "error.publication_sections_require_paged_engine": "セクションを含む文書には Typst または TeX の PDF エンジンを使用してください。",
+  "error.publication_table_unsupported": "表: この操作では文字書式を完全に保持できません。原本は変更されていません。",
   "error.publication_tracking_unsupported": "この出力形式またはプレビューでは、これらの文字間隔の設定に対応していません。設定を削除するか、対応する形式を選択してください。元のソースは保持されます。",
   "error.review_ai_budget": "レビューが処理の上限を超えています。",
   "error.review_ai_interrupted": "AI タスクが中断されました。続行するにはタスクを再開してください。",

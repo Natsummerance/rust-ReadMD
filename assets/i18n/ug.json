@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "بۆلەكنىڭ بەت ياكى ئىستون چوڭلۇقى ئىناۋەتسىز.",
   "error.publication_section_invalid": "بۆلەك تەڭشىكى ئىناۋەتسىز.",
   "error.publication_sections_require_paged_engine": "بۆلەكلەر بار ھۆججەتلەرگە Typst ياكى TeX PDF ماتورىنى ئىشلىتىڭ.",
+  "error.publication_table_unsupported": "جەدۋەل: بۇ مەشغۇلات تېكىست فورماتىنى تولۇق ساقلىيالمايدۇ. ئەسلى ھۆججەت ئۆزگەرمىدى.",
   "error.publication_tracking_unsupported": "بۇ چىقىرىش ياكى ئالدىن كۆرۈش بۇ ھەرپ ئارىلىقى تەڭشەكلىرىنى قوللىمايدۇ. بۇ تەڭشەكنى ئۆچۈرۈڭ ياكى قوللايدىغان فورماتنى تاللاڭ. ئەسلى مەنبە ساقلىنىدۇ.",
   "error.review_ai_budget": "تەكشۈرۈش بىر تەرەپ قىلىش چېكىدىن ئېشىپ كەتتى.",
   "error.review_ai_interrupted": "سۈنئىي ئەقلىي ئىقتىدار ۋەزىپىسى ئۈزۈلۈپ قالدى. داۋاملاشتۇرۇش ئۈچۈن ۋەزىپىنى قايتا باشلاڭ.",

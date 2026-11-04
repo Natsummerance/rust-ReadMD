@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Id-dimensjonijiet tal-paġna jew tal-kolonna tat-taqsima mhumiex validi.",
   "error.publication_section_invalid": "Is-settings tat-taqsima mhumiex validi.",
   "error.publication_sections_require_paged_engine": "Uża l-magna PDF Typst jew TeX għal dokumenti b’taqsimiet.",
+  "error.publication_table_unsupported": "Tabella: Din l-operazzjoni ma tistax iżżomm il-format tat-test. L-oriġinal ma nbidilx.",
   "error.publication_tracking_unsupported": "Dan l-output jew din il-previżjoni ma jappoġġjawx dawn is-settings tal-ispazjar bejn il-karattri. Neħħi s-setting jew agħżel format appoġġjat. Is-sors oriġinali jinżamm.",
   "error.review_ai_budget": "Ir-reviżjoni taqbeż il-limitu tal-ipproċessar.",
   "error.review_ai_interrupted": "Il-kompitu tal-intelliġenza artifiċjali ġie interrott. Kompli l-kompitu biex tkompli taħdem.",

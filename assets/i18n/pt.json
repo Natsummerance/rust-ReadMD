@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "As dimensões da página ou coluna da secção são inválidas.",
   "error.publication_section_invalid": "As definições da secção são inválidas.",
   "error.publication_sections_require_paged_engine": "Utilize o motor PDF Typst ou TeX para documentos com secções.",
+  "error.publication_table_unsupported": "Tabela: Esta operação não consegue preservar a formatação do texto. O original não foi alterado.",
   "error.publication_tracking_unsupported": "Esta saída ou pré-visualização não suporta estas definições de espaçamento entre caracteres. Remova a definição ou escolha um formato compatível. O código-fonte original é preservado.",
   "error.review_ai_budget": "A revisão excede o limite de processamento.",
   "error.review_ai_interrupted": "A tarefa de IA foi interrompida. Retome-a para continuar.",

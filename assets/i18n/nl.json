@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "De pagina- of kolomafmetingen van de sectie zijn ongeldig.",
   "error.publication_section_invalid": "De sectie-instellingen zijn ongeldig.",
   "error.publication_sections_require_paged_engine": "Gebruik de PDF-engine Typst of TeX voor documenten met secties.",
+  "error.publication_table_unsupported": "Tabel: Deze bewerking kan de tekstopmaak niet behouden. Het origineel is ongewijzigd.",
   "error.publication_tracking_unsupported": "Deze uitvoer of dit voorbeeld ondersteunt deze instellingen voor tekenafstand niet. Verwijder de instelling of kies een ondersteund formaat. De oorspronkelijke bron blijft behouden.",
   "error.review_ai_budget": "De beoordeling overschrijdt de verwerkingslimiet.",
   "error.review_ai_interrupted": "De AI-taak is onderbroken. Hervat deze om door te gaan.",

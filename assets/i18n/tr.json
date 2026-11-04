@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Bölümün sayfa veya sütun boyutları geçersiz.",
   "error.publication_section_invalid": "Bölüm ayarları geçersiz.",
   "error.publication_sections_require_paged_engine": "Bölüm içeren belgeler için Typst veya TeX PDF motorunu kullanın.",
+  "error.publication_table_unsupported": "Tablo: Bu işlem metin biçimlendirmesini koruyamıyor. Asıl dosya değiştirilmedi.",
   "error.publication_tracking_unsupported": "Bu çıktı veya önizleme, bu karakter aralığı ayarlarını desteklemiyor. Ayarı kaldırın veya desteklenen bir biçim seçin. Özgün kaynak korunur.",
   "error.review_ai_budget": "İnceleme işlem sınırını aşıyor.",
   "error.review_ai_interrupted": "Yapay zekâ görevi kesintiye uğradı. Devam etmek için görevi sürdürün.",

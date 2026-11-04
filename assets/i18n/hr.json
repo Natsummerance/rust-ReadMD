@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Dimenzije stranice ili stupca odjeljka nisu valjane.",
   "error.publication_section_invalid": "Postavke odjeljka nisu valjane.",
   "error.publication_sections_require_paged_engine": "Za dokumente s odjeljcima upotrijebite PDF mehanizam Typst ili TeX.",
+  "error.publication_table_unsupported": "Tablica: Ova radnja ne može očuvati oblikovanje teksta. Izvornik nije promijenjen.",
   "error.publication_tracking_unsupported": "Ovaj izlaz ili pretpregled ne podržava ove postavke razmaka među znakovima. Uklonite postavku ili odaberite podržani format. Izvorni sadržaj ostaje sačuvan.",
   "error.review_ai_budget": "Pregled premašuje ograničenje obrade.",
   "error.review_ai_interrupted": "Zadatak umjetne inteligencije prekinut je. Nastavite ga za daljnji rad.",

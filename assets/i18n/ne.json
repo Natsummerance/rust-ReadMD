@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "खण्डको पृष्ठ वा स्तम्भको आकार अमान्य छ।",
   "error.publication_section_invalid": "खण्डका सेटिङहरू अमान्य छन्।",
   "error.publication_sections_require_paged_engine": "खण्ड भएका कागजातका लागि Typst वा TeX PDF इन्जिन प्रयोग गर्नुहोस्।",
+  "error.publication_table_unsupported": "तालिका: यो कार्यले पाठको ढाँचा पूर्ण रूपमा जोगाउन सक्दैन। मूल परिवर्तन भएको छैन।",
   "error.publication_tracking_unsupported": "यो आउटपुट वा पूर्वावलोकनले अक्षरबीचको दूरीका यी सेटिङहरू समर्थन गर्दैन। सेटिङ हटाउनुहोस् वा समर्थित ढाँचा छान्नुहोस्। मूल स्रोत सुरक्षित रहन्छ।",
   "error.review_ai_budget": "समीक्षाले प्रशोधन सीमा नाघ्यो।",
   "error.review_ai_interrupted": "एआई कार्य अवरुद्ध भयो। जारी राख्न यसलाई पुनः सुरु गर्नुहोस्।",

@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Die Seiten- oder Spaltenmaße des Abschnitts sind ungültig.",
   "error.publication_section_invalid": "Die Abschnittseinstellungen sind ungültig.",
   "error.publication_sections_require_paged_engine": "Verwenden Sie für Dokumente mit Abschnitten die PDF-Engine Typst oder TeX.",
+  "error.publication_table_unsupported": "Tabelle: Dieser Vorgang kann die Textformatierung nicht erhalten. Das Original bleibt unverändert.",
   "error.publication_tracking_unsupported": "Diese Zeichenabstände werden von dieser Ausgabe oder Vorschau nicht unterstützt. Entfernen Sie die Einstellung oder wählen Sie ein unterstütztes Format. Der ursprüngliche Quelltext bleibt erhalten.",
   "error.review_ai_budget": "Die Prüfung überschreitet die Verarbeitungsgrenze.",
   "error.review_ai_interrupted": "Die KI-Aufgabe wurde unterbrochen. Setzen Sie sie fort, um weiterzumachen.",

@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Tá toisí leathanaigh nó colúin na rannóige neamhbhailí.",
   "error.publication_section_invalid": "Tá socruithe na rannóige neamhbhailí.",
   "error.publication_sections_require_paged_engine": "Úsáid inneall PDF Typst nó TeX le haghaidh doiciméid ina bhfuil rannóga.",
+  "error.publication_table_unsupported": "Tábla: Ní féidir leis an oibríocht seo formáidiú an téacs a chaomhnú. Tá an bunleagan gan athrú.",
   "error.publication_tracking_unsupported": "Ní thacaíonn an t-aschur ná an réamhamharc seo leis na socruithe spásála carachtar seo. Bain an socrú nó roghnaigh formáid a dtacaítear léi. Coinnítear an bunfhoinse.",
   "error.review_ai_budget": "Sáraíonn an t-athbhreithniú an teorainn phróiseála.",
   "error.review_ai_interrupted": "Cuireadh isteach ar an tasc intleachta saorga. Atosaigh é chun leanúint ar aghaidh.",

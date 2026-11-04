@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Хэсгийн хуудас эсвэл баганын хэмжээ буруу байна.",
   "error.publication_section_invalid": "Хэсгийн тохиргоо буруу байна.",
   "error.publication_sections_require_paged_engine": "Хэсэгтэй баримтад Typst эсвэл TeX PDF хөдөлгүүр ашиглана уу.",
+  "error.publication_table_unsupported": "Хүснэгт: Энэ үйлдэл текстийн форматыг бүрэн хадгалж чадахгүй. Эх хувь өөрчлөгдөөгүй.",
   "error.publication_tracking_unsupported": "Энэ гаралт эсвэл урьдчилан харах горим тэмдэгт хоорондын зайн эдгээр тохиргоог дэмжихгүй. Тохиргоог арилгах эсвэл дэмждэг формат сонгоно уу. Эх бичвэр хадгалагдана.",
   "error.review_ai_budget": "Хяналт боловсруулах хязгаараас хэтэрсэн.",
   "error.review_ai_interrupted": "Хиймэл оюуны даалгавар тасалдсан. Үргэлжлүүлэхийн тулд даалгаврыг сэргээнэ үү.",

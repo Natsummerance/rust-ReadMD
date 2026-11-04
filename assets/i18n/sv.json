@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Avsnittets sid- eller spaltmått är ogiltiga.",
   "error.publication_section_invalid": "Avsnittsinställningarna är ogiltiga.",
   "error.publication_sections_require_paged_engine": "Använd PDF-motorn Typst eller TeX för dokument med avsnitt.",
+  "error.publication_table_unsupported": "Tabell: Åtgärden kan inte bevara textformateringen. Originalet är oförändrat.",
   "error.publication_tracking_unsupported": "Dessa inställningar för teckenavstånd stöds inte av denna utmatning eller förhandsvisning. Ta bort inställningen eller välj ett format som stöds. Den ursprungliga källan bevaras.",
   "error.review_ai_budget": "Granskningen överskrider bearbetningsgränsen.",
   "error.review_ai_interrupted": "AI-uppgiften avbröts. Återuppta den för att fortsätta.",

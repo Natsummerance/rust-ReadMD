@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Dimensiunile paginii sau coloanei secțiunii sunt nevalide.",
   "error.publication_section_invalid": "Setările secțiunii sunt nevalide.",
   "error.publication_sections_require_paged_engine": "Folosește motorul PDF Typst sau TeX pentru documentele cu secțiuni.",
+  "error.publication_table_unsupported": "Tabel: Operația nu poate păstra formatarea textului. Originalul nu s-a modificat.",
   "error.publication_tracking_unsupported": "Această ieșire sau previzualizare nu acceptă aceste setări de spațiere între caractere. Eliminați setarea sau alegeți un format acceptat. Sursa originală este păstrată.",
   "error.review_ai_budget": "Revizuirea depășește limita de procesare.",
   "error.review_ai_interrupted": "Sarcina IA a fost întreruptă. Reia-o pentru a continua.",

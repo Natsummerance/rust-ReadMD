@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Некоректні розміри сторінки або колонок розділу.",
   "error.publication_section_invalid": "Некоректні параметри розділу.",
   "error.publication_sections_require_paged_engine": "Для документів із розділами використовуйте рушій PDF Typst або TeX.",
+  "error.publication_table_unsupported": "Таблиця: Ця операція не може зберегти форматування тексту. Оригінал не змінено.",
   "error.publication_tracking_unsupported": "Цей вивід або попередній перегляд не підтримує ці налаштування міжсимвольного інтервалу. Видаліть налаштування або виберіть підтримуваний формат. Початковий текст зберігається.",
   "error.review_ai_budget": "Перевірка перевищує ліміт обробки.",
   "error.review_ai_interrupted": "Завдання ШІ було перервано. Відновіть його, щоб продовжити.",

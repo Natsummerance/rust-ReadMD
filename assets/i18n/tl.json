@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Hindi wasto ang sukat ng pahina o kolum ng seksiyon.",
   "error.publication_section_invalid": "Hindi wasto ang mga setting ng seksiyon.",
   "error.publication_sections_require_paged_engine": "Gamitin ang Typst o TeX PDF engine para sa mga dokumentong may mga seksiyon.",
+  "error.publication_table_unsupported": "Talahanayan: Hindi mapapanatili ng operasyong ito ang pormat ng teksto. Hindi nabago ang orihinal.",
   "error.publication_tracking_unsupported": "Hindi sinusuportahan ng output o preview na ito ang mga setting na ito ng agwat ng mga karakter. Alisin ang setting o pumili ng suportadong format. Nananatili ang orihinal na source.",
   "error.review_ai_budget": "Lumampas ang pagsusuri sa limitasyon ng pagproseso.",
   "error.review_ai_interrupted": "Naantala ang gawain ng AI. Ipagpatuloy ito upang magpatuloy sa paggawa.",

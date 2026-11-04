@@ -165,7 +165,20 @@ pub(crate) fn for_format(format:&str, content:&str, resolved:crate::publication_
 pub(crate) fn resolve_for_format(format:&str, content:&str, options:&Value)->Result<crate::publication_typography::ResolvedOptions>{
     for_format(format,content,resolve(content,options)?)
 }
+pub(crate) fn validate_pdf_engine(options:&Value)->Result<()> {
+    if options.pointer("/pdf/engine").is_some_and(|value| !value.is_null() &&
+        !value.as_str().is_some_and(|engine|matches!(engine,"rust"|"typst"|"xelatex"|"pdflatex"))) {
+        return Err(error("latex_invalid_engine","options.pdf.engine"));
+    }
+    Ok(())
+}
 pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<()> {
+    if format.eq_ignore_ascii_case("pdf") {validate_pdf_engine(options)?;}
+    if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || format.eq_ignore_ascii_case("pdf") &&
+        options.pointer("/pdf/engine").and_then(Value::as_str).is_none_or(|engine| engine == "rust")) {
+        let document = crate::md_ast::parse(content);
+        crate::md_ast::native_table_document(&document).map_err(|code| error(code, "source.table"))?;
+    }
     if options.get("footnotes").is_some_and(|v| !v.is_null()) || content.contains("readmd-section") {
         let consumer = if format.eq_ignore_ascii_case("docx") { crate::publication_note_policies::Consumer::Docx }
             else if format.eq_ignore_ascii_case("html") { crate::publication_note_policies::Consumer::Html }

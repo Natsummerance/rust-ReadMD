@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "Ingano y’urupapuro cyangwa y’inkingi y’igice ntiyemewe.",
   "error.publication_section_invalid": "Igenamiterere ry’igice ntiryemewe.",
   "error.publication_sections_require_paged_engine": "Ku nyandiko zifite ibice, koresha moteri ya PDF ya Typst cyangwa TeX.",
+  "error.publication_table_unsupported": "Imbonerahamwe: Iki gikorwa ntigishobora kubika imiterere y’inyandiko yose. Umwimerere ntiwahindutse.",
   "error.publication_tracking_unsupported": "Ibisohoka cyangwa kureba mbere ntibishyigikira aya magenamiterere y’intera hagati y’inyuguti. Kuraho igenamiterere cyangwa uhitemo imiterere ishyigikiwe. Inkomoko y’umwimerere irabikwa.",
   "error.review_ai_budget": "Isuzuma rirengeje igipimo ntarengwa cyo gutunganya.",
   "error.review_ai_interrupted": "Igikorwa cy’ubwenge bw’ubukorano cyahagaritswe. Gikomeze kugira ngo ukomeze gukora.",

@@ -742,6 +742,7 @@
   "error.publication_section_geometry": "The section page or column dimensions are invalid.",
   "error.publication_section_invalid": "Invalid section settings.",
   "error.publication_sections_require_paged_engine": "Use the Typst or TeX PDF engine for documents with sections.",
+  "error.publication_table_unsupported": "Table: This operation cannot preserve the text formatting. The original is unchanged.",
   "error.publication_tracking_unsupported": "These character spacing settings are not supported by this output or preview. Remove the setting or choose a supported format. The original source is preserved.",
   "error.review_ai_budget": "The review exceeds the processing limit.",
   "error.review_ai_interrupted": "The AI task was interrupted. Resume it to continue.",
