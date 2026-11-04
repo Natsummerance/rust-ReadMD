@@ -7,8 +7,10 @@ const out=process.env.READMD_VSCODE_OPENAPI_AUDIT,delay=ms=>new Promise(r=>setTi
  if(!browser)throw Error('Native VS Code debugging endpoint did not start');
  const page=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('workbench'));if(!page)throw Error('Native workbench missing');
  for(const phase of ['cancel','accept','source-conflict','document-conflict']){
-  while(Date.now()<deadline){let state;try{state=JSON.parse(fs.readFileSync(path.join(out,'state.json'),'utf8'));}catch{}if(state?.phase===phase)break;if(state?.phase==='failed')throw Error('Extension Host failed before '+phase);await delay(80);}
-  const toast=page.locator('.notification-toast').filter({hasText:'Review 1 API changes.'}).last();
+  let expectedChanges;
+  while(Date.now()<deadline){let state;try{state=JSON.parse(fs.readFileSync(path.join(out,'state.json'),'utf8'));}catch{}if(state?.phase===phase){expectedChanges=state.expectedChanges;break;}if(state?.phase==='failed')throw Error('Extension Host failed before '+phase);await delay(80);}
+  if(![3,4].includes(expectedChanges))throw Error('Fixed complex-fixture change count missing for '+phase);
+  const toast=page.locator('.notification-toast').filter({hasText:'Review '+expectedChanges+' API changes.'}).last();
   await toast.waitFor({state:'visible',timeout:30000});
   await page.screenshot({path:path.join(out,phase+'.png')});fs.writeFileSync(path.join(out,phase+'.ready'),'');
   while(!fs.existsSync(path.join(out,phase+'.go'))&&Date.now()<deadline)await delay(50);

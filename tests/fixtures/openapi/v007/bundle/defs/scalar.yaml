@@ -1,0 +1,1 @@
+Label: {type: string, minLength: 2, description: '中文 label 😀'}

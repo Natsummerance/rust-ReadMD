@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-04",
+  "sourceCommit": "58c7fd4a2488b14d1348251818b322e0dd6c56c0",
+  "runtimeImplementationCommit": "6b823725978aa477245204affc34a7d1c2ed4877",
+  "scope": "Managed Node.js single code-block installation/run/cancel/save/undo/reopen and cleanup; not whole V7-05",
+  "runtimeVersion": "24.22.2",
+  "ci": {
+    "runId": 41812983265,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41812983265",
+    "jobsPassed": 8,
+    "artifactDigestsVerified": 23,
+    "artifacts": [
+      {
+        "id": 13314501728,
+        "name": "P1-code-lifecycle-windows-latest",
+        "archiveSha256": "657ec95287d30227d58d7c06bbfb9f0319c59a21dcf0467e062915fb2647e03a",
+        "archiveBytes": 1213,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "p1-code-lifecycle/report.json",
+            "sha256": "a2b560a2b5f29c21dbe8cc57531289987ee6587676e08fd451a461fb0a9e4f5b"
+          },
+          {
+            "name": "p1-code-output/report.json",
+            "sha256": "102053e198a16b58ff34a404c33b0aaeb77dea5bcaec8cd1340dd6396a17ab72"
+          }
+        ]
+      },
+      {
+        "id": 13314540783,
+        "name": "P1-code-mcp-eof-macos-latest",
+        "archiveSha256": "959e32ad1158a0a619cfb27dffca1c335b40189568dfa5a945f724e99915db8b",
+        "archiveBytes": 645,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "33dda36769e96aec37cbe82a8450f07b275143189aa8c2a8ddaf2842d21f8f56"
+          }
+        ]
+      },
+      {
+        "id": 13314392251,
+        "name": "P1-code-batch-windows-latest",
+        "archiveSha256": "5101b594d352333a67ce5864d858254af144b273339debba32f2d39012efe170",
+        "archiveBytes": 702,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "11c4fd5669917580fbc6e97bb087f99ad45b857899d58d58d1dbf08a5ce46679"
+          }
+        ]
+      },
+      {
+        "id": 13314395302,
+        "name": "P1-code-batch-ubuntu-latest",
+        "archiveSha256": "4693801cf9fd81c9075a4d72ac5061d52ca6641b940cd586bb4804f008e2a1b2",
+        "archiveBytes": 701,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "7be72e743ee5a88d6aa46f6f58365305464e2d6a3ef8a56f46843c33e4bab94e"
+          }
+        ]
+      },
+      {
+        "id": 13314262880,
+        "name": "P1-managed-node-windows-latest",
+        "archiveSha256": "30194d0873bde7024b5ab7b6bc3cbc3bdb64ab1a13b5faedff1212ea371c32b8",
+        "archiveBytes": 1000,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "7bee6d06819dd3ed9be95a334ffa822dfc1e244e4afe7e77c73418d87d48cce7"
+          }
+        ]
+      },
+      {
+        "id": 13314158329,
+        "name": "P1-version-fence-windows-latest",
+        "archiveSha256": "616a41eacced2b9b791c95c381915302eb52d7269ec539a80791f11e1684917f",
+        "archiveBytes": 956,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "source-fixture.json",
+            "sha256": "5963dbfbaeb58050fe036a481d41a34526031c496a465a6e96a559d6c9b17ed8"
+          },
+          {
+            "name": "result/report.json",
+            "sha256": "27635d6c7a32c1125aef10404cbf2d7e7ecd5bfe43463f6b1521f4a426c4a845"
+          }
+        ]
+      },
+      {
+        "id": 13314115377,
+        "name": "P1-session-CAS-ubuntu-latest",
+        "archiveSha256": "7383f2804fd5247c0f1cac28be98b717ff212933e040adc380757db792a2b215",
+        "archiveBytes": 283,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "8e417833b8a6bcb610aa5c92aff5ece7b5c7c9c3d46aad6abc9a8d7f99c4609d"
+          }
+        ]
+      },
+      {
+        "id": 13314133535,
+        "name": "P1-code-mcp-eof-windows-latest",
+        "archiveSha256": "5f9ddd825d8e113a8cc6de80b39c981e06e02ccafcb985f7c4bddc588dba22f3",
+        "archiveBytes": 639,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "c5522102122ba1718ca8268f43d4e0768a5e12b96880a9567adef3672cf191b8"
+          }
+        ]
+      },
+      {
+        "id": 13314006966,
+        "name": "P1-code-lifecycle-ubuntu-latest",
+        "archiveSha256": "b8f48ecfe54cbf0ff163b542ad1ef0cd04d8794874cbe9b801d138be8b7bf18b",
+        "archiveBytes": 1797,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "p1-code-lifecycle/report.json",
+            "sha256": "579f9a3c32404733b0788d75fb9eb57f14a9d0f2fde3025c0fb195c84669317b"
+          },
+          {
+            "name": "p1-code-host-exit/report.json",
+            "sha256": "7530070320481813617f773ecf5331fb4d65d268a0450b390dcc25812fb5e4ff"
+          },
+          {
+            "name": "p1-code-output/report.json",
+            "sha256": "a07f6549fb612259debaf87c5cd58e50cb9e2b04a748ba1e575c51268fddbfc5"
+          }
+        ]
+      },
+      {
+        "id": 13314015826,
+        "name": "P1-native-space-windows-latest",
+        "archiveSha256": "d6f606771906fda6c323a8a2cf72900aa3d5a6a4f4342ec2b73ab2d0f01be70f",
+        "archiveBytes": 3536,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "native-quota.json",
+            "sha256": "92f066b3ae35091320c881cf73b0856cf0f9373f726315d60952c81c28dcfd43"
+          },
+          {
+            "name": "native-space.json",
+            "sha256": "04f3a61169752ef6ccc17386d0ac2b38a0040804f306b98b9ad498a45e216452"
+          },
+          {
+            "name": "prepared.json",
+            "sha256": "fcd1dd7a5ebbe665b15d38b102f2afb3a547a8f752b91be66898254f8e125ae2"
+          }
+        ]
+      },
+      {
+        "id": 13314075886,
+        "name": "P1-session-CAS-macos-latest",
+        "archiveSha256": "71a72e794593a3936f022f6703f4388ce8f7e822f247367d3408e337dae2582f",
+        "archiveBytes": 284,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "920efb49af14d7c9c1426f072c99bfacb5185b23d40bc5ec4a914b3d0984fdba"
+          }
+        ]
+      },
+      {
+        "id": 13313883388,
+        "name": "P1-code-lifecycle-macos-latest",
+        "archiveSha256": "fb3d6c1b88d4bffba41c9446fda0ce7f339524fe18c7453ff582852b7fbe22c8",
+        "archiveBytes": 1812,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "p1-code-lifecycle/report.json",
+            "sha256": "1cf317f7aa09f93c49d2cacdca352f24bf8dbac06b882ca76870a28daee5b9a1"
+          },
+          {
+            "name": "p1-code-output/report.json",
+            "sha256": "bc9abcdc6040d1e40dd1220e28ee59e6328030f312e9e82a8614cb4c2b01152b"
+          },
+          {
+            "name": "p1-code-host-exit/report.json",
+            "sha256": "643d8cde495a1c00516c4e49fca7353ec266907f925afea11a45fedfeb863fa2"
+          }
+        ]
+      },
+      {
+        "id": 13313827345,
+        "name": "P1-code-mcp-eof-ubuntu-latest",
+        "archiveSha256": "8c1c731fa3896dee192844eaa0e421436a8ae50ee941238ab601e26aa3b77aa5",
+        "archiveBytes": 638,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "1ccc74fed3d7ee8eca5db1b79f2bfcc105b40482255f75518ec248b3b90d09ea"
+          }
+        ]
+      },
+      {
+        "id": 13313912775,
+        "name": "P1-code-batch-browser",
+        "archiveSha256": "825fb192dc60b8486d1c1f6c3c259b89854d864cf27814f4bc6e99b94ab2c330",
+        "archiveBytes": 757,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "36cf17be858a350dbaeec5a311e7642e04e4a62c514d5a47b7ff0bdbc147b639"
+          }
+        ]
+      },
+      {
+        "id": 13313657832,
+        "name": "P1-managed-node-ubuntu-latest",
+        "archiveSha256": "e5be07e9c7e9d3dc4fcc94413eb10020021c1170572afb6bfab784697c53967c",
+        "archiveBytes": 1001,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "0d51ad076863aba82c61af43b33fc0f6bcd66e491a1af2ad1db265cd1f42454f"
+          }
+        ]
+      },
+      {
+        "id": 13313778148,
+        "name": "P1-code-output-browser",
+        "archiveSha256": "cd0a51d6a31ad06e9f70c061d2ae52777ae0c6e4428f88ba4969c11f310f48da",
+        "archiveBytes": 911,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "a3be530d6e8d3c8ef1c8d6990bb85f8537170acf6a30c310b4f66f8656f8f793"
+          }
+        ]
+      },
+      {
+        "id": 13313483845,
+        "name": "P1-code-close-boundary-browser",
+        "archiveSha256": "433d4cd52ca35410e96fe34ec2d444c5631b3ace46d1c033e956236b0a2e1713",
+        "archiveBytes": 560,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "c1b4f1d187a15ec1c6e4b445241c6973d5b4d0787b073593e8503dccf13a70a8"
+          }
+        ]
+      },
+      {
+        "id": 13313444498,
+        "name": "P1-version-fence-macos-latest",
+        "archiveSha256": "2bf7d001a4291038788478d6c9277e825f3cc175824bf0f98ab9c6199f25d985",
+        "archiveBytes": 953,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "result/report.json",
+            "sha256": "f8c1f6e51dfd0922424992932699634f920bd9cafff0a9866f63af1d53135537"
+          },
+          {
+            "name": "source-fixture.json",
+            "sha256": "3ca42d8b5edb78305ba067285e948c968891952a9a80b69552ed35b145a31656"
+          }
+        ]
+      },
+      {
+        "id": 13313419615,
+        "name": "P1-managed-node-macos-latest",
+        "archiveSha256": "fb458dc17f56c925fb1d5b472ace6f22e524840164d46f1a9e8df776af2a6c31",
+        "archiveBytes": 1000,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "3bfb534c224ed87d8edd10e3b1c253ebb40fca3294eea6414186fc51321f2e46"
+          }
+        ]
+      },
+      {
+        "id": 13313472299,
+        "name": "P1-session-CAS-windows-latest",
+        "archiveSha256": "975f1de567547ec034fabecd6daef18c0206c64c158590ff45d095107643a42a",
+        "archiveBytes": 284,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "44b0b4425c6b8fef9fdb96c531292e6bb3e10305cba9089fb3360a08c8c3c3ab"
+          }
+        ]
+      },
+      {
+        "id": 13313044836,
+        "name": "P1-version-fence-ubuntu-latest",
+        "archiveSha256": "102973ced54379405372d6cff636fe31f98d70584ca84a95d94921f16bf8595a",
+        "archiveBytes": 958,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "source-fixture.json",
+            "sha256": "0cdcf15369c5f89caaa75ffc63b2e6fa7b5080aa3897ccc81200984f4f1e02f6"
+          },
+          {
+            "name": "result/report.json",
+            "sha256": "7f3fa6a237a12f77ca3fd5a73b271254f77ee41acf269691fec1668791a4d5c5"
+          }
+        ]
+      },
+      {
+        "id": 13312754328,
+        "name": "P1-native-space-ubuntu-latest",
+        "archiveSha256": "f4e26830936589bcbace4cae5746fbd66843d908766df0f1ab8edda687cde4de",
+        "archiveBytes": 2646,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "linux-extra.json",
+            "sha256": "86f79b33f4a7a5f1b59696d94906737e849d314fc1eab32a07ca657dcc68a3a7"
+          },
+          {
+            "name": "native-space.json",
+            "sha256": "5ae622ee8a55607fe8ec8e9ac2e17263a17833bb9e119d8f4dbf6cea0516e60f"
+          },
+          {
+            "name": "prepared.json",
+            "sha256": "f5d232f528b8870f380512b3dd1869ae22a08ed98b425c8899dde7fee31a50b9"
+          }
+        ]
+      },
+      {
+        "id": 13313389503,
+        "name": "P1-code-batch-macos-latest",
+        "archiveSha256": "f6df78c7bdc0008d5e74b9f802eff2e13ff7169a0056800bfee0c4b0156176cc",
+        "archiveBytes": 699,
+        "digestVerified": true,
+        "reports": [
+          {
+            "name": "report.json",
+            "sha256": "50b53d7d8c587e4f5c37277756d054eff3a6a5e57bb76c5ab51e1391dca1269b"
+          }
+        ]
+      }
+    ]
+  },
+  "platforms": [
+    {
+      "os": "darwin",
+      "runtimePlatform": "macos-arm64",
+      "binarySha256": "51be608d1a05fd06208cd2d733ccf77ed900956c7eae8ffb75e8aa4dff6d2ced",
+      "bootSha256": "9e5804c8b8371acaff94d5fe8e35e93b2b63f7342ff7569d4cef335b168b81a7",
+      "packSha256": "d6bdddce9e87853479c8bd80ef2f7107ca26dc387949f1c4ae32a43fe24328cf",
+      "manifestSha256": "da13a43544dcbedb96e1d86626f8228505f182b4860f38e9dd7ab14410189986",
+      "genuineHttpChecks": 6,
+      "actualProcesses": 3,
+      "cancelResponseMs": 114.68529200000012,
+      "timeoutMs": 1049.703625,
+      "completedProbeCopiesRetained": 0,
+      "oldWriterFence": {
+        "oldSchema": 6,
+        "newSchema": 7,
+        "oldSourceCommit": "5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4",
+        "oldBinarySha256": "b37b9fc337bccf470df6e6dc5753fd200e18321d2d91bd38fa68418aeac1bd77"
+      },
+      "sessionCasRepeatedPasses": 16,
+      "managedMcpEofPassed": true,
+      "normalUnixHostExitPassed": true,
+      "nativeWindowCertified": false
+    },
+    {
+      "os": "win32",
+      "runtimePlatform": "windows-x64",
+      "binarySha256": "4e1f19aa9b473082531db2df4ff86c27e8a627074372134c13f0a51929982898",
+      "bootSha256": "4b3725c9e19b50310c8b9f5c418cbfafc5ffb948bdc6b2e6b5388faef4cb6815",
+      "packSha256": "6bac29c5611a8dca18b34d427d33e5213b41f0779d6b69ec4d2751c718fd51d5",
+      "manifestSha256": "b03a4c34d07b322dbda0fe172632ab534161b2ee29f97caa55286ea9f4479128",
+      "genuineHttpChecks": 6,
+      "actualProcesses": 3,
+      "cancelResponseMs": 17.456300000000738,
+      "timeoutMs": 1019.0164000000004,
+      "completedProbeCopiesRetained": 0,
+      "oldWriterFence": {
+        "oldSchema": 6,
+        "newSchema": 7,
+        "oldSourceCommit": "5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4",
+        "oldBinarySha256": "106411442e30dd7b0bfb0b4d16c3fa60e8dd9e6aedda0d37f8a672b709ead414"
+      },
+      "sessionCasRepeatedPasses": 16,
+      "managedMcpEofPassed": true,
+      "normalUnixHostExitPassed": null,
+      "nativeWindowCertified": false
+    },
+    {
+      "os": "linux",
+      "runtimePlatform": "linux-x64",
+      "binarySha256": "37496b5f194c1689fbd5a5e6bb9ede5113f96705c4d14db8786cbd216db75af6",
+      "bootSha256": "9e5804c8b8371acaff94d5fe8e35e93b2b63f7342ff7569d4cef335b168b81a7",
+      "packSha256": "380bd8c92c58e741f5b8b671026436234877ef10188e43a0a6286eb4a587d5c5",
+      "manifestSha256": "fdf9422e75ecaedd5d7942f08cf6eb0233037376eed5fd26799e177e9dfa3d27",
+      "genuineHttpChecks": 6,
+      "actualProcesses": 3,
+      "cancelResponseMs": 21.358632999999827,
+      "timeoutMs": 1020.5858200000002,
+      "completedProbeCopiesRetained": 0,
+      "oldWriterFence": {
+        "oldSchema": 6,
+        "newSchema": 7,
+        "oldSourceCommit": "5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4",
+        "oldBinarySha256": "3dc0f6820eb05b5ce73593b5690a2b3ed6a637206dccd0e0d50b1e5f782a1aba"
+      },
+      "sessionCasRepeatedPasses": 16,
+      "managedMcpEofPassed": true,
+      "normalUnixHostExitPassed": true,
+      "nativeWindowCertified": false
+    }
+  ],
+  "sourcePreparation": {
+    "targets": 6,
+    "pinnedOfficialInputs": true,
+    "completeBundledLicenseAndThirdPartyNotices": true,
+    "unchangedOfficialExecutables": true,
+    "osNeutralGzipHeader": 255,
+    "normalRustBuildsOffline": true,
+    "distributionPublished": false
+  },
+  "firstFailures": [
+    {
+      "runId": 41804329602,
+      "platform": "Windows",
+      "reason": "Bash heredoc was interpreted by PowerShell; replaced with portable Node preparation entrypoint"
+    },
+    {
+      "runId": 41804329602,
+      "platform": "Linux",
+      "reason": "Old-writer fixture pinned an earlier V0.0.6 archive; now pinned to independently certified refreshed publication, all archive/executable checks retained"
+    },
+    {
+      "runId": 41804329602,
+      "platform": "Mac",
+      "reason": "Observation test incorrectly counted complete worker cleanup in the 200ms observation interval; observation and two-second retirement now measured separately, real HTTP response threshold unchanged"
+    },
+    {
+      "runId": 41809362300,
+      "platform": "Windows",
+      "reason": "Two-process session CAS child failed without a diagnostic; preserved, production cause not established, added safe I/O-phase/OS-code diagnostics and reaped both children before asserting",
+      "followupRepeatedPasses": 16,
+      "followupFullJobPassed": true,
+      "rootCauseCertified": false
+    },
+    {
+      "platform": "Mac",
+      "reason": "Completed probe omitted its finished record and retained executable copies; fixed without deleting stop-pending recovery journals",
+      "verifiedOldProbeCopiesRemoved": 5
+    }
+  ],
+  "limitations": [
+    "No new Mac Cocoa or native file chooser evidence for this Node candidate",
+    "Windows ARM, Linux ARM and Mac Intel runtime packages were prepared but not certified on their own physical hardware",
+    "Other code runtimes, non-SQL batches and durable unknown-side-effect recovery remain open",
+    "Node permission flags do not certify a full Unix OS sandbox",
+    "Offline runtime package publication and final release delivery remain open",
+    "Intermittent Windows session-CAS first failure remains unclassified; further directed diagnostics are retained"
+  ],
+  "modelsRequestedByNodeAcceptance": false,
+  "dailyApplicationChanged": false,
+  "releaseAssetsChanged": false,
+  "wholeV705Accepted": false,
+  "wholeP1Accepted": false,
+  "wholeP2Accepted": false,
+  "v007Published": false
+}

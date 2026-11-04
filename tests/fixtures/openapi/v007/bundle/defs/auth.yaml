@@ -1,0 +1,8 @@
+bearer: {type: http, scheme: bearer, bearerFormat: JWT}
+oauth:
+  type: oauth2
+  flows:
+    authorizationCode:
+      authorizationUrl: 'https://example.invalid/authorize'
+      tokenUrl: 'https://example.invalid/token'
+      scopes: {'read:items': 'Read owned items', 'write:items': 'Write owned items'}

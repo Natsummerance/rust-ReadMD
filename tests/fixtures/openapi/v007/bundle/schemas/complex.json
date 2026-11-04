@@ -1,0 +1,21 @@
+{
+  "$defs": {
+    "Envelope": {
+      "title": "重复标题",
+      "type": "object",
+      "required": ["data"],
+      "properties": {
+        "data": {"oneOf": [{"$ref": "./models.yaml#/Record"}, {"type": "null"}]},
+        "audit": {"allOf": [{"$ref": "./models.yaml#/Audit"}, {"type": "object", "properties": {"extra": {"type": "string"}}}]},
+        "choice": {"anyOf": [{"type": "integer"}, {"type": "string", "minLength": 2}]},
+        "matrix": {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": false},
+        "escaped~name/key": {"type": "string"},
+        "never": false
+      },
+      "if": {"required": ["audit"]},
+      "then": {"minProperties": 2},
+      "else": {"maxProperties": 6},
+      "unevaluatedProperties": false
+    }
+  }
+}

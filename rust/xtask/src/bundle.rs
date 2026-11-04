@@ -43,6 +43,7 @@ pub const SOURCES: &[&str] = &[
     "js/reader/math-metadata.js",
     "js/features/ai-selection.js",
     "js/features/ai-harness.js",
+    "js/features/ai-chat-stream.js",
     "js/features/document-refactor.js",
     "js/features/ai.js",
     "js/features/document-history.js",

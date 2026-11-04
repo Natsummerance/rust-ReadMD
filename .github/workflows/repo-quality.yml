@@ -99,6 +99,8 @@ jobs:
           node - <<'JS'
           const vm = require('node:vm'), { driver } = require('./ui-tests/macos-code-batch-system-native.cjs');
           for (const phase of ['run_save_quit','reopen_undo_close','batch_run_save_quit','batch_reopen_undo_close','empty']) new vm.Script(driver(phase, { source:'/owned/source.md', slow:'/owned/slow.md', batch:'/owned/batch.md' }));
+          const chat = require('./ui-tests/macos-ai-node-system-native.cjs');
+          for (const phase of chat.phases) new vm.Script(chat.driver(phase, { node:'/owned/node.md', ai:'/owned/chat.md' }, {}));
           JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
@@ -108,6 +110,15 @@ jobs:
         run: node tools/test/code-lifecycle-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-code-lifecycle
       - name: P1 managed Node installation, cancellation, save, undo and new process
         run: node tools/test/node-runtime-http-stdio.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-managed-node
+      - name: P1 genuine chat streaming, cancellation, failure and new process
+        run: node tools/test/ai-chat-stream-http.cjs --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/p1-ai-chat-stream
+      - name: Retain actual chat stream receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-chat-stream-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: .cache/p1-ai-chat-stream/report.json
       - name: Retain actual managed Node receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -195,6 +206,8 @@ jobs:
         run: node --test ui-tests/close-confirm-adapter.test.cjs ui-tests/close-save-target-adapter.test.cjs ui-tests/lifecycle-order-adapter.test.cjs ui-tests/session-cas-adapter.test.cjs ui-tests/session-load-barrier.test.cjs ui-tests/durable-review-adapter.test.cjs
       - name: Managed Node input and streaming package regressions
         run: node --test tools/test/node-runtime-preparation.test.mjs tools/test/stream-capability-pack.test.mjs tools/test/capability-publication.test.mjs
+      - name: Strict chat stream and conversation ownership regressions
+        run: node --test --test-timeout=10000 ui-tests/ai-chat-stream.test.cjs ui-tests/ai-harness-adapter.test.cjs
 
   integrations:
     name: VS Code and MCP quality
@@ -222,6 +235,8 @@ jobs:
         run: |
           cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
           npm test --prefix packages/vscode-extension
+      - name: Extension Host preparation rejects missing and stale compilation
+        run: node --test ui-tests/openapi-preflight.test.cjs tools/test/interop-diagnostics.test.cjs
       - name: Real MCP stdio and concurrency acceptance
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/debug/readmd
@@ -267,7 +282,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.22.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -275,6 +290,8 @@ jobs:
           key: playwright-1.54-ubuntu-24.04
       - name: Prepare locked Rust dependencies
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Prepare reviewed native Node input and immutable offline pack
+        run: node tools/ci-prepare-node-runtime.mjs
       - name: Build headless kernel
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
       - name: Install Playwright
@@ -301,6 +318,46 @@ jobs:
         env:
           READMD_CODE_BROWSER: chromium
         run: node tools/test/code-close-boundary-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-code-close-boundary
+      - name: P1 managed Node installation and document history in the production UI
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/node-runtime-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-managed-node-browser
+      - name: P1 real chat controls, partial replies and late conversation receipts
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/ai-chat-browser.cjs --bin rust/target/debug/readmd --evidence .cache/p1-ai-chat-browser
+      - name: P1 complex local OpenAPI, conflicts, save and durable reopen
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node tools/test/v007-openapi-baseline.cjs --bin rust/target/debug/readmd --evidence .cache/p1-openapi-baseline
+      - name: Retain OpenAPI baseline receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-openapi-baseline
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-openapi-baseline/report.json
+            .cache/p1-openapi-baseline/first-failure.png
+      - name: Retain chat browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-ai-chat-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-ai-chat-browser/report.json
+            .cache/p1-ai-chat-browser/first-failure.png
+      - name: Retain managed Node browser receipt and first failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-managed-node-browser
+          if-no-files-found: ignore
+          path: |
+            .cache/p1-managed-node-browser/report.json
+            .cache/p1-managed-node-browser/first-failure.png
+            .cache/p1-managed-node-browser/deadline.json
       - name: Retain code close-boundary receipt and first failure
         if: always()
         uses: actions/upload-artifact@v4

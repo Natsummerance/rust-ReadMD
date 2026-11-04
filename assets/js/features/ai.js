@@ -1183,10 +1183,12 @@ async function deleteCurrentTpl() {
 /* ---------------- 对话历史管理 ---------------- */
 
 async function loadAiSessions() {
+  const epoch = state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
   try {
     const r = await apiFetch('/api/ai/history');
     if (!r.ok) return;
     const d = await r.json();
+    if (state.ai.sessionListEpoch !== epoch) return;
     state.ai.sessions = d.sessions || [];
     renderAiSessionSelect();
   } catch (e) { /* ignore */ }
@@ -1194,6 +1196,16 @@ async function loadAiSessions() {
 
 function renderAiSessionSelect() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const select = $('ai-session');
+  if (select) {
+    const selected = state.ai.sessionId || select.value || '';
+    const options = [document.createElement('option')]; options[0].value = '';
+    for (const session of state.ai.sessions || []) {
+      const option = document.createElement('option'); option.value = session.id;
+      option.textContent = session.title || (_t('ai.untitledSession') || ''); options.push(option);
+    }
+    select.replaceChildren(...options); select.value = selected;
+  }
   const list = $('ai-history-list');
   if (!list) return;
   const q = ($('ai-history-search') && $('ai-history-search').value || '').trim().toLowerCase();
@@ -1212,7 +1224,7 @@ function renderAiSessionSelect() {
     load.innerHTML = '<strong></strong><small></small>';
     load.querySelector('strong').textContent = s.title || (_t('ai.untitledSession') || '');
     load.querySelector('small').textContent = fmtTime(s.updated) + ' · ' + (s.msgCount || 0) + ' ' + (_t('ai.msgCountUnit') || '');
-    load.addEventListener('click', async () => { $('ai-session').value = s.id; await onAiSessionChange(); closeAiModal('ai-history-modal'); });
+    load.addEventListener('click', async () => { await onAiSessionChange(s.id); closeAiModal('ai-history-modal'); });
     const rename = document.createElement('button'); rename.className = 'tb-btn'; rename.textContent = _t('tabs.rename') || ''; rename.title = _t('ai.renameSession') || '';
     rename.addEventListener('click', () => renameAiSession(s));
     const del = document.createElement('button'); del.className = 'tb-btn'; del.textContent = _t('tpl.delete') || ''; del.title = _t('ai.deleteSession') || '';
@@ -1247,14 +1259,20 @@ function fmtTime(ts) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 
-async function onAiSessionChange() {
+async function onAiSessionChange(selectedId) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const id = $('ai-session').value;
+  const id = typeof selectedId === 'string' ? selectedId : $('ai-session').value;
   if (!id) return;
+  const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = id;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply();
   try {
     const r = await apiFetch('/api/ai/history?id=' + encodeURIComponent(id));
+    if (state.ai.sessionEpoch !== epoch) return;
     if (!r.ok) { showToast(_t('toast.loadSessionFail') || ''); return; }
     const s = (await r.json()).session;
+    if (state.ai.sessionEpoch !== epoch) return;
     if (!s) { showToast(_t('toast.sessionNotExist') || ''); return; }
     const savedProvider = (state.ai.providers || []).find(p => p.id === s.provider || p.name === s.provider);
     if (savedProvider) {
@@ -1264,14 +1282,23 @@ async function onAiSessionChange() {
       syncAiKey();
     }
     state.ai.messages = s.messages || [];
+    state.ai.capturedTarget = state.ai.conversationTarget = state.ai.lastSelection = null;
+    state.ai.targetOverride = null;
     state.ai.sessionId = s.id;
+    $('ai-session').value = s.id;
     state.ai.raw = '';
     state.ai.usage = null;
     state.ai.sessUsage = s.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     updateAiUsage();
     renderAiHistory();
     showToast(_t('toast.sessionLoaded') || '');
-  } catch (e) { showToast(_t('toast.loadSessionFail') || ''); }
+  } catch (e) { if (state.ai.sessionEpoch === epoch) showToast(_t('toast.loadSessionFail') || ''); }
+  finally {
+    if (state.ai.sessionEpoch === epoch) {
+      state.ai.loadingSessionId = null;
+      if (!state.ai.aborter) setAiBusy(false);
+    }
+  }
 }
 
 
@@ -1347,7 +1374,7 @@ function decorateAiAnswer(body) {
 
 /* Drop the latest answer (and the question that produced it) and ask again. */
 function regenerateLastAnswer() {
-  if (state.ai.busy) return;
+  if (state.ai.busy || state.ai.preparing) return;
   const msgs = state.ai.messages || [];
   if (!msgs.length || msgs[msgs.length - 1].role !== 'assistant') return;
   msgs.pop();
@@ -1446,7 +1473,7 @@ function renderAiHistory() {
       ab.className = 'ai-msg ai';
       const tag = document.createElement('div');
       tag.className = 'ai-msg-tag';
-      setAiTag(tag, _t('ai.assistant') || '', (m.model || '') + fmtAiUsage(m.usage));
+      setAiTag(tag, _t('ai.assistant') || '', (m.model || '') + (m.incomplete ? ' ' + (_t('ai.stoppedSuffix') || '') : fmtAiUsage(m.usage)));
       const body = document.createElement('div');
       body.className = 'ai-msg-body';
       body.innerHTML = renderSafeMarkdown(m.content);
@@ -1462,17 +1489,20 @@ function renderAiHistory() {
   updateAiRawButtons();
 }
 
-async function saveCurrentSession(silent) {
+async function saveCurrentSession(silent, context) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = state.ai.sessionEpoch;
+  const ticket = state.ai.sessionSaveEpoch = (state.ai.sessionSaveEpoch || 0) + 1;
+  const current = () => state.ai.sessionEpoch === epoch && state.ai.sessionSaveEpoch === ticket && (!context || state.ai.aborter === context.owner);
   const msgs = (state.ai.messages || []).filter(m => m && !m.ephemeral);
   if (!msgs.length) { if (!silent) showToast((state.ai.messages || []).length ? (_t('toast.incognitoNoSave') || '') : (_t('toast.noConversationContent') || '')); return false; }
   const title = ($('ai-prompt').value.trim() || msgs[0].content || (_t('ai.untitledSession') || '')).slice(0, 40).replace(/\s+/g, ' ');
   const sess = {
-    id: state.ai.sessionId || undefined,
+    id: (context ? context.sessionId : state.ai.sessionId) || undefined,
     title: title,
-    provider: $('ai-provider').value,
-    model: $('ai-model').value,
-    doc: state.mode === 'file' ? (state.file || '') : (state.sourceName || ''),
+    provider: context ? context.provider : $('ai-provider').value,
+    model: context ? context.model : $('ai-model').value,
+    doc: context ? context.doc : state.mode === 'file' ? (state.file || '') : (state.sourceName || ''),
     messages: msgs,
     usage: state.ai.sessUsage,
   };
@@ -1483,31 +1513,26 @@ async function saveCurrentSession(silent) {
     });
     const d = await r.json();
     if (!r.ok || !d.ok) throw new Error(d.error || (_t('toast.saveFailed') || ''));
+    if (!current()) return false;
     state.ai.sessionId = d.session.id;
     await loadAiSessions();
+    if (!current()) return false;
     $('ai-session').value = state.ai.sessionId;
     if (!silent) showToast(_t('toast.sessionSaved') || '');
     return true;
-  } catch (e) { if (!silent) showToast((_t('toast.saveFailed') || '') + e.message); return false; }
+  } catch (e) { if (current() && !silent) showToast((_t('toast.saveFailed') || '') + e.message); return false; }
 }
 
 async function deleteCurrentSession() {
   const id = $('ai-session').value;
-  if (!id) return;
-  try {
-    const r = await apiFetch('/api/ai/history', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', id }),
-    });
-    const d = await r.json();
-    if (!r.ok || !d.ok) throw new Error(d.error || '删除失败');
-    if (state.ai.sessionId === id) { state.ai.sessionId = null; state.ai.messages = []; clearAiOutput(); }
-    await loadAiSessions();
-    showToast(_t('toast.sessionDeleted') || '');
-  } catch (e) { showToast((_t('toast.deleteFailed') || '') + e.message); }
+  if (id) return deleteAiSessionById(id);
 }
 
 function clearAiContext() {
+  state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply(); setAiBusy(false);
   state.ai.capturedTarget = null;
   state.ai.conversationTarget = null;
   state.ai.lastSelection = null;
@@ -1525,7 +1550,20 @@ function clearAiContext() {
 }
 
 
+function releaseAiPreparation(owner, onlyPreparing = false) {
+  if (!owner || state.ai.preparationOwner !== owner || (onlyPreparing && owner.phase !== 'preparing')) return;
+  state.ai.preparing = false; state.ai.preparationOwner = null;
+}
+
+function stopAiChatReply() {
+  const owner = state.ai.aborter;
+  if (owner?.kind !== 'chat') return;
+  owner.abort(); releaseAiPreparation(owner.preparationOwner);
+  state.ai.aborter = null; setAiBusy(false);
+}
+
 function clearAiOutput() {
+  stopAiChatReply();
   state.ai.raw = '';
   state.ai.aborter = null;
   const out = $('ai-output');
@@ -1784,10 +1822,19 @@ async function copyText(value, success) {
 async function deleteAiSessionById(id) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!id) return;
+  state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
+  const wasCurrent = state.ai.sessionId === id;
+  const selected = wasCurrent || state.ai.loadingSessionId === id;
+  const epoch = selected ? (state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1) : state.ai.sessionEpoch;
+  if (selected) {
+    state.ai.loadingSessionId = null;
+    releaseAiPreparation(state.ai.preparationOwner, true); stopAiChatReply();
+    if (wasCurrent) { state.ai.sessionId = null; $('ai-session').value = ''; }
+  }
   try {
     const r = await apiFetch('/api/ai/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id }) });
     const d = await r.json(); if (!r.ok || !d.ok) throw new Error(d.error || (_t('toast.deleteFailed') || ''));
-    if (state.ai.sessionId === id) clearAiContext();
+    if (wasCurrent && state.ai.sessionEpoch === epoch) clearAiContext();
     await loadAiSessions(); showToast(_t('toast.sessionDeleted') || '');
   } catch (e) { showToast((_t('toast.deleteFailed') || '') + e.message); }
 }
@@ -1795,10 +1842,16 @@ async function deleteAiSessionById(id) {
 async function clearAiSessions() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   if (!(state.ai.sessions || []).length || !window.confirm(_t('toast.clearSessionsConfirm') || '')) return;
+  const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  releaseAiPreparation(state.ai.preparationOwner, true);
+  stopAiChatReply();
   try {
     const r = await apiFetch('/api/ai/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || (_t('toast.clearFailed') || ''));
-    state.ai.sessionId = null; state.ai.sessions = []; fillAiSessions(); showToast(_t('toast.sessionsCleared') || '');
+    if (state.ai.sessionEpoch === epoch) { state.ai.sessionId = null; $('ai-session').value = ''; }
+    await loadAiSessions(); showToast(_t('toast.sessionsCleared') || '');
   } catch (e) { showToast((_t('toast.clearFailed') || '') + e.message); }
 }
 
@@ -2162,18 +2215,24 @@ function updateAiUsage() {
 
 async function runAi(action) {
   if (state.ai.busy || state.ai.preparing) return;
+  state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
+  state.ai.loadingSessionId = null;
+  const owner = { phase: 'preparing' };
+  state.ai.preparationOwner = owner;
   state.ai.preparing = true;
-  try { return await runAiRequest(action); }
-  finally { state.ai.preparing = false; }
+  try { return await runAiRequest(action, owner); }
+  finally { releaseAiPreparation(owner); }
 }
 
-async function runAiRequest(action) {
+async function runAiRequest(action, preparationOwner) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const epoch = state.ai.sessionEpoch;
+  const current = () => state.ai.sessionEpoch === epoch && (!preparationOwner || state.ai.preparationOwner === preparationOwner);
   state.ai.lastAction = action || (currentAiTemplate() && currentAiTemplate().action) || '';
   captureAiSelection();
   const reviewTab = getActiveTab();
   const reviewStamp = reviewTab && window.ReadMDReview ? await ReadMDReview.capture(reviewTab) : null;
-  if (reviewTab && getActiveTab() !== reviewTab) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const target = state.ai.targetOverride;
   const targetInfo = target != null
     ? { text: target, isSelection: true, exact: false, from: -1, to: -1, source: getCurrentDocumentText(), tabId: state.activeTabId }
@@ -2186,6 +2245,7 @@ async function runAiRequest(action) {
   const prompt = $('ai-prompt').value.trim();
   if (!text?.trim() && !prompt) { showToast(_t('toast.noDocContentNotice') || ''); return; }
   if (!(await ensureAiConfigured())) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const p = currentAiProvider();
   if (!p) return;
   state.ai.conversationTarget = targetInfo;
@@ -2224,6 +2284,7 @@ async function runAiRequest(action) {
   // prevents the request from racing the config write and lets the server
   // resolve the opaque credential_id instead of receiving a raw key.
   if (!(await saveAiSelection(true))) return;
+  if (!current() || (reviewTab && getActiveTab() !== reviewTab)) return;
   const activeProvider = currentAiProvider() || p;
   let requestHeaders = {};
   try { requestHeaders = readAiCustomHeaders(); } catch (e) { return; }
@@ -2232,7 +2293,8 @@ async function runAiRequest(action) {
   if (action === 'modify') {
     if (!reviewTab || !reviewStamp || (isSelection && !currentSelectionSnapshot.exact)) { showToast(_t('review.conflict')); return; }
     if (!state.editing) await toggleEdit();
-    if (getActiveTab() !== reviewTab || !state.editing) return;
+    if (!current() || getActiveTab() !== reviewTab || !state.editing) return;
+    if (preparationOwner) preparationOwner.phase = 'task';
     setAiBusy(true);
     const taskId = window.ReadMDTask?.newTaskId('review-ai') || ('review-ai-' + crypto.randomUUID());
     if (window.ReadMDAiHarness && window.READMD_ENGINE === 'rust') {
@@ -2271,6 +2333,7 @@ async function runAiRequest(action) {
     finally { setAiBusy(false); state.ai.aborter = null; }
     return;
   }
+  if (preparationOwner) preparationOwner.phase = 'chat';
   const docs = text.length > 120000 ? text.slice(0, 120000) + '\n\n' + (_t('ai.contentTruncated') || '') : text;
   const fill = s => String(s || '').replace(/\{doc\}/g, docs).replace(/\{prompt\}/g, prompt || '');
   let userMsg;
@@ -2284,7 +2347,8 @@ async function runAiRequest(action) {
   else userMsg = docFollows + '\n\n' + docs;
 
 
-  const msgs = (state.ai.messages || []).slice(-40);
+  const previousMessages = state.ai.messages || [];
+  const msgs = previousMessages.slice(-40);
   msgs.push({ role: 'user', content: userMsg, ephemeral: isIncognito });
 
   const out = $('ai-output');
@@ -2294,7 +2358,7 @@ async function runAiRequest(action) {
   const scopeText = isSelection ? (_t('ai.scopeSelection') || '') : (_t('ai.scopeFull') || '');
   // "动作：提问（全文）" → "提问（全文）": the label prefix is noise in a chat header.
   const userTagText = (resolveAiActionLabel(action, tpl) + scopeText).replace(/^[^：:]{1,8}[：:]\s*/, '');
-  appendAiUserBubble(out, userTagText, userMsg, {
+  const userBubble = appendAiUserBubble(out, userTagText, userMsg, {
     scopeLabel: scopeText, prompt: prompt,
     docLines: docs.split('\n').length, docChars: docs.length,
   });
@@ -2312,14 +2376,26 @@ async function runAiRequest(action) {
   out.scrollTop = out.scrollHeight;
 
   state.ai.raw = '';
+  state.ai.usage = null;
   updateAiRawButtons();
   setAiBusy(true);
   const ctrl = new AbortController();
-  state.ai.aborter = ctrl;
+  const taskId = window.ReadMDTask?.newTaskId('chat') || ('chat-' + crypto.randomUUID());
+  let running = true, cancelPromise = null;
+  const cancel = () => {
+    cancelPromise ||= Promise.resolve(window.ReadMDReview?.cancelAi(taskId, () => running)).catch(() => 'unknown');
+  };
+  ctrl.signal.addEventListener('abort', cancel, { once: true });
+  const owner = { kind: 'chat', preparationOwner, abort: () => ctrl.abort() };
+  state.ai.aborter = owner;
+  const owns = () => state.ai.aborter === owner;
+  const ensureOwner = () => { if (!owns()) { ctrl.abort(); throw new DOMException('cancelled', 'AbortError'); } };
+  const saveContext = { owner, sessionId: state.ai.sessionId, provider: activeProvider.id, model,
+    doc: origin.path || origin.name || '' };
   let renderTimer = null;
   const render = () => {
     renderTimer = null;
-    if (!state.ai.raw) return;
+    if (!owns() || !state.ai.raw) return;
     const follow = out.scrollHeight - out.scrollTop - out.clientHeight < 100;
     aiBody.innerHTML = renderSafeMarkdown(state.ai.raw) + '<span class="streaming-cursor"></span>';
     if (follow) out.scrollTop = out.scrollHeight;
@@ -2328,8 +2404,9 @@ async function runAiRequest(action) {
   try {
     const r = await apiFetch('/api/ai/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
       body: JSON.stringify({
+        task_id: taskId, session: saveContext.sessionId || undefined, incognito: isIncognito,
         provider: activeProvider.id, model: model,
         credential_id: activeProvider.credential_id || undefined,
         base_url: baseUrl || undefined, mode: mode, endpoint_mode: endpointMode, headers: requestHeaders, stream: stream,
@@ -2347,56 +2424,30 @@ async function runAiRequest(action) {
       throw new Error(d.error || ('HTTP ' + r.status));
     }
     const contentType = (r.headers.get('content-type') || '').toLowerCase();
-    if (!stream || contentType.includes('application/json')) {
+    ensureOwner();
+    const accountUsage = usage => {
+      ensureOwner(); state.ai.usage = usage;
+      const s = state.ai.sessUsage;
+      s.prompt_tokens += usage.prompt_tokens || 0;
+      s.completion_tokens += usage.completion_tokens || 0;
+      s.total_tokens += usage.total_tokens || 0;
+      updateAiUsage();
+    };
+    if (contentType.includes('application/json')) {
       const data = await r.json().catch(() => ({}));
+      ensureOwner();
       if (data.error) throw new Error(data.error);
       const text = data.text || data.content || (data.choices && data.choices[0] && (data.choices[0].message ? data.choices[0].message.content : data.choices[0].text)) || '';
       state.ai.raw = text;
-      if (data.usage) {
-        state.ai.usage = data.usage;
-        const s = state.ai.sessUsage;
-        s.prompt_tokens += data.usage.prompt_tokens || 0;
-        s.completion_tokens += data.usage.completion_tokens || 0;
-        s.total_tokens += data.usage.total_tokens || 0;
-        updateAiUsage();
-      }
+      if (data.usage) accountUsage(data.usage);
     } else {
-      const reader = r.body.getReader();
-      const dec = new TextDecoder('utf-8');
-      let buf = '';
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let idx;
-        while ((idx = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, idx).trim();
-          buf = buf.slice(idx + 1);
-          if (line.indexOf('data:') !== 0) continue;
-          const data = line.slice(5).trim();
-          if (!data) continue;
-          let obj;
-          try { obj = JSON.parse(data); } catch (e) { continue; }
-          if (obj.type === 'error' || obj.error) throw new Error(obj.error || 'AI stream error');
-          if (obj.type === 'done' || obj.done) break;
-          const usage = obj.usage || (obj.type === 'usage' ? obj.usage : null);
-          if (usage) {
-            state.ai.usage = usage;
-            const s = state.ai.sessUsage;
-            s.prompt_tokens += usage.prompt_tokens || 0;
-            s.completion_tokens += usage.completion_tokens || 0;
-            s.total_tokens += usage.total_tokens || 0;
-            updateAiUsage();
-            continue;
-          }
-          const delta = obj.type === 'delta' ? obj.delta : obj.d;
-          if (delta === undefined) continue;
-          state.ai.raw += delta;
+      await window.ReadMDChatStream.consume(r, { taskId, signal: ctrl.signal, onUsage: accountUsage,
+        onDelta: delta => { ensureOwner(); state.ai.raw += delta;
           if (!renderTimer) renderTimer = setTimeout(render, state.ai.raw.length > 150000 ? 500 : 120);
-        }
-      }
+        } });
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
     }
+    ensureOwner();
     aiBody.innerHTML = renderSafeMarkdown(state.ai.raw);
     renderMath(aiBody);
     decorateAiAnswer(aiBody);
@@ -2412,13 +2463,15 @@ async function runAiRequest(action) {
       msgs.push(last);
       state.ai.messages = msgs;
       aiBody.appendChild(renderAiBubbleActions(state.ai.raw, last));
-      const saved = isIncognito ? false : await saveCurrentSession(true);
+      const saved = isIncognito ? false : await saveCurrentSession(true, saveContext);
+      ensureOwner();
       updateAiRawButtons();
       showToast(isIncognito ? (_t('toast.aiIncognitoDone') || '') : (saved ? (_t('toast.aiSavedDone') || '') : (_t('toast.aiSaveFailDone') || '')));
     } else {
       msgs.pop();
     }
   } catch (e) {
+    if (!owns()) return;
     if (e.name === 'AbortError') {
       setAiTag(aiTag, _t('ai.assistant') || '', model + ' ' + (_t('ai.stoppedSuffix') || ''));
       const typing = aiBody.querySelector('.ai-typing');
@@ -2429,6 +2482,7 @@ async function runAiRequest(action) {
         const last = {
           role: 'assistant',
           content: state.ai.raw,
+          incomplete: true,
           ephemeral: isIncognito,
           selectionContext: currentSelectionSnapshot
         };
@@ -2436,6 +2490,7 @@ async function runAiRequest(action) {
         msgs.push(last);
         state.ai.messages = msgs;
         aiBody.appendChild(renderAiBubbleActions(state.ai.raw, last));
+        updateAiRawButtons();
       }
       showToast(_t('ai.stopped') || '');
     } else {
@@ -2444,21 +2499,37 @@ async function runAiRequest(action) {
       const hint = aiErrorHint(e);
       setAiConnectionState(hint.kind, hint.summary);
       showToast(hint.message);
-      aiBody.innerHTML = '<p class="ai-err">' + String(e.message).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p>';
+      const key = 'error.' + (e.code || ''), localized = _t(key);
+      const message = e.code === 'ai_session_save_failed' ? _t('toast.aiSaveFailDone') : localized !== key ? localized : hint.message;
+      aiBody.innerHTML = (state.ai.raw ? renderSafeMarkdown(state.ai.raw) : '') + '<p class="ai-err">' + String(message).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</p>';
+      if (state.ai.raw) {
+        msgs.push({ role: 'assistant', content: state.ai.raw, incomplete: true, ephemeral: isIncognito, selectionContext: currentSelectionSnapshot });
+        state.ai.messages = msgs;
+        renderMath(aiBody); updateAiRawButtons();
+      }
       const retryBtn = document.createElement('button');
       retryBtn.type = 'button';
       retryBtn.className = 'ai-bubble-act-btn ai-retry-btn';
       retryBtn.setAttribute('aria-label', _t('reader.refresh') || '重试');
       retryBtn.innerHTML = '<svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;margin-right:4px;"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> <span>' + (_t('reader.refresh') || '重试') + '</span>';
       retryBtn.onclick = () => {
+        if (state.ai.busy || state.ai.preparing || state.ai.sessionEpoch !== epoch) return;
+        if (getActiveTab() !== reviewTab || getCurrentDocumentText() !== currentSelectionSnapshot.source || $('ai-prompt').value.trim() !== prompt || getAiTargetText().text !== text) {
+          showToast(_t('review.conflict')); return;
+        }
+        if (state.ai.messages === msgs) state.ai.messages = previousMessages;
+        userBubble.remove();
         aiBubble.remove();
         runAi(action);
       };
       aiBody.appendChild(retryBtn);
     }
   } finally {
-    setAiBusy(false);
-    state.ai.aborter = null;
+    if (renderTimer) clearTimeout(renderTimer);
+    ctrl.signal.removeEventListener('abort', cancel);
+    if (cancelPromise) await cancelPromise;
+    running = false;
+    if (owns()) { setAiBusy(false); state.ai.aborter = null; }
   }
 }
 
@@ -2511,14 +2582,14 @@ function aiConversationMarkdown(session) {
   if (s.provider) lines.push('> ' + (_t('ai.providerPrefix') || '') + String(s.provider).slice(0, 120));
   if (s.model) lines.push('> ' + (_t('ai.modelPrefix') || '') + String(s.model).slice(0, 160));
   if (s.updated || s.created) lines.push('> ' + (_t('ai.timePrefix') || '') + fmtTime(s.updated || s.created));
-  (s.messages || []).forEach(m => { if (m && (m.role === 'user' || m.role === 'assistant') && m.content) lines.push('', '## ' + (m.role === 'user' ? (_t('ai.userRole') || '') : (_t('ai.assistantRole') || '')), '', String(m.content)); });
+  (s.messages || []).forEach(m => { if (m && (m.role === 'user' || m.role === 'assistant') && m.content) lines.push('', '## ' + (m.role === 'user' ? (_t('ai.userRole') || '') : (_t('ai.assistantRole') || '') + (m.incomplete ? ' ' + (_t('ai.stoppedSuffix') || '') : '')), '', String(m.content)); });
   return lines.join('\n').trim() + '\n';
 }
 
 async function selectedConversationMarkdown() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   let id = state.ai.sessionId || $('ai-session').value;
-  if (!id && (state.ai.messages || []).length) return aiConversationMarkdown({ title: _t('ai.currentSession') || '', provider: $('ai-provider').value, model: $('ai-model').value, messages: state.ai.messages });
+  if ((state.ai.messages || []).length) return aiConversationMarkdown({ title: (state.ai.sessions || []).find(s => s.id === id)?.title || (_t('ai.currentSession') || ''), provider: $('ai-provider').value, model: $('ai-model').value, messages: state.ai.messages });
   if (!id) throw new Error(_t('toast.selectOrFinishSession') || '');
   const r = await apiFetch('/api/ai/history?id=' + encodeURIComponent(id)); const d = await r.json();
   if (!r.ok || !d.session) throw new Error(d.error || (_t('toast.sessionNotExist') || ''));
@@ -2638,7 +2709,7 @@ function bindAiResize() {
 
 function aiErrorHint(error) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const raw = String((error && error.message) || error || (_t('toast.unknownError') || ''));
+  const raw = error?.status ? 'HTTP ' + error.status : String((error && error.message) || error || (_t('toast.unknownError') || ''));
   if (/provider_model_unavailable/.test(raw)) return { kind: 'error', summary: _t('ai.reqFailSummary'), message: _t('ai.selectModel') };
   if (/401|403|auth|key|token|鉴权|密钥/i.test(raw)) return { kind: 'error', summary: _t('ai.authFailSummary') || '', message: _t('ai.authFailMsg') || '' };
   if (/429|rate.?limit|限流|too many/i.test(raw)) return { kind: 'warn', summary: _t('ai.rateLimitSummary') || '', message: _t('ai.rateLimitMsg') || '' };

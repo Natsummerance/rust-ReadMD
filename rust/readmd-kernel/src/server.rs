@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+mod chat_stream;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const SERVER_TAG: &str = "readmd-rust";
@@ -530,13 +531,14 @@ fn handle_connection(stream: TcpStream, app: Arc<App>) {
             Ok(Some(req)) => req,
             _ => break,
         };
-        if req.method == "POST" && req.path.trim_end_matches('/') == "/api/ai/complete"
+        if req.method == "POST" && matches!(req.path.trim_end_matches('/'), "/api/ai/complete" | "/api/ai/chat")
             && req.header("accept").is_some_and(|s| s.contains("text/event-stream")) {
             if let Err(error) = authorize(&app,&req,peer_is_loopback) {
                 let _ = write_response(&mut writer,&error_response(error),false,false);
             } else {
                 let _ = writer.set_write_timeout(Some(Duration::from_secs(5)));
-                serve_completion_stream(&app,&req,&mut writer);
+                if req.path.trim_end_matches('/') == "/api/ai/chat" { chat_stream::serve(&app,&req,&mut writer); }
+                else { serve_completion_stream(&app,&req,&mut writer); }
             }
             break;
         }
@@ -4681,6 +4683,26 @@ fn ai_complete_events(app: &Arc<App>, req: &Request, transport: Option<&dyn ai_p
 /// `h_ai_chat` with its egress injected, so the envelope the frontend gets can
 /// be pinned by a test that never opens a socket.
 fn ai_chat(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transport) -> ApiResult<Response> {
+    let (payload, route) = prepare_chat_route(app, req)?;
+    // The dispatch half: the transport for the selected mode, using the same
+    // provider adapters as the Accept-negotiated event-stream consumer.
+    let stream = ai_providers::dispatch_chat(&route, transport).map_err(ai_chat_failure)?;
+    let (content, usage) = collapse_chat_stream(stream).map_err(ai_chat_failure)?;
+    if crate::ai_completion::retired_model_notice(&content) {
+        return Err(ApiError::new(502,"provider_model_unavailable"));
+    }
+    let model = ai_providers::py_str(&route.args.model);
+    let session = payload.get("session").and_then(value_to_string).unwrap_or_else(|| "default".into());
+    let user_text = chat_user_text(&payload);
+    if payload.get("incognito").and_then(Value::as_bool) != Some(true) {
+        app.store.remember_chat_turn(&session, &user_text, &content, &model)
+            .map_err(|_|ApiError::internal("ai_session_save_failed"))?;
+    }
+    ok_json(json!({"ok":true,"content":content,"text":content,"response":content,"model":model,
+        "usage":usage.unwrap_or(Value::Null),"session":session}))
+}
+
+fn prepare_chat_route(app: &Arc<App>, req: &Request) -> ApiResult<(Value, ai_providers::ResolvedRoute)> {
     // `readmd.py:2386-2397` has two arms that share the `invalid_request` code
     // but carry different text: a body that will not JSON-decode, and a decoded
     // body that is not an object.  `body_value` collapses both to `Null`, so the
@@ -4703,35 +4725,16 @@ fn ai_chat(app: &Arc<App>, req: &Request, transport: &dyn ai_providers::Transpor
     if route.args.base_url.is_empty() {
         return Err(ApiError::bad_request("ai_not_configured").noted("detail", "请先在设置中配置 AI 服务地址。"));
     }
-    // The dispatch half: the transport for the selected `mode`, over the same
-    // in-process `ureq` + rustls stack as before — no Python, no subprocess.
-    let stream = ai_providers::dispatch_chat(&route, transport).map_err(ai_chat_failure)?;
-    let (content, usage) = collapse_chat_stream(stream).map_err(ai_chat_failure)?;
-    if crate::ai_completion::retired_model_notice(&content) {
-        return Err(ApiError::new(502,"provider_model_unavailable"));
-    }
-    let model = ai_providers::py_str(&route.args.model);
+    Ok((payload, route))
+}
 
-    let session = payload.get("session").and_then(value_to_string).unwrap_or_else(|| "default".into());
-    let user_text = payload
+fn chat_user_text(payload: &Value) -> String {
+    payload
         .get("messages")
         .and_then(|m| m.as_array())
         .and_then(|a| a.iter().rev().find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user")))
         .and_then(|m| m.get("content").and_then(|c| c.as_str()).map(String::from))
-        .unwrap_or_default();
-    if !user_text.is_empty() {
-        let _ = app.store.remember_chat(&session, "user", &user_text, &model);
-    }
-    let _ = app.store.remember_chat(&session, "assistant", &content, &model);
-    ok_json(json!({
-        "ok": true,
-        "content": content,
-        "text": content,
-        "response": content,
-        "model": model,
-        "usage": usage.unwrap_or(Value::Null),
-        "session": session,
-    }))
+        .unwrap_or_default()
 }
 
 fn h_ai_history(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
@@ -7533,6 +7536,28 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert!(calls[0].body.contains("\"stream\": false"));
         assert!(!calls[0].body.contains("stream_options"));
+    }
+
+    #[test]
+    fn chat_incognito_json_does_not_persist_raw_messages() {
+        let app=sample_app("aichat-incognito");
+        let transport=FakeTransport::new(&[r#"{"choices":[{"message":{"content":"private reply"}}]}"#]);
+        let body=chat_body(json!({"stream":false,"incognito":true,"session":"owned-private"})).to_string();
+        let response=ai_chat(&app,&request("POST","/api/ai/chat",body.as_bytes()),&transport).unwrap();
+        let result:Value=serde_json::from_slice(&response.body).unwrap();assert_eq!(result["content"],"private reply");
+        assert_eq!(transport.recorded().len(),1);assert!(app.store.chat_history("owned-private",10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn chat_json_history_failure_rolls_back_the_turn_and_reports_failure() {
+        let app=sample_app("aichat-atomic-json");
+        let database=rusqlite::Connection::open(&app.paths.db_path).unwrap();
+        database.execute_batch("CREATE TRIGGER reject_assistant BEFORE INSERT ON chat_messages WHEN NEW.role='assistant' BEGIN SELECT RAISE(ABORT,'owned fixture failure'); END;").unwrap();
+        let transport=FakeTransport::new(&[r#"{"choices":[{"message":{"content":"complete reply"}}]}"#]);
+        let body=chat_body(json!({"stream":false,"session":"owned-failed-turn"})).to_string();
+        let error=ai_chat(&app,&request("POST","/api/ai/chat",body.as_bytes()),&transport).err().unwrap();
+        assert_eq!(error.status,500);assert_eq!(error.code,"ai_session_save_failed");
+        assert_eq!(transport.recorded().len(),1);assert!(app.store.chat_history("owned-failed-turn",10).unwrap().is_empty());
     }
 
     #[test]
