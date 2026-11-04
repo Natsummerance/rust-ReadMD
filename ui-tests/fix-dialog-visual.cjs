@@ -133,7 +133,8 @@ async function main() {
       await page.keyboard.press('Escape');
       await until(() => page.locator('#fix-modal').evaluate(node => node.classList.contains('hidden')), 'original Escape close');
       const menuReturn = await page.evaluate(() => ({ active: document.activeElement.id || document.activeElement.tagName,
-        openerVisible: $('btn-fix').getClientRects().length > 0 && getComputedStyle($('more-menu')).display !== 'none',
+        openerVisible: $('btn-more').getClientRects().length > 0 && getComputedStyle($('btn-more')).visibility !== 'hidden',
+        moreClosed: !$('more-menu').classList.contains('open'),
         remainingInert: document.querySelectorAll('[data-rm-inert]').length }));
       report.cases.at(-1).menuReturn = menuReturn;
       assert.equal(menuReturn.remainingInert, 0, 'Original modal manager releases the background');
@@ -159,9 +160,10 @@ async function main() {
     report.checks.push('Original close and backdrop handlers; zero model/task-start calls and zero page errors');
     report.modalServiceControlPassed = true;
     report.modalServiceControl = 'Visible #btn-more focused then real showFixModal() called; original Escape handler returned focus. This is a separate modal-service control, not the real menu flow.';
-    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-fix' && item.menuReturn.openerVisible);
+    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-more' && item.menuReturn.openerVisible && item.menuReturn.moreClosed);
+    assert.equal(report.menuFocusReturnPassed, true, 'Every real More-menu repair flow must restore focus to the visible More opener');
     report.visualScopePassed = true;
-    report.unchangedMenuFocusBoundary = 'The original More menu closes on the close-button click: its hidden #btn-fix cannot receive restored focus. This presentation change leaves menu/modal services unchanged; visible-opener focus return is verified separately.';
+    report.menuFocusBoundary = 'The shell closes the original More menu and exposes its visible opener before the original repair handler opens its modal; every actual menu flow restores focus to that opener.';
     report.passed = true;
   } catch (error) {
     report.failure = { phase, message: error.message, stack: error.stack };

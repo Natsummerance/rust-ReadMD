@@ -67,6 +67,17 @@ async function main(){
     phase='targeted RTL sidebar';await page.setViewportSize({width:1024,height:680});await page.evaluate(async()=>{await i18n.setLanguage('ar',false);document.body.classList.add('native-macos');document.body.style.setProperty('--native-controls-leading','88px');});
     const strings=JSON.parse(read('assets/i18n/ar.json').toString('utf8')),expect=require(path.join(path.dirname(playwright),'@playwright/test')).expect;report.rtlTabs=[];
     const closeLabels=await page.locator('#side .tab-close').evaluateAll(nodes=>nodes.map(node=>node.title));report.rtlCloseLabels=closeLabels;assert(closeLabels.length>0);assert(closeLabels.every(label=>label===strings['tabs.closeTab']), 'existing tab close labels follow a live language change');
+    const activeRow=page.locator('#side .tab-item.active');await activeRow.focus();await page.keyboard.press('F2');
+    const rename=page.locator('#side .tab-title-input');await rename.waitFor({state:'visible'});await rename.fill('Uncommitted owned filename');
+    const handle=await rename.elementHandle();await rename.evaluate(node=>node.setSelectionRange(2,9));
+    await page.evaluate(()=>i18n.setLanguage('en',false));
+    assert.equal(await handle.evaluate(node=>node.isConnected&&node.value==='Uncommitted owned filename'&&node.selectionStart===2&&node.selectionEnd===9),true,'A live language change preserves the same rename input, text and selection');
+    await page.evaluate(()=>i18n.setLanguage('ar',false));await page.keyboard.press('Escape');
+    await until(()=>page.locator('#side .tab-title-input').count().then(count=>count===0),'rename cancellation after a live locale change');
+    assert.equal(await page.locator('#side').evaluate(node=>node.classList.contains('hidden')),false,'Consumed rename Escape leaves the original sidebar open');
+    for(const key of ['a','b','c'])assert.equal(fs.readFileSync(files[key],'utf8'),CONTENT[key]);
+    check('live locale changes update close labels while retaining the original rename input, selection and unmodified files');
+
     for(const [id,key] of [['tab-toc','sidebar.toc'],['tab-files','sidebar.files']]){const el=page.locator('#'+id);await expect(el).toHaveAccessibleName(strings[key]);assert.equal(await el.textContent(),strings[key]);assert.equal(await el.getAttribute('title'),strings[key]);const size=await el.evaluate(el=>{const r=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect();return{width:r.width,height:r.height,top:r.top,bottom:r.bottom,parentTop:p.top,parentBottom:p.bottom,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,fullText:el.textContent,title:el.title};});assert(size.width>=44&&size.height>=44);assert(size.scrollHeight<=size.clientHeight+1,'long RTL text remains within its tab');assert(size.top>=size.parentTop-1&&size.bottom<=size.parentBottom+1,'RTL tab remains in navigation row');report.rtlTabs.push({id,...size});}
     check('1024 Arabic tab names and titles remain complete with 44px targets and no vertical overflow');await geometry('targeted actual Mac CSS RTL sidebar',{mac:true});await shot('product-css-projection-mac-rtl-1024');assert.deepEqual(report.inferenceRequests,[]);report.passed=true;return;
   }
