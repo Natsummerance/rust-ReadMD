@@ -49,11 +49,13 @@ async function main() {
     binarySha256: sha(fs.readFileSync(args.bin)), bootSha256: sha(fs.readFileSync(path.join(ROOT, 'assets/readmd.boot.js'))),
     pack: { sha256: proof.sha256, manifestSha256: proof.manifestSha256, bytes: proof.size, version: proof.manifest.version, platform: proof.manifest.platform },
     inputDocuments: Object.entries(fixtures).map(([name, text]) => ({ name, sha256: sha(encoded(text)), bytes: encoded(text).length })),
-    checks: [], capabilityRequests: [], reviewRequests: [], codeRequests: [], codeReceipts: [], historyKeys: [],
+    checks: [], capabilityRequests: [], capabilityReceipts: [], responseReadErrors: [], reviewRequests: [], codeRequests: [], codeReceipts: [], historyKeys: [],
     storage: { transientBudgetBytes: 450 * 1048576, retainedBudgetBytes: 250 * 1048576, sampleIntervalMs: 50, peakObservedLogicalBytes: 0, peakObservedAllocatedBytes: 0 },
   };
   let test, phase = 'start', releaseImport, copiedFile, copiedIdentity, sampler, deadline;
-  const responseReads = [];
+  const responseReads = [], capabilityRequestRecords = new WeakMap(), started = performance.now();
+  const now = () => Number((performance.now() - started).toFixed(3));
+  const safe = value => String(value).replaceAll(output, '<owned>').replaceAll(ROOT, '<repo>');
   function mark(next) { phase = next; console.log(JSON.stringify({ phase })); }
   function sample() {
     const size = ownedSize(output);
@@ -88,13 +90,32 @@ async function main() {
       if (request.method() !== 'POST') return;
       if (!['/api/capabilities/packs', '/api/review', '/api/code/run'].includes(route)) return;
       const body = request.postDataJSON();
-      if (route === '/api/capabilities/packs') report.capabilityRequests.push({ action: body.action, id: body.id });
+      if (route === '/api/capabilities/packs') {
+        const record = { sequence: report.capabilityRequests.length + 1, action: body.action, id: body.id, jobSha256: body.job ? sha(body.job) : undefined, requestedMs: now(), phase };
+        report.capabilityRequests.push(record); capabilityRequestRecords.set(request, record);
+      }
       else if (route === '/api/review') report.reviewRequests.push({ action: body.action, documentId: body.document_id, generation: body.generation, revision: body.review_revision, sourceLine: body.source_line });
       else report.codeRequests.push({ lang: body.lang, code: body.code, confirm: body.confirm });
     });
     page.on('response', response => {
-      if (new URL(response.url()).pathname !== '/api/code/run') return;
-      responseReads.push(response.json().then(body => report.codeReceipts.push({ ok: body.ok, stdout: body.stdout, runtime: body.runtime, errorCode: body.error_code })));
+      const route = new URL(response.url()).pathname;
+      if (!['/api/code/run', '/api/capabilities/packs'].includes(route)) return;
+      const receivedMs = now(), request = capabilityRequestRecords.get(response.request());
+      responseReads.push(response.json().then(body => {
+        if (route === '/api/code/run') report.codeReceipts.push({ ok: body.ok, stdout: body.stdout, runtime: body.runtime, errorCode: body.error_code });
+        else report.capabilityReceipts.push({
+          sequence: request?.sequence, action: request?.action, id: request?.id || body.id,
+          requestJobSha256: request?.jobSha256, jobSha256: body.job ? sha(body.job) : undefined,
+          requestedMs: request?.requestedMs, receivedMs, completedMs: now(), status: response.status(), ok: body.ok,
+          phase: body.phase, operation: body.operation, errorCode: body.error_code,
+          ready: body.ready, installed: body.installed, present: body.present, busy: body.busy, busyCode: body.busy_code,
+          resultInstalled: body.result?.installed, cleanupPending: body.result?.cleanup_pending,
+        });
+      }).catch(error => report.responseReadErrors.push({ route, sequence: request?.sequence, error: safe(error.message).slice(0, 200) })));
+    });
+    page.on('requestfailed', request => {
+      const record = capabilityRequestRecords.get(request);
+      if (record) record.failure = safe(request.failure()?.errorText || 'request_failed').slice(0, 200);
     });
     await page.evaluate(() => {
       window.__nodeHistoryKeys = [];
@@ -187,8 +208,17 @@ async function main() {
     report.checks.push('genuine pinned Node returns 42 and writes one output after the second matching source fence only; a real editor keyboard undo and redo each form one durable history action, then save preserves BOM and CRLF');
 
     mark('1024 by 680 plugin Node row and actual uninstall');
-    await page.setViewportSize({ width: 1024, height: 680 }); await page.evaluate(async () => { await openPluginModal(); await refreshOfflineCapabilityPack(); });
+    await page.setViewportSize({ width: 1024, height: 680 });
+    const refreshFirstSequence = report.capabilityRequests.length + 1, refreshStartedMs = now();
+    await page.evaluate(async () => { await Promise.all([openPluginModal(), refreshOfflineCapabilityPack()]); });
+    await Promise.all(responseReads);
+    const refreshRequests = report.capabilityRequests.filter(item => item.sequence >= refreshFirstSequence);
+    report.pluginRefresh = { startedMs: refreshStartedMs, completedMs: now(), catalogRequests: refreshRequests.filter(item => item.action === 'catalog').length, nodeStatusRequests: refreshRequests.filter(item => item.action === 'status' && item.id === 'node').length, ariaBusy: await page.locator('#plugin-capability-pack').getAttribute('aria-busy') };
+    assert.equal(report.pluginRefresh.catalogRequests, 1, 'Concurrent refresh shares one catalog request');
+    assert.equal(report.pluginRefresh.nodeStatusRequests, 1, 'Concurrent refresh shares one genuine Node status probe');
+    assert.equal(report.pluginRefresh.ariaBusy, 'false', 'The legitimate UI refresh has completed');
     const uninstall = page.locator('#plugin-capability-uninstall-node'); await uninstall.waitFor({ state: 'visible' });
+    assert.equal(await uninstall.isEnabled(), true, 'Only a non-busy runtime may be removed from the panel');
     const row = uninstall.locator('..'); await row.locator('summary').click(); await row.scrollIntoViewIfNeeded();
     report.pluginLayout = await row.evaluate(element => {
       const rect = value => { const r = value.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; };
@@ -199,10 +229,32 @@ async function main() {
     assert(report.pluginLayout.row.left >= report.pluginLayout.box.left - 1 && report.pluginLayout.row.right <= report.pluginLayout.box.right + 1);
     for (const child of report.pluginLayout.children) assert(child.left >= report.pluginLayout.row.left - 1 && child.right <= report.pluginLayout.row.right + 1, 'Node row child stays within row');
     await page.screenshot({ path: path.join(output, 'node-plugin-1024x680.png') });
+    const removalFirstSequence = report.capabilityRequests.length + 1;
     await uninstall.click(); await page.locator('#confirm-modal').waitFor({ state: 'visible' }); await page.locator('#confirm-action').click();
-    await until(async () => !(await status()).ready && await page.locator('#plugin-capability-install-node').count() === 1, 'real Node removal and refreshed row', 60000);
+    const removalWaitStartedMs = now(), removalRemaining = () => Math.max(0, 60000 - (now() - removalWaitStartedMs));
+    let removalStart, removalTerminal;
+    await until(() => {
+      const starts = report.capabilityReceipts.filter(item => item.sequence >= removalFirstSequence && item.action === 'uninstall_start' && item.id === 'node');
+      assert(starts.length <= 1, 'Uninstall is never replayed');
+      if (!starts.length) return false;
+      removalStart = starts[0]; assert.equal(removalStart.status, 200, 'Real uninstall_start: ' + removalStart.errorCode);
+      assert.equal(removalStart.ok, true); assert(removalStart.jobSha256, 'Real uninstall job identity');
+      removalTerminal = report.capabilityReceipts.find(item => item.jobSha256 === removalStart.jobSha256 && (item.sequence === removalStart.sequence || item.action === 'download_status' && item.requestJobSha256 === removalStart.jobSha256) && ['removed', 'error', 'cancelled'].includes(item.phase));
+      if (!removalTerminal) return false;
+      assert.equal(removalTerminal.status, 200); assert.equal(removalTerminal.ok, true);
+      assert.equal(removalTerminal.operation, 'uninstall'); assert.equal(removalTerminal.phase, 'removed', 'Real uninstall terminal: ' + removalTerminal.errorCode);
+      assert.equal(removalTerminal.resultInstalled, false); return true;
+    }, 'real Node uninstall job terminal', removalRemaining());
+    await until(async () => {
+      const refreshed = report.capabilityReceipts.some(item => item.action === 'status' && item.id === 'node' && item.requestedMs >= removalTerminal.receivedMs && item.status === 200 && item.ready === false && item.installed === false && item.busy === false);
+      return refreshed && await page.locator('#plugin-capability-pack').getAttribute('aria-busy') === 'false' && await page.locator('#plugin-capability-install-node').count() === 1;
+    }, 'real Node removal and refreshed row', removalRemaining());
+    const statusDuringRemoval = report.capabilityRequests.filter(item => item.action === 'status' && item.requestedMs >= removalStart.requestedMs && item.requestedMs < removalTerminal.receivedMs);
+    assert.deepEqual(statusDuringRemoval, [], 'No real status probe competes with uninstall');
+    assert.equal(report.capabilityRequests.filter(item => item.sequence >= removalFirstSequence && item.action === 'uninstall_start' && item.id === 'node').length, 1);
+    report.uninstall = { startSequence: removalStart.sequence, jobSha256: removalStart.jobSha256, requestedMs: removalStart.requestedMs, terminalReceivedMs: removalTerminal.receivedMs, terminalPhase: removalTerminal.phase, terminalResultInstalled: removalTerminal.resultInstalled, uiRefreshCompletedMs: now(), deadlineMs: 60000, waitElapsedMs: now() - removalWaitStartedMs, statusRequestsDuringRemoval: statusDuringRemoval.length };
     assert.equal(await page.locator('#plugin-capability-uninstall-node').count(), 0);
-    report.removedStatus = await status(); assert.equal(report.removedStatus.ready, false);
+    report.removedStatusRequestedMs = now(); report.removedStatus = await status(); assert.equal(report.removedStatus.ready, false);
     assert(report.capabilityRequests.some(item => item.action === 'uninstall_start' && item.id === 'node'));
     assert.equal(fs.existsSync(path.join(test.profile, 'capabilities/managed-v2/node', proof.manifest.version, 'bin', process.platform === 'win32' ? 'node.exe' : 'node')), false);
     await page.locator('#plugin-close').click();
@@ -210,11 +262,12 @@ async function main() {
     await page.locator('#preview-pane .code-chunk-run-btn').nth(1).click(); await modal().waitFor({ state: 'visible' });
     await modalCancel().click(); await modal().waitFor({ state: 'detached' }); await idle(); assert.equal(report.codeRequests.length, 1);
     report.checks.push('at 1024×680 the expanded Node row and all controls fit without horizontal overflow; real confirmation and uninstall remove the runtime, preserve all documents and make the next Run request installation again');
+    await Promise.all(responseReads); assert.deepEqual(report.responseReadErrors, []);
     assert.deepEqual(test.errors, []); report.passed = true;
   } catch (error) {
-    report.failure = { phase, name: error.name, message: String(error.message).replaceAll(output, '<owned>').replaceAll(ROOT, '<repo>').slice(0, 1200) }; process.exitCode = 1;
+    report.failure = { phase, atMs: now(), name: error.name, message: safe(error.message).slice(0, 1200), stack: safe(error.stack || '').split('\n').slice(0, 8).join('\n') }; process.exitCode = 1;
     if (test) {
-      report.ui = await test.page.evaluate(() => ({ activeName: getActiveTab()?.name, editing: state.editing, jobs: window.ReadMDCodeRuns?.busy(), installer: document.getElementById('capability-install-status')?.textContent, modal: Boolean(document.getElementById('capability-install-modal')), tabs: state.tabs.map(tab => ({ name: tab.name, dirty: tab.isDirty, generation: tab.inputGeneration })) })).catch(() => ({ unavailable: true }));
+      report.ui = await test.page.evaluate(() => ({ activeName: getActiveTab()?.name, editing: state.editing, jobs: window.ReadMDCodeRuns?.busy(), installer: document.getElementById('capability-install-status')?.textContent, modal: Boolean(document.getElementById('capability-install-modal')), capabilityRow: document.getElementById('plugin-capability-pack')?.textContent?.slice(0, 1200), capabilityRowBusy: document.getElementById('plugin-capability-pack')?.getAttribute('aria-busy'), tabs: state.tabs.map(tab => ({ name: tab.name, dirty: tab.isDirty, generation: tab.inputGeneration })) })).catch(() => ({ unavailable: true }));
       await test.page.screenshot({ path: path.join(output, 'first-failure.png') }).catch(() => {});
     }
   } finally {

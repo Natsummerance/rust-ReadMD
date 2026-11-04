@@ -240,18 +240,50 @@
     }
     return d;
   }
-  window.refreshOfflineCapabilityPack=async()=>{
-    const row=document.getElementById('plugin-capability-pack');if(!row)return;
+  let capabilityPanelRefresh=null,capabilityPanelOperation=null,capabilityPanelGeneration=0;
+  function syncCapabilityPanelBusy(){
+    const row=document.getElementById('plugin-capability-pack'),busy=!!(capabilityPanelRefresh||capabilityPanelOperation);
+    if(row){row.setAttribute('aria-busy',String(busy));for(const button of row.querySelectorAll('button[data-capability-action]'))button.disabled=busy||button.dataset.capabilityBusy==='true';}
+    const offline=document.getElementById('plugin-offline-pack');if(offline)offline.disabled=busy;
+  }
+  function capabilityActionAllowed(button,data){return button.isConnected&&!button.disabled&&!data.busy&&!capabilityPanelRefresh&&!capabilityPanelOperation;}
+  async function runCapabilityPanelOperation(action){
+    if(capabilityPanelOperation)return false;
+    const previous=capabilityPanelRefresh?.promise;
+    let release;const operation={done:new Promise(resolve=>{release=resolve;}),refresh:null};
+    capabilityPanelOperation=operation;capabilityPanelGeneration++;syncCapabilityPanelBusy();
+    try{if(previous)await previous;return await action();}
+    finally{
+      capabilityPanelOperation=null;release();
+      // A queued refresh joins this one after the real operation has settled.
+      // Never probe while uninstall owns the capability's exclusive lease.
+      await(operation.refresh||window.refreshOfflineCapabilityPack());
+    }
+  }
+  window.refreshOfflineCapabilityPack=()=>{
+    if(capabilityPanelOperation){
+      const operation=capabilityPanelOperation;
+      if(!operation.refresh)operation.refresh=operation.done.then(()=>window.refreshOfflineCapabilityPack());
+      return operation.refresh;
+    }
+    if(capabilityPanelRefresh)return capabilityPanelRefresh.promise;
+    const pending={promise:null},generation=capabilityPanelGeneration;capabilityPanelRefresh=pending;syncCapabilityPanelBusy();
+    pending.promise=(async()=>{
+    const row=document.getElementById('plugin-capability-pack');if(!row)return false;
+    try{
     const catalog=await window.ReadMDCapabilities.request({action:'catalog'}),entries=catalog.packs.filter(p=>p.available);
-    const results=await Promise.allSettled(entries.map(p=>packRequest({action:'status',id:p.id})));row.replaceChildren();row.classList.remove('hidden');
+    const results=await Promise.allSettled(entries.map(p=>packRequest({action:'status',id:p.id})));
+    if(generation!==capabilityPanelGeneration||capabilityPanelOperation||row!==document.getElementById('plugin-capability-pack'))return false;
+    row.replaceChildren();row.classList.remove('hidden');
     for(let i=0;i<results.length;i++){
       const result=results[i],item=document.createElement('div');item.className='plugin-capability-item';row.append(item);
       if(result.status!=='fulfilled'){item.textContent=t('error.'+result.reason.message);continue;}
-      const data=result.value,entry=entries[i],engine=entry.name||t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
-      if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(await window.ReadMDCapabilities.ensure(data.id))await window.refreshOfflineCapabilityPack();};item.append(install);}
+      const data=result.value,entry=entries[i],engine=entry.name||t(entry.labelKey),name=document.createElement('details');name.className='plugin-capability-details';const summary=document.createElement('summary'),title=document.createElement('strong');title.textContent=engine+' · '+t(data.busy?'error.'+(data.busy_code||'capability_install_busy'):data.installed?'plugin.installed':'plugin.notInstalled');summary.append(title);const purpose=document.createElement('p');purpose.textContent=t(entry.descriptionKey);const sizes=document.createElement('p');sizes.textContent=t('capability.sizes',{download:window.ReadMDCapabilities.size(entry.downloadBytes),installed:window.ReadMDCapabilities.size(entry.installedBytes)});name.append(summary,purpose,sizes);item.append(name);
+      if(!data.installed){const install=document.createElement('button');install.type='button';install.className='tb-btn';install.dataset.capabilityAction='install';install.dataset.capabilityBusy=String(!!data.busy);install.textContent=t('plugin.install');install.id='plugin-capability-install-'+data.id;install.onclick=async()=>{if(!capabilityActionAllowed(install,data))return;await runCapabilityPanelOperation(()=>window.ReadMDCapabilities.ensure(data.id));};item.append(install);}
       if(data.present){const remove=document.createElement('button');remove.type='button';remove.className='tb-btn';remove.id=data.id==='pdfium'?'plugin-capability-uninstall':'plugin-capability-uninstall-'+data.id;remove.textContent=t('plugin.uninstall');remove.onclick=async()=>{
+        if(!capabilityActionAllowed(remove,data))return;
+        try{const result=await runCapabilityPanelOperation(async()=>{
         if(!await confirmAction({title:t('plugin.uninstall'),message:t('capability.uninstallConfirm',{name:engine}),confirmText:t('plugin.uninstall'),cancelText:t('common.cancel'),danger:true}))return;
-        remove.disabled=true;
         const operation=document.createElement('div');operation.className='plugin-capability-operation';
         const progress=document.createElement('progress');progress.max=100;progress.setAttribute('aria-label',t('plugin.uninstall'));
         const status=document.createElement('span');status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.textContent=t('plugin.uninstall')+'…';
@@ -261,16 +293,22 @@
         const paint=d=>{cancel.disabled=!['removing'].includes(d.phase);if(d.files_total){progress.value=100*d.files_done/d.files_total;}else{progress.removeAttribute('value');}status.textContent=d.phase==='cancelling'?t('task.cancelling'):t('plugin.uninstall')+'…'+(d.files_total?' '+new Intl.NumberFormat(window.i18n.currentLang).format(d.files_done)+' / '+new Intl.NumberFormat(window.i18n.currentLang).format(d.files_total):'');};
         const requestCancel=async()=>{cancelRequested=true;cancel.disabled=true;status.textContent=t('task.cancelling');if(!cancelTask)return;try{paint(await cancelTask());}catch(error){status.textContent=t('error.'+error.message);}};
         cancel.onclick=requestCancel;
-        try{const result=await window.ReadMDCapabilities.uninstall(data.id,{onJob:(_job,action)=>{cancelTask=action;if(cancelRequested)requestCancel();},onProgress:paint});await window.refreshOfflineCapabilityPack();showToast(t(result.cleanup_pending?'capability.cleanupPending':'plugin.uninstallSuccess',{name:engine}));}
-        catch(error){if(error.message!=='cancelled')showToast(t('error.'+error.message));await window.refreshOfflineCapabilityPack();}
-        finally{operation.remove();remove.disabled=false;}
-      };item.append(remove);}
+        try{return await window.ReadMDCapabilities.uninstall(data.id,{onJob:(_job,action)=>{cancelTask=action;if(cancelRequested)requestCancel();},onProgress:paint});}
+        finally{operation.remove();}
+        });if(result)showToast(t(result.cleanup_pending?'capability.cleanupPending':'plugin.uninstallSuccess',{name:engine}));}
+        catch(error){if(error.message!=='cancelled')showToast(t('error.'+error.message));}
+      };remove.dataset.capabilityAction='uninstall';remove.dataset.capabilityBusy=String(!!data.busy);item.append(remove);}
     }
+    return true;
+    }catch(error){if(generation===capabilityPanelGeneration&&!capabilityPanelOperation){row.textContent=t('error.'+error.message);row.classList.remove('hidden');}return false;}
+    })().finally(()=>{if(capabilityPanelRefresh===pending)capabilityPanelRefresh=null;syncCapabilityPanelBusy();});
+    return pending.promise;
   };
   window.installOfflineCapabilityPack=async()=>{
-    const install=async picked=>{if(!picked)return;const b=document.getElementById('plugin-offline-pack');b.disabled=true;try{const installed=await packRequest({action:'install',path:picked});showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}finally{b.disabled=false;await window.refreshOfflineCapabilityPack();}};
-    if(hasPy){await install(await py.choose_any_file());return;}
-    const input=document.createElement('input');input.type='file';input.accept='.readmd-pack';input.onchange=async()=>{const file=input.files?.[0];if(!file)return;const button=document.getElementById('plugin-offline-pack');button.disabled=true;try{const installed=await window.ReadMDCapabilities.upload(file);showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}finally{button.disabled=false;await window.refreshOfflineCapabilityPack();}};input.click();
+    if(capabilityPanelOperation||capabilityPanelRefresh)return;
+    const install=async picked=>{if(!picked)return;try{const installed=await packRequest({action:'install',path:picked});showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}};
+    if(hasPy){await runCapabilityPanelOperation(async()=>install(await py.choose_any_file()));return;}
+    const input=document.createElement('input');input.type='file';input.accept='.readmd-pack';input.onchange=async()=>{const file=input.files?.[0];if(!file||capabilityPanelOperation)return;await runCapabilityPanelOperation(async()=>{try{const installed=await window.ReadMDCapabilities.upload(file);showToast(t('capability.packInstalled',{name:t('capability.'+installed.id+'.name')}));}catch(error){showToast(t('error.'+error.message));}});};input.click();
   };
   document.getElementById('plugin-offline-pack')?.addEventListener('click',()=>window.installOfflineCapabilityPack().catch(()=>showToast(t('error.capability_pack_invalid'))));
   window.addEventListener('readmd:language-changed',()=>{if(!document.getElementById('plugin-modal')?.classList.contains('hidden'))window.refreshOfflineCapabilityPack();if(session){$pdf('status').textContent=t(session.can_edit?'pdf.hint':'error.pdf_read_only')+(session.dirty?' · '+t('pdf.unsaved'):'');const original=$pdf('font').querySelector('option[value=""]');if(original)original.textContent=t('pdf.originalFont');}});

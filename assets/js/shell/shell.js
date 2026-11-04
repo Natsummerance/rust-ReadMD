@@ -270,7 +270,7 @@ function initSingleChromeNavigation() {
   // These are the same menu buttons and business listeners. Close their menu
   // and expose a visible opener before the existing action opens its dialog.
   const relayMenuAction = event => {
-    const action = event.target.closest('[data-shell-menu-action]');
+    const action = event.target.closest('[data-shell-menu-action],.more-item');
     if (!action || event.type === 'contextmenu' && action.id !== 'btn-zen') return;
     closeMoreMenu();
     $('btn-more')?.focus({ preventScroll: true });

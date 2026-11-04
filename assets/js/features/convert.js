@@ -234,9 +234,8 @@ async function openPluginModal() {
   const modal = $('plugin-modal');
   if (!modal) return;
   modal.classList.remove('hidden');
-  window.refreshOfflineCapabilityPack?.();
   setPluginListStatus(_t('plugin.loading'));
-  await refreshPluginList();
+  await Promise.all([window.refreshOfflineCapabilityPack?.(), refreshPluginList()]);
 }
 
 function closePluginModal() {

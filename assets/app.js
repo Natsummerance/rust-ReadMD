@@ -929,6 +929,7 @@ function bindEvents() {
   $('lang-search-input')?.addEventListener('input', event => window.i18n?.renderLanguageGrid(event.target.value));
   $('table-modal-close')?.addEventListener('click', () => closeTableModal());
   window.addEventListener('readmd:language-changed', e => {
+    localizeOpenTabs();
     const lang = e.detail.lang;
     const labelEl = $('lang-current-label');
     if (labelEl && window.i18n && window.i18n.meta[lang]) {

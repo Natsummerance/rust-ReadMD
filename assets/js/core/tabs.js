@@ -69,6 +69,25 @@ function revealTabInTrack(container, tab) {
   else if (end > container[scroll] + size - 8) container[scroll] = end - size + 8;
 }
 
+// Update chrome in place: changing language must not rebuild a live rename
+// input, change the active identity or persist a new document revision.
+function localizeOpenTabs() {
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
+  const tabs = new Map((state.tabs || []).map(tab => [tab.id, tab]));
+  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item, #doc-tabs-secondary-bar .tab-item, #doc-tabs-dropdown .tab-item')) {
+    const tab = tabs.get(row.dataset.tabId); if (!tab) continue;
+    const close = t('tabs.closeTab');
+    row.title = `${tab.path || tab.title || tab.name || t('tabs.untitled')} (${close}: Delete)`;
+    const button = row.querySelector('.tab-close'); if (button) button.title = close;
+    const reason = tab.externalChanged ? t('toast.saveConflict') : tab.isDirty ? t('tabs.dirty') : '';
+    const dot = row.querySelector('.tab-dirty'); if (dot) dot.title = reason;
+    if (reason) row.setAttribute('aria-description', reason); else row.removeAttribute('aria-description');
+    if (!tab.title && !tab.name && !row.querySelector('.tab-title-input')) {
+      const title = row.querySelector('.tab-title'); if (title) title.textContent = t('tabs.untitled');
+    }
+  }
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
