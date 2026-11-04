@@ -106,8 +106,11 @@
   "qaUnregistered": true,
   "modelsRequested": false,
   "dailyApplicationChanged": false,
-  "formalPackageColdStartupAccepted": false,
+  "formalPackageColdStartupAccepted": true,
   "v007Published": false,
   "wholeV705Accepted": false,
-  "wholeP1Accepted": false
+  "wholeP1Accepted": false,
+  "formalColdAndReopenPhases": 8,
+  "installedColdAndReopenPhases": 2,
+  "publicationReceipt": "readmd-v006-code-close-published-2026-11-04.json"
 }

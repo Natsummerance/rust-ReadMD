@@ -84,7 +84,7 @@ ReadMD 解决的是长期资料库里的实际问题：大文件能继续读，�
 | **国产信创系统** | 统信 UOS / 银河麒麟 / Deepin / Ubuntu | [⬇️ **ReadMD-linux-x86_64.deb**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/ReadMD-linux-x86_64.deb) | Deb 原生安装包；需以对应系统的实机验收记录为准 |
 | **SHA-256 校验** | 完整性清单 | [⬇️ **SHA256SUMS.txt**](https://github.com/Natsummerance/rust-ReadMD/releases/latest/download/SHA256SUMS.txt) | 全量资产 SHA-256 哈希校验清单 |
 
-Windows ZIP 必须完整解压并保留目录结构。桌面启动需要 Windows WebView2、macOS 系统 WebKit 或 Linux GTK / WebKitGTK。OCR、PDFium、Typst 和出版字体为可选能力包，不包含在基础安装包或 ZIP 中；当前引擎包仅 Windows x64 已准备并实测，其他平台以实际包目录为准。Linux ARM64 / 麒麟 ARM64 当前仅有构建脚本，未发布 V0.0.5 安装包。
+Windows ZIP 必须完整解压并保留目录结构。桌面启动需要 Windows WebView2、macOS 系统 WebKit 或 Linux GTK / WebKitGTK。OCR、PDFium、Typst 和出版字体为可选能力包，不包含在基础安装包或 ZIP 中；当前引擎包仅 Windows x64 已准备并实测，其他平台以实际包目录为准。Linux ARM64 / 麒麟 ARM64 当前仅有构建脚本，尚未发布原生安装包。
 
 ---
 
@@ -266,7 +266,7 @@ readmd/
 - **Q: 为什么双击打开速度极快？**
  - A: 安装版为 onedir 目录部署，启动无需临时解压；关闭后常驻系统托盘，二次打开通过轻量本地通信在 0.3s 内瞬间唤醒。
 - **Q: 打开未签名安装包被系统拦截怎么办？**
- - A: Windows 在 SmartScreen 提示点击「更多信息 → 仍要运行」；macOS 首次打开在 Finder 中右键 `ReadMD.app` 选择「打开」。请核对 `SHA256SUMS.txt` 校验码。
+ - A: Windows 在 SmartScreen 提示点击「更多信息 → 仍要运行」；macOS 首次提示无法验证开发者时，先核对来源及 `SHA256SUMS.txt`，再按[逐应用安装说明](release/macos-install.md)在「系统设置 → 隐私与安全性」确认打开。当前使用免费 ad-hoc 签名，未进行 Apple 公证。
 - **Q: 文档格式自动修正常见错误会改写我的原始文件吗？**
  - A: **绝不会**。自动修正仅发生在内存渲染阶段，原 `.md` 源码保持 100% 完好无损。
 
