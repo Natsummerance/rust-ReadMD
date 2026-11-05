@@ -17,7 +17,9 @@ const walk = relative => {
     const child = path.posix.join(relative, item.name);
     if (item.isSymbolicLink()) throw Error('Package cannot contain symlinks: ' + child);
     if (item.isDirectory()) walk(child);
-    else if (item.isFile() && !child.endsWith('.map')) add('extension/' + child, fs.readFileSync(path.join(root, child)), child === 'core/bin/readmd' ? 0o755 : 0o644);
+    // Native QA preparation binds local workspace/toolchain paths. Keep that
+    // receipt on disk for verification, but never include it in a release.
+    else if (item.isFile() && !child.endsWith('.map') && child !== 'out/.readmd-openapi-build.json') add('extension/' + child, fs.readFileSync(path.join(root, child)), child === 'core/bin/readmd' ? 0o755 : 0o644);
   }
 };
 for (const required of ['out/extension.js','out/webview.js','media/preview.js','media/diagram-frame.js','media/vendor/marked.min.js','media/vendor/mermaid.min.js','media/vendor/reveal/theme/fonts/source-sans-pro/source-sans-pro.css']) {
