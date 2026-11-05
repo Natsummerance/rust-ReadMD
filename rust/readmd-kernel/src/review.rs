@@ -307,7 +307,7 @@ impl Service {
             let mut after = document.content.clone();
             for mapping in document.mappings.iter().rev() {
                 if crate::speech::cancelled() { return Err("cancelled"); }
-                let before = apply(&after, &mapping.inverse)?.content;
+                let before = apply(&after, &document_transaction::canonical_inverse(mapping.inverse.clone())?)?.content;
                 if let Some(action) = actions.get(&mapping.event_id) {
                     let touches = |text: &str, edits: &[TextEdit]| {
                         crate::document_assets::image_references(text).iter().any(|(range, _)| {
@@ -545,7 +545,7 @@ impl Service {
             // snapshot, not a caller-selected subset or a replacement string.
             let mut content = document.content.clone();
             for mapping in document.mappings.iter().rev().filter(|mapping| mapping.event_id > target) {
-                content = apply(&content, &mapping.inverse)?.content;
+                content = apply(&content, &document_transaction::canonical_inverse(mapping.inverse.clone())?)?.content;
             }
             let mut changes = document.changes.clone();
             for payload in review_store::events_after(tx, id, target)? {
@@ -1070,7 +1070,7 @@ fn expand_receipt(
         .rev()
         .filter(|mapping| mapping.event_id > target)
     {
-        content = apply(&content, &mapping.inverse)?.content;
+        content = apply(&content, &document_transaction::canonical_inverse(mapping.inverse.clone())?)?.content;
     }
     if document_transaction::revision(&content)
         != metadata["revision"]
@@ -1427,7 +1427,16 @@ fn record_action(
     before_changes: Vec<Change>,
     compensates: Option<u64>,
 ) -> Result<Action, &'static str> {
-    let result = apply(before_content, &edits)?;
+    // Preserve one inverse fragment per original edit for history metadata.
+    let result = document_transaction::apply_with_inverse_fragments(
+        before_content,
+        &ContentTransaction {
+            base_revision: document_transaction::revision(before_content),
+            origin: "review".into(),
+            edits: edits.clone(),
+        },
+    )?;
+    checked_content(&result.content)?;
     if result.content != document.content {
         return Err("review_conflict");
     }
@@ -1670,6 +1679,144 @@ fn resolve(
     document.redo.clear();
     Ok(())
 }
+// Only exact adjacent content inverses cancel. Their coordinate edits and old
+// source bytes prove an identity transform for older inverse ranges. Metadata
+// events and immutable journal entries remain untouched; resource rewrites that
+// change either coordinates or inserted bytes do not match this proof.
+fn compensation_mappings(mappings: &[Mapping], event: u64) -> Result<Vec<usize>, &'static str> {
+    let mut effective: Vec<usize> = Vec::new();
+    for (index, mapping) in mappings.iter().enumerate().filter(|(_, mapping)| mapping.event_id > event) {
+        if mapping.edits.is_empty() { continue; }
+        if let Some(previous) = effective.last() {
+            if mapping.edits == document_transaction::canonical_inverse(mappings[*previous].inverse.clone())? {
+                effective.pop();
+                continue;
+            }
+        }
+        effective.push(index);
+    }
+    Ok(effective)
+}
+// A plain compensation restores these exact old source pieces. The output
+// offsets are measured after every preceding raw fragment, including coincident
+// zero-length inverses; the executed transaction may later coalesce them.
+struct CompensationSource<'a> {
+    from: usize,
+    to: usize,
+    text: &'a str,
+    output_from: usize,
+    output_to: usize,
+    exact: bool,
+}
+fn compensation_sources<'a>(
+    target: &'a Action,
+    fragments: &[TextEdit],
+) -> Result<Vec<CompensationSource<'a>>, &'static str> {
+    if target.edits.len() != target.inverse.len()
+        || target.inverse.len() != fragments.len()
+        || fragments.len() != target.inverse_expected.len()
+    {
+        return Err("review_conflict");
+    }
+    let mut shift = 0isize;
+    let mut sources = Vec::with_capacity(fragments.len());
+    for ((forward, original), actual) in target.edits.iter().zip(&target.inverse).zip(fragments) {
+        let removed = forward.to.checked_sub(forward.from).ok_or("review_conflict")?;
+        if original.insert.encode_utf16().count() != removed || actual.from > actual.to {
+            return Err("review_conflict");
+        }
+        let inserted = actual.insert.encode_utf16().count();
+        let output_from = actual.from.checked_add_signed(shift).ok_or("review_conflict")?;
+        let output_to = output_from.checked_add(inserted).ok_or("review_conflict")?;
+        sources.push(CompensationSource {
+            from: forward.from,
+            to: forward.to,
+            text: &original.insert,
+            output_from,
+            output_to,
+            exact: original.insert == actual.insert,
+        });
+        let delta = isize::try_from(inserted).map_err(|_| "review_conflict")?
+            .checked_sub(isize::try_from(actual.to - actual.from).map_err(|_| "review_conflict")?)
+            .ok_or("review_conflict")?;
+        shift = shift.checked_add(delta).ok_or("review_conflict")?;
+    }
+    Ok(sources)
+}
+fn compensation_endpoint(
+    point: usize,
+    from_endpoint: bool,
+    empty: bool,
+    sources: &[CompensationSource<'_>],
+) -> Result<Option<usize>, &'static str> {
+    let source = sources.iter().find(|source| {
+        if empty { source.from < point && point < source.to }
+        else if from_endpoint { source.from <= point && point < source.to }
+        else { source.from < point && point <= source.to }
+    });
+    let Some(source) = source else { return Ok(None) };
+    let offset = point - source.from;
+    document_transaction::byte_offset(source.text, offset)?;
+    // A trusted resource restoration may replace the entire old source text.
+    // Its edges are known; an internal position needs an exact projection.
+    if !source.exact {
+        return if point == source.from { Ok(Some(source.output_from)) }
+            else if point == source.to { Ok(Some(source.output_to)) }
+            else { Err("review_conflict") };
+    }
+    Ok(Some(source.output_from.checked_add(offset).ok_or("review_conflict")?))
+}
+fn compensation_range(
+    document: &Document,
+    target: &Action,
+    restored: &Change,
+    current: Option<&Change>,
+    sources: &[CompensationSource<'_>],
+    edits: &[TextEdit],
+    effective_mappings: &[usize],
+) -> Result<(usize, usize), &'static str> {
+    if restored.from > restored.to || restored.to > MAX_DOCUMENT_BYTES {
+        return Err("review_conflict");
+    }
+    let empty = restored.from == restored.to;
+    let from = compensation_endpoint(restored.from, true, empty, sources)?;
+    let to = compensation_endpoint(restored.to, false, empty, sources)?;
+    let mut range = if let Some(current) = current {
+        if current.original != restored.original || current.from > current.to || current.to > MAX_DOCUMENT_BYTES {
+            return Err("review_conflict");
+        }
+        let (mut from, mut to) = (current.from, current.to);
+        map_geometry(&mut from, &mut to, edits);
+        (from, to)
+    } else if let (Some(from), Some(to)) = (from, to) {
+        (from, to)
+    } else {
+        // Redoing an applied deletion recreates an absent, empty change from
+        // the exact empty source piece of its undo's forward insertion.
+        let points = sources.iter().filter(|source| empty && source.from == restored.from
+            && source.to == restored.to && source.exact && source.output_from == source.output_to)
+            .map(|source| source.output_from).collect::<BTreeSet<_>>();
+        if let Some(point) = points.first().copied().filter(|_| points.len() == 1) {
+            (point, point)
+        } else {
+            // A metadata-only proposed change can be absent during redo. Its
+            // source frame is unchanged by that action, so only later proven
+            // non-overlapping shifts may move it. New body edits clear redo;
+            // trusted saves may retain it. Never replay a lossy overlap.
+            if !target.edits.is_empty() { return Err("review_conflict"); }
+            let (mut from, mut to) = (restored.from, restored.to);
+            for index in effective_mappings {
+                let mapping = &document.mappings[*index];
+                if map_geometry(&mut from, &mut to, &mapping.edits) { return Err("review_conflict"); }
+            }
+            (from, to)
+        }
+    };
+    if let Some(from) = from { range.0 = from; }
+    if let Some(to) = to { range.1 = to; }
+    slice(&document.content, range.0, range.1)?;
+    Ok(range)
+}
 fn compensate(
     tx: &Transaction<'_>,
     document: &mut Document,
@@ -1681,12 +1828,11 @@ fn compensate(
         document.undo.pop().ok_or("review_undo_unavailable")?
     };
     let mut edits = target.inverse.clone();
+    if edits.len() != target.inverse_expected.len() { return Err("review_conflict"); }
+    let effective_mappings = compensation_mappings(&document.mappings, target.event_id)?;
     for edit in &mut edits {
-        for mapping in document
-            .mappings
-            .iter()
-            .filter(|mapping| mapping.event_id > target.event_id)
-        {
+        for index in &effective_mappings {
+            let mapping = &document.mappings[*index];
             map_geometry(&mut edit.from, &mut edit.to, &mapping.edits);
         }
     }
@@ -1705,6 +1851,8 @@ fn compensate(
             return Err("review_conflict");
         }
     }
+    let sources = compensation_sources(&target, &edits)?;
+    let edits = document_transaction::canonical_inverse(edits)?;
     let before_content = document.content.clone();
     let before_changes = document.changes.clone();
     let result = apply(&before_content, &edits)?;
@@ -1716,16 +1864,8 @@ fn compensate(
             if let Some(current) = before_changes.iter().find(|change| change.id == restored.id && change.original == restored.original) {
                 if current.restore_original.is_some() { restored.restore_original = current.restore_original.clone(); }
             }
-            // Rebase the stored range through the original event, every later
-            // mapping and this compensation. No substring search is involved.
-            for mapping in document
-                .mappings
-                .iter()
-                .filter(|mapping| mapping.event_id >= target.event_id)
-            {
-                map_geometry(&mut restored.from, &mut restored.to, &mapping.edits);
-            }
-            map_geometry(&mut restored.from, &mut restored.to, &edits);
+            let current = before_changes.iter().find(|change| change.id == restored.id);
+            (restored.from, restored.to) = compensation_range(document, &target, &restored, current, &sources, &edits, &effective_mappings)?;
             if restored.restore_original.is_some() && restored.application == "applied" && !restored.taken_over {
                 // A pre-save metadata-only action can carry the old path
                 // fragment. Its mapped range now owns the complete resource
@@ -1735,6 +1875,12 @@ fn compensate(
                     if !restored.candidate_versions.contains(&restored.replacement) { restored.candidate_versions.push(restored.replacement.clone()); }
                     restored.replacement = ReviewText::new(replacement);
                 }
+            }
+            if restored.application == "applied" && !restored.taken_over
+                && matches!(restored.decision.as_str(), "pending" | "accepted")
+                && slice(&document.content, restored.from, restored.to)? != restored.replacement.as_str()
+            {
+                return Err("review_conflict");
             }
             restored.version = next_counter(document.review_revision)?;
             document.changes.push(restored);
@@ -2038,15 +2184,16 @@ fn discard(
         }
         let before_content = document.content.clone();
         let before_changes = document.changes.clone();
-        let result = apply(&before_content, &mapping.inverse)?;
-        map_changes(document, &mapping.inverse, &result.content, false)?;
+        let inverse = document_transaction::canonical_inverse(mapping.inverse)?;
+        let result = apply(&before_content, &inverse)?;
+        map_changes(document, &inverse, &result.content, false)?;
         document.content = result.content;
         record_action(
             tx,
             document,
             "discard_compensation",
             "system",
-            mapping.inverse,
+            inverse,
             &before_content,
             before_changes,
             Some(mapping.event_id),

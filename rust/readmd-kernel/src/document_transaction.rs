@@ -52,6 +52,56 @@ pub fn byte_offset(content: &str, utf16: usize) -> Result<usize, &'static str> {
 }
 
 pub fn apply(content: &str, tx: &ContentTransaction) -> Result<TransactionResult, &'static str> {
+    let mut result = apply_impl(content, tx)?;
+    result.inverse = canonical_inverse(result.inverse)?;
+    Ok(result)
+}
+
+/// Review records one inverse fragment per forward edit for causal range mapping.
+/// These fragments must be checked individually before canonicalizing for replay.
+pub(crate) fn apply_with_inverse_fragments(
+    content: &str,
+    tx: &ContentTransaction,
+) -> Result<TransactionResult, &'static str> {
+    apply_impl(content, tx)
+}
+
+/// Coalesce only trusted inverse prefixes collapsed by adjacent forward deletes.
+/// This is never used to normalize client edits before their strict validation.
+pub(crate) fn canonical_inverse(
+    fragments: Vec<TextEdit>,
+) -> Result<Vec<TextEdit>, &'static str> {
+    if fragments.len() > MAX_OPERATIONS {
+        return Err("transaction_budget");
+    }
+    let mut result: Vec<TextEdit> = Vec::with_capacity(fragments.len());
+    let mut bytes = 0usize;
+    for edit in fragments {
+        if edit.from > edit.to {
+            return Err("transaction_overlapping_edits");
+        }
+        bytes = bytes
+            .checked_add(edit.insert.len())
+            .ok_or("transaction_budget")?;
+        if bytes > MAX_DOCUMENT_BYTES {
+            return Err("transaction_budget");
+        }
+        if let Some(previous) = result.last_mut() {
+            if previous.from == previous.to && previous.from == edit.from {
+                previous.to = edit.to;
+                previous.insert.push_str(&edit.insert);
+                continue;
+            }
+            if edit.from < previous.to || edit.from == previous.from {
+                return Err("transaction_overlapping_edits");
+            }
+        }
+        result.push(edit);
+    }
+    Ok(result)
+}
+
+fn apply_impl(content: &str, tx: &ContentTransaction) -> Result<TransactionResult, &'static str> {
     if content.len() > MAX_DOCUMENT_BYTES || tx.edits.len() > MAX_OPERATIONS {
         return Err("transaction_budget");
     }
@@ -183,5 +233,196 @@ mod tests {
             "transaction_overlapping_edits"
         );
         assert!(!apply(source, &tx(source, vec![])).unwrap().changed);
+    }
+
+    #[test]
+    fn adjacent_deletions_return_an_applicable_inverse() {
+        let source = "😀ab!";
+        for replacement in ["", "β😀"] {
+            let result = apply(source, &tx(source, vec![
+                TextEdit { from: 2, to: 3, insert: String::new() },
+                TextEdit { from: 3, to: 4, insert: replacement.into() },
+            ])).unwrap();
+            assert_eq!(result.content, format!("😀{replacement}!"));
+            let restored = apply(&result.content, &tx(&result.content, result.inverse)).unwrap();
+            assert_eq!(restored.content, source);
+            assert_eq!(
+                apply(&restored.content, &tx(&restored.content, restored.inverse)).unwrap().content,
+                result.content
+            );
+        }
+    }
+
+    #[test]
+    fn raw_fragments_retain_sorted_forward_correspondence() {
+        let source = "😀ab!";
+        let forward = tx(source, vec![
+            TextEdit { from: 3, to: 4, insert: "β😀".into() },
+            TextEdit { from: 2, to: 3, insert: String::new() },
+        ]);
+        let raw = apply_with_inverse_fragments(source, &forward).unwrap();
+        assert_eq!(raw.content, "😀β😀!");
+        assert_eq!(raw.inverse, vec![
+            TextEdit { from: 2, to: 2, insert: "a".into() },
+            TextEdit { from: 2, to: 5, insert: "b".into() },
+        ]);
+        // Review validates these two fragments against two forward inserts;
+        // they are deliberately not a valid client transaction on their own.
+        assert_eq!(
+            apply(&raw.content, &tx(&raw.content, raw.inverse.clone())).unwrap_err(),
+            "transaction_overlapping_edits"
+        );
+        let inverse = canonical_inverse(raw.inverse).unwrap();
+        assert_eq!(inverse, vec![TextEdit { from: 2, to: 5, insert: "ab".into() }]);
+        let public = apply(source, &forward).unwrap();
+        assert_eq!(public.content, raw.content);
+        assert_eq!(public.inverse, inverse);
+        assert_eq!(
+            apply(&raw.content, &tx(&raw.content, inverse)).unwrap().content,
+            source
+        );
+    }
+
+    #[test]
+    fn collapsed_prefix_chain_preserves_bom_crlf_and_replacement() {
+        let source = "\u{feff}😀abc\r\n!";
+        let after = "\u{feff}😀β😀\r\n!";
+        let result = apply(source, &tx(source, vec![
+            TextEdit { from: 3, to: 4, insert: String::new() },
+            TextEdit { from: 4, to: 5, insert: String::new() },
+            TextEdit { from: 5, to: 6, insert: "β😀".into() },
+        ])).unwrap();
+        assert_eq!(result.content.as_bytes(), after.as_bytes());
+        assert_eq!(result.inverse, vec![TextEdit { from: 3, to: 6, insert: "abc".into() }]);
+        let restored = apply(after, &tx(after, result.inverse)).unwrap();
+        assert_eq!(restored.content.as_bytes(), source.as_bytes());
+        assert_eq!(
+            apply(source, &tx(source, restored.inverse)).unwrap().content.as_bytes(),
+            after.as_bytes()
+        );
+    }
+
+    #[test]
+    fn deletion_followed_by_boundary_insertion_has_one_applicable_inverse() {
+        let source = "😀ab!";
+        let result = apply(source, &tx(source, vec![
+            TextEdit { from: 2, to: 3, insert: String::new() },
+            TextEdit { from: 3, to: 3, insert: "XY".into() },
+        ])).unwrap();
+        assert_eq!(result.content, "😀XYb!");
+        assert_eq!(result.inverse, vec![TextEdit { from: 2, to: 4, insert: "a".into() }]);
+        assert_eq!(
+            apply(&result.content, &tx(&result.content, result.inverse)).unwrap().content,
+            source
+        );
+    }
+
+    #[test]
+    fn disjoint_inverses_remain_distinct() {
+        let source = "😀ab!cd";
+        let result = apply(source, &tx(source, vec![
+            TextEdit { from: 2, to: 3, insert: String::new() },
+            TextEdit { from: 5, to: 6, insert: "X".into() },
+        ])).unwrap();
+        assert_eq!(result.content, "😀b!Xd");
+        assert_eq!(result.inverse, vec![
+            TextEdit { from: 2, to: 2, insert: "a".into() },
+            TextEdit { from: 4, to: 5, insert: "c".into() },
+        ]);
+        assert_eq!(
+            apply(&result.content, &tx(&result.content, result.inverse)).unwrap().content,
+            source
+        );
+    }
+
+    #[test]
+    fn canonical_inverse_rejects_unrelated_overlap_or_reordering() {
+        for fragments in [
+            vec![
+                TextEdit { from: 2, to: 4, insert: "a".into() },
+                TextEdit { from: 2, to: 2, insert: "b".into() },
+            ],
+            vec![
+                TextEdit { from: 2, to: 4, insert: "a".into() },
+                TextEdit { from: 3, to: 5, insert: "b".into() },
+            ],
+            vec![
+                TextEdit { from: 4, to: 4, insert: "a".into() },
+                TextEdit { from: 2, to: 2, insert: "b".into() },
+            ],
+            vec![TextEdit { from: 3, to: 2, insert: "a".into() }],
+        ] {
+            assert_eq!(canonical_inverse(fragments).unwrap_err(), "transaction_overlapping_edits");
+        }
+        let adjacent = vec![
+            TextEdit { from: 2, to: 4, insert: "a".into() },
+            TextEdit { from: 4, to: 4, insert: "b".into() },
+        ];
+        assert_eq!(canonical_inverse(adjacent.clone()).unwrap(), adjacent);
+    }
+
+    #[test]
+    fn client_same_start_edits_are_not_canonicalized() {
+        let source = "😀ab!";
+        for edits in [
+            vec![
+                TextEdit { from: 2, to: 2, insert: "X".into() },
+                TextEdit { from: 2, to: 3, insert: "Y".into() },
+            ],
+            vec![
+                TextEdit { from: 2, to: 2, insert: "X".into() },
+                TextEdit { from: 2, to: 2, insert: "Y".into() },
+            ],
+            vec![
+                TextEdit { from: 2, to: 4, insert: "X".into() },
+                TextEdit { from: 3, to: 4, insert: "Y".into() },
+            ],
+        ] {
+            let request = tx(source, edits);
+            assert_eq!(apply(source, &request).unwrap_err(), "transaction_overlapping_edits");
+            assert_eq!(apply_with_inverse_fragments(source, &request).unwrap_err(), "transaction_overlapping_edits");
+        }
+    }
+
+    #[test]
+    fn canonical_inverse_operation_budget_is_unchanged() {
+        let fragments = (0..=MAX_OPERATIONS).map(|point| TextEdit {
+            from: point, to: point, insert: String::new(),
+        }).collect();
+        assert_eq!(canonical_inverse(fragments).unwrap_err(), "transaction_budget");
+    }
+
+    #[test]
+    fn every_valid_two_edit_utf16_transaction_has_closed_inverse() {
+        let source = "\u{feff}😀ab\r\n";
+        let boundaries = [0, 1, 3, 4, 5, 6, 7];
+        let replacements = ["", "β😀", "|"];
+        let mut checked = 0;
+        for first_from in 0..boundaries.len() {
+            for first_to in first_from..boundaries.len() {
+                for second_from in first_to..boundaries.len() {
+                    if second_from == first_from {
+                        continue;
+                    }
+                    for second_to in second_from..boundaries.len() {
+                        for first_insert in replacements {
+                            for second_insert in replacements {
+                                let forward = tx(source, vec![
+                                    TextEdit { from: boundaries[first_from], to: boundaries[first_to], insert: first_insert.into() },
+                                    TextEdit { from: boundaries[second_from], to: boundaries[second_to], insert: second_insert.into() },
+                                ]);
+                                let result = apply(source, &forward).unwrap();
+                                let restored = apply(&result.content, &tx(&result.content, result.inverse)).unwrap();
+                                assert_eq!(restored.content.as_bytes(), source.as_bytes());
+                                let redone = apply(source, &tx(source, restored.inverse)).unwrap();
+                                assert_eq!(redone.content, result.content);
+                                checked += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 1638);
     }
 }

@@ -42,6 +42,58 @@ fn events(directory: &TempDir) -> i64 {
 }
 
 #[test]
+fn undo_restores_exact_pending_ranges_after_enclosing_manual_replacement_and_restart() {
+    let directory = TempDir::new().unwrap();
+    let service = Service::new(directory.path());
+    let original = "前😀\nA orig C\nA orig C\n";
+    let pending_body = "前😀\nA orig C\nA next C\n";
+    let manual_body = "前😀\nA orig C\nA next C\n\nTail\n";
+    let opened = open_document(&service, "/exact-undo.md", original);
+    let proposed = change(&service, &opened, "propose", "exact-undo-propose", json!({
+        "origin":"ai", "edits":[{"from":15,"to":19,"insert":"next"}]
+    }));
+    let id = proposed["changes"][0]["id"].clone();
+    assert_eq!(proposed["content"], pending_body);
+    let mut current = change(&service, &proposed, "edit", "exact-undo-manual", json!({
+        "origin":"editor", "edits":[{"from":13,"to":22,"insert":"A next C\n\nTail\n"}]
+    }));
+    assert_eq!(current["content"], manual_body);
+    assert_eq!(current["changes"][0]["decision"], "conflict");
+    assert_eq!(current["changes"][0]["taken_over"], true);
+    for round in 0..2 {
+        current = change(&service, &current, "undo", &format!("exact-undo-{round}"), json!({}));
+        assert_eq!(current["content"], pending_body);
+        let restored = &current["changes"][0];
+        assert_eq!(restored["id"], id);
+        assert_eq!(restored["from"], 15);
+        assert_eq!(restored["to"], 19);
+        assert_eq!(restored["original"], "orig");
+        assert_eq!(restored["replacement"], "next");
+        assert_eq!(restored["decision"], "pending");
+        assert_eq!(restored["application"], "applied");
+        assert_eq!(restored["taken_over"], false);
+        if round == 0 {
+            current = change(&service, &current, "redo", "exact-redo", json!({}));
+            assert_eq!(current["content"], manual_body);
+            assert_eq!(current["changes"][0]["decision"], "conflict");
+            assert_eq!(current["changes"][0]["taken_over"], true);
+        }
+    }
+    drop(service);
+    let service = Service::new(directory.path());
+    let reopened = read(&service, &current);
+    assert_eq!(reopened["content"], pending_body);
+    assert_eq!(reopened["changes"][0]["id"], id);
+    assert_eq!(reopened["changes"][0]["from"], 15);
+    assert_eq!(reopened["changes"][0]["to"], 19);
+    let withdrawn = change(&service, &reopened, "resolve", "exact-withdraw", json!({
+        "decision":"withdraw", "ids":[id]
+    }));
+    assert_eq!(withdrawn["content"], original);
+    assert_eq!(withdrawn["changes"][0]["decision"], "withdrawn");
+}
+
+#[test]
 fn export_acceptance_is_scoped_to_frozen_versions_and_survives_restart() {
     let directory = TempDir::new().unwrap();
     let service = Service::new(directory.path());
@@ -1551,5 +1603,250 @@ fn review_monotonic_counters_refuse_sqlite_integer_overflow_atomically() {
         );
         assert_eq!(read(&service, &initial), before);
         assert_eq!(events(&directory), 0);
+    }
+}
+
+// Independent literal expectations: review-anchor-undo-adversarial-spec-01.
+// These tests call the actual Service/SQLite history, not the geometry helper.
+#[cfg(test)]
+mod exact_anchor_compensation_regressions {
+    use super::*;
+    const ORIGINAL: &str = "😀|aaOOaa|bbOObb|tailOO";
+    const SEEDED: &str = "😀|aaCCaa|bbCCbb|tailCC";
+    fn seed(service: &Service, path: &str, proposed: bool) -> Value {
+        let first = open_document(service, path, ORIGINAL);
+        change(service, &first, "propose", "seed", json!({"origin":"ai",
+            "application":if proposed {"proposed"} else {"applied"},
+            "edits":[{"from":5,"to":7,"insert":"CC"},{"from":12,"to":14,"insert":"CC"},{"from":21,"to":23,"insert":"CC"}]}))
+    }
+    fn ids(head: &Value) -> Vec<Value> {
+        [5,12,21].iter().map(|from| head["changes"].as_array().unwrap().iter()
+            .find(|change| change["from"] == *from).unwrap()["id"].clone()).collect()
+    }
+    fn item<'a>(head: &'a Value, id: &Value) -> &'a Value {
+        head["changes"].as_array().unwrap().iter().find(|change| change["id"] == *id).unwrap()
+    }
+    fn semantic(head: &Value, ids: &[Value]) -> Value {
+        json!(ids.iter().map(|id| {
+            let current = item(head,id);
+            ["id","from","to","original","replacement","decision","application","taken_over",
+                "origin","task_id","candidate_versions","dependencies","restore_original"]
+                .iter().map(|key| ((*key).to_string(),current[*key].clone()))
+                .collect::<serde_json::Map<String,Value>>()
+        }).collect::<Vec<_>>())
+    }
+    fn ranges(head: &Value, ids: &[Value], expected: [[u64;2];3]) {
+        assert_eq!(head["changes"].as_array().unwrap().len(),3);
+        for (id, pair) in ids.iter().zip(expected) {
+            assert_eq!(item(head,id)["from"],pair[0]);assert_eq!(item(head,id)["to"],pair[1]);
+        }
+    }
+    fn rewrite_save(service: &Service, head: &Value, saved: &str, edits: Value) -> Value {
+        let prepare_call=uuid::Uuid::new_v4().to_string();
+        let commit_call=uuid::Uuid::new_v4().to_string();
+        let prepared=change(service,head,"prepare_save",&prepare_call,json!({
+            "content":head["content"],"disk_revision":head["disk_revision"],
+            "expected_disk_revision":document_transaction::revision(saved),"saved_content":saved,
+            "edit_steps":[{"edits":edits}]}));
+        service.handle(&json!({"action":"commit_save","document_id":head["document_id"],
+            "intent_id":prepared["intent_id"],"call_id":commit_call,
+            "disk_revision":document_transaction::revision(saved),"content":saved})).unwrap()
+    }
+    #[test]
+    fn independent_eighteen_ranges_restart_undo_redo_and_withdraw() {
+        let cases: Vec<(&str,Value,&str,[[u64;2];3],[bool;3])> = vec![
+            ("whole-grow-emoji",json!([{"from":10,"to":16,"insert":"bb🙂CCbb"}]),"😀|aaCCaa|bb🙂CCbb|tailCC",[[5, 7], [10, 18], [23, 25]],[false, true, false]),
+            ("whole-shrink",json!([{"from":10,"to":16,"insert":"CC"}]),"😀|aaCCaa|CC|tailCC",[[5, 7], [10, 12], [17, 19]],[false, true, false]),
+            ("whole-equal-length",json!([{"from":10,"to":16,"insert":"zzCCzz"}]),"😀|aaCCaa|zzCCzz|tailCC",[[5, 7], [10, 16], [21, 23]],[false, true, false]),
+            ("whole-delete",json!([{"from":10,"to":16,"insert":""}]),"😀|aaCCaa||tailCC",[[5, 7], [10, 10], [15, 17]],[false, true, false]),
+            ("partial-left-grow",json!([{"from":11,"to":13,"insert":"LLLL"}]),"😀|aaCCaa|bLLLLCbb|tailCC",[[5, 7], [11, 16], [23, 25]],[false, true, false]),
+            ("partial-left-shrink",json!([{"from":11,"to":13,"insert":"L"}]),"😀|aaCCaa|bLCbb|tailCC",[[5, 7], [11, 13], [20, 22]],[false, true, false]),
+            ("partial-left-equal",json!([{"from":11,"to":13,"insert":"LL"}]),"😀|aaCCaa|bLLCbb|tailCC",[[5, 7], [11, 14], [21, 23]],[false, true, false]),
+            ("partial-right-grow",json!([{"from":13,"to":15,"insert":"RRRR"}]),"😀|aaCCaa|bbCRRRRb|tailCC",[[5, 7], [12, 17], [23, 25]],[false, true, false]),
+            ("partial-right-shrink",json!([{"from":13,"to":15,"insert":"R"}]),"😀|aaCCaa|bbCRb|tailCC",[[5, 7], [12, 14], [20, 22]],[false, true, false]),
+            ("partial-right-equal",json!([{"from":13,"to":15,"insert":"RR"}]),"😀|aaCCaa|bbCRRb|tailCC",[[5, 7], [12, 15], [21, 23]],[false, true, false]),
+            ("inner-equal-control",json!([{"from":12,"to":13,"insert":"Z"}]),"😀|aaCCaa|bbZCbb|tailCC",[[5, 7], [12, 14], [21, 23]],[false, true, false]),
+            ("one-enclosing-both-ids",json!([{"from":3,"to":16,"insert":"xxaaCCaa|bbCCbbyy"}]),"😀|xxaaCCaa|bbCCbbyy|tailCC",[[3, 20], [3, 20], [25, 27]],[true, true, false]),
+            ("multi-range-shrink-grow",json!([{"from":3,"to":9,"insert":"aCCa"},{"from":10,"to":16,"insert":"bbbbCCbbbb"}]),"😀|aCCa|bbbbCCbbbb|tailCC",[[3, 7], [8, 18], [23, 25]],[true, true, false]),
+            ("multi-range-net-zero",json!([{"from":3,"to":9,"insert":"aaaaCCaa"},{"from":10,"to":16,"insert":"CCbb"}]),"😀|aaaaCCaa|CCbb|tailCC",[[3, 11], [12, 16], [21, 23]],[true, true, false]),
+            ("insert-at-left-boundary",json!([{"from":12,"to":12,"insert":"X"}]),"😀|aaCCaa|bbXCCbb|tailCC",[[5, 7], [13, 15], [22, 24]],[false, false, false]),
+            ("insert-at-right-boundary",json!([{"from":14,"to":14,"insert":"Y"}]),"😀|aaCCaa|bbCCYbb|tailCC",[[5, 7], [12, 14], [22, 24]],[false, false, false]),
+            ("left-adjacent-replacement",json!([{"from":10,"to":12,"insert":"B"}]),"😀|aaCCaa|BCCbb|tailCC",[[5, 7], [11, 13], [20, 22]],[false, false, false]),
+            ("right-adjacent-replacement",json!([{"from":14,"to":16,"insert":"BBB"}]),"😀|aaCCaa|bbCCBBB|tailCC",[[5, 7], [12, 14], [22, 24]],[false, false, false]),
+        ];
+        for (label,edits,after,forward,taken) in cases {
+            let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+            let seeded=seed(&service,&format!("draft:{label}"),false);let ids=ids(&seeded);
+            assert_eq!(seeded["content"],SEEDED);ranges(&seeded,&ids,[[5,7],[12,14],[21,23]]);
+            let manual=change(&service,&seeded,"edit","manual",json!({"origin":"editor","edits":edits}));
+            assert_eq!(manual["content"],after,"{label}");ranges(&manual,&ids,forward);
+            for (id,taken) in ids.iter().zip(taken) {
+                assert_eq!(item(&manual,id)["taken_over"],taken,"{label}");
+                assert_eq!(item(&manual,id)["decision"],if taken {"conflict"} else {"pending"},"{label}");
+            }
+            drop(service);let service=Service::new(directory.path());let current=read(&service,&manual);
+            let undone=change(&service,&current,"undo","undo",json!({}));
+            assert_eq!(undone["content"],SEEDED,"{label}");assert_eq!(semantic(&undone,&ids),semantic(&seeded,&ids),"{label}");
+            assert!(undone["generation"].as_u64().unwrap()>manual["generation"].as_u64().unwrap());
+            let redone=change(&service,&undone,"redo","redo",json!({}));
+            assert_eq!(redone["content"],after,"{label}");assert_eq!(semantic(&redone,&ids),semantic(&manual,&ids),"{label}");
+            let back=change(&service,&redone,"undo","undo-again",json!({}));
+            let withdrawn=change(&service,&back,"resolve","withdraw",json!({"ids":ids,"decision":"withdraw"}));
+            assert_eq!(withdrawn["content"],ORIGINAL,"{label}");
+        }
+    }
+    #[test]
+    fn independent_five_zero_spans_keep_exact_point_through_history() {
+        let cases: Vec<(&str,Value,&str,[u64;2],bool)> = vec![
+            ("zero-insert-same-point",json!([{"from":4,"to":4,"insert":"🙂"}]),"😀|a🙂b|tail",[4, 6],true),
+            ("zero-enclosing-replacement",json!([{"from":3,"to":5,"insert":"A🙂B"}]),"😀|A🙂B|tail",[3, 7],true),
+            ("zero-left-adjacent",json!([{"from":3,"to":4,"insert":"AA"}]),"😀|AAb|tail",[5, 5],false),
+            ("zero-right-adjacent",json!([{"from":4,"to":5,"insert":"BBBB"}]),"😀|aBBBB|tail",[4, 4],false),
+            ("zero-earlier-surrogate-safe",json!([{"from":0,"to":2,"insert":"X"}]),"X|ab|tail",[3, 3],false),
+        ];
+        for(label,edits,after,forward,taken)in cases {
+            let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+            let first=open_document(&service,&format!("draft:{label}"),"😀|aXXb|tail");
+            let seeded=change(&service,&first,"propose","seed",json!({"edits":[{"from":4,"to":6,"insert":""}]}));
+            let id=seeded["changes"][0]["id"].clone();let ids=vec![id.clone()];
+            let manual=change(&service,&seeded,"edit","manual",json!({"edits":edits}));
+            assert_eq!(manual["content"],after);assert_eq!(item(&manual,&id)["from"],forward[0]);assert_eq!(item(&manual,&id)["to"],forward[1]);assert_eq!(item(&manual,&id)["taken_over"],taken);
+            drop(service);let service=Service::new(directory.path());
+            let undone=change(&service,&read(&service,&manual),"undo","undo",json!({}));
+            assert_eq!(undone["content"],"😀|ab|tail");assert_eq!(semantic(&undone,&ids),semantic(&seeded,&ids),"{label}");
+            let redone=change(&service,&undone,"redo","redo",json!({}));assert_eq!(redone["content"],after);assert_eq!(semantic(&redone,&ids),semantic(&manual,&ids));
+        }
+    }
+    #[test]
+    fn applied_deletion_proposal_redo_recreates_absent_zero_anchor() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+        let first=open_document(&service,"draft:zero-proposal","😀|aXXb|tail");
+        let seeded=change(&service,&first,"propose","seed",json!({"edits":[{"from":4,"to":6,"insert":""}]}));
+        let id=seeded["changes"][0]["id"].clone();
+        let undone=change(&service,&seeded,"undo","undo",json!({}));assert!(undone["changes"].as_array().unwrap().is_empty());
+        let redone=change(&service,&undone,"redo","redo",json!({}));assert_eq!(redone["content"],"😀|ab|tail");assert_eq!(semantic(&redone,&[id.clone()]),semantic(&seeded,&[id]));
+    }
+    #[test]
+    fn applied_multi_proposal_redo_recreates_absent_positive_spans() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:applied-redo",false);let ids=ids(&seeded);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));assert_eq!(undone["content"],ORIGINAL);assert!(undone["changes"].as_array().unwrap().is_empty());
+        drop(service);let service=Service::new(directory.path());let redone=change(&service,&read(&service,&undone),"redo","redo",json!({}));assert_eq!(redone["content"],SEEDED);assert_eq!(semantic(&redone,&ids),semantic(&seeded,&ids));
+    }
+    #[test]
+    fn multiple_raw_inverse_fragments_and_shared_source_boundaries_restore_exactly() {
+        for edits in [
+            json!([{"from":0,"to":0,"insert":"ZZ"},{"from":10,"to":16,"insert":"(bbCCbb)"}]),
+            json!([{"from":3,"to":5,"insert":"Q"},{"from":5,"to":7,"insert":"R"}]),
+            json!([{"from":3,"to":5,"insert":""},{"from":5,"to":7,"insert":""}]),
+            json!([{"from":3,"to":5,"insert":""},{"from":5,"to":7,"insert":"R"}]),
+        ] {
+            let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:raw",false);let ids=ids(&seeded);
+            let manual=change(&service,&seeded,"edit","manual",json!({"edits":edits}));
+            service.store.run(|tx|with_text_context(tx,||{let doc=load(tx,manual["document_id"].as_str().unwrap())?;let action=doc.undo.last().unwrap();assert_eq!(action.edits.len(),2);assert_eq!(action.inverse.len(),2);assert_eq!(action.inverse_expected.len(),2);Ok(())})).unwrap();
+            drop(service);let service=Service::new(directory.path());let undone=change(&service,&read(&service,&manual),"undo","undo",json!({}));
+            assert_eq!(undone["content"],SEEDED);assert_eq!(semantic(&undone,&ids),semantic(&seeded,&ids));
+            let redone=change(&service,&undone,"redo","redo",json!({}));assert_eq!(redone["content"],manual["content"]);assert_eq!(semantic(&redone,&ids),semantic(&manual,&ids));
+        }
+    }
+    #[test]
+    fn metadata_accept_and_enclosing_later_pair_do_not_replay_lossy_geometry() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:later",false);let ids=ids(&seeded);
+        let accepted=change(&service,&seeded,"resolve","accept",json!({"ids":[ids[1]],"decision":"accept"}));
+        let later=change(&service,&accepted,"edit","later",json!({"edits":[{"from":3,"to":16,"insert":"(aaCCaa|bbCCbb)"}]}));
+        let undo_later=change(&service,&later,"undo","undo-later",json!({}));assert_eq!(undo_later["content"],SEEDED);assert_eq!(semantic(&undo_later,&ids),semantic(&accepted,&ids));
+        let undo_accept=change(&service,&undo_later,"undo","undo-accept",json!({}));assert_eq!(undo_accept["content"],SEEDED);assert_eq!(semantic(&undo_accept,&ids),semantic(&seeded,&ids));assert_eq!(undo_accept["generation"],undo_later["generation"]);
+    }
+    #[test]
+    fn metadata_accept_preserves_actual_nonundoable_save_prefix_geometry() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:save-prefix",false);let ids=ids(&seeded);
+        let accepted=change(&service,&seeded,"resolve","accept",json!({"ids":[ids[1]],"decision":"accept"}));
+        let saved=rewrite_save(&service,&accepted,"PFX|😀|aaCCaa|bbCCbb|tailCC",json!([{"from":0,"to":0,"insert":"PFX|"}]));
+        let undone=change(&service,&saved,"undo","undo-accept",json!({}));assert_eq!(undone["content"],saved["content"]);ranges(&undone,&ids,[[9,11],[16,18],[25,27]]);assert_eq!(item(&undone,&ids[1])["decision"],"pending");assert_eq!(undone["generation"],saved["generation"]);
+    }
+    #[test]
+    fn proposed_metadata_redo_after_real_save_preserves_ids_without_applying_text() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:proposed-save",true);let ids=ids(&seeded);assert_eq!(seeded["content"],ORIGINAL);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));assert!(undone["changes"].as_array().unwrap().is_empty());
+        let saved=rewrite_save(&service,&undone,"PFX|😀|aaOOaa|bbOObb|tailOO",json!([{"from":0,"to":0,"insert":"PFX|"}]));
+        drop(service);let service=Service::new(directory.path());let redone=change(&service,&read(&service,&saved),"redo","redo",json!({}));assert_eq!(redone["content"],saved["content"]);ranges(&redone,&ids,[[9,11],[16,18],[25,27]]);for id in ids{assert_eq!(item(&redone,&id)["application"],"proposed");assert_eq!(item(&redone,&id)["decision"],"pending");assert_eq!(item(&redone,&id)["taken_over"],false);}assert_eq!(redone["generation"],saved["generation"]);
+    }
+    #[test]
+    fn ordinary_new_body_edit_clears_metadata_only_redo_as_actual_service_contract() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:redo-cleared",true);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));let edited=change(&service,&undone,"edit","new-input",json!({"edits":[{"from":0,"to":0,"insert":"X"}]}));assert_eq!(edited["can_redo"],false);let count=events(&directory);let before=read(&service,&edited);
+        assert_eq!(service.handle(&request(&edited,"redo","forbidden-redo",json!({}))).unwrap_err(),"review_redo_unavailable");assert_eq!(read(&service,&edited),before);assert_eq!(events(&directory),count);
+    }
+    #[test]
+    fn ambiguous_absent_metadata_redo_fails_without_mutating_history_or_receipts() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let seeded=seed(&service,"draft:ambiguous-proposed",true);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));let saved=rewrite_save(&service,&undone,"😀|aaOOaa|changed|tailOO",json!([{"from":10,"to":16,"insert":"changed"}]));
+        let before=read(&service,&saved);let count=events(&directory);let request=request(&before,"redo","ambiguous-redo",json!({}));assert_eq!(service.handle(&request).unwrap_err(),"review_conflict");assert_eq!(read(&service,&saved),before);assert_eq!(events(&directory),count);let receipt=service.handle(&json!({"action":"receipt","document_id":saved["document_id"],"call_id":"ambiguous-redo"})).unwrap();assert_eq!(receipt["found"],false);
+    }
+    #[test]
+    fn semantic_decisions_and_applications_survive_enclosing_manual_undo() {
+        for mode in ["pending","accepted","conflict","withdrawn","proposed","accepted-proposed"] {
+            let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let proposed=mode=="proposed"||mode=="accepted-proposed";let mut baseline=seed(&service,&format!("draft:{mode}"),proposed);let ids=ids(&baseline);
+            if mode=="accepted"||mode=="accepted-proposed"{baseline=change(&service,&baseline,"resolve","accept",json!({"ids":[ids[1]],"decision":"accept"}));}
+            if mode=="withdrawn"{baseline=change(&service,&baseline,"resolve","withdraw",json!({"ids":[ids[1]],"decision":"withdraw"}));}
+            if mode=="conflict"{baseline=change(&service,&baseline,"edit","inner",json!({"edits":[{"from":12,"to":13,"insert":"Z"}]}));}
+            ranges(&baseline,&ids,[[5,7],[12,14],[21,23]]);
+            let manual=change(&service,&baseline,"edit","outer",json!({"edits":[{"from":10,"to":16,"insert":"WRAPPED"}]}));let undone=change(&service,&manual,"undo","undo",json!({}));assert_eq!(undone["content"],baseline["content"],"{mode}");assert_eq!(semantic(&undone,&ids),semantic(&baseline,&ids),"{mode}");
+        }
+    }
+    #[test]
+    fn enclosing_undo_after_later_enclosing_undo_preserves_body_inverse_source() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+        let seeded=seed(&service,"draft:two-enclosing",false);let ids=ids(&seeded);
+        let target=change(&service,&seeded,"edit","target",json!({"edits":[{"from":10,"to":16,"insert":"bb🙂CCbb"}]}));
+        assert_eq!(target["content"],"😀|aaCCaa|bb🙂CCbb|tailCC");
+        let later=change(&service,&target,"edit","later",json!({"edits":[{"from":3,"to":18,"insert":"(aaCCaa|bb🙂CCbb)"}]}));
+        let undo_later=change(&service,&later,"undo","undo-later",json!({}));
+        assert_eq!(undo_later["content"],target["content"]);assert_eq!(semantic(&undo_later,&ids),semantic(&target,&ids));
+        drop(service);let service=Service::new(directory.path());
+        let undo_target=change(&service,&read(&service,&undo_later),"undo","undo-target",json!({}));
+        assert_eq!(undo_target["content"],SEEDED);assert_eq!(semantic(&undo_target,&ids),semantic(&seeded,&ids));
+        let redo_target=change(&service,&undo_target,"redo","redo-target",json!({}));
+        assert_eq!(redo_target["content"],target["content"]);assert_eq!(semantic(&redo_target,&ids),semantic(&target,&ids));
+    }
+    #[test]
+    fn absent_proposed_redo_uses_exact_inverse_save_pair_without_lossy_replay() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+        let seeded=seed(&service,"draft:proposed-save-pair",true);let ids=ids(&seeded);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));
+        assert!(undone["changes"].as_array().unwrap().is_empty());assert_eq!(undone["can_redo"],true);
+        let first_save=rewrite_save(&service,&undone,"😀|aaOOaa|WRAP|tailOO",json!([{"from":10,"to":16,"insert":"WRAP"}]));
+        assert_eq!(first_save["can_redo"],true);
+        let second_save=rewrite_save(&service,&first_save,ORIGINAL,json!([{"from":10,"to":14,"insert":"bbOObb"}]));
+        assert_eq!(second_save["can_redo"],true);assert_eq!(second_save["content"],ORIGINAL);
+        drop(service);let service=Service::new(directory.path());
+        let redone=change(&service,&read(&service,&second_save),"redo","redo",json!({}));
+        assert_eq!(redone["content"],ORIGINAL);assert_eq!(semantic(&redone,&ids),semantic(&seeded,&ids));
+        assert_eq!(redone["generation"],second_save["generation"]);
+    }
+    #[test]
+    fn absent_proposed_redo_refuses_noninverse_same_coordinate_save_pair_atomically() {
+        let directory=TempDir::new().unwrap();let service=Service::new(directory.path());
+        let seeded=seed(&service,"draft:proposed-noninverse-save",true);
+        let undone=change(&service,&seeded,"undo","undo",json!({}));
+        assert!(undone["changes"].as_array().unwrap().is_empty());assert_eq!(undone["can_redo"],true);
+        let first_save=rewrite_save(&service,&undone,"😀|aaOOaa|WRAP|tailOO",json!([{"from":10,"to":16,"insert":"WRAP"}]));
+        let second_save=rewrite_save(&service,&first_save,"😀|aaOOaa|bbXXbb|tailOO",json!([{"from":10,"to":14,"insert":"bbXXbb"}]));
+        assert_eq!(second_save["can_redo"],true);assert_eq!(second_save["content"],"😀|aaOOaa|bbXXbb|tailOO");
+        let before=read(&service,&second_save);let count=events(&directory);
+        let attempt=request(&before,"redo","noninverse-save-redo",json!({}));
+        assert_eq!(service.handle(&attempt).unwrap_err(),"review_conflict");
+        assert_eq!(read(&service,&second_save),before);assert_eq!(events(&directory),count);
+        assert_eq!(service.handle(&json!({"action":"receipt","document_id":before["document_id"],"call_id":"noninverse-save-redo"})).unwrap()["found"],false);
+    }
+    #[test]
+    fn trusted_raw_inverse_replays_support_receipts_export_and_discard() {
+        for consumer in ["receipt","export","discard"] {
+            let directory=TempDir::new().unwrap();let service=Service::new(directory.path());let first=open_document(&service,&format!("draft:{consumer}"),ORIGINAL);let seed_request=request(&first,"propose","seed",json!({"edits":[{"from":5,"to":7,"insert":"CC"},{"from":12,"to":14,"insert":"CC"},{"from":21,"to":23,"insert":"CC"}]}));let seeded=service.handle(&seed_request).unwrap();let frozen=service.freeze_export_snapshot(&seeded).unwrap();let manual=change(&service,&seeded,"edit","manual",json!({"edits":[{"from":3,"to":5,"insert":""},{"from":5,"to":7,"insert":""}]}));
+            match consumer {
+                "receipt"=>{let count=events(&directory);assert_eq!(service.handle(&seed_request).unwrap(),seeded);assert_eq!(events(&directory),count);},
+                "export"=>{let accepted=service.accept_export_snapshot(&frozen,"verified-export").unwrap();assert_eq!(accepted["accepted_count"],0);assert_eq!(accepted["conflict_count"],3);assert_eq!(accepted["content"],manual["content"]);},
+                _=>{let discarded=change(&service,&manual,"discard","discard",json!({"disk_revision":first["disk_revision"],"disk_content":ORIGINAL}));assert_eq!(discarded["content"],ORIGINAL);assert!(discarded["changes"].as_array().unwrap().is_empty());},
+            }
+        }
     }
 }

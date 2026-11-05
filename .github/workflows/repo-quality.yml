@@ -101,6 +101,15 @@ jobs:
           JS
       - name: Headless build (Docker / server, no window toolkit)
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
+      - name: P0 review undo, exact anchors, saves and new-process recovery
+        run: node tools/test/review-undo-http.cjs --repo . --bin rust/target/debug/readmd${{ runner.os == 'Windows' && '.exe' || '' }} --evidence .cache/review-undo-http
+      - name: Retain real review undo and recovery receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P0-review-undo-http-${{ matrix.os }}
+          if-no-files-found: error
+          path: .cache/review-undo-http/report.json
       - name: Locked browser driver for real close and save boundaries
         run: npm ci --prefix ui-tests
       - name: Prepare owned headless browser
