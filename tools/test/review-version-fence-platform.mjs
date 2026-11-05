@@ -12,8 +12,8 @@ if(fs.realpathSync.native(repo)!==fs.realpathSync.native(process.env.GITHUB_WORK
 const mac=JSON.parse(fs.readFileSync(path.join(repo,'docs/reviews/readmd-v006-p0-macos-closeout-2026-11-03.json')));
 // V0.0.6 was refreshed after P0. Pin its independently inspected and anonymously
 // re-downloaded delivery receipt, not a moving release checksum or an old ZIP.
-const published=JSON.parse(fs.readFileSync(path.join(repo,'docs/reviews/readmd-v006-code-close-published-2026-11-04.json')));
-if(published.version!=='0.0.6'||published.publicationStatus!=='complete'||published.runtimeSourceCommit!=='5d617aeffdb792f6fd7ef7616b7f099b4f90c3b4')throw Error('Unreviewed previous writer receipt');
+const published=JSON.parse(fs.readFileSync(path.join(repo,'tests/fixtures/review-version/previous-release-v006-2026-11-05.json')));
+if(published.schemaVersion!==1||published.version!=='0.0.6'||published.publicationStatus!=='complete'||published.runtimeSourceCommit!=='e7b1bb97fc4ab5f5b43e6f0800512b10c0988fd9'||published.ciRunId!==41905970855||published.tagCommit!=='544defc32219e4de6b85e9d07d9edc230d6639f4'||published.anonymousDownloadsVerified!==11)throw Error('Unreviewed previous writer receipt');
 const arch=process.arch==='arm64'?'arm64':'x64';
 if(!['win32','linux','darwin'].includes(process.platform)||process.platform!=='darwin'&&process.arch!=='x64')throw Error('No certified previous writer for this target');
 const name=process.platform==='win32'?'ReadMD-windows-x64.zip':process.platform==='linux'?'ReadMD-linux-x86_64.tar.gz':`ReadMD-macos-${arch}.zip`;
