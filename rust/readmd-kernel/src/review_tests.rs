@@ -1838,6 +1838,131 @@ mod exact_anchor_compensation_regressions {
         assert_eq!(read(&service,&second_save),before);assert_eq!(events(&directory),count);
         assert_eq!(service.handle(&json!({"action":"receipt","document_id":before["document_id"],"call_id":"noninverse-save-redo"})).unwrap()["found"],false);
     }
+    const MIXED_ZERO_SOURCE: &str = "😀|ab|![保留](owned.svg)\n";
+    const MIXED_ZERO_BODY: &str = "😀|β😀|![保留](owned.svg)\n";
+    fn mixed_zero_proposal(service: &Service, delete_first: bool) -> Value {
+        let first = open_document(service, "draft:mixed-zero-boundary", MIXED_ZERO_SOURCE);
+        let edits = if delete_first {
+            json!([{"from":3,"to":4,"insert":""},{"from":4,"to":5,"insert":"β😀"}])
+        } else {
+            json!([{"from":3,"to":4,"insert":"β😀"},{"from":4,"to":5,"insert":""}])
+        };
+        change(service, &first, "propose", "mixed-propose", json!({
+            "origin":"ai","task_id":"mixed-zero-owned","application":"applied","edits":edits
+        }))
+    }
+    fn mixed_zero_ids(head: &Value) -> Vec<Value> {
+        assert_eq!(head["content"], MIXED_ZERO_BODY);
+        assert_eq!(head["changes"].as_array().unwrap().len(), 2);
+        ["a", "b"].iter().map(|original| head["changes"].as_array().unwrap().iter()
+            .find(|change| change["original"] == *original).unwrap()["id"].clone()).collect()
+    }
+    fn mixed_zero_exact(head: &Value, ids: &[Value], delete_first: bool) {
+        assert_eq!(head["content"], MIXED_ZERO_BODY);
+        assert_eq!(head["changes"].as_array().unwrap().len(), 2);
+        let expected = if delete_first {
+            [(3, 3, "a", ""), (3, 6, "b", "β😀")]
+        } else {
+            [(3, 6, "a", "β😀"), (6, 6, "b", "")]
+        };
+        for (id, (from, to, original, replacement)) in ids.iter().zip(expected) {
+            let current = item(head, id);
+            assert_eq!(current["from"], from);
+            assert_eq!(current["to"], to);
+            assert_eq!(current["original"], original);
+            assert_eq!(current["replacement"], replacement);
+            assert_eq!(current["decision"], "pending");
+            assert_eq!(current["application"], "applied");
+            assert_eq!(current["taken_over"], false);
+            assert_eq!(current["origin"], "ai");
+            assert_eq!(current["task_id"], "mixed-zero-owned");
+        }
+    }
+    fn mixed_zero_restart_cycle(delete_first: bool) {
+        let directory = TempDir::new().unwrap();
+        let service = Service::new(directory.path());
+        let proposed = mixed_zero_proposal(&service, delete_first);
+        let ids = mixed_zero_ids(&proposed);
+        mixed_zero_exact(&proposed, &ids, delete_first);
+        let undone = change(&service, &proposed, "undo", "mixed-undo", json!({}));
+        assert_eq!(undone["content"], MIXED_ZERO_SOURCE);
+        assert!(undone["changes"].as_array().unwrap().is_empty());
+        assert_eq!(undone["can_redo"], true);
+        drop(service);
+        let service = Service::new(directory.path());
+        let reopened = read(&service, &undone);
+        assert_eq!(reopened["content"], MIXED_ZERO_SOURCE);
+        assert!(reopened["changes"].as_array().unwrap().is_empty());
+        assert_eq!(reopened["can_redo"], true);
+        let redone = change(&service, &reopened, "redo", "mixed-redo", json!({}));
+        mixed_zero_exact(&redone, &ids, delete_first);
+        assert_eq!(semantic(&redone, &ids), semantic(&proposed, &ids));
+        for id in &ids {
+            assert!(item(&redone, id)["version"].as_u64().unwrap()
+                > item(&proposed, id)["version"].as_u64().unwrap());
+            assert!(item(&redone, id)["last_event_id"].as_u64().unwrap()
+                > item(&proposed, id)["last_event_id"].as_u64().unwrap());
+        }
+        drop(service);
+        let service = Service::new(directory.path());
+        let persisted = read(&service, &redone);
+        mixed_zero_exact(&persisted, &ids, delete_first);
+        assert_eq!(semantic(&persisted, &ids), semantic(&proposed, &ids));
+    }
+    #[test]
+    fn absent_zero_at_left_edge_of_restored_source_restarts_and_redoes() {
+        mixed_zero_restart_cycle(true);
+    }
+    #[test]
+    fn absent_zero_at_right_edge_of_restored_source_restarts_and_redoes() {
+        mixed_zero_restart_cycle(false);
+    }
+    #[test]
+    fn absent_zero_exact_empty_source_keeps_its_saved_position() {
+        let directory = TempDir::new().unwrap();
+        let service = Service::new(directory.path());
+        let proposed = mixed_zero_proposal(&service, false);
+        let ids = mixed_zero_ids(&proposed);
+        mixed_zero_exact(&proposed, &ids, false);
+        let undone = change(&service, &proposed, "undo", "mixed-undo", json!({}));
+        assert_eq!(undone["content"], MIXED_ZERO_SOURCE);
+        assert!(undone["changes"].as_array().unwrap().is_empty());
+        assert_eq!(undone["can_redo"], true);
+        // B's own exact empty source keeps its point after the independently
+        // inserted X; A's neighboring nonempty edge is not competing ownership.
+        let saved = rewrite_save(&service, &undone, "😀|aXb|![保留](owned.svg)\n",
+            json!([{"from":4,"to":4,"insert":"X"}]));
+        assert_eq!(saved["content"], "😀|aXb|![保留](owned.svg)\n");
+        assert!(saved["changes"].as_array().unwrap().is_empty());
+        assert_eq!(saved["can_redo"], true);
+        drop(service);
+        let service = Service::new(directory.path());
+        let reopened = read(&service, &saved);
+        assert_eq!(reopened["can_redo"], true);
+        let redone = change(&service, &reopened, "redo", "mixed-saved-redo", json!({}));
+        assert_eq!(redone["content"], "😀|β😀X|![保留](owned.svg)\n");
+        assert_eq!(redone["changes"].as_array().unwrap().len(), 2);
+        assert_eq!(item(&redone, &ids[0])["from"], 3);
+        assert_eq!(item(&redone, &ids[0])["to"], 6);
+        assert_eq!(item(&redone, &ids[1])["from"], 7);
+        assert_eq!(item(&redone, &ids[1])["to"], 7);
+        let mut expected = semantic(&proposed, &ids);
+        expected[1]["from"] = json!(7);
+        expected[1]["to"] = json!(7);
+        assert_eq!(semantic(&redone, &ids), expected);
+        for id in &ids {
+            assert!(item(&redone, id)["version"].as_u64().unwrap()
+                > item(&proposed, id)["version"].as_u64().unwrap());
+            assert!(item(&redone, id)["last_event_id"].as_u64().unwrap()
+                > item(&proposed, id)["last_event_id"].as_u64().unwrap());
+        }
+        drop(service);
+        let service = Service::new(directory.path());
+        let persisted = read(&service, &redone);
+        assert_eq!(persisted["content"], "😀|β😀X|![保留](owned.svg)\n");
+        assert_eq!(persisted["changes"].as_array().unwrap().len(), 2);
+        assert_eq!(semantic(&persisted, &ids), expected);
+    }
     #[test]
     fn trusted_raw_inverse_replays_support_receipts_export_and_discard() {
         for consumer in ["receipt","export","discard"] {

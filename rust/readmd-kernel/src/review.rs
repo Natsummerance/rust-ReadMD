@@ -1777,11 +1777,28 @@ fn compensation_range(
     } else if let (Some(from), Some(to)) = (from, to) {
         (from, to)
     } else {
-        // Redoing an applied deletion recreates an absent, empty change from
-        // the exact empty source piece of its undo's forward insertion.
-        let points = sources.iter().filter(|source| empty && source.from == restored.from
+        // Preserve ownership proved by the exact empty source of an applied
+        // deletion, before considering any neighboring nonempty source edge.
+        let mut points = sources.iter().filter(|source| empty && source.from == restored.from
             && source.to == restored.to && source.exact && source.output_from == source.output_to)
             .map(|source| source.output_from).collect::<BTreeSet<_>>();
+        if empty && points.is_empty() {
+            // Without an exact empty source, require an exact edge witness and
+            // one output point across all matching edges, even inexact pieces.
+            let mut edges = BTreeSet::new();
+            let mut exact_edge = false;
+            for source in sources {
+                if source.from == restored.from {
+                    edges.insert(source.output_from);
+                    exact_edge |= source.exact;
+                }
+                if source.to == restored.to {
+                    edges.insert(source.output_to);
+                    exact_edge |= source.exact;
+                }
+            }
+            if exact_edge { points = edges; }
+        }
         if let Some(point) = points.first().copied().filter(|_| points.len() == 1) {
             (point, point)
         } else {
