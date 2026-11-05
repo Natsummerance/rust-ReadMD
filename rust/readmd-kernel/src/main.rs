@@ -3113,7 +3113,11 @@ fn build_webview<'a>(
             if crate::desktop_web::origin(&request.uri().to_string()) != reader_origin { return; }
             match request.body().as_str() {
                 "readmd:page-ready" => page_ready.store(true, Ordering::SeqCst),
-                "readmd:quit" => { quit.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
+                "readmd:quit" => {
+                    #[cfg(all(feature = "native-qa", debug_assertions))]
+                    if crate::native_qa::hold_quit() { return; }
+                    quit.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web);
+                },
                 "readmd:show-window" => { show.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); },
                 "readmd:fullscreen-on" => {
                     fullscreen.store(FULLSCREEN_ENTER, Ordering::SeqCst);
@@ -3125,7 +3129,13 @@ fn build_webview<'a>(
                 }
                 _ => {
                     #[cfg(all(feature = "native-qa", debug_assertions))]
-                    if crate::native_qa::record(request.body()) { return; }
+                    match crate::native_qa::record(request.body()) {
+                        crate::native_qa::RecordOutcome::NotQa => {}
+                        crate::native_qa::RecordOutcome::Recorded => return,
+                        crate::native_qa::RecordOutcome::ReleaseHeldQuit => {
+                            quit.store(true, Ordering::SeqCst); let _ = render_proxy.send_event(HostEvent::Web); return;
+                        }
+                    }
                     if request.body().len() < 64 * 1024 && crate::desktop_web::origin(&request.uri().to_string()) == reader_origin {
                         if let Ok(value) = serde_json::from_str::<serde_json::Value>(request.body()) {
                             if let Some(action) = value.get("readmd_window").and_then(serde_json::Value::as_str) {

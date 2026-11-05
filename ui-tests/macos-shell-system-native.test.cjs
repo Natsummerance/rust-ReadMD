@@ -28,30 +28,38 @@ function png(){
  const header=Buffer.alloc(13);header.writeUInt32BE(3840);header.writeUInt32BE(1,4);header[8]=8;header[9]=6;
  return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',zlib.deflateSync(Buffer.alloc(3840*4+1))),chunk('IEND',Buffer.alloc(0))]);
 }
-async function closedDriver(quit,{script=shell.driver('closed_stays_closed',{a:'/owned/a.md',b:'/owned/b.md',fix:'/owned/fix.md',ack:'/owned/ack.txt'},{csp,cases:shell.cases,a:shell.A,b:shell.B,fix:shell.FIX,addition:shell.ADDITION}),profile=fresh('terminal'),onRaw=()=>{},dropTerminal=false}={}){
- const b={id:'b',path:'/owned/b.md',content:shell.B+shell.ADDITION,isDirty:false},fix={id:'fix',path:'/owned/fix.md'},messages=[];
+async function closedDriver(quit,{script=shell.driver('closed_stays_closed',{a:'/owned/a.md',b:'/owned/b.md',fix:'/owned/fix.md',ack:'/owned/ack.txt'},{csp,cases:shell.cases,a:shell.A,b:shell.B,fix:shell.FIX,addition:shell.ADDITION}),profile=fresh('terminal'),onRelease=()=>{},dropTerminal=false,syncFailure=false}={}){
+ const b={id:'b',path:'/owned/b.md',content:shell.B+shell.ADDITION,isDirty:false},fix={id:'fix',path:'/owned/fix.md'},messages=[],events=[];let quitCalls=0,held=0,blocked=false,releases=0;
+ const files=JSON.parse(script.match(/files=(\{[^;]*?\}),config=/)[1]);
  const context={__readmdSessionReady:Promise.resolve(),hasPy:true,URL,Date,setTimeout,clearTimeout,editorPrefs:{aiCompletion:false},state:{tabs:[b,fix],activeTabId:'b'},getActiveTab:()=>b,
   document:{body:{classList:{contains:key=>['native-macos','shell-single-chrome'].includes(key)}},querySelector:key=>key==='.titlebar-mark'?{complete:true,naturalWidth:1,src:'http://owned.invalid/assets/ReadMD-macos.svg'}:{content:csp}},
   ReadMDSession:{whenIdle:async()=>{},flush:async()=>true},requestAnimationFrame:fn=>fn(),fetch:async()=>({status:403}),apiFetch:async()=>({ok:true,json:async()=>({modules:{ocr:'idle',transcribe:'idle'}})}),
-  py:{native_titlebar:'macos',request_quit:quit},window:{ReadMDLifecycle:{busy:()=>false},ipc:{postMessage:message=>{
-   messages.push(message);if(message==='readmd:quit'){onRaw();return;}
-   const parsed=JSON.parse(message),value=parsed.readmd_native_qa_progress||parsed.readmd_native_qa_result;if(!value||dropTerminal&&parsed.readmd_native_qa_result)return;
-   const file=path.join(profile,parsed.readmd_native_qa_progress?'native-qa-progress.json':'native-qa-result.json');try{fs.writeFileSync(file,JSON.stringify(value),parsed.readmd_native_qa_progress?{}:{flag:'wx'});}catch(error){if(error.code!=='EEXIST')throw error;}
-  }}}};
+  py:{native_titlebar:'macos',request_quit:async()=>{quitCalls++;events.push('guard');return quit({postQuit:()=>context.window.ipc.postMessage('readmd:quit')});}},window:{ReadMDLifecycle:{busy:()=>false}}};
+ const originalPost=message=>{
+  messages.push(message);if(message==='readmd:quit'){events.push('host_held_quit');if(++held!==1)blocked=true;return;}
+  const parsed=JSON.parse(message),value=parsed.readmd_native_qa_progress||parsed.readmd_native_qa_result;if(!value||dropTerminal&&parsed.readmd_native_qa_result)return;
+  if(parsed.readmd_native_qa_progress){fs.writeFileSync(path.join(profile,'native-qa-progress.json'),JSON.stringify(value));return;}
+  let persisted=false,fd;
+  try{fd=fs.openSync(path.join(profile,'native-qa-result.json'),'wx');fs.writeFileSync(fd,JSON.stringify(value));if(syncFailure)throw Error('controlled_host_sync_failure');fs.fsyncSync(fd);persisted=true;events.push('terminal_persisted');}catch{blocked=true;}finally{if(fd!==undefined)fs.closeSync(fd);}
+  if(!blocked&&held===1&&persisted&&value.ok===true&&value.phase==='closed_stays_closed'&&value.checks.includes('guarded_quit_accepted')){events.push('host_release');releases++;blocked=true;onRelease();}else blocked=true;
+ };
+ // Match Wry 0.57.0's actual property descriptors, not a writable VM double.
+ Object.defineProperty(context.window,'ipc',{value:Object.freeze({postMessage:originalPost})});
  if(script.includes('const phase="closed_stays_closed"')){
-  const files=JSON.parse(script.match(/files=(\{[^;]*?\}),config=/)[1]);b.path=files.b;fix.path=files.fix;
+  b.path=files.b;fix.path=files.fix;
  }
  const running=new vm.Script(script).runInNewContext(context);
- return{running,messages,profile,terminals:()=>messages.filter(message=>message.startsWith('{')).map(JSON.parse).map(value=>value.readmd_native_qa_result).filter(Boolean)};
+ return{running,messages,profile,events,quitCalls:()=>quitCalls,releases:()=>releases,ipcUnchanged:()=>Object.isFrozen(context.window.ipc)&&context.window.ipc.postMessage===originalPost&&!Object.getOwnPropertyDescriptor(context.window,'ipc').writable,terminals:()=>messages.filter(message=>message.startsWith('{')).map(JSON.parse).map(value=>value.readmd_native_qa_result).filter(Boolean)};
 }
 
 async function outer(kind){
  const directory=fresh(kind),app=path.join(directory,'MockOnly.app'),assets=path.join(directory,'assets'),output=path.join(directory,'run');fs.mkdirSync(app);fs.mkdirSync(assets);
  for(const name of ['index.html','readmd.boot.js','style.css','css/shell.css','css/panels.css','ReadMD-macos.svg']){const file=path.join(assets,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,name==='index.html'?'<meta http-equiv="Content-Security-Policy" content="'+csp+'">':'owned VM fixture');}
- const clock={now:100000},state={alive:false,cleanupCalls:0,rawQuit:0,polls:0,waitCalls:0,phases:0,messages:[]};
+ const clock={now:100000},state={alive:false,cleanupCalls:0,rawQuit:0,quitReleases:0,polls:0,waitCalls:0,phases:0,messages:[]};
  const host={prepare:()=>({binarySha256:'vm_only',helperSha256:'vm_only',bundleIdentifier:'asia.readmd.nativeqa.vm',launch:async({profile,docs})=>{
   state.alive=true;if(kind==='launch_reject')throw Error('launch_cleanup_unproved');
   const script=fs.readFileSync(path.join(profile,'native-qa.js'),'utf8'),phase=JSON.parse(script.match(/const phase=("[^"]+")/)[1]),receipt={initialAppContext:{pid:4000+(++state.phases)},forcedCleanup:false,nativeProcessGone:false};
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(profile,'native-qa-guarded-quit.json'))),{schema:'readmd-native-qa-guarded-quit-v1',phase});
   let frame=0;const ids=[101,102,103,104,201];
   if(!['cleanup_failure','cleanup_success','missing_receipt'].includes(kind)){
    if(phase==='shell_edit_save'){
@@ -59,9 +67,10 @@ async function outer(kind){
     fs.mkdirSync(path.join(profile,'native-frames'));for(const id of ids)fs.writeFileSync(path.join(profile,'native-frames',String(id).padStart(5,'0')+'.png'),png());
    }
    if(phase==='closed_stays_closed'){
-    const quit=async()=>{if(kind==='quit_throw')throw Error('owned_guarded_quit_failure');if(kind==='quit_false')return false;state.alive=false;return true;};
-    const closed=await closedDriver(quit,{script,profile,onRaw:()=>{state.rawQuit++;state.alive=false;},dropTerminal:kind==='quit_true_missing_receipt'});await closed.running;state.messages=closed.messages;
-   }else fs.writeFileSync(path.join(profile,'native-qa-result.json'),JSON.stringify({ok:true,phase,checks:['appkit_green_enters_actual_fullscreen','native_menu_enters_actual_fullscreen','production_csp_unchanged','unauthenticated_api_refused']}),{flag:'wx'});
+    const quit=async({postQuit})=>{if(kind==='quit_throw')throw Error('owned_guarded_quit_failure');if(kind==='quit_false')return false;postQuit();return true;};
+    const closed=await closedDriver(quit,{script,profile,onRelease:()=>{state.quitReleases++;state.alive=false;},dropTerminal:kind==='quit_true_missing_receipt',syncFailure:kind==='host_sync_failure'});await closed.running;state.rawQuit=closed.messages.filter(m=>m==='readmd:quit').length;state.messages=closed.messages;
+   }else fs.writeFileSync(path.join(profile,'native-qa-result.json'),JSON.stringify({ok:true,phase,checks:['appkit_green_enters_actual_fullscreen','native_menu_enters_actual_fullscreen','production_csp_unchanged','unauthenticated_api_refused','guarded_quit_accepted']}),{flag:'wx'});
+   if(kind==='ack_inode_changed'&&phase==='shell_edit_save'){const ack=path.join(docs,'native-frame-ack.txt');fs.renameSync(ack,ack+'.retained');fs.writeFileSync(ack,'',{flag:'wx'});}
   }
   return{receipt,pid:receipt.initialAppContext.pid,get launcherStopped(){
    state.polls++;if(['cleanup_failure','cleanup_success','missing_receipt'].includes(kind))return true;
@@ -94,8 +103,17 @@ for(const [name,quit]of[['throws',async()=>{throw Error('owned_quit_failure');}]
  const run=await closedDriver(quit);await run.running;assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,false);assert.equal(JSON.parse(fs.readFileSync(path.join(run.profile,'native-qa-result.json'))).ok,false);assert(!run.messages.includes('readmd:quit'));
 });
 test('only strict guard true permits one success, with no terminal before acceptance',async()=>{
- let release,called=false;const accepted=new Promise(resolve=>{release=resolve;});const run=await closedDriver(async()=>{called=true;return accepted;});
- while(!called)await new Promise(setImmediate);const before=run.terminals().length;release(true);await run.running;assert.equal(before,0);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert(!run.messages.includes('readmd:quit'));
+ let release,called=false;const accepted=new Promise(resolve=>{release=resolve;});const run=await closedDriver(async({postQuit})=>{postQuit();called=true;return accepted;});
+ while(!called)await new Promise(setImmediate);const before=run.terminals().length;assert.equal(run.releases(),0);release(true);await run.running;assert.equal(before,0);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert.equal(run.messages.filter(m=>m==='readmd:quit').length,1);assert.equal(run.quitCalls(),1);assert(run.ipcUnchanged());assert.equal(run.releases(),1);assert(run.events.indexOf('host_held_quit')<run.events.indexOf('terminal_persisted'));assert(run.events.indexOf('terminal_persisted')<run.events.indexOf('host_release'));
+});
+for(const count of [0,2])test('strict true with '+count+' guard quit messages cannot release the controlled host',async()=>{
+ const run=await closedDriver(async({postQuit})=>{for(let i=0;i<count;i++)postQuit();return true;});await run.running;assert.equal(run.quitCalls(),1);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert.equal(run.releases(),0);assert(run.ipcUnchanged());
+});
+for(const kind of ['false','throw'])test('a held original quit is discarded when the real guard '+kind,async()=>{
+ const run=await closedDriver(async({postQuit})=>{postQuit();if(kind==='throw')throw Error('controlled_guard_failure');return false;});await run.running;assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,false);assert.equal(run.releases(),0);assert(run.ipcUnchanged());
+});
+test('a host sync fault never releases even when success bytes exist',async()=>{
+ const run=await closedDriver(async({postQuit})=>{postQuit();return true;},{syncFailure:true});await run.running;assert.equal(run.terminals()[0].ok,true);assert.equal(run.releases(),0);assert(fs.existsSync(path.join(run.profile,'native-qa-result.json')));assert(run.ipcUnchanged());
 });
 for(const kind of ['quit_throw','quit_false'])test('owner aborts early on legal false terminal ('+kind+')',async()=>{
  const result=await outer(kind);assert.equal(result.report.passed,false);assert(result.error);assert.equal(result.state.rawQuit,0);assert(result.state.messages.some(message=>message.startsWith('{')&&JSON.parse(message).readmd_native_qa_result?.ok===false));assert(result.state.polls<25,'Do not wait out the 180-second budget');assert(result.report.phases.at(-1).result?.ok===false);assert.equal(result.state.waitCalls,2,'The failed final phase must not enter native wait');
@@ -110,8 +128,22 @@ test('launch rejection cannot infer successful helper cleanup and retains scratc
  const result=await outer('launch_reject');assert.match(result.error,/launch_cleanup_unproved/);assert.equal(result.tmpExists,true);assert.equal(result.homeExists,true);assert.equal(result.report.cleanup.allOwnedTerminated,false);assert.equal(result.report.cleanup.instances[0].instanceReturned,false);assert.equal(result.report.cleanup.instances[0].cleanupConfirmed,false);
 });
 test('accepted quit with a lost terminal receipt remains a failed owner run',async()=>{
- const result=await outer('quit_true_missing_receipt');assert(result.error);assert.equal(result.report.passed,false);assert.equal(result.state.rawQuit,0);assert.equal(result.state.alive,false);assert.equal(result.report.cleanup.allOwnedTerminated,true);
+ const result=await outer('quit_true_missing_receipt');assert(result.error);assert.equal(result.report.passed,false);assert.equal(result.state.rawQuit,1);assert.equal(result.state.quitReleases,0);assert.equal(result.state.alive,false);assert.equal(result.report.cleanup.allOwnedTerminated,true);
 });
 test('accepted quit and confirmed owners complete the controlled positive run',async()=>{
- const result=await outer('quit_true');assert.equal(result.error,undefined);assert.equal(result.report.passed,true);assert.equal(result.state.rawQuit,0);assert.equal(result.state.cleanupCalls,3);assert.equal(result.report.cleanup.allOwnedTerminated,true);assert(result.report.cleanup.instances.every(instance=>instance.cleanupConfirmed));assert.equal(result.tmpExists,false);assert.equal(result.homeExists,false);
+ const result=await outer('quit_true');assert.equal(result.error,undefined);assert.equal(result.report.passed,true);assert.equal(result.state.rawQuit,1);assert.equal(result.state.quitReleases,1);assert.equal(result.state.cleanupCalls,3);assert.equal(result.report.cleanup.allOwnedTerminated,true);assert(result.report.cleanup.instances.every(instance=>instance.cleanupConfirmed));assert(result.report.phases.every(entry=>entry.quitBarrier?.ownedProfileOptIn&&entry.quitBarrier?.phase===entry.phase));assert.equal(result.tmpExists,false);assert.equal(result.homeExists,false);
+});
+test('the owner cannot pass a success terminal without its eventual real quit',async()=>{
+ const result=await outer('host_sync_failure');assert(result.error);assert.equal(result.report.passed,false);assert.equal(result.state.rawQuit,1);assert.equal(result.state.quitReleases,0);
+});
+test('replacing the owned ACK inode is rejected before acknowledgment',async()=>{
+ const result=await outer('ack_inode_changed');assert(result.error);assert.equal(result.report.passed,false);assert.match(result.error,/Original owned ACK inode/);assert.equal(result.state.rawQuit,0);
+});
+test('actual running animations delay measurement without changing the 44px predicate',async()=>{
+ const script=shell.driver('shell_edit_save',{},{}),start=script.indexOf('const animationsSettled='),end=script.indexOf('\n const json=',start);assert(start>=0&&end>start);
+ let polls=0,settledCalls=0;const element={getAnimations(options){assert.equal(options.subtree,true);return[{playState:++polls<3?'running':'finished'}];}};
+ const context={until:async(fn)=>{for(let n=0;n<5;n++){if(await fn())return;}throw Error('animation_not_settled');},settled:async()=>{settledCalls++;}};
+ const wait=vm.runInNewContext(script.slice(start,end)+'\nanimationsSettled;',context);await wait(element);assert.equal(polls,3);assert.equal(settledCalls,1);
+ await assert.rejects(wait({getAnimations:()=>[{playState:'running'}]}),/animation_not_settled/);
+ assert(script.indexOf('await animationsSettled(menu);const item=')<script.indexOf("'more_fix_target_focused_and_reachable'"));assert(script.includes('item.height>=44&&item.width>=44'));assert(script.includes("await animationsSettled($('fix-box'));const modal="));
 });

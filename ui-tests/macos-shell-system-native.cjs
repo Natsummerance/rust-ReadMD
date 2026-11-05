@@ -37,6 +37,7 @@ function plan() {
       'AppKit green-button target/action and the existing native menu toggle actual NSWindow FullScreen state; stable viewport and native state are required.',
       'A synthetic editor change is saved through the existing visible Save control and genuine services, preserving BOM/CRLF bytes.',
       'Three normal OS launches/true quits restore the saved duplicate-title document, close only the background A tab, then keep it closed in a new process.',
+      'One genuine guarded quit must return strict true; an explicitly opted-in debug QA host holds exactly one real quit until the matching valid terminal is freshly written and synced, then runs the original quit path.',
     ],
     boundaries: {
       f11AndEscape: 'pending: the existing host only exposes fixed Cmd+S/Cmd+Q NSEvent menu equivalents; no F11/Escape or generic key injection is exposed and this harness dispatches no synthetic KeyboardEvents',
@@ -62,6 +63,7 @@ function driver(phase, files, config) {
  const until=async(fn,key,ms=20000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await wait(40);}throw Error(key);};
  const rect=element=>{const r=element.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
  const settled=async()=>{await ReadMDSession.whenIdle();await until(()=>!window.ReadMDLifecycle?.busy?.(),'document_not_idle');await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));};
+ const animationsSettled=async element=>{await until(()=>typeof element?.getAnimations==='function'&&element.getAnimations({subtree:true}).every(animation=>['finished','idle'].includes(animation.playState)),'actual_animation_did_not_finish');await settled();};
  const json=async(route,body)=>{const response=await apiFetch(route,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined);const result=await response.json();if(!response.ok||result.ok===false)throw Error('genuine_api_rejected');return result;};
  const freshNative=async()=>{const before=host();py.window_control('status');await until(()=>host()&&host()!==before&&host().chrome?.buttons?.length===3,'fresh_native_snapshot_missing');return host();};
  const nativeAction=async(kind,action)=>{const id=++sequence;py.window_control(kind,{id,...action});const key=kind==='qa_native_button'?'__readmdNativeButtonResult':'__readmdNativeTrayResult';await until(()=>window[key]?.id===id,'native_action_ack_missing');if(!window[key].performed)throw Error('native_action_not_performed');};
@@ -92,14 +94,14 @@ function driver(phase, files, config) {
   py.window_control('qa_window_size',{width:1024,height:680});await until(()=>Math.abs(innerWidth-1024)<2&&Math.abs(innerHeight-680)<2,'fix_native_size_not_applied');
   await i18n.setLanguage('zh-CN',false);$('btn-more').focus();$('btn-more').click();await until(()=>$('btn-more').getAttribute('aria-expanded')==='true','more_menu_did_not_open');
   for(const group of [...$('more-menu').querySelectorAll('.more-group')].filter(visible))if(!group.classList.contains('open'))group.querySelector('.more-group-header').click();
-  const menu=$('more-menu');await settled();const box=rect(menu);
+  const menu=$('more-menu');await settled();await animationsSettled(menu);const box=rect(menu);
   check(box.y>=0&&box.bottom<=innerHeight+1&&menu.scrollWidth<=menu.clientWidth+1&&menu.scrollHeight>menu.clientHeight&&['auto','scroll'].includes(getComputedStyle(menu).overflowY),'more_menu_bounded_and_scrollable');
   menu.scrollTop=menu.scrollHeight;await until(()=>menu.scrollTop>0,'more_menu_did_not_scroll');$('btn-fix').scrollIntoView({block:'nearest'});$('btn-fix').focus();await settled();
-  const item=rect($('btn-fix')),m=rect(menu);await freshNative();check(host().focused===true&&document.activeElement===$('btn-fix')&&!$('btn-fix').disabled&&item.height>=44&&item.width>=44&&item.y>=m.y-1&&item.bottom<=m.bottom+1,'more_fix_target_focused_and_reachable');
+  await animationsSettled(menu);const item=rect($('btn-fix')),m=rect(menu);await freshNative();check(host().focused===true&&document.activeElement===$('btn-fix')&&!$('btn-fix').disabled&&item.height>=44&&item.width>=44&&item.y>=m.y-1&&item.bottom<=m.bottom+1,'more_fix_target_focused_and_reachable');
   $('btn-fix').click();await until(()=>visible($('fix-modal'))&&document.activeElement===$('fix-list'),'fix_modal_initial_focus_missing');
   await until(()=>document.querySelectorAll('#fix-list .document-inspection-issue').length===48,'fixed_anchor_inspection_missing');
   const issues=[...document.querySelectorAll('#fix-list .document-inspection-issue')];check(issues.every((row,index)=>row.textContent.includes('#missing-'+String(index+1).padStart(3,'0'))),'fixed_48_anchor_targets_preserved');
-  const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('btn-more').getAttribute('aria-expanded')==='false'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
+  await animationsSettled($('fix-box'));const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('btn-more').getAttribute('aria-expanded')==='false'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
   list.scrollTop=list.scrollHeight;await settled();const last=rect(issues[47]),bounds=rect(list);check(list.scrollTop>0&&last.y>=bounds.y-1&&last.bottom<=bounds.bottom+1,'fix_last_issue_reachable_by_real_scroll');
   $('fix-close').click();await until(()=>!visible($('fix-modal'))&&document.activeElement===$('btn-more'),'fix_close_did_not_return_focus');check(true,'fix_close_returns_more_focus');
  }
@@ -137,7 +139,10 @@ function driver(phase, files, config) {
   }
   check(await ReadMDSession.flush()===true,'genuine_session_flush_acknowledged');
   const modules=await json('/api/modules');check(modules.modules.ocr==='idle'&&modules.modules.transcribe==='idle','model_modules_remain_idle');
+  // Wry's actual IPC object is frozen. Leave it and the business guard intact;
+  // only the explicitly opted-in debug QA host delays the received quit.
   const accepted=await py.request_quit();if(accepted!==true)throw Error('owned_quit_not_accepted');
+  check(true,'guarded_quit_accepted');
   window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:true,phase,checks}}));
  }catch(error){checks.push('failed_'+String(error.message).replace(/[^a-z0-9_]/g,'_').slice(0,90));window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:false,phase,checks:checks.slice(-64)}}));}
 })();`;
@@ -177,12 +182,20 @@ async function run(app, out, assets) {
   const report = { passed: false, nativeAcceptanceExecuted: false, nativeHost: 'dedicated QA LaunchServices / Cocoa / WKWebView',
     nativeF11Certified: false, nativeEscapeCertified: false, trustedPointerCertified: false, nativeWheelCertified: false,
     modelInferenceRequestedByHarness: false, nodeInstallationRequested: false, chooserRequested: false, credentialsRequested: false,
-    fakeBridge: false, cspModified: false, physicalMonitorScreenshot: false, frameRenderer: 'existing WKSnapshotConfiguration with AppKit standard controls',
+    fakeBridge: false, cspModified: false, qaQuitHostBarrier: true, businessQuitGuardUnchanged: true, physicalMonitorScreenshot: false, frameRenderer: 'existing WKSnapshotConfiguration with AppKit standard controls',
     desktopBudgetMs: 180000, harnessSha256: sha(fs.readFileSync(__filename)), systemHostSha256: sha(fs.readFileSync(require.resolve('./macos-native-system-host.cjs'))),
     assetsBefore: before, plan: plan(), phases: [], frames: [], cleanup: { instances: [], allOwnedTerminated: false, scratchRemoved: false }, inputs: [['a', A], ['b', B], ['fix', FIX]].map(([key, text]) => ({ key, name: path.basename(files[key]), bytes: encode(text).length, sha256: sha(encode(text)) })) };
-  const captured = new Set(); let desktopStarted;
+  const captured = new Set(); let desktopStarted, quitOptInIdentity;
   const failure = error => ({ name: error.name, message: String(error.message).replaceAll(out, '<owned>').replaceAll(workspace, '<workspace>').slice(0, 1000) });
   const verify = () => { assert.deepEqual(fs.readFileSync(files.a), encode(A)); assert.deepEqual(fs.readFileSync(files.b), encode(B + ADDITION)); assert.deepEqual(fs.readFileSync(files.fix), encode(FIX)); assert.deepEqual(bindings(), before); };
+  function writeAcknowledgements() {
+    const fd = fs.openSync(files.ack, fs.constants.O_RDWR | fs.constants.O_NOFOLLOW);
+    try {
+      const current = fs.fstatSync(fd); assert(current.isFile() && current.ino === ackIdentity.ino && current.dev === ackIdentity.dev, 'Original owned ACK inode required');
+      const bytes = Buffer.from([...captured].join('\n') + '\n');
+      fs.writeFileSync(fd, bytes); fs.ftruncateSync(fd, bytes.length); fs.fsyncSync(fd);
+    } finally { fs.closeSync(fd); }
+  }
   async function framesReady() {
     const progressFile = path.join(dirs.profile, 'native-qa-progress.json');
     if (!fs.existsSync(progressFile)) return;
@@ -194,8 +207,7 @@ async function run(app, out, assets) {
     const bytes = fs.readFileSync(frame); if (bytes.length < 32 || bytes.subarray(-8, -4).toString() !== 'IEND') return;
     assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a'); assert.equal(bytes.readUInt32BE(16), 3840); assert(bytes.readUInt32BE(20) > 0);
     report.frames.push({ id, relativePath: path.relative(out, frame), bytes: bytes.length, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), sha256: sha(bytes) }); captured.add(id);
-    const current = fs.lstatSync(files.ack); assert(current.isFile() && !current.isSymbolicLink() && current.ino === ackIdentity.ino && current.dev === ackIdentity.dev);
-    fs.writeFileSync(files.ack, [...captured].join('\n') + '\n');
+    writeAcknowledgements();
   }
   try {
     const host = prepare(app, out, { tmp: dirs.tmp, home: dirs['native-home'], assets });
@@ -205,8 +217,17 @@ async function run(app, out, assets) {
       const script = driver(phase, files, { csp, cases, a: A, b: B, addition: ADDITION, fix: FIX });
       assert(Buffer.byteLength(script) <= 64 * 1024); new vm.Script(script);
       fs.writeFileSync(path.join(out, phase + '-driver.js'), script, { flag: 'wx', mode: 0o600 }); fs.writeFileSync(path.join(dirs.profile, 'native-qa.js'), script);
+      const quitOptIn = Buffer.from(JSON.stringify({ schema: 'readmd-native-qa-guarded-quit-v1', phase }) + '\n');
+      const quitFile = path.join(dirs.profile, 'native-qa-guarded-quit.json');
+      const fd = fs.openSync(quitFile, fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW | (quitOptInIdentity ? 0 : fs.constants.O_CREAT | fs.constants.O_EXCL), 0o600);
+      try {
+        const stat = fs.fstatSync(fd); assert(stat.isFile());
+        if (quitOptInIdentity) assert(stat.dev === quitOptInIdentity.dev && stat.ino === quitOptInIdentity.ino, 'Original owned quit opt-in inode required');
+        else quitOptInIdentity = stat;
+        fs.writeFileSync(fd, quitOptIn); fs.ftruncateSync(fd, quitOptIn.length); fs.fsyncSync(fd);
+      } finally { fs.closeSync(fd); }
       const ownership = { phase, launchAttempted: true, instanceReturned: false, cleanupAttempted: false, cleanupConfirmed: false }; report.cleanup.instances.push(ownership);
-      const entry = { phase, driverSha256: sha(script), host: null, passed: false }; report.phases.push(entry);
+      const entry = { phase, driverSha256: sha(script), host: null, passed: false, quitBarrier: { ownedProfileOptIn: true, phase, optInSha256: sha(quitOptIn) } }; report.phases.push(entry);
       let instance, phaseError;
       try {
         // A rejected launch may have performed its own cleanup, but without a
@@ -222,6 +243,7 @@ async function run(app, out, assets) {
             assert(typeof terminal.ok === 'boolean' && terminal.phase === phase && Array.isArray(terminal.checks) && terminal.checks.length <= 64 && terminal.checks.every(label => typeof label === 'string' && /^[a-z_0-9]{1,127}$/.test(label)), 'Invalid native terminal receipt');
             entry.result = terminal;
             assert.equal(terminal.ok, true, 'Native terminal rejected: ' + terminal.checks.join(','));
+            assert(terminal.checks.includes('guarded_quit_accepted'), 'Strict genuine quit guard acceptance required');
           }
           if (instance.launcherStopped || Date.now() >= deadline) break;
           await framesReady(); await pause(40);
@@ -230,7 +252,7 @@ async function run(app, out, assets) {
         // The app may stop after accepting quit but before posting a terminal.
         // Missing/partial receipts still fail closed; process exit is not an ACK.
         entry.result = JSON.parse(fs.readFileSync(resultFile)); fs.renameSync(resultFile, path.join(out, phase + '.json'));
-        assert.equal(entry.result.ok, true, entry.result.checks.join(',')); assert.equal(entry.result.phase, phase);
+        assert.equal(entry.result.ok, true, entry.result.checks.join(',')); assert.equal(entry.result.phase, phase); assert(entry.result.checks.includes('guarded_quit_accepted'), 'Strict genuine quit guard acceptance required');
         assert.equal(instance.receipt.forcedCleanup, false); assert.equal(instance.receipt.nativeProcessGone, true); verify(); entry.passed = true;
       } catch (error) {
         phaseError = error; entry.failure = failure(error);
