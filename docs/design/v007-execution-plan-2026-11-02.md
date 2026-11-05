@@ -4,7 +4,7 @@
 
 ## 当前基线
 
-- V0.0.6 已正式发布；首次发布与原标签见 [发布记录](../reviews/readmd-v006-release-published-2026-10-31.json)。早一轮 [生命周期热修复](../reviews/readmd-v006-macos-lifecycle-followup-2026-11-03.json)源码为 `635a6538`。本轮 P0 四个 Mac 包已进一步替换为 `fb6eaa74`，274 项最终原生检查、四包 8 次冷启动/重开通过，本机安装与公开 ARM 下载一致。Windows/Linux/集成包已由同一业务源码的 `adf7ac45` CI 构建并替换，十包及总摘要核对完成，见 [全平台回执](../reviews/readmd-v006-p0-platform-refresh-2026-11-03.md)；原标签不移动。
+- V0.0.6 已正式发布。2026-11-05 最新正式下载运行源码为 `e7b1bb97`：十个包及总摘要完成替换和 11 次匿名内容摘要／大小核对，Mac 四包 8 次启动／重开、本机另 2 次通过，默认 Markdown 关联保持；原标签未移动，见 [最新交付记录](../reviews/readmd-v006-session-refresh-published-2026-11-05.md)。此前 `635a6538`、`fb6eaa74`、`adf7ac45`、`5d617aef` 的回执各保留其历史范围。P1 开发格式和功能没有带入正式 V0.0.6。
 - 本次 Mac 热修复完成关闭／保存／恢复 56 项原生检查，四包共 8 次冷启动／重开，并验证已有配置升级后的页面集合与原件保护。这是 V7-00 的限定进展，不代表下面 16 类生命周期场景全部验收。
 - 最终 boot 的 Mac 限定原生检查为 9 组、286 项，见 [原生收尾记录](../reviews/readmd-v006-macos-native-closeout-2026-10-31.md)。它覆盖中文读写恢复、系统打开、六格式实际导出、菜单、插件和资源，不能扩大为 75 条完整认证。
 - [能力合同](capability-upgrade-acceptance.json)仍为 **63 项进行中、12 项待办、0 项整项验收**。详细未完成项与原验收条件已保留在 [本次待办快照](v007-backlog-2026-11-02.json)，计划不修改总账状态。
@@ -100,3 +100,7 @@ Rust 继续 `--locked --offline`、`CARGO_INCREMENTAL=0` 和单一共享 target�
 2026-11-04 原生增量：`7a83480b` 取得[五阶段 75 项 Cocoa/WKWebView 代码流程记录](../reviews/readmd-v007-p1-code-native-closeout-2026-11-04.md)，专用应用正常退出且注销，没有调用模型。V0.0.6 独立热修复 `5d617aef` 另取得 68 项原生关闭／退出编辑及新进程历史检查；初次候选因 Ubuntu 26.04 与锁定 Playwright 不兼容而拒收，改用明确的 Ubuntu 24.04 测试机重跑。正式安装包的字节、冷启动和替换仍是独立门槛，不据此标记全部 P1/P2 完成。
 
 2026-11-04 发布收尾：运行源码 `5d617aef` 已完成十个 V0.0.6 下载及总摘要的替换与 11 次匿名内容摘要／大小复核，Mac 四包 8 次正常启动／重开、本机副本另 2 次通过，默认 Markdown 关联保持。原标签未移动，主分支正常快进至 `e3bd8386`，见[发布回执](https://github.com/Natsummerance/rust-ReadMD/blob/e3bd838606ace3170bdda718848d9b0424a731fb/docs/reviews/readmd-v006-code-close-published-2026-11-04.json)。P1 的 75 项原生证据仍独立绑定 `7a83480b`，未将新审阅格式或批量功能带入 V0.0.6；继续受管运行环境与持久执行检查点，不据此完成 V7-05、P1/P2 或发布 V0.0.7。
+
+2026-11-05 当前限定增量：`457a1fc9` 的 [literal GFM 单格](../reviews/readmd-v007-p1-table-cell-native-2026-11-05.md)取得真实服务／浏览器 11 条回执及三阶段 50 项 Mac 原生检查；两次显式保存、不同进程恢复、一次持久撤销／重做、待审身份与 BOM/CRLF 原字节已复核。V7-07 的排序、结构行列、合并、扩展属性及完整平台／输入矩阵仍开放。新 [OpenAPI 可读投影](../reviews/readmd-v007-p1-openapi-projection-native-2026-11-05.md)完成实际原生 VS Code 的 8 项业务、3 项投影和 10 张稳定画面独立检查；只认证所述 native EH 范围，不冒称跨进程 Rust undo 或全部 V7-06。
+
+同日 CI 边界：`7a6ca78e` 的 8 个任务和 48 份产物摘要已核对，三平台旧版写入者格式隔离分别 5 项通过。`1e39f5bd` 的新一轮为 7 成功／1 Windows 失败：停止停滞请求后 peer 读取返回 10060/TimedOut，后续 worker 归零断言尚未执行；这与旧 `83b4ccf7` 的过时下载输入锁失败是不同事件，Rust 子树虽相同也不能归为已证 flaky。首败日志保留，新的单项被动 trace 诊断在隔离分支远端执行；该分支临时单测试 workflow 不得合入正式质量门槛，也不等于 8 任务全 CI。当前 V7-05/11 与全部 P1/P2 发布条件继续开放，未发布 V0.0.7。
