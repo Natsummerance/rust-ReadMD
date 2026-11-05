@@ -1987,6 +1987,13 @@ function renderTabsBar() {
   };
 
 
+  // Snapshot only the row that owns focus now, immediately before rebuilding.
+  // Async rendering must not restore focus captured before its await.
+  const focusedTab = document.activeElement;
+  const focusedTabId = focusedTab?.classList?.contains('tab-item') &&
+    ((bar && focusedTab.parentElement === bar) || (secBar && focusedTab.parentElement === secBar))
+    ? focusedTab.dataset.tabId : null;
+
   if (bar) {
     bar.innerHTML = '';
     state.tabs.forEach(tab => bar.appendChild(createTabEl(tab, bar)));
@@ -2043,6 +2050,19 @@ function renderTabsBar() {
       if (bar && bar.parentElement) bar.parentElement.classList.remove('hidden');
     }
   }
+  // Rebuilds retire the old focused row. Preserve its identity without taking
+  // focus from an editor/menu, including focus moved by a synchronous blur.
+  if (focusedTabId && (document.activeElement === document.body || document.activeElement === focusedTab)) {
+    for (const container of [bar, secBar]) {
+      const replacement = Array.from(container?.children || []).find(item =>
+        item.classList.contains('tab-item') && item.dataset.tabId === focusedTabId);
+      if (!replacement || !replacement.isConnected || replacement.offsetParent === null ||
+          replacement.closest('[inert]') || replacement.closest('[hidden]') || getComputedStyle(replacement).visibility !== 'visible') continue;
+      replacement.focus({ preventScroll: true });
+      break;
+    }
+  }
+
 }
 
 function focusVisibleTab(tabId) {
