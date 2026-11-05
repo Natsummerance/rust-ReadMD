@@ -13798,6 +13798,55 @@ window.ReadMDReview = (() => {
     const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
   }
+  function manualCurrent(rec, stamp) {
+    return Boolean(rec && stamp && stamp.owner === rec.tab && activeTab() === rec.tab && state.editing &&
+      activeView() === stamp.view && rec.view === stamp.view && stamp.view.state.doc === stamp.editorDoc &&
+      !stamp.view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false &&
+      !renameReserved(rec) && !rec.tab._renameInFlight && !rec.error && !rec.saving && !rec.adopting && !rec.processing && !rec.queue.length &&
+      !window.ReadMDLifecycle?.busy?.() && !window.ReadMDSession?.restoring?.() &&
+      rec.tab.path === stamp.path && (rec.tab.revision || '') === stamp.fileRevision &&
+      rec.snapshot?.revision === stamp.revision && rec.snapshot?.disk_revision === stamp.disk_revision &&
+      stamp.view.state.doc.toString() === stamp.content && isCurrent(rec, stamp));
+  }
+  async function freshManualHead(rec, stamp) {
+    // resume is the existing authorized physical-open path: it checks the
+    // disk fingerprint and reports recovery instead of silently rebasing.
+    const latest = await request('/api/review', { action: 'resume', path: stamp.path });
+    if (!manualCurrent(rec, stamp) || latest.recovery || latest.status === 'needs_recovery' ||
+        ['document_id', 'generation', 'review_revision', 'revision', 'disk_revision', 'content'].some(key => latest[key] !== stamp[key]) ||
+        latest.path !== rec.snapshot.path) throw failure('review_stale_generation');
+  }
+  async function captureManualRange(from, to, tab = activeTab()) {
+    const view = activeView(), editorDoc = view?.state.doc;
+    if (!tab?.path || tab.path.startsWith('draft:') || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
+    const path = tab.path, fileRevision = tab.revision || '', editGeneration = tab.editGeneration || 0;
+    const base = await capture(tab), rec = records.get(tab);
+    if (!base || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > base.content.length ||
+        [from, to].some(at => at > 0 && at < base.content.length && /[\uD800-\uDBFF]/.test(base.content[at - 1]) && /[\uDC00-\uDFFF]/.test(base.content[at]))) throw failure('review_conflict');
+    const stamp = { ...base, owner: tab, view, editorDoc, path, fileRevision, editGeneration,
+      revision: rec.snapshot.revision, disk_revision: rec.snapshot.disk_revision, from, to, original: base.content.slice(from, to) };
+    if (!manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    return Object.freeze(stamp);
+  }
+  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent) {
+    const rec = tab && records.get(tab);
+    const owned = () => ownedCurrent === undefined || typeof ownedCurrent === 'function' && ownedCurrent() === true;
+    if (typeof insert !== 'string' || !owned() || !manualCurrent(rec, stamp) || stamp.content.slice(stamp.from, stamp.to) !== stamp.original) throw failure('review_stale_generation');
+    if (!await flush(tab) || !owned() || !manualCurrent(rec, stamp)) throw rec?.error || failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    // The dialog may have closed, or another FIFO operation started, during
+    // the last await. No cancellation claim is made after this dispatch.
+    if (!owned() || !manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const edit = { from: stamp.from, to: stamp.to, insert }, after = apply(stamp.content, [edit]);
+    if (after === stamp.content) return rec.snapshot;
+    // The ordinary CM listener owns enqueueEdit and its genuine manual FIFO.
+    // Never send an AI proposal or manufacture a visible acknowledgement.
+    stamp.view.dispatch({ changes: edit, selection: { anchor: edit.from + insert.length }, scrollIntoView: true, userEvent: 'input.table.cell' });
+    if (stamp.view.state.doc.toString() !== after || rec.local !== after) throw failure('review_conflict');
+    if (!await flush(tab)) throw rec.error || failure('review_persistence_failed');
+    return rec.snapshot;
+  }
   async function codeTarget(sourceLine, code, tab = activeTab(), signal) {
     const stamp = await capture(tab), rec = records.get(tab);
     if (signal?.aborted) throw failure('cancelled');
@@ -14257,7 +14306,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, captureManualRange, applyManualRange, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();
@@ -15933,6 +15982,128 @@ function cmAlignTableColumn(view, alignment) {
   return true;
 }
 
+/* READMD_LITERAL_TABLE_CELL_HELPERS_BEGIN */
+// This first visual edit handles literal, single-line cells. Rich/unknown
+// cell source is retained and read-only rather than flattened to display text.
+function cmTableCellLiteral(raw) {
+  if (raw.length > 4096 || /[`*_~$<>\[\]\r\n\u0000]/.test(raw)) return null;
+  for (let i = 0; i < raw.length; i++) if (raw[i] === '\\' && !['\\', '|'].includes(raw[++i])) return null;
+  let unknown = false;
+  const text = raw.replace(/\\([\\|])/g, '$1').replace(/&([^;\s]+);/g, (whole, entity) => {
+    if (Object.hasOwn({ amp: 1, lt: 1, gt: 1, quot: 1, apos: 1 }, entity)) return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[entity];
+    const n = /^#\d+$/.test(entity) ? Number(entity.slice(1)) : /^#x[0-9a-f]+$/i.test(entity) ? parseInt(entity.slice(2), 16) : -1;
+    if (n <= 0 || n > 0x10ffff || n >= 0xd800 && n <= 0xdfff) { unknown = true; return whole; }
+    return String.fromCodePoint(n);
+  });
+  return unknown ? null : text;
+}
+function cmTableCellReplacement(value) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\r\n\u0000\u2028\u2029]/.test(value)) return null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    if (ch >= 0xd800 && ch <= 0xdbff) { const next = value.charCodeAt(++i); if (!(next >= 0xdc00 && next <= 0xdfff)) return null; }
+    else if (ch >= 0xdc00 && ch <= 0xdfff) return null;
+  }
+  return clipboardTableCell(value);
+}
+function cmTableCellContext(view) {
+  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view);
+  if (!hit || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  let node = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
+  while (node && node.name !== 'Table') {
+    if (node.name === 'HTMLBlock' && /^\s*<table\b/i.test(view.state.doc.sliceString(node.from, node.to))) return { unsupported: true };
+    node = node.parent;
+  }
+  if (!node) return null;
+  const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
+  const unsupported = () => ({ unsupported: true });
+  if (node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > 32 ||
+      !/^ {0,3}$/.test(header.text.slice(0, node.from - header.from)) || /<(?:table|tr|td|th|col|caption)\b/i.test(doc.sliceString(node.from, node.to))) return unsupported();
+  const lines = [];
+  for (let number = header.number; number <= last.number; number++) {
+    const line = doc.line(number), segments = cmTableRowSegments(line.text);
+    if (!segments || !segments.length || segments.length > 16 || lines.length && segments.length !== lines[0].segments.length) return unsupported();
+    lines.push({ line, segments });
+  }
+  if (lines.length < 3 || (lines.length - 1) * lines[0].segments.length > 256 ||
+      !lines[1].segments.every(cell => /^\s*:?-+:?\s*$/.test(lines[1].line.text.slice(cell.from, cell.to)))) return unsupported();
+  const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
+    const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+    const body = raw.slice(leading).replace(/[ \t]*$/, ''), from = line.from + segment.from + leading;
+    return { row, column, from, to: from + body.length, original: body, value: cmTableCellLiteral(body), line: line.number,
+      segmentFrom: line.from + segment.from, segmentTo: line.from + segment.to };
+  }));
+  const parsedRows = [];
+  for (let child = node.firstChild; child; child = child.nextSibling) if (child.name === 'TableHeader' || child.name === 'TableRow') parsedRows.push(child);
+  if (parsedRows.length !== rows.length || rows.some((cells, row) => {
+    const parsedCells = parsedRows[row].getChildren('TableCell');
+    return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
+  })) return unsupported();
+  const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
+  return selected ? { from: node.from, to: node.to, rows, selected, editorDoc: doc } : unsupported();
+}
+let tableCellSession = null;
+function tableCellControls(view, context, modal, picker) {
+  const t = key => window.i18n ? window.i18n.t(key) : key, root = document.createElement('div');
+  root.id = 'table-cell-controls'; root.className = 'table-cell-editor'; picker.before(root);
+  const status = document.createElement('p'); status.className = 'hint'; status.setAttribute('role', 'status');
+  if (context.unsupported || !window.ReadMDReview?.captureManualRange || !window.ReadMDReview?.applyManualRange) {
+    status.textContent = t(context.unsupported ? 'error.publication_table_unsupported' : 'review.persistenceFailed'); root.append(status); return;
+  }
+  const tab = getActiveTab(), session = { view, tab, context, root, serial: 0, stamp: null, busy: false };
+  tableCellSession = session;
+  root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
+  const current = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
+    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc;
+  const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
+  const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
+  const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
+  const label = document.createElement('label'); label.setAttribute('for', input.id);
+  const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const apply = document.createElement('button'), cancel = document.createElement('button');
+  for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
+  apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
+  const buttons = [];
+  async function select(cell) {
+    if (!current() || session.busy) return;
+    const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
+    label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
+    for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
+    if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.to, tab);
+      if (!current() || token !== session.serial) return;
+      if (stamp.editorDoc !== context.editorDoc || stamp.original !== cell.original) throw Error('review_stale_generation');
+      session.stamp = stamp; apply.disabled = false; status.textContent = ''; input.focus();
+    } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
+  }
+  for (const row of context.rows) {
+    const tr = document.createElement('tr');
+    for (const cell of row) {
+      const td = document.createElement(cell.row === 0 ? 'th' : 'td'), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.original; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
+      button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
+      button.addEventListener('click', () => { void select(cell); }); buttons.push({ button, cell }); td.append(button); tr.append(td);
+    }
+    grid.append(tr);
+  }
+  cancel.addEventListener('click', closeTableModal);
+  apply.addEventListener('click', async () => {
+    if (!current() || session.busy || !session.stamp) return;
+    const replacement = cmTableCellReplacement(input.value);
+    if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    if (input.value === session.cell.value) { closeTableModal(); return; }
+    const stamp = session.stamp;
+    session.busy = true; apply.disabled = true; input.disabled = true;
+    try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
+    catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
+    finally { session.busy = false; }
+  });
+  root.append(gridWrap, label, input, actions, status); void select(context.selected);
+}
+
+/* READMD_LITERAL_TABLE_CELL_HELPERS_END */
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -15940,6 +16111,9 @@ function openTableModal() {
   if (!modal) return;
   const _t = key => window.i18n ? window.i18n.t(key) : key;
   const picker = $('table-grid-picker'), label = $('table-grid-label');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_END */
   $('table-align-controls')?.remove();
   const view = cmView, hit = cmTableAlignmentContext(view);
   if (hit && picker) {
@@ -15965,9 +16139,16 @@ function openTableModal() {
     initTableGridPicker();
   }
   modal.classList.remove('hidden');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_BEGIN */
+  const cell = cmTableCellContext(view);
+  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_END */
 }
 
 function closeTableModal() {
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_END */
   const modal = $('table-modal');
   if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();

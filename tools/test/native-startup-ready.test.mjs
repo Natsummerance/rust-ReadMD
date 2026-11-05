@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 const source=fs.readFileSync(new URL('../../rust/readmd-kernel/src/main.rs',import.meta.url),'utf8');
 const script=source.match(/"(String\(document\.readyState === 'complete'[^\n]+)"/)?.[1];
-for (const asset of ['readmd.boot.js','css/reader.css']) test('same-version hotfixes bind the immutable cache URL to '+asset,()=>{
+for (const asset of ['readmd.boot.js','css/reader.css','css/editor.css']) test('same-version hotfixes bind the immutable cache URL to '+asset,()=>{
   const html=fs.readFileSync(new URL('../../assets/index.html',import.meta.url),'utf8');
   const src=[...html.matchAll(/(?:src|href)="(\/assets\/[^"?]+\?[^"]+)"/g)].map(match=>match[1]).find(value=>value.startsWith('/assets/'+asset+'?'));assert.ok(src);
   const url=new URL(src.replaceAll('&amp;','&'),'http://127.0.0.1');

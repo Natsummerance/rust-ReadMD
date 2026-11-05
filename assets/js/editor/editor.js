@@ -1668,6 +1668,128 @@ function cmAlignTableColumn(view, alignment) {
   return true;
 }
 
+/* READMD_LITERAL_TABLE_CELL_HELPERS_BEGIN */
+// This first visual edit handles literal, single-line cells. Rich/unknown
+// cell source is retained and read-only rather than flattened to display text.
+function cmTableCellLiteral(raw) {
+  if (raw.length > 4096 || /[`*_~$<>\[\]\r\n\u0000]/.test(raw)) return null;
+  for (let i = 0; i < raw.length; i++) if (raw[i] === '\\' && !['\\', '|'].includes(raw[++i])) return null;
+  let unknown = false;
+  const text = raw.replace(/\\([\\|])/g, '$1').replace(/&([^;\s]+);/g, (whole, entity) => {
+    if (Object.hasOwn({ amp: 1, lt: 1, gt: 1, quot: 1, apos: 1 }, entity)) return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[entity];
+    const n = /^#\d+$/.test(entity) ? Number(entity.slice(1)) : /^#x[0-9a-f]+$/i.test(entity) ? parseInt(entity.slice(2), 16) : -1;
+    if (n <= 0 || n > 0x10ffff || n >= 0xd800 && n <= 0xdfff) { unknown = true; return whole; }
+    return String.fromCodePoint(n);
+  });
+  return unknown ? null : text;
+}
+function cmTableCellReplacement(value) {
+  if (typeof value !== 'string' || value.length > 4096 || /[\r\n\u0000\u2028\u2029]/.test(value)) return null;
+  for (let i = 0; i < value.length; i++) {
+    const ch = value.charCodeAt(i);
+    if (ch >= 0xd800 && ch <= 0xdbff) { const next = value.charCodeAt(++i); if (!(next >= 0xdc00 && next <= 0xdfff)) return null; }
+    else if (ch >= 0xdc00 && ch <= 0xdfff) return null;
+  }
+  return clipboardTableCell(value);
+}
+function cmTableCellContext(view) {
+  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view);
+  if (!hit || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  let node = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
+  while (node && node.name !== 'Table') {
+    if (node.name === 'HTMLBlock' && /^\s*<table\b/i.test(view.state.doc.sliceString(node.from, node.to))) return { unsupported: true };
+    node = node.parent;
+  }
+  if (!node) return null;
+  const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
+  const unsupported = () => ({ unsupported: true });
+  if (node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > 32 ||
+      !/^ {0,3}$/.test(header.text.slice(0, node.from - header.from)) || /<(?:table|tr|td|th|col|caption)\b/i.test(doc.sliceString(node.from, node.to))) return unsupported();
+  const lines = [];
+  for (let number = header.number; number <= last.number; number++) {
+    const line = doc.line(number), segments = cmTableRowSegments(line.text);
+    if (!segments || !segments.length || segments.length > 16 || lines.length && segments.length !== lines[0].segments.length) return unsupported();
+    lines.push({ line, segments });
+  }
+  if (lines.length < 3 || (lines.length - 1) * lines[0].segments.length > 256 ||
+      !lines[1].segments.every(cell => /^\s*:?-+:?\s*$/.test(lines[1].line.text.slice(cell.from, cell.to)))) return unsupported();
+  const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
+    const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+    const body = raw.slice(leading).replace(/[ \t]*$/, ''), from = line.from + segment.from + leading;
+    return { row, column, from, to: from + body.length, original: body, value: cmTableCellLiteral(body), line: line.number,
+      segmentFrom: line.from + segment.from, segmentTo: line.from + segment.to };
+  }));
+  const parsedRows = [];
+  for (let child = node.firstChild; child; child = child.nextSibling) if (child.name === 'TableHeader' || child.name === 'TableRow') parsedRows.push(child);
+  if (parsedRows.length !== rows.length || rows.some((cells, row) => {
+    const parsedCells = parsedRows[row].getChildren('TableCell');
+    return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
+  })) return unsupported();
+  const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
+  return selected ? { from: node.from, to: node.to, rows, selected, editorDoc: doc } : unsupported();
+}
+let tableCellSession = null;
+function tableCellControls(view, context, modal, picker) {
+  const t = key => window.i18n ? window.i18n.t(key) : key, root = document.createElement('div');
+  root.id = 'table-cell-controls'; root.className = 'table-cell-editor'; picker.before(root);
+  const status = document.createElement('p'); status.className = 'hint'; status.setAttribute('role', 'status');
+  if (context.unsupported || !window.ReadMDReview?.captureManualRange || !window.ReadMDReview?.applyManualRange) {
+    status.textContent = t(context.unsupported ? 'error.publication_table_unsupported' : 'review.persistenceFailed'); root.append(status); return;
+  }
+  const tab = getActiveTab(), session = { view, tab, context, root, serial: 0, stamp: null, busy: false };
+  tableCellSession = session;
+  root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
+  const current = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
+    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc;
+  const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
+  const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
+  const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
+  const label = document.createElement('label'); label.setAttribute('for', input.id);
+  const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const apply = document.createElement('button'), cancel = document.createElement('button');
+  for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
+  apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
+  const buttons = [];
+  async function select(cell) {
+    if (!current() || session.busy) return;
+    const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
+    label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
+    for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
+    if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.to, tab);
+      if (!current() || token !== session.serial) return;
+      if (stamp.editorDoc !== context.editorDoc || stamp.original !== cell.original) throw Error('review_stale_generation');
+      session.stamp = stamp; apply.disabled = false; status.textContent = ''; input.focus();
+    } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
+  }
+  for (const row of context.rows) {
+    const tr = document.createElement('tr');
+    for (const cell of row) {
+      const td = document.createElement(cell.row === 0 ? 'th' : 'td'), button = document.createElement('button');
+      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.original; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
+      button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
+      button.addEventListener('click', () => { void select(cell); }); buttons.push({ button, cell }); td.append(button); tr.append(td);
+    }
+    grid.append(tr);
+  }
+  cancel.addEventListener('click', closeTableModal);
+  apply.addEventListener('click', async () => {
+    if (!current() || session.busy || !session.stamp) return;
+    const replacement = cmTableCellReplacement(input.value);
+    if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    if (input.value === session.cell.value) { closeTableModal(); return; }
+    const stamp = session.stamp;
+    session.busy = true; apply.disabled = true; input.disabled = true;
+    try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
+    catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
+    finally { session.busy = false; }
+  });
+  root.append(gridWrap, label, input, actions, status); void select(context.selected);
+}
+
+/* READMD_LITERAL_TABLE_CELL_HELPERS_END */
 function openTableModal() {
   if (!state.editing) return;
   closeMdPopups();
@@ -1675,6 +1797,9 @@ function openTableModal() {
   if (!modal) return;
   const _t = key => window.i18n ? window.i18n.t(key) : key;
   const picker = $('table-grid-picker'), label = $('table-grid-label');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_OPEN_RESET_END */
   $('table-align-controls')?.remove();
   const view = cmView, hit = cmTableAlignmentContext(view);
   if (hit && picker) {
@@ -1700,9 +1825,16 @@ function openTableModal() {
     initTableGridPicker();
   }
   modal.classList.remove('hidden');
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_BEGIN */
+  const cell = cmTableCellContext(view);
+  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }
+  /* READMD_LITERAL_TABLE_CELL_OPEN_CONTROLS_END */
 }
 
 function closeTableModal() {
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_BEGIN */
+  tableCellSession = null; $('table-cell-controls')?.remove();
+  /* READMD_LITERAL_TABLE_CELL_CLOSE_RESET_END */
   const modal = $('table-modal');
   if (modal) window.ReadMDModal.close(modal);
   if (cmView) cmView.focus();

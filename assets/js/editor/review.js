@@ -449,6 +449,55 @@ window.ReadMDReview = (() => {
     const normalized = edits.map(edit => ({ from: edit.from, to: edit.to, insert: lf(edit.insert) }));
     return mutate('propose', { edits: normalized, origin: 'ai' }, tab, stamp);
   }
+  function manualCurrent(rec, stamp) {
+    return Boolean(rec && stamp && stamp.owner === rec.tab && activeTab() === rec.tab && state.editing &&
+      activeView() === stamp.view && rec.view === stamp.view && stamp.view.state.doc === stamp.editorDoc &&
+      !stamp.view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false &&
+      !renameReserved(rec) && !rec.tab._renameInFlight && !rec.error && !rec.saving && !rec.adopting && !rec.processing && !rec.queue.length &&
+      !window.ReadMDLifecycle?.busy?.() && !window.ReadMDSession?.restoring?.() &&
+      rec.tab.path === stamp.path && (rec.tab.revision || '') === stamp.fileRevision &&
+      rec.snapshot?.revision === stamp.revision && rec.snapshot?.disk_revision === stamp.disk_revision &&
+      stamp.view.state.doc.toString() === stamp.content && isCurrent(rec, stamp));
+  }
+  async function freshManualHead(rec, stamp) {
+    // resume is the existing authorized physical-open path: it checks the
+    // disk fingerprint and reports recovery instead of silently rebasing.
+    const latest = await request('/api/review', { action: 'resume', path: stamp.path });
+    if (!manualCurrent(rec, stamp) || latest.recovery || latest.status === 'needs_recovery' ||
+        ['document_id', 'generation', 'review_revision', 'revision', 'disk_revision', 'content'].some(key => latest[key] !== stamp[key]) ||
+        latest.path !== rec.snapshot.path) throw failure('review_stale_generation');
+  }
+  async function captureManualRange(from, to, tab = activeTab()) {
+    const view = activeView(), editorDoc = view?.state.doc;
+    if (!tab?.path || tab.path.startsWith('draft:') || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
+    const path = tab.path, fileRevision = tab.revision || '', editGeneration = tab.editGeneration || 0;
+    const base = await capture(tab), rec = records.get(tab);
+    if (!base || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > base.content.length ||
+        [from, to].some(at => at > 0 && at < base.content.length && /[\uD800-\uDBFF]/.test(base.content[at - 1]) && /[\uDC00-\uDFFF]/.test(base.content[at]))) throw failure('review_conflict');
+    const stamp = { ...base, owner: tab, view, editorDoc, path, fileRevision, editGeneration,
+      revision: rec.snapshot.revision, disk_revision: rec.snapshot.disk_revision, from, to, original: base.content.slice(from, to) };
+    if (!manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    return Object.freeze(stamp);
+  }
+  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent) {
+    const rec = tab && records.get(tab);
+    const owned = () => ownedCurrent === undefined || typeof ownedCurrent === 'function' && ownedCurrent() === true;
+    if (typeof insert !== 'string' || !owned() || !manualCurrent(rec, stamp) || stamp.content.slice(stamp.from, stamp.to) !== stamp.original) throw failure('review_stale_generation');
+    if (!await flush(tab) || !owned() || !manualCurrent(rec, stamp)) throw rec?.error || failure('review_stale_generation');
+    await freshManualHead(rec, stamp);
+    // The dialog may have closed, or another FIFO operation started, during
+    // the last await. No cancellation claim is made after this dispatch.
+    if (!owned() || !manualCurrent(rec, stamp)) throw failure('review_stale_generation');
+    const edit = { from: stamp.from, to: stamp.to, insert }, after = apply(stamp.content, [edit]);
+    if (after === stamp.content) return rec.snapshot;
+    // The ordinary CM listener owns enqueueEdit and its genuine manual FIFO.
+    // Never send an AI proposal or manufacture a visible acknowledgement.
+    stamp.view.dispatch({ changes: edit, selection: { anchor: edit.from + insert.length }, scrollIntoView: true, userEvent: 'input.table.cell' });
+    if (stamp.view.state.doc.toString() !== after || rec.local !== after) throw failure('review_conflict');
+    if (!await flush(tab)) throw rec.error || failure('review_persistence_failed');
+    return rec.snapshot;
+  }
   async function codeTarget(sourceLine, code, tab = activeTab(), signal) {
     const stamp = await capture(tab), rec = records.get(tab);
     if (signal?.aborted) throw failure('cancelled');
@@ -908,7 +957,7 @@ window.ReadMDReview = (() => {
   }
   document.addEventListener?.('readmd:document-loaded', () => statusContext(records.get(activeTab())));
   window.addEventListener?.('readmd:language-changed', () => statusContext(records.get(activeTab())));
-  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
+  return { lf, documentEdits, ensure, restore, mount, detach, extension, onEditorUpdate, flush, flushAll, capture, captureManualRange, applyManualRange, propose, codeTarget, codeOutput, codeBatchTarget, codeBatchRun, codeBatchOutput, resolve, discard, history, runAi, cancelAi,
     prepareSave, saved, finishSave, beginRename, renamed, refactorState, validateRefactorGroup, applyRefactorGroup, endRename, retry, navigate, adopt, snapshot: tab => records.get(tab || activeTab())?.snapshot || null,
     busy: tab => { const rec = records.get(tab || activeTab()); return Boolean(rec && (rec.processing || rec.saving || rec.queue.length)); } };
 })();

@@ -149,8 +149,9 @@ test('studio does not treat a late source-only response as the replacement draft
 });
 test('approved review integration keeps frontend bytes fixed outside the formula context hook',()=>{
   // V006 batch 1 changes review/editor/save integration; batch 3 also fixes
-  // clipboard and column alignment tables. Advance only the reviewed editor
-  // baseline after real CSP editing, undo, save and reopen checks. Other guards stay unchanged.
+  // clipboard and column alignment tables. Literal cell editing owns four
+  // explicit new regions; project only those out and retain the legacy pin.
+  // Its exact source ranges, manual FIFO and cancellation have separate tests.
   // The two advanced baselines use canonical CRLF, independent of checkout
   // EOL. The preview baseline includes the rename/recovery fence validated by
   // the separate real-browser edit, undo/redo, save and restart regression.
@@ -164,6 +165,26 @@ test('approved review integration keeps frontend bytes fixed outside the formula
   ];assert.equal(protectedFiles.length,5);
   for(const row of protectedFiles){
     let bytes=fs.readFileSync(path.join(root,row.path));
+    if(row.path==='assets/js/editor/editor.js'){
+      let text=bytes.toString('utf8').replace(/\r\n?/g,'\n');
+      const reset="  tableCellSession = null; $('table-cell-controls')?.remove();\n";
+      const hooks=[['HELPERS','',null],['OPEN_RESET','  ',reset],
+        ['OPEN_CONTROLS','  ',"  const cell = cmTableCellContext(view);\n  if (cell && picker) { picker.classList.add('hidden'); tableCellControls(view, cell, modal, picker); }\n"],
+        ['CLOSE_RESET','  ',reset]];
+      for(const [name,indent,expected] of hooks){
+        const begin=indent+'/* READMD_LITERAL_TABLE_CELL_'+name+'_BEGIN */\n',end=indent+'/* READMD_LITERAL_TABLE_CELL_'+name+'_END */\n';
+        assert.equal(text.split(begin).length,2,name);assert.equal(text.split(end).length,2,name);
+        const at=text.indexOf(begin),stop=text.indexOf(end,at+begin.length);assert(stop>at,name);
+        const body=text.slice(at+begin.length,stop);
+        if(expected!==null)assert.equal(body,expected,name);
+        else{
+          assert.deepEqual([...body.matchAll(/^function (\w+)\(/gm)].map(match=>match[1]),['cmTableCellLiteral','cmTableCellReplacement','cmTableCellContext','tableCellControls']);
+          assert.equal(body.split('let tableCellSession = null;').length,2);
+        }
+        text=text.slice(0,at)+text.slice(stop+end.length);
+      }
+      bytes=Buffer.from(text);
+    }
     if(row.path==='assets/js/editor/preview.js'){
       const text=bytes.toString('utf8'),begin='  // READMD_MATH_CONTEXT_BEGIN',end='  // READMD_MATH_CONTEXT_END';
       if(text.includes(begin)){

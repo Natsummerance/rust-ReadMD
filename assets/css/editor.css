@@ -622,3 +622,85 @@ body.zen-mode #edit-wrap { background: var(--color-surface); }
   .review-context-menu > button { min-height: 44px; }
   .review-block-actions { opacity: 1; }
 }
+
+/* Literal cell editing uses the existing table modal and its one vertical body.
+   The owner supplies --table-cell-columns as the actual integer column count. */
+#table-cell-controls.table-cell-editor {
+  --table-cell-target: max(44px, var(--touch-target, 44px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+#table-cell-controls.table-cell-editor .table-cell-grid-scroll {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding: var(--space-1);
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+#table-cell-controls.table-cell-editor .table-cell-grid {
+  inline-size: 100%;
+  min-inline-size: calc(clamp(1, var(--table-cell-columns, 1), 16) * var(--table-cell-target) + (clamp(1, var(--table-cell-columns, 1), 16) + 1) * var(--space-1));
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: var(--space-1);
+  margin: 0;
+}
+#table-cell-controls.table-cell-editor .table-cell-grid :is(th, td) {
+  padding: 0;
+  border: 0;
+}
+#table-cell-controls.table-cell-editor .table-cell-grid .tb-btn {
+  display: block;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: var(--table-cell-target);
+  block-size: var(--table-cell-target);
+  min-block-size: var(--table-cell-target);
+  padding-block: 0;
+  line-height: calc(var(--table-cell-target) - 2 * var(--hairline));
+  text-align: start;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  scroll-margin-inline: var(--space-1);
+  transform: none;
+}
+#table-cell-controls.table-cell-editor > .modal-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: var(--table-cell-target);
+  max-inline-size: 100%;
+  block-size: var(--table-cell-target);
+  min-block-size: var(--table-cell-target);
+}
+#table-cell-controls.table-cell-editor .table-cell-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+#table-cell-controls.table-cell-editor .table-cell-editor-actions .tb-btn {
+  min-inline-size: var(--table-cell-target);
+  max-inline-size: 100%;
+  min-block-size: var(--table-cell-target);
+  block-size: auto;
+  padding-block: var(--space-2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  transform: none;
+}
+#table-cell-controls.table-cell-editor > :is(label, .hint) {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+#table-cell-controls.table-cell-editor > .hint { margin: 0; }
+/* The old picker label stays in flow in cell mode, rather than covering input
+   or actions after a long grid. Removing this root restores picker styling. */
+#table-cell-controls.table-cell-editor ~ #table-grid-label { position: static; }
