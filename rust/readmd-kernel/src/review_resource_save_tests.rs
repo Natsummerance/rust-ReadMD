@@ -595,3 +595,63 @@ fn prepared_history_refuses_changed_resource_and_preserves_external_bytes_on_abo
     assert!(current["save_intent"].is_null()); assert_eq!(current["content"], edited["content"]);
     assert_eq!(mutate(&app, &current, "undo", json!({}))["content"], raw);
 }
+
+#[test]
+fn enclosing_partial_image_undo_then_save_copy_retains_precise_metadata_and_hidden_resources() {
+    let root = tempfile::tempdir().unwrap();
+    let app = runtime(root.path());
+    use sha2::Digest;
+    let raw = "A😀|![one](old.svg)|ZZ\n";
+    let expected_original = "\u{feff}A😀|![one](old.svg)|ZZ\r\n";
+    assert!(!raw.contains('\r') && !raw.starts_with('\u{feff}'));
+    let (file, dest) = input(root.path(), raw);
+    assert_eq!(std::fs::read(&file).unwrap(),expected_original.as_bytes());
+    let old = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 0L1 1"/></svg>"#;
+    let new = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><path d="M0 1L1 0"/></svg>"#;
+    assert_eq!(old.len(),84);assert_eq!(new.len(),84);
+    assert_eq!(format!("{:x}",sha2::Sha256::digest(old)),"e9f329621cfb632a24bebdce7d173dddfe75d0bf46edddab6c0535b13eb65368");
+    assert_eq!(format!("{:x}",sha2::Sha256::digest(new)),"7c2c8f3b040de0f1ff1d217d2ca52934b3738206e15e16c8fc71c8671d6ccf25");
+    std::fs::write(file.parent().unwrap().join("old.svg"), old).unwrap();
+    std::fs::write(file.parent().unwrap().join("new.svg"), new).unwrap();
+    let first = open(&app, &file);
+    let proposed = mutate(&app, &first, "propose", json!({"origin":"ai","edits":[
+        {"from":11,"to":14,"insert":"new"},{"from":20,"to":22,"insert":"YY"}]}));
+    let image_id = proposed["changes"].as_array().unwrap().iter().find(|x|x["from"]==11).unwrap()["id"].clone();
+    let outside_id = proposed["changes"].as_array().unwrap().iter().find(|x|x["from"]==20).unwrap()["id"].clone();
+    let manual = mutate(&app, &proposed, "edit", json!({"edits":[{"from":4,"to":19,"insert":"prefix ![one](new.svg)"}]}));
+    let restored = mutate(&app, &manual, "undo", json!({}));
+    assert_eq!(restored["content"], "A😀|![one](new.svg)|YY\n");
+    let image = restored["changes"].as_array().unwrap().iter().find(|x|x["id"]==image_id).unwrap();
+    assert_eq!(image["from"],11); assert_eq!(image["to"],14);
+    assert_eq!(image["original"],"old"); assert_eq!(image["replacement"],"new");
+    assert_eq!(image["decision"],"pending"); assert_eq!(image["application"],"applied"); assert_eq!(image["taken_over"],false);
+    let accepted = mutate(&app, &restored, "resolve", json!({"ids":[image_id],"decision":"accept"}));
+    let target = dest.join("exact-image.md");
+    let saved = save(&app, &file, &accepted, &target);
+    let new_uri = "readmd-assets/new%2D7c2c8f3b040de0f1ff1d217d%2Esvg";
+    let old_uri = "readmd-assets/old%2De9f329621cfb632a24bebdce%2Esvg";
+    let expected = "A😀|![one](readmd-assets/new%2D7c2c8f3b040de0f1ff1d217d%2Esvg)|YY\n";
+    assert_eq!(saved["review"]["content"],expected);
+    assert_eq!(std::fs::read(&file).unwrap(),expected_original.as_bytes());
+    assert_eq!(std::fs::read(&target).unwrap(),format!("\u{feff}{}",expected.replace('\n',"\r\n")).as_bytes());
+    let decode = |uri:&str| percent_encoding::percent_decode_str(uri).decode_utf8().unwrap().into_owned();
+    assert_eq!(std::fs::read(dest.join(decode(old_uri))).unwrap(),old.as_slice());
+    assert_eq!(std::fs::read(dest.join(decode(new_uri))).unwrap(),new.as_slice());
+    let document_id=saved["review"]["document_id"].clone();
+    drop(app);
+    std::fs::rename(file.parent().unwrap(),root.path().join("original-offline")).unwrap();
+    let app=runtime(root.path());
+    let reopened=open(&app,&target);assert_eq!(reopened["document_id"],document_id);
+    let undone=mutate(&app,&reopened,"undo",json!({}));
+    assert_eq!(undone["content"],expected);assert_eq!(undone["generation"],reopened["generation"]);
+    let image=undone["changes"].as_array().unwrap().iter().find(|x|x["id"]==image_id).unwrap();
+    assert_eq!(image["from"],11);assert_eq!(image["to"],61);assert_eq!(image["original"],"old");assert_eq!(image["replacement"],new_uri);assert_eq!(image["restore_original"],old_uri);assert_eq!(image["decision"],"pending");assert_eq!(image["taken_over"],false);
+    let outside=undone["changes"].as_array().unwrap().iter().find(|x|x["id"]==outside_id).unwrap();
+    assert_eq!(outside["from"],63);assert_eq!(outside["to"],65);assert_eq!(outside["original"],"ZZ");assert_eq!(outside["replacement"],"YY");assert_eq!(outside["decision"],"pending");assert_eq!(outside["taken_over"],false);
+    let withdrawn=mutate(&app,&undone,"resolve",json!({"ids":[image_id],"decision":"withdraw"}));
+    assert_eq!(withdrawn["content"],"A😀|![one](readmd-assets/old%2De9f329621cfb632a24bebdce%2Esvg)|YY\n");
+    assert_eq!(image_bytes(withdrawn["content"].as_str().unwrap(),&dest),vec![old.to_vec()]);
+    let back=mutate(&app,&withdrawn,"undo",json!({}));assert_eq!(back["content"],expected);
+    assert_eq!(image_bytes(back["content"].as_str().unwrap(),&dest),vec![new.to_vec()]);
+    assert_eq!(std::fs::read(&target).unwrap(),format!("\u{feff}{}",expected.replace('\n',"\r\n")).as_bytes());
+}

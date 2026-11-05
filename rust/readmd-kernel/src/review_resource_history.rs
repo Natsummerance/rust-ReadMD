@@ -501,7 +501,8 @@ pub(super) fn validate_head(
                     return Err("review_save_conflict");
                 }
             }
-            let next = apply(&content, &proof.inverse)?;
+            let inverse = document_transaction::canonical_inverse(proof.inverse.clone())?;
+            let next = apply(&content, &inverse)?;
             if next.revision != proof.target_revision {
                 return Err("review_save_conflict");
             }
@@ -562,7 +563,8 @@ pub(super) fn compensate_projection(
             return Err("review_conflict");
         }
     }
-    let result = apply(&document.content, &projection.inverse)?;
+    let inverse = document_transaction::canonical_inverse(projection.inverse.clone())?;
+    let result = apply(&document.content, &inverse)?;
     if result.revision != projection.target_revision {
         return Err("review_conflict");
     }
@@ -572,7 +574,7 @@ pub(super) fn compensate_projection(
     for change in &mut document.changes {
         change.version = version;
     }
-    Ok(projection.inverse.clone())
+    Ok(inverse)
 }
 pub(super) fn reverse(
     document: &Document,
@@ -689,4 +691,74 @@ mod tests {
             assert!(current["save_intent"].is_null());
         }
     }
+    // Compatibility input: split an actually generated, valid inverse insertion
+    // into two raw same-point fragments. Only the decomposition changes; target
+    // revisions and metadata still come from real reachable Service history.
+    fn legacy_raw_projection_fixture(root: &Path) -> (Service, Value, Value, std::path::PathBuf) {
+        let service=Service::new(root);
+        let raw="😀|aaCCbb|![x](old.svg)";
+        let file=root.join("legacy-projection.md");std::fs::write(&file,raw).unwrap();
+        std::fs::write(root.join("old.svg"),b"<svg>owned source</svg>").unwrap();
+        let first=service.handle(&json!({"action":"open","path":file,"content":raw,"disk_content":raw,"disk_revision":document_transaction::revision(raw)})).unwrap();
+        let head=change(&service,&first,"edit",json!({"edits":[{"from":3,"to":5,"insert":""},{"from":5,"to":7,"insert":""}]}));
+        assert_eq!(head["content"],"😀|bb|![x](old.svg)");
+        let mut plans=service.resource_save_history(&head,|state|Ok(ResourceState{content:string(state,"content")?.into(),steps:Vec::new(),restorations:Vec::new()})).unwrap();
+        assert_eq!(plans.as_array().unwrap().len(),1);
+        assert_eq!(plans[0]["projection"]["inverse"],json!([{"from":3,"to":3,"insert":"aaCC"}]));
+        assert_eq!(plans[0]["projection"]["inverse_expected"],json!([""]));
+        plans[0]["projection"]["inverse"]=json!([{"from":3,"to":3,"insert":"aa"},{"from":3,"to":3,"insert":"CC"}]);
+        plans[0]["projection"]["inverse_expected"]=json!(["",""]);
+        (service,head,plans,file)
+    }
+    fn commit_legacy_raw_projection(service:&Service,head:&Value,plans:Value,file:&Path)->Value {
+        let content=head["content"].as_str().unwrap();
+        let prepared=change(service,head,"prepare_save",json!({"content":content,"saved_content":content,
+            "disk_revision":head["disk_revision"],"expected_disk_revision":document_transaction::revision(content),"history_projections":plans}));
+        std::fs::write(file,content).unwrap();
+        service.handle(&json!({"action":"commit_save","document_id":head["document_id"],"intent_id":prepared["intent_id"],
+            "call_id":Uuid::new_v4().to_string(),"disk_revision":document_transaction::revision(content),"content":content})).unwrap()
+    }
+    #[test]
+    fn legacy_raw_projection_persists_and_executes_undo_redo_without_changing_expected_pairs() {
+        let root=tempfile::tempdir().unwrap();
+        let(service,head,plans,file)=legacy_raw_projection_fixture(root.path());
+        let committed=commit_legacy_raw_projection(&service,&head,plans,&file);
+        service.store.run(|tx|with_text_context(tx,||{
+            let document=load(tx,committed["document_id"].as_str().unwrap())?;
+            let proof=document.undo.last().unwrap().resource_projection.as_ref().unwrap();
+            assert_eq!(proof.inverse.len(),2);assert_eq!(proof.inverse_expected,vec!["",""]);
+            assert_eq!(proof.inverse[0].from,3);assert_eq!(proof.inverse[1].from,3);
+            assert_eq!(proof.inverse[0].insert,"aa");assert_eq!(proof.inverse[1].insert,"CC");Ok(())
+        })).unwrap();
+        drop(service);let service=Service::new(root.path());
+        let current=service.handle(&json!({"action":"read","document_id":committed["document_id"]})).unwrap();
+        let undone=change(&service,&current,"undo",json!({}));assert_eq!(undone["content"],"😀|aaCCbb|![x](old.svg)");
+        let redone=change(&service,&undone,"redo",json!({}));assert_eq!(redone["content"],"😀|bb|![x](old.svg)");
+        assert_eq!(std::fs::read(&file).unwrap(),"😀|bb|![x](old.svg)".as_bytes());
+        assert_eq!(std::fs::read(root.path().join("old.svg")).unwrap(),b"<svg>owned source</svg>");
+    }
+    #[test]
+    fn legacy_raw_projection_second_expected_mismatch_is_atomic_before_canonical_execution() {
+        let root=tempfile::tempdir().unwrap();
+        let(service,head,plans,file)=legacy_raw_projection_fixture(root.path());
+        let committed=commit_legacy_raw_projection(&service,&head,plans,&file);
+        // A corrupted old persisted expected value must not disappear when its
+        // execution fragments coalesce. This is test-only stored-data injection.
+        service.store.run(|tx|with_text_context(tx,||{
+            let mut document=load(tx,committed["document_id"].as_str().unwrap())?;
+            document.undo.last_mut().unwrap().resource_projection.as_mut().unwrap().inverse_expected[1]="not-empty".into();
+            persist(tx,&document)
+        })).unwrap();
+        let before=service.handle(&json!({"action":"read","document_id":committed["document_id"]})).unwrap();
+        let count=||rusqlite::Connection::open(root.path().join("review.sqlite3")).unwrap().query_row("SELECT COUNT(*) FROM review_events",[],|row|row.get::<_,i64>(0)).unwrap();
+        let events_before=count();let disk_before=std::fs::read(&file).unwrap();
+        let request=json!({"action":"undo","document_id":before["document_id"],"generation":before["generation"],
+            "review_revision":before["review_revision"],"call_id":"legacy-raw-expected-fault"});
+        assert_eq!(service.handle(&request).unwrap_err(),"review_conflict");
+        assert_eq!(service.handle(&json!({"action":"read","document_id":before["document_id"]})).unwrap(),before);
+        assert_eq!(count(),events_before);assert_eq!(std::fs::read(&file).unwrap(),disk_before);
+        assert_eq!(service.handle(&json!({"action":"receipt","document_id":before["document_id"],"call_id":"legacy-raw-expected-fault"})).unwrap()["found"],false);
+        assert_eq!(std::fs::read(root.path().join("old.svg")).unwrap(),b"<svg>owned source</svg>");
+    }
+
 }
