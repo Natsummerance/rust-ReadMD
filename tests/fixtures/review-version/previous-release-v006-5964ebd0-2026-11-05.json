@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "version": "0.0.6",
+  "tag": "V0.0.6",
+  "tagCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+  "runtimeSourceCommit": "5964ebd0e2a4fecb676b2b8ee95573fa4b516fa6",
+  "ciRunId": 41981825560,
+  "sourceRunUrl": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41981825560",
+  "publicationStatus": "complete",
+  "packagesReplaced": 10,
+  "anonymousDownloadsVerified": 11,
+  "previousSemanticSchema": 6,
+  "packages": [
+    {
+      "name": "ReadMD-windows-x64.zip",
+      "size": 68593909,
+      "sha256": "4368c993b0a2214a34797b68493fbb4faecf6137348e2757fcad7bfcb654494f",
+      "binarySha256": "f86b0e4cb8a04ecd2e1464e7cce06718e8553e36b7888b2317a33f9f6a32a6d9",
+      "bootSha256": "7746e0e1fb7785a134e7fff09750974c3042919350a2cd1eaa86f6cfb8ce8013",
+      "sourceBootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceByteVariants": {
+        "assets/index.html": "exact Windows CRLF checkout",
+        "assets/readmd.boot.js": "exact Windows CRLF checkout",
+        "assets/js/core/lifecycle.js": "exact Windows CRLF checkout",
+        "assets/js/editor/review.js": "exact Windows CRLF checkout",
+        "assets/js/reader/render.js": "exact Windows CRLF checkout"
+      },
+      "buildRunId": 41981825560,
+      "sourceArtifactId": 13394464219,
+      "sourceArtifactDigest": "sha256:356ebdaf91d8e87a1b9ddabc367d3d3a2762bab16e6a56c0e1900c80ed324b47",
+      "githubAssetId": 712777040
+    },
+    {
+      "name": "ReadMD-linux-x86_64.tar.gz",
+      "size": 68163590,
+      "sha256": "1d2060e512450194ba6cba79ad751e546f65746cbc9c0cd83692724368bbafff",
+      "binarySha256": "2b7af9ea5c8a1f928ae891af62a30171231ad527da3ad0fe6c92b1761da771a8",
+      "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceBootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceByteVariants": {
+        "assets/index.html": "exact Git bytes",
+        "assets/readmd.boot.js": "exact Git bytes",
+        "assets/js/core/lifecycle.js": "exact Git bytes",
+        "assets/js/editor/review.js": "exact Git bytes",
+        "assets/js/reader/render.js": "exact Git bytes"
+      },
+      "buildRunId": 41981825560,
+      "sourceArtifactId": 13394009501,
+      "sourceArtifactDigest": "sha256:3058fa17a66cec31948ccedf2180408205d1a03a63a51c2346ee0059d524b3e3",
+      "githubAssetId": 712776357
+    },
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 68107587,
+      "sha256": "efa54541818751f82af5131042442dc643098091e61688c2ff03ec80cd2ad22e",
+      "binarySha256": "8419f88f523888d23dcaf89eaa45d99fdd52ed0c0c2725756f277bd786b2be4e",
+      "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceBootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceByteVariants": {
+        "assets/index.html": "exact Git bytes",
+        "assets/readmd.boot.js": "exact Git bytes",
+        "assets/js/core/lifecycle.js": "exact Git bytes",
+        "assets/js/editor/review.js": "exact Git bytes",
+        "assets/js/reader/render.js": "exact Git bytes"
+      },
+      "buildRunId": 41981825560,
+      "sourceArtifactId": 13394129290,
+      "sourceArtifactDigest": "sha256:1e05d8ec5636031750b4206a7060128ee891c0d940cd0dabd30897f3f58ee96d",
+      "githubAssetId": 712729642
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 69019475,
+      "sha256": "7c9b2fc9496ed0e563bff35064757135742fa6997124ec9ed94b876de291000d",
+      "binarySha256": "037dc70428425bae0f72024a5aa2657206eeed93e91cdbc3eb3aec68b67fa9f4",
+      "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceBootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+      "sourceByteVariants": {
+        "assets/index.html": "exact Git bytes",
+        "assets/readmd.boot.js": "exact Git bytes",
+        "assets/js/core/lifecycle.js": "exact Git bytes",
+        "assets/js/editor/review.js": "exact Git bytes",
+        "assets/js/reader/render.js": "exact Git bytes"
+      },
+      "buildRunId": 41981825560,
+      "sourceArtifactId": 13393808994,
+      "sourceArtifactDigest": "sha256:1a83bf630f1cabaaf060dbb1f9827c8afa62d25b41df19188b25fa24ef51a489",
+      "githubAssetId": 712759380
+    }
+  ],
+  "anonymousDownloads": [
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 68107587,
+      "sha256": "efa54541818751f82af5131042442dc643098091e61688c2ff03ec80cd2ad22e",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 77019293,
+      "sha256": "179290413b3e0d3c35349d5506dfbafc360f2803e2bc8183f529bd589fb8154f",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 69019475,
+      "sha256": "7c9b2fc9496ed0e563bff35064757135742fa6997124ec9ed94b876de291000d",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-macos-x64.dmg",
+      "size": 77215637,
+      "sha256": "681f726700b8deff240f82fa81e6b35091cf896a93e73566e944219d3d5e9bb3",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-windows-x64.zip",
+      "size": 68593909,
+      "sha256": "4368c993b0a2214a34797b68493fbb4faecf6137348e2757fcad7bfcb654494f",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMDSetup-windows-x64.exe",
+      "size": 65182435,
+      "sha256": "890736bdd315763658806db987084a35d0a866fcf300a10c6667cd7754ff7d64",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-linux-x86_64.deb",
+      "size": 56997574,
+      "sha256": "89265fd55a02793fc6c2dda008382b9de110a661f0250014889acecb87c870d6",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "ReadMD-linux-x86_64.tar.gz",
+      "size": 68163590,
+      "sha256": "1d2060e512450194ba6cba79ad751e546f65746cbc9c0cd83692724368bbafff",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "readmd-vscode-0.0.6.vsix",
+      "size": 14039557,
+      "sha256": "000871d99f9c34fb72310fc7f68385d0029c269d62a409703fb31667f10e131c",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "readmd-mcp-server-0.0.6.zip",
+      "size": 7055,
+      "sha256": "eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595",
+      "passed": true,
+      "authenticated": false
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 903,
+      "sha256": "4e9c020e67e5cae5cadba17bfab1b72bd67d405d3e0d9fabc076ad3227108bb6",
+      "passed": true,
+      "authenticated": false
+    }
+  ],
+  "provenance": {
+    "independentBuildJobsPassed": 10,
+    "requiredArtifactsVerified": 16,
+    "casPlatformsVerified": 3,
+    "undoHttpPlatformsVerified": 3,
+    "sourceBoundMacUndoQaChecks": 61,
+    "sourceBoundMacQaChecks": 68,
+    "formalMacColdAndReopenPhases": 8,
+    "installedNativeColdAndReopenPhases": 2,
+    "formalArchiveSourceVerified": true,
+    "remoteBackupCleanupComplete": true,
+    "ownedLocalCleanupComplete": true,
+    "finalReleaseApiSha256": "b5599cb10941b8337bfa9517b8607380c46f3f8003261b340c78aeadec7c188d",
+    "deliveryReceiptSha256": {
+      "complete": "aba9d889a6b485724cff73275a49fd2bb6822b66bb20172b12e39b4e81bb4c4f",
+      "anonymous": "3f60e1e95ec83f832dbaef226b5193272819b603f455b92de9f6664bfcab22b9",
+      "remoteCleanup": "817f1da2426de9b853f54ebf5ea93be89a9460969061e5269df7ee6e852f1eea",
+      "journal": "c02183d42f178d5a9a1f16a4fd85fbb9847512340e6d00197fcd638e71d46492",
+      "prepared": "d47b4645dd214ea5b12d2060f4e3a86ca5793a3957492ab599f3173b3fe42cb4",
+      "installedReview": "048d4d82505ed7def5e0f45e583d31fd65a38d7f9f1d52d697e589202691ef69",
+      "finalReleaseApi": "b5599cb10941b8337bfa9517b8607380c46f3f8003261b340c78aeadec7c188d",
+      "localCleanup": "2805b5b6217a3ef116a35a54408abdde9f8a3036c4e2e0e002187b735f008d2b",
+      "localSeal": "25385a53b188e9b78a4dc330d5603b9da6526d789aef964cfb4908c3d7be2964"
+    }
+  },
+  "modelsRequested": false
+}
