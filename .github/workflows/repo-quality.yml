@@ -56,6 +56,8 @@ jobs:
         run: cargo fetch --locked --manifest-path rust/Cargo.toml
       - name: Canonical owned test temporary directory
         run: node tools/ci-test-temp.mjs
+      - name: Portable input diagnostics, package privacy and table edit ownership
+        run: node --test --test-concurrency=2 --test-timeout=20000 tools/test/review-version-fence-input.test.mjs tools/test/vscode-package-privacy.test.mjs tools/test/v007-table-cell.test.cjs
       - name: Prepare reviewed native Node input and immutable offline pack
         run: node tools/ci-prepare-node-runtime.mjs
       - name: Prepare pinned Linux SVG source and dependencies
@@ -173,6 +175,8 @@ jobs:
           if-no-files-found: ignore
           path: |
             .cache/p1-previous-writer/source-fixture.json
+            .cache/p1-previous-writer/input-diagnostics.json
+            .cache/p1-previous-writer/input-cleanup.json
             .cache/p1-previous-writer/result/report.json
             .cache/p1-previous-writer/result/first-failure.json
 
