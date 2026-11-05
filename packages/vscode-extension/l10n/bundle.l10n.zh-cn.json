@@ -207,5 +207,10 @@
   "openApiLocalChanges": "生成区域内有手工修改，请将笔记移到区域外后再更新。",
   "openApiInvalidRegion": "生成区域标记损坏，请从文档历史记录恢复。",
   "openApiBudget": "接口定义、文档或已打开的审阅超出处理上限。",
-  "openApiFailed": "无法生成 API 文档，请检查 OpenAPI 3.0／3.1 的 JSON 或 YAML 源文件和 ReadMD 内核。"
+  "openApiFailed": "无法生成 API 文档，请检查 OpenAPI 3.0／3.1 的 JSON 或 YAML 源文件和 ReadMD 内核。",
+  "openApiMetadataSummary": "接口生成记录 · 接口数：{operations} · 引用文件数：{references}。可切换原文查看。",
+  "openApiViewRaw": "查看完整原文",
+  "openApiViewSummary": "显示易读差异",
+  "openApiMetadataPrevious": "原接口生成记录 · 接口数：{operations} · 引用文件数：{references}。可切换原文查看。",
+  "openApiMetadataUpdated": "更新后的接口生成记录 · 接口数：{operations} · 引用文件数：{references}。可切换原文查看。"
 }
