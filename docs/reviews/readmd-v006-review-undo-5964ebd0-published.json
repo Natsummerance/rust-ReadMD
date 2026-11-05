@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-05",
+  "version": "0.0.6",
+  "runtimeSourceCommit": "5964ebd0e2a4fecb676b2b8ee95573fa4b516fa6",
+  "tagCommit": "544defc32219e4de6b85e9d07d9edc230d6639f4",
+  "tagPreserved": true,
+  "release": "https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.6",
+  "publicationStatus": "complete",
+  "change": {
+    "trigger": "Enclosing manual edits can lose exact pending anchors during Undo",
+    "scope": "Preserve raw source fragments; canonicalize trusted replay; restore only proven UTF16 source endpoints including supported empty boundaries",
+    "preserved": "Strict client overlap/original/revision checks, safe refusal, pending review, resources and schema6 retained"
+  },
+  "ci": {
+    "runId": 41981825560,
+    "url": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/41981825560",
+    "buildAndQualityJobsPassed": 10,
+    "publishJobSkipped": true,
+    "requiredArtifacts": 16,
+    "artifactDigestSizeAndCrcVerified": true,
+    "cas": [
+      {
+        "artifact": "V006-session-CAS-ubuntu-24.04",
+        "platform": "linux",
+        "rounds": 16,
+        "sourceHashBeforeAfterVerified": true,
+        "windowsControlMarkers": [],
+        "nativeWindowCertified": false
+      },
+      {
+        "artifact": "V006-session-CAS-windows-latest",
+        "platform": "win32",
+        "rounds": 128,
+        "sourceHashBeforeAfterVerified": true,
+        "windowsControlMarkers": [
+          "legacy-shared-delete",
+          "held-two-process",
+          "denied-delete",
+          "post-publish-sync"
+        ],
+        "nativeWindowCertified": false
+      },
+      {
+        "artifact": "V006-session-CAS-macos-latest",
+        "platform": "darwin",
+        "rounds": 16,
+        "sourceHashBeforeAfterVerified": true,
+        "windowsControlMarkers": [],
+        "nativeWindowCertified": false
+      }
+    ],
+    "codeClose": [
+      {
+        "artifact": "V006-code-close-ubuntu-24.04",
+        "checks": 10,
+        "productionCspAndAuthVerified": true,
+        "nativeWindowCertified": false
+      },
+      {
+        "artifact": "V006-code-close-windows-latest",
+        "checks": 10,
+        "productionCspAndAuthVerified": true,
+        "nativeWindowCertified": false
+      },
+      {
+        "artifact": "V006-code-close-macos-latest",
+        "checks": 10,
+        "productionCspAndAuthVerified": true,
+        "nativeWindowCertified": false
+      }
+    ],
+    "formalReleaseBinaryLifecycle": [
+      {
+        "artifact": "P0-lifecycle-ReadMD-windows-x64",
+        "expected": 30,
+        "unexpected": 0,
+        "flaky": 0,
+        "nativeWindowCertified": false
+      },
+      {
+        "artifact": "P0-lifecycle-ReadMD-linux-x86_64",
+        "expected": 30,
+        "unexpected": 0,
+        "flaky": 0,
+        "nativeWindowCertified": false
+      }
+    ]
+  },
+  "macNativeUndo": {
+    "checks": 61,
+    "phases": 3,
+    "binarySha256": "66518bab7a36af3ae021287b5300a291dba7f2474469d41c2f19208334b60275",
+    "rawReportSha256": "1743df2fa4888fc8cdbb4995e8e9fb995ffe3b877672dc0532dd94e5bb0707e9",
+    "rootReadbackSha256": "7f3dea47b6516829a307ebe8efb7affc3205dcad469595dc13424491bd785fdd",
+    "normalOwnedExits": true,
+    "physicalKeyboardImeCertified": false
+  },
+  "macNativeCode": {
+    "checks": 68,
+    "phases": 2,
+    "binarySha256": "66518bab7a36af3ae021287b5300a291dba7f2474469d41c2f19208334b60275",
+    "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+    "rawReportSha256": "71d5f47cb02bd7085201096d0569f277bd05afe3fa99595d3fab8fcc6ebbf5e1",
+    "scriptedUiEntries": true,
+    "physicalKeysCertified": false,
+    "nativeFilePickerExercised": false,
+    "sourceBoundSuccessfulBuildVerified": true
+  },
+  "formalMac": {
+    "packages": [
+      {
+        "name": "ReadMD-macos-arm64.zip",
+        "arch": "arm64",
+        "kind": "zip",
+        "binarySha256": "8419f88f523888d23dcaf89eaa45d99fdd52ed0c0c2725756f277bd786b2be4e",
+        "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+        "packageSha256": "efa54541818751f82af5131042442dc643098091e61688c2ff03ec80cd2ad22e",
+        "rawReportSha256": "5558b802a2b284731c89e8d2e0252bbb92b5d4f47b01b5476b36ee6df7c5f499",
+        "normalColdAndReopenPhases": 2
+      },
+      {
+        "name": "ReadMD-macos-arm64.dmg",
+        "arch": "arm64",
+        "kind": "dmg",
+        "binarySha256": "8419f88f523888d23dcaf89eaa45d99fdd52ed0c0c2725756f277bd786b2be4e",
+        "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+        "packageSha256": "179290413b3e0d3c35349d5506dfbafc360f2803e2bc8183f529bd589fb8154f",
+        "rawReportSha256": "9c7de78ebf28dbfede35d824dc039edc1718cd8dec311237e3993b4b9b54841d",
+        "normalColdAndReopenPhases": 2
+      },
+      {
+        "name": "ReadMD-macos-x64.zip",
+        "arch": "x64",
+        "kind": "zip",
+        "binarySha256": "037dc70428425bae0f72024a5aa2657206eeed93e91cdbc3eb3aec68b67fa9f4",
+        "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+        "packageSha256": "7c9b2fc9496ed0e563bff35064757135742fa6997124ec9ed94b876de291000d",
+        "rawReportSha256": "f2de68fc43668ce3d9492a5474ee0334a84c4a815debe866acd34a5febf8ffdc",
+        "normalColdAndReopenPhases": 2
+      },
+      {
+        "name": "ReadMD-macos-x64.dmg",
+        "arch": "x64",
+        "kind": "dmg",
+        "binarySha256": "037dc70428425bae0f72024a5aa2657206eeed93e91cdbc3eb3aec68b67fa9f4",
+        "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+        "packageSha256": "681f726700b8deff240f82fa81e6b35091cf896a93e73566e944219d3d5e9bb3",
+        "rawReportSha256": "d7f586807bc1f47783c3fa949581e739c91289e4c0999be47ca24e22bb9547c0",
+        "normalColdAndReopenPhases": 2
+      }
+    ],
+    "coldAndReopenPhases": 8,
+    "independentlyReviewedOriginalScreenshots": 8,
+    "allNormalOwnedExits": true,
+    "physicalIntelHardwareCertified": false,
+    "intelExecution": "Rosetta x86_64 on Apple Silicon",
+    "qaBinaryIsSeparateFromFormalCiBinary": true
+  },
+  "installed": {
+    "binarySha256": "8419f88f523888d23dcaf89eaa45d99fdd52ed0c0c2725756f277bd786b2be4e",
+    "bootSha256": "597aaa321f74a2ea0925af232b62102c6e125a135697dbe22f753674c7a45bb7",
+    "nativeColdAndReopenPhases": 2,
+    "independentlyReviewedOriginalScreenshots": 2,
+    "userDataUnchanged": true,
+    "defaultMarkdownApplicationVerified": true,
+    "previousApplicationRetainedForRollback": true
+  },
+  "packages": [
+    {
+      "name": "ReadMD-macos-arm64.zip",
+      "size": 68107587,
+      "sha256": "efa54541818751f82af5131042442dc643098091e61688c2ff03ec80cd2ad22e"
+    },
+    {
+      "name": "ReadMD-macos-arm64.dmg",
+      "size": 77019293,
+      "sha256": "179290413b3e0d3c35349d5506dfbafc360f2803e2bc8183f529bd589fb8154f"
+    },
+    {
+      "name": "ReadMD-macos-x64.zip",
+      "size": 69019475,
+      "sha256": "7c9b2fc9496ed0e563bff35064757135742fa6997124ec9ed94b876de291000d"
+    },
+    {
+      "name": "ReadMD-macos-x64.dmg",
+      "size": 77215637,
+      "sha256": "681f726700b8deff240f82fa81e6b35091cf896a93e73566e944219d3d5e9bb3"
+    },
+    {
+      "name": "ReadMD-windows-x64.zip",
+      "size": 68593909,
+      "sha256": "4368c993b0a2214a34797b68493fbb4faecf6137348e2757fcad7bfcb654494f"
+    },
+    {
+      "name": "ReadMDSetup-windows-x64.exe",
+      "size": 65182435,
+      "sha256": "890736bdd315763658806db987084a35d0a866fcf300a10c6667cd7754ff7d64"
+    },
+    {
+      "name": "ReadMD-linux-x86_64.deb",
+      "size": 56997574,
+      "sha256": "89265fd55a02793fc6c2dda008382b9de110a661f0250014889acecb87c870d6"
+    },
+    {
+      "name": "ReadMD-linux-x86_64.tar.gz",
+      "size": 68163590,
+      "sha256": "1d2060e512450194ba6cba79ad751e546f65746cbc9c0cd83692724368bbafff"
+    },
+    {
+      "name": "readmd-vscode-0.0.6.vsix",
+      "size": 14039557,
+      "sha256": "000871d99f9c34fb72310fc7f68385d0029c269d62a409703fb31667f10e131c"
+    },
+    {
+      "name": "readmd-mcp-server-0.0.6.zip",
+      "size": 7055,
+      "sha256": "eb1dd216c5e616eff9c45c7ae90fe784ef3a90f689b373d3bc000f04823b2595"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "size": 903,
+      "sha256": "4e9c020e67e5cae5cadba17bfab1b72bd67d405d3e0d9fabc076ad3227108bb6"
+    }
+  ],
+  "anonymousDownloadsVerified": 11,
+  "anonymousDownloadsAuthenticated": false,
+  "cleanup": {
+    "remoteAssetBackupsDeleted": 12,
+    "remoteBackupsRetained": 0,
+    "privateDisposableDirectories": 10,
+    "privateLogicalBytesRemoved": 1515239312,
+    "previousApplicationBackupRetained": true,
+    "canonicalInstallersRetained": 10,
+    "rawEvidenceRetained": true,
+    "physicalSpaceClaimed": false,
+    "privateDisposableFiles": 17
+  },
+  "signing": {
+    "adHoc": true,
+    "developerId": false,
+    "notarized": false
+  },
+  "receiptSha256": {
+    "complete": "aba9d889a6b485724cff73275a49fd2bb6822b66bb20172b12e39b4e81bb4c4f",
+    "anonymous": "3f60e1e95ec83f832dbaef226b5193272819b603f455b92de9f6664bfcab22b9",
+    "remoteCleanup": "817f1da2426de9b853f54ebf5ea93be89a9460969061e5269df7ee6e852f1eea",
+    "journal": "c02183d42f178d5a9a1f16a4fd85fbb9847512340e6d00197fcd638e71d46492",
+    "prepared": "d47b4645dd214ea5b12d2060f4e3a86ca5793a3957492ab599f3173b3fe42cb4",
+    "installedReview": "048d4d82505ed7def5e0f45e583d31fd65a38d7f9f1d52d697e589202691ef69",
+    "finalReleaseApi": "b5599cb10941b8337bfa9517b8607380c46f3f8003261b340c78aeadec7c188d",
+    "localCleanup": "2805b5b6217a3ef116a35a54408abdde9f8a3036c4e2e0e002187b735f008d2b",
+    "localSeal": "25385a53b188e9b78a4dc330d5603b9da6526d789aef964cfb4908c3d7be2964"
+  },
+  "modelsRequested": false,
+  "boundaries": {
+    "macNative": "Cocoa/WKWebView scripted UI, formal package and installed window captures; not physical keys, IME or file-picker certification",
+    "windowsLinux": "Actual CLI/two-process Rust tests and real release-binary HTTP/headless browser; not native windows, choosers or IME",
+    "wholeContract": {
+      "items": 75,
+      "wholeItemsAccepted": 0,
+      "changedByThisHotfix": false
+    },
+    "p1Published": false,
+    "p2Published": false,
+    "v007Published": false
+  },
+  "publicationRecovery": {
+    "earlierAttemptRolledBack": true,
+    "originalFailureJournalRetained": true,
+    "sameCandidateStagedAssetsReused": 12,
+    "newInstallationClaimed": false
+  }
+}
