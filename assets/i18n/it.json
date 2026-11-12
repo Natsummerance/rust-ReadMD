@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL di base (aggiunge automaticamente il percorso)",
   "ai.endpointFull": "URL endpoint completo (nessun percorso aggiunto)",
   "ai.invalidHeaders": "Le intestazioni personalizzate devono essere un oggetto JSON valido.",
+  "ai.localServices": "IA locale",
   "ai.providerDirectory": "Elenco dei provider",
   "ai.regenerate": "Rigenera",
   "ai.starter.explainAsk": "Elenca i termini tecnici di questo documento e spiegane ciascuno in linguaggio semplice.",

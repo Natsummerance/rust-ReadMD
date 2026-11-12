@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Base URL (awtomatikong idadagdag ang endpoint path)",
   "ai.endpointFull": "Buong Endpoint URL (walang idinagdag na path)",
   "ai.invalidHeaders": "Ang mga custom na header ay dapat na wastong JSON object.",
+  "ai.localServices": "Lokal na AI",
   "ai.providerDirectory": "Direktoryo ng provider",
   "ai.regenerate": "I-regenerate",
   "ai.starter.explainAsk": "Ilista ang mga teknikal na termino sa dokumentong ito at ipaliwanag ang bawat isa sa simpleng wika.",

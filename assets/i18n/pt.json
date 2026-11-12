@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL base (anexa automaticamente o caminho)",
   "ai.endpointFull": "URL completa do endpoint (sem caminho anexado)",
   "ai.invalidHeaders": "Os cabeçalhos personalizados devem ser um objeto JSON válido.",
+  "ai.localServices": "IA local",
   "ai.providerDirectory": "Diretório de provedores",
   "ai.regenerate": "Regenerar",
   "ai.starter.explainAsk": "Liste os termos técnicos neste documento e explique cada um em linguagem simples.",

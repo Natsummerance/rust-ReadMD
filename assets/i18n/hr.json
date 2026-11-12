@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Osnovni URL (automatski dodaj putanju krajnje točke)",
   "ai.endpointFull": "Potpuni URL krajnje točke (bez dodane putanje)",
   "ai.invalidHeaders": "Prilagođena zaglavlja moraju biti valjani JSON objekt.",
+  "ai.localServices": "Lokalna umjetna inteligencija",
   "ai.providerDirectory": "Imenik pružatelja usluga",
   "ai.regenerate": "Regeneriraj",
   "ai.starter.explainAsk": "Navedite tehničke izraze u ovom dokumentu i objasnite svaki običnim jezikom.",

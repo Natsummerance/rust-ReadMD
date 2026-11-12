@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL de bază (adăugați automat calea endpointului)",
   "ai.endpointFull": "URL endpoint complet (fără cale adăugată)",
   "ai.invalidHeaders": "Anteturile personalizate trebuie să fie un obiect JSON valid.",
+  "ai.localServices": "IA locală",
   "ai.providerDirectory": "Director de furnizori",
   "ai.regenerate": "Regenerează",
   "ai.starter.explainAsk": "Enumerați termenii tehnici din acest document și explicați-i pe fiecare în limbaj simplu.",

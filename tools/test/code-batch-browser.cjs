@@ -74,11 +74,16 @@ async function main() {
   try {
     await start(); mark('all blocks once, actual history and save'); await edit('批量 中文😀.md');
     await page.evaluate(async () => { const tab = getActiveTab(), stamp = await ReadMDReview.capture(tab), at = cmView.state.doc.toString().indexOf('Same.'); await ReadMDReview.propose([{ from: at, to: at + 5, insert: 'Pending.' }], stamp, tab); await renderPreview(); });
+    await page.locator('#btn-more').click();
+    const runButton = page.locator('#btn-run-all-chunks');
+    const runLabel = await page.evaluate(() => i18n.t('menu.runCode'));
+    assert.notEqual(runLabel, 'menu.runCode');
+    assert.equal(await runButton.innerText(), runLabel);
     const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/review' && r.request().postDataJSON()?.action === 'code_batch_run');
-    await page.evaluate(() => document.getElementById('btn-run-all-chunks').click());
+    await runButton.click();
     await until(() => page.evaluate(() => ReadMDCodeRuns.busy() === 0), 'batch terminal');
     assert.equal((await (await response).json()).results.length, 2); assert.equal(await text(), EXPECTED); assert.equal(report.singleRunRequests, 0); assert.equal(report.batchRunRequests, 1);
-    assert.deepEqual(fs.readFileSync(path.join(docs, '批量 中文😀.md')), encoded(EXPECTED)); assert.equal(await page.locator('#btn-run-all-chunks em').count(), 1);
+    assert.deepEqual(fs.readFileSync(path.join(docs, '批量 中文😀.md')), encoded(EXPECTED)); assert.equal(await runButton.textContent(), runLabel);
     await history(false); assert.equal(await text(), SOURCE.replace('Same.', 'Pending.')); await history(true); assert.equal(await text(), EXPECTED);
     assert.equal(await page.evaluate(() => saveEdit()), true);
     assert.equal(await page.evaluate(() => ReadMDReview.snapshot(getActiveTab()).changes[0].original), 'Same.');

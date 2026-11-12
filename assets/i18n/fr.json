@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL de base (ajoute automatiquement le chemin)",
   "ai.endpointFull": "URL complète (aucun chemin ajouté)",
   "ai.invalidHeaders": "Les en-têtes personnalisés doivent être un objet JSON valide.",
+  "ai.localServices": "IA locale",
   "ai.providerDirectory": "Répertoire des fournisseurs",
   "ai.regenerate": "Régénérer",
   "ai.starter.explainAsk": "Lister les termes techniques de ce document et expliquer chacun en langage simple.",

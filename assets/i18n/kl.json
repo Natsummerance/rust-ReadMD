@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Base URL (namminermik naggataata aqqutaa ikkutissaaq)",
   "ai.endpointFull": "Endpoint URL tamarmiusoq (aqqutaa ikkutassaanngilaq)",
   "ai.invalidHeaders": "Namminermik headers-it JSON object-iusariaqarput.",
+  "ai.localServices": "Qarasaasiami AI",
   "ai.providerDirectory": "Tunniussisartut toqqorsiviat",
   "ai.regenerate": "Nutaanik pilersitsiuk",
   "ai.starter.explainAsk": "Allakkami matumani oqaatsit tekniskiusut allattukkit nassuiarlugillu paasiuminartumik.",

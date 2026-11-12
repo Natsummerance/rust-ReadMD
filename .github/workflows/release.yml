@@ -157,6 +157,7 @@ jobs:
         if: runner.os != 'macOS'
         env:
           READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
+          READMD_REQUIRE_TOKEN: '1'
         run: node ui-tests/node_modules/@playwright/test/cli.js test --config ui-tests/p0-lifecycle.config.cjs
 
       - name: Upload lifecycle results and failure traces

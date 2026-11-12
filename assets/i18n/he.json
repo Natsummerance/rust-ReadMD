@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "כתובת בסיס (הוספה אוטומטית של נתיב נקודת הקצה)",
   "ai.endpointFull": "כתובת נקודת קצה מלאה (ללא הוספת נתיב)",
   "ai.invalidHeaders": "הכותרות המותאמות אישית חייבות להיות אובייקט JSON תקין.",
+  "ai.localServices": "בינה מלאכותית מקומית",
   "ai.providerDirectory": "ספריית ספקים",
   "ai.regenerate": "צור מחדש",
   "ai.starter.explainAsk": "פרט את המונחים הטכניים במסמך זה והסבר כל אחד מהם בשפה פשוטה.",

@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Alap URL (végpont útvonalának automatikus hozzáfűzése)",
   "ai.endpointFull": "Teljes végpont URL (nincs hozzáfűzött útvonal)",
   "ai.invalidHeaders": "Az egyéni fejléceknek érvényes JSON-objektumnak kell lenniük.",
+  "ai.localServices": "Helyi MI",
   "ai.providerDirectory": "Szolgáltatói könyvtár",
   "ai.regenerate": "Újragenerálás",
   "ai.starter.explainAsk": "Sorolja fel a dokumentumban szereplő szakkifejezéseket, és mindegyiket magyarázza el közérthető nyelven.",

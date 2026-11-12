@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL ya Ntete (tula nkwani na nzila mosi)",
   "ai.endpointFull": "URL ya Nkwani ya Mvimba (nzila mosi te)",
   "ai.invalidHeaders": "Ba-en-tetes ya kuswaswa fwete vanda ya mbote ya JSON.",
+  "ai.localServices": "AI ya bwala",
   "ai.providerDirectory": "Lutangu ya bapesisi",
   "ai.regenerate": "Kubaka diaka",
   "ai.starter.explainAsk": "Songa mambu ya teknike na mukanda yayi mpi tendula konso mosi na ndinga ya pamba.",

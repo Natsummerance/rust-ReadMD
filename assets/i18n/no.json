@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Basis-URL (legg til endepunktsbane automatisk)",
   "ai.endpointFull": "Fullstendig endepunkts-URL (ingen tillagt bane)",
   "ai.invalidHeaders": "Tilpassede hoder må være et gyldig JSON-objekt.",
+  "ai.localServices": "Lokal KI",
   "ai.providerDirectory": "Tilbyderkatalog",
   "ai.regenerate": "Regenerer",
   "ai.starter.explainAsk": "List opp de tekniske termene i dette dokumentet og forklar hver enkelt på et enkelt språk.",

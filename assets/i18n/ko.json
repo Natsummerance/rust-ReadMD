@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "기본 URL (엔드포인트 경로 자동 추가)",
   "ai.endpointFull": "전체 엔드포인트 URL (경로 추가 안 함)",
   "ai.invalidHeaders": "사용자 정의 헤더는 유효한 JSON 개체여야 합니다.",
+  "ai.localServices": "로컬 AI",
   "ai.providerDirectory": "제공자 디렉터리",
   "ai.regenerate": "다시 생성",
   "ai.starter.explainAsk": "이 문서의 전문 용어를 나열하고 각각을 알기 쉬운 언어로 설명합니다.",

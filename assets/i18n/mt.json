@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL Bażi (żid awtomatikament il-mogħdija tal-endpoint)",
   "ai.endpointFull": "URL tal-Endpoint Sħiħ (l-ebda mogħdija miżjuda)",
   "ai.invalidHeaders": "L-headers personalizzati jridu jkunu oġġett JSON validu.",
+  "ai.localServices": "IA lokali",
   "ai.providerDirectory": "Direttorju tal-fornitur",
   "ai.regenerate": "Iġġenera mill-ġdid",
   "ai.starter.explainAsk": "Elenka t-termini tekniċi f'dan id-dokument u spjega kull wieħed b'lingwa sempliċi.",

@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Basis-URL (voegt automatisch pad toe)",
   "ai.endpointFull": "Volledige eindpunt-URL (geen pad toegevoegd)",
   "ai.invalidHeaders": "Aangepaste headers moeten een geldig JSON-object zijn.",
+  "ai.localServices": "Lokale AI",
   "ai.providerDirectory": "Providerdirectory",
   "ai.regenerate": "Opnieuw genereren",
   "ai.starter.explainAsk": "Lijst de technische termen in dit document op en leg elke term uit in begrijpelijke taal.",

@@ -2532,6 +2532,7 @@
   "ai.copyCode": "Copy",
   "ai.customHeaders": "Custom headers (JSON, optional)",
   "ai.invalidHeaders": "Custom headers must be a valid JSON object.",
+  "ai.localServices": "Local AI",
   "ai.providerDirectory": "Provider directory",
   "ai.regenerate": "Regenerate",
   "ai.starter.explainAsk": "List the technical terms in this document and explain each in plain language.",

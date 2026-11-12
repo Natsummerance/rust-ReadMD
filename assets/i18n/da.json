@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Basis-URL (tilføj automatisk slutpunktsti)",
   "ai.endpointFull": "Fuld slutpunkts-URL (ingen tilføjet sti)",
   "ai.invalidHeaders": "Brugerdefinerede headere skal være et gyldigt JSON-objekt.",
+  "ai.localServices": "Lokal AI",
   "ai.providerDirectory": "Udbyderoversigt",
   "ai.regenerate": "Regenerer",
   "ai.starter.explainAsk": "Oplist de tekniske termer i dette dokument, og forklar hver enkelt i et enkelt sprog.",

@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Baza URL (aŭtomate alkroĉi finpunktan vojon)",
   "ai.endpointFull": "Plena finpunkta URL (sen alkroĉita vojo)",
   "ai.invalidHeaders": "Propraj kaplinioj devas esti valida JSON-objekto.",
+  "ai.localServices": "Loka AI",
   "ai.providerDirectory": "Katalogo de provizantoj",
   "ai.regenerate": "Regeneri",
   "ai.starter.explainAsk": "Listigu la fakterminojn en ĉi tiu dokumento kaj klarigu ĉiun per simpla lingvaĵo.",

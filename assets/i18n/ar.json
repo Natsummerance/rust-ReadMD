@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "عنوان URL الأساسي (إلحاق مسار نقطة النهاية تلقائياً)",
   "ai.endpointFull": "عنوان URL لنقطة النهاية الكاملة (بدون مسار ملحق)",
   "ai.invalidHeaders": "يجب أن تكون الترويسات المخصصة كائن JSON صالحاً.",
+  "ai.localServices": "ذكاء اصطناعي محلي",
   "ai.providerDirectory": "دليل المزودين",
   "ai.regenerate": "إعادة توليد",
   "ai.starter.explainAsk": "سرد المصطلحات التقنية في هذا المستند وشرح كل منها بلغة بسيطة وواضحة.",

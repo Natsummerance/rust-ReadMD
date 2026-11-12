@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "बेस URL (एंडपॉइंट पाथ स्वतः जोड़ें)",
   "ai.endpointFull": "पूर्ण एंडपॉइंट URL (कोई पाथ नहीं जोड़ा गया)",
   "ai.invalidHeaders": "कस्टम हेडर एक वैध JSON ऑब्जेक्ट होना चाहिए।",
+  "ai.localServices": "स्थानीय एआई",
   "ai.providerDirectory": "प्रदाता निर्देशिका",
   "ai.regenerate": "पुनः उत्पन्न करें",
   "ai.starter.explainAsk": "इस दस्तावेज़ में तकनीकी शब्दों की सूची बनाएँ और प्रत्येक को सरल भाषा में समझाएँ।",

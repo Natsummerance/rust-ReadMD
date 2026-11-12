@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL Asas (tambah laluan titik akhir secara automatik)",
   "ai.endpointFull": "URL Titik Akhir Penuh (tiada laluan tambahan)",
   "ai.invalidHeaders": "Pengepala tersuai mestilah objek JSON yang sah.",
+  "ai.localServices": "AI setempat",
   "ai.providerDirectory": "Direktori penyedia",
   "ai.regenerate": "Jana semula",
   "ai.starter.explainAsk": "Senaraikan terma teknikal dalam dokumen ini dan terangkan setiap satunya dalam bahasa mudah.",

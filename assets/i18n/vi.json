@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL cơ sở (tự động nối đường dẫn điểm cuối)",
   "ai.endpointFull": "URL điểm cuối đầy đủ (không nối thêm đường dẫn)",
   "ai.invalidHeaders": "Tiêu đề tùy chỉnh phải là một đối tượng JSON hợp lệ.",
+  "ai.localServices": "AI cục bộ",
   "ai.providerDirectory": "Thư mục nhà cung cấp",
   "ai.regenerate": "Tạo lại",
   "ai.starter.explainAsk": "Liệt kê các thuật ngữ kỹ thuật trong tài liệu này và giải thích từng thuật ngữ bằng ngôn ngữ thông thường.",

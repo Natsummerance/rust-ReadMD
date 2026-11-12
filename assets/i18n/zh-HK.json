@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Base URL（自動附加介面路徑）",
   "ai.endpointFull": "完整介面 URL（不附加路徑）",
   "ai.invalidHeaders": "自訂請求標頭必須是有效的 JSON 物件。",
+  "ai.localServices": "本機 AI",
   "ai.providerDirectory": "服務商目錄",
   "ai.regenerate": "重新產生",
   "ai.starter.explainAsk": "請列出這份文件中的專業術語，並逐一用淺白語言解釋。",

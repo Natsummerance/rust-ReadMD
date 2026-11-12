@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Perus-URL (lisää päätepisteen polun automaattisesti)",
   "ai.endpointFull": "Koko päätepisteen URL (ei lisättyä polkua)",
   "ai.invalidHeaders": "Mukautettujen otsikoiden on oltava kelvollinen JSON-objekti.",
+  "ai.localServices": "Paikallinen tekoäly",
   "ai.providerDirectory": "Palveluntarjoajahakemisto",
   "ai.regenerate": "Luo uudelleen",
   "ai.starter.explainAsk": "Luettele tämän asiakirjan tekniset termit ja selitä kukin selkokielellä.",

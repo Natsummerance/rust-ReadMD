@@ -65,6 +65,33 @@ test('authentication failure is visible, does not report success and never echoe
   expect(calls).toHaveLength(1);
 });
 
+test('local services stay grouped and cannot borrow another provider’s model', async ({ page }) => {
+  await page.evaluate(async () => {
+    await i18n.setLanguage('zh-CN', false);
+    openAiModal('ai-settings-modal', document.querySelector('#ai-settings-open'));
+  });
+  const provider = page.locator('#ai-provider');
+  const group = provider.locator('[data-i18n-label="ai.localServices"]');
+  await expect(group).toHaveAttribute('label', '本地 AI');
+  await expect(group.locator(`option[value="${providerId}"]`)).toHaveText('Test relay');
+  await expect(group.locator('option[value="preset:oMLX"]')).toHaveText('oMLX');
+  await expect(group.locator('option[value="preset:llama.cpp"]')).toHaveText('llama.cpp');
+  const connection = await page.evaluate(async () => {
+    state.ai.config.current = { provider_id: 'preset:OpenAI', model: 'remote-only-model' };
+    $('ai-provider').value = 'preset:llama.cpp';
+    onAiProviderChange();
+    const { local, model } = await resolveSharedAiConnection();
+    return { local, model };
+  });
+  expect(connection).toEqual({ local: true, model: '' });
+  await expect(page.locator('#ai-model')).toBeDisabled();
+  await expect(page.locator('#ai-key')).toHaveAttribute('placeholder', '');
+  await page.evaluate(() => i18n.setLanguage('en', false));
+  await expect(group).toHaveAttribute('label', 'Local AI');
+  await expect(provider).toHaveValue('preset:llama.cpp');
+  expect(calls).toHaveLength(0);
+});
+
 test('compact checkboxes work by label and keyboard across themes without composer overflow', async ({ page }) => {
   for (const viewport of [{ width: 1160, height: 820 }, { width: 1024, height: 680 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);

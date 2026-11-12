@@ -325,7 +325,7 @@ window.i18n = {
       if (label && el.innerHTML !== label) el.innerHTML = label;
     });
 
-    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label']]) {
+    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label'], ['label', 'label']]) {
       const source = 'data-i18n-' + suffix;
       root.querySelectorAll(`[${source}]`).forEach(el => {
         const label = readLabel(el.getAttribute(source));

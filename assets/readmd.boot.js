@@ -1100,7 +1100,7 @@ window.i18n = {
       if (label && el.innerHTML !== label) el.innerHTML = label;
     });
 
-    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label']]) {
+    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label'], ['label', 'label']]) {
       const source = 'data-i18n-' + suffix;
       root.querySelectorAll(`[${source}]`).forEach(el => {
         const label = readLabel(el.getAttribute(source));
@@ -20069,6 +20069,7 @@ function updateAiConnectionSummary() {
   if (summary) summary.textContent = (model && model.value) || (_t('ai.noModel') || '');
   if (!p) return setAiConnectionState('warn', _t('ai.noProvider') || '');
   const local = isLocalAiProvider(p);
+  if (local && !model?.value) return setAiConnectionState('warn', _t('ai.noModel') || '');
   if (local || p.has_key || p.key_source) setAiConnectionState('ready', p.name + ' · ' + (_t('ai.statusReady') || ''));
   else setAiConnectionState('warn', p.name + ' · ' + (_t('ai.needKey') || ''));
 }
@@ -21451,21 +21452,30 @@ function mergeAiProviders(custom, presets) {
   return [...(custom || []), ...(presets || [])];
 }
 
+function aiProviderGroup(provider) {
+  if (provider.source_only) return 'ai.sourcePrefix';
+  if (isLocalAiProvider(provider)) return 'ai.localServices';
+  return provider.custom ? 'ai.customConnections' : 'ai.officialPresets';
+}
+
 function fillAiProviders(merged, current) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('ai-provider');
   const curId = (current && (current.provider_id || current.provider)) || (merged[0] && merged[0].id) || '';
   sel.innerHTML = '';
-  const customGroup = document.createElement('optgroup'); customGroup.label = _t('ai.customConnections') || '';
-  const presetGroup = document.createElement('optgroup'); presetGroup.label = _t('ai.officialPresets') || '';
+  const groups = new Map(['ai.localServices', 'ai.customConnections', 'ai.officialPresets'].map(key => {
+    const group = document.createElement('optgroup');
+    group.label = _t(key);
+    group.dataset.i18nLabel = key;
+    return [key, group];
+  }));
   merged.forEach(p => {
     const o = document.createElement('option');
     o.value = p.id;
     o.textContent = p.name;
-    (p.custom ? customGroup : presetGroup).appendChild(o);
+    groups.get(aiProviderGroup(p)).appendChild(o);
   });
-  if (customGroup.children.length) sel.appendChild(customGroup);
-  if (presetGroup.children.length) sel.appendChild(presetGroup);
+  for (const group of groups.values()) if (group.children.length) sel.appendChild(group);
   if (curId) sel.value = curId;
   const cards = $('ai-provider-cards');
   const search = $('ai-provider-search');
@@ -21484,9 +21494,14 @@ function fillAiProviders(merged, current) {
         const title = document.createElement('strong'); title.textContent = p.name || p.id;
         const meta = document.createElement('span');
         const caps = p.capabilities && typeof p.capabilities === 'object' ? Object.keys(p.capabilities).filter(k => p.capabilities[k]).slice(0, 3) : [];
-        const capLabels = { chat: _t('ai.aiResult') || '', models: _t('ai.model') || '', vision: _t('ai.explain') || '', tools: _t('ai.advanced') || '' };
-        const kind = p.source_only ? (_t('ai.sourcePrefix') || '') : (p.custom ? (_t('ai.customConnections') || '') : (_t('ai.officialPresets') || ''));
-        meta.textContent = kind + (caps.length ? ' · ' + caps.map(k => capLabels[k] || k).join(' · ') : '');
+        const capLabels = { chat: 'ai.aiResult', models: 'ai.model', vision: 'ai.explain', tools: 'ai.advanced' };
+        for (const key of [aiProviderGroup(p), ...caps.map(k => capLabels[k]).filter(Boolean)]) {
+          if (meta.childNodes.length) meta.append(' · ');
+          const label = document.createElement('span');
+          label.dataset.i18n = key;
+          label.textContent = _t(key);
+          meta.append(label);
+        }
         const status = document.createElement('i'); status.className = 'ai-provider-state'; status.setAttribute('aria-label', p.has_key ? (_t('ai.keyConfigured') || '') : (_t('ai.noKeyConfigured') || '')); status.textContent = p.has_key ? '●' : '○';
         card.append(title, meta, status);
         if (!p.source_only) card.addEventListener('click', () => { sel.value = p.id; onAiProviderChange(); fillAiProviders(merged, { provider_id: p.id, model: $('ai-model').value }); });
@@ -21517,7 +21532,7 @@ async function resolveSharedAiConnection() {
   return {
     provider: provider.id || provider.name || '',
     credential_id: provider.credential_id || undefined,
-    model: selectedModel || current.model || (provider.models || [])[0] || '',
+    model: selectedModel || (provider.id === currentId ? current.model : '') || (provider.models || [])[0] || '',
     base_url: provider.base_url || undefined,
     mode: provider.mode || (provider.format === 'anthropic' ? 'messages' : 'auto'),
     endpoint_mode: provider.endpoint_mode || 'prefix',
@@ -21643,11 +21658,11 @@ function syncAiKey() {
   inp.value = '';
    inp.placeholder = (p.key_source && p.key_source.indexOf('env:') === 0)
      ? (_t('ai.readFromEnv', { env: p.key_source.slice(4) }) || '')
-     : (isLocalAiProvider(p) ? (_t('ai.apiKeyOllama') || '') : (_t('ai.apiKeyRequired') || ''));
+     : (isLocalAiProvider(p) ? '' : (_t('ai.apiKeyRequired') || ''));
   if (status) {
     status.textContent = p.has_key
       ? (p.key_source ? (_t('ai.keyReady', { source: p.key_source }) || '') : (_t('ai.keyConfigured') || ''))
-       : (isLocalAiProvider(p) ? (_t('ai.localNoKey') || '') : (_t('ai.noKeyConfigured') || ''));
+      : (_t('ai.noKeyConfigured') || '');
   }
   updateAiConnectionSummary();
 }
@@ -21983,7 +21998,7 @@ async function loadAiModels() {
   const endpointMode = $('ai-endpoint-mode') ? ($('ai-endpoint-mode').value || 'prefix') : 'prefix';
   if (!baseUrl) { showToast(_t('toast.enterBaseUrlFirst') || ''); return; }
   let p = currentAiProvider();
-  const local = isLocalAiProvider(p);
+  const local = isLocalAiProvider({ ...p, base_url: baseUrl });
   if (!local && !key && !(p && p.has_key)) { showToast(_t('toast.enterApiKeyFirst') || ''); return; }
   // Persist a newly entered key before discovery so the provider endpoint
   // receives only an opaque credential_id, never a raw secret.

@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL base (adjuntar automáticamente la ruta del punto de enlace)",
   "ai.endpointFull": "URL de punto de enlace completa (sin ruta adjunta)",
   "ai.invalidHeaders": "自定义请求头必须是有效的 JSON 对象。",
+  "ai.localServices": "AI lokal",
   "ai.providerDirectory": "服务商目录",
   "ai.regenerate": "重新生成",
   "ai.starter.explainAsk": "列出本文档中的技术术语，并用通俗易懂的语言解释每一个术语。",

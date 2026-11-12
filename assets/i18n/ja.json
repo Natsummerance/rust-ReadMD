@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "ベースURL（エンドポイントパスを自動追加）",
   "ai.endpointFull": "完全なエンドポイントURL（パスを追加しない）",
   "ai.invalidHeaders": "カスタムヘッダーは有効なJSONオブジェクトである必要があります。",
+  "ai.localServices": "ローカルAI",
   "ai.providerDirectory": "プロバイダーディレクトリ",
   "ai.regenerate": "再生成",
   "ai.starter.explainAsk": "このドキュメント内の専門用語をリストアップし、それぞれを分かりやすい言葉で説明します。",

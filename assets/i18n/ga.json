@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Bun-URL (uath-chuir cosán an chríochphointe leis)",
   "ai.endpointFull": "URL Críochphointe Iomlán (gan cosán breise curtha leis)",
   "ai.invalidHeaders": "Caithfidh ceanntásca saincheaptha a bheith ina n-oibiacht bhailí JSON.",
+  "ai.localServices": "Intleacht shaorga áitiúil",
   "ai.providerDirectory": "Eolaire soláthraithe",
   "ai.regenerate": "Athghin",
   "ai.starter.explainAsk": "Liostaigh na téarmaí teicniúla sa doiciméad seo agus mínígh gach ceann acu i ngnáth-theanga.",

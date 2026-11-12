@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Basis-URL (Endpunktpfad automatisch anhängen)",
   "ai.endpointFull": "Vollständige Endpunkt-URL (kein Pfad angehängt)",
   "ai.invalidHeaders": "Benutzerdefinierte Header müssen ein gültiges JSON-Objekt sein.",
+  "ai.localServices": "Lokale KI",
   "ai.providerDirectory": "Anbieterverzeichnis",
   "ai.regenerate": "Neu generieren",
   "ai.starter.explainAsk": "Liste die Fachbegriffe in diesem Dokument auf und erkläre jeden in einfacher Sprache.",

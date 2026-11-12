@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Temel URL (uç nokta yolunu otomatik ekler)",
   "ai.endpointFull": "Tam Uç Nokta URL'si (ek yol yok)",
   "ai.invalidHeaders": "Özel üstbilgiler geçerli bir JSON nesnesi olmalıdır.",
+  "ai.localServices": "Yerel yapay zekâ",
   "ai.providerDirectory": "Sağlayıcı dizini",
   "ai.regenerate": "Yeniden oluştur",
   "ai.starter.explainAsk": "Bu belgedeki teknik terimleri listeleyin ve her birini sade bir dille açıklayın.",

@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Osnovni URL (samodejno dodaj pot končne točke)",
   "ai.endpointFull": "Celoten URL končne točke (brez dodane poti)",
   "ai.invalidHeaders": "Glave po meri morajo biti veljaven objekt JSON.",
+  "ai.localServices": "Lokalna umetna inteligenca",
   "ai.providerDirectory": "Imenik ponudnikov",
   "ai.regenerate": "Ponovno ustvari",
   "ai.starter.explainAsk": "Naštejte tehnične izraze v tem dokumentu in vsakega razložite v preprostem jeziku.",

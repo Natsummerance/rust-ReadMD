@@ -54,7 +54,9 @@ test('a late save acknowledges only submitted text and retains newer input', asy
   const source = await file(page); await change(page, 'SUBMITTED');
   let release; const held = new Promise(resolve => release = resolve);
   await page.route('**/api/save', async route => { await held; const response = await route.fetch(); await route.fulfill({ response }); });
+  const submitted = page.waitForRequest('**/api/save');
   await page.evaluate(() => { window.pendingSave = saveEdit({ exitAfterSave: true }); });
+  await submitted;
   await expect(page.locator('#edit-save')).toBeDisabled();
   await change(page, 'NEWER DRAFT'); release();
   expect(await page.evaluate(() => window.pendingSave)).toBe(false);
@@ -67,7 +69,9 @@ test('a save response cannot change a different active document', async ({ page 
   const id = await page.evaluate(() => state.activeTabId);
   let release; const held = new Promise(resolve => release = resolve);
   await page.route('**/api/save', async route => { await held; const response = await route.fetch(); await route.fulfill({ response }); });
+  const submitted = page.waitForRequest('**/api/save');
   await page.evaluate(() => { window.pendingSave = saveEdit(); });
+  await submitted;
   await expect(page.locator('#edit-save')).toBeDisabled();
   await page.evaluate(async () => { await renderVirtual('clipboard', 'other.md', '', 'OTHER DRAFT', []); await toggleEdit(); });
   release(); expect(await page.evaluate(() => window.pendingSave)).toBe(true);
@@ -132,16 +136,20 @@ test('undo history survives switching away and reopening an edited tab', async (
   await page.evaluate(async id => { await switchTab(id); await toggleEdit(); }, id);
   await page.evaluate(() => cmUndo()); await expect.poll(() => current(page)).toBe('# Original\n');
 });
-test('single conversion preview writes nothing, explicit overwrite keeps the earlier Markdown', async ({ page, request }) => {
+test('single conversion preview writes nothing, explicit overwrite keeps the earlier Markdown', async ({ page }) => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'readmd-convert-lifecycle-'));
   try {
     const source = path.join(dir, 'report.txt'), target = path.join(dir, 'report.md');
     await fs.writeFile(source, 'Converted text');
     const root = '/api/convert?p=' + encodeURIComponent(source);
-    const preview = await request.get(root + '&preview=1'); expect(preview.ok()).toBe(true);
-    expect((await preview.json()).saved).toBe(false); await expect(fs.access(target)).rejects.toThrow();
+    const convert = query => page.evaluate(async url => {
+      const response = await apiFetch(url);
+      return { ok: response.ok, saved: (await response.json()).saved };
+    }, root + query);
+    expect(await convert('&preview=1')).toEqual({ ok: true, saved: false });
+    await expect(fs.access(target)).rejects.toThrow();
     await fs.writeFile(target, 'PREVIOUS OUTPUT');
-    const overwritten = await request.get(root + '&on_exists=overwrite'); expect((await overwritten.json()).saved).toBe(true);
+    expect(await convert('&on_exists=overwrite')).toEqual({ ok: true, saved: true });
     const entry = (await history(page)).find(e => e.path === target && e.kind === 'version'); expect(entry).toBeTruthy();
     const old = await page.evaluate(async id => (await (await apiFetch('/api/documents/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'read', id }) })).json()).content, entry.id);
     expect(old).toBe('PREVIOUS OUTPUT'); expect((await fs.readdir(dir)).sort()).toEqual(['report.md', 'report.txt']);

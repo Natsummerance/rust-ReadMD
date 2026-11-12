@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "Bas-URL (lägg till slutpunktssökväg automatiskt)",
   "ai.endpointFull": "Fullständig slutpunkts-URL (ingen tillagd sökväg)",
   "ai.invalidHeaders": "Anpassade huvuden måste vara ett giltigt JSON-objekt.",
+  "ai.localServices": "Lokal AI",
   "ai.providerDirectory": "Leverantörskatalog",
   "ai.regenerate": "Generera igen",
   "ai.starter.explainAsk": "Lista de tekniska termerna i det här dokumentet och förklara var och en på ett enkelt språk.",

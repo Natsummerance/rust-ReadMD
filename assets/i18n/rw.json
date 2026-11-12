@@ -2928,6 +2928,7 @@
   "ai.endpointPrefix": "URL y'Ibanze (yongeraho inzira y'iherezo ku buryo bwikora)",
   "ai.endpointFull": "URL y'Iherezo ryuzuye (nta nzira yongeyeho)",
   "ai.invalidHeaders": "Imitwe yihariye igomba kuba ikintu cya JSON cyemewe.",
+  "ai.localServices": "AI yo kuri mudasobwa",
   "ai.providerDirectory": "Ububiko bw'abatanze serivisi",
   "ai.regenerate": "Ongera ureme",
   "ai.starter.explainAsk": "Rutonde amagambo y'ubuhanga muri iyi nyandiko kandi usobanure buri rimwe mu rurimi rworoshye.",

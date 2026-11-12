@@ -2532,6 +2532,7 @@
   "ai.copyCode": "复制",
   "ai.customHeaders": "自定义请求头（JSON，可选）",
   "ai.invalidHeaders": "自定义请求头必须是有效的 JSON 对象。",
+  "ai.localServices": "本地 AI",
   "ai.providerDirectory": "提供商目录",
   "ai.regenerate": "重新生成",
   "ai.starter.explainAsk": "请列出这份文档中的专业术语，并逐一用通俗语言解释。",
