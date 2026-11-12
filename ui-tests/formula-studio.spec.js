@@ -8,10 +8,24 @@ async function edit(page,src,position=src.length){
   await page.goto('/');await waitForPage(page, ()=>window.__readmdAppReady);
   await page.evaluate(async({src,position})=>{await renderVirtual('clipboard','equation.md','',src,[]);await toggleEdit();setEditorPref('aiCompletion',false);cmView.dispatch({selection:{anchor:position}});},{src,position});
 }
+async function openFormulaPicker(page) {
+  const button = page.locator('#formula-open');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  if (await button.evaluate(node => Boolean(node.closest('#edit-overflow-menu')))) {
+    const overflow = page.locator('#edit-overflow-trigger');
+    if (await overflow.getAttribute('aria-expanded') !== 'true') await overflow.click();
+  }
+  await button.click();
+}
+async function openLivePreview(page) {
+  await page.locator('#edit-view-trigger').click();
+  await page.locator('#edit-view-menu [data-pv="bottom"]').click();
+  await expect(page.locator('#preview-wrap')).toBeVisible();
+}
 async function ready(page){await expect(page.locator('#formula-preview > mjx-container > svg')).toBeVisible();await expect(page.locator('#formula-apply')).toBeEnabled();}
 test('cold formula catalog paints each template once and retains assistive math', async ({ page }) => {
   await edit(page, '# Empty of math\n');
-  await page.locator('#formula-open').click();
+  await openFormulaPicker(page);
   const previews = page.locator('#formula-list .formula-template-preview');
   const templates = await page.evaluate(async () => (await ReadMDFormula.load()).templates.filter(t => t.category === 'structures').length);
   expect(templates).toBeGreaterThan(0);
@@ -33,7 +47,7 @@ test('cold formula catalog paints each template once and retains assistive math'
 });
 test('visual symbol replacement stages the whole equation and applies one undoable change',async({page})=>{
   const src='# Research\n\n';await edit(page,src);
-  await page.locator('#formula-open').click();
+  await openFormulaPicker(page);
   await expect(page.locator('[data-math-id="fraction"] .formula-template-preview svg')).toBeVisible();
   await expect(page.locator('[data-math-id="fraction"] small')).toBeHidden();
   await page.locator('[data-math-id="fraction"]').click();await ready(page);
@@ -49,7 +63,7 @@ test('visual symbol replacement stages the whole equation and applies one undoab
 });
 test('editing the second identical formula preserves the first and original delimiters',async({page})=>{
   const src='First $x^2$. Second \\(x^2\\).';await edit(page,src,src.lastIndexOf('x^2')+1);
-  await page.locator('#formula-open').click();await ready(page);
+  await openFormulaPicker(page);await ready(page);
   await page.getByRole('button',{name:'Edit symbol x',exact:true}).click();
   await page.locator('#formula-token').fill('y');await page.locator('#formula-token').press('Enter');await ready(page);
   await page.locator('#formula-apply').click();
@@ -57,7 +71,7 @@ test('editing the second identical formula preserves the first and original deli
 });
 test('live preview opens the exact second occurrence and code examples remain untouched',async({page})=>{
   const src='`$x^2$`\n\nFirst $x^2$.\n\nSecond $x^2$.';await edit(page,src);
-  await page.evaluate(()=>setPvLayout('right'));
+  await openLivePreview(page);
   await expect(page.locator('#preview-pane mjx-container')).toHaveCount(2);
   await page.locator('#preview-pane mjx-container').nth(1).dblclick();await ready(page);
   await page.getByRole('button',{name:'Edit symbol 2',exact:true}).click();
@@ -67,17 +81,17 @@ test('live preview opens the exact second occurrence and code examples remain un
 });
 test('cancel, invalid input and changes in the underlying document never overwrite content',async({page})=>{
   const src='Equation $x+1$.';await edit(page,src,11);
-  await page.locator('#formula-open').click();await ready(page);
+  await openFormulaPicker(page);await ready(page);
   await page.locator('#formula-source-details summary').click();await page.locator('#formula-source').fill('\\frac{');
   await expect(page.locator('#formula-error')).not.toHaveText('');await expect(page.locator('#formula-apply')).toBeDisabled();
   await page.keyboard.press('Escape');expect(await page.evaluate(()=>getEditContent())).toBe(src);
-  await page.locator('#formula-open').click();await ready(page);
+  await openFormulaPicker(page);await ready(page);
   await page.evaluate(()=>cmView.dispatch({changes:{from:0,insert:'New '}}));
   await page.locator('#formula-apply').click();await expect(page.locator('#formula-error')).toContainText('changed');
   expect(await page.evaluate(()=>getEditContent())).toBe('New '+src);
 });
 test('catalog covers Unicode math and every published template renders with selectable symbols',async({page})=>{
-  await edit(page,'');await page.locator('#formula-open').click();
+  await edit(page,'');await openFormulaPicker(page);
   const catalog=await page.evaluate(()=>ReadMDFormula.load());expect(catalog.symbols.length).toBeGreaterThanOrEqual(2400);
   expect(catalog.symbols.some(s=>s.id==='U+1D6C2')).toBe(true);
   for(const template of catalog.templates){
@@ -88,7 +102,7 @@ test('catalog covers Unicode math and every published template renders with sele
   await page.locator('#formula-search').fill('U+1D6C2');await expect(page.locator('[data-math-id="U+1D6C2"]')).toBeVisible();
 });
 test('compact windows and primary languages retain a visible apply button without horizontal overflow',async({page})=>{
-  await edit(page,'$x^2$',3);await page.locator('#formula-open').click();await ready(page);
+  await edit(page,'$x^2$',3);await openFormulaPicker(page);await ready(page);
   for(const [width,height]of[[1024,680],[1160,820],[390,844]]){
     await page.setViewportSize({width,height});
     for(const language of ['zh-CN','zh-TW','en','ja']){
@@ -103,15 +117,15 @@ test('closing during catalog loading prevents delayed rendering into another ses
   let release;const gate=new Promise(r=>release=r);
   await page.route('**/assets/math-catalog.json',async route=>{await gate;await route.continue();});
   await edit(page,'$x+1$',2);
-  await page.locator('#formula-open').click();await expect(page.locator('#formula-modal')).toBeVisible();
+  await openFormulaPicker(page);await expect(page.locator('#formula-modal')).toBeVisible();
   await page.locator('#formula-close').click();release();
   await expect(page.locator('#formula-modal')).toBeHidden();
   expect(await page.evaluate(()=>getEditContent())).toBe('$x+1$');
-  await page.locator('#formula-open').click();await ready(page);
+  await openFormulaPicker(page);await ready(page);
 });
 
 test('unknown commands and oversized drafts cannot be applied; empty drafts remain disabled',async({page})=>{
-  const src='# Untouched';await edit(page,src);await page.locator('#formula-open').click();
+  const src='# Untouched';await edit(page,src);await openFormulaPicker(page);
   await expect(page.locator('#formula-apply')).toBeDisabled();
   await page.evaluate(()=>ReadMDFormula.insert('\\ReadMDUnknownCommand{x}'));
   await expect(page.locator('#formula-error')).not.toHaveText('');
@@ -135,7 +149,7 @@ test('formula HTML annotations cannot create navigation or escape the preview bo
 
 test('ordinary numeric math renders while currency and fenced examples remain literal',async({page})=>{
   await edit(page,'Price $5 and $6.\n\nNumeric $2+2$.\n\n```text\n$x^2$\n```');
-  await page.evaluate(()=>setPvLayout('right'));
+  await openLivePreview(page);
   await expect(page.locator('#preview-pane mjx-container')).toHaveCount(1);
   await expect(page.locator('#preview-pane')).toContainText('Price $5 and $6.');
   await expect(page.locator('#preview-pane code')).toHaveText('$x^2$');
