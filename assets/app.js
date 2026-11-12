@@ -132,18 +132,6 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.toggleDrawer();
   });
 
-  // 更多菜单手风琴分组折叠切换
-  document.querySelectorAll('.more-group-header').forEach(hdr => {
-    hdr.addEventListener('click', e => {
-      e.stopPropagation();
-      const grp = hdr.closest('.more-group');
-      if (grp) {
-        grp.classList.toggle('open');
-        hdr.setAttribute('aria-expanded', grp.classList.contains('open') ? 'true' : 'false');
-      }
-    });
-  });
-
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
@@ -740,7 +728,7 @@ function bindEvents() {
   if ($('style-ai-gen-btn')) $('style-ai-gen-btn').addEventListener('click', generateCustomStyleWithAi);
   if ($('style-ai-prompt')) {
     $('style-ai-prompt').addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !$('style-ai-gen-btn').disabled) {
         e.preventDefault();
         generateCustomStyleWithAi();
       }
@@ -776,7 +764,8 @@ function bindEvents() {
     const el = $(id);
     if (!el) return;
     el.addEventListener('keydown', e => {
-      if (e.key === 'Tab') {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         const start = el.selectionStart;
         const end = el.selectionEnd;

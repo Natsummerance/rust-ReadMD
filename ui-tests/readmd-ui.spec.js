@@ -305,8 +305,7 @@ test('welcome keeps toolbar disabled and six modules; clipboard lives in more me
     await expect(page.locator('#' + id)).toBeVisible();
   }
   await expect(page.locator('#btn-clipboard-new')).toBeHidden();
-  await page.locator('#btn-more').click();
-  await page.locator('.more-group:has(#btn-clipboard-new) .more-group-header').click();
+  await page.locator('#tab-conversion').click();
   await expect(page.locator('#btn-clipboard-new')).toBeVisible();
 });
 
@@ -647,7 +646,7 @@ test('v2.3.0 i18n language modal and switching', async ({ page }) => {
   // Switch language
   await page.evaluate(() => i18n.setLanguage('en'));
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.locator('#btn-more')).toHaveAttribute('title', /More Options|More Features/);
+  await expect(page.locator('#tab-settings')).toHaveAttribute('title', 'Settings');
 
   // Close modal
   await page.evaluate(() => i18n.closeModal());
@@ -837,22 +836,18 @@ test('v2.3.7 top bar zen mode toggle & keyboard escape shortcut', async ({ page 
   expect(await page.evaluate(() => document.body.classList.contains('zen-mode'))).toBe(false);
 });
 
-test('v2.3.7 more menu accordion groups and document-dependent disabled state', async ({ page }) => {
+test('sidebar tools switch independently and preserve document-dependent disabled state', async ({ page }) => {
   await page.goto('/');
-  await page.waitForSelector('#btn-more');
-
-  // 1. 首页欢迎页状态下打开更多菜单
-  await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toBeVisible();
-
-  // 2. 验证三个极简分组存在且可折叠/展开
-  const groups = page.locator('.more-group');
-  expect(await groups.count()).toBe(3);
-
-  const interactHeader = page.locator('.more-group-header').nth(1);
-  await interactHeader.click();
-  // 再次点击可切换展开折叠
-  await interactHeader.click();
+  await waitForPage(page, () => window.__readmdAppReady);
+  for (const view of ['conversion', 'interaction', 'settings']) {
+    const trigger = page.locator('#tab-' + view);
+    await trigger.click();
+    await expect(trigger).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#side-' + view)).toBeVisible();
+    await expect(page.locator('#side .side-view:visible')).toHaveCount(1);
+  }
+  await page.locator('#tab-settings').click();
+  await expect(page.locator('#side')).toBeHidden();
 
   // 3. 验证未加载文档时，文档依赖功能被 disabled
   await expect(page.locator('#btn-presentation-menu')).toHaveAttribute('disabled', '');
@@ -875,11 +870,8 @@ test('v2.3.7 more menu accordion groups and document-dependent disabled state', 
 
 test('v2.3.7 custom styles and html head injection modal', async ({ page }) => {
   await page.goto('/');
-  await page.waitForSelector('#btn-more');
-
-  await page.locator('#btn-more').click();
-  const styleGroup = page.locator('.more-group:has(#btn-style-custom) .more-group-header');
-  if (await styleGroup.getAttribute('aria-expanded') !== 'true') await styleGroup.click();
+  await waitForPage(page, () => window.__readmdAppReady);
+  await page.locator('#tab-settings').click();
   await page.locator('#btn-style-custom').click();
 
   const modal = page.locator('#style-custom-modal');
@@ -1663,27 +1655,25 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
   const toolbarOverflow = await page.locator('#toolbar')
     .evaluate(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}));
   expect(toolbarOverflow.scrollWidth).toBeLessThanOrEqual(toolbarOverflow.clientWidth + 1);
-  for (const id of ['btn-toc', 'btn-edit', 'btn-more']) {
+  for (const id of ['btn-toc', 'btn-edit', 'tab-conversion', 'tab-interaction', 'tab-settings']) {
     await expect(page.locator(`#${id}`)).toBeVisible();
   }
   const open = page.locator('#btn-open');
   await page.locator('#tab-files').click(); await expect(open).toBeVisible();
   await expect(page.locator('#search-input')).toHaveAttribute('aria-label', /搜索|search/i);
   await expect(page.locator('#btn-print')).toBeDisabled();
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'false');
-  await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toBeVisible();
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#tab-conversion')).toHaveAttribute('aria-selected', 'false');
+  await page.locator('#tab-conversion').click();
+  await expect(page.locator('#side-conversion')).toBeVisible();
+  await expect(page.locator('#tab-conversion')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#btn-search')).toBeVisible();
 
-  const firstGroupHeader = page.locator('.more-group').filter({ has: page.locator('#btn-convert') }).locator('.more-group-header');
-  await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'false');
-  await firstGroupHeader.click();
-  await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'true');
-  await firstGroupHeader.click();
-  await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#tab-interaction')).toBeFocused();
+  await expect(page.locator('#side-conversion')).toBeHidden();
+  await expect(page.locator('#side-interaction')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'false');
+  await expect(page.locator('#tab-interaction')).toHaveAttribute('aria-selected', 'false');
   await expect(page.locator('#btn-toc')).toBeFocused();
 
   await page.evaluate(() => document.getElementById('export-modal').classList.remove('hidden'));

@@ -81,10 +81,9 @@ test.beforeEach(async ({ page }) => {
 test('Plugin Center entry point and modal cards render correctly', async ({ page }) => {
   await waitForApp(page);
 
-  // 1. 打开更多菜单并打开万物转 MD 模态框
-  await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toBeVisible();
-  await page.locator('.more-group:has(#btn-convert) .more-group-header').click();
+  // 1. 从转换侧栏打开万物转 MD 模态框
+  await page.locator('#tab-conversion').click();
+  await expect(page.locator('#side-conversion')).toBeVisible();
   await page.locator('#btn-convert').click();
   await expect(page.locator('#convert-modal')).toBeVisible();
 
@@ -135,8 +134,7 @@ test('Plugin install and uninstall invoke in-app confirmation modal', async ({ p
   await waitForApp(page);
 
   // 打开插件管理中心
-  await page.locator('#btn-more').click();
-  await page.locator('.more-group:has(#btn-convert) .more-group-header').click();
+  await page.locator('#tab-conversion').click();
   await page.locator('#btn-convert').click();
   await page.locator('#btn-open-plugins').click();
   const pluginModal = page.locator('#plugin-modal');

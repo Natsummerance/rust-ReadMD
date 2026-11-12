@@ -32,7 +32,7 @@ test('stale metadata detaches only after protected recovery is saved and opens a
   const entries=await page.evaluate(async()=> (await(await apiFetch('/api/documents/history')).json()).entries);
   const record=entries.find(e=>e.kind==='math_recovery'&&e.path.endsWith('Study.md'));expect(record).toBeTruthy();expect(record.context.reason).toBe('math_metadata_stale');
   const copy=await api(page,'/api/documents/history',{op:'read',id:record.id});expect(copy.content).toContain('skw');expect(copy.content).not.toContain('readmd:math:v1');
-  await page.locator('#btn-more').click();await page.locator('.more-group').filter({has:page.locator('#btn-document-history')}).locator('.more-group-header').click();await page.locator('#btn-document-history').click();await page.locator('[data-history-id="'+record.id+'"]').getByRole('button',{name:'Open as copy',exact:true}).click();
+  await page.locator('#tab-interaction').click();await page.locator('#btn-document-history').click();await page.locator('[data-history-id="'+record.id+'"]').getByRole('button',{name:'Open as copy',exact:true}).click();
   await expect(page.locator('#document-history-modal')).toHaveClass(/hidden/);expect(await page.evaluate(()=>getEditContent())).toBe(copy.content);
   expect(await page.evaluate(()=>getActiveTab().path)).toBeFalsy();expect(fs.readFileSync(file,'utf8')).toBe('$\\frac{z}{b}$');
   expect(fs.readdirSync(folder)).toEqual(['Study.md']);

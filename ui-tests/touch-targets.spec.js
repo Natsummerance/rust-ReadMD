@@ -47,17 +47,11 @@ test('mobile reader controls meet touch target budgets', async ({ page }, testIn
   const undersized = sizes.filter(size => size.minimum < 43.5);
   expect(undersized).toEqual([]);
 
-  await page.locator('#btn-more').click();
-  await page.evaluate(() => {
-    document.querySelectorAll('.more-group').forEach(g => g.classList.add('open'));
-  });
-  const moreItems = await page.evaluate(() => [...document.querySelectorAll('.more-item')]
-    .filter(target => target.offsetParent !== null)
-    .map(target => Math.min(
-      target.getBoundingClientRect().width,
-      target.getBoundingClientRect().height,
-    )));
-  expect(moreItems.length).toBeGreaterThan(4);
-  const undersizedMore = moreItems.filter(minimum => minimum < 43.5);
-  expect(undersizedMore).toEqual([]);
+  for (const view of ['conversion', 'interaction', 'settings']) {
+    await page.locator('#tab-' + view).click();
+    const actions = await page.locator('#side-' + view + ' .side-action:visible').evaluateAll(rows =>
+      rows.map(row => Math.min(row.getBoundingClientRect().width, row.getBoundingClientRect().height)));
+    expect(actions.length).toBeGreaterThan(4);
+    expect(actions.filter(minimum => minimum < 43.5)).toEqual([]);
+  }
 });

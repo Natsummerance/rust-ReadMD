@@ -18,11 +18,13 @@ test('one global chrome has horizontal tabs and one set of sidebar commands',()=
   }
   assert(!html.includes('id="doc-tabs-secondary-bar"'));
   assert(!html.includes('id="titlebar-home"'));
-  for (const id of ['btn-search','btn-recent','btn-more']) assert(containingTag(html,id).includes('side-tabs'));
+  for (const id of ['btn-search','btn-recent','tab-conversion','tab-interaction','tab-settings']) assert(containingTag(html,id).includes('side-tabs'));
   for (const id of ['btn-print','btn-palette','btn-theme','btn-home','status-update-badge']) assert(containingTag(html,id).includes('side-shortcuts'));
   assert(containingTag(html,'statusbar').includes('side'));
   assert(containingTag(html,'search-bar').includes('side-search'));
-  assert(containingTag(html,'more-menu').includes('side-more'));
+  assert(containingTag(html,'btn-convert').includes('side-conversion'));
+  assert(containingTag(html,'btn-document-history').includes('side-interaction'));
+  assert(containingTag(html,'btn-style-custom').includes('side-settings'));
   assert(containingTag(html,'pv-sync').includes('edit-view-menu'));
   for (const id of ['btn-open','btn-print','btn-ai','btn-edit','doc-tabs-bar','edit-save','statusbar']) {
     assert.equal([...html.matchAll(new RegExp('id="'+id+'"','g'))].length,1,id+' has a single owner');

@@ -87,9 +87,6 @@ test('table selector shows all ten columns and inserts the chosen table', async 
 
 test('search navigation reflects whether the current query has results', async ({ page }) => {
   await page.evaluate(() => { exitEdit(); renderContent(state.original, 'Search'); });
-  if (await page.locator('#btn-search').evaluate(button => button.closest('#more-menu') && !document.getElementById('more-menu').classList.contains('open'))) {
-    await page.locator('#btn-more').click();
-  }
   await page.locator('#btn-search').click();
   await page.locator('#search-input').fill('not-found-in-this-document');
   await expect(page.locator('#search-next')).toBeDisabled(); await expect(page.locator('#search-prev')).toBeDisabled();

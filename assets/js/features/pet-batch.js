@@ -1179,9 +1179,7 @@ async function pollPetControls() {
         else if (target === 'ai') { if (typeof openAIPanel === 'function') openAIPanel(); }
       } else if (payload && payload.pending) {
         try { await petNativeApi()?.show_window?.(); } catch (_) {}
-        const trigger = $('btn-more');
-        const menu = $('more-menu');
-        if (trigger && menu && !menu.classList.contains('open')) trigger.click();
+        if (typeof showSide === 'function') showSide('settings');
       }
     }
   } catch (_error) { /* optional native bridge */ }

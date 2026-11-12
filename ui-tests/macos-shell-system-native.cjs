@@ -93,16 +93,15 @@ function driver(phase, files, config) {
  }
  async function fixMenu(){
   py.window_control('qa_window_size',{width:1024,height:680});await until(()=>Math.abs(innerWidth-1024)<2&&Math.abs(innerHeight-680)<2,'fix_native_size_not_applied');
-  await i18n.setLanguage('zh-CN',false);$('btn-more').focus();$('btn-more').click();await until(()=>$('btn-more').getAttribute('aria-selected')==='true','more_menu_did_not_open');
-  for(const group of [...$('more-menu').querySelectorAll('.more-group')].filter(visible))if(!group.classList.contains('open'))group.querySelector('.more-group-header').click();
-  const menu=$('more-menu');await settled();await animationsSettled(menu);const box=rect(menu);
-  check(box.y>=0&&box.bottom<=innerHeight+1&&menu.scrollWidth<=menu.clientWidth+1&&menu.scrollHeight>menu.clientHeight&&['auto','scroll'].includes(getComputedStyle(menu).overflowY),'more_menu_bounded_and_scrollable');
-  menu.scrollTop=menu.scrollHeight;await until(()=>menu.scrollTop>0,'more_menu_did_not_scroll');$('btn-fix').scrollIntoView({block:'nearest'});$('btn-fix').focus();await settled();
+  await i18n.setLanguage('zh-CN',false);$('tab-interaction').focus();$('tab-interaction').click();await until(()=>$('tab-interaction').getAttribute('aria-selected')==='true','more_menu_did_not_open');
+  const menu=$('side-interaction').querySelector('.side-actions');await settled();await animationsSettled(menu);const box=rect(menu);
+  check(box.y>=0&&box.bottom<=innerHeight+1&&menu.scrollWidth<=menu.clientWidth+1&&['auto','scroll'].includes(getComputedStyle(menu).overflowY),'more_menu_bounded_and_scrollable');
+  $('btn-fix').scrollIntoView({block:'nearest'});$('btn-fix').focus();await settled();
   await animationsSettled(menu);const item=rect($('btn-fix')),m=rect(menu);await freshNative();check(host().focused===true&&document.activeElement===$('btn-fix')&&!$('btn-fix').disabled&&item.height>=44&&item.width>=44&&item.y>=m.y-1&&item.bottom<=m.bottom+1,'more_fix_target_focused_and_reachable');
   $('btn-fix').click();await until(()=>visible($('fix-modal'))&&document.activeElement===$('fix-list'),'fix_modal_initial_focus_missing');
   await until(()=>document.querySelectorAll('#fix-list .document-inspection-issue').length===48,'fixed_anchor_inspection_missing');
   const issues=[...document.querySelectorAll('#fix-list .document-inspection-issue')];check(issues.every((row,index)=>row.textContent.includes('#missing-'+String(index+1).padStart(3,'0'))),'fixed_48_anchor_targets_preserved');
-  await animationsSettled($('fix-box'));const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('btn-more').getAttribute('aria-selected')==='true'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
+  await animationsSettled($('fix-box'));const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('tab-interaction').getAttribute('aria-selected')==='true'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
   list.scrollTop=list.scrollHeight;await settled();const last=rect(issues[47]),bounds=rect(list);check(list.scrollTop>0&&last.y>=bounds.y-1&&last.bottom<=bounds.bottom+1,'fix_last_issue_reachable_by_real_scroll');
   $('fix-close').click();await until(()=>!visible($('fix-modal'))&&document.activeElement===$('btn-fix'),'fix_close_did_not_return_focus');check(true,'fix_close_returns_to_sidebar_action');
  }

@@ -29,8 +29,7 @@ test('module details are available from the plugin entry and follow the language
     state.modules = { convert:'ready', ocr:'loading', transcribe:'unavailable', pdf_editor:'error' };
     updateModuleUi();
   });
-  await page.locator('#btn-more').click();
-  await page.locator('.more-group').filter({ has: page.locator('#btn-plugin-menu') }).locator('.more-group-header').click();
+  await page.locator('#tab-settings').click();
   const entry = page.locator('#btn-plugin-menu');
   await expect(entry).toBeVisible();
   await expect(entry).toHaveAccessibleName(await page.evaluate(() => i18n.t('menu.plugins')));

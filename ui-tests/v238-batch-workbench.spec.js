@@ -39,9 +39,8 @@ test.beforeEach(async ({ page }) => {
 
 test('all-to-markdown workbench is the single entry point for batch conversion', async ({ page }) => {
   await waitForApp(page);
-  await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toBeVisible();
-  await page.locator('.more-group:has(#btn-convert) .more-group-header').click();
+  await page.locator('#tab-conversion').click();
+  await expect(page.locator('#side-conversion')).toBeVisible();
   await page.locator('#btn-convert').click();
   await expect(page.locator('#convert-modal')).toBeVisible();
   await expect(page.locator('#convert-title')).toContainText('转 Markdown');

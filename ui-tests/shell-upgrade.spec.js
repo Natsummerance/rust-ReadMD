@@ -24,7 +24,7 @@ async function openDoc(page, name = 'shell.md', body = '# Shell\n\n## Section\n\
 
 test('Ctrl+K opens the palette as a managed modal layer with a listbox', async ({ page }) => {
   await boot(page);
-  await page.locator('#btn-more').focus();
+  await page.locator('#tab-settings').focus();
   await page.keyboard.press('Control+k');
   const modal = page.locator('#command-palette-modal');
   await expect(modal).toBeVisible();
@@ -93,14 +93,14 @@ test('palette executes the existing feature and ranks it first next time', async
   await expect.poll(() => page.evaluate(() => [state.theme, document.body.dataset.theme].join('/'))).toBe('sepia/sepia');
 
   // Opening a dialog from the palette: focus returns to the original opener.
-  await page.locator('#btn-more').focus();
+  await page.locator('#tab-settings').focus();
   await page.keyboard.press('Control+k');
   await page.locator('#cmdp-input').fill('导出文档');
   await page.keyboard.press('Enter');
   await expect(page.locator('#export-modal')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('#export-modal')).toBeHidden();
-  await expect(page.locator('#btn-more')).toBeFocused();
+  await expect(page.locator('#tab-settings')).toBeFocused();
 
   // Recently used actions are listed first on an empty query.
   await page.keyboard.press('Control+k');

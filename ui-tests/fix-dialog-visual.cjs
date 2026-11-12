@@ -43,9 +43,7 @@ async function main() {
     });
     await page.evaluate(async () => { setEditorPref('aiCompletion', false); await ReadMDShellLoader.load(); });
     async function openFix() {
-      if (await page.locator('#btn-more').getAttribute('aria-selected') !== 'true') await page.locator('#btn-more').click();
-      const group = page.locator('.more-group').filter({ has: page.locator('#btn-fix') });
-      if (!await group.evaluate(node => node.classList.contains('open'))) await group.locator('.more-group-header').click();
+      if (await page.locator('#tab-interaction').getAttribute('aria-selected') !== 'true') await page.locator('#tab-interaction').click();
       await page.locator('#btn-fix').click();
     }
     const cases = [
@@ -133,7 +131,7 @@ async function main() {
       await until(() => page.locator('#fix-modal').evaluate(node => node.classList.contains('hidden')), 'original Escape close');
       const menuReturn = await page.evaluate(() => ({ active: document.activeElement.id || document.activeElement.tagName,
         openerVisible: $('btn-fix').getClientRects().length > 0,
-        moreSelected: $('btn-more').getAttribute('aria-selected') === 'true',
+        interactionSelected: $('tab-interaction').getAttribute('aria-selected') === 'true',
         remainingInert: document.querySelectorAll('[data-rm-inert]').length }));
       report.cases.at(-1).menuReturn = menuReturn;
       assert.equal(menuReturn.remainingInert, 0, 'Original modal manager releases the background');
@@ -149,17 +147,17 @@ async function main() {
     await page.mouse.click(16, 16);
     await until(() => page.locator('#fix-modal').evaluate(node => node.classList.contains('hidden')), 'original backdrop close');
     phase = 'visible opener focus return';
-    await page.locator('#btn-more').focus();
+    await page.locator('#tab-interaction').focus();
     await page.evaluate(() => showFixModal());
     await settle(page);
     await page.keyboard.press('Escape');
-    await expect(page.locator('#btn-more')).toBeFocused();
+    await expect(page.locator('#tab-interaction')).toBeFocused();
     assert.deepEqual(forbiddenRequests, []);
     assert.deepEqual(test.errors, []);
     report.checks.push('Original close and backdrop handlers; zero model/task-start calls and zero page errors');
     report.modalServiceControlPassed = true;
-    report.modalServiceControl = 'Visible #btn-more focused then real showFixModal() called; original Escape handler returned focus. This is a separate modal-service control, not the real menu flow.';
-    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-fix' && item.menuReturn.openerVisible && item.menuReturn.moreSelected);
+    report.modalServiceControl = 'Visible #tab-interaction focused then real showFixModal() called; original Escape handler returned focus. This is a separate modal-service control, not the real menu flow.';
+    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-fix' && item.menuReturn.openerVisible && item.menuReturn.interactionSelected);
     assert.equal(report.menuFocusReturnPassed, true, 'Every real repair flow must restore focus to its visible sidebar action');
     report.visualScopePassed = true;
     report.menuFocusBoundary = 'The More sidebar stays open behind the repair dialog. Closing the dialog restores focus to the action that opened it.';

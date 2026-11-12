@@ -4,7 +4,7 @@
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
   const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q;
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=0bf1a18dee19';
   let cssPending = null;
   let pending = null;
 

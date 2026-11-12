@@ -91,14 +91,52 @@
   white-space: normal;
 }
 
-/* Style editor and connection settings share the dialog controls and spacing. */
-#style-custom-modal .style-modal-desc { margin: 0 0 var(--space-2); }
-#style-custom-modal .style-option { margin-block-start: var(--space-2); }
-#style-custom-modal .style-option summary { color: var(--fg2); font-size: var(--text-sm); }
-#style-custom-head { min-height: 90px; }
-#style-custom-modal .style-ai-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
-#style-custom-modal .style-ai-bar input { flex: 1 1 180px; min-width: 0; }
-#style-custom-modal :is(.btn-preset, .style-ai-bar button, .modal-footer button),
+/* Style editing keeps the code surface and its tools in one dialog. */
+#style-custom-modal .style-modal-dialog {
+  width: min(620px, 100%); max-height: calc(100dvh - var(--space-8));
+  background: var(--color-surface-raised);
+}
+#style-custom-modal :is(.modal-header, .modal-footer) {
+  padding: var(--space-2) var(--space-5); background: transparent; flex: none;
+}
+#style-custom-modal .modal-header h3 { font-size: var(--text-lg); }
+#style-custom-modal .modal-body {
+  display: flex; flex-direction: column; gap: var(--space-2); min-height: 0;
+  padding: var(--space-3) var(--space-5); overflow: auto; overscroll-behavior: contain;
+}
+.style-feedback:has(#style-load-status:empty) { display: none; }
+.style-css-tools {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3);
+}
+.style-css-tools label { font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+#style-custom-modal .style-presets-bar { gap: var(--space-1); }
+#style-custom-modal .btn-preset {
+  min-height: var(--touch-target); border-color: transparent; border-radius: var(--radius-s);
+  background: transparent; color: var(--color-fg-muted); box-shadow: none;
+}
+#style-custom-modal .btn-preset:hover:not(:disabled) { border-color: transparent; background: var(--color-hover); }
+#style-custom-modal .style-code-editor {
+  flex: none; box-sizing: border-box; min-width: 0; width: 100%; padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border); border-radius: var(--radius-s);
+  background: var(--color-surface-sunken); color: var(--color-fg); resize: vertical;
+}
+#style-custom-modal .style-code-editor:focus-visible { outline-offset: -1px; }
+#style-custom-css { min-height: clamp(112px, 28dvh, 220px); }
+#style-custom-head { min-height: 92px; margin-block-end: var(--space-2); }
+.style-details { border-block-start: 1px solid var(--color-separator); }
+.style-details summary {
+  box-sizing: border-box; min-height: var(--touch-target); padding-block: var(--space-2);
+  color: var(--color-fg-muted); font-size: var(--text-sm); line-height: 1.5; cursor: pointer;
+}
+#style-custom-modal .style-ai-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2);
+}
+#style-custom-modal .style-ai-bar textarea { box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; }
+#style-custom-modal .style-ai-status {
+  margin-block: var(--space-2); color: var(--color-fg-muted); font-size: var(--text-xs); overflow-wrap: anywhere;
+}
+#style-custom-modal :is(.modal-close, .style-ai-bar button) { min-width: var(--touch-target); min-height: var(--touch-target); }
+#style-custom-modal :is(.btn-preset, .modal-footer button),
 #ai-settings-box .conn-actions button, #export-box .export-foot button {
   height: auto;
   max-width: 100%;

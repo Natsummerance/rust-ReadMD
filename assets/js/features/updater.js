@@ -66,10 +66,7 @@ async function checkUpdateOnce(silent = true) {
       return res;
     }
     scheduleUpdateCheck(true);
-    if (res && res.current_version) {
-      if ($('status-version')) $('status-version').textContent = 'v' + res.current_version;
-      if ($('menu-version-label')) $('menu-version-label').textContent = _t('update.currentVer', { ver: res.current_version }) || ('当前版本 v' + res.current_version);
-    }
+    syncVersionLabels(res.current_version);
     if (res.has_update) {
       updateInfo = res;
       upgradeUrl = res.html_url;

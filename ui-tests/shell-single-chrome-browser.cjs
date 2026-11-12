@@ -102,7 +102,7 @@ const check=(name)=>report.checks.push({name,passed:true});
   assert.doesNotMatch(await p.locator('#status-summary').textContent(),/\b(?:LF|CRLF)\b/);
   await p.locator('#tab-toc').click();await p.locator('#side-toc').waitFor();
   await p.locator('#btn-recent').click();await until(()=>p.locator('#side-recent-list button').count().then(n=>n>=2),'real recent files');
-  await p.locator('#btn-more').click();await p.locator('#more-menu').waitFor();
+  await p.locator('#tab-conversion').click();await p.locator('#side-conversion').waitFor();
   assert.ok(await p.locator('#btn-saveas').isVisible());assert.ok(await p.locator('#btn-print').isVisible());
   await p.locator('#btn-toc').click();assert.equal(await p.locator('#side').isVisible(),false);
   await p.locator('#btn-toc').click();assert.ok(await p.locator('#status-summary').isVisible());

@@ -74,7 +74,7 @@ async function main() {
   try {
     await start(); mark('all blocks once, actual history and save'); await edit('批量 中文😀.md');
     await page.evaluate(async () => { const tab = getActiveTab(), stamp = await ReadMDReview.capture(tab), at = cmView.state.doc.toString().indexOf('Same.'); await ReadMDReview.propose([{ from: at, to: at + 5, insert: 'Pending.' }], stamp, tab); await renderPreview(); });
-    await page.locator('#btn-more').click();
+    await page.locator('#tab-interaction').click();
     const runButton = page.locator('#btn-run-all-chunks');
     const runLabel = await page.evaluate(() => i18n.t('menu.runCode'));
     assert.notEqual(runLabel, 'menu.runCode');

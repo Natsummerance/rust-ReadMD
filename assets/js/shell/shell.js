@@ -302,7 +302,7 @@ function initSingleChromeNavigation() {
       items[(from + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
     event.preventDefault();
     showSide(next.dataset.sideView);
-    next.focus({ preventScroll: true });
+    next.focus();
   });
   // Some document lifecycle paths hide the panel directly. Keep the rail
   // state correct and clear search marks when those paths close it.

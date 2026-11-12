@@ -22,9 +22,6 @@ test('search Enter cycles matches without leaving the field', async ({ page }) =
       [],
     );
   });
-  if (await page.locator('#btn-search').evaluate(button => button.closest('#more-menu') && !document.getElementById('more-menu').classList.contains('open'))) {
-    await page.locator('#btn-more').click();
-  }
   await page.locator('#btn-search').click();
   await page.locator('#search-input').fill('target');
 

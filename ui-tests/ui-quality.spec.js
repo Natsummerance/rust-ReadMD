@@ -26,7 +26,7 @@ const MODALS = [
 for (const [id, open] of MODALS) {
   test(`${id}: focus stays inside, Esc closes and focus returns`, async ({ page }) => {
     await openDoc(page);
-    const opener = page.locator('#btn-more');
+    const opener = page.locator('#tab-settings');
     await opener.focus();
     await expect(opener).toBeFocused();
     await page.evaluate(open);
@@ -43,6 +43,70 @@ for (const [id, open] of MODALS) {
     await expect(opener).toBeFocused();
   });
 }
+
+test('sidebar tool panels stay below style editing and return focus after saving', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 680 });
+  await openDoc(page);
+  await page.evaluate(() => { document.body.dataset.theme = 'sepia'; });
+  for (const view of ['conversion', 'interaction', 'settings']) {
+    await page.locator('#tab-' + view).click();
+    await expect(page.locator('#side-' + view)).toBeVisible();
+    await expect(page.locator('#side .side-view:visible')).toHaveCount(1);
+  }
+  const opener = page.locator('#btn-style-custom');
+  const modal = page.locator('#style-custom-modal');
+  await opener.click();
+  await expect(modal).toBeVisible();
+  const css = modal.locator('#style-custom-css');
+  const head = modal.locator('#style-custom-head');
+  await expect(css).toBeEnabled();
+  const before = await page.evaluate(async () => {
+    const response = await apiFetch('/api/style/get');
+    return (await response.json()).data;
+  });
+  try {
+    const layers = await page.evaluate(() => {
+      const side = document.getElementById('side');
+      const modal = document.getElementById('style-custom-modal');
+      const panel = modal.querySelector('.modal-dialog').getBoundingClientRect();
+      const sidebar = side.getBoundingClientRect();
+      const x = Math.max(panel.left, sidebar.left) + 2;
+      const y = Math.max(panel.top, sidebar.top) + 18;
+      return {
+        hasOverlap: x < Math.min(panel.right, sidebar.right) && y < Math.min(panel.bottom, sidebar.bottom),
+        onTop: modal.contains(document.elementFromPoint(x, y)),
+        zOrder: Number(getComputedStyle(side).zIndex) < Number(getComputedStyle(modal).zIndex),
+        inert: document.getElementById('layout').inert,
+      };
+    });
+    expect(layers).toEqual({ hasOverlap: true, onTop: true, zOrder: true, inert: true });
+    await modal.locator('#btn-preset-indent').click();
+    await expect(css).toHaveValue(/text-indent/);
+    const next = { css: '.markdown-body h1 { color: #3355aa; }', head: '<meta name="color-scheme" content="light dark">' };
+    await css.fill(next.css);
+    await head.locator('..').locator('summary').click();
+    await head.fill(next.head);
+    const prompt = modal.locator('#style-ai-prompt');
+    await prompt.locator('../..').locator('summary').click();
+    await prompt.fill('加粗');
+    await prompt.press('Shift+Enter');
+    await prompt.press('a');
+    await expect(prompt).toHaveValue('加粗\na');
+    await modal.locator('#style-modal-save').click();
+    await expect(modal).toBeHidden();
+    await expect(opener).toBeFocused();
+    await opener.click();
+    await expect(css).toBeEnabled();
+    await expect(css).toHaveValue(next.css);
+    await expect(head).toHaveValue(next.head);
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+  } finally {
+    await page.evaluate(async body => {
+      await apiFetch('/api/style/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }, before);
+  }
+});
 
 test('Esc during IME composition does not close a modal', async ({ page }) => {
   await openDoc(page);
@@ -106,7 +170,7 @@ test('every visible toolbar button has an accessible name and clicks without err
   page.on('pageerror', e => errors.push(String(e)));
   await openDoc(page);
   // Controls that leave the page, open OS dialogs or quit are not clicked.
-  const SKIP = /^(btn-open|btn-open-folder|btn-home|btn-close|btn-quit|btn-pet|btn-more)$/;
+  const SKIP = /^(btn-open|btn-open-folder|btn-home|btn-close|btn-quit|btn-pet)$/;
   const ids = await page.evaluate(() => [...document.querySelectorAll('.toolbar button[id], #toolbar button[id]')]
     .filter(b => b.offsetParent !== null && !b.disabled)
     .map(b => b.id));

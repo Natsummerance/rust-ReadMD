@@ -3798,11 +3798,13 @@ function stopAutoReload() {
 }
 
 function syncBuildVersionLabels() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const version = document.documentElement.dataset.version;
+  syncVersionLabels(document.documentElement.dataset.version);
+}
+
+function syncVersionLabels(version) {
   if (!version) return;
-  if ($('status-version')) $('status-version').textContent = 'v' + version;
-  if ($('menu-version-label')) $('menu-version-label').textContent = _t('app.currentVersion') + version;
+  const label = 'v' + version.replace(/^[vV]/, '');
+  for (const id of ['status-version', 'menu-version-label']) if ($(id)) $(id).textContent = label;
 }
 
 ;
@@ -5810,7 +5812,7 @@ function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
   if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
   if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
   if (restoreFocus) {
-    const target = [$('btn-search'), $('btn-more'), $('content')].find(node => node &&
+    const target = [$('btn-search'), $('btn-toc'), $('content')].find(node => node &&
       !node.disabled && !node.closest('[inert], [hidden], .hidden') &&
       node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
     target?.focus({ preventScroll: true });
@@ -25714,9 +25716,7 @@ async function pollPetControls() {
         else if (target === 'ai') { if (typeof openAIPanel === 'function') openAIPanel(); }
       } else if (payload && payload.pending) {
         try { await petNativeApi()?.show_window?.(); } catch (_) {}
-        const trigger = $('btn-more');
-        const menu = $('more-menu');
-        if (trigger && menu && !menu.classList.contains('open')) trigger.click();
+        if (typeof showSide === 'function') showSide('settings');
       }
     }
   } catch (_error) { /* optional native bridge */ }
@@ -30091,10 +30091,7 @@ async function checkUpdateOnce(silent = true) {
       return res;
     }
     scheduleUpdateCheck(true);
-    if (res && res.current_version) {
-      if ($('status-version')) $('status-version').textContent = 'v' + res.current_version;
-      if ($('menu-version-label')) $('menu-version-label').textContent = _t('update.currentVer', { ver: res.current_version }) || ('当前版本 v' + res.current_version);
-    }
+    syncVersionLabels(res.current_version);
     if (res.has_update) {
       updateInfo = res;
       upgradeUrl = res.html_url;
@@ -31126,7 +31123,7 @@ async function applyReadyUpdate() {
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
   const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q;
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=0bf1a18dee19';
   let cssPending = null;
   let pending = null;
 
@@ -31516,7 +31513,7 @@ function initSingleChromeNavigation() {
       items[(from + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
     event.preventDefault();
     showSide(next.dataset.sideView);
-    next.focus({ preventScroll: true });
+    next.focus();
   });
   // Some document lifecycle paths hide the panel directly. Keep the rail
   // state correct and clear search marks when those paths close it.
@@ -32198,18 +32195,6 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.toggleDrawer();
   });
 
-  // 更多菜单手风琴分组折叠切换
-  document.querySelectorAll('.more-group-header').forEach(hdr => {
-    hdr.addEventListener('click', e => {
-      e.stopPropagation();
-      const grp = hdr.closest('.more-group');
-      if (grp) {
-        grp.classList.toggle('open');
-        hdr.setAttribute('aria-expanded', grp.classList.contains('open') ? 'true' : 'false');
-      }
-    });
-  });
-
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
@@ -32806,7 +32791,7 @@ function bindEvents() {
   if ($('style-ai-gen-btn')) $('style-ai-gen-btn').addEventListener('click', generateCustomStyleWithAi);
   if ($('style-ai-prompt')) {
     $('style-ai-prompt').addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && !$('style-ai-gen-btn').disabled) {
         e.preventDefault();
         generateCustomStyleWithAi();
       }
@@ -32842,7 +32827,8 @@ function bindEvents() {
     const el = $(id);
     if (!el) return;
     el.addEventListener('keydown', e => {
-      if (e.key === 'Tab') {
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         const start = el.selectionStart;
         const end = el.selectionEnd;

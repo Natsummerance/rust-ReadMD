@@ -537,9 +537,11 @@ function stopAutoReload() {
 }
 
 function syncBuildVersionLabels() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const version = document.documentElement.dataset.version;
+  syncVersionLabels(document.documentElement.dataset.version);
+}
+
+function syncVersionLabels(version) {
   if (!version) return;
-  if ($('status-version')) $('status-version').textContent = 'v' + version;
-  if ($('menu-version-label')) $('menu-version-label').textContent = _t('app.currentVersion') + version;
+  const label = 'v' + version.replace(/^[vV]/, '');
+  for (const id of ['status-version', 'menu-version-label']) if ($(id)) $(id).textContent = label;
 }

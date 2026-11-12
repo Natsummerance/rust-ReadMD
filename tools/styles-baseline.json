@@ -1,5 +1,21 @@
 {
+  "assets/collaboration/client.css": {
+    "S1": 0,
+    "S2": 0,
+    "S3": 0,
+    "S4": 0,
+    "S5": 0,
+    "S6": 0
+  },
   "assets/css/ai.css": {
+    "S1": 0,
+    "S2": 0,
+    "S3": 0,
+    "S4": 0,
+    "S5": 0,
+    "S6": 0
+  },
+  "assets/css/dialogs.css": {
     "S1": 0,
     "S2": 0,
     "S3": 0,
@@ -80,12 +96,12 @@
     "S6": 0
   },
   "assets/style.css": {
-    "S1": 158,
-    "S2": 305,
+    "S1": 157,
+    "S2": 295,
     "S3": 115,
     "S4": 14,
     "S5": 0,
-    "S6": 5
+    "S6": 4
   },
   "assets/workspace-ui.css": {
     "S1": 12,

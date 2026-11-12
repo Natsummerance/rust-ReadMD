@@ -72,7 +72,7 @@ test('an AI copy still asks to save its newly created content', async ({page}) =
 test('titlebar actions share the tab row and the side rail retains its shortcuts', async ({page}) => {
   await page.evaluate(() => renderVirtual('clipboard', 'Chrome.md', '', '# Chrome\n\nTitlebar test.', []));
   for (const id of ['btn-toc','btn-edit','btn-zen','btn-ai','doc-tabs-bar']) await expect(page.locator('#app-titlebar #' + id)).toBeVisible();
-  for (const id of ['rd-prefs-btn','btn-more','btn-search','btn-print','btn-theme','btn-home']) await expect(page.locator('#side-rail #' + id)).toBeVisible();
+  for (const id of ['rd-prefs-btn','tab-conversion','tab-interaction','tab-settings','btn-search','btn-print','btn-theme','btn-home']) await expect(page.locator('#side-rail #' + id)).toBeVisible();
   await expect(page.locator('#window-controls')).toBeHidden();
   let releaseListing;
   const listingGate = new Promise(resolve => { releaseListing = resolve; });
@@ -93,15 +93,15 @@ test('titlebar actions share the tab row and the side rail retains its shortcuts
     for (const id of ['btn-open','btn-folder','btn-reload']) {
       await expect(page.locator('#side-file-actions #' + id)).toBeVisible();
     }
-    await page.locator('#btn-more').click();
-    await expect(page.locator('#more-menu')).toBeVisible();
+    await page.locator('#tab-settings').click();
+    await expect(page.locator('#side-settings')).toBeVisible();
   } finally {
     releaseListing();
   }
   expect(await page.evaluate(() => window.pendingFileListing)).toBe(true);
-  await expect(page.locator('#more-menu')).toBeVisible();
+  await expect(page.locator('#side-settings')).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.locator('#more-menu')).toBeHidden();
+  await expect(page.locator('#side-settings')).toBeHidden();
   await expect(page.locator('#side-rail')).toBeVisible();
 });
 test('reading preferences fit a narrow viewport and retain 44px chrome targets', async ({page}) => {
