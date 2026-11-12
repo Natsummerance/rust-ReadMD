@@ -1102,6 +1102,7 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
         nativeExportPreview.missingCapability = { id: capability, code: error.code }; renderNativeExportCapabilityRequired(generation); return;
       }
       const reason = error.code ? apiMessage({ error_code: error.code }, 'export.previewFailed') : error.message;
+      if (meta) meta.textContent = `${fmt.toUpperCase()} · ${presetName} · ${_t('export.previewFailed')}`;
       if (mini) { mini.textContent = _t('export.previewFailed') + ': ' + reason; mini.setAttribute('aria-busy', 'false'); }
       const wrapper = $('export-preview-modal')?.querySelector('.export-preview-paper-wrapper');
       if (wrapper) { wrapper.textContent = _t('export.previewFailed'); wrapper.setAttribute('aria-busy', 'false'); }

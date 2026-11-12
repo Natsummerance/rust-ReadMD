@@ -42,6 +42,12 @@ test('novel parameters render in the real EPUB and remain editable after choosin
   await page.locator('#export-tab-html').click();const htmlOut=path.join(folder,'Novel.html');
   const htmlResult=await page.evaluate(async({out,base})=>(await apiFetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({format:'html',content:currentExportContent(),baseDir:base,out_path:out,options:collectExportOptions()})})).json(),{out:htmlOut,base:folder});
   expect(htmlResult.ok).toBe(true);const html=fs.readFileSync(htmlOut,'utf8');expect(html).toContain('text-indent:4mm');expect(html).toContain('SimSun');expect(html).toContain('检验与复核');expect(fs.readFileSync(path.join(folder,'Reading-workshop.md'),'utf8')).toBe(fixture.source);
+  // Rust's PDF renderer rejects the novel's nested note placement. Use
+  // the same profile UI with Chinese text and enough content for real pages.
+  const pdfSource = path.join(folder, 'PDF-pagination.md');
+  fs.writeFileSync(pdfSource, '# 排版校验\n\n' +
+    Array.from({length: 42}, (_, index) => '## 检查 ' + (index + 1) + '\n\n核对实际分页和字体。\n\n').join(''));
+  await page.evaluate(async file=>{closeExportModal();await loadFile(file);await openExportModal();},pdfSource);
   await page.locator('#export-tab-pdf').click();
   await page.locator('#export-preview-card').click();
   const wrapper=page.locator('#export-preview-modal .export-preview-paper-wrapper');
