@@ -116,6 +116,9 @@ body[data-theme="sepia"] {
   --color-selection: var(--editor-selection);
   --color-code-bg: var(--code-bg);
   --color-quote-bg: var(--quote-bg);
+  --color-reading-blue: var(--callout-note);
+  --color-reading-green: var(--callout-tip);
+  --color-reading-purple: var(--callout-important);
   --color-hl: var(--hl);
   --color-hover: color-mix(in srgb, var(--fg) 6%, transparent);
   --color-pressed: color-mix(in srgb, var(--fg) 10%, transparent);

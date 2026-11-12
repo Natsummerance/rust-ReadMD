@@ -45,7 +45,7 @@ async function until(fn) { const end=Date.now()+30000; while(Date.now()<end) { i
     await page.locator('.tab-item').filter({hasText:'哲学阅读研究手册.md'}).click();
     await until(()=>page.locator('#content').innerText().then(s=>s.includes('26.87%')));
     if(capture){capture.mark('切回保留的研究手册');await delay(1500);}
-    await page.locator('#titlebar-home').click();
+    await page.locator('#btn-home').click();
     assert.equal(await page.evaluate(()=>state.tabs.length),2);
     if(capture){capture.mark('点击 LOGO 回主页，未关闭页面仍保留');await delay(900);}
     await page.locator('.tab-item').filter({hasText:'哲学阅读研究手册.md'}).click();

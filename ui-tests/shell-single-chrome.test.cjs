@@ -12,11 +12,21 @@ function containingTag(markup,id){
   for(const match of tokens){const value=match[0],tag=match[1].toLowerCase();if(value.startsWith('</')){if(stack.at(-1)?.tag===tag)stack.pop();continue;}if(new RegExp('\\bid="'+id+'"').test(value))return stack.map(x=>x.id).filter(Boolean);if(!['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr'].includes(tag)&&!value.endsWith('/>'))stack.push({tag,id:value.match(/\bid="([^"]+)"/)?.[1]});}
   throw Error('Missing element '+id);
 }
-test('one global chrome contains the action toolbar; service-owned tabs live in the sidebar',()=>{
-  assert(containingTag(html,'toolbar').includes('app-titlebar'),'A second toolbar row must not remain a body sibling');
-  assert(containingTag(html,'doc-tabs-bar').includes('side'),'The existing tablist belongs to the collapsible sidebar');
-  assert(containingTag(html,'doc-tabs-secondary-bar').includes('side'),'Narrow tab fallback must share the sidebar');
-  for(const id of ['btn-toc','btn-open','btn-folder','btn-recent','btn-reload','btn-palette','btn-theme','btn-zen','btn-print','btn-edit','btn-more','btn-ai','doc-tabs-bar','file-title'])assert.equal([...html.matchAll(new RegExp('\\bid="'+id+'"','g'))].length,1,id+' remains a single service-owned entry');
+test('one global chrome has horizontal tabs and one set of sidebar commands',()=>{
+  for (const id of ['toolbar','doc-tabs-bar','btn-edit','btn-zen','btn-ai']) {
+    assert(containingTag(html,id).includes('app-titlebar'), id+' stays in the only titlebar');
+  }
+  assert(!html.includes('id="doc-tabs-secondary-bar"'));
+  assert(!html.includes('id="titlebar-home"'));
+  for (const id of ['btn-search','btn-recent','btn-more']) assert(containingTag(html,id).includes('side-tabs'));
+  for (const id of ['btn-print','btn-palette','btn-theme','btn-home','status-update-badge']) assert(containingTag(html,id).includes('side-shortcuts'));
+  assert(containingTag(html,'statusbar').includes('side'));
+  assert(containingTag(html,'search-bar').includes('side-search'));
+  assert(containingTag(html,'more-menu').includes('side-more'));
+  assert(containingTag(html,'pv-sync').includes('edit-view-menu'));
+  for (const id of ['btn-open','btn-print','btn-ai','btn-edit','doc-tabs-bar','edit-save','statusbar']) {
+    assert.equal([...html.matchAll(new RegExp('id="'+id+'"','g'))].length,1,id+' has a single owner');
+  }
 });
 test('command is icon-only, named and reachable without taking the editor link shortcut',()=>{
   const button=html.match(/<button\b[^>]*id="btn-palette"[\s\S]*?<\/button>/)[0];
@@ -25,11 +35,11 @@ test('command is icon-only, named and reachable without taking the editor link s
   const shell=read('assets/js/shell/shell.js');assert.match(shell,/key === 'k' && !inCodeMirror\(target\)/);
 });
 test('new shell labels reuse existing keys in every packaged UI language',()=>{
-  const keys=['shell.group.view','menu.file','toolbar.export','toolbar.theme','menu.zenMode','tabs.openDocs'];
+  const keys=['shell.group.view','menu.file','toolbar.export','toolbar.theme','menu.zenMode','tabs.openDocs','tabs.toc','shell.sidebar','menu.plugins','plugin.refresh'];
   for(const name of fs.readdirSync(path.join(ROOT,'assets/i18n')).filter(name=>name.endsWith('.json')&&name!=='meta.json')){
     const strings=JSON.parse(read('assets/i18n/'+name));for(const key of keys)assert.equal(typeof strings[key],'string',name+': '+key);
   }
-  assert.match(html,/id="side-file-actions"[^>]+data-i18n-aria="menu.file"/);
+  assert.match(html,/id="side-rail"[^>]+data-i18n-aria="shell.sidebar"/);
 });
 test('platform shortcut labels recognize macOS UA data and legacy MacIntel without changing Windows/Linux',()=>{
   const source=read('assets/js/shell/command-palette.js');

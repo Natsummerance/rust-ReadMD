@@ -232,37 +232,18 @@ impl Tray {
     pub fn available(&self) -> bool {
         self.item.isVisible() && self.item.menu(self.actions.mtm()).is_some()
     }
-    pub fn set_labels(&mut self, labels: [&str; 3]) {
-        for (id, label) in ["show", "open", "exit"].into_iter().zip(labels) {
-            self.label(id, label);
-        }
-    }
-    pub fn set_document_labels(&mut self, labels: [&str; 3]) {
-        for (id, label) in ["file", "save", "save-as"].into_iter().zip(labels) {
-            self.label(id, label);
-        }
-    }
-    pub fn set_edit_labels(&mut self, labels: [&str; 6]) {
-        for (id, label) in ["edit", "undo", "redo", "cut", "copy", "paste"]
-            .into_iter()
-            .zip(labels)
-        {
-            self.label(id, label);
-        }
-    }
-    pub fn set_extra_labels(&mut self, labels: &serde_json::Value) {
-        if let Some(labels) = labels.as_object() {
-            for (id, label) in labels {
-                if let Some(label) = label.as_str().filter(|s| s.len() <= 512) {
-                    self.label(id, label);
-                }
-            }
-        }
-    }
-    fn label(&self, id: &str, label: &str) {
-        if let Some(entries) = self.entries.get(id) {
+    pub fn set_labels(&self, labels: &serde_json::Value) {
+        let Some(labels) = labels.as_object() else { return };
+        for (id, value) in labels {
+            let Some(entries) = self.entries.get(id.as_str()) else { continue };
+            let Some(label) = value.as_str().map(str::trim).filter(|label| valid_label(label)) else {
+                continue;
+            };
+            let title = NSString::from_str(label);
             for entry in entries {
-                entry.setTitle(&NSString::from_str(label));
+                if !entry.title().isEqualToString(&title) {
+                    entry.setTitle(&title);
+                }
             }
         }
     }
@@ -277,8 +258,19 @@ impl Tray {
     #[cfg(all(feature = "native-qa", debug_assertions))]
     pub fn qa_snapshot(&self) -> serde_json::Value {
         let image = self.item.button(self.actions.mtm()).and_then(|b| b.image());
-        serde_json::json!({"template":image.as_ref().is_some_and(|i|i.isTemplate()),"width":image.as_ref().map(|i|i.size().width),"height":image.as_ref().map(|i|i.size().height),"commands":self.dispatch.keys().collect::<Vec<_>>()})
+        let labels: BTreeMap<_, _> = self.entries.iter().map(|(id, entries)| {
+            (*id, entries.iter().map(|entry| entry.title().to_string()).collect::<Vec<_>>())
+        }).collect();
+        serde_json::json!({"template":image.as_ref().is_some_and(|i|i.isTemplate()),"width":image.as_ref().map(|i|i.size().width),"height":image.as_ref().map(|i|i.size().height),"commands":self.dispatch.keys().collect::<Vec<_>>(),"labels":labels})
     }
+}
+
+fn valid_label(label: &str) -> bool {
+    // Keep the existing AppKit title if a renderer sends an unresolved key.
+    let is_key = label.contains('.') && label.split('.').all(|part| {
+        !part.is_empty() && part.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+    });
+    !label.is_empty() && label.len() <= 512 && !is_key && !label.chars().any(char::is_control)
 }
 impl Drop for Tray {
     fn drop(&mut self) {

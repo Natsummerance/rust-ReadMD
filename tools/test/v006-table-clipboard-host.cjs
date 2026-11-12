@@ -30,7 +30,7 @@ function host({ source = '', selection, file = 'owned-table.md', apiFetch } = {}
   context.window = context;
   vm.createContext(context);
   for (const file of ['assets/vendor/codemirror.bundle.js', 'assets/vendor/marked.min.js',
-    'assets/js/editor/md-transforms.js', 'assets/js/editor/editor.js', 'assets/js/editor/preview.js']) {
+    'assets/js/editor/md-transforms.js', 'assets/js/editor/toolbar.js', 'assets/js/editor/editor.js', 'assets/js/editor/preview.js']) {
     vm.runInContext(read(file), context, { filename: file });
   }
   const CM = context.ReadMDCodeMirror;

@@ -239,12 +239,21 @@
     if (activity.justCompleted && !state.activity.justCompleted) respond('complete');
     state.activity = activity; state.animation = snapshot.info?.animation;
     sceneActive = !snapshot.fullscreen && snapshot.visible !== false;
+    if (!sceneActive) menu.hidden = true;
     updateMenu(); syncInteractionRegions(); window.dispatchEvent(new Event('readmd-pet-character-changed'));
   });
   api?.onControl?.(payload => {
     if (payload?.type === 'character') applyCharacter(payload.character);
     if (payload?.type === 'pet') { petPet(); api?.control?.({type:'interact',action:'pet'}); }
     if (payload?.type === 'play') respond('complete');
+    if (payload?.type === 'show-context-menu') {
+      const [sx, sy] = interactionScale();
+      showMenu(payload.x / sx, payload.y / sy);
+    }
+    if (payload?.type === 'surface-hover') {
+      clearTimeout(menuDismissTimer);
+      if (!payload.hovered && !menu.hidden) menuDismissTimer = window.setTimeout(closeMenu, 180);
+    }
   });
   // One drag request after the threshold. Cancelled/moved gestures never pet.
   let gesture = null, strokeX, strokeDistance = 0, strokeAt = 0;
@@ -276,50 +285,131 @@
   }
   window.addEventListener('pointerup', e => finishGesture(e,false)); window.addEventListener('pointercancel', e => finishGesture(e,true));
   canvas.addEventListener('lostpointercapture', e => finishGesture(e,true)); window.addEventListener('blur', e => finishGesture(e,true));
-  const menu = document.createElement('div'); menu.setAttribute('role','menu'); menu.dataset.petInteractive = '';
-  let menuPage = 'home';
-  menu.style.cssText = 'position:absolute;display:none;z-index:9999;min-width:168px;max-height:calc(100% - 8px);overflow:auto;padding:4px;background:rgba(28,30,36,.96);border:1px solid #ffffff14;border-radius:10px;font:13px/1.4 system-ui;color:#eee;user-select:none';
+  const menu = document.createElement('div');
+  menu.setAttribute('role', 'menu');
+  menu.dataset.petInteractive = '';
+  menu.hidden = true;
+  menu.style.cssText = `position:absolute;z-index:9999;box-sizing:border-box;
+    min-width:min(168px,calc(100% - 8px));max-width:calc(100% - 8px);max-height:calc(100% - 8px);
+    overflow:auto;padding:4px;background:rgba(28,30,36,.96);border:1px solid #ffffff14;
+    border-radius:10px;font:13px/1.4 system-ui;color:#eee;user-select:none`;
+  let menuPage = 'home', menuAnchor, menuKey, menuDismissTimer;
   const text = (key,fallback) => state.petInfo.lines?.[key] || fallback;
-  function menuItem(label,run,checked) {
-    const item = document.createElement('button'); item.type = 'button'; item.textContent = `${checked ? '✓ ' : ''}${label}`;
-    item.setAttribute('role',checked === undefined ? 'menuitem' : 'menuitemradio'); if (checked !== undefined) item.setAttribute('aria-checked',String(checked));
-    item.style.cssText = 'display:block;width:100%;min-height:44px;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer';
+  function menuItem({ id, label, run, checked, submenu }) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.dataset.action = id;
+    item.dir = 'auto';
+    item.textContent = `${checked ? '✓ ' : ''}${label}`;
+    item.setAttribute('role', checked === undefined ? 'menuitem' : 'menuitemradio');
+    if (checked !== undefined) item.setAttribute('aria-checked', String(checked));
+    if (submenu) item.setAttribute('aria-haspopup', 'menu');
+    item.style.cssText = `display:block;width:100%;min-height:44px;padding:8px 10px;border:0;
+      border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:start;
+      overflow-wrap:anywhere;cursor:pointer`;
     item.addEventListener('mouseenter',() => item.style.background = '#ffffff14'); item.addEventListener('mouseleave',() => item.style.background = 'transparent');
-    item.addEventListener('click',event => { event.stopPropagation(); menu.style.display = 'none'; run(); syncInteractionRegions(); }); return item;
+    item.addEventListener('click', event => {
+      event.stopPropagation();
+      if (!submenu) closeMenu();
+      run?.();
+    });
+    return item;
   }
   function chooseCharacter(id) {
     applyCharacter(id);
     api?.control?.({type:'character',slug:id,renderer:id === 'arch-chan' ? 'live2d' : 'hermes-sprite'});
   }
-  function menuSection(page) { menuPage=page; updateMenu(); menu.style.display='block'; positionMenu(); syncInteractionRegions(); }
-  function action(kind) { respond(kind === 'play' ? 'complete' : 'pet'); api?.control?.({type:'interact',action:kind}); }
-  function updateMenu() {
-    menu.replaceChildren();
-    if(menuPage === 'characters') {
-      menu.appendChild(menuItem(text('pet.menu.back','Back'),() => menuSection('home')));
-      const choices=state.petInfo.characters || Object.entries(PROFILES).map(([slug,p]) => ({slug,name:p.name}));
-      for(const p of choices) menu.appendChild(menuItem(p.name,() => chooseCharacter(p.slug),state.character === p.slug));
-      if(!choices.some(p => p.slug === 'bongocat')) menu.appendChild(menuItem('BongoCat',() => chooseCharacter('bongocat'),classicEnabled));
-      return;
-    }
-    menu.appendChild(menuItem(text('pet.menu.reader','ReadMD'),() => api?.control?.({type:'open-app',target:'reader'})));
-    menu.appendChild(menuItem(text('pet.menu.clipboard','Open clipboard'),() => api?.control?.({type:'toggle-app'})));
-    menu.appendChild(menuItem(text('pet.menu.characters','Characters'),() => menuSection('characters')));
-    menu.appendChild(menuItem(text('pet.action.play','Play'),() => action('play')));
-    menu.appendChild(menuItem(text('pet.settingsTitle','Settings'),() => api?.control?.({type:'open-app',target:'pet-settings'})));
-    menu.appendChild(menuItem(text('pet.hideTitle','Hide'),() => api?.close?.()));
+  function menuSection(page) {
+    menuPage = page;
+    menu.hidden = false;
+    updateMenu();
+    menu.scrollTop = 0;
+    positionMenu();
+    menu.firstElementChild?.focus({ preventScroll: true });
+    syncInteractionRegions();
   }
-  function positionMenu(x=innerWidth/2,y=innerHeight/2) {
+  function action(kind) {
+    if (kind === 'pet') petPet(); else respond('complete');
+    api?.control?.({type:'interact',action:kind});
+  }
+  function menuItems() {
+    if (menuPage === 'characters') {
+      const choices = state.petInfo.characters || Object.entries(PROFILES).map(([slug, p]) => ({ slug, name: p.name }));
+      const characters = choices.some(p => p.slug === 'bongocat') ? choices : [...choices, { slug: 'bongocat', name: 'BongoCat' }];
+      return [
+        { id: 'back', label: text('pet.menu.back', 'Back'), run: () => menuSection('home'), submenu: true },
+        ...characters.map(p => ({ id: p.slug, label: p.name, run: () => chooseCharacter(p.slug), checked: state.character === p.slug }))
+      ];
+    }
+    return [
+      { id: 'reader', label: text('pet.menu.reader', 'Open ReadMD'), run: () => api?.control?.({type:'open-app',target:'reader'}) },
+      { id: 'clipboard', label: text('pet.menu.clipboard', 'Open clipboard'), run: () => api?.control?.({type:'toggle-app'}) },
+      { id: 'characters', label: text('pet.menu.characters', 'Change character'), run: () => menuSection('characters'), submenu: true },
+      { id: 'pet', label: text('pet.action.pet', 'Pet'), run: () => action('pet') },
+      { id: 'play', label: text('pet.action.play', 'Play'), run: () => action('play') },
+      { id: 'settings', label: text('pet.settingsTitle', 'Settings'), run: () => api?.control?.({type:'open-app',target:'pet-settings'}) },
+      { id: 'hide', label: text('pet.hideTitle', 'Hide'), run: () => api?.close?.() },
+      { id: 'dismiss', label: text('pet.menu.dismiss', 'Dismiss') }
+    ];
+  }
+  function updateMenu() {
+    if (menu.hidden) return;
+    const label = text('pet.gallery.companion', 'Companion');
+    const items = menuItems();
+    const key = JSON.stringify([menuPage, label, items.map(({ id, label, checked }) => [id, label, checked])]);
+    if (key === menuKey) return;
+    menuKey = key;
+    const focused = menu.contains(document.activeElement) ? document.activeElement.dataset.action : undefined;
+    const scrollTop = menu.scrollTop;
+    menu.setAttribute('aria-label', label);
+    menu.replaceChildren(...items.map(menuItem));
+    if (focused) [...menu.children].find(item => item.dataset.action === focused)?.focus({ preventScroll: true });
+    menu.scrollTop = scrollTop;
+    positionMenu();
+  }
+  function positionMenu() {
+    const { x, y } = menuAnchor;
     menu.style.left = `${Math.max(4,Math.min(x,innerWidth-menu.offsetWidth-4))}px`;
     menu.style.top = `${Math.max(4,Math.min(y,innerHeight-menu.offsetHeight-4))}px`;
   }
-  document.body.appendChild(menu); updateMenu();
+  function showMenu(x, y) {
+    if (!sceneActive || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    clearTimeout(menuDismissTimer);
+    menuAnchor = { x, y };
+    menuSection('home');
+  }
+  function closeMenu() {
+    if (menu.hidden) return;
+    clearTimeout(menuDismissTimer);
+    menu.hidden = true;
+    syncInteractionRegions();
+  }
+  document.body.appendChild(menu);
   canvas.addEventListener('contextmenu',event => {
-    event.preventDefault(); menuPage='home'; updateMenu(); menu.style.display='block';
-    positionMenu(event.clientX,event.clientY); syncInteractionRegions();
+    event.preventDefault();
+    if (gesture) return;
+    const { clientX: x, clientY: y } = event;
+    if (hitRects.some(r => x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)) showMenu(x, y);
   });
-  window.addEventListener('click',event => { if(!menu.contains(event.target)) { menu.style.display='none'; syncInteractionRegions(); } });
-  window.addEventListener('keydown',event => { if(event.key==='Escape') { menu.style.display='none'; syncInteractionRegions(); } });
+  window.addEventListener('click', event => { if (!menu.contains(event.target)) closeMenu(); });
+  window.addEventListener('blur', closeMenu);
+  document.documentElement.addEventListener('pointerleave', closeMenu);
+  window.addEventListener('resize', () => { if (!menu.hidden) { positionMenu(); syncInteractionRegions(); } });
+  window.addEventListener('keydown', event => {
+    if (menu.hidden) return;
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape') event.preventDefault();
+      closeMenu();
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      const items = [...menu.children];
+      const focused = items.indexOf(document.activeElement);
+      const delta = event.key === 'ArrowUp' ? -1 : 1;
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+        : (focused + delta + items.length) % items.length;
+      items[index]?.focus();
+    }
+  });
   function drawHearts(dt) {
     ctx.save(); ctx.font = '18px system-ui'; ctx.textAlign = 'center'; ctx.fillStyle = '#ff7b9c';
     for (let i = state.hearts.length-1; i >= 0; i--) {
@@ -335,7 +425,7 @@
     hitCanvas.width = w; hitCanvas.height = h;
     if (classicEnabled || state.character === 'arch-chan') {
       const capture = (classicEnabled ? classicController : liveController)?.silhouetteCanvas?.();
-      if (!capture) return [];
+      if (!capture) { hitRects = []; return hitRects; }
       const b = capture.bounds;
       if (capture.clip) { const r=capture.clip; hitCtx.beginPath(); hitCtx.rect(r.x/cell,r.y/cell,r.width/cell,r.height/cell); hitCtx.clip(); }
       hitCtx.drawImage(capture.canvas,b.x/cell,b.y/cell,b.width/cell,b.height/cell);
@@ -360,22 +450,32 @@
   }
   window.addEventListener('readmd-pet-ui-changed',syncInteractionRegions);
   const hitTimer = window.setInterval(() => { if(sceneActive) syncInteractionRegions(); },150);
-  function syncInteractionRegions() {
+  function interactionScale() {
     // WebView zoom changes CSS pixels independently of the native window's
     // logical size. DOM gestures keep CSS coordinates; native hit testing gets
     // window coordinates, including after DPI changes and resizing.
-    const sx = hostBounds?.width ? hostBounds.width / innerWidth : 1;
-    const sy = hostBounds?.height ? hostBounds.height / innerHeight : 1;
+    return [hostBounds?.width ? hostBounds.width / innerWidth : 1, hostBounds?.height ? hostBounds.height / innerHeight : 1];
+  }
+  function syncInteractionRegions() {
+    if (!sceneActive) {
+      hitRects = [];
+      api?.control?.({ type: 'interaction-regions', rects: [], petRects: [] });
+      return;
+    }
+    const [sx, sy] = interactionScale();
     const nativeRect = r => ({ x:r.x*sx,y:r.y*sy,width:r.width*sx,height:r.height*sy });
     const regions = currentRegions();
     let petRects = silhouetteRects();
-    const uiRects = [...document.querySelectorAll('[data-pet-interactive]')].filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden').map(el => { const r = el.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; });
+    const uiRects = [...document.querySelectorAll('[data-pet-interactive]')].filter(el => {
+      const style = getComputedStyle(el);
+      return el.getClientRects().length && style.visibility !== 'hidden' && style.pointerEvents !== 'none';
+    }).map(el => { const r = el.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; });
     for(const box of uiRects) petRects=petRects.flatMap(r => {
       const x=Math.max(r.x,box.x), y=Math.max(r.y,box.y), right=Math.min(r.x+r.width,box.x+box.width), bottom=Math.min(r.y+r.height,box.y+box.height);
       if(right<=x || bottom<=y) return [r];
       return [{x:r.x,y:r.y,width:r.width,height:y-r.y},{x:r.x,y:bottom,width:r.width,height:r.y+r.height-bottom},{x:r.x,y,width:x-r.x,height:bottom-y},{x:right,y,width:r.x+r.width-right,height:bottom-y}].filter(a=>a.width>0 && a.height>0);
     });
-    api?.control?.({ type:'interaction-regions',rects:[...petRects,...uiRects].map(nativeRect),petRects:petRects.map(nativeRect),
+    api?.control?.({ type:'interaction-regions',rects:[...uiRects,...petRects].map(nativeRect),petRects:petRects.map(nativeRect),
       ...(regions.head ? {head:nativeRect(regions.head)} : {}) });
   }
   window.addEventListener('readmd-bongo-layout',syncInteractionRegions);

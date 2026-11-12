@@ -101,6 +101,11 @@ enum UserEvent {
     InputFault(&'static str),
     DragStart,
     PetClick,
+    #[cfg(target_os = "macos")]
+    ContextMenu {
+        x: f64,
+        y: f64,
+    },
 }
 
 pub struct PetHost;
@@ -193,39 +198,27 @@ impl PetHost {
         // visibility (including the normal hidden state).
 
         let input_proxy = event_loop.create_proxy();
-        let input_watcher = InputWatcher::new(move |event| match event {
-            InputEvent::Activity(active) => {
-                let _ = input_proxy.send_event(UserEvent::InputActivity(active));
-            }
-            InputEvent::Hover(hovered) => {
-                let _ = input_proxy.send_event(UserEvent::CursorHover(hovered));
-            }
-            InputEvent::Bongo(bongo_state) => {
-                let _ = input_proxy.send_event(UserEvent::Bongo(bongo_state));
-            }
-            InputEvent::Fault(code) => {
-                let _ = input_proxy.send_event(UserEvent::InputFault(code));
-            }
-            InputEvent::DragStart => {
-                let _ = input_proxy.send_event(UserEvent::DragStart);
-            }
-            InputEvent::PetClick => {
-                let _ = input_proxy.send_event(UserEvent::PetClick);
-            }
-        });
-        #[cfg(target_os = "macos")]
-        let local_input = {
-            let proxy = event_loop.create_proxy();
-            input_watcher
-                .install_local_events(&window, move |event| {
-                    if let InputEvent::PetClick = event {
-                        let _ = proxy.send_event(UserEvent::PetClick);
-                    }
-                })
-                .ok_or_else(|| HostError::Backend("macos_local_input_unavailable".into()))?
+        let dispatch_input = move |event| {
+            let event = match event {
+                InputEvent::Activity(active) => UserEvent::InputActivity(active),
+                InputEvent::Hover(hovered) => UserEvent::CursorHover(hovered),
+                InputEvent::Bongo(state) => UserEvent::Bongo(state),
+                InputEvent::Fault(code) => UserEvent::InputFault(code),
+                InputEvent::DragStart => UserEvent::DragStart,
+                InputEvent::PetClick => UserEvent::PetClick,
+                #[cfg(target_os = "macos")]
+                InputEvent::ContextMenu { x, y } => UserEvent::ContextMenu { x, y },
+            };
+            let _ = input_proxy.send_event(event);
         };
+        let input_watcher = InputWatcher::new(dispatch_input.clone());
+        #[cfg(target_os = "macos")]
+        let local_input = input_watcher
+            .install_local_events(&window, dispatch_input)
+            .ok_or_else(|| HostError::Backend("macos_local_input_unavailable".into()))?;
         #[cfg(all(target_os = "macos", feature = "native-qa", debug_assertions))]
         let mut native_qa = native_qa::Driver::from_config(&config);
+        let mut cursor_over_surface = false;
 
         event_loop.run(move |event, _target, control_flow| {
             #[cfg(target_os = "macos")]
@@ -269,6 +262,12 @@ impl PetHost {
                 }
                 Event::UserEvent(UserEvent::CursorHover(hovered)) => {
                     let _ = backend.set_click_through(&window, !hovered);
+                    if cursor_over_surface != hovered {
+                        let _ = webview.send_control(&serde_json::json!({
+                            "type":"surface-hover","hovered":hovered
+                        }));
+                    }
+                    cursor_over_surface = hovered;
                 }
                 Event::UserEvent(UserEvent::Bongo(bongo_state)) => {
                     let _ = webview.send_bongo_input(&bongo_state);
@@ -287,6 +286,14 @@ impl PetHost {
                 }
                 Event::UserEvent(UserEvent::PetClick) => {
                     let _ = webview.send_control(&serde_json::json!({"type":"pet"}));
+                }
+                #[cfg(target_os = "macos")]
+                Event::UserEvent(UserEvent::ContextMenu { x, y }) => {
+                    if state.visible && state.renderer_ready {
+                        let _ = webview.send_control(&serde_json::json!({
+                            "type":"show-context-menu","x":x,"y":y
+                        }));
+                    }
                 }
                 Event::UserEvent(UserEvent::Snapshot(update)) => {
                     if let Err(error) = maybe_recover_renderer(&mut webview, &mut state) {

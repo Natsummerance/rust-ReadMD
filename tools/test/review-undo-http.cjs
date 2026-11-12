@@ -17,6 +17,11 @@ const fixtures = () => [
     enclosing: [{ from: 13, to: 24, insert: '【手动】A next😀 C【结束】\n' }] },
   { id: 'adjacent-delete', name: '相邻删除.md', initial: ADJ, after: '😀!\n重复段落。\n重复段落。\n[资源](./resources/owned.txt)\n', replacement: '' },
   { id: 'adjacent-replace', name: '相邻替换.md', initial: ADJ, after: '😀β😀!\n重复段落。\n重复段落。\n[资源](./resources/owned.txt)\n', replacement: 'β😀' },
+  ...['', 'β😀'].flatMap(replacement => [false, true].map(reverse => {
+    const id = `withdraw-${replacement ? 'replace' : 'delete'}-${reverse ? 'reverse' : 'source'}`;
+    return { id, name: `${id} 中文😀.md`, initial: ADJ, after: `😀${replacement}!\n重复段落。\n重复段落。\n[资源](./resources/owned.txt)\n`,
+      replacement, withdrawOrder: reverse ? ['b', 'a'] : ['a', 'b'] };
+  })),
 ];
 // Version/event counters remain monotonic; every stable stored review field is compared.
 const FIELDS = ['id', 'from', 'to', 'original', 'replacement', 'decision', 'application', 'taken_over', 'origin', 'task_id', 'restore_original', 'candidate_versions', 'dependencies'];
@@ -33,7 +38,8 @@ function expectations() {
     resourceSha256: sha(Buffer.from('OWNED_RESOURCE 中文😀\r\n')), untouchedSha256: sha(physical('不相关原件😀\n')),
     required: ['three distinct owned PIDs and three observed exit+close pairs', 'actual stdout listen port, root token, unchanged production CSP/index/boot and anonymous denial',
       'exact review semantics and UTF16 anchors in every phase', 'explicit BOM/CRLF save does not accept pending AI', 'durable service readback after new PIDs',
-      'adjacent deletion/replacement inverse undo and redo across restart', 'physical source/resource/sentinel byte assertions', 'readOnly SQLite after actual exit+close when requested'],
+      'adjacent deletion/replacement inverse undo and redo across restart', 'grouped withdrawal in both ID orders, exact edits, durable replay',
+      'physical source/resource/sentinel byte assertions', 'readOnly SQLite after actual exit+close when requested'],
     deadlinesMs: { readiness: 30000, request: 10000, stop: 10000, body: 180000 },
     notCertified: ['Mac native UI', 'physical keyboard/IME', 'normal Windows App quit', 'model/provider correctness', 'compiled producer source equivalence without root build receipt'] };
 }
@@ -68,6 +74,8 @@ async function main(argv = process.argv.slice(2)) {
   const write = (name, value) => fs.writeFileSync(path.join(args.evidence, name), JSON.stringify(safe(value), null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   const spec = expectations(), rows = fixtures().map(f => ({ ...f, file: path.join(dirs.documents, f.name) }));
   const expectedDisk = new Map(rows.map(f => [f.id, physical(f.initial)])), heads = new Map(), ids = new Map();
+  const manualRows = rows.slice(1).filter(f => !f.withdrawOrder);
+  const groupedRows = rows.filter(f => f.withdrawOrder), withdrawals = new Map();
   for (const f of rows) fs.writeFileSync(f.file, physical(f.initial), { flag: 'wx', mode: 0o600 });
   const resource = path.join(dirs.documents, 'resources', 'owned.txt'), untouched = path.join(dirs.documents, '不相关.md');
   fs.writeFileSync(resource, Buffer.from('OWNED_RESOURCE 中文😀\r\n'), { flag: 'wx', mode: 0o600 }); fs.writeFileSync(untouched, physical('不相关原件😀\n'), { flag: 'wx', mode: 0o600 });
@@ -92,6 +100,20 @@ async function main(argv = process.argv.slice(2)) {
       assert.equal(actual.origin, 'ai'); assert.equal(actual.task_id, 'synthetic-portable-undo');
       assert.deepEqual(actual.candidate_versions, ['next😀']); assert.deepEqual(actual.dependencies, []); assert.equal(actual.restore_original, undefined);
       assert(Number.isSafeInteger(actual.version) && actual.version > 0); assert(Number.isSafeInteger(actual.last_event_id) && actual.last_event_id > 0);
+    } else if (f.withdrawOrder && state !== 'initial') {
+      assert.equal(s.changes.length, 2);
+      const withdrawn = state === 'withdrawn';
+      const ranges = withdrawn ? [[2, 3], [3, 4]] : [[2, 2], [2, f.replacement ? 5 : 2]];
+      for (const [index, original] of ['a', 'b'].entries()) {
+        const key = f.id + '/' + original, actual = s.changes.find(change => change.original === original);
+        const [from, to] = ranges[index], replacement = index === 0 ? '' : f.replacement;
+        if (!ids.has(key)) { assert.equal(state, 'pending'); ids.set(key, actual.id); }
+        assert.deepEqual(semantic(actual), { id: ids.get(key), from, to, original, replacement,
+          decision: withdrawn ? 'withdrawn' : 'pending', application: withdrawn ? 'proposed' : 'applied',
+          taken_over: false, origin: 'ai', task_id: 'synthetic-portable-undo', restore_original: undefined,
+          candidate_versions: [replacement], dependencies: [] });
+        assert.equal(actual.current, withdrawn ? original : replacement);
+      }
     } else assert.equal(s.changes.length, 0);
     heads.set(f.id, s); disks(); return s;
   }
@@ -216,8 +238,10 @@ async function main(argv = process.argv.slice(2)) {
     index = fs.readFileSync(path.join(args.assets, 'index.html')); boot = fs.readFileSync(path.join(args.assets, 'readmd.boot.js'));
     report.assets = { indexSha256: sha(index), rootBootSha256: sha(boot) };
     const sourceFiles = ['document_transaction.rs', 'review.rs', 'review_api.rs', 'review_store.rs', 'server.rs', 'content.rs', 'text_encoding.rs', 'main.rs'];
-    const optional = 'review_resource_history.rs'; report.optionalSourceAbsent = [];
-    if (fs.existsSync(path.join(args.repo, 'rust/readmd-kernel/src', optional))) sourceFiles.push(optional); else report.optionalSourceAbsent.push(optional);
+    report.optionalSourceAbsent = [];
+    for (const optional of ['review_resource_history.rs', 'review_withdrawal.rs']) {
+      if (fs.existsSync(path.join(args.repo, 'rust/readmd-kernel/src', optional))) sourceFiles.push(optional); else report.optionalSourceAbsent.push(optional);
+    }
     bindings = () => sourceFiles.map(name => ({ file: 'rust/readmd-kernel/src/' + name, sha256: sha(fs.readFileSync(path.join(args.repo, 'rust/readmd-kernel/src', name))) }));
     report.sourceBinding = bindings(); report.expectedSchemaVersion = Number(fs.readFileSync(path.join(args.repo, 'rust/readmd-kernel/src/review_store.rs'), 'utf8').match(/SCHEMA_VERSION:\s*i64\s*=\s*(\d+)/)?.[1]); assert(Number.isSafeInteger(report.expectedSchemaVersion));
     report.sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: args.repo, encoding: 'utf8', maxBuffer: 4096 }).trim(); assert(/^[a-f0-9]{40}$/.test(report.sourceCommit));
@@ -230,15 +254,52 @@ async function main(argv = process.argv.slice(2)) {
     await mutate(enclosing, 'edit', { origin: 'editor', edits: enclosing.enclosing }, MANUAL, 'manual');
     await mutate(enclosing, 'undo', {}, PENDING, 'pending'); await mutate(enclosing, 'redo', {}, MANUAL, 'manual'); await mutate(enclosing, 'undo', {}, PENDING, 'pending');
     check('enclosing/manual-undo-redo-restores-exact-pending-semantics'); await save(enclosing, PENDING, 'pending');
-    for (const f of rows.slice(1)) { report.phase = f.id + '/initial-adjacent-edit'; await open(f); await mutate(f, 'edit', { origin: 'editor', edits: [{ from: 2, to: 3, insert: '' }, { from: 3, to: 4, insert: f.replacement }] }, f.after); await save(f, f.after); }
+    for (const f of manualRows) { report.phase = f.id + '/initial-adjacent-edit'; await open(f); await mutate(f, 'edit', { origin: 'editor', edits: [{ from: 2, to: 3, insert: '' }, { from: 3, to: 4, insert: f.replacement }] }, f.after); await save(f, f.after); }
+    for (const f of groupedRows) {
+      report.phase = f.id + '/propose-and-save-pending'; await open(f);
+      await mutate(f, 'propose', { origin: 'ai', task_id: 'synthetic-portable-undo', edits: [
+        { from: 2, to: 3, insert: '' }, { from: 3, to: 4, insert: f.replacement },
+      ] }, f.after, 'pending');
+      await save(f, f.after, 'pending');
+    }
     await stopAndRead(1);
     host = await launch(2); report.phase = 'new PID exact pending and withdrawal'; await open(enclosing, true, PENDING, 'pending');
     await mutate(enclosing, 'resolve', { ids: [ids.get('pending')], decision: 'withdraw' }, LF, 'withdrawn');
     await mutate(enclosing, 'undo', {}, PENDING, 'pending'); await mutate(enclosing, 'redo', {}, LF, 'withdrawn'); await save(enclosing, LF, 'withdrawn'); check('enclosing/new-PID-exact-withdraw-undo-redo');
-    for (const f of rows.slice(1)) { report.phase = f.id + '/persistent-undo-redo'; await open(f, true, f.after); await mutate(f, 'undo', {}, f.initial); await mutate(f, 'redo', {}, f.after); const undone = await mutate(f, 'undo', {}, f.initial); assert.equal(undone.can_redo, true); await save(f, f.initial); assert.equal(heads.get(f.id).can_redo, true); check(f.id + '/new-PID-one-undo-redo-and-save'); }
+    for (const f of manualRows) { report.phase = f.id + '/persistent-undo-redo'; await open(f, true, f.after); await mutate(f, 'undo', {}, f.initial); await mutate(f, 'redo', {}, f.after); const undone = await mutate(f, 'undo', {}, f.initial); assert.equal(undone.can_redo, true); await save(f, f.initial); assert.equal(heads.get(f.id).can_redo, true); check(f.id + '/new-PID-one-undo-redo-and-save'); }
+    for (const f of groupedRows) {
+      report.phase = f.id + '/withdraw-on-second-PID';
+      const proposed = await open(f, true, f.after, 'pending');
+      const request = { action: 'resolve', ...cas(proposed), decision: 'withdraw', ids: f.withdrawOrder.map(original => ids.get(f.id + '/' + original)) };
+      const withdrawn = validate(f, await api('/api/review', request), f.initial, 'withdrawn');
+      snapshot(f, 'resolve', withdrawn);
+      assert.equal(withdrawn.generation, proposed.generation + 1);
+      assert.equal(withdrawn.review_revision, proposed.review_revision + 1);
+      assert.deepEqual(withdrawn.transaction_edits, [{ from: 2, to: f.replacement ? 5 : 2, insert: 'ab' }]);
+      withdrawals.set(f.id, { request, withdrawn });
+      await save(f, f.initial, 'withdrawn');
+      const undone = await mutate(f, 'undo', {}, f.after, 'pending');
+      assert.equal(undone.can_redo, true);
+      assert.deepEqual(undone.transaction_edits, [{ from: 2, to: 4, insert: f.replacement }]);
+      await save(f, f.after, 'pending');
+      check(f.id + '/new-PID-withdraw-save-one-undo-and-save-pending');
+    }
     await stopAndRead(2);
     host = await launch(3); report.phase = 'third PID saved withdrawal'; await open(enclosing, true, LF, 'withdrawn');
-    for (const f of rows.slice(1)) { report.phase = f.id + '/third-PID-durable-redo'; const reopened = await open(f, true, f.initial); assert.equal(reopened.can_redo, true); await mutate(f, 'redo', {}, f.after); await save(f, f.after); await mutate(f, 'undo', {}, f.initial); await save(f, f.initial); check(f.id + '/third-PID-redo-undo-closes-inverse'); }
+    for (const f of manualRows) { report.phase = f.id + '/third-PID-durable-redo'; const reopened = await open(f, true, f.initial); assert.equal(reopened.can_redo, true); await mutate(f, 'redo', {}, f.after); await save(f, f.after); await mutate(f, 'undo', {}, f.initial); await save(f, f.initial); check(f.id + '/third-PID-redo-undo-closes-inverse'); }
+    for (const f of groupedRows) {
+      report.phase = f.id + '/third-PID-redo-and-replay';
+      const reopened = await open(f, true, f.after, 'pending'); assert.equal(reopened.can_redo, true);
+      const redone = await mutate(f, 'redo', {}, f.initial, 'withdrawn');
+      const { request, withdrawn } = withdrawals.get(f.id);
+      assert.deepEqual(redone.transaction_edits, withdrawn.transaction_edits);
+      const saved = await save(f, f.initial, 'withdrawn');
+      const readRequest = { action: 'read', document_id: saved.document_id };
+      const beforeReplay = await api('/api/review', readRequest);
+      assert.deepEqual(await api('/api/review', request), withdrawn);
+      assert.deepEqual(await api('/api/review', readRequest), beforeReplay);
+      check(f.id + '/third-PID-redo-save-and-idempotent-receipt');
+    }
     disks(); for (const f of rows) assert.deepEqual(expectedDisk.get(f.id), physical(f.initial));
     check('all-originals-restored-and-owned-resource-sentinel-unchanged'); await stopAndRead(3); remaining();
     assert.equal(new Set(report.processes.map(p => p.pid)).size, 3); assert.equal(report.processes.length, 3);

@@ -1,143 +1,224 @@
 'use strict';
-// Actual packaged boot + real owned Rust file/review/session services. No source
-// injection, replacement business handler, model call or desktop automation.
+// Real bundled UI and authenticated Rust document services. No screenshot artifacts.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {ROOT,sha,pause,until,openOwned}=require('../tools/test/owned-browser-host.cjs');
-const args=process.argv.slice(2),arg=name=>{const at=args.indexOf(name);return at<0?undefined:args[at+1];};
-const binary=arg('--bin'),output=arg('--evidence'),playwright=arg('--playwright');
-assert(binary&&path.isAbsolute(binary)&&output&&path.isAbsolute(output),'Explicit absolute --bin and --evidence required');
-// openOwned requires a fresh, non-symlink evidence directory; no developer-local path is embedded.
-const read=name=>fs.readFileSync(path.join(ROOT,name));
-const bound=['assets/index.html','assets/readmd.boot.js','assets/css/shell.css','assets/style.css','assets/css/panels.css','assets/js/shell/shell.js','assets/js/shell/command-palette.js','assets/app.js','assets/js/core/tabs.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js','assets/js/core/modal.js'];
-const report={passed:false,scope:arg('--case')==='rtl'?'targeted-rtl-sidebar':arg('--case')==='shell'?'bounded-shell-and-document-services':'full-shell-browser-flow',browserFullscreenCertified:false,inferenceRequests:[],headless:true,nativeUiCertified:false,modelsUsed:false,productSourceInjection:false,businessHandlersReplaced:false,driverSha256:sha(fs.readFileSync(__filename)),binarySha256:sha(fs.readFileSync(binary)),sourceBefore:Object.fromEntries(bound.map(name=>[name,sha(read(name))])),checks:[],screenshots:[],receipts:[],dragEvents:[],limitations:['Mac/caption-control geometry is a CSS projection on the real boot; no native window control or native drag claim.','4K is 3840x2160 logical viewport at the browser DPR; physical Retina/native DPI remains separate.','The explicit frozen kernel is used for this UI shell slice; other feature acceptance remains separately scoped.']};
-const CONTENT={a:'# OWNED_SHELL_A\n\nSaved A.\n',b:'# OWNED_SHELL_B\n\nSaved B.\n',c:'# OWNED_SHELL_C\n\nSaved C.\n'},DIRTY='OWNED_SHELL_CHANGED\n';
-let test,page,phase='start',files,ids;const receiptWork=[];
-function check(name,detail={}){report.checks.push({name,passed:true,...detail});}
-async function shot(name){await page.evaluate(async()=>Promise.all(document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getTiming().iterations)).map(animation=>animation.finished.catch(()=>{}))));await page.screenshot({path:path.join(output,name+'.png')});report.screenshots.push(name+'.png');}
-async function active(id){await until(()=>page.evaluate(id=>state.activeTabId===id,id),'active tab '+id);}
-const tab=id=>page.locator('#side [role=tab][data-tab-id="'+id+'"]:visible');
-async function settled(){await page.evaluate(async()=>{await ReadMDSession.whenIdle();});await until(()=>page.evaluate(()=>!window.ReadMDLifecycle?.busy?.()&&!window.ReadMDRefactor?.busy?.()),'service idle');}
-async function session(){assert.notEqual(await page.evaluate(()=>ReadMDSession.flush()),false,'Real session flush ACK required');const value=await test.api('/api/session');assert.equal(value.ok,true);assert.equal(value.protocol,'readmd-session-cas-v1');return value;}
-async function geometry(name,{mac=false,caption=false}={}){
- await page.locator('#side').evaluate(async el=>Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))));
- const value=await page.evaluate(()=>{
-  const rect=el=>{const r=el.getBoundingClientRect();return{x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
-  const shown=el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
-  const icons=[...document.querySelectorAll('#app-titlebar button,#side-close-btn,#side-file-actions button,#side .tab-close')].filter(shown).map(el=>({id:el.id||el.className,label:el.getAttribute('aria-label')||el.title||el.textContent.trim(),...rect(el)}));
-  return {width:innerWidth,height:innerHeight,dpr:devicePixelRatio,overflow:document.documentElement.scrollWidth-innerWidth,header:rect($('app-titlebar')),toolbar:rect($('toolbar')),identity:rect(document.querySelector('.titlebar-identity')),logo:rect($('titlebar-home')),title:rect($('window-drag-region')),actions:rect($('titlebar-actions')),caption:rect($('window-controls')),content:rect($('content')),side:rect($('side')),icons,more:rect($('btn-more')),ai:rect($('btn-ai'))};
- });
- (report.geometry??=[]).push({name,...value});
- assert(value.overflow<=1,name+' no horizontal page overflow');assert.equal(value.header.height,52,name+' one 52px global row');assert(value.toolbar.y>=value.header.y-1&&value.toolbar.bottom<=value.header.bottom+1,name+' action row contained by titlebar');
- for(const icon of value.icons){assert(icon.label,name+' named icon '+icon.id);assert(icon.width>=44&&icon.height>=44,name+' actual 44px target '+icon.id);assert(icon.x>=0&&icon.right<=value.width&&icon.y>=0&&icon.bottom<=value.height,name+' target remains in viewport '+icon.id);}
- const headerIcons=value.icons.filter(icon=>icon.y<value.header.bottom);
- for(let i=0;i<headerIcons.length;i++)for(let j=i+1;j<headerIcons.length;j++){const a=headerIcons[i],b=headerIcons[j];assert(a.right<=b.x||b.right<=a.x||a.bottom<=b.y||b.bottom<=a.y,name+' header hitboxes do not overlap '+a.id+'/'+b.id);}
- assert(value.more.right<=value.ai.x,name+' More precedes AI physically');
- if(mac){assert(value.actions.x>=88,name+' physical left native inset');assert(value.actions.right<=value.identity.x,name+' actions left of right-anchored identity');assert(value.title.right<=value.logo.x&&value.logo.x-value.title.right<=8,name+' title adjacent left of logo');}
- else{assert(value.identity.right<=value.actions.x,name+' left identity then left action group');if(caption)assert(value.actions.right<=value.caption.x,name+' right caption clearance');}
- check(name,{...value,cssProjectionOnly:mac||caption});
-}
-async function longListCheck(){
-  const overflowFiles=[];
-  for(let i=1;i<=9;i++){const name='overflow-'+String(i).padStart(2,'0')+'.md',file=path.join(test.documents,name);fs.writeFileSync(file,'# OWNED_SHELL_OVERFLOW_'+i+'\n\nSynthetic overflow document.\n',{flag:'wx'});overflowFiles.push(file);await page.evaluate(file=>loadFile(file),file);}
-  await settled();await page.locator('#titlebar-documents').click();await page.locator('#side').evaluate(async el=>Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))));
-  const visibility=await page.evaluate(()=>{const list=$('doc-tabs-bar'),active=list.querySelector('.tab-item.active'),r=list.getBoundingClientRect(),a=active.getBoundingClientRect();return{scrollTop:list.scrollTop,clientHeight:list.clientHeight,scrollHeight:list.scrollHeight,listTop:r.top,listBottom:r.bottom,activeTop:a.top,activeBottom:a.bottom,tabCount:state.tabs.length};});report.longList=visibility;
-  assert(visibility.activeTop>=visibility.listTop-1&&visibility.activeBottom<=visibility.listBottom+1,'The active original tab must be revealed in a long vertical list');check('long sidebar list reveals the actual active tab',{...visibility});await page.locator('#doc-tabs-bar').hover();await page.mouse.wheel(0,-180);await until(()=>page.locator('#doc-tabs-bar').evaluate((el,before)=>el.scrollTop<before,visibility.scrollTop),'native vertical wheel');await page.locator('#titlebar-documents').click();await until(()=>page.locator('#doc-tabs-bar').evaluate(el=>{const a=el.querySelector('.tab-item.active').getBoundingClientRect(),b=el.getBoundingClientRect();return a.top>=b.top-1&&a.bottom<=b.bottom+1;}),'title disclosure re-reveals active tab after wheel');check('native vertical wheel and title disclosure keep long list reachable');
-
-}
-async function main(){
+const {ROOT, openOwned, until, sha}=require('../tools/test/owned-browser-host.cjs');
+const arg=name=>{const i=process.argv.indexOf(name);return i>=0?process.argv[i+1]:null;};
+const out=arg('--evidence'), binary=arg('--bin'), scenario=arg('--case')||'shell';
+assert(out && binary && path.isAbsolute(out) && path.isAbsolute(binary));
+const bound=['assets/index.html','assets/readmd.boot.js','assets/css/shell.css','assets/css/editor.css'];
+const stamp=()=>Object.fromEntries(bound.map(file=>[file,sha(fs.readFileSync(path.join(ROOT,file)))]));
+const before=stamp();
+const report={passed:false,scenario,checks:[],nativeUiCertified:false,inferenceRequests:[],pageErrors:[]};
+let h,phase='start',files;
+const check=(name)=>report.checks.push({name,passed:true});
+(async()=>{
  try{
-  test=await openOwned(output,async(api,paths)=>{
-   for(const folder of ['a','b'])fs.mkdirSync(path.join(paths.documents,folder));
-   files={a:path.join(paths.documents,'a','相同标题.md'),b:path.join(paths.documents,'b','相同标题.md'),c:path.join(paths.documents,'长文件名_'+('排列与保护_'.repeat(12))+'.md')};
-   for(const key of ['a','b','c'])fs.writeFileSync(files[key],CONTENT[key],{flag:'wx'});
-   fs.writeFileSync(path.join(paths.profile,'settings.json'),JSON.stringify({lang:'zh-CN',autoCheckUpdate:false}));
-  },{binary,playwright});page=test.page;
-  page.on('request',request=>{const route=new URL(request.url()).pathname;if(request.method()==='POST'&&/^\/api\/ai\/(?:chat|completion)(?:\/|$)/.test(route))report.inferenceRequests.push(route);});
-  assert.equal(await page.evaluate(()=>editorPrefs.aiCompletion),false,'Fresh owned editor preferences disable inference');
-  page.on('response',response=>{const route=new URL(response.url()).pathname;if(!['/api/save','/api/session'].includes(route)||response.request().method()!=='POST')return;receiptWork.push((async()=>{try{const value=await response.json();report.receipts.push({route,status:response.status(),ok:value.ok,persisted:value.persisted,protocol:value.protocol,call_id:value.call_id,revision:value.revision,session_version:value.session_version,tabKeys:value.session?.tabs?.map(tab=>tab.key)});}catch{}})());});
-  await page.evaluate(()=>{window.__shellObservedMode=[];document.addEventListener('contextmenu',event=>{if(event.target.closest?.('#btn-zen'))window.__shellObservedMode.push({type:'zen-contextmenu',trusted:event.isTrusted,activation:navigator.userActivation?.isActive,menuOpen:$('more-menu').classList.contains('open')});},true);document.addEventListener('fullscreenchange',()=>window.__shellObservedMode.push({type:'fullscreenchange',fullscreen:Boolean(document.fullscreenElement),zen:document.body.classList.contains('zen-mode')}));});
-  const base=new URL((await test.host.api('/')).url).origin;
-  const denied=await fetch(base+'/api/session');assert([401,403].includes(denied.status),'Session rejects an unauthenticated caller');check('actual Rust CSP token boundary',{unauthenticatedSessionStatus:denied.status,servedBootSha256:report.sourceBefore['assets/readmd.boot.js']});
-
-  phase='real duplicate-title documents';for(const key of ['a','b','c'])await page.evaluate(file=>loadFile(file),files[key]);await settled();
-  const rows=await page.evaluate(()=>state.tabs.map(tab=>({id:tab.id,path:tab.path,title:tab.title||tab.name})));
-  ids=Object.fromEntries(['a','b','c'].map(key=>[key,rows.find(row=>row.path===files[key]).id]));assert.notEqual(ids.a,ids.b);assert.equal(rows.find(row=>row.id===ids.a).title,rows.find(row=>row.id===ids.b).title);
-  await page.locator('#titlebar-documents').click();await until(()=>page.locator('#side').isVisible(),'title disclosure opens sidebar');await until(()=>page.evaluate(id=>document.activeElement?.dataset.tabId===id,ids.c),'active original tab focus');assert.equal(await page.locator('#doc-tabs-bar').getAttribute('aria-orientation'),'vertical');assert.equal(await page.locator('#side .tab-item:visible').count(),3);check('same original tablist and duplicate titles retain durable identities',{ids});
-  if(arg('--case')==='rtl'){
-    phase='targeted RTL sidebar';await page.setViewportSize({width:1024,height:680});await page.evaluate(async()=>{await i18n.setLanguage('ar',false);document.body.classList.add('native-macos');document.body.style.setProperty('--native-controls-leading','88px');});
-    const strings=JSON.parse(read('assets/i18n/ar.json').toString('utf8')),expect=require(require.resolve('@playwright/test',{paths:[playwright||__dirname,__dirname]})).expect;report.rtlTabs=[];
-    const closeLabels=await page.locator('#side .tab-close').evaluateAll(nodes=>nodes.map(node=>node.title));report.rtlCloseLabels=closeLabels;assert(closeLabels.length>0);assert(closeLabels.every(label=>label===strings['tabs.closeTab']), 'existing tab close labels follow a live language change');
-    const activeRow=page.locator('#side .tab-item.active');await activeRow.focus();await page.keyboard.press('F2');
-    const rename=page.locator('#side .tab-title-input');await rename.waitFor({state:'visible'});await rename.fill('Uncommitted owned filename');
-    const handle=await rename.elementHandle();await rename.evaluate(node=>node.setSelectionRange(2,9));
-    await page.evaluate(()=>i18n.setLanguage('en',false));
-    assert.equal(await handle.evaluate(node=>node.isConnected&&node.value==='Uncommitted owned filename'&&node.selectionStart===2&&node.selectionEnd===9),true,'A live language change preserves the same rename input, text and selection');
-    await page.evaluate(()=>i18n.setLanguage('ar',false));await page.keyboard.press('Escape');
-    await until(()=>page.locator('#side .tab-title-input').count().then(count=>count===0),'rename cancellation after a live locale change');
-    assert.equal(await page.locator('#side').evaluate(node=>node.classList.contains('hidden')),false,'Consumed rename Escape leaves the original sidebar open');
-    for(const key of ['a','b','c'])assert.equal(fs.readFileSync(files[key],'utf8'),CONTENT[key]);
-    check('live locale changes update close labels while retaining the original rename input, selection and unmodified files');
-
-    for(const [id,key] of [['tab-toc','sidebar.toc'],['tab-files','sidebar.files']]){const el=page.locator('#'+id);await expect(el).toHaveAccessibleName(strings[key]);assert.equal(await el.textContent(),strings[key]);assert.equal(await el.getAttribute('title'),strings[key]);const size=await el.evaluate(el=>{const r=el.getBoundingClientRect(),p=el.parentElement.getBoundingClientRect();return{width:r.width,height:r.height,top:r.top,bottom:r.bottom,parentTop:p.top,parentBottom:p.bottom,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,fullText:el.textContent,title:el.title};});assert(size.width>=44&&size.height>=44);assert(size.scrollHeight<=size.clientHeight+1,'long RTL text remains within its tab');assert(size.top>=size.parentTop-1&&size.bottom<=size.parentBottom+1,'RTL tab remains in navigation row');report.rtlTabs.push({id,...size});}
-    check('1024 Arabic tab names and titles remain complete with 44px targets and no vertical overflow');await geometry('targeted actual Mac CSS RTL sidebar',{mac:true});await shot('product-css-projection-mac-rtl-1024');assert.deepEqual(report.inferenceRequests,[]);report.passed=true;return;
+  h=await openOwned(out,(_,ctx)=>{
+    files=[path.join(ctx.documents,'工作说明.md'),path.join(ctx.documents,'窄窗标签和持续编辑保存测试说明.md')];
+    fs.writeFileSync(files[0],'# 工作说明\r\n\r\n选择文本 ABCDEF GHIJKLM\r\n第二行供拖选定位。\r\n',{flag:'wx'});
+    fs.writeFileSync(files[1],'# 窄窗标签\r\n\r\n正文内容\r\n',{flag:'wx'});
+    for(let i=2;i<11;i++){const f=path.join(ctx.documents,'回归文档'+i+' 标签空间测试.md');files.push(f);fs.writeFileSync(f,'# 回归文档 '+i+'\n',{flag:'wx'});}
+    fs.writeFileSync(path.join(ctx.profile,'settings.json'),JSON.stringify({lang:'zh-CN',autoCheckUpdate:false}),{flag:'wx'});
+  },{binary,playwright:arg('--playwright')||undefined});const p=h.page;
+  p.on('request',request=>{
+    if(request.method()==='POST'&&/^\/api\/ai\/(?:chat|completion)(?:\/|$)/.test(new URL(request.url()).pathname)) report.inferenceRequests.push(new URL(request.url()).pathname);
+  });
+  const denied=await p.evaluate(async()=> (await fetch('/api/session')).status);
+  assert([401,403].includes(denied));check('actual Rust auth and production CSP');
+  const geometry=async()=>{
+    const m=await p.evaluate(()=>{
+      const rect=id=>$(id).getBoundingClientRect();
+      const header=rect('app-titlebar'), bar=rect('doc-tabs-bar'), ai=rect('btn-ai'), side=rect('side-rail');
+      return {overflow:document.documentElement.scrollWidth-innerWidth,bar:bar.right,ai:ai.left,headBottom:header.bottom,sideTop:side.top,
+        railMatches:getComputedStyle($('side-rail')).backgroundColor===getComputedStyle($('app-titlebar')).backgroundColor};
+    });
+    assert(m.overflow<=1 && m.bar<=m.ai+.5 && m.railMatches);return m;
+  };
+  const box=async sel=>p.locator(sel).boundingBox();
+  const load=async i=>p.evaluate(file=>loadFile(file),files[i]);
+  await load(0);await load(1);
+  const ids=await p.evaluate(()=>state.tabs.map(t=>t.id));
+  if(scenario==='rtl'){
+    phase='RTL and native caption projections';
+    await p.setViewportSize({width:1024,height:680});
+    await p.evaluate(async()=>{await i18n.setLanguage('ar',false);document.body.classList.add('native-macos');});
+    assert.equal(await p.locator('html').getAttribute('dir'),'rtl');
+    await geometry();check('Arabic sidebar and Mac inset geometry');
+    for(const [id,key] of [['btn-toc','shell.sidebar'],['tab-toc','tabs.toc'],['tab-files','sidebar.files']]){
+      assert.equal(await p.locator('#'+id).getAttribute('aria-label'),await p.evaluate(k=>i18n.t(k),key));
+    }
+    check('translated labels stay named');
+    await p.locator('#tab-files').click();assert.ok(await p.locator('#status-summary').isVisible());
+    await p.locator('#doc-tabs-bar .tab-item.active').focus();await p.keyboard.press('F2');
+    const rename=p.locator('#doc-tabs-bar .tab-title-input');await rename.fill('Uncommitted filename');
+    const handle=await rename.elementHandle();
+    await p.evaluate(()=>i18n.setLanguage('en',false));
+    assert.equal(await handle.evaluate(el=>el.isConnected&&el.value==='Uncommitted filename'),true);
+    await p.keyboard.press('Escape');await rename.waitFor({state:'hidden'});
+    assert.ok(await p.locator('#side').isVisible());check('language switch preserves rename and Escape only cancels the rename');
+    await p.evaluate(()=>{document.body.classList.remove('native-macos');document.body.classList.add('custom-titlebar');$('window-controls').classList.remove('hidden');});
+    await geometry();assert.ok((await p.locator('#window-controls').boundingBox()).x>(await p.locator('#btn-ai').boundingBox()).x);
+    check('Windows/Linux caption placement projection');
+    assert.match(fs.readFileSync(files[1],'utf8'),/^# 窄窗标签\r\n/);
+    check('cancelled rename preserves file bytes');
+    report.passed=true;return;
   }
-  await geometry('actual browser 1160 light');await shot('product-shell-1160-light');
-  phase='preserved reading and More controls';await page.locator('#rd-prefs-btn').click();await until(()=>page.locator('#rd-prefs').isVisible(),'original reading settings');await page.locator('#rd-prefs').evaluate(async el=>Promise.all(el.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))));const prefs=await page.locator('#rd-prefs').boundingBox();assert(prefs.x>=0&&prefs.x+prefs.width<=1160&&prefs.y+prefs.height<=820);await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>document.activeElement.id),'rd-prefs-btn');
-  await page.locator('#btn-more').click();await page.locator('#btn-print').click();await until(()=>page.locator('#export-modal').isVisible(),'original export entry');assert.equal(await page.locator('#btn-more').getAttribute('aria-expanded'),'false');await page.keyboard.press('Escape');await until(()=>page.locator('#export-modal').isVisible().then(value=>!value),'export close');assert.equal(await page.evaluate(()=>document.activeElement.id),'btn-more');
-  await page.evaluate(()=>{state.theme='light';applySettings();});await page.locator('#btn-more').click();await page.locator('#btn-theme').click();await until(()=>page.evaluate(()=>state.theme==='dark'&&document.body.dataset.theme==='dark'),'original theme action');assert.equal(await page.locator('#btn-more').getAttribute('aria-expanded'),'false');await page.evaluate(()=>{state.theme='light';applySettings();});check('reading settings export and theme retain original handlers and visible focus return');
-  if(arg('--case')==='f2'){phase='global F2 with sidebar collapsed';await page.locator('#side-close-btn').click();await page.keyboard.press('F2');report.f2State={inputCount:await page.locator('.tab-title-input').count(),inputVisible:await page.locator('.tab-title-input').isVisible(),sidebarVisible:await page.locator('#side').isVisible()};assert.equal(report.f2State.inputVisible,true,'Global F2 must expose the original rename input');report.passed=true;return;}
-  if(arg('--case')==='scroll'){phase='long vertical list active reveal';await longListCheck();await session();report.passed=true;return;}
-  if(arg('--case')==='right-click'){phase='right-click original Zen entry';await page.locator('#btn-more').click();await page.locator('#btn-zen').click({button:'right'});await until(()=>page.evaluate(()=>Boolean(document.fullscreenElement)&&document.body.classList.contains('zen-mode')),'original right-click fullscreen');report.rightClickState=await page.evaluate(()=>({menuExpanded:$('btn-more').getAttribute('aria-expanded'),menuOpen:$('more-menu').classList.contains('open'),active:document.activeElement?.id}));assert.equal(report.rightClickState.menuExpanded,'false','right-click Zen closes its parent menu');report.passed=true;return;}
-
-  phase='global F2 original rename entry';await page.locator('#side-close-btn').click();await page.keyboard.press('F2');await until(()=>page.locator('.tab-title-input').isVisible(),'global F2 exposes original rename input');assert.equal(await page.locator('.tab-title-input').evaluate(el=>el===document.activeElement),true);await page.locator('.tab-title-input').press('Escape');assert.equal(await page.locator('#side').isVisible(),true);assert.equal(await page.evaluate(()=>document.activeElement?.dataset.tabId),ids.c);assert.equal(await page.evaluate(()=>getActiveTab().path),files.c);check('global F2 reveals original sidebar rename input and Escape returns tab focus without a file change');
-
-  phase='keyboard and dirty close';await tab(ids.c).focus();await page.keyboard.press('ArrowUp');await active(ids.b);await settled();await page.locator('#btn-edit').click();await until(()=>page.evaluate(()=>state.editing&&Boolean(window.cmView)),'actual editor');await page.evaluate(text=>cmView.dispatch({changes:{from:0,insert:text}}),DIRTY);await until(()=>page.evaluate(()=>getActiveTab().isDirty),'actual dirty marker');assert.equal(await tab(ids.b).locator('.tab-dirty').count(),1);assert.equal(await page.locator('#titlebar-dirty').isVisible(),true);
-  await tab(ids.b).locator('.tab-close').click();await until(()=>page.locator('#close-confirm-modal').isVisible(),'original close guard');assert.equal(await page.locator('#close-confirm-modal:visible').count(),1);await shot('product-dirty-close-original-guard');await page.locator('#close-confirm-cancel').click();await settled();await active(ids.b);assert.equal(await page.evaluate(()=>getEditContent()),DIRTY+CONTENT.b);assert.equal(fs.readFileSync(files.b,'utf8'),CONTENT.b);check('dirty close cancellation preserves editor body identity and original disk file');
-  await tab(ids.b).locator('.tab-close').click();await until(()=>page.locator('#close-confirm-modal').isVisible(),'save-close original guard');await page.locator('#close-confirm-save').click();await until(()=>page.evaluate(id=>!state.tabs.some(tab=>tab.id===id),ids.b),'saved close original service');await settled();assert.equal(fs.readFileSync(files.b,'utf8'),DIRTY+CONTENT.b);const savedSession=await session();assert(!savedSession.session.tabs.some(tab=>tab.key==='file:'+ids.b));await Promise.all(receiptWork);assert(report.receipts.some(row=>row.route==='/api/save'&&row.status===200&&row.ok===true),'Successful real save receipt');check('save-close persists actual owned bytes and original session ACK',{savedFileSha256:sha(fs.readFileSync(files.b)),sessionVersion:savedSession.session_version});
-  phase='actual saved file reopen';await page.evaluate(file=>loadFile(file),files.b);await settled();const reopened=await page.evaluate(()=>({id:getActiveTab().id,original:state.original,dirty:getActiveTab().isDirty,revision:getActiveTab().revision}));assert.equal(reopened.original,DIRTY+CONTENT.b);assert.equal(Boolean(reopened.dirty),false);assert.equal(reopened.revision,sha(fs.readFileSync(files.b)));await page.locator('#btn-edit').click();await until(()=>page.evaluate(()=>state.editing),'reopened editor');assert.equal(await page.evaluate(()=>getEditContent()),DIRTY+CONTENT.b);await page.locator('#titlebar-documents').click();await tab(reopened.id).locator('.tab-close').click();await until(()=>page.evaluate(id=>!state.tabs.some(tab=>tab.id===id),reopened.id),'reopened clean close');await settled();assert.equal(await page.locator('#close-confirm-modal').isVisible(),false);await session();check('saved bytes reopen through actual file and ReviewStore then close cleanly',{reopenedRevision:reopened.revision});
-
-
-  phase='trusted HTML vertical drag';if(await page.evaluate(()=>state.editing))await page.evaluate(()=>exitEdit());await page.locator('#titlebar-documents').click();await settled();
-  await page.evaluate(()=>{window.__shellObservedDrag=[];for(const type of ['dragstart','drop'])document.addEventListener(type,event=>{if(event.target.closest?.('#side .tab-item'))window.__shellObservedDrag.push({type,isTrusted:event.isTrusted});},true);});
-  await tab(ids.a).dragTo(tab(ids.c),{targetPosition:{x:24,y:40}});await until(()=>page.evaluate(([c,a])=>state.tabs.map(tab=>tab.id).join(',')===[c,a].join(','),[ids.c,ids.a]),'lower-half vertical reorder');
-  await tab(ids.a).dragTo(tab(ids.c),{targetPosition:{x:24,y:4}});await until(()=>page.evaluate(([a,c])=>state.tabs.map(tab=>tab.id).join(',')===[a,c].join(','),[ids.a,ids.c]),'upper-half vertical reorder');
-  report.dragEvents=await page.evaluate(()=>window.__shellObservedDrag);assert(report.dragEvents.filter(row=>row.type==='drop'&&row.isTrusted).length>=2,'Trusted browser HTML drops, not injected DragEvents');const reordered=await session();assert.deepEqual(reordered.session.tabs.map(tab=>tab.key),['file:'+ids.a,'file:'+ids.c]);check('real browser vertical HTML drag in both directions uses original reorder and session receipt',{dragEvents:report.dragEvents,sessionVersion:reordered.session_version});
-
-  phase='original context and rename cancellation';await tab(ids.a).click();await active(ids.a);await settled();await tab(ids.a).focus();await page.keyboard.press('Shift+F10');await until(()=>page.locator('#tab-context-menu').isVisible(),'original keyboard context menu');await page.locator('#tab-context-menu [data-action=rename]').click();const rename=tab(ids.a).locator('.tab-title-input');await rename.fill('重命名_合成');await rename.press('Escape');await until(()=>rename.isVisible().then(value=>!value),'original rename cancellation');assert.equal(fs.readFileSync(files.a,'utf8'),CONTENT.a);assert.equal(await page.evaluate(id=>state.tabs.find(tab=>tab.id===id).path,ids.a),files.a);report.limitations.push('The settings-only headless bridge has no native py.rename_file; physical native rename is not certified. The original context/inline rename/cancel path is exercised.');report.renameCancelSidebarVisible=await page.locator('#side').isVisible();assert.equal(report.renameCancelSidebarVisible,true,'rename Esc must not also close the sidebar');assert.equal(await page.evaluate(()=>document.activeElement?.dataset.tabId),ids.a,'rename Esc returns focus to the original tab');check('original keyboard context and inline rename cancellation retain tab identity and bytes');
-
-  phase='collapse and command focus';await page.locator('#titlebar-documents').click();const before=await page.locator('#main-col').boundingBox(),side=await page.locator('#side').boundingBox();await tab(ids.a).focus();await page.keyboard.press('Escape');await until(()=>page.locator('#side').isVisible().then(value=>!value),'sidebar Esc');const after=await page.locator('#main-col').boundingBox();assert.equal(after.width-before.width,side.width);assert.equal(await page.evaluate(()=>document.activeElement.id),'titlebar-documents');check('sidebar releases actual width and returns focus',{released:side.width});await shot('product-sidebar-collapsed-1160');
-  report.shortcutPlatform=await page.evaluate(()=>({platform:navigator.platform,uaPlatform:navigator.userAgentData?.platform,keysIsMac:ReadMDKeys.isMac}));await page.locator('#btn-palette').focus();assert.equal(await page.locator('#btn-palette .tb-palette-label').count(),0);await until(()=>page.locator('#shell-command-hint').isVisible(),'keyboard command hint');assert.equal(report.shortcutPlatform.keysIsMac,process.platform==='darwin','Actual browser platform matches independent host OS');assert((await page.locator('#shell-command-hint').innerText()).includes(process.platform==='darwin'?'Cmd':'Ctrl'));await page.keyboard.press('Control+Shift+P');await until(()=>page.locator('#command-palette-modal').isVisible(),'original command palette shortcut');await page.keyboard.press('Escape');check('icon-only command has platform focus hint and original command shortcut');
-
-  phase='theme viewport RTL and platform CSS projections';
-  for(const [width,height,theme,lang] of [[1024,680,'light','zh-CN'],[1160,820,'dark','zh-CN'],[1024,680,'dark','ar'],[3840,2160,'light','zh-CN']]){
-    await page.setViewportSize({width,height});await page.evaluate(async([theme,lang])=>{state.theme=theme;applySettings();await i18n.setLanguage(lang,false);},[theme,lang]);await page.locator('#titlebar-documents').click();await geometry('actual '+width+' '+theme+' '+lang);await shot('product-shell-'+width+'-'+theme+'-'+lang);
+  if(scenario==='compact'){
+    phase='compact responsive controls';
+    for(const width of [360,390,412,600,640,641,1024,1160]){
+      await p.setViewportSize({width,height:740});
+      await geometry();
+      await p.locator('#btn-toc').click();await p.locator('#side-files').waitFor();
+      assert.ok(await p.locator('#btn-open').isVisible());
+      assert.ok(await p.locator('#btn-ai').isVisible());
+      for(const id of ['btn-print','btn-palette','btn-theme','btn-home']){
+        const b=await p.locator('#'+id).boundingBox();assert(b.width>=44&&b.height>=44);
+      }
+      await p.locator('#btn-toc').click();assert.equal(await p.locator('#side').isVisible(),false);
+      check('fixed rail and reachable commands at '+width);
+    }
+    await p.locator('#btn-palette').click();await p.locator('#command-palette-modal').waitFor();
+    await until(()=>p.locator('#command-palette-modal').evaluate(el=>el.contains(document.activeElement)),'palette focus acquired');
+    for(const width of [390,641,1160]){
+      await p.setViewportSize({width,height:740});await geometry();
+      assert.ok(await p.locator('#command-palette-modal').evaluate(el=>el.contains(document.activeElement)));
+    }
+    await p.keyboard.press('Escape');await p.locator('#command-palette-modal').waitFor({state:'hidden'});
+    assert.equal(await p.locator('#btn-palette').evaluate(el=>el===document.activeElement),true);
+    check('command focus stays owned through resize and restores to the rail');
+    report.passed=true;return;
   }
-  await page.setViewportSize({width:1024,height:680});await page.evaluate(async()=>{await i18n.setLanguage('ar',false);document.body.classList.add('native-macos');document.body.style.setProperty('--native-controls-leading','88px');});await geometry('actual CSS Mac RTL projection',{mac:true});await shot('product-css-projection-mac-rtl-1024');
-  await page.evaluate(async()=>{document.body.classList.remove('native-macos');await i18n.setLanguage('en',false);document.body.classList.add('custom-titlebar');$('window-controls').classList.remove('hidden');});await geometry('actual CSS Windows Linux caption projection',{caption:true});await shot('product-css-projection-caption-1024');await page.evaluate(()=>{document.body.classList.remove('custom-titlebar');$('window-controls').classList.add('hidden');});
-
-  phase='actual Zen and fullscreen';await page.evaluate(async()=>{await i18n.setLanguage('zh-CN',false);state.theme='light';applySettings();});await page.locator('#side-close-btn').click();const normal=await page.locator('#content').boundingBox();
-  const chromeVisible=()=>page.locator('#btn-more').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.height>=44;});
-  const chromeHidden=()=>page.locator('#btn-more').evaluate(el=>el.getBoundingClientRect().bottom<=0&&document.getElementById('app-titlebar').getBoundingClientRect().bottom<=0);
-  const observeZen=async label=>{(report.zenObservations??=[]).push({label,...await page.evaluate(()=>{const r=$('app-titlebar').getBoundingClientRect();return{bodyClass:document.body.className,active:document.activeElement?.id,headerTop:r.top,headerBottom:r.bottom,transform:getComputedStyle($('app-titlebar')).transform,headerHovered:$('app-titlebar').matches(':hover'),triggerHovered:Boolean(document.querySelector('.zen-hover-trigger:hover'))};})});};
-  const reveal=async()=>{await page.mouse.move(700,400);await page.mouse.move(200,3);await until(chromeVisible,'top-edge chrome reveal');};
-  await page.locator('#btn-more').click();await page.locator('#btn-zen').click();await until(()=>page.locator('#content').boundingBox().then(rect=>rect.y===0),'Zen actual released height');await until(chromeHidden,'all global controls hidden with parent chrome');assert.equal(await page.evaluate(()=>document.body.classList.contains('zen-toolbar-suppressed')),true);await observeZen('fully hidden before suppressed hover');await page.mouse.move(200,3);await pause(300);await observeZen('after suppressed hover');assert.equal(await chromeHidden(),true,'suppression blocks immediate top-hover reveal');
-  await reveal();check('Zen suppression and top-edge hover reveal move the whole global bar');await page.mouse.move(700,400);await until(chromeHidden,'hover leaves and hides chrome');await page.locator('#btn-more').focus();await until(chromeVisible,'keyboard focus reveals whole bar');await page.locator('#content').focus();await until(chromeHidden,'focus leaves and hides chrome');await shot('product-zen-released-layout');check('Zen focus reveal and hidden controls release actual height',{normalContentTop:normal.y,zenContentTop:0});
-  await reveal();await page.locator('#btn-more').click();await page.locator('#btn-zen').click();await until(()=>page.evaluate(()=>!document.body.classList.contains('zen-mode')),'original left-click exits Zen');
-  if(arg('--case')==='shell'){report.fullscreenBoundary={certified:false,reason:'Actual original UI and baseline requests both reject with TypeError: not granted; separate diagnostics and browser-08 failure retained. Native verification is pending.'};}
-  else {
-  await page.keyboard.press('F11');await until(()=>page.evaluate(()=>Boolean(document.fullscreenElement)&&document.body.classList.contains('zen-mode')),'browser fullscreen and Zen');await reveal();await page.locator('#btn-more').click();await page.locator('#btn-zen').click();assert.equal(await page.evaluate(()=>Boolean(document.fullscreenElement)&&!document.body.classList.contains('zen-mode')),true,'left-click exits only Zen while staying fullscreen');
-  await page.locator('#btn-more').click();await page.locator('#btn-zen').click({button:'right'});await until(()=>page.evaluate(()=>!document.fullscreenElement),'original right-click fullscreen exit');await page.keyboard.press('F11');await until(()=>page.evaluate(()=>Boolean(document.fullscreenElement)),'F11 fullscreen again');await page.keyboard.press('Escape');await until(()=>page.evaluate(()=>!document.fullscreenElement&&!document.body.classList.contains('zen-mode')),'Esc fullscreen and Zen exit');if(await page.locator('#btn-more').getAttribute('aria-expanded')!=='true')await page.locator('#btn-more').click();await page.locator('#btn-zen').click({button:'right'});await until(()=>page.evaluate(()=>Boolean(document.fullscreenElement)&&document.body.classList.contains('zen-mode')),'original right-click enters fullscreen and Zen');assert.equal(await page.locator('#btn-more').getAttribute('aria-expanded'),'false','right-click Zen closes its parent menu');await page.mouse.move(700,400);await until(chromeHidden,'right-click fullscreen hides whole chrome');await page.keyboard.press('Escape');await until(()=>page.evaluate(()=>!document.fullscreenElement&&!document.body.classList.contains('zen-mode')),'right-click fullscreen Escape exit');check('actual F11 right-click left-click and Escape retain independent fullscreen Zen behavior');
-  report.browserFullscreenCertified=true;
-  }
-
-  phase='long vertical list active reveal';
-  await longListCheck();
-
-  report.modeEvents=await page.evaluate(()=>window.__shellObservedMode);await session();await Promise.all(receiptWork);assert.equal(test.errors.length,0,'No product page exceptions');assert.deepEqual(report.inferenceRequests,[],'No inference API requests');report.passed=true;
- }catch(error){report.failure={phase,message:error.message,stack:error.stack};if(page)try{report.lastUiState=await page.evaluate(()=>{const r=$('app-titlebar').getBoundingClientRect();return{bodyClass:document.body.className,documentFullscreen:Boolean(document.fullscreenElement),nativeFullscreen:Boolean(window.__readmdNativeFullscreen),viewModeTarget:window.ReadMDViewMode?.isFullscreen(),bridgeFullscreen:typeof window.pywebview?.api?.toggle_native_fullscreen,active:document.activeElement?.id,menuOpen:$('more-menu').classList.contains('open'),menuExpanded:$('btn-more').getAttribute('aria-expanded'),toolbarClass:$('toolbar').className,headerTop:r.top,headerBottom:r.bottom,toast:$('toast')?.textContent?.slice(0,200),modeEvents:window.__shellObservedMode};});}catch{};if(page)try{await shot('FIRST-FAILURE');}catch{};process.exitCode=1;
- }finally{
-  if(test){await Promise.allSettled(receiptWork);report.pageErrors=test.errors;await test.close();report.ownedBrowserScratchRemoved=['tmp','home','browser-profile'].every(name=>!fs.existsSync(path.join(output,name)));}
-  report.sourceAfter=Object.fromEntries(bound.map(name=>[name,sha(read(name))]));report.runtimeSourceUnchanged=JSON.stringify(report.sourceBefore)===JSON.stringify(report.sourceAfter);fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({passed:report.passed,phase,checks:report.checks.length,report:path.join(output,'report.json'),failure:report.failure?.message,runtimeSourceUnchanged:report.runtimeSourceUnchanged,ownedBrowserScratchRemoved:report.ownedBrowserScratchRemoved}));
+  phase='titlebar and rail';assert.deepEqual(await p.locator('#app-titlebar button:visible').evaluateAll(els=>els.filter(e=>e.id).map(e=>e.id)),['btn-toc','btn-edit','btn-zen','doc-tabs-new','btn-ai']);
+  assert.equal(await p.locator('#app-titlebar img').count(),0);
+  assert.equal(await p.locator('#window-title').isVisible(), false);
+  assert.equal(await p.locator('#doc-tabs-bar').getAttribute('aria-orientation'),'horizontal');
+  assert.equal(await p.locator('#side-shortcuts > :last-child').getAttribute('id'),'btn-home');
+  assert.ok(await p.evaluate(()=>getComputedStyle($('app-titlebar')).backgroundColor===getComputedStyle($('side-rail')).backgroundColor));
+  assert.equal(await p.locator('#statusbar').isVisible(),false);
+  await p.locator('#btn-toc').click();await p.locator('#side-files').waitFor();
+  await until(()=>p.locator('#status-words').textContent().then(Boolean),'document statistics');
+  assert.equal(await p.locator('#status-format').textContent(),'MD');
+  assert.match(await p.locator('#status-encoding').textContent(),/UTF-8/i);
+  assert.doesNotMatch(await p.locator('#status-summary').textContent(),/\b(?:LF|CRLF)\b/);
+  await p.locator('#tab-toc').click();await p.locator('#side-toc').waitFor();
+  await p.locator('#btn-recent').click();await until(()=>p.locator('#side-recent-list button').count().then(n=>n>=2),'real recent files');
+  await p.locator('#btn-more').click();await p.locator('#more-menu').waitFor();
+  assert.ok(await p.locator('#btn-saveas').isVisible());assert.ok(await p.locator('#btn-print').isVisible());
+  await p.locator('#btn-toc').click();assert.equal(await p.locator('#side').isVisible(),false);
+  await p.locator('#btn-toc').click();assert.ok(await p.locator('#status-summary').isVisible());
+  assert.equal(await p.locator('#side').getAttribute('data-view'),'more');
+  check('top tabs, five side views, auto details and reopen');
+  phase='font and hover';
+  await p.locator('#rd-prefs-btn').click();await p.locator('#rd-prefs').waitFor();
+  const pref=await box('#rd-prefs');assert(pref.y>=0&&pref.y+pref.height<=820);
+  await p.keyboard.press('Escape');
+  await p.locator('#btn-print').hover();await p.locator('#rm-tooltip.is-visible').waitFor();
+  assert.match(await p.locator('#rm-tooltip').textContent(),/导出/);
+  await p.locator('#btn-print').click();await p.locator('#export-modal').waitFor();await p.locator('#export-close').click();
+  check('font popover fits, print glyph tooltip opens actual export');
+  phase='search and mode';
+  await load(0);await p.keyboard.press('Control+f');
+  assert.equal(await p.locator('#side').getAttribute('data-view'),'search');assert.ok(await p.locator('#side-search #search-input').isVisible());
+  await p.locator('#search-input').fill('ABCDEF');await p.locator('#search-input').press('Enter');
+  await until(()=>p.locator('#search-count').textContent().then(s=>s.includes('1/1')),'document search matched');
+  await p.keyboard.press('Escape');assert.equal(await p.locator('#side').isVisible(),false);
+  await p.keyboard.press('Control+Shift+F');assert.equal(await p.locator('#side').getAttribute('data-view'),'toc');
+  check('sidebar find and separate outline shortcut');
+  phase='edit and preview';
+  const sideBefore = await box('#side'), railBefore = await box('#side-rail');
+  await p.locator('#btn-edit').click();await until(()=>p.evaluate(()=>state.editing&&!!cmView),'editor ready');
+  const sideAfter = await box('#side'), railAfter = await box('#side-rail'), editorBar = await box('#edit-bar');
+  assert.deepEqual(sideAfter, sideBefore);
+  assert.equal(railAfter.y, railBefore.y);
+  assert.equal(railAfter.height, railBefore.height);
+  assert.ok(editorBar.x >= sideAfter.x + sideAfter.width - 1);
+  assert.equal(await p.locator('#status-summary').evaluate(el => getComputedStyle(el).whiteSpace), 'nowrap');
+  assert.equal(await p.locator('#status-mods').count(), 0);
+  assert.equal(await p.locator('#edit-bar > :last-child').getAttribute('id'),'edit-save');
+  assert.equal((await p.locator('#edit-save').textContent()).trim(),'保存');
+  await p.locator('#edit-view-trigger').click();assert.equal(await p.locator('#edit-view-menu .pv-btn').count(),5);
+  await p.locator('#edit-view-menu [data-pv="right"]').click();await p.locator('#preview-wrap').waitFor();
+  assert.equal(await p.locator('[data-pv="right"]').getAttribute('aria-pressed'),'true');
+  await p.locator('#edit-view-trigger').click();await p.locator('[data-pv="none"]').click();
+  assert.equal(await p.locator('#preview-wrap').isVisible(),false);
+  const row=await box('#edit-bar'),save=await box('#edit-save');assert(save.y>=row.y&&save.y+save.height<=row.y+row.height+1);
+  check('one edit row and existing preview directions');
+  phase='editor selection';
+  const range=await p.evaluate(()=>{
+    const p=cmView.state.doc.toString().indexOf('ABCDEF');
+    return [cmView.coordsAtPos(p),cmView.coordsAtPos(p+12),cmView.coordsAtPos(p+1),cmView.coordsAtPos(p+2)];
+  });
+  await p.mouse.move(range[0].left,range[0].top+6);await p.mouse.down();await p.mouse.move(range[1].left,range[1].top+6,{steps:8});
+  await new Promise(r=>setTimeout(r,155));assert.equal(await p.locator('#cm-selection-toolbar').isVisible(),false);
+  await p.mouse.up();assert.equal(await p.locator('#cm-selection-toolbar').isVisible(),false);
+  await p.locator('#cm-selection-toolbar').waitFor();
+  const selected=await p.evaluate(()=>cmView.state.sliceDoc(cmView.state.selection.main.from,cmView.state.selection.main.to));
+  assert.ok(selected.includes('ABCDEF'),JSON.stringify(selected));
+  const mid=(range[2].left+range[3].left)/2,y=range[2].top+6;
+  await p.mouse.move(mid-1,y);await p.mouse.down();await p.mouse.move(mid+1,y,{steps:2});await p.mouse.up();
+  await new Promise(r=>setTimeout(r,230));
+  assert.equal(await p.locator('#cm-selection-toolbar').isVisible(),false);
+  await p.keyboard.press('Shift+ArrowRight');await p.locator('#cm-selection-toolbar').waitFor();
+  check('drag does not raise toolbar early, tiny movement suppressed, keyboard selection works');
+  phase='save';
+  await p.evaluate(()=>cmView.dispatch({changes:{from:cmView.state.doc.length,insert:'\n快捷保存\n'}}));
+  await p.keyboard.press('Control+s');
+  await until(()=>p.evaluate(()=>state.editing&&!getActiveTab().isDirty),'keyboard save stays');
+  assert.match(fs.readFileSync(files[0],'utf8'),/快捷保存\r\n/);
+  await p.evaluate(()=>cmView.dispatch({changes:{from:cmView.state.doc.length,insert:'保存后退出\n'}}));
+  await p.locator('#edit-save').click();
+  await until(()=>p.evaluate(()=>!state.editing&&!getActiveTab().isDirty),'button save exits');
+  assert.match(fs.readFileSync(files[0],'utf8'),/保存后退出\r\n/);
+  check('real CRLF save; shortcut stays; button returns to reader');
+  await p.emulateMedia({media:'print'});
+  assert.ok(await p.locator('#content').isVisible());
+  assert.equal(await p.locator('#app-titlebar').isVisible(), false);
+  assert.equal(await p.locator('#side-rail').isVisible(), false);
+  await p.emulateMedia({media:null});
+  check('reading document still prints through the document column');
+  phase='overflow and update';
+  await p.setViewportSize({width:1024,height:680});
+  for(let i=2;i<files.length;i++)await load(i);
+  await p.locator('#doc-tabs-overflow-btn').waitFor();await p.locator('#doc-tabs-overflow-btn').click();
+  await until(()=>p.locator('#doc-tabs-dropdown [role="menuitem"]').count().then(n=>n===11),'all eleven tabs in overflow');
+  await p.locator('#doc-tabs-dropdown [role="menuitem"]').filter({hasText:'工作说明.md'}).click();
+  await until(()=>p.evaluate(id=>state.activeTabId===id,ids[0]),'overflow opens real document');
+  assert.equal(await p.locator('#doc-tabs-overflow-btn').getAttribute('aria-expanded'),'false');
+  await p.route('**/api/update/check',rt=>rt.fulfill({json:{ok:true,has_update:true,current_version:'0.0.6',latest_version:'0.0.7',html_url:'https://example.invalid/'}}));
+  await p.evaluate(()=>checkUpdate(true));await p.locator('#status-update-badge').waitFor();
+  assert.equal(await p.locator('#side-shortcuts > :first-child').getAttribute('id'),'status-update-badge');
+  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true);
+  check('narrow tab overflow, update above shortcuts');
+  phase='native-independent state';
+  await p.locator('#btn-zen').click();
+  assert.ok(await p.evaluate(()=>document.body.classList.contains('zen-mode')));
+  assert.equal(await p.locator('#side-rail').isVisible(),false);
+  await p.keyboard.press('Escape');
+  assert.ok(await p.locator('#side-rail').isVisible());
+  check('Zen releases rail');
+  phase='dirty close, durable reopen and tab order';
+  await p.locator('#btn-edit').click();
+  await p.evaluate(()=>cmView.dispatch({changes:{from:cmView.state.doc.length,insert:'\n关闭保护\n'}}));
+  const active=p.locator('#doc-tabs-bar .tab-item.active');
+  await active.locator('.tab-close').click();await p.locator('#close-confirm-modal').waitFor();
+  await p.locator('#close-confirm-cancel').click();
+  assert.ok(await p.evaluate(()=>state.editing&&getEditContent().includes('关闭保护')));
+  await active.locator('.tab-close').click();await p.locator('#close-confirm-save').click();
+  await until(()=>p.evaluate(id=>!state.tabs.some(t=>t.id===id),ids[0]),'save and close');
+  await load(0);assert.ok(await p.evaluate(()=>state.original.includes('关闭保护')));
+  assert.match(fs.readFileSync(files[0],'utf8'),/关闭保护\r\n/);
+  const identity=await p.evaluate(()=>getActiveTab().id);
+  await active.focus();await p.keyboard.press('Alt+ArrowLeft');
+  assert.ok(await p.evaluate(id=>state.tabs.findIndex(t=>t.id===id)<state.tabs.length-1,identity));
+  check('dirty tab cancel, save-close, file reopen and horizontal reorder');
+  report.passed=true;
+ }catch(e){report.failure={phase,message:e.message};console.error('Phase:',phase,e.message);throw e;}
+ finally{
+   if(h){report.pageErrors=h.errors;await h.close();}
+   report.runtimeSourceUnchanged=JSON.stringify(stamp())===JSON.stringify(before);
+   if(!report.runtimeSourceUnchanged||report.pageErrors.length||report.inferenceRequests.length)report.passed=false;
+   if(fs.existsSync(out))fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2)+'\n');
+   if(report.passed)console.log(scenario+': '+report.checks.length+' checks');
+   else process.exitCode=1;
  }
-}
-main().catch(error=>{console.error(error.message);process.exitCode=1;});
+})().catch(e=>{console.error(e);process.exitCode=1});

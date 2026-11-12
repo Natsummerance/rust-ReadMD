@@ -57,11 +57,12 @@ function updateModuleUi() {
     const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':v==='idle'?'convert.statusPending':'status.loading';
     parts.push(label+' · '+_t(status));
   }
-  const el = $('status-mods');
-  if (el) {
-    const details=parts.length?_t('status.modulePrefix')+'\n'+parts.join('\n'):'';
-    el.textContent=details?'●':'';el.title=details;el.setAttribute('role','img');el.setAttribute('aria-label',details);
-    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v==='loading')?'loading':Object.values(m).some(v=>v==='idle')?'idle':'ready';
+  const pluginMenu = $('btn-plugin-menu');
+  if (pluginMenu) {
+    const details = parts.length ? _t('status.modulePrefix') + '\n' + parts.join('\n') : '';
+    pluginMenu.title = details;
+    if (details) pluginMenu.setAttribute('aria-description', details);
+    else pluginMenu.removeAttribute('aria-description');
   }
 }
 window.addEventListener('readmd:language-changed',updateModuleUi);

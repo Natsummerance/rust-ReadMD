@@ -1229,7 +1229,12 @@ function renderAiSessionSelect() {
     rename.addEventListener('click', () => renameAiSession(s));
     const del = document.createElement('button'); del.className = 'tb-btn'; del.textContent = _t('tpl.delete') || ''; del.title = _t('ai.deleteSession') || '';
     del.addEventListener('click', async () => {
-      if (!window.confirm((_t('ai.confirmDeleteSession') || '') + (s.title || (_t('ai.untitledSession') || '')) + '？')) return;
+      if (!await confirmAction({
+        title: _t('ai.deleteSession'),
+        message: _t('ai.confirmDeleteSession', { name: s.title || _t('ai.untitledSession') }),
+        confirmText: _t('ai.delete'),
+        danger: true,
+      })) return;
       await deleteAiSessionById(s.id);
     });
     row.append(load, rename, del); list.appendChild(row);
@@ -1238,7 +1243,7 @@ function renderAiSessionSelect() {
 
 async function renameAiSession(summary) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const title = window.prompt(_t('ai.sessionName') || '', summary.title || '');
+  const title = await promptText({ title: _t('ai.sessionName'), value: summary.title || '', confirmText: _t('dialog.save') });
   if (title === null) return;
   const next = title.trim().slice(0, 80);
   if (!next) { showToast(_t('toast.sessionNameEmpty') || ''); return; }
@@ -1841,7 +1846,9 @@ async function deleteAiSessionById(id) {
 
 async function clearAiSessions() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!(state.ai.sessions || []).length || !window.confirm(_t('toast.clearSessionsConfirm') || '')) return;
+  if (!(state.ai.sessions || []).length || !await confirmAction({
+    title: _t('ai.clearHistory'), message: _t('toast.clearSessionsConfirm'), confirmText: _t('ai.clearHistory'), danger: true,
+  })) return;
   const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
   state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
   state.ai.loadingSessionId = null;
@@ -1868,14 +1875,20 @@ function newAiProvider() {
   custom.push(p);
   state.ai.providers = mergeAiProviders(custom, state.ai.config.presets || []);
   fillAiProviders(state.ai.providers, { provider_id: p.id, model: '' });
-  $('ai-provider-name').focus(); $('ai-provider-name').select();
+  const nameField = $('ai-provider-name');
+  nameField.closest('details').open = true;
+  nameField.focus();
+  nameField.select();
 }
 
 async function deleteAiProvider() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const p = currentAiProvider();
   if (!p || !p.custom || !state.ai.config) return;
-  if (!window.confirm(_t('toast.customConnDeleteConfirm', { name: p.name }) || ('删除自定义连接“' + p.name + '”？此操作不会影响官方预设。'))) return;
+  if (!await confirmAction({
+    title: _t('ai.deleteProvider'), message: _t('toast.customConnDeleteConfirm', { name: p.name }), confirmText: _t('ai.delete'), danger: true,
+  })) return;
+  if (currentAiProvider()?.id !== p.id || !state.ai.config) return;
   const custom = (state.ai.config.custom || []).filter(c => c.id !== p.id);
   const fallback = (state.ai.config.presets || [])[0] || custom[0] || {};
   const current = { provider_id: fallback.id || '', model: '' };

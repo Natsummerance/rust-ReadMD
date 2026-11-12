@@ -15,7 +15,7 @@ function driver(phase,file,ack){return String.raw`(async()=>{
   await loadFile(${JSON.stringify(file)});
   if(phase==='enable'){
    await openPetSettings();await until(()=>activePetSettingsStatus?.adapter?.available);
-   $('pet-enabled').checked=true;$('pet-runtime').value='desktop';$('pet-renderer').value='hermes-sprite';
+   $('pet-enabled').checked=true;$('pet-runtime-desktop').checked=true;
    currentActivePetSlug='mochi';$('pet-lock-position').checked=false;$('pet-sound').checked=false;
    const result=await savePetSettings();check(result?.ok===true,'real_pet_settings_configure_succeeded');closePetSettings();
   }

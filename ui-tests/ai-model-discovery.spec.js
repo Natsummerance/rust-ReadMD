@@ -112,7 +112,7 @@ test('failed desktop installation preserves the real disabled state and does not
   await page.route('**/api/pets/configure', r => { configured++; return r.fulfill({ json: { ok: true } }); });
   const result = await page.evaluate(async status => {
     renderPetSettings(status);
-    $('pet-runtime').value = 'desktop'; $('pet-enabled').checked = true;
+    $('pet-runtime-desktop').checked = true; $('pet-enabled').checked = true;
     return savePetSettings();
   }, status);
   expect(result.ok).toBe(false);

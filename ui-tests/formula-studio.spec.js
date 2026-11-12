@@ -22,7 +22,8 @@ test('visual symbol replacement stages the whole equation and applies one undoab
   const dsl=await page.locator('#formula-source').inputValue();expect(dsl).toContain('frac(');expect(dsl).toContain('θ');
   await page.locator('#formula-apply').click();
   expect(await page.evaluate(()=>getEditContent())).toBe(src+':math['+dsl+']');
-  await page.keyboard.press('Control+z');expect(await page.evaluate(()=>getEditContent())).toBe(src);
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
+  await expect.poll(() => page.evaluate(() => getEditContent())).toBe(src);
 });
 test('editing the second identical formula preserves the first and original delimiters',async({page})=>{
   const src='First $x^2$. Second \\(x^2\\).';await edit(page,src,src.lastIndexOf('x^2')+1);

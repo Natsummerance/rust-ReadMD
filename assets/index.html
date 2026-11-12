@@ -9,229 +9,61 @@
 <meta name="readmd-startup-probe" content="0">
 <title>ReadMD</title>
 <link rel="icon" type="image/x-icon" href="/assets/readmd.ico">
-<link rel="stylesheet" href="/assets/css/tokens.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/style.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/workspace-ui.css?v=0.0.6">
+<link rel="stylesheet" href="/assets/css/tokens.css?v=0.0.6&amp;rev=2420a60d0b35">
+<link rel="stylesheet" href="/assets/style.css?v=0.0.6&amp;rev=7c8a2e5fe95f">
+<link rel="stylesheet" href="/assets/workspace-ui.css?v=0.0.6&amp;rev=66638534d6c1">
 <link rel="stylesheet" href="/assets/skill-workbench.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/css/shell.css?v=0.0.6">
+<link rel="stylesheet" href="/assets/css/shell.css?v=0.0.6&amp;rev=12aae6424c33">
 <link rel="stylesheet" href="/assets/css/reader.css?v=0.0.6&amp;rev=28cee3db5c4a">
-<link rel="stylesheet" href="/assets/css/editor.css?v=0.0.6&amp;rev=5458db7bbdef">
+<link rel="stylesheet" href="/assets/css/editor.css?v=0.0.6&amp;rev=1aa43f222313">
 <link rel="stylesheet" href="/assets/css/ai.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/css/pet.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/css/panels.css?v=0.0.6">
+<link rel="stylesheet" href="/assets/css/panels.css?v=0.0.6&amp;rev=9af8536eb19d">
+<link rel="stylesheet" href="/assets/css/dialogs.css?v=0.0.6&amp;rev=db4da2763ebe">
+<link rel="stylesheet" href="/assets/css/pet.css?v=0.0.6&amp;rev=d2f23b7d16c4">
 </head>
 <body class="shell-single-chrome">
 <header id="app-titlebar" class="app-titlebar">
-  <div class="titlebar-identity">
-    <button id="titlebar-home" class="titlebar-home" type="button" title="返回主页" aria-label="返回主页" data-i18n-title="toolbar.home" data-i18n-aria="toolbar.home"><img class="titlebar-mark" src="/assets/icon-256.png" width="26" height="26" alt="" aria-hidden="true" draggable="false"></button>
-    <div id="window-drag-region" class="window-drag-region">
-      <button id="titlebar-documents" class="titlebar-documents" type="button" aria-haspopup="false" aria-controls="side" aria-expanded="false" disabled>
-        <img id="titlebar-document-icon" src="/assets/markdown-file.svg" width="22" height="22" alt="" aria-hidden="true" hidden>
-        <span id="window-title">ReadMD</span><span id="titlebar-dirty" class="titlebar-dirty hidden" aria-hidden="true">•</span>
-        <span id="titlebar-tab-count" class="titlebar-tab-count hidden" aria-hidden="true"></span>
-        <svg class="titlebar-disclosure" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
-      </button>
-    </div>
-  </div>
   <nav id="titlebar-actions" class="titlebar-actions" aria-label="全局操作" data-i18n-aria="window.globalActions">
     <div id="toolbar">
       <div class="tb-group tb-left">
-<button id="btn-toc" class="tb-btn icon" title="目录 (Ctrl+Shift+F)" aria-label="目录" data-i18n-title="sidebar.toc" data-i18n-aria="sidebar.toc">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        <button id="btn-toc" aria-controls="side" aria-expanded="false" class="tb-btn icon" title="侧栏" aria-label="侧栏" data-i18n-title="shell.sidebar" data-i18n-aria="shell.sidebar">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M9.5 5v14"/></svg>
     </button>
-<button id="btn-open" class="tb-btn icon" title="打开 Markdown 文件 (Ctrl+O)" aria-label="打开文件" data-i18n-title="toolbar.open" data-i18n-aria="toolbar.open">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/></svg>
-    </button>
-<button id="btn-palette" class="tb-btn icon tb-palette" type="button" title="命令面板 (Ctrl+K)" aria-label="命令面板" aria-haspopup="dialog" aria-describedby="shell-command-hint" aria-keyshortcuts="Control+K Meta+K Control+Shift+P Meta+Shift+P" data-i18n-title="shell.toolbar.paletteTip" data-i18n-aria="editor.command">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5L10 12l-4.5 4.5"/><path d="M12.5 16.5h6"/></svg>
-    <span id="shell-command-hint" class="shell-command-hint" role="tooltip"></span></button>
-      </div>
-      <div class="tb-group tb-right">
-<button id="btn-graph" class="tb-btn icon hidden" disabled title="知识图谱 (Ctrl+G)" aria-label="知识图谱" data-i18n-title="graph.title" data-i18n-aria="graph.title">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="8" r="3"/><circle cx="12" cy="18" r="3"/><path d="M8.5 7.5l7 1.5M7.5 8.5l3.5 7M16.5 10l-3.5 6"/></svg>
-    </button>
-<button id="btn-search" class="tb-btn icon" title="搜索 (Ctrl+F)" aria-label="搜索" data-i18n-title="toolbar.search" data-i18n-aria="toolbar.search">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-    </button>
-<button id="btn-edit" class="tb-btn icon" title="编辑当前 Markdown (Ctrl+E)" aria-label="编辑" data-i18n-title="toolbar.edit" data-i18n-aria="toolbar.edit" disabled>
+        <button id="btn-edit" class="tb-btn icon" title="编辑当前 Markdown (Ctrl+E)" aria-label="编辑" data-i18n-title="toolbar.edit" data-i18n-aria="toolbar.edit" disabled>
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/></svg>
-      <span class="tb-label" data-i18n="toolbar.edit">编辑</span>
     </button>
-<button id="btn-more" class="tb-btn icon" title="更多功能" aria-label="更多功能" data-i18n-title="toolbar.more" data-i18n-aria="toolbar.more" aria-haspopup="true" aria-expanded="false">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
-    </button>
-<button id="btn-ai" class="tb-btn accent" title="AI 助手 (Ctrl+Shift+A)" aria-label="AI 助手" data-i18n-title="toolbar.ai" data-i18n-aria="toolbar.ai">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4L12 3z"/><path d="M19 14l.9 2.3L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.7L19 14z"/></svg>
-      <span class="tb-label" data-i18n="app.ai">AI</span>
-    </button>
-<div id="more-menu" class="more-menu" role="menu" aria-label="更多功能" data-i18n-aria="menu.moreAria">
-    <div id="shell-compact-group" class="more-group open" hidden>
-      <button class="more-group-header" type="button" aria-expanded="true"><span data-i18n="shell.group.general">通用</span><span class="more-group-arrow">›</span></button>
-      <div id="shell-compact-actions" class="more-group-items"></div>
-    </div>
-    <div class="more-group open">
-      <button class="more-group-header" type="button" aria-expanded="true"><span data-i18n="shell.group.view">视图</span><span class="more-group-arrow">›</span></button>
-      <div class="more-group-items">
-      <div class="shell-menu-action"><button id="btn-print" class="tb-btn icon more-item" data-shell-menu-action role="menuitem" title="导出文档 (Ctrl+P)" aria-label="导出" data-i18n-title="toolbar.export" data-i18n-aria="toolbar.export">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="4" y="8" width="16" height="8" rx="1"/><path d="M7 16h10v4H7z"/></svg>
-    </button><span class="shell-menu-label" data-i18n="toolbar.export">导出文档</span></div>
-      <div class="shell-menu-action"><button id="btn-theme" class="tb-btn icon more-item" data-shell-menu-action role="menuitem" title="切换主题 (Ctrl+D)" aria-label="切换主题"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg></button><span class="shell-menu-label" data-i18n="toolbar.theme">外观主题</span></div>
-      <div class="shell-menu-action"><button id="btn-zen" class="tb-btn icon more-item" data-shell-menu-action role="menuitem" title="左键：禅模式 · 右键／F11：全屏 · Esc：退出" aria-label="禅模式" aria-pressed="false" data-i18n-title="toolbar.zenGesture" data-i18n-aria="toolbar.zen">
+        <button id="btn-zen" class="tb-btn icon" title="禅模式 (F11)" aria-label="禅模式" aria-pressed="false" data-i18n-title="toolbar.zen" data-i18n-aria="toolbar.zen">
       <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
-    </button><span class="shell-menu-label" data-i18n="menu.zenMode">禅模式</span></div>
+    </button>
       </div>
-    </div>
-      <div class="more-group">
-        <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpImport">导入</span><span class="more-group-arrow">›</span></button>
-        <div class="more-group-items">
-          <button id="btn-convert" class="more-item" role="menuitem"><span data-i18n="menu.convert">万物转换</span><em data-i18n="menu.convertSub">格式转 MD</em></button>
-          <button id="btn-web" class="more-item" role="menuitem"><span data-i18n="menu.web">网页提取</span><em data-i18n="menu.webSub">网页转 MD</em></button>
-          <button id="btn-ocr" class="more-item" role="menuitem"><span data-i18n="menu.ocr">扫描识别</span><em data-i18n="menu.ocrSub">OCR 识别</em></button>
-          <button id="btn-pdf-edit" class="more-item" role="menuitem"><span data-i18n="pdf.title">编辑 PDF</span><em data-i18n="pdf.editOriginal">保留 PDF 格式</em></button>
-          <button id="btn-clipboard-new" class="more-item" role="menuitem"><span data-i18n="menu.clipboard">剪贴新建</span><em data-i18n="menu.clipboardSub">剪贴板转 MD</em></button>
+      <div id="window-drag-region" class="window-drag-region">
+        <button id="file-title" class="file-title hidden" type="button" title="当前文件名" aria-label="当前文件名" data-i18n-title="reader.currentDoc" data-i18n-aria="reader.currentDoc" disabled></button>
+        <div id="doc-tabs-container" class="doc-tabs-container">
+        <div id="doc-tabs-bar" class="doc-tabs-bar" role="tablist" aria-orientation="horizontal" aria-label="已打开文档" data-i18n-aria="tabs.openDocs"></div>
+        <div id="doc-tabs-overflow-wrap" class="doc-tabs-overflow-wrap hidden">
+          <button id="doc-tabs-overflow-btn" class="doc-tabs-overflow-btn" title="全部标签" data-i18n-title="tabs.overflowTooltip" aria-haspopup="menu" aria-expanded="false" data-i18n-aria="tabs.overflowTooltip"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+          <div id="doc-tabs-dropdown" class="doc-tabs-dropdown hidden" role="menu"></div>
         </div>
       </div>
-      <div class="more-group">
-        <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpInteract">互动</span><span class="more-group-arrow">›</span></button>
-        <div class="more-group-items">
-          <button id="btn-backlinks-menu" class="more-item" disabled role="menuitem"><span data-i18n="graph.backlinks">反向链接</span><em data-i18n="graph.backlinksSub">双向关联</em></button>
-          <button id="btn-presentation-menu" class="more-item" disabled role="menuitem"><span data-i18n="menu.presentation">演讲演示</span><em data-i18n="menu.presentationSub">全屏演示</em></button>
-          <button id="btn-run-all-chunks" class="more-item hidden" disabled role="menuitem"><span data-i18n="menu.runCode">运行代码</span><em data-i18n="menu.runCodeSub">执行代码块</em></button>
-          <button id="btn-style-custom" class="more-item" role="menuitem"><span data-i18n="menu.customStyle">样式定制</span><em data-i18n="menu.customStyleSub">CSS / Head 注入</em></button>
-          <button id="btn-saveas" class="more-item" disabled role="menuitem"><span data-i18n="menu.saveAs">另存为</span><em data-i18n="menu.saveAsSub">.md 文件</em></button>
-          <button id="btn-document-copy" class="more-item" disabled role="menuitem"><span data-i18n="storage.createCopy">创建编辑副本</span><em data-i18n="storage.copyDraft">先编辑，保存时再选位置</em></button>
-          <button id="btn-document-history" class="more-item" role="menuitem"><span data-i18n="storage.history">恢复与版本历史</span><em data-i18n="storage.historySub">草稿与保存前版本</em></button>
-          <button id="btn-fix" class="more-item" disabled role="menuitem"><span data-i18n="menu.fix">修复详情</span><em data-i18n="menu.fixSub">自动修正报告</em></button>
-          <button id="btn-share" class="more-item" disabled role="menuitem"><span data-i18n="menu.share">扫码共享</span><em data-i18n="menu.shareSub">局域网移动端</em></button>
-        </div>
+        <button id="doc-tabs-new" class="tb-btn icon" type="button" title="新建文档" aria-label="新建文档" data-i18n-title="menu.new" data-i18n-aria="menu.new"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+        <span id="window-title" hidden></span>
       </div>
-      <div class="more-group">
-        <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpSettings">设置</span><span class="more-group-arrow">›</span></button>
-        <div class="more-group-items">
-          <button id="btn-lang" class="more-item" role="menuitem"><span data-i18n="menu.lang">界面语言</span><em id="lang-current-label">简体中文</em></button>
-          <button id="btn-pet" class="more-item" role="menuitem"><span data-i18n="menu.pet">桌宠</span><em id="pet-status-label" data-i18n="app.disabled">未开启</em></button>
-          <!-- 插件中心：主界面"万物转换"弹窗已有扩展管理入口，此处隐藏收拢 -->
-          <!-- <button id="btn-plugin-menu" class="more-item" role="menuitem"><span data-i18n="menu.plugins">插件中心</span><em data-i18n="menu.pluginsSub">扩展管理</em></button> -->
-          <button id="btn-assoc" class="more-item" role="menuitem"><span data-i18n="menu.assoc">设为默认</span><em data-i18n="menu.assocSub">.md 打开方式</em></button>
-          <button id="btn-autostart" class="more-item" role="menuitem"><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
-          <button id="btn-close-to-tray" class="more-item hidden" role="menuitemcheckbox" aria-checked="true"><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
-          <button id="btn-check-update" class="more-item" role="menuitem"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">当前版本 v0.0.6</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
-        </div>
-      </div>
-    </div>
-      </div>
+      <div class="tb-group tb-right"><button id="btn-ai" class="tb-btn icon accent" title="AI 助手 (Ctrl+Shift+A)" aria-label="AI 助手" data-i18n-title="toolbar.ai" data-i18n-aria="toolbar.ai">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4L12 3z"/><path d="M19 14l.9 2.3L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.7L19 14z"/></svg>
+    </button></div>
     </div>
   </nav>
-  <div class="titlebar-spacer" aria-hidden="true"></div>
   <div id="window-controls" class="window-controls hidden">
-    <button id="window-minimize" type="button" data-i18n-aria="window.minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
-    <button id="window-maximize" type="button" data-i18n-aria="window.maximize"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
-    <button id="window-close" type="button" data-i18n-aria="window.close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
+    <button id="window-minimize" type="button" data-i18n-title="window.minimize" data-i18n-aria="window.minimize"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+    <button id="window-maximize" type="button" data-i18n-title="window.maximize" data-i18n-aria="window.maximize"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
+    <button id="window-close" type="button" data-i18n-title="window.close" data-i18n-aria="window.close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8"/></svg></button>
   </div>
 </header>
-
-
-<div id="search-bar" class="hidden">
-  <input id="search-input" type="text" placeholder="在文档中搜索..." aria-label="在文档中搜索" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.placeholder">
-  <span id="search-count" class="search-count" role="status" aria-live="polite"></span>
-  <button id="search-prev" class="tb-btn" title="上一个 (Shift+Enter)" data-i18n-title="search.prev" data-i18n-aria="search.prev">&#8593;</button>
-  <button id="search-next" class="tb-btn" title="下一个 (Enter)" data-i18n-title="search.next" data-i18n-aria="search.next">&#8595;</button>
-  <div id="search-replace-controls" hidden>
-    <input id="search-replace-input" type="text" placeholder="替换为…" aria-label="替换文本" data-i18n-placeholder="search.replacePlaceholder" data-i18n-aria="search.replaceLabel">
-    <button id="search-replace-one" class="tb-btn" data-i18n="search.replaceOne" disabled>替换</button>
-    <button id="search-replace-all" class="tb-btn" data-i18n="search.replaceAll" disabled>全部替换</button>
-  </div>
-  <button id="search-close" class="tb-btn" title="关闭 (Esc)" data-i18n-title="search.close" data-i18n-aria="search.close">&#10005;</button>
-</div>
-
-
-<div id="edit-bar" class="hidden" role="toolbar" aria-label="Markdown 编辑工具栏" data-i18n-aria="editor.toolbarLabel">
-  <div class="md-tool" id="md-tool">
-    <div class="md-tool-group md-fmt-group">
-      <button class="md-tool-btn icon" data-md="bold" title="加粗 (Ctrl+B)" aria-label="加粗" data-i18n-title="editor.boldTip" data-i18n-aria="editor.bold">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>
-      </button>
-      <button class="md-tool-btn icon" data-md="italic" title="斜体 (Ctrl+I)" aria-label="斜体" data-i18n-title="editor.italicTip" data-i18n-aria="editor.italic">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5M5 19h5M15 5l-6 14"/></svg>
-      </button>
-      <button class="md-tool-btn icon md-wide-only" data-md="strike" title="删除线 (Ctrl+Shift+X)" aria-label="删除线" data-i18n-title="editor.strikeTip" data-i18n-aria="editor.strikethrough">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M16.5 6.5C15.8 5.3 14.2 4.5 12 4.5c-2.8 0-4.5 1.4-4.5 3.3 0 1 .4 1.8 1.2 2.4M8 17c.8 1.5 2.4 2.5 4.4 2.5 2.8 0 4.6-1.4 4.6-3.4 0-.8-.2-1.5-.7-2.1"/></svg>
-      </button>
-      <button class="md-tool-btn icon md-wide-only" data-md="code" title="行内代码 (Ctrl+E)" aria-label="行内代码" data-i18n-title="editor.codeTip" data-i18n-aria="editor.codeInline">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m15.5 17 5-5-5-5M8.5 7l-5 5 5 5"/></svg>
-      </button>
-      <button class="md-tool-btn icon" data-md="link" title="链接 (Ctrl+K)" aria-label="链接" data-i18n-title="editor.linkTip" data-i18n-aria="editor.link">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
-      </button>
-    </div>
-    <span class="md-tool-sep" aria-hidden="true"></span>
-    <div class="md-menu-wrap md-wide-only"><button class="md-tool-btn md-group" data-menu="md-text-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.text">文本</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
-      <div id="md-text-menu" class="md-menu hidden" role="menu"><button data-md="strike" role="menuitem"><span data-i18n="editor.strikethrough">删除线</span><kbd>Ctrl+Shift+X</kbd></button><button data-md="code" role="menuitem"><span data-i18n="editor.codeInline">行内代码</span><kbd>Ctrl+E</kbd></button><button data-md="math" role="menuitem"><span data-i18n="editor.mathInline">行内公式</span></button><button data-md="link" role="menuitem"><span data-i18n="editor.link">链接</span><kbd>Ctrl+K</kbd></button><button data-md="publication-style" role="menuitem"><span data-i18n="publication.local.title">局部排版</span></button></div></div>
-    <div class="md-menu-wrap"><button class="md-tool-btn md-group" data-menu="md-structure-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.structure">结构</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
-      <div id="md-structure-menu" class="md-menu hidden" role="menu"><button data-md="h1" role="menuitem"><span data-i18n="editor.h1">一级标题</span><kbd>Ctrl+1</kbd></button><button data-md="h2" role="menuitem"><span data-i18n="editor.h2">标题</span><kbd>Ctrl+2</kbd></button><button data-md="h3" role="menuitem"><span data-i18n="editor.h3">三级标题</span><kbd>Ctrl+3</kbd></button><button data-md="para" role="menuitem"><span data-i18n="editor.paragraph">正文</span><kbd>Ctrl+0</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="quote" role="menuitem"><span data-i18n="editor.quote">引用</span><kbd>Ctrl+Shift+.</kbd></button><button data-md="callout" role="menuitem"><span data-i18n="editor.callout">提示块</span></button><button data-md="list" role="menuitem"><span data-i18n="editor.ul">无序列表</span><kbd>Ctrl+Shift+8</kbd></button><button data-md="ordered" role="menuitem"><span data-i18n="editor.ol">有序列表</span><kbd>Ctrl+Shift+7</kbd></button><button data-md="task" role="menuitem"><span data-i18n="editor.taskList">任务列表</span><kbd>Ctrl+Shift+9</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="codeblock" role="menuitem"><span data-i18n="editor.codeBlock">代码块</span></button><button data-md="mathblock" role="menuitem"><span data-i18n="editor.mathBlock">公式块</span></button><button data-md="hr" role="menuitem"><span data-i18n="editor.hr">分隔线</span></button></div></div>
-    <div class="md-menu-wrap"><button class="md-tool-btn md-group" data-menu="md-insert-menu" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.insert">插入</span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
-      <div id="md-insert-menu" class="md-menu hidden" role="menu">
-        <button data-md="image" role="menuitem" data-i18n="editor.image">图片</button>
-        <button id="btn-insert-table" data-md="table" role="menuitem" data-i18n="editor.table">表格</button>
-        <button data-md="link" role="menuitem" data-i18n="editor.link">链接</button>
-        <span class="md-menu-sep" aria-hidden="true"></span>
-        <button id="btn-insert-code-chunk" data-md="codechunk" role="menuitem" data-i18n="editor.codeChunk">交互代码块</button>
-        <button id="btn-insert-diagram" data-md="diagram" role="menuitem" data-i18n="editor.diagram">科学图表</button>
-        <button id="btn-insert-doc-import" data-md="docimport" role="menuitem" data-i18n="editor.docImport">文档引用</button>
-        <button id="btn-insert-frontmatter" data-md="frontmatter" role="menuitem" data-i18n="editor.frontmatter">样式元数据 (Frontmatter)</button>
-      </div></div>
-    <button id="formula-open" class="md-tool-btn md-group" title="公式选择器" data-i18n-title="dialog.formulaTitle"><span data-i18n="editor.formula">∑ 公式</span></button>
-    <button id="edit-slash-btn" class="md-tool-btn md-slash-btn" title="插入块 (/ 或 Ctrl+/)" aria-label="插入块" data-i18n-title="slash.buttonTip" data-i18n-aria="slash.button">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><kbd aria-hidden="true">/</kbd>
-    </button>
-    <div id="edit-overflow-wrap" class="md-menu-wrap hidden">
-      <button id="edit-overflow-trigger" class="md-tool-btn icon" data-menu="edit-overflow-menu" aria-haspopup="true" aria-expanded="false" title="更多功能" aria-label="更多功能" data-i18n-title="toolbar.more" data-i18n-aria="toolbar.more">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
-      </button>
-      <div id="edit-overflow-menu" class="md-menu hidden" role="menu"></div>
-    </div>
-  </div>
-  <div class="edit-actions-right">
-    <div class="md-menu-wrap edit-view-ctl">
-      <button id="edit-view-trigger" class="md-tool-btn icon" aria-haspopup="true" aria-expanded="false" title="视图" aria-label="视图" data-i18n-title="editor.view" data-i18n-aria="editor.view">
-        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>
-      </button>
-      <div id="edit-view-menu" class="md-menu edit-view-menu hidden" role="menu">
-        <button id="edit-view-focus" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.focusMode">专注模式</span></button>
-        <button id="edit-view-typewriter" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.typewriterMode">打字机滚动</span></button>
-        <button id="edit-view-lines" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.lineNumbers">行号</span></button>
-        <button id="edit-view-ai-completion" role="menuitemcheckbox" aria-checked="false" data-i18n-title="editor.aiCompletionPrivacy"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.aiCompletion">AI 自动补全 · Tab 接受</span></button>
-      </div>
-    </div>
-    <button id="edit-undo" class="md-tool-btn icon" title="撤销 (Ctrl+Z)" aria-label="撤销" data-i18n-title="editor.undo" data-i18n-aria="editor.undo">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-    </button>
-    <button id="edit-redo" class="md-tool-btn icon" title="重做 (Ctrl+Y)" aria-label="重做" data-i18n-title="editor.redo" data-i18n-aria="editor.redo">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
-    </button>
-    <div class="pv-ctl md-menu-wrap" aria-label="预览布局" data-i18n-aria="editor.previewLayout">
-      <button id="pv-trigger" class="md-tool-btn md-group" aria-haspopup="true" aria-expanded="false"><span data-i18n="editor.preview">预览：无</span></button>
-      <div id="pv-menu" class="pv-menu hidden" role="menu">
-
-        <div class="pv-grid" aria-label="预览停靠方向" data-i18n-aria="editor.previewDockDir">
-          <span></span><button class="pv-btn" data-pv="top" title="上方预览" data-i18n-title="editor.previewTop">↑</button><button class="pv-btn" data-pv="none" title="关闭预览" data-i18n-title="editor.previewNone">×</button>
-          <button class="pv-btn" data-pv="left" title="左侧预览" data-i18n-title="editor.previewLeft">←</button><span class="pv-center" data-i18n="editor.preview">预览</span><button class="pv-btn" data-pv="right" title="右侧预览" data-i18n-title="editor.previewRight">→</button>
-          <span></span><button class="pv-btn" data-pv="bottom" title="下方预览" data-i18n-title="editor.previewBottom">↓</button><span></span>
-        </div>
-          <label class="ai-sel pv-sync"><input id="pv-sync" type="checkbox"><span data-i18n="editor.previewSync"> 同步滚动</span></label>
-          <label class="ai-sel pv-sync"><input id="pv-publication" type="checkbox"><span data-i18n="export.actualPreview">生成文档页面</span></label>
-      </div>
-    </div>
-  </div>
-  <button id="edit-save" class="tb-btn accent" data-i18n="editor.save">保存</button>
-  <button id="edit-cancel" class="tb-btn" data-i18n="editor.cancel">取消</button>
-</div>
 
 <!-- 编辑器选中文本浮动快捷操作栏 -->
 <div id="cm-selection-toolbar" class="cm-selection-toolbar hidden" role="toolbar" aria-label="选中文本快捷操作" data-i18n-aria="editor.selectionToolbar">
   <button id="cm-sel-ai" class="cm-sel-btn ai-highlight" title="AI 改写 (Alt+K)" aria-label="AI 改写" data-i18n-title="editor.aiInlineTip" data-i18n-aria="editor.aiInline">
     <svg class="cm-sel-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4L12 3z"/><path d="M19 14l.9 2.3L22 17l-2.1.7L19 20l-.9-2.3L16 17l2.1-.7L19 14z"/></svg>
-    <span data-i18n="editor.aiShort">AI</span>
   </button>
   <span class="cm-sel-sep" aria-hidden="true"></span>
   <button id="cm-sel-bold" class="cm-sel-btn icon" data-cmd="bold" aria-pressed="false" title="加粗 (Ctrl+B)" aria-label="加粗" data-i18n-title="editor.boldTip" data-i18n-aria="editor.bold">
@@ -269,41 +101,213 @@
 
 
 <div id="layout">
-  <aside id="side" class="hidden">
-    <div id="side-tabs" role="tablist" aria-label="文件" data-i18n-aria="sidebar.files">
-      <button id="tab-toc" class="side-tab active" role="tab" aria-selected="true" aria-controls="toc-list" title="目录大纲" data-i18n-title="sidebar.toc" data-i18n="sidebar.toc">目录</button>
-      <button id="tab-files" class="side-tab" role="tab" aria-selected="false" aria-controls="file-list" tabindex="-1" title="文件列表" data-i18n-title="sidebar.files" data-i18n="sidebar.files">文件</button>
-      <button id="side-close-btn" class="side-close-btn" title="关闭侧栏 (Esc)" aria-label="关闭侧栏" data-i18n-title="toolbar.close" data-i18n-aria="toolbar.close">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+  <nav id="side-rail" class="side-rail" aria-label="侧栏" data-i18n-aria="shell.sidebar">
+    <div id="side-tabs" role="tablist" aria-orientation="vertical" data-i18n-aria="shell.sidebar" aria-label="侧栏">
+      <button id="tab-files" class="tb-btn icon" type="button" title="文件" aria-label="文件" data-i18n-title="sidebar.files" data-i18n-aria="sidebar.files" role="tab" aria-controls="side-files" aria-selected="false" data-side-view="files" tabindex="0"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h7l5 5v10a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm6 0v6h6M8 14h7m-7 3h7"/></svg></button>
+      <button id="tab-toc" class="tb-btn icon" type="button" title="目录" aria-label="目录" data-i18n-title="tabs.toc" data-i18n-aria="tabs.toc" role="tab" aria-controls="side-toc" aria-selected="false" data-side-view="toc" tabindex="-1"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.1M4 12h.1M4 18h.1"/></svg></button>
+      <button id="btn-recent" class="tb-btn icon" type="button" title="最近" aria-label="最近" data-i18n-title="app.recent" data-i18n-aria="app.recent" role="tab" aria-controls="side-recent" aria-selected="false" data-side-view="recent" tabindex="-1"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></button>
+      <button id="btn-search" class="tb-btn icon" type="button" title="搜索" aria-label="搜索" data-i18n-title="toolbar.search" data-i18n-aria="toolbar.search" role="tab" aria-controls="side-search" aria-selected="false" data-side-view="search" tabindex="-1"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5"/></svg></button>
+      <button id="btn-more" class="tb-btn icon" type="button" title="更多" aria-label="更多" data-i18n-title="toolbar.more" data-i18n-aria="toolbar.more" role="tab" aria-controls="side-more" aria-selected="false" data-side-view="more" tabindex="-1"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+    </div>
+    <div id="side-shortcuts" role="group" aria-label="工具" data-i18n-aria="shell.group.general">
+      <button id="status-update-badge" class="tb-btn icon hidden" type="button" title="可用更新" aria-label="可用更新" data-i18n-title="status.clickToUpdate" data-i18n-aria="status.clickToUpdate">
+        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4"/></svg>
+        <span id="update-badge-ver" hidden></span>
       </button>
+      <button id="btn-print" class="tb-btn icon" title="导出文档 (Ctrl+P)" aria-label="导出" data-i18n-title="toolbar.export" data-i18n-aria="toolbar.export">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="4" y="8" width="16" height="8" rx="1"/><path d="M7 16h10v4H7z"/></svg>
+    </button>
+      <button id="btn-theme" class="tb-btn icon" title="切换主题 (Ctrl+D)" aria-label="切换主题"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg></button>
+      <div id="side-font-slot"></div>
+      <button id="btn-palette" class="tb-btn icon" type="button" title="命令面板 (Ctrl+K)" aria-label="命令面板" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K Control+Shift+P Meta+Shift+P" data-i18n-title="shell.toolbar.paletteTip" data-i18n-aria="editor.command">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5L10 12l-4.5 4.5"/><path d="M12.5 16.5h6"/></svg>
+    <span id="shell-command-hint" class="shell-command-hint" role="tooltip"></span></button>
+      <button id="btn-home" class="tb-btn icon" type="button" title="主页" aria-label="主页" data-i18n-title="toolbar.home" data-i18n-aria="toolbar.home"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg></button>
     </div>
-    <section id="side-documents" class="side-documents" aria-labelledby="side-documents-title" hidden>
-      <h2 id="side-documents-title" data-i18n="tabs.openDocs">已打开文档</h2>
-      <button id="file-title" class="file-title hidden" type="button" title="当前文件名" aria-label="当前文件名" data-i18n-title="reader.currentDoc" data-i18n-aria="reader.currentDoc" disabled></button>
-      <div id="doc-tabs-container" class="doc-tabs-container">
-      <div id="doc-tabs-bar" class="doc-tabs-bar" role="tablist" aria-orientation="vertical" aria-label="已打开文档" data-i18n-aria="tabs.openDocs"></div>
-      <div id="doc-tabs-overflow-wrap" class="doc-tabs-overflow-wrap hidden">
-        <button id="doc-tabs-overflow-btn" class="doc-tabs-overflow-btn" title="查看被折叠的标签页" data-i18n-title="tabs.overflowTooltip" aria-haspopup="menu" aria-expanded="false">⌄</button>
-        <div id="doc-tabs-dropdown" class="doc-tabs-dropdown hidden" role="menu"></div>
-      </div>
-    </div>
-      <div id="doc-tabs-secondary-bar" class="doc-tabs-secondary-bar hidden" role="tablist" aria-orientation="vertical" aria-label="已打开文档" data-i18n-aria="tabs.openDocs"></div>
+  </nav>
+  <aside id="side" class="hidden" data-view="files" aria-label="侧栏" data-i18n-aria="shell.sidebar">
+    <section id="side-files" class="side-view" role="tabpanel" aria-labelledby="tab-files">
+      <header class="side-header">
+        <h2 data-i18n="menu.file">文件</h2>
+        <div id="side-file-actions" class="side-file-actions">
+          <button id="btn-open" class="tb-btn icon" title="打开 Markdown 文件 (Ctrl+O)" aria-label="打开文件" data-i18n-title="toolbar.open" data-i18n-aria="toolbar.open">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/></svg>
+    </button>
+          <button id="btn-folder" class="tb-btn icon" title="打开文件夹" aria-label="打开文件夹" data-i18n-title="toolbar.openFolder" data-i18n-aria="toolbar.openFolder">
+          <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
+        </button>
+          <button id="btn-reload" class="tb-btn icon" title="重新加载 (Ctrl+R)" aria-label="重新加载" data-i18n-title="sidebar.refresh" data-i18n-aria="sidebar.refresh">
+          <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        </div>
+      </header>
+      <div id="file-list" class="side-body"></div>
     </section>
-    <div id="side-file-actions" class="side-file-actions" role="group" aria-label="文件" data-i18n-aria="menu.file">
-<button id="btn-folder" class="tb-btn icon" title="打开文件夹" aria-label="打开文件夹" data-i18n-title="toolbar.openFolder" data-i18n-aria="toolbar.openFolder">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"/></svg>
-    </button>
-<button id="btn-recent" class="tb-btn icon" title="最近文件" aria-label="最近文件" data-i18n-title="app.recent" data-i18n-aria="app.recent">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-    </button>
-<button id="btn-reload" class="tb-btn icon" title="重新加载 (Ctrl+R)" aria-label="重新加载" data-i18n-title="sidebar.refresh" data-i18n-aria="sidebar.refresh">
-      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
-    </button>
+    <section id="side-toc" class="side-view" role="tabpanel" aria-labelledby="tab-toc" hidden>
+      <header class="side-header"><h2 data-i18n="tabs.toc">目录</h2></header>
+      <nav id="toc-list" class="side-body"></nav>
+    </section>
+    <section id="side-recent" class="side-view" role="tabpanel" aria-labelledby="btn-recent" hidden>
+      <header class="side-header"><h2 data-i18n="app.recent">最近打开</h2><button id="side-recent-clear" class="tb-btn icon" type="button" title="清空记录" aria-label="清空记录" data-i18n-title="app.clearRecent" data-i18n-aria="app.clearRecent"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M9 7V4h6v3M7 7l1 12h8l1-12M10 10v6m4-6v6"/></svg></button></header>
+      <ul id="side-recent-list" class="side-body"></ul>
+    </section>
+    <section id="side-search" class="side-view" role="tabpanel" aria-labelledby="btn-search" hidden>
+      <header class="side-header"><h2 data-i18n="toolbar.search">搜索</h2></header>
+      <div id="search-bar" class="hidden">
+        <input id="search-input" type="text" placeholder="搜索正文" aria-label="搜索正文" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.placeholder">
+        <span id="search-count" class="search-count" role="status" aria-live="polite"></span>
+        <button id="search-prev" class="tb-btn" title="上一个 (Shift+Enter)" data-i18n-title="search.prev" data-i18n-aria="search.prev">&#8593;</button>
+        <button id="search-next" class="tb-btn" title="下一个 (Enter)" data-i18n-title="search.next" data-i18n-aria="search.next">&#8595;</button>
+        <div id="search-replace-controls" hidden>
+          <input id="search-replace-input" type="text" placeholder="替换为…" aria-label="替换文本" data-i18n-placeholder="search.replacePlaceholder" data-i18n-aria="search.replaceLabel">
+          <button id="search-replace-one" class="tb-btn" data-i18n="search.replaceOne" disabled>替换</button>
+          <button id="search-replace-all" class="tb-btn" data-i18n="search.replaceAll" disabled>全部替换</button>
+        </div>
+        <button id="search-close" class="tb-btn" title="关闭 (Esc)" data-i18n-title="search.close" data-i18n-aria="search.close">&#10005;</button>
+      </div>
+    </section>
+    <section id="side-more" class="side-view" role="tabpanel" aria-labelledby="btn-more" hidden>
+      <header class="side-header"><h2 data-i18n="toolbar.more">更多</h2></header>
+      <div id="more-menu" class="more-menu side-body">
+      <div class="more-group">
+        <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpImport">导入</span><span class="more-group-arrow">›</span></button>
+        <div class="more-group-items">
+          <button id="btn-convert" class="more-item"><span data-i18n="menu.convert">万物转换</span></button>
+          <button id="btn-web" class="more-item"><span data-i18n="menu.web">网页提取</span></button>
+          <button id="btn-ocr" class="more-item"><span data-i18n="menu.ocr">扫描识别</span></button>
+          <button id="btn-pdf-edit" class="more-item"><span data-i18n="pdf.title">编辑 PDF</span></button>
+          <button id="btn-clipboard-new" class="more-item"><span data-i18n="menu.clipboard">剪贴新建</span></button>
+        </div>
+      </div>
+      <div class="more-group open">
+        <button class="more-group-header" type="button" aria-expanded="true"><span data-i18n="menu.grpInteract">互动</span><span class="more-group-arrow">›</span></button>
+        <div class="more-group-items">
+          <button id="btn-graph" class="more-item hidden" type="button" disabled title="知识图谱 (Ctrl+G)" aria-label="知识图谱" data-i18n-title="graph.title" data-i18n-aria="graph.title"><span data-i18n="graph.title">知识图谱</span></button>
+          <button id="btn-backlinks-menu" class="more-item" disabled><span data-i18n="graph.backlinks">反向链接</span></button>
+          <button id="btn-presentation-menu" class="more-item" disabled><span data-i18n="menu.presentation">演讲演示</span></button>
+          <button id="btn-run-all-chunks" class="more-item hidden" disabled><span data-i18n="menu.runCode">运行代码</span></button>
+          <button id="btn-style-custom" class="more-item"><span data-i18n="menu.customStyle">样式定制</span></button>
+          <button id="btn-saveas" class="more-item" disabled><span data-i18n="menu.saveAs">另存为</span></button>
+          <button id="btn-document-copy" class="more-item" disabled><span data-i18n="storage.createCopy">创建编辑副本</span></button>
+          <button id="btn-document-history" class="more-item"><span data-i18n="storage.history">恢复与版本历史</span></button>
+          <button id="btn-fix" class="more-item" disabled><span data-i18n="menu.fix">修复详情</span></button>
+          <button id="btn-share" class="more-item" disabled><span data-i18n="menu.share">扫码共享</span></button>
+        </div>
+      </div>
+      <div class="more-group">
+        <button class="more-group-header" type="button" aria-expanded="false"><span data-i18n="menu.grpSettings">设置</span><span class="more-group-arrow">›</span></button>
+        <div class="more-group-items">
+          <button id="btn-lang" class="more-item"><span data-i18n="menu.lang">界面语言</span><em id="lang-current-label">简体中文</em></button>
+          <button id="btn-pet" class="more-item"><span data-i18n="menu.pet">桌宠</span><em id="pet-status-label" data-i18n="app.disabled">未开启</em></button>
+          <button id="btn-plugin-menu" class="more-item" type="button"><span data-i18n="menu.plugins">插件中心</span></button>
+          <button id="btn-assoc" class="more-item"><span data-i18n="menu.assoc">设为默认</span></button>
+          <button id="btn-autostart" class="more-item"><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
+          <button id="btn-close-to-tray" class="more-item hidden" role="switch" aria-checked="true"><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
+          <button id="btn-check-update" class="more-item"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">当前版本 v0.0.6</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
+        </div>
+      </div>
+      </div>
+    </section>
+    <div id="statusbar" class="hidden" role="group" tabindex="-1" data-i18n-aria="pm.details" aria-label="详情">
+      <div id="status-summary" class="status-summary">
+        <span id="status-format"></span>
+        <span id="status-words"></span>
+        <span id="status-reading-time"></span>
+        <span id="status-encoding"></span>
+      </div>
+      <div class="statusbar-left-group">
+        <span id="status-version" class="status-version" hidden title="ReadMD 当前版本" data-i18n-title="status.version">v0.0.6</span>
+        <button id="status-pagination" type="button" class="status-pagination hidden" title="点击切换阅读模式" data-i18n-title="pagination.switchModeTitle"></button>
+        <span id="status-left" hidden></span>
+      </div>
+      <span id="status-right" hidden></span>
+      <div id="editor-status-group">
+        <span id="edit-doc-stats" aria-live="polite"></span>
+        <span id="status-ai-completion" role="status" aria-live="polite"></span>
+        <span id="document-recovery-status" role="status" aria-live="polite"></span>
+        <span class="edit-tip-keys" data-i18n-title="editor.shortcutsTip" hidden></span>
+      </div>
+
+
+
     </div>
-    <nav id="toc-list" class="side-body" role="tabpanel" aria-labelledby="tab-toc"></nav>
-    <div id="file-list" class="side-body hidden" role="tabpanel" aria-labelledby="tab-files"></div>
   </aside>
 
+  <div id="document-column">
+    <div id="edit-bar" class="hidden" role="toolbar" aria-label="Markdown 编辑工具栏" data-i18n-aria="editor.toolbarLabel">
+      <div class="md-tool" id="md-tool">
+        <div class="md-tool-group md-fmt-group">
+          <button class="md-tool-btn icon" data-md="bold" title="加粗 (Ctrl+B)" aria-label="加粗" data-i18n-title="editor.boldTip" data-i18n-aria="editor.bold">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/></svg>
+          </button>
+          <button class="md-tool-btn icon" data-md="italic" title="斜体 (Ctrl+I)" aria-label="斜体" data-i18n-title="editor.italicTip" data-i18n-aria="editor.italic">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5M5 19h5M15 5l-6 14"/></svg>
+          </button>
+          <button class="md-tool-btn icon" data-md="link" title="链接 (Ctrl+K)" aria-label="链接" data-i18n-title="editor.linkTip" data-i18n-aria="editor.link">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/></svg>
+          </button>
+        </div>
+        <span class="md-tool-sep" aria-hidden="true"></span>
+        <div class="md-menu-wrap"><button class="md-tool-btn icon" data-menu="md-text-menu" aria-haspopup="true" aria-expanded="false" title="文本" aria-label="文本" data-i18n-title="editor.text" data-i18n-aria="editor.text"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M12 5v14m-4 0h8"/></svg></button>
+          <div id="md-text-menu" class="md-menu hidden" role="menu"><button data-md="strike" role="menuitem"><span data-i18n="editor.strikethrough">删除线</span><kbd>Ctrl+Shift+X</kbd></button><button data-md="code" role="menuitem"><span data-i18n="editor.codeInline">行内代码</span><kbd>Ctrl+E</kbd></button><button data-md="math" role="menuitem"><span data-i18n="editor.mathInline">行内公式</span></button><button data-md="publication-style" role="menuitem"><span data-i18n="publication.local.title">局部排版</span></button></div></div>
+        <div class="md-menu-wrap"><button class="md-tool-btn icon" data-menu="md-structure-menu" aria-haspopup="true" aria-expanded="false" title="结构" aria-label="结构" data-i18n-title="editor.structure" data-i18n-aria="editor.structure"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5v14M13 5v14M5 12h8m4-3 3-2v10"/></svg></button>
+          <div id="md-structure-menu" class="md-menu hidden" role="menu"><button data-md="h1" role="menuitem"><span data-i18n="editor.h1">一级标题</span><kbd>Ctrl+1</kbd></button><button data-md="h2" role="menuitem"><span data-i18n="editor.h2">标题</span><kbd>Ctrl+2</kbd></button><button data-md="h3" role="menuitem"><span data-i18n="editor.h3">三级标题</span><kbd>Ctrl+3</kbd></button><button data-md="para" role="menuitem"><span data-i18n="editor.paragraph">正文</span><kbd>Ctrl+0</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="quote" role="menuitem"><span data-i18n="editor.quote">引用</span><kbd>Ctrl+Shift+.</kbd></button><button data-md="callout" role="menuitem"><span data-i18n="editor.callout">提示块</span></button><button data-md="list" role="menuitem"><span data-i18n="editor.ul">无序列表</span><kbd>Ctrl+Shift+8</kbd></button><button data-md="ordered" role="menuitem"><span data-i18n="editor.ol">有序列表</span><kbd>Ctrl+Shift+7</kbd></button><button data-md="task" role="menuitem"><span data-i18n="editor.taskList">任务列表</span><kbd>Ctrl+Shift+9</kbd></button><span class="md-menu-sep" aria-hidden="true"></span><button data-md="codeblock" role="menuitem"><span data-i18n="editor.codeBlock">代码块</span></button><button data-md="mathblock" role="menuitem"><span data-i18n="editor.mathBlock">公式块</span></button><button data-md="hr" role="menuitem"><span data-i18n="editor.hr">分隔线</span></button></div></div>
+        <div class="md-menu-wrap"><button class="md-tool-btn icon" data-menu="md-insert-menu" aria-haspopup="true" aria-expanded="false" title="插入" aria-label="插入" data-i18n-title="editor.insert" data-i18n-aria="editor.insert"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 8.5v7m-3.5-3.5h7"/></svg></button>
+          <div id="md-insert-menu" class="md-menu hidden" role="menu">
+            <button data-md="image" role="menuitem" data-i18n="editor.image">图片</button>
+            <button id="btn-insert-table" data-md="table" role="menuitem" data-i18n="editor.table">表格</button>
+            <span class="md-menu-sep" aria-hidden="true"></span>
+            <button id="btn-insert-code-chunk" data-md="codechunk" role="menuitem" data-i18n="editor.codeChunk">交互代码块</button>
+            <button id="btn-insert-diagram" data-md="diagram" role="menuitem" data-i18n="editor.diagram">科学图表</button>
+            <button id="btn-insert-doc-import" data-md="docimport" role="menuitem" data-i18n="editor.docImport">文档引用</button>
+            <button id="btn-insert-frontmatter" data-md="frontmatter" role="menuitem" data-i18n="editor.frontmatter">样式元数据 (Frontmatter)</button>
+            <span class="md-menu-sep" aria-hidden="true"></span>
+            <button id="edit-slash-btn" type="button" role="menuitem" title="插入块" data-i18n-title="slash.buttonTip">
+              <span data-i18n="slash.button">插入块</span><kbd>/</kbd>
+            </button>
+          </div></div>
+        <button id="formula-open" class="md-tool-btn icon" type="button" title="公式" aria-label="公式" data-i18n-title="dialog.formulaTitle" data-i18n-aria="dialog.formulaTitle"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5H6l6 7-6 7h12"/></svg></button>
+        <div id="edit-overflow-wrap" class="md-menu-wrap hidden">
+          <button id="edit-overflow-trigger" class="md-tool-btn icon" data-menu="edit-overflow-menu" aria-haspopup="true" aria-expanded="false" title="更多功能" aria-label="更多功能" data-i18n-title="toolbar.more" data-i18n-aria="toolbar.more">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          </button>
+          <div id="edit-overflow-menu" class="md-menu hidden" role="menu"></div>
+        </div>
+      </div>
+      <div class="edit-actions-right">
+        <div class="md-menu-wrap edit-view-ctl">
+          <button id="edit-view-trigger" class="md-tool-btn icon" data-menu="edit-view-menu" aria-controls="edit-view-menu" aria-haspopup="true" aria-expanded="false" title="视图" aria-label="视图" data-i18n-title="editor.view" data-i18n-aria="editor.view">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M14 5v14"/></svg>
+          </button>
+          <div id="edit-view-menu" class="md-menu edit-view-menu hidden" role="menu">
+            <div class="edit-preview-options">
+              <div class="edit-preview-label" data-i18n="editor.preview">预览</div>
+              <div class="edit-preview-dock" role="group" aria-label="预览布局" data-i18n-aria="editor.previewLayout">
+                <button class="pv-btn" type="button" data-pv="left" title="左侧预览" aria-label="左侧预览" data-i18n-title="editor.previewLeft" data-i18n-aria="editor.previewLeft" aria-pressed="false"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path class="pv-pane" d="M6 7h5v10H6z"/><path d="M12 5v14"/></svg></button>
+                <button class="pv-btn" type="button" data-pv="top" title="上方预览" aria-label="上方预览" data-i18n-title="editor.previewTop" data-i18n-aria="editor.previewTop" aria-pressed="false"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path class="pv-pane" d="M6 7h12v4H6z"/><path d="M4 12h16"/></svg></button>
+                <button class="pv-btn" type="button" data-pv="bottom" title="下方预览" aria-label="下方预览" data-i18n-title="editor.previewBottom" data-i18n-aria="editor.previewBottom" aria-pressed="false"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path class="pv-pane" d="M6 13h12v4H6z"/><path d="M4 12h16"/></svg></button>
+                <button class="pv-btn" type="button" data-pv="right" title="右侧预览" aria-label="右侧预览" data-i18n-title="editor.previewRight" data-i18n-aria="editor.previewRight" aria-pressed="false"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path class="pv-pane" d="M13 7h5v10h-5z"/><path d="M12 5v14"/></svg></button>
+                <button class="pv-btn" type="button" data-pv="none" title="关闭预览" aria-label="关闭预览" data-i18n-title="editor.previewNone" data-i18n-aria="editor.previewNone" aria-pressed="false"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M7 9h10M7 12h7M7 15h8"/></svg></button>
+              </div>
+              <label class="ai-sel view-option"><input id="pv-sync" type="checkbox"><span data-i18n="editor.previewSync">同步滚动</span></label>
+              <label class="ai-sel view-option"><input id="pv-publication" type="checkbox"><span data-i18n="export.preview">排版预览</span></label>
+            </div>
+            <button id="edit-view-focus" class="view-option" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.focusMode">专注模式</span></button>
+            <button id="edit-view-typewriter" class="view-option" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.typewriterMode">打字机滚动</span></button>
+            <button id="edit-view-lines" class="view-option" role="menuitemcheckbox" aria-checked="false"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.lineNumbers">行号</span></button>
+            <button id="edit-view-ai-completion" class="view-option" role="menuitemcheckbox" aria-checked="false" data-i18n-title="editor.aiCompletionPrivacy"><span class="md-check" aria-hidden="true"></span><span data-i18n="editor.aiCompletion">AI 自动补全 · Tab 接受</span></button>
+          </div>
+        </div>
+        <button id="edit-undo" class="md-tool-btn icon" title="撤销 (Ctrl+Z)" aria-label="撤销" data-i18n-title="editor.undo" data-i18n-aria="editor.undo">
+          <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+        </button>
+        <button id="edit-redo" class="md-tool-btn icon" title="重做 (Ctrl+Y)" aria-label="重做" data-i18n-title="editor.redo" data-i18n-aria="editor.redo">
+          <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+        </button>
+      </div>
+      <button id="edit-cancel" class="tb-btn icon" type="button" title="取消" aria-label="取消" data-i18n-title="editor.cancel" data-i18n-aria="editor.cancel"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+      <button id="edit-save" class="tb-btn accent" data-i18n="editor.save">保存</button>
+    </div>
   <div id="main-col">
     <main id="content" role="tabpanel" tabindex="-1" aria-label="当前文档" data-i18n-aria="reader.currentDoc">
       <div id="welcome">
@@ -449,6 +453,8 @@
     </div>
   </div>
 
+  </div>
+
   <!-- AI 助手工作台 (Split Workspace / Floating Panel) -->
   <div id="ai-panel" class="hidden">
     <div id="ai-resize-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="调整 AI 面板宽度" data-i18n-aria="ai.resizeHandle" aria-valuemin="320" aria-valuemax="1400" aria-valuenow="440" title="拖动或用左右方向键调整 AI 面板宽度" data-i18n-title="ai.resizeHandle"></div>
@@ -521,45 +527,45 @@
 <div id="pet-settings-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="pet-settings-title">
   <div id="pet-settings-box" class="apple-modal-box pet-settings-sheet">
     <div class="export-head pet-sheet-head">
-      <div>
-        <h3 id="pet-settings-title" data-i18n="menu.pet">桌宠与阅读伴侣</h3>
-        <p class="pet-subtitle" data-i18n="pet.subtitle">伴随阅读进度、实时互动响应、直接拖拽转换文档</p>
-      </div>
-      <button id="pet-settings-close" class="pet-sheet-close" type="button" aria-label="关闭" data-i18n-aria="toolbar.close">
-        <svg class="pet-sheet-close-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <h3 id="pet-settings-title" data-i18n="menu.pet">桌宠</h3>
+      <button id="pet-settings-close" class="modal-close-btn" type="button" aria-label="关闭" data-i18n-aria="toolbar.close" data-i18n-title="toolbar.close">
+        <svg class="modal-close-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
 
     <div class="pet-sheet-body">
-      <!-- 角色实时预览舞台 -->
-      <div class="pet-preview-stage" id="pet-status-card">
+      <div class="pet-preview-stage" id="pet-status-card" data-i18n-title="pet.coreHint">
         <div class="pet-preview-aura" id="pet-preview-aura">
           <div class="pet-preview-character" id="pet-preview-character"></div>
         </div>
         <div class="pet-preview-badge">
           <span id="pet-status-dot" class="status-indicator conn-dot"></span>
           <span id="pet-status-text" data-i18n="pet.statusStopped">就绪</span>
-          <span class="pet-slug-divider">·</span>
-          <span id="pet-active-slug" data-i18n="pet.gallery.companion">伴读使者</span>
+          <span id="pet-active-slug">伴读使者</span>
         </div>
-        <p class="pet-core-hint" data-i18n="pet.coreHint">点击互动 · 拖动移动 · 右键菜单 · 拖入文件打开或转换</p>
         <p id="pet-status-line" class="pet-status-note" role="status" aria-live="polite"></p>
       </div>
 
       <!-- 分组设置清单 (Apple Inset Grouped List) -->
       <div class="apple-grouped-list">
         <div class="apple-list-row">
-          <label for="pet-runtime" data-i18n="pet.runtime">运行位置</label>
-          <select id="pet-runtime" class="apple-select">
-            <option value="in-app" data-i18n="pet.runtime.inApp">阅读器内</option>
-            <option value="desktop" data-i18n="pet.runtime.desktop">独立桌面（需桌宠扩展）</option>
-          </select>
+          <span id="pet-runtime-label" class="apple-row-title" data-i18n="pet.runtime">运行位置</span>
+          <div id="pet-runtime" class="pet-runtime-choices" role="group" aria-labelledby="pet-runtime-label">
+            <label><input id="pet-runtime-in-app" type="radio" name="pet-runtime" checked><span data-i18n="pet.runtime.inApp">阅读器内</span></label>
+            <label><input id="pet-runtime-desktop" type="radio" name="pet-runtime"><span data-i18n="pet.runtime.desktop">独立桌面</span></label>
+          </div>
         </div>
-        <div class="apple-list-row" id="pet-gallery-row">
-          <label for="pet-gallery" data-i18n="pet.gallery">桌宠库</label>
-          <select id="pet-gallery" class="apple-select"><option value="" data-i18n="pet.gallery.companion">伴读使者</option></select>
-          <button id="pet-gallery-delete" class="tb-btn danger hidden" type="button" data-i18n="pet.gallery.delete">删除</button>
-          <label class="tb-btn" for="pet-gallery-import" data-i18n="pet.gallery.import">导入精灵图</label>
+        <div class="pet-library-tools" data-pet-section-content="characters">
+          <label class="pet-search-field">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="5.8"/><path d="m15.2 15.2 4 4"/></svg>
+            <input id="pet-roster-search" type="search" placeholder="桌宠库" aria-label="桌宠库" data-i18n-placeholder="pet.gallery" data-i18n-aria="pet.gallery">
+          </label>
+          <button id="pet-gallery-import-button" class="tb-btn icon" type="button" title="导入精灵图" aria-label="导入精灵图" data-i18n-title="pet.gallery.import" data-i18n-aria="pet.gallery.import">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>
+          </button>
+          <button id="pet-gallery-delete" class="tb-btn icon danger hidden" type="button" title="删除" aria-label="删除" data-i18n-title="pet.gallery.delete" data-i18n-aria="pet.gallery.delete">
+            <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16m-11 0V4h6v3M6 7l1 13h10l1-13m-8 4v5m4-5v5"/></svg>
+          </button>
           <input id="pet-gallery-import" type="file" accept="image/png,image/webp" hidden>
         </div>
         <div class="apple-list-row">
@@ -571,17 +577,6 @@
             <input id="pet-enabled" class="plugin-switch-input" type="checkbox" data-i18n-aria="pet.enable">
             <span class="apple-switch-track plugin-switch-track" aria-hidden="true"><span class="apple-switch-thumb plugin-switch-thumb"></span></span>
           </label>
-        </div>
-
-        <div class="apple-list-row" id="pet-renderer-row">
-          <div class="apple-row-info">
-            <span class="apple-row-title" data-i18n="pet.renderer">渲染角色</span>
-            <span class="apple-row-desc" data-i18n="pet.rendererDesc">选择伴读外观与动画模型</span>
-          </div>
-          <select id="pet-renderer" class="apple-select" data-i18n-aria="pet.renderer">
-            <option value="hermes-sprite" data-i18n="pet.renderer.sprite">精灵图</option>
-            <option value="live2d" data-i18n="pet.renderer.live2d">Arch-Chan 少女</option>
-          </select>
         </div>
 
         <h4 class="pet-group-title" data-pet-section-content="settings" data-i18n="pet.appearanceGroup">外观与尺寸</h4>
@@ -777,9 +772,9 @@
       </div>
     </div>
     <div class="conn-actions">
-      <button id="ai-save-key" class="tb-btn accent" data-i18n="ai.saveSettings">保存连接设置</button>
-      <button id="ai-test-connection" class="tb-btn" data-i18n="ai.testConnection">测试连接</button>
       <span id="ai-conn-status" class="conn-status" role="status" aria-live="polite"></span>
+      <button id="ai-test-connection" class="tb-btn" data-i18n="ai.testConnection">测试连接</button>
+      <button id="ai-save-key" class="tb-btn accent" data-i18n="dialog.save">保存</button>
     </div>
   </div>
 </div>
@@ -1022,7 +1017,7 @@
       </div>
       <button id="url-close" class="icon-btn" aria-label="关闭网页转换" data-i18n-aria="toolbar.close">×</button>
     </div>
-    
+
     <div class="url-input-wrap">
       <input id="url-input" type="url" inputmode="url" placeholder="输入网页 URL (如 https://example.com/post)..." aria-label="网页 URL" data-i18n-placeholder="web.urlPlaceholder" data-i18n-aria="web.urlPlaceholder" autocomplete="url">
       <button id="url-paste-btn" class="tb-btn icon" title="从剪贴板粘贴" aria-label="粘贴网址" data-i18n-title="web.pasteTitle" data-i18n-aria="web.pasteAria">
@@ -1084,26 +1079,26 @@
   </div>
 </div>
 
-<div id="close-confirm-modal" data-backdrop="static" class="hidden" role="dialog" aria-modal="true" aria-label="未保存修改提示" data-i18n-aria="dialog.unsavedTitle">
-  <div id="close-confirm-box">
+<div id="close-confirm-modal" data-backdrop="static" class="confirmation-layer hidden" role="dialog" aria-modal="true" aria-labelledby="close-confirm-title" aria-describedby="close-confirm-desc">
+  <div id="close-confirm-box" class="close-confirm-box">
     <div class="close-confirm-head">
       <div class="close-confirm-icon-wrap">
-        <svg class="close-confirm-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <svg class="close-confirm-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       </div>
       <div>
-        <h3 id="close-confirm-title" data-i18n="dialog.unsavedTitle">是否保存对文档的修改？</h3>
+        <h3 id="close-confirm-title" data-i18n="dialog.unsavedTitle">未保存</h3>
         <p id="close-confirm-desc" data-i18n="dialog.unsavedMsgDesc">「文档」已被修改，如果直接关闭，未保存的内容将会丢失。</p>
       </div>
     </div>
     <div class="close-confirm-actions">
-      <button id="close-confirm-save" class="tb-btn accent" data-i18n="dialog.save">保存修改</button>
+      <button id="close-confirm-save" class="tb-btn accent" data-i18n="dialog.save">保存</button>
       <button id="close-confirm-discard" class="tb-btn danger" data-i18n="dialog.dontSave">不保存</button>
       <button id="close-confirm-cancel" class="tb-btn" data-i18n="dialog.cancel">取消</button>
     </div>
   </div>
 </div>
 
-<div id="choice-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="choice-title" aria-describedby="choice-desc">
+<div id="choice-modal" class="confirmation-layer hidden" role="dialog" aria-modal="true" aria-labelledby="choice-title" aria-describedby="choice-desc">
   <div id="choice-box" class="close-confirm-box">
     <div class="close-confirm-head">
       <div class="close-confirm-icon-wrap">
@@ -1118,7 +1113,7 @@
   </div>
 </div>
 
-<div id="save-conflict-modal" data-backdrop="static" class="hidden" role="dialog" aria-modal="true" aria-labelledby="save-conflict-title" aria-describedby="save-conflict-desc">
+<div id="save-conflict-modal" data-backdrop="static" class="confirmation-layer hidden" role="dialog" aria-modal="true" aria-labelledby="save-conflict-title" aria-describedby="save-conflict-desc">
   <div id="save-conflict-box" class="close-confirm-box">
     <div class="close-confirm-head">
       <div class="close-confirm-icon-wrap">
@@ -1137,7 +1132,7 @@
   </div>
 </div>
 
-<div id="confirm-modal" data-backdrop="static" class="hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+<div id="confirm-modal" data-backdrop="static" class="confirmation-layer hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
   <div class="close-confirm-box">
     <div class="close-confirm-head">
       <div class="close-confirm-icon-wrap">
@@ -1146,16 +1141,17 @@
       <div>
         <h3 id="confirm-title"></h3>
         <p id="confirm-message"></p>
+        <input id="confirm-input" class="hidden" type="text" aria-labelledby="confirm-title" autocomplete="off">
       </div>
     </div>
     <div class="close-confirm-actions">
-      <button id="confirm-cancel" class="tb-btn" data-i18n="dialog.cancel">取消</button>
+      <button id="confirm-cancel" class="tb-btn" data-modal-initial data-i18n="dialog.cancel">取消</button>
       <button id="confirm-action" class="tb-btn danger" data-i18n="dialog.confirm">确认</button>
     </div>
   </div>
 </div>
 
-<div id="continuous-modal" data-backdrop="static" class="hidden" role="dialog" aria-modal="true" aria-labelledby="continuous-title">
+<div id="continuous-modal" data-backdrop="static" class="confirmation-layer hidden" role="dialog" aria-modal="true" aria-labelledby="continuous-title" aria-describedby="continuous-desc">
   <div class="close-confirm-box">
     <div class="close-confirm-head">
       <div class="close-confirm-icon-wrap">
@@ -1179,22 +1175,27 @@
 
 <div id="fix-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="fix-title" aria-describedby="fix-note">
   <div id="fix-box">
-    <div class="fix-header">
-      <h3 id="fix-title"><span data-i18n="dialog.fixTitle">本次自动修正详情</span></h3>
-      <span id="fix-count"></span>
+    <header class="fix-header">
+      <div class="fix-heading">
+        <h3 id="fix-title" data-i18n="dialog.fixTitle">本次自动修正详情</h3>
+        <span id="fix-count"></span>
+      </div>
+      <button id="fix-close" class="tb-btn icon modal-close-btn" type="button" aria-label="关闭" title="关闭" data-i18n-aria="toolbar.close" data-i18n-title="toolbar.close">
+        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div class="fix-scope">
+      <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v5M12 8h.01"/></svg>
+      <p id="fix-note" class="fix-note" data-i18n="fixes.note">修正仅用于本次阅读，不会改写原文件。</p>
     </div>
-    <p id="fix-note" class="fix-note" data-i18n="fixes.note">修正仅用于本次阅读，不会改写原文件。</p>
     <ul id="fix-list" tabindex="0" aria-labelledby="fix-title"></ul>
-    <div class="fix-actions">
+    <footer class="fix-actions">
       <div class="fix-ai-action">
         <button id="fix-ai-btn" class="tb-btn" aria-describedby="fix-review-hint" data-i18n="fixes.aiFix">AI 深度修复</button>
         <span id="fix-review-hint" data-i18n="review.pending">待审阅</span>
       </div>
-      <div class="fix-confirm-actions">
-        <button id="fix-close" class="tb-btn" data-i18n="toolbar.close">关闭</button>
-        <button id="fix-save" class="tb-btn accent primary" data-i18n="app.saveAs">另存为修正后文件</button>
-      </div>
-    </div>
+      <button id="fix-save" class="tb-btn accent primary" data-i18n="app.saveAs">另存为修正后文件</button>
+    </footer>
   </div>
 </div>
 
@@ -1369,38 +1370,22 @@
 <!-- 插件管理中心弹窗 -->
 <div id="plugin-modal" class="hidden modal-overlay" role="dialog" aria-modal="true" aria-labelledby="plugin-title">
   <div id="plugin-box" class="plugin-box apple-modal-box">
-    <div class="export-head plugin-sheet-head">
+    <header class="export-head plugin-sheet-head">
       <div>
         <h3 id="plugin-title" data-i18n="plugin.center.title">扩展插件管理中心</h3>
+        <p id="plugin-summary" class="plugin-summary" role="status" aria-live="polite"></p>
       </div>
-      <button id="plugin-close" class="tb-btn icon modal-close-btn" aria-label="关闭" data-i18n-aria="toolbar.close">
-        <svg class="tb-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <button id="plugin-close" class="tb-btn icon modal-close-btn" type="button" aria-label="关闭" data-i18n-aria="toolbar.close">
+        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m18 6-12 12M6 6l12 12"/></svg>
       </button>
-    </div>
-    <details class="plugin-runtime-details">
-      <summary data-i18n="plugin.runtimeDetails">运行信息</summary>
-      <div class="plugin-system-status">
-        <div class="plugin-status-pill">
-          <span class="status-indicator ready" aria-hidden="true"></span>
-          <span class="status-label" data-i18n="plugin.sandboxReady">能力由 ReadMD 内核原生提供 · 无需 Python 或 pip</span>
-        </div>
-        <div class="plugin-meta-indicators">
-          <div class="plugin-indicator-item">
-            <span class="plugin-meta-label" data-i18n="plugin.ffmpegStatus">FFmpeg 状态</span>：
-            <span id="plugin-ffmpeg-badge" class="plugin-badge" data-i18n="plugin.detecting">检测中…</span>
-          </div>
-          <span id="plugin-sandbox-path" class="plugin-path hidden">—</span>
-        </div>
-      </div>
-    </details>
+    </header>
     <div class="plugin-discovery">
       <label class="plugin-search"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="plugin-search" type="search" data-i18n-placeholder="plugin.search" data-i18n-aria="plugin.search" placeholder="搜索插件与功能" autocomplete="off"></label>
       <button id="plugin-installed-filter" class="tb-btn" type="button" aria-pressed="false" data-i18n="plugin.installedOnly">已安装</button>
-      <button id="plugin-refresh" class="tb-btn" type="button" data-i18n="plugin.refresh">刷新</button>
-      <button id="plugin-offline-pack" class="tb-btn" type="button" data-i18n="pdf.installPack">安装离线能力包</button>
+      <button id="plugin-refresh" class="tb-btn icon" type="button" aria-label="刷新" title="刷新" data-i18n-aria="plugin.refresh" data-i18n-title="plugin.refresh">
+        <svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+      </button>
     </div>
-    <div id="plugin-capability-pack" class="plugin-summary hidden" role="status" aria-live="polite"></div>
-    <div id="plugin-summary" class="plugin-summary" role="status" aria-live="polite"></div>
     <div id="plugin-category-tabs" class="plugin-category-tabs" role="tablist" aria-label="插件能力分类" data-i18n-aria="plugin.categories">
       <button class="plugin-tab-pill active" data-category="all" data-i18n="plugin.filter.all">全部</button>
       <button class="plugin-tab-pill" data-category="ocr" data-i18n="plugin.category.ocr">光学识别</button>
@@ -1413,6 +1398,28 @@
     <div id="plugin-cards-grid" class="plugin-grid">
       <!-- 动态填充插件卡片 -->
     </div>
+    <footer class="plugin-footer">
+      <div id="plugin-capability-pack" class="plugin-summary hidden" role="status" aria-live="polite"></div>
+      <div class="plugin-footer-tools">
+        <details class="plugin-runtime-details">
+          <summary data-i18n="plugin.runtimeDetails">运行信息</summary>
+          <div class="plugin-system-status">
+            <div class="plugin-status-pill">
+              <span class="status-indicator ready" aria-hidden="true"></span>
+              <span class="status-label" data-i18n="plugin.sandboxReady">能力由 ReadMD 内核原生提供 · 无需 Python 或 pip</span>
+            </div>
+            <div class="plugin-meta-indicators">
+              <div class="plugin-indicator-item">
+                <span class="plugin-meta-label" data-i18n="plugin.ffmpegStatus">FFmpeg 状态</span>
+                <span id="plugin-ffmpeg-badge" class="plugin-badge" data-i18n="plugin.detecting">检测中…</span>
+              </div>
+              <span id="plugin-sandbox-path" class="plugin-path hidden">—</span>
+            </div>
+          </div>
+        </details>
+        <button id="plugin-offline-pack" class="tb-btn" type="button" data-i18n="pdf.installPack">安装离线能力包</button>
+      </div>
+    </footer>
   </div>
 </div>
 
@@ -1429,7 +1436,7 @@
     <div class="update-body">
       <div class="update-notes-head" data-i18n="update.log">更新日志</div>
       <div id="update-notes-content" class="update-notes-content markdown-body"></div>
-      
+
       <div class="update-asset-card">
         <div class="update-asset-info">
           <span class="update-asset-name" id="update-asset-name">—</span>
@@ -1525,30 +1532,7 @@
 
 <div id="zen-hover-trigger" class="zen-hover-trigger"></div>
 
-<footer id="statusbar">
-  <div class="statusbar-left-group">
-    <span id="status-version" class="status-version" title="ReadMD 当前版本" data-i18n-title="status.version">v0.0.6</span>
-    <button id="status-pagination" type="button" class="status-pagination hidden" title="点击切换阅读模式" data-i18n-title="pagination.switchModeTitle"></button>
-    <span id="status-left"></span>
-  </div>
-  <span id="status-right"></span>
-  <span id="status-mods"></span>
-  <div id="editor-status-group">
-    <span id="edit-doc-stats" aria-live="polite"></span>
-    <span id="status-ai-completion" role="status" aria-live="polite"></span>
-    <span id="document-recovery-status" role="status" aria-live="polite"></span>
-    <span class="edit-tip-keys" data-i18n="editor.shortcutsTip"></span>
-  </div>
-  <button id="status-update-badge" class="status-update-badge hidden" title="点击查看新版本并更新" data-i18n-title="status.clickToUpdate">
-    <svg class="update-badge-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.2-6.3-4.6-6.3 4.6 2.3-7.2-6-4.6h7.6z"/></svg>
-    <span data-i18n="status.newVersion">新版本</span> <span id="update-badge-ver"></span>
-  </button>
 
-  <button id="btn-home" class="status-btn-home hidden" title="返回主页" data-i18n-title="toolbar.home">
-    <svg class="status-home-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-    <span data-i18n="toolbar.home">返回主页</span>
-  </button>
-</footer>
 
 <div id="style-custom-modal" data-backdrop="static" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="style-modal-title">
   <div class="modal-dialog style-modal-dialog">
@@ -1564,7 +1548,7 @@
         <p id="style-load-status" role="status" aria-live="polite"></p>
         <button id="style-load-retry" type="button" class="tb-btn hidden" data-i18n="audit.retryLoad">重新加载</button>
       </div>
-      
+
       <div class="style-presets-bar">
         <span class="style-presets-label" data-i18n="dialog.stylePresets">常用排版模板:</span>
         <button type="button" class="btn-preset" id="btn-preset-indent" data-i18n="dialog.stylePresetIndent">首行缩进</button>
@@ -1573,24 +1557,26 @@
         <button type="button" class="btn-preset" id="btn-preset-print" data-i18n="dialog.stylePresetPrint">打印分页优化</button>
       </div>
 
-      <div class="style-ai-bar">
-        <input type="text" id="style-ai-prompt" class="style-ai-input" placeholder="输入排版风格诉求，例如：适合学术论文的衬线体与优雅边距..." data-i18n-placeholder="styleai.placeholder">
-        <button type="button" id="style-ai-gen-btn" class="tb-btn" data-i18n="styleai.generate">AI 生成样式</button>
-      </div>
-      <div id="style-ai-status" class="style-ai-status hidden"></div>
-
       <div class="form-group">
-        <label for="style-custom-css" data-i18n="dialog.styleCustomCssLabel">自定义 CSS 样式 (应用于阅读、编辑与导出):</label>
+        <label for="style-custom-css">CSS</label>
         <textarea id="style-custom-css" class="style-code-editor" placeholder="/* 例如：\n.markdown-body p { text-indent: 2em; }\n*/" data-i18n-placeholder="dialog.styleCustomCssPlaceholder"></textarea>
       </div>
-      <div class="form-group">
-        <label for="style-custom-head" data-i18n="dialog.styleCustomHeadLabel">自定义 HTML Head 注入 (引入外部字体、脚本或样式表):</label>
-        <textarea id="style-custom-head" class="style-code-editor" style="min-height:90px;" placeholder="&lt;!-- 例如：\n&lt;link rel='stylesheet' href='https://fonts.googleapis.com/...'&gt;\n--&gt;" data-i18n-placeholder="dialog.styleCustomHeadPlaceholder"></textarea>
-      </div>
+      <details class="panel-options style-option">
+        <summary>HTML Head</summary>
+        <textarea id="style-custom-head" class="style-code-editor" aria-label="HTML Head" data-i18n-aria="dialog.styleCustomHeadLabel" placeholder="&lt;!-- 例如：\n&lt;link rel='stylesheet' href='https://fonts.googleapis.com/...'&gt;\n--&gt;" data-i18n-placeholder="dialog.styleCustomHeadPlaceholder"></textarea>
+      </details>
+      <details class="panel-options style-option">
+        <summary data-i18n="styleai.generate">AI 排版</summary>
+        <div class="style-ai-bar">
+          <input type="text" id="style-ai-prompt" class="style-ai-input" data-i18n-placeholder="styleai.placeholder" data-i18n-aria="styleai.placeholder">
+          <button type="button" id="style-ai-gen-btn" class="tb-btn" data-i18n="styleai.generate">生成样式</button>
+        </div>
+        <div id="style-ai-status" class="style-ai-status hidden" role="status"></div>
+      </details>
     </div>
     <div class="modal-footer">
       <button id="style-modal-cancel" class="tb-btn" data-i18n="dialog.cancel">取消</button>
-      <button id="style-modal-save" class="tb-btn accent" data-i18n="dialog.styleCustomSave">保存并即时生效</button>
+      <button id="style-modal-save" class="tb-btn accent" data-i18n="dialog.save">保存</button>
     </div>
   </div>
 </div>
@@ -1770,7 +1756,7 @@
   </div>
 </div>
 
-<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=178fa8609708"></script>
+<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=22381fa06ee2"></script>
 <script defer src="/assets/js/platform/harmony.js?v=0.0.5"></script>
 </body>
 </html>

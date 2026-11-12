@@ -679,12 +679,19 @@
     return { text: formatted.join('\n'), selFrom: first.from, selTo: first.to };
   }
 
+  // The caller supplies two adjacent body lines from one parsed table.
+  function tableRowSwap(first, second) {
+    const [upper, lower] = first.from < second.from ? [first, second] : [second, first];
+    if (lower.from !== upper.to + 1 || upper.text === lower.text) return null;
+    return { from: upper.from, to: lower.to, insert: lower.text + '\n' + upper.text };
+  }
+
   const api = {
     computeSyntaxEdit, applySyntaxEdit,
     headingLevelEdit, calloutEdit, CALLOUT_TYPES,
     blockInsertEdit, linePrefixEdit, inlineInsertEdit, footnoteEdit, tocMarkdown, headingSlug,
     fuzzyScore, textStats,
-    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock,
+    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock, tableRowSwap,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ReadMDTransforms = api;

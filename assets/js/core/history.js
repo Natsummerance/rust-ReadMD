@@ -163,10 +163,31 @@ function renderRecentList(list, rec, onOpen) {
   }).catch(() => {});
 }
 
+function renderSidebarRecent(rec) {
+  const list = $('side-recent-list');
+  $('side-recent-clear').disabled = !rec.length;
+  renderRecentList(list, rec, loadFile);
+  if (!rec.length) {
+    const row = document.createElement('li');
+    row.className = 'side-empty';
+    row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
+    list.appendChild(row);
+  }
+}
+
+let recentSidebarRequest = 0;
+async function refreshSidebarRecent() {
+  const request = ++recentSidebarRequest;
+  const rec = await getRecentEntries();
+  if (request === recentSidebarRequest) renderSidebarRecent(rec);
+}
+
 async function refreshRecent() {
   const box = $('recent-box');
   if (!box) return;
+  const request = ++recentSidebarRequest;
   const rec = await getRecentEntries();
+  if (request === recentSidebarRequest) renderSidebarRecent(rec);
   if (!rec.length) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   renderRecentList($('recent-list'), rec, loadFile);
@@ -188,7 +209,7 @@ async function openHistoryModal() {
 }
 
 async function clearRecent() {
-  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: ['history-clear', 'recent-clear', 'side-recent-clear'] });
 }
 
 async function runClearRecent() {
@@ -273,6 +294,21 @@ function setUnavailableReason(element, reason) {
   }
 }
 
+function updateSidebarSummaryTitle(summary) {
+  summary.title = Array.from(summary.children, item => item.textContent).filter(Boolean).join(' · ');
+}
+
+function updateSidebarStatistics(stats) {
+  const summary = $('status-summary');
+  if (!summary) return;
+  summary.dataset.tab = state.activeTabId || '';
+  const locale = window.i18n?.currentLang;
+  const count = value => Number(value).toLocaleString(locale || undefined);
+  $('status-words').textContent = stats ? window.i18n.t('reader.wordCount', { count: count(stats.words) }) : '';
+  $('status-reading-time').textContent = stats ? window.i18n.t('reader.readingTime', { minutes: count(stats.minutes) }) : '';
+  updateSidebarSummaryTitle(summary);
+}
+
 function updateStatus() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const srcLabels = {
@@ -298,6 +334,15 @@ function updateStatus() {
   $('status-right').textContent = state.mode === 'unavailable' ? _t('toast.openFailed') : parts.join(' · ');
   const isWelcome = state.mode === 'welcome';
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
+  const summary = $('status-summary');
+  if (summary) {
+    if (summary.dataset.tab !== (state.activeTabId || '') || !hasDoc) updateSidebarStatistics(null);
+    const ext = String(state.ext || state.sourceName?.match(/\.([a-z\d]{1,8})$/i)?.[1] || 'md').replace(/^\./, '').toUpperCase();
+    $('status-format').textContent = /^(?:MARKDOWN|MDOWN|MKD|MKDN)$/.test(ext) ? 'MD' : ext;
+    $('status-encoding').textContent = (state.encoding || '').toUpperCase();
+    updateSidebarSummaryTitle(summary);
+    $('statusbar').classList.toggle('hidden', !hasDoc);
+  }
   const canEdit = hasDoc && !state.editing;
   const canReload = state.mode === 'file';
   const canSaveas = hasDoc;
@@ -311,9 +356,8 @@ function updateStatus() {
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
     $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || !canExport;
-    const exportHint = _t('toolbar.export') + ' (Ctrl+P)';
-    $('btn-print').title = exportHint;
-    $('btn-print').setAttribute('aria-label', exportHint);
+    $('btn-print').title = _t('toolbar.export');
+    $('btn-print').setAttribute('aria-label', _t('toolbar.export'));
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
   if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable';
@@ -346,10 +390,7 @@ function updateStatus() {
   }
 
   const btnHome = $('btn-home');
-  if (btnHome) {
-    if (isWelcome) btnHome.classList.add('hidden');
-    else btnHome.classList.remove('hidden');
-  }
+  if (btnHome) btnHome.disabled = isWelcome;
 }
 
 let goingHome = false;

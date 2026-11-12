@@ -25,6 +25,7 @@ struct Gesture {
     sequence: u64,
     click: bool,
     context_menu: bool,
+    control_click: bool,
     start: NSPoint,
     stage: u8,
     next: Instant,
@@ -70,6 +71,7 @@ impl Driver {
             "bounds":{"x":state.bounds.x,"y":state.bounds.y,"width":state.bounds.width,"height":state.bounds.height},
             "renderer_ready":state.renderer_ready,"interaction_generation":state.interaction_generation,
             "regions":state.interaction_rects.len(),"pet_regions":state.pet_rects.len(),"locked":state.lock_position,
+            "ui_regions":state.interaction_rects.len().saturating_sub(state.pet_rects.len()),
             "hit_point":hit,"pointer":pointer(),
             "input_permissions":crate::input::native_permissions()})
     }
@@ -111,7 +113,8 @@ impl Driver {
             let local = native
                 .convertPointFromScreen(NSPoint::new(gesture.start.x + dx, gesture.start.y + dy));
             let event = NSEvent::mouseEventWithType_location_modifierFlags_timestamp_windowNumber_context_eventNumber_clickCount_pressure(
-                kind, local, NSEventModifierFlags::empty(), NSProcessInfo::processInfo().systemUptime(), native.windowNumber(), None,
+                kind, local, if gesture.control_click { NSEventModifierFlags::Control } else { NSEventModifierFlags::empty() },
+                NSProcessInfo::processInfo().systemUptime(), native.windowNumber(), None,
                 i64::from(gesture.stage) as isize, 1, if kind == NSEventType::LeftMouseUp {0.0} else {1.0});
             if let (Some(main), Some(event)) = (MainThreadMarker::new(), event) {
                 NSApplication::sharedApplication(main).postEvent_atStart(&event, false);
@@ -161,20 +164,30 @@ impl Driver {
                 result["owned_drop_accepted"] = json!(accepted);
                 self.write(result);
             }
-            "click" | "drag" | "context-menu" => {
+            action @ ("click"
+            | "drag"
+            | "context-menu"
+            | "context-menu-margin"
+            | "control-click") => {
                 let rect = state
                     .pet_rects
                     .iter()
                     .max_by(|a, b| (a.width * a.height).total_cmp(&(b.width * b.height)));
                 if let Some(rect) = rect {
-                    let point = NSPoint::new(
-                        rect.x + rect.width / 2.0,
-                        native.frame().size.height - rect.y - rect.height / 2.0,
-                    );
+                    let height = native.frame().size.height;
+                    let point = if action == "context-menu-margin" {
+                        NSPoint::new(8.0, height - 8.0)
+                    } else {
+                        NSPoint::new(
+                            rect.x + rect.width / 2.0,
+                            height - rect.y - rect.height / 2.0,
+                        )
+                    };
                     self.gesture = Some(Gesture {
                         sequence,
-                        click: value["action"] != "drag",
-                        context_menu: value["action"] == "context-menu",
+                        click: action != "drag",
+                        context_menu: action.starts_with("context-menu"),
+                        control_click: action == "control-click",
                         start: native.convertPointToScreen(point),
                         stage: 0,
                         next: Instant::now(),

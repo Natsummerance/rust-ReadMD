@@ -495,11 +495,10 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    if (p.requires_model && isCached) metaParts.push(_t('plugin.cacheReady'));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">
-        ${p.enabled ? '<span class="plugin-pulse-pip"></span>' : ''}
         ${escapeHtml(capName)}${isExclusive ? ' · ' + escapeHtml(_t('plugin.exclusiveNotice')) : ''}
       </span>
     ` : '';
@@ -582,13 +581,11 @@ function renderPluginCards(plugins) {
             <h4 class="plugin-card-title">${escapeHtml(title)}</h4>
             ${capBadge}
           </div>
-          <div class="plugin-card-submeta">
-            ${escapeHtml(metaParts.join(' · '))}
-          </div>
+          ${metaParts.length ? `<div class="plugin-card-submeta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+          <p class="plugin-card-desc">${escapeHtml(desc)}</p>
+          ${progressHtml}
         </div>
       </div>
-      <p class="plugin-card-desc">${escapeHtml(desc)}</p>
-      ${progressHtml}
       <div class="plugin-card-foot">
         <div class="plugin-foot-left">${footLeft}</div>
         <div class="plugin-foot-right">${footRight}</div>

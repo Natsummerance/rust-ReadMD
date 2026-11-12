@@ -74,10 +74,10 @@ function revealTabInTrack(container, tab) {
 function localizeOpenTabs() {
   const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
   const tabs = new Map((state.tabs || []).map(tab => [tab.id, tab]));
-  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item, #doc-tabs-secondary-bar .tab-item, #doc-tabs-dropdown .tab-item')) {
+  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item')) {
     const tab = tabs.get(row.dataset.tabId); if (!tab) continue;
     const close = t('tabs.closeTab');
-    row.title = `${tab.path || tab.title || tab.name || t('tabs.untitled')} (${close}: Delete)`;
+    row.title = tab.title || tab.name || t('tabs.untitled');
     const button = row.querySelector('.tab-close'); if (button) button.title = close;
     const reason = tab.externalChanged ? t('toast.saveConflict') : tab.isDirty ? t('tabs.dirty') : '';
     const dot = row.querySelector('.tab-dirty'); if (dot) dot.title = reason;
@@ -88,32 +88,43 @@ function localizeOpenTabs() {
   }
 }
 
+function syncTopTabOverflow({ reveal = false } = {}) {
+  const bar = $('doc-tabs-bar'), container = $('doc-tabs-container'), wrap = $('doc-tabs-overflow-wrap');
+  if (!container?.clientWidth || !bar || !wrap) return;
+  const overflow = bar.scrollWidth > container.clientWidth + 2;
+  if (!overflow && !$('doc-tabs-dropdown').classList.contains('hidden')) {
+    const focused = wrap.contains(document.activeElement);
+    setTopTabMenu(false);
+    if (focused) focusVisibleTab(state.activeTabId);
+  }
+  wrap.classList.toggle('hidden', !overflow);
+  if (reveal) revealTabInTrack(bar, bar.querySelector('.tab-item.active'));
+}
+
+function setTopTabMenu(open, { focus = false } = {}) {
+  const menu = $('doc-tabs-dropdown'), button = $('doc-tabs-overflow-btn');
+  if (!menu || !button) return;
+  menu.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', String(open));
+  if (open && focus) menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
-  const secBar = $('doc-tabs-secondary-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');
-  const btnHome = $('btn-home');
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   if (state.tabs.length === 0) {
     if (bar) bar.innerHTML = '';
-    if (secBar) { secBar.innerHTML = ''; secBar.classList.add('hidden'); }
     if (overflowWrap) overflowWrap.classList.add('hidden');
-    if (btnHome) btnHome.classList.add('hidden');
+    if (dropdown) dropdown.replaceChildren();
+    setTopTabMenu(false);
     if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
       window.ReadMDGraph.updateVisibility(false);
     }
     return;
-  }
-
-  if (btnHome) {
-    if (state.mode === 'welcome') {
-      btnHome.classList.add('hidden');
-    } else {
-      btnHome.classList.remove('hidden');
-    }
   }
 
   if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
@@ -135,7 +146,7 @@ function renderTabsBar() {
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
-    el.title = `${tab.path || tab.title || tab.name} (${_t('tabs.closeTab')}: Delete)`;
+    el.title = tab.title || tab.name || _t('tabs.untitled');
     if (tab.isDirty) {
       const dot = document.createElement('span');
       const reason = tab.externalChanged
@@ -157,6 +168,7 @@ function renderTabsBar() {
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
+    titleSpan.dir = 'auto';
     titleSpan.textContent = tab.title || tab.name || (_t('tabs.untitled') || '未命名');
     el.appendChild(titleSpan);
 
@@ -272,7 +284,7 @@ function renderTabsBar() {
   // Async rendering must not restore focus captured before its await.
   const focusedTab = document.activeElement;
   const focusedTabId = focusedTab?.classList?.contains('tab-item') &&
-    ((bar && focusedTab.parentElement === bar) || (secBar && focusedTab.parentElement === secBar))
+    focusedTab.parentElement === bar
     ? focusedTab.dataset.tabId : null;
 
   if (bar) {
@@ -288,73 +300,45 @@ function renderTabsBar() {
       item.tabIndex = -1;
       item.className = 'doc-tabs-dropdown-item' + (tab.id === state.activeTabId ? ' active' : '');
       item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.tabIndex = -1;
       const label = document.createElement('span');
       label.textContent = (tab.title || tab.name) + (tab.isDirty ? ' •' : '');
+      label.dir = 'auto';
       const meta = document.createElement('small');
       meta.textContent = tab.path || (tab.isVirtual ? (_t('tabs.virtual') || '虚拟') : '');
       item.append(label, meta);
-      item.addEventListener('click', () => {
-        switchTab(tab.id);
-        dropdown.classList.add('hidden');
+      item.addEventListener('click', async () => {
+        setTopTabMenu(false);
+        await switchTab(tab.id);
+        if (document.activeElement === document.body) focusVisibleTab(state.activeTabId);
       });
       dropdown.appendChild(item);
     });
 
   }
 
-  if (bar && overflowWrap) {
-    const syncOverflow = () => {
-      if (!bar.isConnected || !overflowWrap.isConnected) return;
-      overflowWrap.classList.toggle('hidden', !(bar.scrollWidth > bar.clientWidth + 6));
-    };
-    syncOverflow();
-    requestAnimationFrame(syncOverflow);
-  }
-
-  const revealActiveTab = (container) => {
-    const active = container?.querySelector('.tab-item.active');
-    revealTabInTrack(container, active);
-  };
-  revealActiveTab(bar);
-  revealActiveTab(secBar);
-
-  if (secBar) {
-    if (window.innerWidth < 650 && state.tabs.length > 0) {
-      secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab, secBar)));
-      secBar.classList.remove('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
-    } else {
-      secBar.classList.add('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.remove('hidden');
-    }
-  }
+  syncTopTabOverflow({ reveal: true });
+  requestAnimationFrame(() => syncTopTabOverflow({ reveal: true }));
   // Rebuilds retire the old focused row. Preserve its identity without taking
   // focus from an editor/menu, including focus moved by a synchronous blur.
   if (focusedTabId && (document.activeElement === document.body || document.activeElement === focusedTab)) {
-    for (const container of [bar, secBar]) {
-      const replacement = Array.from(container?.children || []).find(item =>
-        item.classList.contains('tab-item') && item.dataset.tabId === focusedTabId);
-      if (!replacement || !replacement.isConnected || replacement.offsetParent === null ||
-          replacement.closest('[inert]') || replacement.closest('[hidden]') || getComputedStyle(replacement).visibility !== 'visible') continue;
+    const replacement = Array.from(bar.children).find(item => item.dataset.tabId === focusedTabId);
+    if (replacement?.offsetParent && !replacement.closest('[inert], [hidden]')) {
       replacement.focus({ preventScroll: true });
-      break;
     }
   }
 
 }
 
-function focusVisibleTab(tabId) {
-  requestAnimationFrame(() => {
-    const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
-    const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next) {
-      revealTabInTrack(next.parentElement, next);
-      if (document.activeElement !== next) next.focus({ preventScroll: true });
-    }
-  });
+function focusVisibleTab(tabId, { immediate = false } = {}) {
+  const focus = () => {
+    const bar = $('doc-tabs-bar');
+    const next = Array.from(bar?.children || []).find(row => row.dataset.tabId === tabId);
+    if (!next || next.offsetParent === null) return;
+    revealTabInTrack(bar, next);
+    if (document.activeElement !== next) next.focus({ preventScroll: true });
+  };
+  if (immediate) focus();
+  else requestAnimationFrame(focus);
 }
 
 function moveTabFocus(activeTabId, key) {
@@ -374,7 +358,6 @@ function moveTabFocus(activeTabId, key) {
 function startTabInlineRename(tab, titleSpan, tabEl) {
   if (tab?._renamePending) { void recoverPendingRename(tab); return; }
   if (renameBlocked(tab)) return;
-  tabEl.closest?.('#side')?.classList.remove('hidden');
   if (tabEl.querySelector('.tab-title-input') || tabEl.querySelector('.tab-rename-wrap')) return;
   const currentTitle = tab.title || tab.name || '';
   const dot = currentTitle.lastIndexOf('.');
@@ -424,8 +407,15 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
   };
 
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); committed = true; cleanup(); }
+    if (e.isComposing || !['Enter', 'Escape'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Enter') commit();
+    else {
+      committed = true;
+      cleanup();
+      tabEl.focus({ preventScroll: true });
+    }
   });
   input.addEventListener('blur', () => { setTimeout(() => { if (!committed) commit(); }, 120); });
 }
@@ -648,7 +638,7 @@ function openTabContextMenu(e, tabId) {
   menu.style.top = Math.min(window.innerHeight - 200, e.clientY) + 'px';
   menu.classList.remove('hidden');
   menu.dataset.returnFocus = tabId;
-  setTimeout(() => menu.querySelector('button:not([disabled])')?.focus(), 20);
+  menu.querySelector('button:not([disabled])')?.focus();
 }
 
 function closeTabContextMenu({ restoreFocus = false } = {}) {
@@ -657,7 +647,7 @@ function closeTabContextMenu({ restoreFocus = false } = {}) {
   menu.classList.add('hidden');
   if (!restoreFocus) return;
   const tabId = menu.dataset.returnFocus;
-  if (tabId) focusVisibleTab(tabId);
+  if (tabId) focusVisibleTab(tabId, { immediate: true });
 }
 
 async function renderActiveTab({ restoreScroll = false } = {}) {
@@ -854,7 +844,7 @@ function promptDirtyClose(tabName, owner = typeof getActiveTab === 'function' ? 
     promptDirtyClose.active = true;
     let settled = false, focusTimer;
     const titleEl = $('close-confirm-title');
-    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '是否保存对文档的修改？';
+    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '未保存';
     const descEl = $('close-confirm-desc');
     if (descEl) descEl.textContent = _t('dialog.unsavedMsgDesc', { name: tabName || (_t('tabs.untitled') || '文档') }) || `「${tabName || '文档'}」已被修改，如果直接关闭，未保存的内容将会丢失。`;
     modal.classList.remove('hidden');
@@ -1333,7 +1323,7 @@ async function closeAllTabs() {
       name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
       content, fixed: content, original: file?.original ?? file?.content ?? (dirty || descriptor.unsavedCreation ? '' : content),
       revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
-      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fix_details ?? file?.fixes ?? [], stats: file?.stats || {},
       is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
       isVirtual: !file, isDirty: dirty, unsavedCreation: !file && (descriptor.unsavedCreation || dirty),
       originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,

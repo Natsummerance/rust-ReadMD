@@ -1,4 +1,4 @@
-const {waitForPage}=require('./page-condition.cjs');
+const {waitForPage,revealDocumentSearch}=require('./page-condition.cjs');
 // Reader lane: callouts, code headers, outline scroll-spy, table wrappers,
 // footnotes, reading preferences and the image lightbox.
 const { test, expect } = require('@playwright/test');
@@ -203,7 +203,7 @@ test('footnotes, task lists, definition lists and figures upgrade safely', async
 
 test('search skips reader chrome and keeps the count contract', async ({ page }) => {
   await openDoc(page, ['# Copy target', '', '```js', 'const copy = 1;', '```', '', 'copy here and copy there'].join('\n'));
-  await page.locator('#btn-search').click();
+  await (await revealDocumentSearch(page)).click();
   await page.locator('#search-input').fill('copy');
   await page.keyboard.press('Enter');
   // heading + code + two in the paragraph; the "Copy" button label is chrome.

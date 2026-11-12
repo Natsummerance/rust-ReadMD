@@ -69,38 +69,21 @@ function setPvLayout(layout) {
     switchEditAiToChatPanel();
   }
   state.pvLayout = layout;
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === layout));
-  updatePvLabel(layout);
   applyPvLayout();
 }
 
 function updatePvLabel(layout = state.pvLayout || 'none') {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const names = {
-    none: _t('editor.previewNone') || '无',
-    left: _t('editor.previewLeft') || '左',
-    right: _t('editor.previewRight') || '右',
-    bottom: _t('editor.previewBottom') || '下',
-    top: _t('editor.previewTop') || '上'
-  };
-  const narrow = window.innerWidth < 600 && (layout === 'left' || layout === 'right');
-  const previewLabel = _t('editor.preview') || '预览';
-  const trigger = $('pv-trigger');
-  if (trigger) {
-    // Short visible label; the full state (incl. narrow-screen note) is in title/aria-label.
-    const full = narrow
-      ? previewLabel + '：' + names[layout] + '（' + (_t('editor.narrowScreenBottom') || '窄屏置底') + '）'
-      : previewLabel + '：' + names[layout];
-    trigger.innerHTML = '<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="pv-trigger-label"></span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
-    trigger.querySelector('.pv-trigger-label').textContent = full;
-    trigger.title = full;
-    trigger.setAttribute('aria-label', full);
-    trigger.classList.toggle('is-on', layout !== 'none');
+  for (const button of document.querySelectorAll('.pv-btn')) {
+    const active = button.dataset.pv === layout;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   }
+  $('edit-view-trigger')?.classList.toggle('is-on', layout !== 'none');
 }
 
 function applyPvLayout({ persist = true, updatePanels = true } = {}) {
   const layout = state.pvLayout || 'none';
+  updatePvLabel(layout);
   const mc = $('main-col');
 
   const pw = $('preview-wrap');
@@ -557,10 +540,58 @@ function alignEditorAndPreview() {
 }
 window.alignEditorAndPreview = alignEditorAndPreview;
 
-function applyPvUi() {
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === state.pvLayout));
+function updatePreviewOptions() {
   const sync = $('pv-sync');
-  if (sync) sync.checked = !!state.pvSync;
+  const publication = $('pv-publication');
+  if (sync) {
+    sync.checked = !!state.pvSync;
+    sync.disabled = !!state.pvPublication;
+  }
+  if (publication) publication.checked = !!state.pvPublication;
+}
+
+function bindPreviewControls() {
+  document.querySelectorAll('.pv-btn').forEach(button => {
+    button.addEventListener('click', event => {
+      setPvLayout(button.dataset.pv);
+      closeMdPopups({ restoreFocus: event.detail === 0 });
+    });
+  });
+  const sync = $('pv-sync');
+  sync.addEventListener('change', () => {
+    state.pvSync = sync.checked;
+    saveSettings();
+  });
+  const publication = $('pv-publication');
+  publication.addEventListener('change', async () => {
+    const wanted = publication.checked;
+    const tab = state.activeTabId;
+    const view = cmView;
+    publication.disabled = true;
+    try {
+      const ready = !wanted || (view && await ReadMDCapabilities.ensure('typst') &&
+        await ReadMDCapabilities.ensurePublication(view.state.doc.toString(), {
+          ...state.export?.options, pdf: { engine: 'typst' }
+        }));
+      if (state.activeTabId !== tab || cmView !== view || !state.editing) return;
+      state.pvPublication = !!(wanted && ready);
+      pvLast = '';
+      schedulePreview();
+    } catch {
+      if (state.activeTabId === tab && cmView === view && state.editing) {
+        showToast(i18n.t('editor.previewRenderFail'));
+      }
+    } finally {
+      publication.disabled = false;
+      updatePreviewOptions();
+    }
+  });
+  $('preview-wrap').addEventListener('scroll', pvSyncFromPreview);
+  bindPvSplitter();
+}
+
+function applyPvUi() {
+  updatePreviewOptions();
   setPvLayout(state.pvLayout);
 }
 

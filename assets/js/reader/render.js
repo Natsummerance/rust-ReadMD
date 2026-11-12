@@ -227,7 +227,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       original: d.original != null ? d.original : d.content,
       fixed: d.content,
       title: isBrowserCopy ? `${d.name} (${_t('app.browserCopy') || 'browser copy'})` : d.name,
-      fixes: d.fixes || [],
+      fixes: d.fix_details ?? d.fixes ?? [],
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
@@ -256,7 +256,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (wasActive) {
         await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
-        setFixes(d.fixes || [], d.stats || {});
+        setFixes(fileFields.fixes, d.stats || {});
         await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
@@ -292,7 +292,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       syncStateFromActiveTab();
       await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
-      setFixes(d.fixes || [], d.stats || {});
+      setFixes(fileFields.fixes, d.stats || {});
       await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
@@ -355,7 +355,6 @@ function setEditBtn(label) {
   if (!el) return;
   const sp = el.querySelector('span.tb-label');
   if (sp) sp.textContent = label;
-  else el.textContent = label;
   el.setAttribute('aria-pressed', String(Boolean(state.editing)));
   el.setAttribute('aria-label', label);
   el.title = /Ctrl\+E|⌘/.test(label) ? label : `${label} (Ctrl+E)`;
@@ -3108,7 +3107,7 @@ async function launchPresentationMode() {
         </div>
         <button type="button" class="presentation-btn" id="presentation-overview-btn" title="${_t('presentation.overviewTitle')}">${_t('presentation.overviewLabel')}</button>
         <button type="button" class="presentation-btn" id="presentation-fullscreen-btn" title="${_t('presentation.fullscreenTitle')}">${_t('presentation.fullscreenLabel')}</button>
-        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle" data-modal-close><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div id="presentation-loading"></div>
       <iframe class="presentation-iframe" title="${_t('menu.presentation') || '演讲演示'}" src="about:blank"></iframe>

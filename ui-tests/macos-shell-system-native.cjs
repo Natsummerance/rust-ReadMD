@@ -30,10 +30,10 @@ function plan() {
     phases, cases, headerHeight: 52, minimumDomTarget: 44,
     independentInputs: { a: A, b: B, addition: ADDITION, fix: FIX, missingAnchors: 48 },
     expectations: [
-      'Actual AppKit standard buttons fit the 52px web row with measured leading clearance; actions stay physically left of the right-anchored brand.',
-      'At each fixed size/theme/locale the original sidebar returns active-tab focus, uses 44px controls and releases its measured width when closed.',
+      'Actual AppKit standard buttons fit the 52px web row with measured leading clearance; tabs remain in the titlebar between the left controls and right AI.',
+      'At each fixed size/theme/locale the sidebar uses 44px controls, releases its measured width when closed, and restores focus to its toggle.',
       'More opens its existing groups; the real bounded menu scrolls to Fix; the inspection lists exactly 48 fixed missing anchors and the real list scrolls.',
-      'The modal receives actual WKWebView document.activeElement focus, contains 44px controls, and Close returns focus to More without changing source.',
+      'The modal receives actual WKWebView document.activeElement focus, contains 44px controls, and Close returns focus to the repair action without changing source.',
       'AppKit green-button target/action and the existing native menu toggle actual NSWindow FullScreen state; stable viewport and native state are required.',
       'A synthetic editor change is saved through the existing visible Save control and genuine services, preserving BOM/CRLF bytes.',
       'Three normal OS launches/true quits restore the saved duplicate-title document, close only the background A tab, then keep it closed in a new process.',
@@ -70,29 +70,30 @@ function driver(phase, files, config) {
  const stableNative=async wanted=>{let last='',since=0;await until(async()=>{const s=await freshNative(),c=s.chrome,key=[innerWidth,innerHeight,c.contentWidth,c.contentHeight,c.nativeFullscreen].join(',');if(key!==last){last=key;since=Date.now();}return c.nativeFullscreen===wanted&&s.fullscreen===wanted&&Date.now()-since>=1200&&(!wanted||innerWidth>=screen.availWidth-2&&innerHeight>=screen.availHeight-2)&&c.buttons.find(b=>b.kind==='fullscreen')?.enabled;},'native_space_did_not_settle',30000);};
  const capture=async id=>{py.window_control('qa_capture_frame',{id});progress('shell_capture_'+id);await until(async()=>{const r=await apiFetch('/api/file?p='+encodeURIComponent(files.ack));return r.ok&&String((await r.json()).content||'').split('\n').includes(String(id));},'owned_native_frame_missing',15000);};
  const tabFor=file=>state.tabs.find(tab=>tab.path===file);
- const rowFor=tab=>[...document.querySelectorAll('#side .tab-item')].find(row=>row.dataset.tabId===tab.id);
+ const rowFor=tab=>[...document.querySelectorAll('#doc-tabs-bar .tab-item')].find(row=>row.dataset.tabId===tab.id);
  async function sidebar(){
-  $('titlebar-documents').click();await until(()=>visible($('side'))&&document.activeElement?.dataset.tabId===state.activeTabId,'sidebar_active_focus_missing');await settled();
+  $('btn-toc').click();await until(()=>visible($('side'))&&visible($('status-summary')),'sidebar_and_details_missing');await settled();
   const side=rect($('side')),before=rect($('main-col'));
-  if(side.width<200||$('doc-tabs-bar').getAttribute('aria-orientation')!=='vertical')throw Error('original_vertical_sidebar_missing');
-  for(const button of [...$('side').querySelectorAll('.tab-close,#side-close-btn')].filter(visible)){const r=rect(button);if(r.width<44||r.height<44||!(button.getAttribute('aria-label')||button.title))throw Error('sidebar_target_too_small_or_unnamed');}
-  $('side-close-btn').click();await until(()=>!visible($('side'))&&Math.abs(rect($('main-col')).width-before.width-side.width)<=1,'sidebar_width_not_released');
-  await until(()=>document.activeElement===$('titlebar-documents'),'sidebar_opener_focus_not_restored');
+  if(side.width<200||$('doc-tabs-bar').getAttribute('aria-orientation')!=='horizontal')throw Error('side_width_or_horizontal_tabs_missing');
+  for(const button of [...$('side-rail').querySelectorAll('button')].filter(visible)){const r=rect(button);if(r.width<44||r.height<44||!(button.getAttribute('aria-label')||button.title))throw Error('sidebar_target_too_small_or_unnamed');}
+  $('statusbar').focus();$('btn-toc').click();
+  await until(()=>!visible($('side'))&&visible($('side-rail'))&&Math.abs(rect($('main-col')).width-before.width-side.width)<=1,'sidebar_width_not_released');
+  await until(()=>document.activeElement===$('btn-toc'),'sidebar_opener_focus_not_restored');
  }
  async function layout(test){
   py.window_control('qa_window_size',{width:test.width,height:test.height});await until(()=>Math.abs(innerWidth-test.width)<2&&Math.abs(innerHeight-test.height)<2,'native_size_not_applied');
   state.theme=test.theme;applySettings();await i18n.setLanguage(test.lang,false);await settled();
-  const s=await freshNative(),c=s.chrome,h=rect($('app-titlebar')),actions=rect($('titlebar-actions')),identity=rect(document.querySelector('.titlebar-identity')),logo=rect($('titlebar-home')),title=rect($('window-drag-region')),nativeRight=Math.max(...c.buttons.map(b=>b.x+b.width));
+  const s=await freshNative(),c=s.chrome,h=rect($('app-titlebar')),actions=rect($('titlebar-actions')),tabs=rect($('doc-tabs-bar')),ai=rect($('btn-ai')),nativeRight=Math.max(...c.buttons.map(b=>b.x+b.width));
   check(s.focused===true&&s.visible===true&&c.platform==='macos'&&c.systemControls&&c.fullSizeContent&&c.titleHidden&&c.transparentTitlebar&&c.nativeFullscreen===false,'actual_cocoa_chrome_'+test.id);
   check(Math.abs(h.height-52)<=0.5&&Math.abs(h.y)<=0.5&&c.buttons.length===3&&c.buttons.every(b=>!b.hidden&&b.enabled&&b.width>8&&b.height>8&&b.x>=0&&b.y>=0&&b.y+b.height<=52)&&c.leadingInset>=nativeRight+10&&actions.x>=c.leadingInset-1,'native_buttons_clear_52px_row_'+test.id);
-  check(actions.right<=identity.x+1&&title.right<=logo.x+1&&logo.x-title.right<=8&&logo.right>=innerWidth-20&&logo.right<=innerWidth+1&&getComputedStyle($('window-controls')).display==='none'&&!document.querySelector('.window-resize-edge'),'right_brand_left_actions_'+test.id);
+  check(!$('app-titlebar').querySelector('img')&&rect($('btn-zen')).right<=tabs.x+1&&tabs.right<=ai.x+1&&ai.right>=innerWidth-20&&ai.right<=innerWidth+1&&getComputedStyle($('window-controls')).display==='none'&&!document.querySelector('.window-resize-edge'),'left_actions_horizontal_tabs_right_ai_'+test.id);
   const controls=[...document.querySelectorAll('#app-titlebar button')].filter(visible),boxes=controls.map(rect);
   check(controls.every((button,index)=>{const r=boxes[index];return r.width>=44&&r.height>=44&&r.x>=nativeRight+10&&r.right<=innerWidth+1&&r.y>=0&&r.bottom<=52.5&&(button.getAttribute('aria-label')||button.title);})&&boxes.every((a,index)=>boxes.slice(index+1).every(b=>a.right<=b.x+0.5||b.right<=a.x+0.5||a.bottom<=b.y+0.5||b.bottom<=a.y+0.5))&&document.documentElement.scrollWidth<=innerWidth+1,'named_nonoverlapping_native_targets_'+test.id);
   await sidebar();check(true,'sidebar_width_and_focus_'+test.id);await capture(test.id);
  }
  async function fixMenu(){
   py.window_control('qa_window_size',{width:1024,height:680});await until(()=>Math.abs(innerWidth-1024)<2&&Math.abs(innerHeight-680)<2,'fix_native_size_not_applied');
-  await i18n.setLanguage('zh-CN',false);$('btn-more').focus();$('btn-more').click();await until(()=>$('btn-more').getAttribute('aria-expanded')==='true','more_menu_did_not_open');
+  await i18n.setLanguage('zh-CN',false);$('btn-more').focus();$('btn-more').click();await until(()=>$('btn-more').getAttribute('aria-selected')==='true','more_menu_did_not_open');
   for(const group of [...$('more-menu').querySelectorAll('.more-group')].filter(visible))if(!group.classList.contains('open'))group.querySelector('.more-group-header').click();
   const menu=$('more-menu');await settled();await animationsSettled(menu);const box=rect(menu);
   check(box.y>=0&&box.bottom<=innerHeight+1&&menu.scrollWidth<=menu.clientWidth+1&&menu.scrollHeight>menu.clientHeight&&['auto','scroll'].includes(getComputedStyle(menu).overflowY),'more_menu_bounded_and_scrollable');
@@ -101,14 +102,14 @@ function driver(phase, files, config) {
   $('btn-fix').click();await until(()=>visible($('fix-modal'))&&document.activeElement===$('fix-list'),'fix_modal_initial_focus_missing');
   await until(()=>document.querySelectorAll('#fix-list .document-inspection-issue').length===48,'fixed_anchor_inspection_missing');
   const issues=[...document.querySelectorAll('#fix-list .document-inspection-issue')];check(issues.every((row,index)=>row.textContent.includes('#missing-'+String(index+1).padStart(3,'0'))),'fixed_48_anchor_targets_preserved');
-  await animationsSettled($('fix-box'));const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('btn-more').getAttribute('aria-expanded')==='false'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
+  await animationsSettled($('fix-box'));const modal=rect($('fix-box')),list=$('fix-list');check(modal.y>=0&&modal.bottom<=innerHeight+1&&$('btn-more').getAttribute('aria-selected')==='true'&&[...$('fix-modal').querySelectorAll('button')].filter(visible).every(button=>rect(button).width>=44&&rect(button).height>=44)&&list.scrollHeight>list.clientHeight,'fix_dialog_44px_and_scroll_boundaries');
   list.scrollTop=list.scrollHeight;await settled();const last=rect(issues[47]),bounds=rect(list);check(list.scrollTop>0&&last.y>=bounds.y-1&&last.bottom<=bounds.bottom+1,'fix_last_issue_reachable_by_real_scroll');
-  $('fix-close').click();await until(()=>!visible($('fix-modal'))&&document.activeElement===$('btn-more'),'fix_close_did_not_return_focus');check(true,'fix_close_returns_more_focus');
+  $('fix-close').click();await until(()=>!visible($('fix-modal'))&&document.activeElement===$('btn-fix'),'fix_close_did_not_return_focus');check(true,'fix_close_returns_to_sidebar_action');
  }
  try{
   await __readmdSessionReady;
   check(hasPy&&py.native_titlebar==='macos'&&document.body.classList.contains('native-macos')&&document.body.classList.contains('shell-single-chrome'),'actual_cocoa_wkwebview');
-  await until(()=>document.querySelector('.titlebar-mark')?.complete&&document.querySelector('.titlebar-mark').naturalWidth>0,'packaged_mac_brand_not_loaded');check(new URL(document.querySelector('.titlebar-mark').src).pathname==='/assets/ReadMD-macos.svg','packaged_mac_brand_asset');
+  check(!$('app-titlebar').querySelector('img')&&$('side-shortcuts').lastElementChild===$('btn-home'),'brand_free_titlebar_and_home_shortcut');
   check(document.querySelector('meta[http-equiv="Content-Security-Policy"]').content===config.csp,'production_csp_unchanged');
   const denied=await fetch('/api/session');check([401,403].includes(denied.status),'unauthenticated_api_refused');
   check(editorPrefs.aiCompletion===false,'automatic_completion_disabled');
@@ -126,14 +127,13 @@ function driver(phase, files, config) {
    await nativeAction('qa_tray',{action:'fullscreen'});await stableNative(false);check(!document.body.classList.contains('zen-mode'),'native_menu_exits_actual_fullscreen');
    await switchTab(tabFor(files.b).id);await settled();$('btn-edit').click();await until(()=>state.editing&&!!cmView,'visible_editor_missing');
    check(text(getEditContent())===config.b,'editor_opens_exact_saved_source');cmView.dispatch({changes:{from:cmView.state.doc.length,insert:config.addition}});await until(()=>getActiveTab().isDirty,'editor_did_not_become_dirty');await freshNative();check(host().chrome.documentEdited===true,'actual_native_dirty_indicator');
-   $('edit-save').click();await until(()=>!getActiveTab().isDirty&&text(getEditContent())===config.b+config.addition,'visible_save_did_not_settle');
+   $('edit-save').click();await until(()=>!state.editing&&!getActiveTab().isDirty&&text(state.original)===config.b+config.addition,'visible_save_did_not_settle');
    check(text((await json('/api/file?p='+encodeURIComponent(files.b))).content)===config.b+config.addition,'genuine_save_committed_exact_body');await freshNative();check(host().chrome.documentEdited===false,'native_dirty_clears_after_save');
-   if(state.editing){$('btn-edit').click();await until(()=>!state.editing,'saved_editor_did_not_close');}
   }else{
    await settled();check(getActiveTab()?.path===files.b&&text(getActiveTab().content)===config.b+config.addition&&!getActiveTab().isDirty,'new_process_restores_saved_body');
    if(phase==='reopen_close'){
     check(state.tabs.length===3&&!!tabFor(files.a)&&!!tabFor(files.fix),'new_process_restores_three_identities');
-    $('titlebar-documents').click();await until(()=>visible(rowFor(tabFor(files.a))),'background_tab_not_visible');const selected=state.activeTabId;rowFor(tabFor(files.a)).querySelector('.tab-close').click();await until(()=>!tabFor(files.a),'background_tab_not_closed');
+    await until(()=>visible(rowFor(tabFor(files.a))),'background_tab_not_visible');const selected=state.activeTabId;rowFor(tabFor(files.a)).querySelector('.tab-close').click();await until(()=>!tabFor(files.a),'background_tab_not_closed');
     check(state.tabs.length===2&&state.activeTabId===selected&&!visible($('close-confirm-modal')),'clean_background_close_preserves_active_document');
    }else check(state.tabs.length===2&&!tabFor(files.a)&&!!tabFor(files.fix),'closed_tab_stays_closed_after_new_process');
   }

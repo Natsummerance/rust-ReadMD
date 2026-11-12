@@ -55,14 +55,15 @@ export function analyse(html, sources) {
     }
   }
   // Controls with an id.
-  const controlRe = /<(button|input|select|textarea|a)\b([^>]*)>([\s\S]*?)(?=<\/\1>|$)/g;
+  const sidebarHook = /\bquerySelectorAll\(['"]\[data-side-view\]['"]\)/.test(code) && /\bdataset\.sideView\b/.test(code);
   const htmlIds = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
   const referenced = id =>
     code.includes(`'${id}'`) || code.includes(`"${id}"`) || code.includes(`#${id}`) || code.includes(`\`${id}\``);
   for (const m of html.matchAll(/<(button|input|select|textarea)\b([^>]*)>/g)) {
     const [tag, attrs] = [m[1], m[2]];
     const id = (attrs.match(/\sid="([^"]+)"/) || [])[1];
-    const hasHook = /\sdata-(action|md|fmt|pv|category|lang|theme|value|tab|mode)=/.test(attrs) || /\sonclick=/.test(attrs);
+    const hasHook = /\sdata-(action|md|fmt|pv|category|lang|theme|value|tab|mode)=/.test(attrs)
+      || /\sonclick=/.test(attrs) || sidebarHook && /\sdata-side-view=/.test(attrs);
     if (/type="hidden"/.test(attrs)) continue;
     if (!id) {
       if (tag === 'button' && !hasHook) {

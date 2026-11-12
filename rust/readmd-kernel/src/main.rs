@@ -3192,7 +3192,10 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         .with_background_color((0xf7, 0xf7, 0xf5, 255))
         .with_inner_size(LogicalSize::new(1160.0, 820.0))
         .with_min_inner_size(LogicalSize::new(720.0, 480.0));
-    #[cfg(windows)] { win_builder = win_builder.with_decorations(false); }
+    let custom_titlebar = cfg!(any(windows, target_os = "linux"));
+    if custom_titlebar {
+        win_builder = win_builder.with_decorations(false);
+    }
     #[cfg(target_os="macos")] {
         use tao::platform::macos::WindowBuilderExtMacOS;
         win_builder = win_builder.with_titlebar_transparent(true).with_title_hidden(true)
@@ -3840,8 +3843,8 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     try {
                         const res = await fetch('/api/system/language', { headers: bridgeHeaders(false) });
                         const data = await res.json();
-                        return data.language || 'zh-CN';
-                    } catch(e) { return 'zh-CN'; }
+                        return data.language || null;
+                    } catch(e) { return null; }
                 },
                 get_app_info: async function() {
                     return { version: '@@READMD_VERSION@@', engine: 'rust-wry', platform: '@@READMD_PLATFORM@@', last_update_error: @@READMD_UPDATE_ERROR@@ };
@@ -4177,7 +4180,7 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
         .replace("@@READMD_UPDATE_ERROR@@", &update_error)
         .replace("@@READMD_VERSION@@", server::VERSION)
         .replace("@@READMD_PLATFORM@@", std::env::consts::OS)
-        .replace("@@READMD_CUSTOM_TITLEBAR@@", if cfg!(windows) { "true" } else { "false" })
+        .replace("@@READMD_CUSTOM_TITLEBAR@@", if custom_titlebar { "true" } else { "false" })
         .replace("@@READMD_NATIVE_TITLEBAR@@", if cfg!(target_os="macos") { "macos" } else { "" })
         .replace("@@READMD_PROBE_MODE@@", if probe.is_some() { "true" } else { "false" });
 
@@ -4479,22 +4482,13 @@ fn run_window(url: String, data_dir: PathBuf, probe: Option<Probe>, probe_json: 
                     }
                     "preferences" => {
                         close_to_tray = options.get("closeToTray").and_then(serde_json::Value::as_bool).unwrap_or(true);
-                        #[cfg(any(windows,target_os="macos"))] if let Some(tray) = tray.as_mut() {
+                        #[cfg(windows)] if let Some(tray) = tray.as_mut() {
                             if let Some(labels) = options.get("labels").and_then(serde_json::Value::as_array) {
                                 if labels.len() == 3 { tray.set_labels([labels[0].as_str().unwrap_or("ReadMD"), labels[1].as_str().unwrap_or("Open"), labels[2].as_str().unwrap_or("Exit")]); }
                             }
                         }
-                        #[cfg(target_os="macos")] if let Some(tray)=tray.as_mut() {
-                            tray.set_extra_labels(&options["menuLabels"]);
-                            if let Some(labels)=options.get("fileLabels").and_then(serde_json::Value::as_array).filter(|v|v.len()==3) {
-                                tray.set_document_labels([labels[0].as_str().unwrap_or("File"),labels[1].as_str().unwrap_or("Save"),labels[2].as_str().unwrap_or("Save As…")]);
-                            }
-                            if let Some(labels)=options.get("editLabels").and_then(serde_json::Value::as_array).filter(|v|v.len()==6) {
-                                tray.set_edit_labels([
-                                    labels[0].as_str().unwrap_or("Edit"),labels[1].as_str().unwrap_or("Undo"),labels[2].as_str().unwrap_or("Redo"),
-                                    labels[3].as_str().unwrap_or("Cut"),labels[4].as_str().unwrap_or("Copy"),labels[5].as_str().unwrap_or("Paste")
-                                ]);
-                            }
+                        #[cfg(target_os="macos")] if let Some(tray) = tray.as_ref() {
+                            tray.set_labels(&options["menuLabels"]);
                         }
                     }
                     _ => {}

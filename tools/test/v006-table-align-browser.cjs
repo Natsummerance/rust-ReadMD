@@ -97,9 +97,8 @@ async function run() {
     phase = 'explicit save and reader reopen';
     const save = page.waitForResponse(response => new URL(response.url()).pathname === '/api/save' && response.request().method() === 'POST');
     await page.locator('#edit-save').click(); assert.equal((await (await save).json()).ok, true);
-    await until(() => page.evaluate(() => !getActiveTab().isDirty), 'save acknowledged');
+    await until(() => page.evaluate(() => !state.editing && !getActiveTab().isDirty), 'save acknowledged and reader restored');
     const persisted = expected.replace(/\n/g, '\r\n'); assert.equal(fs.readFileSync(file, 'utf8'), persisted); report.savedSha256 = sha(persisted);
-    await page.locator('#edit-cancel').click();
     await page.evaluate(file => loadFile(file, { force: true, discardConfirmed: true }), file);
     assert.equal(await page.evaluate(() => state.original), persisted);
     const rendered = await page.locator('#content table tr').evaluateAll(rows => rows.map(row => { const cell = row.children[1]; return { text: cell.textContent, align: cell.getAttribute('align'), computed: getComputedStyle(cell).textAlign }; }));

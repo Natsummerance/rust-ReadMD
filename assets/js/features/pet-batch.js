@@ -345,10 +345,25 @@ function initBubbleInteractions() {
 
 let currentActivePetSlug = '';
 
+function petSelection(status = activePetSettingsStatus) {
+  return status?.preferences?.renderer === 'live2d'
+    ? { renderer: 'live2d', slug: 'arch-chan' }
+    : { renderer: 'hermes-sprite', slug: currentActivePetSlug };
+}
+
 function getActivePetSlug() {
-  if (currentActivePetSlug) return currentActivePetSlug;
-  const select = $('pet-gallery');
-  return (select && select.value) ? select.value : '';
+  return petSelection().slug;
+}
+
+function petCharacterName(slug, fallback = '') {
+  if (!slug || slug === 'hermes') return petT('pet.gallery.hermes', null, '伴读使者');
+  if (slug === 'arch-chan') return petT('pet.renderer.live2d', null, 'Arch-Chan');
+  if (slug === 'bongocat') return 'BongoCat';
+  return petT('pet.preset.' + slug) || fallback || slug;
+}
+
+function petNeedsDesktop({ renderer, slug }) {
+  return renderer === 'live2d' || slug === 'bongocat';
 }
 
 const PET_ROLE_PERSONALITIES = {
@@ -492,25 +507,8 @@ function syncPetWidgetVisibility(status) {
     widget.classList.remove('hidden');
     const prefs = (status && status.preferences) || {};
     applyWidgetAppearance(prefs.scale, prefs.opacity);
-    const charEl = $('pet-character');
-    if (charEl) {
-      const isLive2d = (prefs.renderer === 'live2d');
-      const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-      const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-      charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-      if (isLive2d) {
-        charEl.classList.add('is-arch-chan', 'is-live2d');
-        charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-      } else if (isAnimSprite) {
-        charEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-        charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-      } else {
-        charEl.classList.add('is-sprite-avatar');
-        charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-      }
-      if (!isLive2d) paintPetPreview(charEl,activeSlug);
-      else charEl.classList.remove('pet-authored-preview');
-    }
+    const { renderer, slug } = petSelection(status);
+    setPetCharacterPreview($('pet-character'), renderer, status.active_slug ?? slug);
     restoreWidgetPosition();
   } else {
     widget.classList.add('hidden');
@@ -704,10 +702,14 @@ function initPetDirectManipulation() {
 }
 
 function handlePetInteractiveClick() {
-  paintPetPreview($('pet-character'), currentActivePetSlug, 1);
-  setTimeout(() => paintPetPreview($('pet-character'), currentActivePetSlug), 1200);
   const char = $('pet-character');
   if (char) {
+    if (!char.classList.contains('is-live2d')) {
+      paintPetPreview(char, getActivePetSlug(), 'waving', 1);
+      setTimeout(() => {
+        if (!char.classList.contains('is-live2d')) paintPetPreview(char, getActivePetSlug());
+      }, 1200);
+    }
     char.classList.add('pet-bounce');
     setTimeout(() => {
       char.classList.remove('pet-bounce', 'hermes-waving');
@@ -838,16 +840,21 @@ async function refreshPetMenuStatus() {
 
 function renderPetSettings(status) {
   activePetSettingsStatus = status || null;
-  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
+  if (typeof status?.active_slug === 'string') currentActivePetSlug = status.active_slug;
   const preferences = status && status.preferences ? status.preferences : {};
   const enabled = $('pet-enabled');
-  const renderer = $('pet-renderer');
   const scale = $('pet-scale');
   const opacity = $('pet-opacity');
 
   if (enabled) enabled.checked = Boolean(status && status.enabled);
-  if (renderer) renderer.value = preferences.renderer || 'hermes-sprite';
-  if ($('pet-runtime')) $('pet-runtime').value = status?.in_app === false ? 'desktop' : 'in-app';
+  const requiresDesktop = petNeedsDesktop(petSelection());
+  const isInApp = !requiresDesktop && status?.in_app !== false;
+  const inApp = $('pet-runtime-in-app'), desktop = $('pet-runtime-desktop');
+  if (inApp && desktop) {
+    inApp.disabled = requiresDesktop;
+    inApp.checked = isInApp;
+    desktop.checked = !isInApp;
+  }
   if (scale) scale.value = String(petPercent(preferences.scale, 0.22));
   if (opacity) opacity.value = String(petPercent(preferences.opacity, 1.0));
 
@@ -856,7 +863,6 @@ function renderPetSettings(status) {
   }
   updatePetRangeLabels();
 
-  const isInApp = $('pet-runtime')?.value === 'in-app' || status?.in_app !== false;
   const isInstalled = Boolean(status && (status.adapter?.available ?? status.installed));
   const isRunning = Boolean(status?.enabled && (isInApp || (status?.adapter?.running ?? status?.running)));
   const installBtn = $('pet-install');
@@ -882,25 +888,17 @@ function renderPetSettings(status) {
     }
   }
   if (installBtn) {
-    if (isInApp) {
-      installBtn.classList.add('hidden');
-    } else {
-      installBtn.classList.remove('hidden');
-      if (isInstalled) {
-        installBtn.className = 'tb-btn danger';
-        installBtn.textContent = petT('pet.disable');
-        installBtn.dataset.action = 'uninstall';
-      } else {
-        installBtn.className = 'tb-btn accent';
-        installBtn.textContent = petT('pet.enable');
-        installBtn.dataset.action = 'install';
-      }
+    installBtn.classList.toggle('hidden', isInApp || !isInstalled);
+    if (isInstalled) {
+      installBtn.classList.add('danger');
+      installBtn.classList.remove('accent');
+      installBtn.textContent = petT('pet.disable');
+      installBtn.dataset.action = 'uninstall';
     }
   }
 
   // 动态切换舞台角色外观预览 (Hermes vs Arch-Chan)
-  const currentRenderer = (renderer ? renderer.value : '') || (preferences && preferences.renderer) || 'hermes-sprite';
-  updateCharacterPreview(currentRenderer);
+  updateCharacterPreview();
 
   const statusDot = $('pet-status-dot');
   const statusText = $('pet-status-text');
@@ -928,28 +926,55 @@ function renderPetSettings(status) {
     } else if (isInApp || isInstalled) {
       statusLine.textContent = '';
     } else {
-      statusLine.textContent = petT('pet.statusEnableHint');
+      statusLine.textContent = petT('pet.runtime.install');
     }
   }
 
   syncPetWidgetVisibility(status);
+  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
 }
 
 const petPreviewImages = new Map();
+const petPreviewRequests = new WeakMap();
+function petPreviewSource(slug) {
+  if (slug === 'bongocat') return '/assets/pet/bongocat-preview.png';
+  if (!slug || slug === 'hermes') return '/assets/pet/hermes-sprite.png';
+  return `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+}
 function paintPetPreview(element, slug = '', row = 0, frame = 0) {
   if (!element || element.closest('.hidden')) return;
-  const src = slug === 'bongocat' ? '/assets/pet/bongocat-preview.png' : !slug || slug === 'hermes' ? '/assets/pet/hermes-sprite.png' : `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+  const src = petPreviewSource(slug);
+  const request = Symbol();
+  petPreviewRequests.set(element, request);
   element.dataset.petPreviewSource = src;
+  if (slug === 'bongocat') {
+    element.classList.remove('is-sprite-anim', 'is-sprite-avatar');
+    element.classList.add('pet-authored-preview', 'is-bongocat-preview');
+    element.style.backgroundImage = `url("${src}")`;
+    return;
+  }
+  element.classList.remove('is-bongocat-preview');
+  if (!element.classList.contains('pet-authored-preview')) element.style.backgroundImage = `url("${src}")`;
   let loading = petPreviewImages.get(src);
-  if (!loading) { loading = new Promise(resolve => { const image = new Image(); image.onload=()=>resolve(image); image.onerror=()=>resolve(null); image.src=src; }); petPreviewImages.set(src,loading); }
+  if (!loading) {
+    if (petPreviewImages.size >= 12) petPreviewImages.delete(petPreviewImages.keys().next().value);
+    loading = new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = src;
+    });
+    petPreviewImages.set(src, loading);
+  }
   loading.then(image => {
-    if (!image || element.dataset.petPreviewSource !== src) return;
+    if (!image || petPreviewRequests.get(element) !== request) return;
     const v2=image.naturalWidth===1536 && image.naturalHeight===2288;
     const duo=image.naturalWidth===1536 && image.naturalHeight===1024;
     const fw=v2?192:duo?384:image.naturalWidth, fh=v2?208:duo?512:image.naturalHeight;
+    const actionRow = row === 'waving' ? (v2 ? 3 : duo ? 1 : 0) : row;
     const canvas=document.createElement('canvas'); canvas.width=fw;canvas.height=fh;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(row,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
+    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(actionRow,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
     const pixels=ctx.getImageData(0,0,fw,fh).data; let l=fw,t=fh,r=0,b=0;
     for(let y=0;y<fh;y++) for(let x=0;x<fw;x++) if(pixels[(y*fw+x)*4+3]>32) {l=Math.min(l,x);t=Math.min(t,y);r=Math.max(r,x+1);b=Math.max(b,y+1);}
     if(r<=l || b<=t) return;
@@ -960,58 +985,34 @@ function paintPetPreview(element, slug = '', row = 0, frame = 0) {
 }
 window.paintPetPreview = paintPetPreview;
 
-function updateCharacterPreview(rendererVal) {
-  const charEl = document.querySelector('.pet-preview-character');
-  const widgetCharEl = $('pet-character');
-  const slugEl = $('pet-active-slug');
-  const isLive2d = rendererVal === 'live2d';
-  const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-  const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-  if (charEl && !charEl.closest('.hidden')) {
-    charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      charEl.classList.add('is-arch-chan', 'is-live2d');
-      charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      charEl.classList.add('is-hermes', 'is-sprite-anim');
-      charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      charEl.classList.add('is-sprite-avatar');
-      charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+function setPetCharacterPreview(element, renderer, slug) {
+  if (!element || element.closest('.hidden')) return;
+  element.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite',
+    'is-sprite-anim', 'is-sprite-avatar', 'is-bongocat-preview', 'pet-authored-preview');
+  if (renderer === 'live2d') {
+    petPreviewRequests.delete(element);
+    delete element.dataset.petPreviewSource;
+    element.classList.add('is-arch-chan', 'is-live2d');
+    element.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+    return;
   }
-  if (widgetCharEl && !widgetCharEl.closest('.hidden')) {
-    widgetCharEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      widgetCharEl.classList.add('is-arch-chan', 'is-live2d');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      widgetCharEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      widgetCharEl.classList.add('is-sprite-avatar');
-      widgetCharEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+  if (!slug || slug === 'hermes') {
+    element.classList.add('is-hermes', 'is-sprite-anim');
+    if (element.id === 'pet-character') element.classList.add('hermes-sprite');
+  } else {
+    element.classList.add('is-sprite-avatar');
   }
-  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', activeSlug !== 'bongocat');
-  if (!isLive2d) { paintPetPreview(charEl,activeSlug); paintPetPreview(widgetCharEl,activeSlug); }
-  else { charEl?.classList.remove('pet-authored-preview'); widgetCharEl?.classList.remove('pet-authored-preview'); }
-  if (slugEl) {
-    if (isLive2d) {
-      slugEl.textContent = petT('pet.renderer.live2d') || 'Arch-Chan';
-    } else {
-      const optionText = $('pet-gallery')?.selectedOptions?.[0]?.textContent;
-      const fallbackName = (activeSlug && petT('pet.preset.' + activeSlug)) || activeSlug || petT('pet.gallery.hermes') || '伴读使者';
-      slugEl.textContent = optionText || fallbackName;
-    }
-  }
-  const galleryRow = $('pet-gallery-row');
-  if (galleryRow) {
-    galleryRow.classList.toggle('hidden', isLive2d);
-  }
-  if (isLive2d && $('pet-runtime')) {
-    $('pet-runtime').value = 'desktop';
-  }
+  paintPetPreview(element, slug);
+}
+
+function updateCharacterPreview() {
+  const { renderer, slug } = petSelection();
+  setPetCharacterPreview($('pet-preview-character'), renderer, slug);
+  const name = $('pet-active-slug');
+  const pet = currentGalleryPets.find(item => item.slug === slug);
+  if (name) name.textContent = petCharacterName(slug, pet?.display_name);
+  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', slug !== 'bongocat');
+  updatePetDeleteButtonVisibility(slug);
 }
 
 function updatePetRangeLabels() {
@@ -1044,22 +1045,19 @@ function closePetSettings() {
 }
 
 let petSettingsVersion = 0, petSettingsQueue = Promise.resolve();
-function capturePetSettings() {
+function capturePetSettings(selection = petSelection()) {
     const enabled = Boolean($('pet-enabled')?.checked);
     const scale = Number($('pet-scale')?.value || 22) / 100;
     const opacity = Number($('pet-opacity')?.value || 100) / 100;
-    const renderer = $('pet-renderer')?.value || 'hermes-sprite';
-
-    const activeSlug = (typeof currentActivePetSlug !== 'undefined' && currentActivePetSlug) || $('pet-gallery')?.value || undefined;
-    if ((renderer === 'live2d' || activeSlug === 'bongocat') && $('pet-runtime')) $('pet-runtime').value = 'desktop';
-    const isDesktopChoice = $('pet-runtime')?.value === 'desktop';
+    const { renderer, slug } = selection;
+    const isDesktopChoice = petNeedsDesktop(selection) || $('pet-runtime-desktop')?.checked === true;
     return {
       enabled,
       scale,
       opacity,
       renderer,
       in_app: !isDesktopChoice,
-      character: renderer === 'live2d' ? 'arch-chan' : (activeSlug || ''),
+      character: renderer === 'live2d' ? undefined : slug,
       always_on_top: $('pet-topmost')?.checked !== false,
       lock_position: $('pet-lock-position')?.checked === true,
       bubbles: $('pet-bubble-toggle')?.checked !== false,
@@ -1068,8 +1066,8 @@ function capturePetSettings() {
     };
 
 }
-function savePetSettings() {
-  const config=capturePetSettings(), version=++petSettingsVersion;
+function savePetSettings(selection) {
+  const config=capturePetSettings(selection), version=++petSettingsVersion;
   const save=()=>version === petSettingsVersion ? applyPetSettings(config,version) : {ok:true,superseded:true};
   petSettingsQueue=petSettingsQueue.then(save,save);
   return petSettingsQueue;
@@ -1110,11 +1108,11 @@ async function openPetSettings() {
   if (!modal) return;
   modal.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('readmd:pet-open-settings'));
-  const immediateRenderer = $('pet-renderer')?.value || 'hermes-sprite';
-  updateCharacterPreview(immediateRenderer);
+  updateCharacterPreview();
+  const version = petSettingsVersion;
   try {
     const status = await fetchPetRuntimeStatus();
-    renderPetSettings(status);
+    if (version === petSettingsVersion) renderPetSettings(status);
     await refreshPetGallery();
   } catch (_error) {
     console.warn('Failed to load pet status:', _error);
@@ -1219,10 +1217,12 @@ function initPetSystem() {
     if (!btn || btn.disabled) return;
     const isUninstall = btn?.dataset.action === 'uninstall';
 
-    if (isUninstall) {
-      const confirmText = petT('pet.uninstallConfirm') || '是否卸载桌宠伴侣插件？卸载后将移除本地扩展组件。';
-      if (!window.confirm(confirmText)) return;
-    }
+    if (isUninstall && !await confirmAction({
+      title: petT('pet.disable'),
+      message: petT('pet.uninstallConfirm'),
+      confirmText: petT('pet.disable'),
+      danger: true,
+    })) return;
 
     const endpoint = isUninstall ? '/api/pets/uninstall' : '/api/pets/install';
     const pendingText = isUninstall ? (petT('pet.uninstalling') || '正在卸载…') : (petT('pet.installing') || '正在安装…');
@@ -1283,14 +1283,7 @@ function initPetSystem() {
 
   for (const id of ['pet-topmost','pet-lock-position','pet-sound','pet-bubble-toggle']) $(id)?.addEventListener('change', () => { void savePetSettings(); });
   $('pet-enabled')?.addEventListener('change', () => { void savePetSettings(); });
-  $('pet-runtime')?.addEventListener('change', (e) => {
-    const isDesktop = e.target.value === 'desktop';
-    const installRuntimeBtn = $('pet-install-runtime');
-    const installBtn = $('pet-install');
-    if (installRuntimeBtn) installRuntimeBtn.classList.toggle('hidden', !isDesktop);
-    if (installBtn) installBtn.classList.toggle('hidden', !isDesktop);
-    void savePetSettings();
-  });
+  $('pet-runtime')?.addEventListener('change', () => { void savePetSettings(); });
   async function handlePetUpdateClick(btn) {
     if (btn) {
       btn.disabled = true;
@@ -1404,44 +1397,27 @@ function initPetSystem() {
     } catch (error) { showToast(petT('pet.configFailed', { code: error.message })); }
     finally { e.target.value = ''; }
   });
-  $('pet-gallery')?.addEventListener('change', async e => {
-    currentActivePetSlug = e.target.value;
-    updatePetDeleteButtonVisibility(e.target.value);
-    const result = await petGalleryRequest('/api/pets/active', { slug: e.target.value, confirm: true });
-    if (!result.ok) showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
-    await refreshPetGallery();
-    if (result.ok) await requestConfigurePet({});
-  });
+  $('pet-gallery-import-button')?.addEventListener('click', () => $('pet-gallery-import').click());
   $('pet-gallery-delete')?.addEventListener('click', async () => {
-    const select = $('pet-gallery');
-    const slug = select ? select.value : '';
-    if (!slug) return;
-    const selectedOption = select.selectedOptions && select.selectedOptions[0];
-    const petName = selectedOption ? selectedOption.textContent : slug;
-    const confirmMsg = petT('pet.gallery.deleteConfirm', { name: petName }) || `确定要删除自定义桌宠精灵图「${petName}」吗？`;
-    let confirmed = false;
-    if (typeof confirmAction === 'function') {
-      confirmed = await confirmAction({
-        title: petT('pet.gallery.delete') || '删除',
-        message: confirmMsg,
-        danger: true,
-      });
-    } else {
-      confirmed = window.confirm(confirmMsg);
-    }
-    if (!confirmed) return;
-
+    const slug = getActivePetSlug();
+    const pet = currentGalleryPets.find(item => item.slug === slug && !item.is_builtin);
+    if (!pet) return;
+    const name = petCharacterName(slug, pet.display_name);
+    if (!await confirmAction({
+      title: petT('pet.gallery.delete'),
+      message: petT('pet.gallery.deleteConfirm', { name }),
+      confirmText: petT('pet.gallery.delete'),
+      danger: true,
+    })) return;
     const result = await petGalleryRequest('/api/pets/remove', { slug, confirm: true });
-    if (result.ok) {
-      showToast(petT('pet.gallery.deleteSuccess') || '已删除自定义桌宠精灵图');
-      await refreshPetGallery();
-      await requestConfigurePet({});
-    } else {
+    if (!result.ok) {
       showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
+      return;
     }
-  });
-  $('pet-renderer')?.addEventListener('change', (e) => {
-    updateCharacterPreview(e.target.value);
+    showToast(petT('pet.gallery.deleteSuccess'));
+    await refreshPetGallery();
+    await requestConfigurePet({});
+    renderPetSettings(await fetchPetRuntimeStatus());
   });
   // A range drag is already a local edit before its final change event.
   // Invalidate an older status response so it cannot reset the thumb mid-drag.
@@ -1594,15 +1570,8 @@ async function installDefaultPetRuntime() {
 let currentGalleryPets = [];
 
 function updatePetDeleteButtonVisibility(slug) {
-  const deleteBtn = $('pet-gallery-delete');
-  if (deleteBtn) {
-    const isBuiltin = !slug || slug === 'hermes' || currentGalleryPets.some(p => p.slug === slug && p.is_builtin);
-    if (isBuiltin) {
-      deleteBtn.classList.add('hidden');
-    } else {
-      deleteBtn.classList.remove('hidden');
-    }
-  }
+  const removable = currentGalleryPets.some(pet => pet.slug === slug && !pet.is_builtin);
+  $('pet-gallery-delete')?.classList.toggle('hidden', !removable);
 }
 
 async function refreshPetGallery() {
@@ -1610,27 +1579,6 @@ async function refreshPetGallery() {
   if (!result.ok) return;
   currentGalleryPets = result.pets || [];
   currentActivePetSlug = result.active || '';
+  updateCharacterPreview();
   window.dispatchEvent(new CustomEvent('readmd:pet-gallery', { detail: result }));
-  const select = $('pet-gallery');
-  if (select) {
-    select.replaceChildren(new Option(petT('pet.gallery.hermes') || '伴读使者', ''), new Option('BongoCat','bongocat'));
-    const allGalleryPets = [...currentGalleryPets];
-    if (Array.isArray(result.catalog)) {
-      for (const item of result.catalog) {
-        if (!allGalleryPets.some(p => p.slug === item.slug)) {
-          allGalleryPets.push({
-            slug: item.slug,
-            display_name: item.zh_name || item.en_name || item.display_name || item.slug,
-          });
-        }
-      }
-    }
-    for (const pet of allGalleryPets) {
-      const label = (pet.slug && petT('pet.preset.' + pet.slug)) || pet.display_name || pet.slug;
-      select.add(new Option(label, pet.slug));
-    }
-    select.value = result.active || '';
-    updatePetDeleteButtonVisibility(select.value);
-  }
-  updateCharacterPreview($('pet-renderer')?.value || activePetSettingsStatus?.preferences?.renderer || 'hermes-sprite');
 }

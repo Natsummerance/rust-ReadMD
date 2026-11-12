@@ -539,19 +539,33 @@
       wrap.appendChild(table);
     });
   }
+  function syncTableScroll(wrap) {
+    const scrolls = wrap.scrollWidth > wrap.clientWidth + 1;
+    wrap.classList.toggle('is-scrollable', scrolls);
+    if (scrolls) {
+      wrap.tabIndex = 0;
+      wrap.setAttribute('role', 'region');
+      wrap.setAttribute('aria-label', _t('reader.tableRegion'));
+    } else {
+      wrap.removeAttribute('tabindex');
+      wrap.removeAttribute('role');
+      wrap.removeAttribute('aria-label');
+    }
+  }
   function refreshTableScroll(body) {
+    body.querySelectorAll('.rd-table-wrap').forEach(syncTableScroll);
+  }
+  const tableScrollObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+    const wraps = new Set(entries.map(entry => entry.target.closest('.rd-table-wrap')));
+    for (const wrap of wraps) if (wrap?.isConnected) syncTableScroll(wrap);
+  }) : null;
+  function watchTableScroll(body) {
+    if (!tableScrollObserver) return;
+    tableScrollObserver.disconnect();
     body.querySelectorAll('.rd-table-wrap').forEach(wrap => {
-      const scrolls = wrap.scrollWidth > wrap.clientWidth + 1;
-      wrap.classList.toggle('is-scrollable', scrolls);
-      if (scrolls) {
-        wrap.tabIndex = 0;
-        wrap.setAttribute('role', 'region');
-        wrap.setAttribute('aria-label', _t('reader.tableRegion'));
-      } else {
-        wrap.removeAttribute('tabindex');
-        wrap.removeAttribute('role');
-        wrap.removeAttribute('aria-label');
-      }
+      tableScrollObserver.observe(wrap);
+      const table = wrap.querySelector('table');
+      if (table) tableScrollObserver.observe(table);
     });
   }
 
@@ -771,12 +785,63 @@
   const PREF_WIDTHS = ['narrow', 'normal', 'wide'];
   const PREF_LEADING = ['compact', 'normal', 'relaxed'];
   const PREF_FONTS = ['sans', 'serif'];
+  const READING_COLORS = ['default', 'blue', 'green', 'purple'];
+  const COLOR_PROPERTIES = {
+    readingHeadingColor: '--reader-heading-color',
+    readingBoldColor: '--reader-bold-color',
+  };
+  const colorStorageKey = 'readmd-reading-colors';
+  const changedColors = new Set();
+
+  function localReadingColors() {
+    try { return JSON.parse(localStorage.getItem(colorStorageKey) || '{}') || {}; }
+    catch (_) { return {}; }
+  }
+  async function loadReadingColors() {
+    try {
+      const settings = hasPy ? await py.get_settings() : localReadingColors();
+      for (const key of Object.keys(COLOR_PROPERTIES)) {
+        const value = settings?.[key];
+        if (!changedColors.has(key) && READING_COLORS.includes(value)) state[key] = value;
+      }
+      applyReadingInk(document.body);
+      syncPrefsPanel();
+    } catch (_) { /* The default ink remains readable if settings cannot load. */ }
+  }
+  function setReadingColor(key, value) {
+    if (!READING_COLORS.includes(value)) return;
+    changedColors.add(key);
+    state[key] = value;
+    applyReadingInk(document.body);
+    syncPrefsPanel();
+    settingsSaveQueue = settingsSaveQueue.then(async () => {
+      try {
+        const patch = { [key]: value };
+        if (hasPy) {
+          const result = await py.save_settings(patch);
+          if (result === false || result?.ok === false) throw new Error('reading_color_save_failed');
+        } else localStorage.setItem(colorStorageKey, JSON.stringify({ ...localReadingColors(), ...patch }));
+        return true;
+      } catch (_) {
+        showToast(_t('toast.saveFailed'));
+        return false;
+      }
+    });
+  }
+  function applyReadingInk(body) {
+    for (const [key, property] of Object.entries(COLOR_PROPERTIES)) {
+      const color = READING_COLORS.includes(state[key]) ? state[key] : 'default';
+      body.dataset[key] = color;
+      body.style.setProperty(property, color === 'default' ? '' : `var(--color-reading-${color})`);
+    }
+  }
   function applyReadingPrefs() {
     if (!window.state) return;
     const b = document.body;
     b.dataset.readingFont = PREF_FONTS.includes(state.readingFont) ? state.readingFont : 'sans';
     b.dataset.readingWidth = PREF_WIDTHS.includes(state.readingWidth) ? state.readingWidth : 'normal';
     b.dataset.readingLeading = PREF_LEADING.includes(state.readingLeading) ? state.readingLeading : 'normal';
+    applyReadingInk(b);
     // Font/zoom can change the real label width without resizing the article.
     // Re-measure on the same idle queue; never rebuild or alter the source.
     window.ReadMDPublication?.refreshLayout?.();
@@ -792,17 +857,32 @@
 
   let toolsEl = null;
   let prefsEl = null;
-  function segmented(name, key, options) {
-    const group = make('div', 'rd-seg');
+  function prefText(tag, className, key) {
+    const text = _t(key);
+    const el = make(tag, className, text === key ? '' : text);
+    el.dataset.i18n = key;
+    return el;
+  }
+  function labelPrefControl(el, key) {
+    const label = _t(key);
+    el.dataset.i18nTitle = key;
+    el.dataset.i18nAria = key;
+    if (label !== key) {
+      el.title = label;
+      el.setAttribute('aria-label', label);
+    }
+  }
+  function segmented(key, options, swatches = false) {
+    const group = make('div', swatches ? 'rd-seg rd-color-choices' : 'rd-seg');
     group.setAttribute('role', 'radiogroup');
-    group.setAttribute('aria-label', _t('reader.pref' + name));
     options.forEach(([value, labelKey]) => {
-      const btn = make('button', 'rd-seg-btn', _t(labelKey));
+      const btn = swatches ? make('button', 'rd-seg-btn rd-swatch') : prefText('button', 'rd-seg-btn', labelKey);
+      if (swatches) labelPrefControl(btn, labelKey);
       btn.type = 'button';
       btn.setAttribute('role', 'radio');
       btn.dataset.prefKey = key;
       btn.dataset.prefValue = value;
-      btn.addEventListener('click', () => setPref(key, value));
+      btn.addEventListener('click', () => (swatches ? setReadingColor : setPref)(key, value));
       group.appendChild(btn);
     });
     group.addEventListener('keydown', event => {
@@ -810,7 +890,8 @@
       event.preventDefault();
       const buttons = Array.from(group.querySelectorAll('.rd-seg-btn'));
       const at = buttons.findIndex(b => b.getAttribute('aria-checked') === 'true');
-      const dir = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      const rtl = getComputedStyle(group).direction === 'rtl';
+      const dir = event.key === 'ArrowUp' || event.key === (rtl ? 'ArrowRight' : 'ArrowLeft') ? -1 : 1;
       const next = buttons[(at + dir + buttons.length) % buttons.length];
       next.click();
       next.focus();
@@ -819,7 +900,9 @@
   }
   function prefRow(labelKey, control) {
     const row = make('div', 'rd-pref-row');
-    const label = make('span', 'rd-pref-label', _t(labelKey));
+    const label = prefText('span', 'rd-pref-label', labelKey);
+    label.id = 'rd-' + labelKey.slice(labelKey.indexOf('.') + 1);
+    control.setAttribute('aria-labelledby', label.id);
     row.append(label, control);
     return row;
   }
@@ -827,33 +910,34 @@
     const panel = make('div', 'rd-prefs hidden');
     panel.id = 'rd-prefs';
     panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', _t('reader.prefsTitle'));
-    panel.appendChild(make('div', 'rd-prefs-title', _t('reader.prefsTitle')));
+    panel.setAttribute('aria-labelledby', 'rd-prefs-title');
+    const title = prefText('div', 'rd-prefs-title', 'reader.prefsTitle');
+    title.id = 'rd-prefs-title';
+    panel.appendChild(title);
 
     const size = make('div', 'rd-size');
+    size.setAttribute('role', 'group');
     const dec = make('button', 'rd-size-btn', 'A');
     dec.type = 'button';
     dec.classList.add('rd-size-btn--dec');
-    dec.setAttribute('aria-label', _t('toolbar.zoomOut'));
-    dec.title = _t('toolbar.zoomOut');
+    labelPrefControl(dec, 'toolbar.zoomOut');
     const val = make('output', 'rd-size-value');
     val.id = 'rd-size-value';
     val.setAttribute('aria-live', 'polite');
     const inc = make('button', 'rd-size-btn', 'A');
     inc.type = 'button';
     inc.classList.add('rd-size-btn--inc');
-    inc.setAttribute('aria-label', _t('toolbar.zoomIn'));
-    inc.title = _t('toolbar.zoomIn');
+    labelPrefControl(inc, 'toolbar.zoomIn');
     dec.addEventListener('click', () => { if (typeof zoom === 'function') zoom(-10); syncPrefsPanel(); invalidateSpy(); });
     inc.addEventListener('click', () => { if (typeof zoom === 'function') zoom(10); syncPrefsPanel(); invalidateSpy(); });
     size.append(dec, val, inc);
     panel.appendChild(prefRow('reader.prefSize', size));
-    panel.appendChild(prefRow('reader.prefFont', segmented('Font', 'readingFont', [['sans', 'reader.fontSans'], ['serif', 'reader.fontSerif']])));
-    panel.appendChild(prefRow('reader.prefLeading', segmented('Leading', 'readingLeading', [['compact', 'reader.leadingCompact'], ['normal', 'reader.leadingNormal'], ['relaxed', 'reader.leadingRelaxed']])));
-    panel.appendChild(prefRow('reader.prefWidth', segmented('Width', 'readingWidth', [['narrow', 'reader.widthNarrow'], ['normal', 'reader.widthNormal'], ['wide', 'reader.widthWide']])));
-    const foot = make('div', 'rd-prefs-foot');
-    foot.id = 'rd-prefs-stats';
-    panel.appendChild(foot);
+    panel.appendChild(prefRow('reader.prefFont', segmented('readingFont', [['sans', 'reader.fontSans'], ['serif', 'reader.fontSerif']])));
+    panel.appendChild(prefRow('reader.prefLeading', segmented('readingLeading', [['compact', 'reader.leadingCompact'], ['normal', 'reader.leadingNormal'], ['relaxed', 'reader.leadingRelaxed']])));
+    panel.appendChild(prefRow('reader.prefWidth', segmented('readingWidth', [['narrow', 'reader.widthNarrow'], ['normal', 'reader.widthNormal'], ['wide', 'reader.widthWide']])));
+    const colors = READING_COLORS.map(value => [value, 'reader.color.' + value]);
+    panel.appendChild(prefRow('reader.headingColor', segmented('readingHeadingColor', colors, true)));
+    panel.appendChild(prefRow('reader.boldColor', segmented('readingBoldColor', colors, true)));
     return panel;
   }
   function syncPrefsPanel() {
@@ -869,8 +953,6 @@
     const inc = prefsEl.querySelector('.rd-size-btn--inc');
     if (dec) dec.disabled = state.fontSize <= 70;
     if (inc) inc.disabled = state.fontSize >= 180;
-    const foot = prefsEl.querySelector('#rd-prefs-stats');
-    if (foot) foot.textContent = lastStats ? statsText(lastStats) : '';
   }
   function ensureTools() {
     if (toolsEl && toolsEl.isConnected) return toolsEl;
@@ -885,8 +967,7 @@
     btn.setAttribute('aria-haspopup', 'dialog');
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-controls', 'rd-prefs');
-    btn.setAttribute('aria-label', _t('reader.prefsTitle'));
-    btn.title = _t('reader.prefsTitle');
+    labelPrefControl(btn, 'reader.prefsTitle');
     btn.appendChild(icon('type', 'rd-ic tb-ic'));
     btn.addEventListener('click', () => (prefsEl && !prefsEl.classList.contains('hidden') ? closePrefs(true) : openPrefs()));
     prefsEl = buildPrefsPanel();
@@ -898,9 +979,7 @@
         closePrefs(true);
       }
     });
-    const editButton = byId('btn-edit');
-    if (editButton) editButton.after(toolsEl);
-    else (byId('toolbar') || content.parentElement).appendChild(toolsEl);
+    (byId('side-font-slot') || content.parentElement).appendChild(toolsEl);
     document.addEventListener('pointerdown', event => {
       if (prefsEl && !prefsEl.classList.contains('hidden') && !toolsEl.contains(event.target)) closePrefs(false);
     }, true);
@@ -921,10 +1000,10 @@
   function positionPrefs() {
     if (!prefsEl || prefsEl.classList.contains('hidden')) return;
     const anchor = byId('rd-prefs-btn').getBoundingClientRect();
-    const width = prefsEl.getBoundingClientRect().width;
+    const { width, height } = prefsEl.getBoundingClientRect();
     const rtl = getComputedStyle(toolsEl).direction === 'rtl';
-    prefsEl.style.left = Math.max(12, Math.min(innerWidth - width - 12, rtl ? anchor.left : anchor.right - width)) + 'px';
-    prefsEl.style.top = anchor.bottom + 8 + 'px';
+    prefsEl.style.left = Math.max(8, Math.min(innerWidth - width - 8, rtl ? anchor.left - width - 8 : anchor.right + 8)) + 'px';
+    prefsEl.style.top = Math.max(8, Math.min(anchor.top, innerHeight - height - 8)) + 'px';
   }
   function closePrefs(restoreFocus) {
     if (!prefsEl || prefsEl.classList.contains('hidden')) return;
@@ -934,21 +1013,8 @@
     btn.setAttribute('aria-expanded', 'false');
     if (restoreFocus) btn.focus({ preventScroll: true });
   }
-  function relabelTools() {
-    if (!toolsEl) return;
-    const open = prefsEl && !prefsEl.classList.contains('hidden');
-    prefsEl.remove();
-    prefsEl = buildPrefsPanel();
-    toolsEl.appendChild(prefsEl);
-    if (open) prefsEl.classList.remove('hidden');
-    const btn = byId('rd-prefs-btn');
-    btn.setAttribute('aria-label', _t('reader.prefsTitle'));
-    btn.title = _t('reader.prefsTitle');
-    syncPrefsPanel();
-  }
   /* ---------------- floating chrome placement ---------------- */
-  // Reading settings live beside Edit; only the progress bar follows the
-  // reading area's rectangle. Neither is part of the document's content.
+  // Reading settings live in the rail; the progress bar follows the reader.
   let placeFrame = 0;
   function placeChrome() {
     placeFrame = 0;
@@ -1125,10 +1191,12 @@
   /** Measurements that need final layout: stats, table scroll hints, progress. */
   function afterRender(body) {
     if (!body) return;
+    watchTableScroll(body);
     const isReader = body === articleEl();
     if (isReader) {
       try {
         lastStats = computeStats(body);
+        if (!state.editing && typeof updateSidebarStatistics === 'function') updateSidebarStatistics(lastStats);
         insertDocMeta(body, lastStats);
         const tocStats = byId('rd-toc-stats');
         if (tocStats) tocStats.textContent = statsText(lastStats);
@@ -1180,7 +1248,8 @@
     new MutationObserver(schedulePlace).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     new MutationObserver(schedulePlace).observe(content, { childList: true, attributes: true, attributeFilter: ['class'] });
     window.addEventListener('readmd:language-changed', () => {
-      relabelTools();
+      syncPrefsPanel();
+      positionPrefs();
       document.querySelectorAll('.rd-callout-label[data-rd-auto-title]').forEach(label => {
         const type = label.closest('[data-callout]').dataset.callout;
         label.textContent = calloutTitleText(type, CALLOUT_VARIANT[type] || 'note');
@@ -1193,6 +1262,7 @@
       if (lightbox) lightbox.setAttribute('aria-label', _t('reader.imagePreview'));
     });
     applyReadingPrefs();
+    void loadReadingColors();
     schedulePlace();
   }
 

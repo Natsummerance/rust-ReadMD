@@ -62,10 +62,8 @@ async function main() {
       return ReadMDReview.snapshot(tab).document_id;
     });
     await page.locator('#edit-save').click();
-    await until(() => page.evaluate(() => !getActiveTab().isDirty && !ReadMDReview.busy()), 'review edit saved');
+    await until(() => page.evaluate(() => !state.editing && !getActiveTab().isDirty && !ReadMDReview.busy()), 'review edit saved and reader restored');
     assert.equal(fs.readFileSync(oldPath, 'utf8'), source.replace('Original', 'Improved'));
-    await page.locator('#edit-cancel').click();
-    await until(() => page.evaluate(() => !state.editing), 'reader restored');
     report.checks.push('Editing blocks double-click rename; a real pending review edit saves before rename');
 
     phase = 'recovery failure and delayed autosave before rename';
@@ -118,9 +116,8 @@ async function main() {
     await until(() => page.evaluate(() => !cmView.state.doc.toString().includes('Saved after rename.')), 'undo after rename');
     await page.keyboard.press('Control+y');
     await until(() => page.evaluate(() => cmView.state.doc.toString().includes('Saved after rename.')), 'redo after rename');
-    await page.locator('#edit-save').click(); await until(() => page.evaluate(() => !getActiveTab().isDirty && !ReadMDReview.busy()), 'saved renamed file');
+    await page.locator('#edit-save').click(); await until(() => page.evaluate(() => !state.editing && !getActiveTab().isDirty && !ReadMDReview.busy()), 'saved renamed file and restored reader');
     assert.match(fs.readFileSync(newPath, 'utf8'), /Saved after rename\./); assert.equal(fs.existsSync(oldPath), false);
-    await page.locator('#edit-cancel').click(); await until(() => page.evaluate(() => !state.editing), 'reader after save');
     await page.evaluate(() => ReadMDSession.flush());
     report.checks.push('Tab rename, later edit, keyboard undo/redo and save preserve the real file and the same pending review identity');
 

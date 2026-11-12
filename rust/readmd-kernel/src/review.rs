@@ -21,6 +21,8 @@ use uuid::Uuid;
 mod refactor;
 #[path = "review_resource_history.rs"]
 mod resource_history;
+#[path = "review_withdrawal.rs"]
+mod withdrawal;
 pub(crate) use resource_history::ResourceState;
 
 pub const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
@@ -402,7 +404,14 @@ impl Service {
                 if let Some(intent) = &document.save_intent {
                     receipt["intent_id"] = json!(intent.intent_id);
                 }
-                let compact = compact_receipt(request, &receipt);
+                let mut compact = compact_receipt(request, &receipt);
+                if matches!(action, "resolve" | "undo" | "redo") {
+                    let mapping = mapping_at(&document, document.last_event_id).ok_or("review_persistence_failed")?;
+                    if !mapping.edits.is_empty() {
+                        compact["include_transaction_edits"] = json!(true);
+                        receipt["transaction_edits"] = json!(mapping.edits);
+                    }
+                }
                 review_store::put_receipt(tx, id, call_id, &fingerprint, &compact)?;
                 Ok(receipt)
             })
@@ -1087,6 +1096,10 @@ fn expand_receipt(
     }
     metadata["content"] = json!(content);
     metadata["changes"] = json!(public_changes(&ordered, &content));
+    if receipt["include_transaction_edits"] == true {
+        let mapping = mapping_at(document, target).ok_or("review_persistence_failed")?;
+        metadata["transaction_edits"] = json!(mapping.edits);
+    }
     if metadata["save_intent"].get("$review_compact") == Some(&json!(true)) {
         let steps: Vec<Vec<TextEdit>> =
             serde_json::from_value(metadata["save_intent"]["edit_steps"].clone())
@@ -1348,6 +1361,11 @@ fn map_geometry(from: &mut usize, to: &mut usize, edits: &[TextEdit]) -> bool {
     touched
 }
 
+fn mapping_at(document: &Document, event: u64) -> Option<&Mapping> {
+    let index = document.mappings.binary_search_by_key(&event, |mapping| mapping.event_id).ok()?;
+    document.mappings.get(index)
+}
+
 /// The save adapter uses exactly the review engine's UTF-16 geometry; resource
 /// rewrites can enlarge a partial image-address change to the whole address.
 pub(crate) fn mapped_save_range(from: usize, to: usize, edits: &[TextEdit]) -> (usize, usize) {
@@ -1578,9 +1596,10 @@ fn resolve(
             .ok_or("review_invalid_request")?,
     )
     .map_err(|_| "review_invalid_request")?;
+    let selected: HashSet<&str> = ids.iter().map(String::as_str).collect();
     if ids.is_empty()
         || ids.len() > MAX_OPERATIONS
-        || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
+        || selected.len() != ids.len()
     {
         return Err("review_invalid_request");
     }
@@ -1593,7 +1612,7 @@ fn resolve(
         Some(Value::String(value)) if value == "keep_current" && decision == "accept" => true,
         _ => return Err("review_invalid_request"),
     };
-    let mut edits = Vec::new();
+    let mut withdrawals = Vec::new();
     for id in &ids {
         let change = document
             .changes
@@ -1620,24 +1639,21 @@ fn resolve(
             if document.changes.iter().any(|dependent| {
                 dependent.dependencies.contains(id)
                     && dependent.decision != "withdrawn"
-                    && !ids.contains(&dependent.id)
+                    && !selected.contains(dependent.id.as_str())
             }) {
                 return Err("review_conflict");
             }
-            edits.push(TextEdit {
-                from: change.from,
-                to: change.to,
-                insert: change.restore_original.as_ref().unwrap_or(&change.original).as_str().into(),
-            });
+            withdrawals.push(change);
         }
     }
+    let (edits, restored_ranges) = withdrawal::plan(tx, document, withdrawals)?;
     let before_content = document.content.clone();
     let before_changes = document.changes.clone();
     let result = apply(&before_content, &edits)?;
     map_changes(document, &edits, &result.content, false)?;
     document.content = result.content;
     for change in &mut document.changes {
-        if ids.contains(&change.id) {
+        if selected.contains(change.id.as_str()) {
             change.decision = if decision == "accept" {
                 "accepted"
             } else {
@@ -1647,6 +1663,9 @@ fn resolve(
             if decision == "withdraw" {
                 change.application = "proposed".into();
                 change.taken_over = false;
+                if let Some(&(from, to)) = restored_ranges.get(&change.id) {
+                    (change.from, change.to) = (from, to);
+                }
             }
             change.version = next_counter(document.review_revision)?;
         }
@@ -1871,7 +1890,10 @@ fn compensate(
                 if current.restore_original.is_some() { restored.restore_original = current.restore_original.clone(); }
             }
             let current = before_changes.iter().find(|change| change.id == restored.id);
-            (restored.from, restored.to) = compensation_range(document, &target, &restored, current, &sources, &edits, &effective_mappings)?;
+            (restored.from, restored.to) = match withdrawal::compensated_anchor(document, &target, patch, current, &sources, &effective_mappings)? {
+                Some(point) => (point, point),
+                None => compensation_range(document, &target, &restored, current, &sources, &edits, &effective_mappings)?,
+            };
             if restored.restore_original.is_some() && restored.application == "applied" && !restored.taken_over {
                 // A pre-save metadata-only action can carry the old path
                 // fragment. Its mapped range now owns the complete resource

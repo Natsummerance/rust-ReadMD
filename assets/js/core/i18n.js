@@ -63,6 +63,11 @@ window.i18n = {
     'app.loading': '加载中...',
     'app.success': '成功',
     'app.failed': '失败',
+    'theme.auto': '跟随系统',
+    'theme.light': '浅色',
+    'theme.dark': '深色',
+    'theme.sepia': '护眼',
+    'theme.current': '主题：{name}',
     'pet.bubbleOpening': '正在为你打开 {name}...',
     'pet.bubbleOpened': '{name} 已打开！',
     'pet.bubbleConverting': '正在为你转换并打开 {name}...',
@@ -168,41 +173,23 @@ window.i18n = {
       preferred = await this.detectSystemLanguage();
     }
     if ((this.languageEpoch || 0) !== generation) return;
-    preferred = preferred || 'zh-CN';
-
-    // 如果是默认简体中文，DOM 本身即为中文，直接初始化并载入词库
-    if (preferred === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-      document.documentElement.setAttribute('dir', 'ltr');
-      document.documentElement.setAttribute('lang', 'zh-CN');
-      const currentLabel = document.getElementById('lang-current-label');
-      if (currentLabel) currentLabel.textContent = '简体中文';
-      const d = await this.fetchDict('zh-CN');
-      if ((this.languageEpoch || 0) !== generation) return;
-      if (d) {
-        this.dict = d;
-        // zh-CN is the canonical complete dictionary. Reusing it as the
-        // fallback avoids a second 50+ KB English request during startup.
-        // Other languages still load English lazily after the first paint.
-        this.fallbackDict = d;
-        this.translateDOM();
-        window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: 'zh-CN' } }));
-      }
-      return;
+    let language = this.matchLanguage(preferred) || 'zh-CN';
+    let dict = await this.fetchDict(language);
+    if (!dict && language !== 'zh-CN' && (this.languageEpoch || 0) === generation) {
+      language = 'zh-CN';
+      dict = await this.fetchDict(language);
     }
-
-    // 非中文环境快速载入目标语言并翻译
-    await this.setLanguage(preferred, false);
-    setTimeout(() => this.loadFallback(), 500);
+    if (dict && (this.languageEpoch || 0) === generation) this.applyLanguage(language, dict, false);
   },
 
   /** 异步载入第一兜底英文词库 */
-  async loadFallback() {
-    if (Object.keys(this.fallbackDict).length > 0) return;
-    try {
-      const d = await this.fetchDict('en');
-      if (d) this.fallbackDict = d;
-    } catch (e) {}
+  loadFallback() {
+    if (Object.keys(this.fallbackDict).length || this.fallbackRequest) return;
+    this.fallbackRequest = this.fetchDict('en').then(dict => {
+      if (!dict || Object.keys(this.fallbackDict).length) return;
+      this.fallbackDict = dict;
+      if (this.currentLang !== 'zh-CN' && this.currentLang !== 'en') this.translateDOM(document, true);
+    }).finally(() => { this.fallbackRequest = null; });
   },
 
   /** 高效获取语言词库 JSON */
@@ -210,56 +197,54 @@ window.i18n = {
     // Cache-bust: older builds served locale JSON as immutable, so a WebView
     // upgrade could keep serving a stale dictionary missing newer keys.
     const bust = `?v=${Date.now()}`;
-    try {
-      const resp = await fetch(`/assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
-    try {
-      const resp = await fetch(`assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
+    for (const base of ['/assets', 'assets']) {
+      try {
+        const resp = await fetch(`${base}/i18n/${langCode}.json${bust}`);
+        if (!resp.ok) continue;
+        const dict = await resp.json();
+        if (dict && typeof dict === 'object' && !Array.isArray(dict) && Object.keys(dict).length) return dict;
+      } catch (e) {}
+    }
     return null;
+  },
+
+  matchLanguage(code) {
+    if (typeof code !== 'string') return null;
+    const [primary, ...parts] = code.toLowerCase().split(/[-_]/);
+    if (primary === 'zh') {
+      if (parts.includes('hk') || parts.includes('mo')) return 'zh-HK';
+      return parts.includes('tw') || parts.includes('hant') ? 'zh-TW' : 'zh-CN';
+    }
+    return Object.hasOwn(this.meta, primary) ? primary : null;
   },
 
   /** 侦测宿主操作系统语言 */
   async detectSystemLanguage() {
+    const browserLangs = navigator.languages?.length ? navigator.languages : [navigator.language];
+    const browserLanguage = browserLangs.map(code => this.matchLanguage(code)).find(Boolean);
     try {
       if (typeof hasPy !== 'undefined' && hasPy && py.get_system_language) {
-        const pyLang = await py.get_system_language();
-        if (pyLang && this.meta[pyLang]) return pyLang;
+        const pyLang = this.matchLanguage(await py.get_system_language());
+        if (pyLang) return pyLang;
       }
     } catch (e) {}
-
-    const browserLangs = navigator.languages || [navigator.language || 'zh-CN'];
-    for (const l of browserLangs) {
-      if (!l) continue;
-      if (this.meta[l]) return l;
-      const lower = l.toLowerCase();
-      if (lower.startsWith('zh-tw') || lower.startsWith('zh-hk') || lower.includes('hant')) {
-        return lower.includes('hk') ? 'zh-HK' : 'zh-TW';
-      }
-      if (lower.startsWith('zh')) return 'zh-CN';
-      const prefix = l.split('-')[0];
-      if (this.meta[prefix]) return prefix;
-    }
-    return 'zh-CN';
+    return browserLanguage || 'zh-CN';
   },
 
   /** 切换语言 */
   async setLanguage(langCode, save = true) {
     const generation = this.languageEpoch = (this.languageEpoch || 0) + 1;
-    if (!langCode || (!this.meta[langCode] && langCode !== 'zh-CN' && langCode !== 'en')) {
-      langCode = 'zh-CN';
-    }
-
+    langCode = this.matchLanguage(langCode) || 'zh-CN';
     const dict = await this.fetchDict(langCode);
-    if (generation !== this.languageEpoch) return false;
-    if (dict) {
-      this.dict = dict;
-      this.currentLang = langCode;
-    } else if (langCode === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-    }
+    if (!dict || generation !== this.languageEpoch) return false;
+    this.applyLanguage(langCode, dict, save);
+    return true;
+  },
+
+  applyLanguage(langCode, dict, save) {
+    this.dict = dict;
+    this.currentLang = langCode;
+    if (langCode === 'en') this.fallbackDict = dict;
 
     if (save) {
       try {
@@ -285,76 +270,68 @@ window.i18n = {
 
     // 派发切换事件
     window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: this.currentLang } }));
+    if (save && window.READMD_ENGINE === 'rust' && typeof hasPy !== 'undefined' && hasPy) this.persistDesktopLanguage(langCode);
+    if (langCode !== 'en' && langCode !== 'zh-CN') this.loadFallback();
+  },
+
+  persistDesktopLanguage(langCode) {
+    // Keep the native profile used by desktop surfaces in the same order as
+    // the renderer's language choices, even when HTTP replies are delayed.
+    this.languageWrite = (this.languageWrite || Promise.resolve()).then(async () => {
+      if (this.currentLang !== langCode) return;
+      try {
+        const response = await apiFetch('/api/system/language', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: langCode }),
+        });
+        if (!response.ok || (await response.json()).applied !== true) throw new Error('language_write_failed');
+      } catch (_) {
+        if (this.currentLang === langCode && typeof showToast === 'function') showToast(this.t('toast.saveFailed'));
+      }
+    });
   },
 
 
   /** 获取翻译词条，支持 {count}, {name} 占位符替换 */
   t(key, params = {}) {
-    let str = this.dict ? this.dict[key] : undefined;
-    if (str === undefined || str === null || str === '') {
-      str = this.fallbackDict ? this.fallbackDict[key] : undefined;
-    }
-    if ((str === undefined || str === null || str === '') && this.zhDefaults && this.zhDefaults[key]) {
-      str = this.zhDefaults[key];
-    }
-    if ((str === undefined || str === null || str === '') && this.browserDefaults && this.browserDefaults[key]) {
-      str = this.browserDefaults[key];
-    }
-    if (str === undefined || str === null || str === '') {
-      str = key;
-    }
-    if (typeof str === 'string' && params) {
-      for (const [k, v] of Object.entries(params)) {
-        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
-      }
-    }
-    return str;
+    const str = [this.dict[key], this.fallbackDict[key], this.zhDefaults[key], this.browserDefaults[key]]
+      .find(value => typeof value === 'string' && value.trim() && value !== key);
+    if (str === undefined) return key;
+    return params ? str.replace(/\{([\w.-]+)\}/g, (match, name) => Object.hasOwn(params, name) ? String(params[name]) : match) : str;
   },
 
   /** 全局扫描并翻译带有 data-i18n 属性的 DOM */
-  translateDOM(root = document) {
+  translateDOM(root = document, fallbackOnly = false) {
+    const readLabel = key => {
+      if (!key || fallbackOnly && typeof this.dict[key] === 'string' && this.dict[key].trim() && this.dict[key] !== key) return null;
+      const label = this.t(key);
+      return label === key ? null : label;
+    };
     root.querySelectorAll('[data-i18n]').forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      if (!key) return;
+      const key = el.dataset.i18n, label = readLabel(key);
+      if (!label) return;
       if (el.children.length === 0) {
-        el.textContent = this.t(key);
+        if (el.textContent !== label) el.textContent = label;
       } else {
-        const span = el.querySelector(':scope > span[data-i18n="' + key + '"]');
-        if (!span) {
-          let updatedText = false;
-          for (let i = 0; i < el.childNodes.length; i++) {
-            if (el.childNodes[i].nodeType === Node.TEXT_NODE && el.childNodes[i].textContent.trim()) {
-              el.childNodes[i].textContent = this.t(key);
-              updatedText = true;
-              break;
-            }
-          }
-          if (!updatedText) {
-            el.textContent = this.t(key);
-          }
-        }
+        if (Array.from(el.children).some(child => child.dataset.i18n === key)) return;
+        const text = Array.from(el.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+        if (!text) el.appendChild(document.createTextNode(label));
+        else if (text.textContent !== label) text.textContent = label;
       }
     });
 
     root.querySelectorAll('[data-i18n-html]').forEach(el => {
-      const key = el.getAttribute('data-i18n-html');
-      if (key) el.innerHTML = this.t(key);
+      const label = readLabel(el.dataset.i18nHtml);
+      if (label && el.innerHTML !== label) el.innerHTML = label;
     });
 
-    root.querySelectorAll('[data-i18n-title]').forEach(el => {
-      const key = el.getAttribute('data-i18n-title');
-      if (key) el.setAttribute('title', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-      const key = el.getAttribute('data-i18n-placeholder');
-      if (key) el.setAttribute('placeholder', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-aria]').forEach(el => {
-      const key = el.getAttribute('data-i18n-aria');
-      if (key) el.setAttribute('aria-label', this.t(key));
-    });
+    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label']]) {
+      const source = 'data-i18n-' + suffix;
+      root.querySelectorAll(`[${source}]`).forEach(el => {
+        const label = readLabel(el.getAttribute(source));
+        if (label && el.getAttribute(attribute) !== label) el.setAttribute(attribute, label);
+      });
+    }
   },
 
 
@@ -410,7 +387,11 @@ window.i18n = {
         ${isActive ? '<div class="lang-item-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' : ''}
       `;
       item.addEventListener('click', async () => {
-        await this.setLanguage(code, true);
+        const switching = this.setLanguage(code, true), generation = this.languageEpoch;
+        if (!await switching) {
+          if (generation === this.languageEpoch && typeof showToast === 'function') showToast(this.t('ux.loadFailed'));
+          return;
+        }
         this.closeModal();
         if (typeof showToast === 'function') {
           showToast(this.t('lang.autoDetected', { name: native }) || `Language switched to ${native}`);

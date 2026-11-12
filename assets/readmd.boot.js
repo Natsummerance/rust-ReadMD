@@ -610,6 +610,8 @@ const state = {
   readingFont: 'sans',      // reader lane: sans | serif
   readingWidth: 'normal',   // narrow | normal | wide
   readingLeading: 'normal', // compact | normal | relaxed
+  readingHeadingColor: 'default',
+  readingBoldColor: 'default',
   aiPanelWidth: 432,
   autoReload: true,
   closeToTray: true,
@@ -836,6 +838,11 @@ window.i18n = {
     'app.loading': '加载中...',
     'app.success': '成功',
     'app.failed': '失败',
+    'theme.auto': '跟随系统',
+    'theme.light': '浅色',
+    'theme.dark': '深色',
+    'theme.sepia': '护眼',
+    'theme.current': '主题：{name}',
     'pet.bubbleOpening': '正在为你打开 {name}...',
     'pet.bubbleOpened': '{name} 已打开！',
     'pet.bubbleConverting': '正在为你转换并打开 {name}...',
@@ -941,41 +948,23 @@ window.i18n = {
       preferred = await this.detectSystemLanguage();
     }
     if ((this.languageEpoch || 0) !== generation) return;
-    preferred = preferred || 'zh-CN';
-
-    // 如果是默认简体中文，DOM 本身即为中文，直接初始化并载入词库
-    if (preferred === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-      document.documentElement.setAttribute('dir', 'ltr');
-      document.documentElement.setAttribute('lang', 'zh-CN');
-      const currentLabel = document.getElementById('lang-current-label');
-      if (currentLabel) currentLabel.textContent = '简体中文';
-      const d = await this.fetchDict('zh-CN');
-      if ((this.languageEpoch || 0) !== generation) return;
-      if (d) {
-        this.dict = d;
-        // zh-CN is the canonical complete dictionary. Reusing it as the
-        // fallback avoids a second 50+ KB English request during startup.
-        // Other languages still load English lazily after the first paint.
-        this.fallbackDict = d;
-        this.translateDOM();
-        window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: 'zh-CN' } }));
-      }
-      return;
+    let language = this.matchLanguage(preferred) || 'zh-CN';
+    let dict = await this.fetchDict(language);
+    if (!dict && language !== 'zh-CN' && (this.languageEpoch || 0) === generation) {
+      language = 'zh-CN';
+      dict = await this.fetchDict(language);
     }
-
-    // 非中文环境快速载入目标语言并翻译
-    await this.setLanguage(preferred, false);
-    setTimeout(() => this.loadFallback(), 500);
+    if (dict && (this.languageEpoch || 0) === generation) this.applyLanguage(language, dict, false);
   },
 
   /** 异步载入第一兜底英文词库 */
-  async loadFallback() {
-    if (Object.keys(this.fallbackDict).length > 0) return;
-    try {
-      const d = await this.fetchDict('en');
-      if (d) this.fallbackDict = d;
-    } catch (e) {}
+  loadFallback() {
+    if (Object.keys(this.fallbackDict).length || this.fallbackRequest) return;
+    this.fallbackRequest = this.fetchDict('en').then(dict => {
+      if (!dict || Object.keys(this.fallbackDict).length) return;
+      this.fallbackDict = dict;
+      if (this.currentLang !== 'zh-CN' && this.currentLang !== 'en') this.translateDOM(document, true);
+    }).finally(() => { this.fallbackRequest = null; });
   },
 
   /** 高效获取语言词库 JSON */
@@ -983,56 +972,54 @@ window.i18n = {
     // Cache-bust: older builds served locale JSON as immutable, so a WebView
     // upgrade could keep serving a stale dictionary missing newer keys.
     const bust = `?v=${Date.now()}`;
-    try {
-      const resp = await fetch(`/assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
-    try {
-      const resp = await fetch(`assets/i18n/${langCode}.json${bust}`);
-      if (resp.ok) return await resp.json();
-    } catch (e) {}
+    for (const base of ['/assets', 'assets']) {
+      try {
+        const resp = await fetch(`${base}/i18n/${langCode}.json${bust}`);
+        if (!resp.ok) continue;
+        const dict = await resp.json();
+        if (dict && typeof dict === 'object' && !Array.isArray(dict) && Object.keys(dict).length) return dict;
+      } catch (e) {}
+    }
     return null;
+  },
+
+  matchLanguage(code) {
+    if (typeof code !== 'string') return null;
+    const [primary, ...parts] = code.toLowerCase().split(/[-_]/);
+    if (primary === 'zh') {
+      if (parts.includes('hk') || parts.includes('mo')) return 'zh-HK';
+      return parts.includes('tw') || parts.includes('hant') ? 'zh-TW' : 'zh-CN';
+    }
+    return Object.hasOwn(this.meta, primary) ? primary : null;
   },
 
   /** 侦测宿主操作系统语言 */
   async detectSystemLanguage() {
+    const browserLangs = navigator.languages?.length ? navigator.languages : [navigator.language];
+    const browserLanguage = browserLangs.map(code => this.matchLanguage(code)).find(Boolean);
     try {
       if (typeof hasPy !== 'undefined' && hasPy && py.get_system_language) {
-        const pyLang = await py.get_system_language();
-        if (pyLang && this.meta[pyLang]) return pyLang;
+        const pyLang = this.matchLanguage(await py.get_system_language());
+        if (pyLang) return pyLang;
       }
     } catch (e) {}
-
-    const browserLangs = navigator.languages || [navigator.language || 'zh-CN'];
-    for (const l of browserLangs) {
-      if (!l) continue;
-      if (this.meta[l]) return l;
-      const lower = l.toLowerCase();
-      if (lower.startsWith('zh-tw') || lower.startsWith('zh-hk') || lower.includes('hant')) {
-        return lower.includes('hk') ? 'zh-HK' : 'zh-TW';
-      }
-      if (lower.startsWith('zh')) return 'zh-CN';
-      const prefix = l.split('-')[0];
-      if (this.meta[prefix]) return prefix;
-    }
-    return 'zh-CN';
+    return browserLanguage || 'zh-CN';
   },
 
   /** 切换语言 */
   async setLanguage(langCode, save = true) {
     const generation = this.languageEpoch = (this.languageEpoch || 0) + 1;
-    if (!langCode || (!this.meta[langCode] && langCode !== 'zh-CN' && langCode !== 'en')) {
-      langCode = 'zh-CN';
-    }
-
+    langCode = this.matchLanguage(langCode) || 'zh-CN';
     const dict = await this.fetchDict(langCode);
-    if (generation !== this.languageEpoch) return false;
-    if (dict) {
-      this.dict = dict;
-      this.currentLang = langCode;
-    } else if (langCode === 'zh-CN') {
-      this.currentLang = 'zh-CN';
-    }
+    if (!dict || generation !== this.languageEpoch) return false;
+    this.applyLanguage(langCode, dict, save);
+    return true;
+  },
+
+  applyLanguage(langCode, dict, save) {
+    this.dict = dict;
+    this.currentLang = langCode;
+    if (langCode === 'en') this.fallbackDict = dict;
 
     if (save) {
       try {
@@ -1058,76 +1045,68 @@ window.i18n = {
 
     // 派发切换事件
     window.dispatchEvent(new CustomEvent('readmd:language-changed', { detail: { lang: this.currentLang } }));
+    if (save && window.READMD_ENGINE === 'rust' && typeof hasPy !== 'undefined' && hasPy) this.persistDesktopLanguage(langCode);
+    if (langCode !== 'en' && langCode !== 'zh-CN') this.loadFallback();
+  },
+
+  persistDesktopLanguage(langCode) {
+    // Keep the native profile used by desktop surfaces in the same order as
+    // the renderer's language choices, even when HTTP replies are delayed.
+    this.languageWrite = (this.languageWrite || Promise.resolve()).then(async () => {
+      if (this.currentLang !== langCode) return;
+      try {
+        const response = await apiFetch('/api/system/language', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language: langCode }),
+        });
+        if (!response.ok || (await response.json()).applied !== true) throw new Error('language_write_failed');
+      } catch (_) {
+        if (this.currentLang === langCode && typeof showToast === 'function') showToast(this.t('toast.saveFailed'));
+      }
+    });
   },
 
 
   /** 获取翻译词条，支持 {count}, {name} 占位符替换 */
   t(key, params = {}) {
-    let str = this.dict ? this.dict[key] : undefined;
-    if (str === undefined || str === null || str === '') {
-      str = this.fallbackDict ? this.fallbackDict[key] : undefined;
-    }
-    if ((str === undefined || str === null || str === '') && this.zhDefaults && this.zhDefaults[key]) {
-      str = this.zhDefaults[key];
-    }
-    if ((str === undefined || str === null || str === '') && this.browserDefaults && this.browserDefaults[key]) {
-      str = this.browserDefaults[key];
-    }
-    if (str === undefined || str === null || str === '') {
-      str = key;
-    }
-    if (typeof str === 'string' && params) {
-      for (const [k, v] of Object.entries(params)) {
-        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
-      }
-    }
-    return str;
+    const str = [this.dict[key], this.fallbackDict[key], this.zhDefaults[key], this.browserDefaults[key]]
+      .find(value => typeof value === 'string' && value.trim() && value !== key);
+    if (str === undefined) return key;
+    return params ? str.replace(/\{([\w.-]+)\}/g, (match, name) => Object.hasOwn(params, name) ? String(params[name]) : match) : str;
   },
 
   /** 全局扫描并翻译带有 data-i18n 属性的 DOM */
-  translateDOM(root = document) {
+  translateDOM(root = document, fallbackOnly = false) {
+    const readLabel = key => {
+      if (!key || fallbackOnly && typeof this.dict[key] === 'string' && this.dict[key].trim() && this.dict[key] !== key) return null;
+      const label = this.t(key);
+      return label === key ? null : label;
+    };
     root.querySelectorAll('[data-i18n]').forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      if (!key) return;
+      const key = el.dataset.i18n, label = readLabel(key);
+      if (!label) return;
       if (el.children.length === 0) {
-        el.textContent = this.t(key);
+        if (el.textContent !== label) el.textContent = label;
       } else {
-        const span = el.querySelector(':scope > span[data-i18n="' + key + '"]');
-        if (!span) {
-          let updatedText = false;
-          for (let i = 0; i < el.childNodes.length; i++) {
-            if (el.childNodes[i].nodeType === Node.TEXT_NODE && el.childNodes[i].textContent.trim()) {
-              el.childNodes[i].textContent = this.t(key);
-              updatedText = true;
-              break;
-            }
-          }
-          if (!updatedText) {
-            el.textContent = this.t(key);
-          }
-        }
+        if (Array.from(el.children).some(child => child.dataset.i18n === key)) return;
+        const text = Array.from(el.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+        if (!text) el.appendChild(document.createTextNode(label));
+        else if (text.textContent !== label) text.textContent = label;
       }
     });
 
     root.querySelectorAll('[data-i18n-html]').forEach(el => {
-      const key = el.getAttribute('data-i18n-html');
-      if (key) el.innerHTML = this.t(key);
+      const label = readLabel(el.dataset.i18nHtml);
+      if (label && el.innerHTML !== label) el.innerHTML = label;
     });
 
-    root.querySelectorAll('[data-i18n-title]').forEach(el => {
-      const key = el.getAttribute('data-i18n-title');
-      if (key) el.setAttribute('title', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-      const key = el.getAttribute('data-i18n-placeholder');
-      if (key) el.setAttribute('placeholder', this.t(key));
-    });
-
-    root.querySelectorAll('[data-i18n-aria]').forEach(el => {
-      const key = el.getAttribute('data-i18n-aria');
-      if (key) el.setAttribute('aria-label', this.t(key));
-    });
+    for (const [suffix, attribute] of [['title', 'title'], ['placeholder', 'placeholder'], ['aria', 'aria-label']]) {
+      const source = 'data-i18n-' + suffix;
+      root.querySelectorAll(`[${source}]`).forEach(el => {
+        const label = readLabel(el.getAttribute(source));
+        if (label && el.getAttribute(attribute) !== label) el.setAttribute(attribute, label);
+      });
+    }
   },
 
 
@@ -1183,7 +1162,11 @@ window.i18n = {
         ${isActive ? '<div class="lang-item-check"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' : ''}
       `;
       item.addEventListener('click', async () => {
-        await this.setLanguage(code, true);
+        const switching = this.setLanguage(code, true), generation = this.languageEpoch;
+        if (!await switching) {
+          if (generation === this.languageEpoch && typeof showToast === 'function') showToast(this.t('ux.loadFailed'));
+          return;
+        }
         this.closeModal();
         if (typeof showToast === 'function') {
           showToast(this.t('lang.autoDetected', { name: native }) || `Language switched to ${native}`);
@@ -1221,14 +1204,23 @@ document.addEventListener('keydown', event => {
 let activeConfirmFinish = null;
 
 function confirmAction({ title, message = '', confirmText, cancelText, danger = false, signal } = {}) {
+  return showDecisionDialog({ title, message, confirmText, cancelText, danger, signal });
+}
+
+function promptText({ title, value = '', maxLength = 80, confirmText, cancelText } = {}) {
+  return showDecisionDialog({ title, confirmText, cancelText, input: { value, maxLength } });
+}
+
+function showDecisionDialog({ title, message = '', confirmText, cancelText, danger = false, signal, input }) {
   const modal = $('confirm-modal');
-  if (!modal || signal?.aborted) return Promise.resolve(false);
-  if (activeConfirmFinish) activeConfirmFinish(false);
+  const canceled = input ? null : false;
+  if (!modal || signal?.aborted) return Promise.resolve(canceled);
+  activeConfirmFinish?.();
 
   return new Promise(resolve => {
-    const opener = document.activeElement;
     const confirmButton = $('confirm-action');
     const cancelButton = $('confirm-cancel');
+    const field = $('confirm-input');
     let finished = false;
     const finish = value => {
       if (finished) return;
@@ -1236,43 +1228,41 @@ function confirmAction({ title, message = '', confirmText, cancelText, danger = 
       activeConfirmFinish = null;
       confirmButton.removeEventListener('click', onConfirm);
       cancelButton.removeEventListener('click', onCancel);
-      modal.removeEventListener('keydown', onKeyDown);
-      modal.removeEventListener('click', onClick);
+      field.removeEventListener('keydown', onInputKey);
       signal?.removeEventListener('abort', onAbort);
-      modal.classList.add('hidden');
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+      window.ReadMDModal.close(modal);
       resolve(value);
     };
-    const onKeyDown = event => {
-      if (event.key !== 'Escape') return;
+    const onConfirm = () => finish(input ? field.value : true);
+    const onCancel = () => finish(canceled);
+    const onAbort = onCancel;
+    const onInputKey = event => {
+      if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
-      event.stopPropagation();
-      finish(false);
-    };
-    const onConfirm = () => finish(true);
-    const onCancel = () => finish(false);
-    const onAbort = () => finish(false);
-    const onClick = event => {
-      if (event.target === modal) finish(false);
+      onConfirm();
     };
 
-    activeConfirmFinish = () => finish(false);
+    activeConfirmFinish = onCancel;
 
     $('confirm-title').textContent = title || '';
     $('confirm-message').textContent = message;
-    confirmButton.textContent = confirmText || 'OK';
-    cancelButton.textContent = cancelText || 'Cancel';
+    confirmButton.textContent = confirmText || window.i18n.t('dialog.confirm');
+    cancelButton.textContent = cancelText || window.i18n.t('dialog.cancel');
     confirmButton.className = danger ? 'tb-btn danger' : 'tb-btn accent';
+    modal.classList.toggle('text-entry', Boolean(input));
+    field.classList.toggle('hidden', !input);
+    field.toggleAttribute('data-modal-initial', Boolean(input));
+    cancelButton.toggleAttribute('data-modal-initial', !input);
+    field.value = input?.value || '';
+    field.maxLength = input?.maxLength || 80;
 
     confirmButton.addEventListener('click', onConfirm);
     cancelButton.addEventListener('click', onCancel);
-    modal.addEventListener('keydown', onKeyDown);
-    modal.addEventListener('click', onClick);
+    if (input) field.addEventListener('keydown', onInputKey);
     signal?.addEventListener('abort', onAbort, { once: true });
     // An abort may have been triggered while another confirmation was closed.
-    if (signal?.aborted) { finish(false); return; }
-    modal.classList.remove('hidden');
-    setTimeout(() => { if (!finished) cancelButton.focus({ preventScroll: true }); }, 0);
+    if (signal?.aborted) { onAbort(); return; }
+    window.ReadMDModal.open(modal);
   });
 }
 
@@ -1529,11 +1519,12 @@ function updateModuleUi() {
     const status=v==='ready'?'status.ready':v==='error'||v==='unavailable'?'plugin.native.unavailable':v==='disabled'?'status.win7UnsupportedShort':v==='idle'?'convert.statusPending':'status.loading';
     parts.push(label+' · '+_t(status));
   }
-  const el = $('status-mods');
-  if (el) {
-    const details=parts.length?_t('status.modulePrefix')+'\n'+parts.join('\n'):'';
-    el.textContent=details?'●':'';el.title=details;el.setAttribute('role','img');el.setAttribute('aria-label',details);
-    el.dataset.moduleState=Object.values(m).some(v=>['error','unavailable','disabled'].includes(v))?'unavailable':Object.values(m).some(v=>v==='loading')?'loading':Object.values(m).some(v=>v==='idle')?'idle':'ready';
+  const pluginMenu = $('btn-plugin-menu');
+  if (pluginMenu) {
+    const details = parts.length ? _t('status.modulePrefix') + '\n' + parts.join('\n') : '';
+    pluginMenu.title = details;
+    if (details) pluginMenu.setAttribute('aria-description', details);
+    else pluginMenu.removeAttribute('aria-description');
   }
 }
 window.addEventListener('readmd:language-changed',updateModuleUi);
@@ -1793,10 +1784,10 @@ function revealTabInTrack(container, tab) {
 function localizeOpenTabs() {
   const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key;
   const tabs = new Map((state.tabs || []).map(tab => [tab.id, tab]));
-  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item, #doc-tabs-secondary-bar .tab-item, #doc-tabs-dropdown .tab-item')) {
+  for (const row of document.querySelectorAll('#doc-tabs-bar .tab-item')) {
     const tab = tabs.get(row.dataset.tabId); if (!tab) continue;
     const close = t('tabs.closeTab');
-    row.title = `${tab.path || tab.title || tab.name || t('tabs.untitled')} (${close}: Delete)`;
+    row.title = tab.title || tab.name || t('tabs.untitled');
     const button = row.querySelector('.tab-close'); if (button) button.title = close;
     const reason = tab.externalChanged ? t('toast.saveConflict') : tab.isDirty ? t('tabs.dirty') : '';
     const dot = row.querySelector('.tab-dirty'); if (dot) dot.title = reason;
@@ -1807,32 +1798,43 @@ function localizeOpenTabs() {
   }
 }
 
+function syncTopTabOverflow({ reveal = false } = {}) {
+  const bar = $('doc-tabs-bar'), container = $('doc-tabs-container'), wrap = $('doc-tabs-overflow-wrap');
+  if (!container?.clientWidth || !bar || !wrap) return;
+  const overflow = bar.scrollWidth > container.clientWidth + 2;
+  if (!overflow && !$('doc-tabs-dropdown').classList.contains('hidden')) {
+    const focused = wrap.contains(document.activeElement);
+    setTopTabMenu(false);
+    if (focused) focusVisibleTab(state.activeTabId);
+  }
+  wrap.classList.toggle('hidden', !overflow);
+  if (reveal) revealTabInTrack(bar, bar.querySelector('.tab-item.active'));
+}
+
+function setTopTabMenu(open, { focus = false } = {}) {
+  const menu = $('doc-tabs-dropdown'), button = $('doc-tabs-overflow-btn');
+  if (!menu || !button) return;
+  menu.classList.toggle('hidden', !open);
+  button.setAttribute('aria-expanded', String(open));
+  if (open && focus) menu.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+}
+
 function renderTabsBar() {
   window.ReadMDSession?.persist();
   const bar = $('doc-tabs-bar');
-  const secBar = $('doc-tabs-secondary-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');
-  const btnHome = $('btn-home');
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   if (state.tabs.length === 0) {
     if (bar) bar.innerHTML = '';
-    if (secBar) { secBar.innerHTML = ''; secBar.classList.add('hidden'); }
     if (overflowWrap) overflowWrap.classList.add('hidden');
-    if (btnHome) btnHome.classList.add('hidden');
+    if (dropdown) dropdown.replaceChildren();
+    setTopTabMenu(false);
     if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
       window.ReadMDGraph.updateVisibility(false);
     }
     return;
-  }
-
-  if (btnHome) {
-    if (state.mode === 'welcome') {
-      btnHome.classList.add('hidden');
-    } else {
-      btnHome.classList.remove('hidden');
-    }
   }
 
   if (window.ReadMDGraph && typeof window.ReadMDGraph.updateVisibility === 'function') {
@@ -1854,7 +1856,7 @@ function renderTabsBar() {
     el.tabIndex = tab.id === state.activeTabId ? 0 : -1;
     el.draggable = true;
 
-    el.title = `${tab.path || tab.title || tab.name} (${_t('tabs.closeTab')}: Delete)`;
+    el.title = tab.title || tab.name || _t('tabs.untitled');
     if (tab.isDirty) {
       const dot = document.createElement('span');
       const reason = tab.externalChanged
@@ -1876,6 +1878,7 @@ function renderTabsBar() {
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
+    titleSpan.dir = 'auto';
     titleSpan.textContent = tab.title || tab.name || (_t('tabs.untitled') || '未命名');
     el.appendChild(titleSpan);
 
@@ -1991,7 +1994,7 @@ function renderTabsBar() {
   // Async rendering must not restore focus captured before its await.
   const focusedTab = document.activeElement;
   const focusedTabId = focusedTab?.classList?.contains('tab-item') &&
-    ((bar && focusedTab.parentElement === bar) || (secBar && focusedTab.parentElement === secBar))
+    focusedTab.parentElement === bar
     ? focusedTab.dataset.tabId : null;
 
   if (bar) {
@@ -2007,73 +2010,45 @@ function renderTabsBar() {
       item.tabIndex = -1;
       item.className = 'doc-tabs-dropdown-item' + (tab.id === state.activeTabId ? ' active' : '');
       item.type = 'button';
-      item.setAttribute('role', 'menuitem');
-      item.tabIndex = -1;
       const label = document.createElement('span');
       label.textContent = (tab.title || tab.name) + (tab.isDirty ? ' •' : '');
+      label.dir = 'auto';
       const meta = document.createElement('small');
       meta.textContent = tab.path || (tab.isVirtual ? (_t('tabs.virtual') || '虚拟') : '');
       item.append(label, meta);
-      item.addEventListener('click', () => {
-        switchTab(tab.id);
-        dropdown.classList.add('hidden');
+      item.addEventListener('click', async () => {
+        setTopTabMenu(false);
+        await switchTab(tab.id);
+        if (document.activeElement === document.body) focusVisibleTab(state.activeTabId);
       });
       dropdown.appendChild(item);
     });
 
   }
 
-  if (bar && overflowWrap) {
-    const syncOverflow = () => {
-      if (!bar.isConnected || !overflowWrap.isConnected) return;
-      overflowWrap.classList.toggle('hidden', !(bar.scrollWidth > bar.clientWidth + 6));
-    };
-    syncOverflow();
-    requestAnimationFrame(syncOverflow);
-  }
-
-  const revealActiveTab = (container) => {
-    const active = container?.querySelector('.tab-item.active');
-    revealTabInTrack(container, active);
-  };
-  revealActiveTab(bar);
-  revealActiveTab(secBar);
-
-  if (secBar) {
-    if (window.innerWidth < 650 && state.tabs.length > 0) {
-      secBar.innerHTML = '';
-      state.tabs.forEach(tab => secBar.appendChild(createTabEl(tab, secBar)));
-      secBar.classList.remove('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.add('hidden');
-    } else {
-      secBar.classList.add('hidden');
-      if (bar && bar.parentElement) bar.parentElement.classList.remove('hidden');
-    }
-  }
+  syncTopTabOverflow({ reveal: true });
+  requestAnimationFrame(() => syncTopTabOverflow({ reveal: true }));
   // Rebuilds retire the old focused row. Preserve its identity without taking
   // focus from an editor/menu, including focus moved by a synchronous blur.
   if (focusedTabId && (document.activeElement === document.body || document.activeElement === focusedTab)) {
-    for (const container of [bar, secBar]) {
-      const replacement = Array.from(container?.children || []).find(item =>
-        item.classList.contains('tab-item') && item.dataset.tabId === focusedTabId);
-      if (!replacement || !replacement.isConnected || replacement.offsetParent === null ||
-          replacement.closest('[inert]') || replacement.closest('[hidden]') || getComputedStyle(replacement).visibility !== 'visible') continue;
+    const replacement = Array.from(bar.children).find(item => item.dataset.tabId === focusedTabId);
+    if (replacement?.offsetParent && !replacement.closest('[inert], [hidden]')) {
       replacement.focus({ preventScroll: true });
-      break;
     }
   }
 
 }
 
-function focusVisibleTab(tabId) {
-  requestAnimationFrame(() => {
-    const matches = Array.from(document.querySelectorAll(`[data-tab-id="${CSS.escape(tabId)}"]`));
-    const next = matches.find(item => item.offsetParent !== null) || matches[0];
-    if (next) {
-      revealTabInTrack(next.parentElement, next);
-      if (document.activeElement !== next) next.focus({ preventScroll: true });
-    }
-  });
+function focusVisibleTab(tabId, { immediate = false } = {}) {
+  const focus = () => {
+    const bar = $('doc-tabs-bar');
+    const next = Array.from(bar?.children || []).find(row => row.dataset.tabId === tabId);
+    if (!next || next.offsetParent === null) return;
+    revealTabInTrack(bar, next);
+    if (document.activeElement !== next) next.focus({ preventScroll: true });
+  };
+  if (immediate) focus();
+  else requestAnimationFrame(focus);
 }
 
 function moveTabFocus(activeTabId, key) {
@@ -2093,7 +2068,6 @@ function moveTabFocus(activeTabId, key) {
 function startTabInlineRename(tab, titleSpan, tabEl) {
   if (tab?._renamePending) { void recoverPendingRename(tab); return; }
   if (renameBlocked(tab)) return;
-  tabEl.closest?.('#side')?.classList.remove('hidden');
   if (tabEl.querySelector('.tab-title-input') || tabEl.querySelector('.tab-rename-wrap')) return;
   const currentTitle = tab.title || tab.name || '';
   const dot = currentTitle.lastIndexOf('.');
@@ -2143,8 +2117,15 @@ function startTabInlineRename(tab, titleSpan, tabEl) {
   };
 
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    else if (e.key === 'Escape') { e.preventDefault(); committed = true; cleanup(); }
+    if (e.isComposing || !['Enter', 'Escape'].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Enter') commit();
+    else {
+      committed = true;
+      cleanup();
+      tabEl.focus({ preventScroll: true });
+    }
   });
   input.addEventListener('blur', () => { setTimeout(() => { if (!committed) commit(); }, 120); });
 }
@@ -2367,7 +2348,7 @@ function openTabContextMenu(e, tabId) {
   menu.style.top = Math.min(window.innerHeight - 200, e.clientY) + 'px';
   menu.classList.remove('hidden');
   menu.dataset.returnFocus = tabId;
-  setTimeout(() => menu.querySelector('button:not([disabled])')?.focus(), 20);
+  menu.querySelector('button:not([disabled])')?.focus();
 }
 
 function closeTabContextMenu({ restoreFocus = false } = {}) {
@@ -2376,7 +2357,7 @@ function closeTabContextMenu({ restoreFocus = false } = {}) {
   menu.classList.add('hidden');
   if (!restoreFocus) return;
   const tabId = menu.dataset.returnFocus;
-  if (tabId) focusVisibleTab(tabId);
+  if (tabId) focusVisibleTab(tabId, { immediate: true });
 }
 
 async function renderActiveTab({ restoreScroll = false } = {}) {
@@ -2573,7 +2554,7 @@ function promptDirtyClose(tabName, owner = typeof getActiveTab === 'function' ? 
     promptDirtyClose.active = true;
     let settled = false, focusTimer;
     const titleEl = $('close-confirm-title');
-    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '是否保存对文档的修改？';
+    if (titleEl) titleEl.textContent = _t('dialog.unsavedTitle') || '未保存';
     const descEl = $('close-confirm-desc');
     if (descEl) descEl.textContent = _t('dialog.unsavedMsgDesc', { name: tabName || (_t('tabs.untitled') || '文档') }) || `「${tabName || '文档'}」已被修改，如果直接关闭，未保存的内容将会丢失。`;
     modal.classList.remove('hidden');
@@ -3052,7 +3033,7 @@ async function closeAllTabs() {
       name: file?.name || descriptor.name || 'document.md', title: file?.name || descriptor.name || 'document.md',
       content, fixed: content, original: file?.original ?? file?.content ?? (dirty || descriptor.unsavedCreation ? '' : content),
       revision: dirty ? descriptor.revision : (file?.revision || ''), mtime: file?.mtime || 0,
-      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fixes || [], stats: file?.stats || {},
+      size: file?.size || 0, encoding: file?.encoding || 'utf-8', fixes: file?.fix_details ?? file?.fixes ?? [], stats: file?.stats || {},
       is_code: file?.is_code || false, code_lang: file?.code_lang || '', ext: file?.ext || '',
       isVirtual: !file, isDirty: dirty, unsavedCreation: !file && (descriptor.unsavedCreation || dirty),
       originPath: descriptor.originPath || descriptor.path || null, recoveryKey: descriptor.key,
@@ -3443,10 +3424,31 @@ function renderRecentList(list, rec, onOpen) {
   }).catch(() => {});
 }
 
+function renderSidebarRecent(rec) {
+  const list = $('side-recent-list');
+  $('side-recent-clear').disabled = !rec.length;
+  renderRecentList(list, rec, loadFile);
+  if (!rec.length) {
+    const row = document.createElement('li');
+    row.className = 'side-empty';
+    row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
+    list.appendChild(row);
+  }
+}
+
+let recentSidebarRequest = 0;
+async function refreshSidebarRecent() {
+  const request = ++recentSidebarRequest;
+  const rec = await getRecentEntries();
+  if (request === recentSidebarRequest) renderSidebarRecent(rec);
+}
+
 async function refreshRecent() {
   const box = $('recent-box');
   if (!box) return;
+  const request = ++recentSidebarRequest;
   const rec = await getRecentEntries();
+  if (request === recentSidebarRequest) renderSidebarRecent(rec);
   if (!rec.length) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   renderRecentList($('recent-list'), rec, loadFile);
@@ -3468,7 +3470,7 @@ async function openHistoryModal() {
 }
 
 async function clearRecent() {
-  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: 'history-clear' });
+  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: ['history-clear', 'recent-clear', 'side-recent-clear'] });
 }
 
 async function runClearRecent() {
@@ -3553,6 +3555,21 @@ function setUnavailableReason(element, reason) {
   }
 }
 
+function updateSidebarSummaryTitle(summary) {
+  summary.title = Array.from(summary.children, item => item.textContent).filter(Boolean).join(' · ');
+}
+
+function updateSidebarStatistics(stats) {
+  const summary = $('status-summary');
+  if (!summary) return;
+  summary.dataset.tab = state.activeTabId || '';
+  const locale = window.i18n?.currentLang;
+  const count = value => Number(value).toLocaleString(locale || undefined);
+  $('status-words').textContent = stats ? window.i18n.t('reader.wordCount', { count: count(stats.words) }) : '';
+  $('status-reading-time').textContent = stats ? window.i18n.t('reader.readingTime', { minutes: count(stats.minutes) }) : '';
+  updateSidebarSummaryTitle(summary);
+}
+
 function updateStatus() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const srcLabels = {
@@ -3578,6 +3595,15 @@ function updateStatus() {
   $('status-right').textContent = state.mode === 'unavailable' ? _t('toast.openFailed') : parts.join(' · ');
   const isWelcome = state.mode === 'welcome';
   const hasDoc = (state.mode === 'file' || state.mode === 'virtual') && state.original != null;
+  const summary = $('status-summary');
+  if (summary) {
+    if (summary.dataset.tab !== (state.activeTabId || '') || !hasDoc) updateSidebarStatistics(null);
+    const ext = String(state.ext || state.sourceName?.match(/\.([a-z\d]{1,8})$/i)?.[1] || 'md').replace(/^\./, '').toUpperCase();
+    $('status-format').textContent = /^(?:MARKDOWN|MDOWN|MKD|MKDN)$/.test(ext) ? 'MD' : ext;
+    $('status-encoding').textContent = (state.encoding || '').toUpperCase();
+    updateSidebarSummaryTitle(summary);
+    $('statusbar').classList.toggle('hidden', !hasDoc);
+  }
   const canEdit = hasDoc && !state.editing;
   const canReload = state.mode === 'file';
   const canSaveas = hasDoc;
@@ -3591,9 +3617,8 @@ function updateStatus() {
   if ($('btn-print')) {
     const canExport = hasPy || window.READMD_ENGINE === 'rust';
     $('btn-print').disabled = isWelcome || state.mode === 'unavailable' || !canExport;
-    const exportHint = _t('toolbar.export') + ' (Ctrl+P)';
-    $('btn-print').title = exportHint;
-    $('btn-print').setAttribute('aria-label', exportHint);
+    $('btn-print').title = _t('toolbar.export');
+    $('btn-print').setAttribute('aria-label', _t('toolbar.export'));
     if (!canExport) setUnavailableReason($('btn-print'), _t('toast.exportBrowserNotice'));
   }
   if ($('btn-search')) $('btn-search').disabled = isWelcome || state.mode === 'unavailable';
@@ -3626,10 +3651,7 @@ function updateStatus() {
   }
 
   const btnHome = $('btn-home');
-  if (btnHome) {
-    if (isWelcome) btnHome.classList.add('hidden');
-    else btnHome.classList.remove('hidden');
-  }
+  if (btnHome) btnHome.disabled = isWelcome;
 }
 
 let goingHome = false;
@@ -4023,37 +4045,18 @@ function bindTabOverflowEvents() {
   const overflowWrap = $('doc-tabs-overflow-wrap');
   if (!overflowBtn || !dropdown || !overflowWrap) return;
 
-  let isPinned = false;
-
-  const setOverflowMenu = visible => {
-    isPinned = visible;
-    dropdown.classList.toggle('hidden', !visible);
-    overflowBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
-    if (visible) setTimeout(() => dropdown.querySelector('[role="menuitem"]')?.focus(), 20);
-  };
-
-  overflowWrap.addEventListener('mouseenter', () => {
-    if (!isPinned) setOverflowMenu(true);
-  });
-  overflowWrap.addEventListener('mouseleave', () => {
-    if (!isPinned) setOverflowMenu(false);
-  });
-
-  overflowBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    setOverflowMenu(!isPinned);
+  overflowBtn.addEventListener('click', () => {
+    setTopTabMenu(dropdown.classList.contains('hidden'), { focus: true });
   });
 
   overflowBtn.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowDown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.key !== 'ArrowDown') return;
     event.preventDefault();
-    setOverflowMenu(true);
+    setTopTabMenu(true, { focus: true });
   });
 
   document.addEventListener('click', e => {
-    if (!overflowWrap.contains(e.target)) {
-      setOverflowMenu(false);
-    }
+    if (!overflowWrap.contains(e.target)) setTopTabMenu(false);
   });
 
   dropdown.addEventListener('keydown', event => {
@@ -4067,7 +4070,8 @@ function bindTabOverflowEvents() {
       (event.key === 'Home' ? items[0] : items[items.length - 1])?.focus();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      setOverflowMenu(false);
+      event.stopPropagation();
+      setTopTabMenu(false);
       overflowBtn.focus();
     }
   });
@@ -4734,12 +4738,12 @@ function renderMath(body) {
     }
   }
 
-  if (window.MathJax) {
-    if (typeof MathJax.typesetPromise === 'function') { try { doTypeset(); } catch (_) {} }
-    else if (mathReadyPromise) mathReadyPromise.then(doTypeset).catch(() => {});
-    return;
-  }
+  void ensureMathRenderer().then(doTypeset).catch(() => {});
+}
 
+function ensureMathRenderer() {
+  if (typeof window.MathJax?.typesetPromise === 'function') return Promise.resolve();
+  if (mathReadyPromise) return mathReadyPromise;
   window.MathJax = {
     // html is already used by the formula tools; load the pinned local
     // component before TeX configuration, rather than a missing lazy URL.
@@ -4767,8 +4771,8 @@ function renderMath(body) {
     s.onload = () => Promise.resolve(MathJax.startup?.promise).then(resolve, reject);
     s.onerror = () => reject(Error('Local math renderer unavailable'));
   });
-  mathReadyPromise.then(doTypeset).catch(() => {});
   document.head.appendChild(s);
+  return mathReadyPromise;
 }
 
 ;
@@ -4781,25 +4785,50 @@ function renderMath(body) {
 
 let documentInspectionGeneration = 0;
 let documentFixOwner = null;
+const fixLabels = new WeakMap();
+
+function fixLabel(element, text) {
+  if (!element) return;
+  fixLabels.set(element, text);
+  element.textContent = text();
+}
+
+function describeReaderFix(fix) {
+  if (typeof fix === 'string') return fix;
+  const messages = {
+    heading_space: 'fixes.headingSpace', table_separator: 'fixes.tableSeparator',
+    table_alignment: 'fixes.tableAlignment', inline_delimiter: 'fixes.closedDelimiter',
+    inline_math: 'fixes.closedDelimiter',
+  };
+  const line = fix.end_line ? `${fix.line}–${fix.end_line}` : fix.line;
+  const position = i18n.t('inspection.atLine', { line });
+  const message = messages[fix.code];
+  return message ? `${position} · ${i18n.t(message, { ...fix, delimiter: `\u2068${fix.delimiter ?? '$'}\u2069` })}` : position;
+}
+
+function localizeFixReport() {
+  if ($('fix-modal')?.classList.contains('hidden')) return;
+  for (const element of [$('fix-count'), ...($('fix-list')?.children || [])]) {
+    const text = element && fixLabels.get(element);
+    if (text) element.textContent = text();
+  }
+}
+
 function showFixModal() {
   documentFixOwner = captureDocumentFixOwner();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const list = $('fix-list');
   if (list) list.innerHTML = '';
   const fixes = state.fixes || [];
-  const fixCount = $('fix-count');
-  if (fixCount) {
-    fixCount.textContent = fixes.length ? (_t('fixes.countTotal', { count: fixes.length }) || ('（共 ' + fixes.length + ' 处）')) : '';
-  }
+  fixLabel($('fix-count'), () => fixes.length ? i18n.t('fixes.countTotal', { count: fixes.length }) : '');
   if (!fixes.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = _t('fixes.noFixes') || '本篇文档未发现需要修正的内容';
+    fixLabel(li, () => i18n.t('fixes.noFixes'));
     if (list) list.appendChild(li);
   } else {
     fixes.forEach(f => {
       const li = document.createElement('li');
-      li.textContent = f;
+      fixLabel(li, () => describeReaderFix(f));
       if (list) list.appendChild(li);
     });
   }
@@ -4815,7 +4844,7 @@ async function inspectCurrentDocument(generation) {
   const list = $('fix-list');
   const status = document.createElement('li');
   status.className = 'document-inspection-summary';
-  status.textContent = i18n.t('inspection.loading');
+  fixLabel(status, () => i18n.t('inspection.loading'));
   list?.appendChild(status);
   try {
     const response = await apiFetch('/api/document/analyze', {
@@ -4825,22 +4854,24 @@ async function inspectCurrentDocument(generation) {
     const result = await response.json();
     if (generation !== documentInspectionGeneration || tabId !== state.activeTabId || $('fix-modal').classList.contains('hidden')) return;
     if (text !== (state.editing ? getEditContent() : (state.original ?? state.fixed ?? ''))) {
-      status.textContent = i18n.t('inspection.changed'); return;
+      fixLabel(status, () => i18n.t('inspection.changed')); return;
     }
     if (!response.ok || !result.ok) throw new Error('inspection_failed');
-    status.textContent = i18n.t('inspection.summary', { count: result.diagnostics.length });
+    fixLabel(status, () => i18n.t('inspection.summary', { count: result.diagnostics.length }));
     for (const issue of result.diagnostics) {
       const row = document.createElement('li');
       row.className = 'document-inspection-issue';
       const key = 'inspection.' + issue.code;
-      row.textContent = i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target;
+      fixLabel(row, () => i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target);
       list?.appendChild(row);
     }
     if (result.truncated) {
-      const row = document.createElement('li'); row.textContent = i18n.t('inspection.limited'); list?.appendChild(row);
+      const row = document.createElement('li');
+      fixLabel(row, () => i18n.t('inspection.limited'));
+      list?.appendChild(row);
     }
   } catch (_) {
-    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) status.textContent = i18n.t('inspection.failed');
+    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) fixLabel(status, () => i18n.t('inspection.failed'));
   }
 }
 
@@ -5749,32 +5780,33 @@ function updateSearchCount() {
   $('search-count').textContent = total ? ((state.searchIndex % total) + 1) + '/' + total : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
 }
 
-function toggleSearch() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome' || (!state.editing && !state.file && state.original == null)) {
-    showToast(_t('toast.searchNeedsDocument') || '请先打开文档，再按 Ctrl+F 搜索');
-    return;
-  }
+function openSidebarSearch() {
   const bar = $('search-bar');
-  syncSearchMode();
   if (bar.classList.contains('hidden')) {
     bar.classList.remove('hidden');
     if (state.editing) {
       const selected = window.cmView ? window.cmView.state.sliceDoc(window.cmView.state.selection.main.from, window.cmView.state.selection.main.to) : $('edit-area').value.slice($('edit-area').selectionStart, $('edit-area').selectionEnd);
       if (selected && selected.length <= 256 && !selected.includes('\n')) $('search-input').value = selected;
-      searchEditor($('search-input').value, { jump: false });
     }
-    $('search-input').focus();
-    $('search-input').select();
-  } else {
-    closeSearch({ restoreFocus: true });
   }
+  syncSearchMode();
 }
 
-function closeSearch({ restoreFocus = false } = {}) {
+function toggleSearch() {
+  if ($('btn-search').disabled) {
+    showToast(window.i18n?.t('toast.searchNeedsDocument') || '请打开文档');
+    return;
+  }
+  showSide('search');
+  $('search-input').focus();
+  $('search-input').select();
+}
+
+function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
   $('search-bar').classList.add('hidden');
   clearMarks();
   editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+  if (closeSidebar && $('side').dataset.view === 'search') closeSide();
   if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
   if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
   if (restoreFocus) {
@@ -5813,7 +5845,7 @@ async function openFolder() {
 }
 
 let folderRequestEpoch = 0;
-async function listFolder(dir) {
+async function listFolder(dir, { reveal = true } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const epoch = ++folderRequestEpoch;
   try {
@@ -5825,8 +5857,8 @@ async function listFolder(dir) {
     }
     state.folder = d.dir;
     state.folderFiles = d.files || [];
-    renderFolderList();
-    showSide('files');
+    if (reveal) showSide('files', { loadFiles: false });
+    else renderFolderList();
     return true;
   } catch (e) {
     if (epoch === folderRequestEpoch) showToast((_t('toast.readFolderFail') || '读取文件夹失败') + ': ' + e.message);
@@ -5938,11 +5970,6 @@ function renderTreeNodes(container, childrenObj, depth) {
         toggle.classList.add('empty');
       }
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.dir;
-      icon.setAttribute('aria-hidden', 'true');
-
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
@@ -5984,7 +6011,6 @@ function renderTreeNodes(container, childrenObj, depth) {
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
-      row.appendChild(icon);
       row.appendChild(nameEl);
       row.title = item.path;
       nodeEl.appendChild(row);
@@ -6038,65 +6064,10 @@ function handleTreeKeydown(event, row) {
   row.closest('.tree-node')?.parentElement?.closest('.tree-node')?.querySelector(':scope > .tree-row')?.focus();
 }
 
-function showSide(tab) {
-  $('side').classList.remove('hidden');
-  const tabs = { toc: $('tab-toc'), files: $('tab-files') };
-  Object.entries(tabs).forEach(([name, button]) => {
-    const active = name === tab;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', active ? 'true' : 'false');
-    button.tabIndex = active ? 0 : -1;
-  });
-  $('file-list').classList.toggle('hidden', tab !== 'files');
-  $('toc-list').classList.toggle('hidden', tab !== 'toc');
-  if (tab === 'files') {
-    if (state.folderFiles.length) renderFolderList();
-    else listFolder(state.dir || '');
-  } else {
-    buildToc();
-    updateTreeTabIndex();
-  }
-}
-
-(function bindSideTabKeys() {
-  const tablist = $('#side-tabs') || document.getElementById('side-tabs');
-  if (!tablist) return;
-  tablist.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const next = event.key === 'ArrowRight' ? 'files' : 'toc';
-    showSide(next);
-    $(next === 'files' ? 'tab-files' : 'tab-toc').focus();
-  });
-  document.addEventListener('keydown', event => {
-    const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
-    if (row) handleTreeKeydown(event, row);
-  });
-})();
-
-function toggleSide(tab) {
-  const side = $('side');
-  if (!side) return;
-  if (!side.classList.contains('hidden')) {
-    const isCurrentTab = (tab === 'files' && !$('file-list').classList.contains('hidden')) ||
-                         (tab === 'toc' && !$('toc-list').classList.contains('hidden'));
-    if (!tab || isCurrentTab) {
-      side.classList.add('hidden');
-      return;
-    }
-  }
-  showSide(tab || 'toc');
-}
-
-(function bindSideClose() {
-  const btn = $('side-close-btn');
-  if (btn) {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      $('side')?.classList.add('hidden');
-    });
-  }
-})();
+document.addEventListener('keydown', event => {
+  const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
+  if (row) handleTreeKeydown(event, row);
+});
 
 ;
 'use strict';
@@ -7123,7 +7094,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       original: d.original != null ? d.original : d.content,
       fixed: d.content,
       title: isBrowserCopy ? `${d.name} (${_t('app.browserCopy') || 'browser copy'})` : d.name,
-      fixes: d.fixes || [],
+      fixes: d.fix_details ?? d.fixes ?? [],
       stats: d.stats || {},
       size: d.size,
       mtime: d.mtime,
@@ -7152,7 +7123,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       if (wasActive) {
         await prepareDocCitations(d.path, existingTab.content);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
-        setFixes(d.fixes || [], d.stats || {});
+        setFixes(fileFields.fixes, d.stats || {});
         await renderContent(existingTab.content, d.name);
         if (!isDocumentLoadCurrent(loadEpoch)) return;
         if (state.pagination.enabled && state.pagination.mode === 'paged' && previousPage > 0) {
@@ -7188,7 +7159,7 @@ async function loadFile(path, { force = false, browserCopy = null, discardConfir
       syncStateFromActiveTab();
       await prepareDocCitations(d.path, newTab.content);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
-      setFixes(d.fixes || [], d.stats || {});
+      setFixes(fileFields.fixes, d.stats || {});
       await renderContent(newTab.content, d.name);
       if (!isDocumentLoadCurrent(loadEpoch)) return;
       if (state.pagination.enabled && state.pagination.totalPages > 1) {
@@ -7251,7 +7222,6 @@ function setEditBtn(label) {
   if (!el) return;
   const sp = el.querySelector('span.tb-label');
   if (sp) sp.textContent = label;
-  else el.textContent = label;
   el.setAttribute('aria-pressed', String(Boolean(state.editing)));
   el.setAttribute('aria-label', label);
   el.title = /Ctrl\+E|⌘/.test(label) ? label : `${label} (Ctrl+E)`;
@@ -10004,7 +9974,7 @@ async function launchPresentationMode() {
         </div>
         <button type="button" class="presentation-btn" id="presentation-overview-btn" title="${_t('presentation.overviewTitle')}">${_t('presentation.overviewLabel')}</button>
         <button type="button" class="presentation-btn" id="presentation-fullscreen-btn" title="${_t('presentation.fullscreenTitle')}">${_t('presentation.fullscreenLabel')}</button>
-        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        <button type="button" class="presentation-close-btn" id="presentation-close-btn" title="${_t('presentation.closeTitle')}" data-i18n-title="presentation.closeTitle" data-modal-close><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div id="presentation-loading"></div>
       <iframe class="presentation-iframe" title="${_t('menu.presentation') || '演讲演示'}" src="about:blank"></iframe>
@@ -10568,38 +10538,21 @@ function setPvLayout(layout) {
     switchEditAiToChatPanel();
   }
   state.pvLayout = layout;
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === layout));
-  updatePvLabel(layout);
   applyPvLayout();
 }
 
 function updatePvLabel(layout = state.pvLayout || 'none') {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const names = {
-    none: _t('editor.previewNone') || '无',
-    left: _t('editor.previewLeft') || '左',
-    right: _t('editor.previewRight') || '右',
-    bottom: _t('editor.previewBottom') || '下',
-    top: _t('editor.previewTop') || '上'
-  };
-  const narrow = window.innerWidth < 600 && (layout === 'left' || layout === 'right');
-  const previewLabel = _t('editor.preview') || '预览';
-  const trigger = $('pv-trigger');
-  if (trigger) {
-    // Short visible label; the full state (incl. narrow-screen note) is in title/aria-label.
-    const full = narrow
-      ? previewLabel + '：' + names[layout] + '（' + (_t('editor.narrowScreenBottom') || '窄屏置底') + '）'
-      : previewLabel + '：' + names[layout];
-    trigger.innerHTML = '<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="pv-trigger-label"></span><svg class="md-caret" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
-    trigger.querySelector('.pv-trigger-label').textContent = full;
-    trigger.title = full;
-    trigger.setAttribute('aria-label', full);
-    trigger.classList.toggle('is-on', layout !== 'none');
+  for (const button of document.querySelectorAll('.pv-btn')) {
+    const active = button.dataset.pv === layout;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
   }
+  $('edit-view-trigger')?.classList.toggle('is-on', layout !== 'none');
 }
 
 function applyPvLayout({ persist = true, updatePanels = true } = {}) {
   const layout = state.pvLayout || 'none';
+  updatePvLabel(layout);
   const mc = $('main-col');
 
   const pw = $('preview-wrap');
@@ -11056,10 +11009,58 @@ function alignEditorAndPreview() {
 }
 window.alignEditorAndPreview = alignEditorAndPreview;
 
-function applyPvUi() {
-  document.querySelectorAll('.pv-btn').forEach(b => b.classList.toggle('active', b.dataset.pv === state.pvLayout));
+function updatePreviewOptions() {
   const sync = $('pv-sync');
-  if (sync) sync.checked = !!state.pvSync;
+  const publication = $('pv-publication');
+  if (sync) {
+    sync.checked = !!state.pvSync;
+    sync.disabled = !!state.pvPublication;
+  }
+  if (publication) publication.checked = !!state.pvPublication;
+}
+
+function bindPreviewControls() {
+  document.querySelectorAll('.pv-btn').forEach(button => {
+    button.addEventListener('click', event => {
+      setPvLayout(button.dataset.pv);
+      closeMdPopups({ restoreFocus: event.detail === 0 });
+    });
+  });
+  const sync = $('pv-sync');
+  sync.addEventListener('change', () => {
+    state.pvSync = sync.checked;
+    saveSettings();
+  });
+  const publication = $('pv-publication');
+  publication.addEventListener('change', async () => {
+    const wanted = publication.checked;
+    const tab = state.activeTabId;
+    const view = cmView;
+    publication.disabled = true;
+    try {
+      const ready = !wanted || (view && await ReadMDCapabilities.ensure('typst') &&
+        await ReadMDCapabilities.ensurePublication(view.state.doc.toString(), {
+          ...state.export?.options, pdf: { engine: 'typst' }
+        }));
+      if (state.activeTabId !== tab || cmView !== view || !state.editing) return;
+      state.pvPublication = !!(wanted && ready);
+      pvLast = '';
+      schedulePreview();
+    } catch {
+      if (state.activeTabId === tab && cmView === view && state.editing) {
+        showToast(i18n.t('editor.previewRenderFail'));
+      }
+    } finally {
+      publication.disabled = false;
+      updatePreviewOptions();
+    }
+  });
+  $('preview-wrap').addEventListener('scroll', pvSyncFromPreview);
+  bindPvSplitter();
+}
+
+function applyPvUi() {
+  updatePreviewOptions();
   setPvLayout(state.pvLayout);
 }
 
@@ -12585,12 +12586,19 @@ async function exportAndInsertImgOnce() {
     return { text: formatted.join('\n'), selFrom: first.from, selTo: first.to };
   }
 
+  // The caller supplies two adjacent body lines from one parsed table.
+  function tableRowSwap(first, second) {
+    const [upper, lower] = first.from < second.from ? [first, second] : [second, first];
+    if (lower.from !== upper.to + 1 || upper.text === lower.text) return null;
+    return { from: upper.from, to: lower.to, insert: lower.text + '\n' + upper.text };
+  }
+
   const api = {
     computeSyntaxEdit, applySyntaxEdit,
     headingLevelEdit, calloutEdit, CALLOUT_TYPES,
     blockInsertEdit, linePrefixEdit, inlineInsertEdit, footnoteEdit, tocMarkdown, headingSlug,
     fuzzyScore, textStats,
-    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock,
+    strWidth, splitRow, isDelimRow, formatTable, findTable, cellRanges, tableNavEdit, tableEnterEdit, tableBlock, tableRowSwap,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ReadMDTransforms = api;
@@ -13385,7 +13393,7 @@ window.ReadMDReview = (() => {
     const key='error.'+code, localized=t(key);
     if (code && localized !== key) return localized;
     if (code === 'cancelled') return t('ai.stopped');
-    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
+    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery|overlapping_edits/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
   }
   function notifyError(error) { if (typeof showToast === 'function') showToast(message(error), 6000); }
   function source(tab) {
@@ -13502,10 +13510,14 @@ window.ReadMDReview = (() => {
   }
   function remoteEdits(before, snapshot, op) {
     if (before === snapshot.content) return [];
+    if (Array.isArray(snapshot.transaction_edits)) {
+      if (apply(before, snapshot.transaction_edits) !== snapshot.content) throw failure('review_conflict');
+      return snapshot.transaction_edits;
+    }
     if (op?.edits && apply(before, op.edits) === snapshot.content) return op.edits;
     if (op?.kind === 'resolve' && op.previous) {
       const edits = op.previous.changes.filter(change => op.ids.includes(change.id)).flatMap(change => {
-        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.original }];
+        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.restore_original ?? change.original }];
         if (op.decision === 'accept' && change.application === 'proposed') return [{ from: change.from, to: change.to, insert: change.replacement }];
         return [];
       }).sort((a, b) => a.from - b.from);
@@ -13689,7 +13701,7 @@ window.ReadMDReview = (() => {
         } catch (error) {
           // Retain the same id and exact payload: an explicit retry can recover
           // a committed operation whose network acknowledgement was lost.
-          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
+          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|overlapping_edits|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
           if (!rejected) { rec.queue.unshift(op); rec.error = error; }
           op.reject?.(error); delete op.resolve; delete op.reject;
           notifyError(error); refresh(rec);
@@ -14285,7 +14297,7 @@ window.ReadMDReview = (() => {
         if (typeof state !== 'undefined' && !state.editing && typeof toggleEdit === 'function') await toggleEdit();
         if (activeTab() === tab) navigate(1, tab);
       });
-      footer.insertBefore(marker, document.getElementById('status-mods'));
+      footer.insertBefore(marker, document.getElementById('editor-status-group'));
     }
     if (marker) {
       marker.hidden = !(pending || conflict);
@@ -14382,7 +14394,11 @@ function saveEditorPrefs() {
 }
 
 let cmCompartments = null;
-let cmPointerDown = false;
+let cmSelectionGesture = null;
+let cmSelectionSuppressed = null;
+let cmSelectionTimer = 0;
+const CM_SELECTION_SETTLE_MS = 140;
+const CM_SELECTION_SLOP_SQUARED = 16;
 let cmReusedState = false;
 let cmLayoutCleanup = null;
 
@@ -14500,7 +14516,7 @@ function createEditor(doc) {
         }
         slashOnUpdate(u);
         if (u.selectionSet && !u.docChanged) scheduleDocStatistics();
-        if (u.selectionSet || u.docChanged) updateCmSelectionToolbar();
+        if (u.selectionSet || u.docChanged) scheduleCmSelectionToolbar();
         if (u.geometryChanged && !slash.open) repositionCmSelectionToolbar();
       }),
     ],
@@ -14513,8 +14529,22 @@ function createEditor(doc) {
   window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
-  cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
-  cmView.dom.addEventListener('keyup', () => setTimeout(updateCmSelectionToolbar, 10));
+  const view = cmView;
+  view.dom.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
+    cmSelectionGesture = {
+      view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
+      travel: 0, clicks: 1, modified: event.shiftKey || event.altKey || event.ctrlKey || event.metaKey,
+    };
+    cmSelectionSuppressed = null;
+    hideCmSelectionToolbar();
+  }, true);
+  view.dom.addEventListener('mousedown', event => {
+    if (cmSelectionGesture?.view === view) cmSelectionGesture.clicks = event.detail;
+  }, true);
+  view.dom.addEventListener('keydown', event => {
+    if (!event.isComposing) cmSelectionSuppressed = null;
+  }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
     repositionCmSelectionToolbar();
@@ -14526,11 +14556,35 @@ function createEditor(doc) {
 
 }
 
-document.addEventListener('pointerup', () => {
-  if (!cmPointerDown) return;
-  cmPointerDown = false;
-  setTimeout(updateCmSelectionToolbar, 10);
-});
+function trackSelectionTravel(event) {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  gesture.travel = Math.max(gesture.travel, (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2);
+}
+document.addEventListener('pointermove', trackSelectionTravel, { capture: true, passive: true });
+document.addEventListener('pointerup', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  trackSelectionTravel(event);
+  cmSelectionGesture = null;
+  // CodeMirror may finish the range in its mouseup handler. Inspect that
+  // settled range rather than inferring or rewriting the user's selection.
+  requestAnimationFrame(() => {
+    if (cmView !== gesture.view || cmSelectionGesture) return;
+    const { from, to } = cmView.state.selection.main;
+    if (from !== to && gesture.type === 'mouse' && gesture.clicks === 1 &&
+        !gesture.modified && gesture.travel < CM_SELECTION_SLOP_SQUARED) {
+      cmSelectionSuppressed = { view: cmView, from, to };
+    }
+    scheduleCmSelectionToolbar();
+  });
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (cmSelectionGesture?.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  hideCmSelectionToolbar();
+}, true);
+window.addEventListener('blur', () => { cmSelectionGesture = null; hideCmSelectionToolbar(); });
 
 /* vendor 包只导出 historyKeymap，不直接导出 undo / redo：从键位表里取命令 */
 function cmHistoryCommand(key) {
@@ -14559,8 +14613,31 @@ function cmRedo() {
 }
 
 function hideCmSelectionToolbar() {
+  clearTimeout(cmSelectionTimer);
+  cmSelectionTimer = 0;
   const toolbar = $('cm-selection-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
+}
+
+function selectionToolbarRange() {
+  if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
+  const selection = cmView.state.selection.main;
+  if (!selection || selection.empty) return null;
+  const suppressed = cmSelectionSuppressed;
+  if (suppressed?.view === cmView && suppressed.from === selection.from && suppressed.to === selection.to) return null;
+  cmSelectionSuppressed = null;
+  return selection;
+}
+
+function scheduleCmSelectionToolbar() {
+  hideCmSelectionToolbar();
+  const selection = selectionToolbarRange(), view = cmView;
+  if (!selection) return;
+  cmSelectionTimer = setTimeout(() => {
+    cmSelectionTimer = 0;
+    const current = selectionToolbarRange();
+    if (cmView === view && current?.from === selection.from && current.to === selection.to) updateCmSelectionToolbar();
+  }, CM_SELECTION_SETTLE_MS);
 }
 
 /* Selection toolbar buttons -> toolbar command (same code path as #md-tool). */
@@ -14585,12 +14662,8 @@ function cmSelectionMarks(view, from, to) {
 function updateCmSelectionToolbar() {
   const toolbar = $('cm-selection-toolbar');
   if (!toolbar) return;
-  if (!state.editing || !cmView || cmPointerDown || slash.open) {
-    toolbar.classList.add('hidden');
-    return;
-  }
-  const sel = cmView.state.selection.main;
-  if (!sel || sel.empty || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
+  const sel = selectionToolbarRange();
+  if (!sel || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
     toolbar.classList.add('hidden');
     return;
   }
@@ -15215,11 +15288,6 @@ function cmInsertSyntax(kind) {
 }
 
 
-function closeMdPopups() {
-  document.querySelectorAll('.md-menu, .pv-menu').forEach(el => el.classList.add('hidden'));
-  const trigger = $('pv-trigger'); if (trigger) trigger.setAttribute('aria-expanded', 'false');
-  document.querySelectorAll('#edit-bar [data-menu]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-}
 
 /* ============================================================
    Editor Studio PRO: Code Chunk / Diagram / Doc Import Modals
@@ -15751,6 +15819,9 @@ function updateDocStatistics() {
   const hiddenMetadata=[...(window.ReadMDFormula?.metadataRanges(docText)||[]),...(window.ReadMDPublication?.metadataRanges(docText)||[])].sort((a,b)=>a.from-b.from);
   let visibleText='',visibleAt=0;for(const hidden of hiddenMetadata){visibleText+=docText.slice(visibleAt,hidden.from);visibleAt=hidden.to;}visibleText+=docText.slice(visibleAt);
   const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };
+  if (state.editing && typeof updateSidebarStatistics === 'function') {
+    updateSidebarStatistics({ words: stats.words, minutes: Math.max(stats.minutes, stats.words ? 1 : 0) });
+  }
   const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
@@ -15769,6 +15840,7 @@ function updateDocStatistics() {
     }
   }
   const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };
+  statsEl.classList.toggle('has-selection', selWords > 0);
   statsEl.textContent = selWords
     ? _t('editor.statsSelection', { words: nf(selWords), total: params.total })
     : _t('editor.statsLine', params);
@@ -16074,19 +16146,65 @@ function tableCellControls(view, context, modal, picker) {
   tableCellSession = session;
   root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
   const current = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
-    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc;
+    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc && !view.state.readOnly &&
+    window.ReadMDCollaborationShare?.canEdit() !== false;
   const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
   const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
   const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
   const label = document.createElement('label'); label.setAttribute('for', input.id);
   const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const moves = [[-1, 'pm.up', 'M12 19V5m-5 5 5-5 5 5'], [1, 'pm.down', 'M12 5v14m-5-5 5 5 5-5']].map(([step, key, icon]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
+    button.dataset.tableMove = step < 0 ? 'up' : 'down'; button.disabled = true;
+    button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
+    button.title = t(key); button.setAttribute('aria-label', t(key));
+    button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
+    button.addEventListener('click', () => void moveRow(step)); actions.append(button);
+    return { step, button };
+  });
   const apply = document.createElement('button'), cancel = document.createElement('button');
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
   const buttons = [];
+  function rowMove(step) {
+    const row = session.cell?.row, next = row + step;
+    if (!(row > 0 && next > 0 && next < context.rows.length)) return null;
+    const doc = context.editorDoc;
+    return window.ReadMDTransforms.tableRowSwap(doc.line(context.rows[row][0].line), doc.line(context.rows[next][0].line));
+  }
+  function updateMoveButtons() {
+    for (const { button, step } of moves) button.disabled = session.busy || !rowMove(step);
+  }
+  async function moveRow(step) {
+    if (!current() || session.busy) return;
+    const edit = rowMove(step);
+    if (!edit) return;
+    session.busy = true; apply.disabled = true; updateMoveButtons();
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
+      if (!current()) return;
+      // Reordering source would invalidate these anchors. Keep any review
+      // touching the affected lines available for an explicit decision first.
+      const changes = ReadMDReview.snapshot(tab).changes;
+      if (changes.some(change => change.decision !== 'withdrawn' && (change.from === change.to
+        ? edit.from <= change.from && change.from <= edit.to
+        : change.from < edit.to && edit.from < change.to))) {
+        status.textContent = t('review.conflict'); return;
+      }
+      await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current);
+      if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal();
+    } catch (_) {
+      if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
+    } finally {
+      session.busy = false;
+      if (current()) { updateMoveButtons(); apply.disabled = !session.stamp; }
+    }
+  }
   async function select(cell) {
     if (!current() || session.busy) return;
     const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
+    updateMoveButtons();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
     if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
@@ -16095,7 +16213,8 @@ function tableCellControls(view, context, modal, picker) {
       const stamp = await ReadMDReview.captureManualRange(cell.from, cell.to, tab);
       if (!current() || token !== session.serial) return;
       if (stamp.editorDoc !== context.editorDoc || stamp.original !== cell.original) throw Error('review_stale_generation');
-      session.stamp = stamp; apply.disabled = false; status.textContent = ''; input.focus();
+      session.stamp = stamp;
+      if (!session.busy) { apply.disabled = false; status.textContent = ''; input.focus(); }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
   }
   for (const row of context.rows) {
@@ -16115,10 +16234,10 @@ function tableCellControls(view, context, modal, picker) {
     if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
     if (input.value === session.cell.value) { closeTableModal(); return; }
     const stamp = session.stamp;
-    session.busy = true; apply.disabled = true; input.disabled = true;
+    session.busy = true; apply.disabled = true; input.disabled = true; updateMoveButtons();
     try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
     catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
-    finally { session.busy = false; }
+    finally { session.busy = false; if (current()) updateMoveButtons(); }
   });
   root.append(gridWrap, label, input, actions, status); void select(context.selected);
 }
@@ -17175,25 +17294,64 @@ function slashOnUpdate(u) {
 
 window.addEventListener('resize', () => { if (slash.open) positionSlashMenu(); });
 
-/* ============================================================
-   Edit bar: view menu (line numbers / focus / typewriter), slash button,
-   keyboard navigation inside the edit-bar menus.
-   ============================================================ */
+;
+'use strict';
 
-function editMenuArrowNav(e) {
-  const items = [...e.currentTarget.querySelectorAll('button')].filter(b => b.offsetParent !== null && !b.disabled);
-  if (!items.length) return;
-  const i = items.indexOf(document.activeElement);
-  let next = null;
-  if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
-  else if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length];
-  else if (e.key === 'Home') next = items[0];
-  else if (e.key === 'End') next = items[items.length - 1];
-  if (next) { e.preventDefault(); next.focus(); }
+function closeMdPopups({ restoreFocus = false } = {}) {
+  const bar = $('edit-bar');
+  const trigger = bar.querySelector('[data-menu][aria-expanded="true"]');
+  bar.querySelectorAll('.md-menu:not(.hidden)').forEach(menu => menu.classList.add('hidden'));
+  trigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) trigger?.focus({ preventScroll: true });
 }
 
-// Move the original controls, including their bound handlers, into a single
-// overflow menu. Measure translated labels instead of assuming English widths.
+function positionEditorMenu(trigger, menu) {
+  const gap = 8;
+  const anchor = trigger.getBoundingClientRect();
+  const column = $('document-column').getBoundingClientRect();
+  const viewport = document.documentElement;
+  const left = Math.max(gap, column.left + gap);
+  const right = Math.min(viewport.clientWidth - gap, column.right - gap);
+  const top = anchor.bottom + gap;
+  menu.style.inset = 'auto';
+  menu.style.setProperty('--editor-menu-width', Math.max(0, right - left) + 'px');
+  menu.style.setProperty('--editor-menu-height', Math.max(0, viewport.clientHeight - top - gap) + 'px');
+  const width = menu.getBoundingClientRect().width;
+  const rtl = getComputedStyle(trigger).direction === 'rtl';
+  const alignRight = (trigger.id === 'edit-view-trigger') !== rtl;
+  const wanted = alignRight ? anchor.right - width : anchor.left;
+  menu.style.left = Math.max(left, Math.min(wanted, right - width)) + 'px';
+  menu.style.top = top + 'px';
+}
+
+function editorMenuItems(menu) {
+  return [...menu.querySelectorAll('button:not(:disabled), input:not(:disabled)')]
+    .filter(control => control.getClientRects().length);
+}
+
+function editMenuArrowNav(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeMdPopups({ restoreFocus: true });
+    return;
+  }
+  const items = editorMenuItems(event.currentTarget);
+  if (!items.length) return;
+  const index = items.indexOf(document.activeElement);
+  let next;
+  switch (event.key) {
+    case 'ArrowDown': next = items[(index + 1) % items.length]; break;
+    case 'ArrowUp': next = items[(index - 1 + items.length) % items.length]; break;
+    case 'Home': next = items[0]; break;
+    case 'End': next = items.at(-1); break;
+    default: return;
+  }
+  event.preventDefault();
+  next.focus();
+}
+
+// Reuse each command and its listeners when placing it in the overflow menu.
 function bindEditorToolbarOverflow() {
   const bar = $('edit-bar'), menu = $('edit-overflow-menu'), more = $('edit-overflow-wrap'), trigger = $('edit-overflow-trigger');
   if (!bar || !menu || !more || !trigger || bar.dataset.overflowBound) return;
@@ -17201,9 +17359,7 @@ function bindEditorToolbarOverflow() {
   menu.addEventListener('click', event => { if (event.target.closest('button')) closeMdPopups(); });
   const candidates = [
     ['[data-menu="md-text-menu"]', 'editor.text'],
-    ['#formula-open'], ['#edit-slash-btn'],
-    ['#edit-view-trigger', 'editor.view'],
-    ['.md-fmt-group [data-md="strike"]'], ['.md-fmt-group [data-md="code"]'],
+    ['#formula-open'],
     ['[data-menu="md-structure-menu"]', 'editor.structure'],
     ['[data-menu="md-insert-menu"]', 'editor.insert'],
     ['#edit-redo'], ['#edit-undo'], ['.md-fmt-group [data-md="link"]'],
@@ -17211,7 +17367,7 @@ function bindEditorToolbarOverflow() {
   ].map(([selector, heading]) => {
     const button = bar.querySelector(selector);
     if (!button) return null;
-    const popup = heading ? $(button.dataset.menu || 'edit-view-menu') : null;
+    const popup = heading ? $(button.dataset.menu) : null;
     const original = popup ? button.closest('.md-menu-wrap') : button;
     const anchor = document.createComment('editor toolbar position');
     original.before(anchor);
@@ -17224,7 +17380,7 @@ function bindEditorToolbarOverflow() {
       caption.dataset.i18n = heading;
       caption.textContent = window.i18n ? i18n.t(heading) : button.textContent;
       section.append(caption);
-    } else if (button.classList.contains('icon') || button.id === 'edit-slash-btn') {
+    } else if (button.classList.contains('icon')) {
       const label = document.createElement('span');
       label.className = 'editor-overflow-label';
       label.dataset.i18n = button.dataset.i18nAria;
@@ -17270,9 +17426,6 @@ function bindEditorToolbarOverflow() {
           if (required() <= width + .5) break;
         }
       }
-      // Floating menus open inward when their anchor is close to the edge.
-      const r = more.getBoundingClientRect();
-      more.classList.toggle('editor-menu-end', r.left > window.innerWidth / 2);
       if (focused && focused !== document.activeElement && focused.getClientRects().length) focused.focus({ preventScroll:true });
     });
   };
@@ -17283,43 +17436,41 @@ function bindEditorToolbarOverflow() {
 }
 
 function bindEditBarExtras() {
-  const trig = $('edit-view-trigger');
-  const menu = $('edit-view-menu');
-  if (trig && menu && !trig.dataset.bound) {
-    trig.dataset.bound = '1';
-    trig.addEventListener('click', e => {
-      e.stopPropagation();
+  const bar = $('edit-bar');
+  if (bar.dataset.controlsBound) return;
+  bar.dataset.controlsBound = 'true';
+  bar.querySelectorAll('[data-menu]').forEach(trigger => {
+    const menu = $(trigger.dataset.menu);
+    trigger.addEventListener('click', event => {
+      event.stopPropagation();
       const show = menu.classList.contains('hidden');
       closeMdPopups();
-      menu.classList.toggle('hidden', !show);
-      trig.setAttribute('aria-expanded', show ? 'true' : 'false');
-      if (show && e.detail === 0) { const first = menu.querySelector('button'); if (first) first.focus(); }
+      if (!show) return;
+      menu.classList.remove('hidden');
+      trigger.setAttribute('aria-expanded', 'true');
+      positionEditorMenu(trigger, menu);
+      if (event.detail === 0) editorMenuItems(menu)[0]?.focus();
     });
-    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter'], ['edit-view-ai-completion', 'aiCompletion']].forEach(([id, key]) => {
-      const b = $(id);
-      if (b) b.addEventListener('click', e => { e.stopPropagation(); setEditorPref(key); });
-    });
-  }
-  const slashBtn = $('edit-slash-btn');
-  if (slashBtn && !slashBtn.dataset.bound) {
-    slashBtn.dataset.bound = '1';
-    slashBtn.addEventListener('mousedown', e => e.preventDefault());
-    slashBtn.addEventListener('click', e => { e.stopPropagation(); closeMdPopups(); if (cmView) openSlashAtCursor(cmView); });
-  }
-  document.querySelectorAll('#edit-bar .md-menu').forEach(m => {
-    if (m.dataset.navBound) return;
-    m.dataset.navBound = '1';
-    m.addEventListener('keydown', editMenuArrowNav);
+    menu.addEventListener('keydown', editMenuArrowNav);
   });
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => {
-    if (b.dataset.ariaBound) return;
-    b.dataset.ariaBound = '1';
-    b.addEventListener('click', e => requestAnimationFrame(() => {
-      const m = $(b.dataset.menu);
-      const open = !!(m && !m.classList.contains('hidden'));
-      b.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open && e.detail === 0) { const first = m.querySelector('button'); if (first) first.focus(); }
-    }));
+  window.addEventListener('resize', () => {
+    const trigger = bar.querySelector('[data-menu][aria-expanded="true"]');
+    if (trigger) positionEditorMenu(trigger, $(trigger.dataset.menu));
+  });
+  const options = [
+    ['edit-view-lines', 'lineNumbers'],
+    ['edit-view-focus', 'focus'],
+    ['edit-view-typewriter', 'typewriter'],
+    ['edit-view-ai-completion', 'aiCompletion'],
+  ];
+  for (const [id, key] of options) {
+    $(id).addEventListener('click', () => setEditorPref(key));
+  }
+  const slashButton = $('edit-slash-btn');
+  slashButton.addEventListener('mousedown', event => event.preventDefault());
+  slashButton.addEventListener('click', () => {
+    closeMdPopups();
+    if (cmView) openSlashAtCursor(cmView);
   });
   applyEditorViewClasses();
   bindEditorToolbarOverflow();
@@ -17510,12 +17661,7 @@ window.ReadMDFormula = (() => {
           byId('formula-source-details').open=true;return;
         }
       }
-      // Use the existing offline MathJax loader, then render from source rather
-      // than HTML. A stale promise never changes another draft or a closed modal.
-      if (!window.MathJax?.tex2svgPromise) { target.textContent = '$$x$$'; renderMath(target); }
-      if (window.MathJax?.startup?.promise) await MathJax.startup.promise;
-      const deadline = Date.now() + 12000;
-      while (!window.MathJax?.tex2svgPromise && Date.now() < deadline) await new Promise(r => setTimeout(r, 40));
+      await ensureMathRenderer();
       if (draft !== current || epoch !== renderEpoch) return;
       if (!window.MathJax?.tex2svgPromise) throw Error('renderer unavailable');
       const prefix = 'rd-formula-token-' + epoch + '-' + Math.random().toString(36).slice(2, 10) + '-';
@@ -17570,13 +17716,31 @@ window.ReadMDFormula = (() => {
     const from = token ? token.from : source.selectionStart;
     const to = token ? token.to : source.selectionEnd;
     if(current.dialect==='dsl'&&!sourceInput){
+      if (current.insertingTemplate) return;
+      const epoch = ++renderEpoch;
+      const previousSource = current.tex;
+      const wasValid = current.valid;
+      current.insertingTemplate = true;
+      current.valid = false;
+      byId('formula-apply').disabled = true;
+      const stillCurrent = () => draft === current && renderEpoch === epoch && current.tex === previousSource;
       try{
         const response=await apiFetch('/api/math/serialize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:tex,dialect:'latex',target:'dsl',display:false})});
         const result=await response.json();if(!response.ok||!result.ok)throw Error('invalid');
-        if(draft!==current)return;tex=result.output;
+        if (!stillCurrent()) return;
+        tex=result.output;
         // A catalogue item replaces a slot, not the whole Office root.
         const wrapped=/^office\.oMath\(([\s\S]*)\)$/.exec(tex);if(wrapped)tex=wrapped[1];
-      }catch(_){if(draft===current)byId('formula-error').textContent=tr('formula.invalid');return;}
+      } catch (_) {
+        if (stillCurrent()) {
+          current.valid = wasValid;
+          byId('formula-apply').disabled = !wasValid;
+          byId('formula-error').textContent = tr('formula.invalid');
+        }
+        return;
+      } finally {
+        current.insertingTemplate = false;
+      }
     }
     // Empty, unselected drafts accept a template directly. Existing content is
     // replaced only when the user selected it, never just by opening the picker.
@@ -17608,8 +17772,11 @@ window.ReadMDFormula = (() => {
     renderTemplatePreviews();
   }
   async function renderTemplatePreviews() {
-    if (!draft || !window.MathJax?.tex2svgPromise) return;
+    if (!draft) return;
     const current = draft;
+    try { await ensureMathRenderer(); }
+    catch (_) { return; }
+    if (draft !== current || !window.MathJax?.tex2svgPromise) return;
     for (const button of byId('formula-list').querySelectorAll('[data-template-tex]')) {
       if (!button.isConnected || button.dataset.previewPending) continue;
       button.dataset.previewPending = 'true';
@@ -17721,7 +17888,7 @@ window.ReadMDFormula = (() => {
     byId('formula-more').onclick = () => { pageSize += 72; picker(); };
     byId('formula-mode').addEventListener('change', renderDraft);
     let timer;
-    byId('formula-source').addEventListener('input', () => { if (!draft) return; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
+    byId('formula-source').addEventListener('input', () => { if (!draft) return; ++renderEpoch; draft.tex = byId('formula-source').value; draft.valid = false; byId('formula-apply').disabled = true; clearTimeout(timer); timer = setTimeout(renderDraft, 100); });
     byId('formula-source').addEventListener('paste', event => { clearTimeout(timer); void pasteExternalFormula(event); });
     byId('formula-token').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); replaceSelection(e.target.value); } });
     byId('formula-token-replace').onclick = () => replaceSelection(byId('formula-token').value);
@@ -19500,7 +19667,7 @@ window.ReadMDRefactor = (() => {
       Object.assign(tab, { mode: 'file', source: 'file', isVirtual: false, path: file.path, dir: file.dir,
         name: file.name, title: file.name, original: file.original ?? file.content, content: file.content, fixed: file.content,
         revision: file.revision, mtime: file.mtime || 0, size: file.size || 0, encoding: file.encoding || tab.encoding,
-        fixes: file.fixes || [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
+        fixes: file.fix_details ?? file.fixes ?? [], stats: file.stats || {}, isDirty: false, unsavedCreation: false, externalChanged: false });
       if (tab.originPath && key(tab.originPath) === key(oldPath)) tab.originPath = file.path;
     }
     if (typeof state !== 'undefined' && Array.isArray(state.folderFiles)) {
@@ -20909,7 +21076,12 @@ function renderAiSessionSelect() {
     rename.addEventListener('click', () => renameAiSession(s));
     const del = document.createElement('button'); del.className = 'tb-btn'; del.textContent = _t('tpl.delete') || ''; del.title = _t('ai.deleteSession') || '';
     del.addEventListener('click', async () => {
-      if (!window.confirm((_t('ai.confirmDeleteSession') || '') + (s.title || (_t('ai.untitledSession') || '')) + '？')) return;
+      if (!await confirmAction({
+        title: _t('ai.deleteSession'),
+        message: _t('ai.confirmDeleteSession', { name: s.title || _t('ai.untitledSession') }),
+        confirmText: _t('ai.delete'),
+        danger: true,
+      })) return;
       await deleteAiSessionById(s.id);
     });
     row.append(load, rename, del); list.appendChild(row);
@@ -20918,7 +21090,7 @@ function renderAiSessionSelect() {
 
 async function renameAiSession(summary) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const title = window.prompt(_t('ai.sessionName') || '', summary.title || '');
+  const title = await promptText({ title: _t('ai.sessionName'), value: summary.title || '', confirmText: _t('dialog.save') });
   if (title === null) return;
   const next = title.trim().slice(0, 80);
   if (!next) { showToast(_t('toast.sessionNameEmpty') || ''); return; }
@@ -21521,7 +21693,9 @@ async function deleteAiSessionById(id) {
 
 async function clearAiSessions() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (!(state.ai.sessions || []).length || !window.confirm(_t('toast.clearSessionsConfirm') || '')) return;
+  if (!(state.ai.sessions || []).length || !await confirmAction({
+    title: _t('ai.clearHistory'), message: _t('toast.clearSessionsConfirm'), confirmText: _t('ai.clearHistory'), danger: true,
+  })) return;
   const epoch = state.ai.sessionEpoch = (state.ai.sessionEpoch || 0) + 1;
   state.ai.sessionListEpoch = (state.ai.sessionListEpoch || 0) + 1;
   state.ai.loadingSessionId = null;
@@ -21548,14 +21722,20 @@ function newAiProvider() {
   custom.push(p);
   state.ai.providers = mergeAiProviders(custom, state.ai.config.presets || []);
   fillAiProviders(state.ai.providers, { provider_id: p.id, model: '' });
-  $('ai-provider-name').focus(); $('ai-provider-name').select();
+  const nameField = $('ai-provider-name');
+  nameField.closest('details').open = true;
+  nameField.focus();
+  nameField.select();
 }
 
 async function deleteAiProvider() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const p = currentAiProvider();
   if (!p || !p.custom || !state.ai.config) return;
-  if (!window.confirm(_t('toast.customConnDeleteConfirm', { name: p.name }) || ('删除自定义连接“' + p.name + '”？此操作不会影响官方预设。'))) return;
+  if (!await confirmAction({
+    title: _t('ai.deleteProvider'), message: _t('toast.customConnDeleteConfirm', { name: p.name }), confirmText: _t('ai.delete'), danger: true,
+  })) return;
+  if (currentAiProvider()?.id !== p.id || !state.ai.config) return;
   const custom = (state.ai.config.custom || []).filter(c => c.id !== p.id);
   const fallback = (state.ai.config.presets || [])[0] || custom[0] || {};
   const current = { provider_id: fallback.id || '', model: '' };
@@ -23649,11 +23829,10 @@ function renderPluginCards(plugins) {
     if (sizeStr) metaParts.push(sizeStr);
     if (category) metaParts.push(category);
     if (p.requires_model) metaParts.push(_t('plugin.requiresModel'));
-    metaParts.push(p.requires_model && isCached ? _t('plugin.cacheReady') : (p.installed ? _t('plugin.installed') : _t('plugin.available')));
+    if (p.requires_model && isCached) metaParts.push(_t('plugin.cacheReady'));
 
     const capBadge = capName ? `
       <span class="plugin-capability-badge">
-        ${p.enabled ? '<span class="plugin-pulse-pip"></span>' : ''}
         ${escapeHtml(capName)}${isExclusive ? ' · ' + escapeHtml(_t('plugin.exclusiveNotice')) : ''}
       </span>
     ` : '';
@@ -23736,13 +23915,11 @@ function renderPluginCards(plugins) {
             <h4 class="plugin-card-title">${escapeHtml(title)}</h4>
             ${capBadge}
           </div>
-          <div class="plugin-card-submeta">
-            ${escapeHtml(metaParts.join(' · '))}
-          </div>
+          ${metaParts.length ? `<div class="plugin-card-submeta">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+          <p class="plugin-card-desc">${escapeHtml(desc)}</p>
+          ${progressHtml}
         </div>
       </div>
-      <p class="plugin-card-desc">${escapeHtml(desc)}</p>
-      ${progressHtml}
       <div class="plugin-card-foot">
         <div class="plugin-foot-left">${footLeft}</div>
         <div class="plugin-foot-right">${footRight}</div>
@@ -24688,10 +24865,25 @@ function initBubbleInteractions() {
 
 let currentActivePetSlug = '';
 
+function petSelection(status = activePetSettingsStatus) {
+  return status?.preferences?.renderer === 'live2d'
+    ? { renderer: 'live2d', slug: 'arch-chan' }
+    : { renderer: 'hermes-sprite', slug: currentActivePetSlug };
+}
+
 function getActivePetSlug() {
-  if (currentActivePetSlug) return currentActivePetSlug;
-  const select = $('pet-gallery');
-  return (select && select.value) ? select.value : '';
+  return petSelection().slug;
+}
+
+function petCharacterName(slug, fallback = '') {
+  if (!slug || slug === 'hermes') return petT('pet.gallery.hermes', null, '伴读使者');
+  if (slug === 'arch-chan') return petT('pet.renderer.live2d', null, 'Arch-Chan');
+  if (slug === 'bongocat') return 'BongoCat';
+  return petT('pet.preset.' + slug) || fallback || slug;
+}
+
+function petNeedsDesktop({ renderer, slug }) {
+  return renderer === 'live2d' || slug === 'bongocat';
 }
 
 const PET_ROLE_PERSONALITIES = {
@@ -24835,25 +25027,8 @@ function syncPetWidgetVisibility(status) {
     widget.classList.remove('hidden');
     const prefs = (status && status.preferences) || {};
     applyWidgetAppearance(prefs.scale, prefs.opacity);
-    const charEl = $('pet-character');
-    if (charEl) {
-      const isLive2d = (prefs.renderer === 'live2d');
-      const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-      const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-      charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-      if (isLive2d) {
-        charEl.classList.add('is-arch-chan', 'is-live2d');
-        charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-      } else if (isAnimSprite) {
-        charEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-        charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-      } else {
-        charEl.classList.add('is-sprite-avatar');
-        charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-      }
-      if (!isLive2d) paintPetPreview(charEl,activeSlug);
-      else charEl.classList.remove('pet-authored-preview');
-    }
+    const { renderer, slug } = petSelection(status);
+    setPetCharacterPreview($('pet-character'), renderer, status.active_slug ?? slug);
     restoreWidgetPosition();
   } else {
     widget.classList.add('hidden');
@@ -25047,10 +25222,14 @@ function initPetDirectManipulation() {
 }
 
 function handlePetInteractiveClick() {
-  paintPetPreview($('pet-character'), currentActivePetSlug, 1);
-  setTimeout(() => paintPetPreview($('pet-character'), currentActivePetSlug), 1200);
   const char = $('pet-character');
   if (char) {
+    if (!char.classList.contains('is-live2d')) {
+      paintPetPreview(char, getActivePetSlug(), 'waving', 1);
+      setTimeout(() => {
+        if (!char.classList.contains('is-live2d')) paintPetPreview(char, getActivePetSlug());
+      }, 1200);
+    }
     char.classList.add('pet-bounce');
     setTimeout(() => {
       char.classList.remove('pet-bounce', 'hermes-waving');
@@ -25181,16 +25360,21 @@ async function refreshPetMenuStatus() {
 
 function renderPetSettings(status) {
   activePetSettingsStatus = status || null;
-  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
+  if (typeof status?.active_slug === 'string') currentActivePetSlug = status.active_slug;
   const preferences = status && status.preferences ? status.preferences : {};
   const enabled = $('pet-enabled');
-  const renderer = $('pet-renderer');
   const scale = $('pet-scale');
   const opacity = $('pet-opacity');
 
   if (enabled) enabled.checked = Boolean(status && status.enabled);
-  if (renderer) renderer.value = preferences.renderer || 'hermes-sprite';
-  if ($('pet-runtime')) $('pet-runtime').value = status?.in_app === false ? 'desktop' : 'in-app';
+  const requiresDesktop = petNeedsDesktop(petSelection());
+  const isInApp = !requiresDesktop && status?.in_app !== false;
+  const inApp = $('pet-runtime-in-app'), desktop = $('pet-runtime-desktop');
+  if (inApp && desktop) {
+    inApp.disabled = requiresDesktop;
+    inApp.checked = isInApp;
+    desktop.checked = !isInApp;
+  }
   if (scale) scale.value = String(petPercent(preferences.scale, 0.22));
   if (opacity) opacity.value = String(petPercent(preferences.opacity, 1.0));
 
@@ -25199,7 +25383,6 @@ function renderPetSettings(status) {
   }
   updatePetRangeLabels();
 
-  const isInApp = $('pet-runtime')?.value === 'in-app' || status?.in_app !== false;
   const isInstalled = Boolean(status && (status.adapter?.available ?? status.installed));
   const isRunning = Boolean(status?.enabled && (isInApp || (status?.adapter?.running ?? status?.running)));
   const installBtn = $('pet-install');
@@ -25225,25 +25408,17 @@ function renderPetSettings(status) {
     }
   }
   if (installBtn) {
-    if (isInApp) {
-      installBtn.classList.add('hidden');
-    } else {
-      installBtn.classList.remove('hidden');
-      if (isInstalled) {
-        installBtn.className = 'tb-btn danger';
-        installBtn.textContent = petT('pet.disable');
-        installBtn.dataset.action = 'uninstall';
-      } else {
-        installBtn.className = 'tb-btn accent';
-        installBtn.textContent = petT('pet.enable');
-        installBtn.dataset.action = 'install';
-      }
+    installBtn.classList.toggle('hidden', isInApp || !isInstalled);
+    if (isInstalled) {
+      installBtn.classList.add('danger');
+      installBtn.classList.remove('accent');
+      installBtn.textContent = petT('pet.disable');
+      installBtn.dataset.action = 'uninstall';
     }
   }
 
   // 动态切换舞台角色外观预览 (Hermes vs Arch-Chan)
-  const currentRenderer = (renderer ? renderer.value : '') || (preferences && preferences.renderer) || 'hermes-sprite';
-  updateCharacterPreview(currentRenderer);
+  updateCharacterPreview();
 
   const statusDot = $('pet-status-dot');
   const statusText = $('pet-status-text');
@@ -25271,28 +25446,55 @@ function renderPetSettings(status) {
     } else if (isInApp || isInstalled) {
       statusLine.textContent = '';
     } else {
-      statusLine.textContent = petT('pet.statusEnableHint');
+      statusLine.textContent = petT('pet.runtime.install');
     }
   }
 
   syncPetWidgetVisibility(status);
+  window.dispatchEvent(new CustomEvent('readmd:pet-state', { detail: status }));
 }
 
 const petPreviewImages = new Map();
+const petPreviewRequests = new WeakMap();
+function petPreviewSource(slug) {
+  if (slug === 'bongocat') return '/assets/pet/bongocat-preview.png';
+  if (!slug || slug === 'hermes') return '/assets/pet/hermes-sprite.png';
+  return `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+}
 function paintPetPreview(element, slug = '', row = 0, frame = 0) {
   if (!element || element.closest('.hidden')) return;
-  const src = slug === 'bongocat' ? '/assets/pet/bongocat-preview.png' : !slug || slug === 'hermes' ? '/assets/pet/hermes-sprite.png' : `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
+  const src = petPreviewSource(slug);
+  const request = Symbol();
+  petPreviewRequests.set(element, request);
   element.dataset.petPreviewSource = src;
+  if (slug === 'bongocat') {
+    element.classList.remove('is-sprite-anim', 'is-sprite-avatar');
+    element.classList.add('pet-authored-preview', 'is-bongocat-preview');
+    element.style.backgroundImage = `url("${src}")`;
+    return;
+  }
+  element.classList.remove('is-bongocat-preview');
+  if (!element.classList.contains('pet-authored-preview')) element.style.backgroundImage = `url("${src}")`;
   let loading = petPreviewImages.get(src);
-  if (!loading) { loading = new Promise(resolve => { const image = new Image(); image.onload=()=>resolve(image); image.onerror=()=>resolve(null); image.src=src; }); petPreviewImages.set(src,loading); }
+  if (!loading) {
+    if (petPreviewImages.size >= 12) petPreviewImages.delete(petPreviewImages.keys().next().value);
+    loading = new Promise(resolve => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = src;
+    });
+    petPreviewImages.set(src, loading);
+  }
   loading.then(image => {
-    if (!image || element.dataset.petPreviewSource !== src) return;
+    if (!image || petPreviewRequests.get(element) !== request) return;
     const v2=image.naturalWidth===1536 && image.naturalHeight===2288;
     const duo=image.naturalWidth===1536 && image.naturalHeight===1024;
     const fw=v2?192:duo?384:image.naturalWidth, fh=v2?208:duo?512:image.naturalHeight;
+    const actionRow = row === 'waving' ? (v2 ? 3 : duo ? 1 : 0) : row;
     const canvas=document.createElement('canvas'); canvas.width=fw;canvas.height=fh;
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(row,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
+    ctx.drawImage(image, Math.min(frame,Math.floor(image.naturalWidth/fw)-1)*fw,Math.min(actionRow,Math.floor(image.naturalHeight/fh)-1)*fh,fw,fh,0,0,fw,fh);
     const pixels=ctx.getImageData(0,0,fw,fh).data; let l=fw,t=fh,r=0,b=0;
     for(let y=0;y<fh;y++) for(let x=0;x<fw;x++) if(pixels[(y*fw+x)*4+3]>32) {l=Math.min(l,x);t=Math.min(t,y);r=Math.max(r,x+1);b=Math.max(b,y+1);}
     if(r<=l || b<=t) return;
@@ -25303,58 +25505,34 @@ function paintPetPreview(element, slug = '', row = 0, frame = 0) {
 }
 window.paintPetPreview = paintPetPreview;
 
-function updateCharacterPreview(rendererVal) {
-  const charEl = document.querySelector('.pet-preview-character');
-  const widgetCharEl = $('pet-character');
-  const slugEl = $('pet-active-slug');
-  const isLive2d = rendererVal === 'live2d';
-  const activeSlug = $('pet-gallery')?.value || currentActivePetSlug;
-  const isAnimSprite = !activeSlug || activeSlug === 'hermes';
-  if (charEl && !charEl.closest('.hidden')) {
-    charEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      charEl.classList.add('is-arch-chan', 'is-live2d');
-      charEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      charEl.classList.add('is-hermes', 'is-sprite-anim');
-      charEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      charEl.classList.add('is-sprite-avatar');
-      charEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+function setPetCharacterPreview(element, renderer, slug) {
+  if (!element || element.closest('.hidden')) return;
+  element.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite',
+    'is-sprite-anim', 'is-sprite-avatar', 'is-bongocat-preview', 'pet-authored-preview');
+  if (renderer === 'live2d') {
+    petPreviewRequests.delete(element);
+    delete element.dataset.petPreviewSource;
+    element.classList.add('is-arch-chan', 'is-live2d');
+    element.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+    return;
   }
-  if (widgetCharEl && !widgetCharEl.closest('.hidden')) {
-    widgetCharEl.classList.remove('is-hermes', 'is-live2d', 'is-arch-chan', 'hermes-sprite', 'is-sprite-anim', 'is-sprite-avatar');
-    if (isLive2d) {
-      widgetCharEl.classList.add('is-arch-chan', 'is-live2d');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
-    } else if (isAnimSprite) {
-      widgetCharEl.classList.add('hermes-sprite', 'is-hermes', 'is-sprite-anim');
-      widgetCharEl.style.backgroundImage = 'url("/assets/pet/hermes-sprite.png")';
-    } else {
-      widgetCharEl.classList.add('is-sprite-avatar');
-      widgetCharEl.style.backgroundImage = activeSlug === 'bongocat' ? 'url("/assets/pet/bongocat-preview.png")' : `url("/api/pets/thumb?slug=${encodeURIComponent(activeSlug)}")`;
-    }
+  if (!slug || slug === 'hermes') {
+    element.classList.add('is-hermes', 'is-sprite-anim');
+    if (element.id === 'pet-character') element.classList.add('hermes-sprite');
+  } else {
+    element.classList.add('is-sprite-avatar');
   }
-  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', activeSlug !== 'bongocat');
-  if (!isLive2d) { paintPetPreview(charEl,activeSlug); paintPetPreview(widgetCharEl,activeSlug); }
-  else { charEl?.classList.remove('pet-authored-preview'); widgetCharEl?.classList.remove('pet-authored-preview'); }
-  if (slugEl) {
-    if (isLive2d) {
-      slugEl.textContent = petT('pet.renderer.live2d') || 'Arch-Chan';
-    } else {
-      const optionText = $('pet-gallery')?.selectedOptions?.[0]?.textContent;
-      const fallbackName = (activeSlug && petT('pet.preset.' + activeSlug)) || activeSlug || petT('pet.gallery.hermes') || '伴读使者';
-      slugEl.textContent = optionText || fallbackName;
-    }
-  }
-  const galleryRow = $('pet-gallery-row');
-  if (galleryRow) {
-    galleryRow.classList.toggle('hidden', isLive2d);
-  }
-  if (isLive2d && $('pet-runtime')) {
-    $('pet-runtime').value = 'desktop';
-  }
+  paintPetPreview(element, slug);
+}
+
+function updateCharacterPreview() {
+  const { renderer, slug } = petSelection();
+  setPetCharacterPreview($('pet-preview-character'), renderer, slug);
+  const name = $('pet-active-slug');
+  const pet = currentGalleryPets.find(item => item.slug === slug);
+  if (name) name.textContent = petCharacterName(slug, pet?.display_name);
+  $('pet-sound')?.closest('.apple-list-row')?.classList.toggle('hidden', slug !== 'bongocat');
+  updatePetDeleteButtonVisibility(slug);
 }
 
 function updatePetRangeLabels() {
@@ -25387,22 +25565,19 @@ function closePetSettings() {
 }
 
 let petSettingsVersion = 0, petSettingsQueue = Promise.resolve();
-function capturePetSettings() {
+function capturePetSettings(selection = petSelection()) {
     const enabled = Boolean($('pet-enabled')?.checked);
     const scale = Number($('pet-scale')?.value || 22) / 100;
     const opacity = Number($('pet-opacity')?.value || 100) / 100;
-    const renderer = $('pet-renderer')?.value || 'hermes-sprite';
-
-    const activeSlug = (typeof currentActivePetSlug !== 'undefined' && currentActivePetSlug) || $('pet-gallery')?.value || undefined;
-    if ((renderer === 'live2d' || activeSlug === 'bongocat') && $('pet-runtime')) $('pet-runtime').value = 'desktop';
-    const isDesktopChoice = $('pet-runtime')?.value === 'desktop';
+    const { renderer, slug } = selection;
+    const isDesktopChoice = petNeedsDesktop(selection) || $('pet-runtime-desktop')?.checked === true;
     return {
       enabled,
       scale,
       opacity,
       renderer,
       in_app: !isDesktopChoice,
-      character: renderer === 'live2d' ? 'arch-chan' : (activeSlug || ''),
+      character: renderer === 'live2d' ? undefined : slug,
       always_on_top: $('pet-topmost')?.checked !== false,
       lock_position: $('pet-lock-position')?.checked === true,
       bubbles: $('pet-bubble-toggle')?.checked !== false,
@@ -25411,8 +25586,8 @@ function capturePetSettings() {
     };
 
 }
-function savePetSettings() {
-  const config=capturePetSettings(), version=++petSettingsVersion;
+function savePetSettings(selection) {
+  const config=capturePetSettings(selection), version=++petSettingsVersion;
   const save=()=>version === petSettingsVersion ? applyPetSettings(config,version) : {ok:true,superseded:true};
   petSettingsQueue=petSettingsQueue.then(save,save);
   return petSettingsQueue;
@@ -25453,11 +25628,11 @@ async function openPetSettings() {
   if (!modal) return;
   modal.classList.remove('hidden');
   window.dispatchEvent(new CustomEvent('readmd:pet-open-settings'));
-  const immediateRenderer = $('pet-renderer')?.value || 'hermes-sprite';
-  updateCharacterPreview(immediateRenderer);
+  updateCharacterPreview();
+  const version = petSettingsVersion;
   try {
     const status = await fetchPetRuntimeStatus();
-    renderPetSettings(status);
+    if (version === petSettingsVersion) renderPetSettings(status);
     await refreshPetGallery();
   } catch (_error) {
     console.warn('Failed to load pet status:', _error);
@@ -25562,10 +25737,12 @@ function initPetSystem() {
     if (!btn || btn.disabled) return;
     const isUninstall = btn?.dataset.action === 'uninstall';
 
-    if (isUninstall) {
-      const confirmText = petT('pet.uninstallConfirm') || '是否卸载桌宠伴侣插件？卸载后将移除本地扩展组件。';
-      if (!window.confirm(confirmText)) return;
-    }
+    if (isUninstall && !await confirmAction({
+      title: petT('pet.disable'),
+      message: petT('pet.uninstallConfirm'),
+      confirmText: petT('pet.disable'),
+      danger: true,
+    })) return;
 
     const endpoint = isUninstall ? '/api/pets/uninstall' : '/api/pets/install';
     const pendingText = isUninstall ? (petT('pet.uninstalling') || '正在卸载…') : (petT('pet.installing') || '正在安装…');
@@ -25626,14 +25803,7 @@ function initPetSystem() {
 
   for (const id of ['pet-topmost','pet-lock-position','pet-sound','pet-bubble-toggle']) $(id)?.addEventListener('change', () => { void savePetSettings(); });
   $('pet-enabled')?.addEventListener('change', () => { void savePetSettings(); });
-  $('pet-runtime')?.addEventListener('change', (e) => {
-    const isDesktop = e.target.value === 'desktop';
-    const installRuntimeBtn = $('pet-install-runtime');
-    const installBtn = $('pet-install');
-    if (installRuntimeBtn) installRuntimeBtn.classList.toggle('hidden', !isDesktop);
-    if (installBtn) installBtn.classList.toggle('hidden', !isDesktop);
-    void savePetSettings();
-  });
+  $('pet-runtime')?.addEventListener('change', () => { void savePetSettings(); });
   async function handlePetUpdateClick(btn) {
     if (btn) {
       btn.disabled = true;
@@ -25747,44 +25917,27 @@ function initPetSystem() {
     } catch (error) { showToast(petT('pet.configFailed', { code: error.message })); }
     finally { e.target.value = ''; }
   });
-  $('pet-gallery')?.addEventListener('change', async e => {
-    currentActivePetSlug = e.target.value;
-    updatePetDeleteButtonVisibility(e.target.value);
-    const result = await petGalleryRequest('/api/pets/active', { slug: e.target.value, confirm: true });
-    if (!result.ok) showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
-    await refreshPetGallery();
-    if (result.ok) await requestConfigurePet({});
-  });
+  $('pet-gallery-import-button')?.addEventListener('click', () => $('pet-gallery-import').click());
   $('pet-gallery-delete')?.addEventListener('click', async () => {
-    const select = $('pet-gallery');
-    const slug = select ? select.value : '';
-    if (!slug) return;
-    const selectedOption = select.selectedOptions && select.selectedOptions[0];
-    const petName = selectedOption ? selectedOption.textContent : slug;
-    const confirmMsg = petT('pet.gallery.deleteConfirm', { name: petName }) || `确定要删除自定义桌宠精灵图「${petName}」吗？`;
-    let confirmed = false;
-    if (typeof confirmAction === 'function') {
-      confirmed = await confirmAction({
-        title: petT('pet.gallery.delete') || '删除',
-        message: confirmMsg,
-        danger: true,
-      });
-    } else {
-      confirmed = window.confirm(confirmMsg);
-    }
-    if (!confirmed) return;
-
+    const slug = getActivePetSlug();
+    const pet = currentGalleryPets.find(item => item.slug === slug && !item.is_builtin);
+    if (!pet) return;
+    const name = petCharacterName(slug, pet.display_name);
+    if (!await confirmAction({
+      title: petT('pet.gallery.delete'),
+      message: petT('pet.gallery.deleteConfirm', { name }),
+      confirmText: petT('pet.gallery.delete'),
+      danger: true,
+    })) return;
     const result = await petGalleryRequest('/api/pets/remove', { slug, confirm: true });
-    if (result.ok) {
-      showToast(petT('pet.gallery.deleteSuccess') || '已删除自定义桌宠精灵图');
-      await refreshPetGallery();
-      await requestConfigurePet({});
-    } else {
+    if (!result.ok) {
       showToast(petT('pet.configFailed', { code: result.error_code || result.code }));
+      return;
     }
-  });
-  $('pet-renderer')?.addEventListener('change', (e) => {
-    updateCharacterPreview(e.target.value);
+    showToast(petT('pet.gallery.deleteSuccess'));
+    await refreshPetGallery();
+    await requestConfigurePet({});
+    renderPetSettings(await fetchPetRuntimeStatus());
   });
   // A range drag is already a local edit before its final change event.
   // Invalidate an older status response so it cannot reset the thumb mid-drag.
@@ -25937,15 +26090,8 @@ async function installDefaultPetRuntime() {
 let currentGalleryPets = [];
 
 function updatePetDeleteButtonVisibility(slug) {
-  const deleteBtn = $('pet-gallery-delete');
-  if (deleteBtn) {
-    const isBuiltin = !slug || slug === 'hermes' || currentGalleryPets.some(p => p.slug === slug && p.is_builtin);
-    if (isBuiltin) {
-      deleteBtn.classList.add('hidden');
-    } else {
-      deleteBtn.classList.remove('hidden');
-    }
-  }
+  const removable = currentGalleryPets.some(pet => pet.slug === slug && !pet.is_builtin);
+  $('pet-gallery-delete')?.classList.toggle('hidden', !removable);
 }
 
 async function refreshPetGallery() {
@@ -25953,29 +26099,8 @@ async function refreshPetGallery() {
   if (!result.ok) return;
   currentGalleryPets = result.pets || [];
   currentActivePetSlug = result.active || '';
+  updateCharacterPreview();
   window.dispatchEvent(new CustomEvent('readmd:pet-gallery', { detail: result }));
-  const select = $('pet-gallery');
-  if (select) {
-    select.replaceChildren(new Option(petT('pet.gallery.hermes') || '伴读使者', ''), new Option('BongoCat','bongocat'));
-    const allGalleryPets = [...currentGalleryPets];
-    if (Array.isArray(result.catalog)) {
-      for (const item of result.catalog) {
-        if (!allGalleryPets.some(p => p.slug === item.slug)) {
-          allGalleryPets.push({
-            slug: item.slug,
-            display_name: item.zh_name || item.en_name || item.display_name || item.slug,
-          });
-        }
-      }
-    }
-    for (const pet of allGalleryPets) {
-      const label = (pet.slug && petT('pet.preset.' + pet.slug)) || pet.display_name || pet.slug;
-      select.add(new Option(label, pet.slug));
-    }
-    select.value = result.active || '';
-    updatePetDeleteButtonVisibility(select.value);
-  }
-  updateCharacterPreview($('pet-renderer')?.value || activePetSettingsStatus?.preferences?.renderer || 'hermes-sprite');
 }
 
 ;
@@ -25994,9 +26119,6 @@ async function refreshPetGallery() {
     'ux.petActions': '快捷互动',
     'ux.petHello': '打个招呼',
     'ux.petGreeting': '我在这里，陪你读完这一页。',
-    'ux.petPreviewHint': '角色外观预览 · 拖放文件到桌宠即可转换',
-    'ux.petLive2d': 'Live2D · 独立桌面',
-    'ux.petSprite': '精灵动画',
     'ai.title': 'AI 助手',
     'pet.gallery.hermes': '伴读使者'
   };
@@ -26005,8 +26127,8 @@ async function refreshPetGallery() {
     if (val && val !== key) return val;
     return FALLBACKS[key] || key;
   };
-  let gallery = { pets: [], active: '', catalog: [] }, status = null, activeTab = 'characters', initialized = false;
-  let choosing = false, lastTap = 0, query = '', catalogPets = [];
+  let gallery = { pets: [], catalog: [] }, activeTab = 'characters', initialized = false;
+  let choosing = false, lastTap = 0, query = '', catalogPets = [], greetingTimer, previewObserver;
   try { window.petQuietMode = localStorage.getItem('readmd.pet.quiet') === 'true'; } catch (_) { window.petQuietMode = false; }
 
   function getFavorites() {
@@ -26046,34 +26168,28 @@ async function refreshPetGallery() {
     } catch (_) {}
   }
 
-  function translateWorkbench() {
-    const box = document.getElementById('pet-settings-box');
-    if (!box) return;
-    const tabs = box.querySelector('.pet-workbench-tabs');
-    if (tabs) {
-      tabs.setAttribute('aria-label', t('ux.petSections'));
-      tabs.querySelectorAll('button[data-pet-section]').forEach(btn => {
-        const key = btn.getAttribute('data-i18n');
-        if (key) btn.textContent = t(key);
-      });
+  function previewGreeting(speech) {
+    const roleLine = typeof getRoleSpecificQuote === 'function' && getRoleSpecificQuote('pokesNormal');
+    const contextualLine = typeof getContextualGreeting === 'function' && getContextualGreeting();
+    const line = roleLine || contextualLine || t('ux.petGreeting');
+    speech.textContent = line;
+    const widget = document.getElementById('readmd-pet-widget');
+    if (widget && !widget.classList.contains('hidden')) window.showPetBubble?.(line, 4500, 2);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const art = document.getElementById('pet-preview-character');
+    const slug = window.getActivePetSlug?.();
+    if (!art || art.classList.contains('is-live2d') || slug === 'bongocat') {
+      document.getElementById('pet-preview-aura')?.animate?.([
+        { transform: 'translateY(0)' }, { transform: 'translateY(-4px)' }, { transform: 'translateY(0)' }
+      ], { duration: 350, easing: 'ease-out' });
+      return;
     }
-    const companion = box.querySelector('.pet-companion-controls');
-    if (companion) {
-      companion.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        if (key) el.textContent = t(key);
-      });
-    }
-    const hint = box.querySelector('.pet-workbench-preview-hint');
-    if (hint) {
-      hint.textContent = t('ux.petPreviewHint');
-    }
-    const search = document.getElementById('pet-roster-search');
-    if (search) search.placeholder = t('toolbar.search');
-    for (const [id, key] of [['pet-quick-chat', 'ai.title'], ['pet-quick-quiet', 'ux.petQuiet']]) {
-      const button = document.getElementById(id);
-      if (button) { button.title = t(key); button.setAttribute('aria-label', t(key)); }
-    }
+    clearTimeout(greetingTimer);
+    window.paintPetPreview?.(art, slug, 'waving', 1);
+    greetingTimer = setTimeout(() => {
+      if (window.getActivePetSlug?.() === slug && !art.classList.contains('is-live2d')) window.paintPetPreview?.(art, slug);
+    }, 850);
   }
 
   function init() {
@@ -26090,57 +26206,42 @@ async function refreshPetGallery() {
       button.dataset.petSection = id;
       button.setAttribute('data-i18n', key);
       button.textContent = t(key);
-      button.onclick = () => { activeTab = id; renderTabs(); };
+      button.onclick = () => { activeTab = id; renderTabs(); renderRoster(); };
       tabs.appendChild(button);
     }
     box.querySelector('.pet-sheet-body').before(tabs);
     const list = box.querySelector('.apple-grouped-list');
     list.querySelectorAll('.apple-list-row').forEach(row => {
-      row.dataset.petSectionContent ||= row.querySelector('#pet-gallery') ? 'characters' : row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
+      row.dataset.petSectionContent ||= row.querySelector('#pet-bubble-toggle') ? 'companion' : 'settings';
     });
+    const tools = box.querySelector('.pet-library-tools');
+    const search = document.getElementById('pet-roster-search');
+    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); renderRoster(); };
+    const feedback = document.createElement('p');
+    feedback.id = 'pet-choice-feedback';
+    feedback.dataset.petSectionContent = 'characters';
+    feedback.setAttribute('role', 'status');
+    tools.after(feedback);
+
     const roster = document.createElement('section');
     roster.id = 'pet-roster';
     roster.dataset.petSectionContent = 'characters';
-    list.prepend(roster);
-    const search = document.createElement('input');
-    search.id = 'pet-roster-search'; search.type = 'search';
-    search.dataset.petSectionContent = 'characters';
-    search.placeholder = t('toolbar.search'); search.setAttribute('aria-label', t('toolbar.search'));
-    search.oninput = () => { query = search.value.trim().toLocaleLowerCase(); if (list) list.scrollTop = 0; renderRoster(); };
-    roster.before(search);
-
-    const rendererRow = document.getElementById('pet-renderer-row') || document.getElementById('pet-renderer')?.closest('.apple-list-row');
-    if (rendererRow) {
-      rendererRow.dataset.petSectionContent = 'characters';
-      search.before(rendererRow);
-    }
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect) {
-      rendererSelect.addEventListener('change', () => {
-        rendererSelect.dataset.userChanged = 'true';
-        if (list) list.scrollTop = 0;
-        renderRoster();
-      });
-    }
-
-    const galleryRow = document.getElementById('pet-gallery-row') || document.getElementById('pet-gallery')?.closest('.apple-list-row');
-    if (galleryRow) {
-      galleryRow.dataset.petSectionContent = 'characters';
-      search.after(galleryRow);
-    }
-
-    const feedback = document.createElement('p');
-    feedback.id = 'pet-choice-feedback'; feedback.setAttribute('role', 'status');
-    roster.after(feedback);
+    feedback.after(roster);
+    previewObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        previewObserver.unobserve(entry.target);
+        paintPetPreview(entry.target, entry.target.dataset.previewSlug);
+      }
+    });
 
     const companion = document.createElement('section');
     companion.dataset.petSectionContent = 'companion';
     companion.className = 'pet-companion-controls';
-    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-say-hello" type="button" data-i18n="ux.petHello">${t('ux.petHello')}</button><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
+    companion.innerHTML = `<h4 data-i18n="ux.petStyle">${t('ux.petStyle')}</h4><div class="pet-mode-buttons"><button id="pet-mode-social" type="button" data-i18n="ux.petSocial">${t('ux.petSocial')}</button><button id="pet-mode-quiet" type="button" data-i18n="ux.petQuiet">${t('ux.petQuiet')}</button></div><p data-i18n="ux.petQuietHint">${t('ux.petQuietHint')}</p><h4 data-i18n="ux.petActions">${t('ux.petActions')}</h4><div class="pet-action-buttons"><button id="pet-chat-open" type="button"><span data-i18n="ai.title">${t('ai.title')}</span> ↗</button></div>`;
     list.appendChild(companion);
     companion.querySelector('#pet-mode-social').onclick = () => quiet(false);
     companion.querySelector('#pet-mode-quiet').onclick = () => quiet(true);
-    companion.querySelector('#pet-say-hello').onclick = () => { if (typeof handlePetInteractiveClick === 'function') handlePetInteractiveClick(); else window.showPetBubble?.(t('ux.petGreeting'), 3500, 2); };
     const chat = () => { window.closePetSettings?.(); window.openAiPanelWithPrompt?.(null, '', null); };
     companion.querySelector('#pet-chat-open').onclick = chat;
     const quickbar = document.querySelector('.pet-widget-quick-bar');
@@ -26152,22 +26253,27 @@ async function refreshPetGallery() {
       const button = document.createElement('button');
       button.id = id; button.type = 'button'; button.className = 'pet-quick-btn';
       button.title = t(key); button.setAttribute('aria-label', t(key));
+      button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
       button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${icon}</svg>`;
       button.onclick = action; quickbar.prepend(button);
     }
     const preview = box.querySelector('.pet-preview-stage');
-    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
-    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
+    const greeting = document.createElement('button');
+    greeting.id = 'pet-say-hello';
+    greeting.type = 'button';
+    greeting.className = 'tb-btn secondary';
+    greeting.dataset.i18n = 'ux.petHello';
+    greeting.textContent = t('ux.petHello');
+    greeting.setAttribute('aria-controls', 'pet-interaction-preview');
+    preview.appendChild(greeting);
     const speech = document.createElement('p');
     speech.id = 'pet-interaction-preview'; speech.setAttribute('role', 'status'); preview.appendChild(speech);
+    greeting.onclick = () => previewGreeting(speech);
+    const enabledRow = document.getElementById('pet-enabled')?.closest('.apple-list-row');
+    if (enabledRow) { delete enabledRow.dataset.petSectionContent; preview.appendChild(enabledRow); }
     window.addEventListener('readmd:pet-message', e => {
-      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden')) speech.textContent = e.detail.text;
+      if (!document.getElementById('pet-settings-modal')?.classList.contains('hidden') && speech.textContent !== e.detail.text) speech.textContent = e.detail.text;
     });
-    const hint = document.createElement('p');
-    hint.className = 'pet-workbench-preview-hint';
-    hint.setAttribute('data-i18n', 'ux.petPreviewHint');
-    hint.textContent = t('ux.petPreviewHint');
-    preview.appendChild(hint);
     quiet(window.petQuietMode, false);
     void loadCatalog();
     renderTabs();
@@ -26199,213 +26305,144 @@ async function refreshPetGallery() {
     document.querySelectorAll('[data-pet-section-content]').forEach(el => el.classList.toggle('pet-section-inactive', el.dataset.petSectionContent !== activeTab));
   }
   async function choose(renderer, slug) {
-    if (choosing) return; choosing = true;
-    const previousSlug = gallery.active;
-    gallery.active = slug;
-    if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = slug;
-    renderRoster();
+    const current = petSelection();
+    if (choosing || current.renderer === renderer && current.slug === slug) return;
+    const previousSlug = currentActivePetSlug;
     const feedback = document.getElementById('pet-choice-feedback');
+    choosing = true;
     feedback.textContent = '';
+    renderRoster();
     let changedGallery = false;
     try {
       if (renderer === 'hermes-sprite') {
-        const result = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
-        if (!result.ok) throw new Error(result.error_code || result.code);
+        const active = await petGalleryRequest('/api/pets/active', { slug, confirm: true });
+        if (!active.ok) throw new Error(active.error_code || active.code || 'pet_active_failed');
         changedGallery = true;
-        await refreshPetGallery();
       }
-      const rendererSelect = document.getElementById('pet-renderer');
-      if (rendererSelect) {
-        rendererSelect.value = renderer;
-        delete rendererSelect.dataset.userChanged;
-      }
-      if (renderer === 'live2d' || slug === 'bongocat') document.getElementById('pet-runtime').value = 'desktop';
-      const result = await savePetSettings();
-      if (!result?.ok) throw new Error(result?.code || 'pet_config_failed');
+      const result = await savePetSettings({ renderer, slug });
+      if (!result?.ok || result.superseded) throw new Error(result?.code || 'pet_config_failed');
     } catch (error) {
-      if (changedGallery) {
-        gallery.active = previousSlug;
-        if (typeof currentActivePetSlug !== 'undefined') currentActivePetSlug = previousSlug;
-        await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true }).catch(() => null);
-        await refreshPetGallery().catch(() => null);
-      }
+      if (changedGallery) await petGalleryRequest('/api/pets/active', { slug: previousSlug, confirm: true });
       feedback.textContent = petT('pet.configFailed', { code: error.message });
-    }
-    finally {
-      choosing = false; renderRoster();
-      Array.from(document.querySelectorAll('#pet-roster button')).find(button => button.dataset.slug === slug && button.dataset.renderer === renderer)?.focus({ preventScroll: true });
+    } finally {
+      await refreshPetGallery();
+      choosing = false;
+      renderRoster();
+      focusRosterButton(slug);
     }
   }
+
+  function focusRosterButton(slug, favorite = false) {
+    const selector = favorite ? '.pet-fav-btn' : '.pet-character-card';
+    [...document.querySelectorAll('#pet-roster ' + selector)]
+      .find(button => (favorite ? button.dataset.favoriteSlug : button.dataset.slug) === slug)?.focus({ preventScroll: true });
+  }
+
+  function rosterItems() {
+    const featured = [
+      { slug: 'mochi', display_name: '糯米 / Mochi' },
+      { slug: 'moss', display_name: '苔苔 / Moss' },
+      { slug: 'amber', display_name: '琥珀 / Amber' },
+      { slug: '' }, { slug: 'bongocat' }, { slug: 'arch-chan', renderer: 'live2d' },
+    ];
+    const items = new Map(featured.map(pet => [pet.slug, pet]));
+    for (const pet of [...(gallery.pets || []), ...(catalogPets.length ? catalogPets : (gallery.catalog || []))]) {
+      if (!items.has(pet.slug)) items.set(pet.slug, pet);
+    }
+    return [...items.values()];
+  }
+
   function renderRoster() {
-    // Cache catalog/state at startup; build previews when settings is visible.
-    // Creating Image objects inside a hidden gallery downloads every sprite.
-    if (document.getElementById('pet-settings-modal')?.classList.contains('hidden')) return;
-    const host = document.getElementById('pet-roster'); if (!host) return;
-    const focused = host.contains(document.activeElement) ? document.activeElement.dataset : null;
-    const focusedSlug = focused?.slug, focusedRenderer = focused?.renderer;
+    const box = document.getElementById('pet-settings-box');
+    const host = document.getElementById('pet-roster');
+    if (!host || box.closest('.hidden') || activeTab !== 'characters') return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
     host.setAttribute('aria-busy', String(choosing));
-    host.replaceChildren();
-    host.scrollTop = 0;
-    const select = document.getElementById('pet-gallery'); if (select) select.disabled = choosing;
-
-    const rendererSelect = document.getElementById('pet-renderer');
-    const filterRenderer = rendererSelect?.value || (status?.preferences?.renderer === 'live2d' ? 'live2d' : 'hermes-sprite');
-
-    const defaultPetName = t('pet.gallery.hermes') || '伴读使者';
-
-    // Group 0: User's 3 created pets
-    const customSlugs = ['mochi', 'moss', 'amber'];
-    const customPets = [
-      { slug: 'mochi', display_name: '糯米 / Mochi', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'moss', display_name: '苔苔 / Moss', renderer: 'hermes-sprite', groupPriority: 0 },
-      { slug: 'amber', display_name: '琥珀 / Amber', renderer: 'hermes-sprite', groupPriority: 0 }
-    ];
-
-    // Group 1: 伴读使者
-    const companionPet = { slug: '', display_name: defaultPetName, renderer: 'hermes-sprite', groupPriority: 1 };
-
-    // Group 2: 73 loaded sprite pets from catalog
-    const spriteCatalog = (catalogPets.length ? catalogPets : (gallery.catalog || [])).map(p => ({
-      slug: p.slug,
-      display_name: p.zh_name || p.display_name || p.name || p.slug,
-      renderer: 'hermes-sprite',
-      groupPriority: 2
-    }));
-
-    // Other installed pets from gallery (e.g. test custom-cat or user imports)
-    const otherInstalled = (gallery.pets || [])
-      .filter(p => !customSlugs.includes(p.slug) && p.slug !== '' && !spriteCatalog.some(c => c.slug === p.slug))
-      .map(p => ({
-        ...p,
-        renderer: 'hermes-sprite',
-        groupPriority: 2
-      }));
-
-    // Live2D pets
-    const live2dPets = [
-      { slug: 'arch-chan', display_name: 'Arch-Chan', renderer: 'live2d', groupPriority: 0 }
-    ];
-
-    const allItems = [...customPets, companionPet, {slug:'bongocat',display_name:'BongoCat',renderer:'hermes-sprite',groupPriority:1}, ...spriteCatalog, ...otherInstalled, ...live2dPets];
-    allItems.forEach((it, idx) => { it.originalIndex = idx; });
-
-    // Filter by selected renderer:
-    const filtered = allItems.filter(item => {
-      if (item.renderer !== filterRenderer) return false;
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      if (query && !`${label} ${item.slug} ${item.renderer}`.toLocaleLowerCase().includes(query)) return false;
-      return true;
+    box.querySelectorAll('.pet-workbench-tabs button, .pet-library-tools button').forEach(button => {
+      button.disabled = choosing;
     });
+    document.getElementById('pet-status-card').inert = choosing;
+    previewObserver.disconnect();
 
     const favorites = getFavorites();
-    filtered.sort((a, b) => {
-      const favA = favorites.has(a.slug) ? 0 : 1;
-      const favB = favorites.has(b.slug) ? 0 : 1;
-      if (favA !== favB) return favA - favB;
-      if (a.groupPriority !== b.groupPriority) return a.groupPriority - b.groupPriority;
-      return a.originalIndex - b.originalIndex;
-    });
-
-    for (const item of filtered) {
-      const label = (item.slug && petT('pet.preset.' + item.slug)) || item.display_name || item.slug;
-      const live = item.renderer === 'live2d';
+    const selection = petSelection();
+    const entries = rosterItems().map(pet => ({
+      slug: pet.slug,
+      renderer: pet.renderer || 'hermes-sprite',
+      name: petCharacterName(pet.slug, pet.display_name || pet.zh_name || pet.name),
+    })).filter(pet => !query || [pet.name, pet.slug, pet.renderer].join(' ').toLocaleLowerCase().includes(query));
+    entries.sort((a, b) => Number(favorites.has(b.slug)) - Number(favorites.has(a.slug)));
+    const cards = document.createDocumentFragment();
+    for (const pet of entries) {
+      const card = document.createElement('div');
+      card.className = 'pet-roster-item';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'pet-character-card';
       button.disabled = choosing;
-      const currentActive = status?.active_slug ?? gallery.active;
-      const selected = live
-        ? status?.preferences?.renderer === 'live2d'
-        : status?.preferences?.renderer !== 'live2d' && item.slug === currentActive;
-      button.setAttribute('aria-pressed', String(selected));
-      button.dataset.renderer = item.renderer;
-      button.dataset.slug = item.slug;
-
-      const favBtn = document.createElement('span');
-      favBtn.role = 'button';
-      favBtn.tabIndex = 0;
-      const isFav = favorites.has(item.slug);
-      favBtn.className = 'pet-fav-btn' + (isFav ? ' is-favorite' : '');
-      const favLabel = window.i18n ? window.i18n.t(isFav ? 'pet.favorited' : 'pet.favorite') : (isFav ? '已收藏' : '收藏');
-      favBtn.setAttribute('aria-label', favLabel);
-      favBtn.title = favLabel;
-      favBtn.innerHTML = `<svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
-      const onFavClick = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        toggleFavorite(item.slug);
-      };
-      favBtn.onclick = onFavClick;
-      favBtn.onkeydown = (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.stopPropagation();
-          e.preventDefault();
-          toggleFavorite(item.slug);
-        }
-      };
-      button.appendChild(favBtn);
+      button.setAttribute('aria-pressed', String(pet.slug === selection.slug && pet.renderer === selection.renderer));
+      button.dataset.renderer = pet.renderer;
+      button.dataset.slug = pet.slug;
+      button.onclick = () => choose(pet.renderer, pet.slug);
 
       const art = document.createElement('span');
-      art.className = live ? 'pet-card-art live2d' : 'pet-card-art sprite';
-      art.style.backgroundImage = live
-        ? 'url("/assets/pet/arch-chan-avatar.png")'
-        : item.slug === 'bongocat'
-          ? 'url("/assets/pet/bongocat-preview.png")'
-        : item.slug
-          ? `url("/api/pets/thumb?slug=${encodeURIComponent(item.slug)}")`
-          : 'url("/assets/pet/hermes-sprite.png")';
-
-      if (!live) window.paintPetPreview?.(art,item.slug);
+      art.className = 'pet-card-art';
+      art.setAttribute('aria-hidden', 'true');
+      art.dataset.previewSlug = pet.slug;
+      if (pet.renderer === 'live2d') art.style.backgroundImage = 'url("/assets/pet/arch-chan-avatar.png")';
+      else previewObserver.observe(art);
       const name = document.createElement('strong');
-      name.textContent = label;
-      const kind = document.createElement('small');
-      const kindKey = live ? 'pet.behavior.live2d' : item.slug === 'bongocat' ? 'pet.behavior.bongo' : 'pet.behavior.sprite';
-      kind.setAttribute('data-i18n', kindKey);
-      kind.textContent = t(kindKey);
-
-      button.append(art, name, kind);
-      button.onclick = () => choose(item.renderer, item.slug);
-      host.appendChild(button);
-
-      if (!choosing && focusedSlug === item.slug && focusedRenderer === item.renderer) {
-        button.focus({ preventScroll: true });
+      name.textContent = pet.name;
+      button.append(art, name);
+      if (petNeedsDesktop(pet)) {
+        const desktop = document.createElement('small');
+        desktop.title = t('pet.runtime.desktop');
+        desktop.textContent = pet.renderer === 'live2d' ? 'Live2D' : t('pet.behavior.bongo');
+        button.append(desktop);
       }
+
+      const favorite = document.createElement('button');
+      favorite.type = 'button';
+      favorite.className = 'pet-fav-btn';
+      favorite.dataset.favoriteSlug = pet.slug;
+      const selected = favorites.has(pet.slug);
+      favorite.setAttribute('aria-pressed', String(selected));
+      const label = t(selected ? 'pet.favorited' : 'pet.favorite');
+      favorite.setAttribute('aria-label', label + ' · ' + pet.name);
+      favorite.title = label;
+      favorite.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.3"/></svg>';
+      favorite.onclick = () => toggleFavorite(pet.slug);
+      card.append(button, favorite);
+      cards.append(card);
     }
-    if (!host.childElementCount) {
+    if (!entries.length) {
       const empty = document.createElement('p');
+      empty.className = 'pet-roster-empty';
       empty.textContent = t('ux.noResults');
-      host.appendChild(empty);
+      cards.append(empty);
+    }
+    host.replaceChildren(cards);
+    if (!choosing && focused) {
+      const favorite = focused.classList.contains('pet-fav-btn');
+      focusRosterButton(favorite ? focused.dataset.favoriteSlug : focused.dataset.slug, favorite);
     }
   }
 
   window.addEventListener('readmd:pet-state', e => {
-    status = e.detail;
-    if (typeof status?.preferences?.quiet === 'boolean') quiet(status.preferences.quiet, false);
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer && !rendererSelect.dataset.userChanged) {
-      rendererSelect.value = status.preferences.renderer;
-    }
+    const savedQuiet = e.detail?.preferences?.quiet;
+    if (typeof savedQuiet === 'boolean') quiet(savedQuiet, false);
     renderRoster();
   });
   window.addEventListener('readmd:pet-gallery', e => {
     gallery = e.detail;
-    if (Array.isArray(gallery.catalog) && gallery.catalog.length) {
-      catalogPets = gallery.catalog;
-    }
+    if (Array.isArray(gallery.catalog) && gallery.catalog.length) catalogPets = gallery.catalog;
     renderRoster();
   });
-  window.addEventListener('readmd:language-changed', () => { translateWorkbench(); renderRoster(); });
-  window.addEventListener('readmd:pet-open-settings', () => {
-    const box = document.getElementById('pet-settings-box');
-    if (box) box.dataset.petTab = activeTab;
-    const rendererSelect = document.getElementById('pet-renderer');
-    if (rendererSelect && status?.preferences?.renderer) {
-      rendererSelect.value = status.preferences.renderer;
-      delete rendererSelect.dataset.userChanged;
-    }
-    translateWorkbench();
+  window.addEventListener('readmd:language-changed', () => {
+    updateCharacterPreview();
     renderRoster();
   });
+  window.addEventListener('readmd:pet-open-settings', renderRoster);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 
@@ -31257,14 +31294,37 @@ async function applyReadyUpdate() {
 
 function syncWindowPreferences() {
   if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
-  const t = key => window.i18n?.t(key) || key;
-  const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
-  const preferences = { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) };
-  if (py.native_titlebar === 'macos') preferences.menuLabels = Object.fromEntries(Object.entries({new:'menu.new',folder:'menu.openFolder',plugins:'cmd.plugins',pet:'cmd.pet',settings:'menu.settings',hide:'mac.hide',
-    'close-document':'toolbar.close',view:'shell.group.view',zen:'menu.zenMode',fullscreen:'toolbar.fullScreen',minimize:'window.minimize','select-all':'mac.selectAll'}).map(([action,key])=>[action,label(key)]));
+  const translated = key => {
+    const value = window.i18n?.t(key);
+    return typeof value === 'string' && value !== key ? value.trim() : '';
+  };
+  const preferences = { closeToTray: state.closeToTray !== false };
+  if (py.native_titlebar === 'macos') {
+    const keys = {
+      show: 'window.show', open: 'menu.open', exit: 'window.exit',
+      file: 'menu.file', new: 'menu.new', folder: 'menu.openFolder', save: 'menu.save',
+      'save-as': 'menu.saveAs', 'close-document': 'toolbar.close',
+      edit: 'toolbar.edit', undo: 'editor.undo', redo: 'editor.redo',
+      cut: 'editor.cut', copy: 'editor.copy', paste: 'editor.paste', 'select-all': 'mac.selectAll',
+      view: 'shell.group.view', zen: 'menu.zenMode', fullscreen: 'toolbar.fullScreen',
+      minimize: 'window.minimize', plugins: 'cmd.plugins', pet: 'cmd.pet', settings: 'menu.settings', hide: 'mac.hide',
+    };
+    const labels = {};
+    for (const [action, key] of Object.entries(keys)) {
+      let text = translated(key);
+      if (['edit', 'undo', 'redo', 'fullscreen'].includes(action)) text = text.replace(/\s*[（(](?:[^()（）]*\+[^()（）]+|F11)[)）]$/iu, '');
+      if (text) labels[action] = text;
+    }
+    preferences.menuLabels = labels;
+  } else {
+    const labels = ['window.show', 'toolbar.open', 'window.exit'].map(translated);
+    if (labels.every(Boolean)) preferences.labels = labels;
+  }
   py.window_control('preferences', preferences);
-  $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
-  if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
+  $('btn-close-to-tray')?.setAttribute('aria-checked', String(preferences.closeToTray));
+  const status = $('close-to-tray-status');
+  const statusLabel = translated(preferences.closeToTray ? 'app.enabled' : 'app.disabled');
+  if (status && statusLabel) status.textContent = statusLabel;
 }
 
 // Native menus enter the existing UI workflows. Modal guards, revision checks,
@@ -31304,13 +31364,12 @@ function initWindowChrome() {
   actions.dataset.initialized = 'true';
   initSingleChromeNavigation();
   const title = $('window-title');
-  const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
-  const command = (action, options) => { if (native || macNative) py.window_control(action, options); };
+  const custom = !macNative && !!(hasPy && py.custom_titlebar && py.window_control);
+  const command = (action, options) => { if (custom || macNative) py.window_control(action, options); };
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
-    syncChromeDocumentDisclosure();
     command('title', { title: document.title });
   };
   new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true, characterData: true });
@@ -31324,20 +31383,24 @@ function initWindowChrome() {
     if (!actions.contains(document.activeElement)) $('toolbar')?.classList.remove('zen-toolbar-revealed');
   }, 0));
   if (macNative) initMacWindowChrome(command);
-  if (!native) return;
+  if (custom || macNative) {
+    syncWindowPreferences();
+    window.addEventListener('readmd:language-changed', syncWindowPreferences);
+  }
+  if (!custom) return;
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
-  $('btn-close-to-tray').classList.remove('hidden');
+  const trayToggle = $('btn-close-to-tray');
   $('window-minimize').onclick = () => command('minimize');
   $('window-maximize').onclick = () => command('maximize');
   $('window-close').onclick = () => command('close');
-  $('btn-close-to-tray').onclick = async () => {
+  trayToggle.onclick = async () => {
     const previous = state.closeToTray; state.closeToTray = previous === false;
     syncWindowPreferences();
     if (!await saveSettings()) { state.closeToTray = previous; syncWindowPreferences(); }
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions,#window-controls');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', e => { if (e.button === 0 && !interactive(e.target)) press = { x: e.screenX, y: e.screenY }; });
   drag.addEventListener('pointermove', e => {
@@ -31360,227 +31423,107 @@ function initWindowChrome() {
     button.setAttribute('aria-pressed', String(!!status.maximized));
     button.innerHTML = status.maximized ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M6 3v3h4v4h3"/><rect x="3" y="6" width="7" height="7"/></svg>' : '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>';
     $('window-close').title = window.i18n?.t(status.trayAvailable && state.closeToTray !== false ? 'window.hide' : 'window.close') || '';
-    $('btn-close-to-tray').disabled = !status.trayAvailable;
+    trayToggle.classList.toggle('hidden', !status.trayAvailable);
+    trayToggle.disabled = !status.trayAvailable;
   };
-  syncWindowPreferences();
-  window.addEventListener('readmd:language-changed', syncWindowPreferences);
 }
 
-// This layer projects the existing document/tab services into the shell. It
-// never clones a tab, installs a second close handler or changes editor state.
-function syncChromeDocumentDisclosure() {
-  const button = $('titlebar-documents'), side = $('side'), section = $('side-documents');
-  if (!button || !side) return;
-  const tabs = state.tabs || [];
-  const legacy = $('file-title');
-  const available = tabs.length > 0 || !!(legacy && !legacy.classList.contains('hidden') && legacy.textContent);
-  button.disabled = !available;
-  button.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
-  $('btn-toc')?.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
-  const label = window.i18n?.t('tabs.openDocs') || 'tabs.openDocs';
-  const name = $('window-title')?.textContent || document.title;
-  button.setAttribute('aria-label', `${label}: ${name}${tabs.length > 1 ? ` (${tabs.length})` : ''}`);
-  button.title = `${name}\n${label}`;
-  if (section) section.hidden = !available;
-  const icon = $('titlebar-document-icon'); if (icon) icon.hidden = !available;
-  const count = $('titlebar-tab-count');
-  if (count) { count.textContent = String(tabs.length); count.classList.toggle('hidden', tabs.length < 2); }
-  const active = tabs.find(tab => tab.id === state.activeTabId);
-  $('titlebar-dirty')?.classList.toggle('hidden', !active?.isDirty && !active?.externalChanged);
-  if (active?.isDirty || active?.externalChanged) button.setAttribute('aria-description', window.i18n?.t(active.externalChanged ? 'toast.saveConflict' : 'tabs.dirty') || '');
-  else button.removeAttribute('aria-description');
+// The rail stays in place. Its views use the original document services and
+// controls, so changing panel does not rebind a command or change the document.
+function syncSidebar() {
+  const side = $('side');
+  const open = !side.classList.contains('hidden');
+  const view = side.dataset.view;
+  $('btn-toc').setAttribute('aria-expanded', String(open));
+  for (const button of $('side-tabs').querySelectorAll('[data-side-view]')) {
+    const current = button.dataset.sideView === view;
+    button.setAttribute('aria-selected', String(open && current));
+    button.tabIndex = current && !button.disabled ? 0 : -1;
+  }
+  if (!$('side-tabs').querySelector('[tabindex="0"]')) $('tab-files').tabIndex = 0;
+}
+
+function showSide(view = $('side').dataset.view, { loadFiles = true } = {}) {
+  const side = $('side');
+  const next = $('side-' + view);
+  if (!next?.classList.contains('side-view') || view === 'search' && $('btn-search').disabled) view = 'files';
+  if (side.dataset.view === 'search' && view !== 'search') closeSearch({ closeSidebar: false });
+  side.dataset.view = view;
+  for (const panel of side.querySelectorAll('.side-view')) panel.hidden = panel.id !== 'side-' + view;
+  side.classList.remove('hidden');
+  syncSidebar();
+  if (view === 'files') {
+    if (state.folderFiles.length || !loadFiles) renderFolderList();
+    else void listFolder(state.folder || state.dir || '', { reveal: false });
+  } else if (view === 'toc') {
+    buildToc();
+  } else if (view === 'recent') {
+    refreshSidebarRecent();
+  } else if (view === 'search') {
+    openSidebarSearch();
+  }
+}
+
+function closeSide({ restoreFocus = false } = {}) {
+  const side = $('side');
+  if (side.classList.contains('hidden')) return;
+  const focused = side.contains(document.activeElement);
+  if (!$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+  side.classList.add('hidden');
+  syncSidebar();
+  if (restoreFocus || focused) $('btn-toc').focus({ preventScroll: true });
+}
+
+function toggleSide(view) {
+  const side = $('side');
+  if (!side.classList.contains('hidden') && (!view || view === side.dataset.view)) closeSide();
+  else showSide(view);
 }
 
 function initSingleChromeNavigation() {
-  const side = $('side'), disclosure = $('titlebar-documents'), toolbar = $('toolbar');
-  if (!side || !disclosure || disclosure.dataset.bound) return;
-  disclosure.dataset.bound = 'true';
-  let opener = $('btn-toc'), lastFocus = document.activeElement;
-  document.addEventListener('focusin', event => { lastFocus = event.target; });
-  disclosure.addEventListener('click', () => {
-    opener = disclosure;
-    side.classList.remove('hidden');
-    syncChromeDocumentDisclosure();
-    if (state.tabs?.length) focusVisibleTab(state.activeTabId || state.tabs[0].id);
-    else $('file-title')?.focus();
+  const side = $('side'), rail = $('side-tabs');
+  if (!side || !rail || rail.dataset.bound) return;
+  rail.dataset.bound = 'true';
+  $('btn-toc').addEventListener('click', () => toggleSide());
+  $('doc-tabs-new').addEventListener('click', () => newDocument());
+  const buttons = [...rail.querySelectorAll('[data-side-view]')];
+  for (const button of buttons) button.addEventListener('click', () => {
+    const view = button.dataset.sideView;
+    if (view === 'search' && (side.classList.contains('hidden') || side.dataset.view !== view)) toggleSearch();
+    else toggleSide(view);
   });
-  $('btn-toc')?.setAttribute('aria-controls', 'side');
-  $('btn-toc')?.addEventListener('pointerdown', () => { opener = $('btn-toc'); });
+  rail.addEventListener('keydown', event => {
+    if (event.isComposing || !['ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
+    const items = buttons.filter(button => !button.disabled);
+    const from = items.indexOf(document.activeElement);
+    if (from < 0) return;
+    const next = event.key === 'Home' ? items[0] : event.key === 'End' ? items.at(-1) :
+      items[(from + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+    event.preventDefault();
+    showSide(next.dataset.sideView);
+    next.focus({ preventScroll: true });
+  });
+  // Some document lifecycle paths hide the panel directly. Keep the rail
+  // state correct and clear search marks when those paths close it.
   new MutationObserver(() => {
-    syncChromeDocumentDisclosure();
-    if (side.classList.contains('hidden') && (side.contains(document.activeElement) || document.activeElement === document.body && side.contains(lastFocus))) {
-      const target = opener && !opener.disabled ? opener : $('btn-toc');
-      target?.focus({ preventScroll: true });
-    }
+    if (side.classList.contains('hidden') && !$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+    syncSidebar();
   }).observe(side, { attributes: true, attributeFilter: ['class'] });
-  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
-    const bar = $(id);
-    if (bar) new MutationObserver(syncChromeDocumentDisclosure).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
-  }
-  if ($('file-title')) new MutationObserver(syncChromeDocumentDisclosure).observe($('file-title'), { childList: true, attributes: true, attributeFilter: ['class'] });
-  side.addEventListener('keydown', event => {
-    if (event.isComposing || event.keyCode === 229 || event.key !== 'Escape' || window.ReadMDModal?.top()) return;
-    if (event.defaultPrevented) {
-      event.stopPropagation();
-      if (event.target.matches('.tab-title-input')) event.composedPath().find(node => node instanceof HTMLElement && node.matches('.tab-item'))?.focus({ preventScroll: true });
-      return;
-    }
-    if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
-    event.preventDefault(); event.stopPropagation();
-    side.classList.add('hidden');
-  });
-  // These are the same menu buttons and business listeners. Close their menu
-  // and expose a visible opener before the existing action opens its dialog.
-  const relayMenuAction = event => {
-    const action = event.target.closest('[data-shell-menu-action],.more-item');
-    if (!action || event.type === 'contextmenu' && action.id !== 'btn-zen') return;
-    closeMoreMenu();
-    $('btn-more')?.focus({ preventScroll: true });
-  };
-  for (const type of ['click','contextmenu']) $('more-menu')?.addEventListener(type, relayMenuAction, true);
-  // Compact chrome relocates the original controls, including their business
-  // listeners. Keep its header out of the desktop menu's keyboard item list.
-  const compactGroup = $('shell-compact-group'), compactActions = $('shell-compact-actions');
-  if (compactGroup && compactActions) {
-    const compact = window.matchMedia('(max-width: 640px)');
-    const groupAnchor = document.createComment('compact menu position');
-    compactGroup.before(groupAnchor);
-    const placements = [
-      ['btn-open', 'toolbar.open'], ['btn-palette', 'editor.command'],
-      ['btn-search', 'toolbar.search'], ['btn-ai', 'toolbar.ai'], ['btn-graph', 'graph.title'],
-    ].map(([id, key]) => {
-      const button = $(id);
-      if (!button) return null;
-      const anchor = document.createComment(id + ' desktop position');
-      button.before(anchor);
-      const wrapper = document.createElement('div'), label = document.createElement('span');
-      wrapper.className = 'shell-menu-action shell-compact-action';
-      wrapper.dataset.shellCompact = id;
-      label.className = 'shell-menu-label';
-      label.dataset.i18n = key;
-      label.setAttribute('aria-hidden', 'true');
-      wrapper.append(label);
-      compactActions.append(wrapper);
-      return { button, anchor, wrapper, label, key, role: button.getAttribute('role'),
-        menuItem: button.classList.contains('more-item'), menuAction: button.hasAttribute('data-shell-menu-action') };
-    }).filter(Boolean);
-    const modalOpeners = new WeakMap();
-    let pendingFocus = null;
-    window.addEventListener('readmd:modal-opened', () => {
-      const modal = window.ReadMDModal?.top();
-      if (!modal) return;
-      const origin = placements.find(({ button }) => button === document.activeElement || button.contains(document.activeElement));
-      if (origin) modalOpeners.set(modal, origin.button);
-      else modalOpeners.delete(modal);
-    });
-    const watchMovedOpener = modal => {
-      if (pendingFocus) {
-        pendingFocus.observer.disconnect();
-        if (pendingFocus.frame !== null) cancelAnimationFrame(pendingFocus.frame);
-      }
-      const pending = { observer: null, frame: null };
-      pending.observer = new MutationObserver(() => {
-        if (pending.frame !== null) return;
-        pending.frame = requestAnimationFrame(() => {
-          pending.frame = null;
-          if (pendingFocus !== pending || modal.isConnected && !modal.classList.contains('hidden') && getComputedStyle(modal).display !== 'none') return;
-          pending.observer.disconnect(); pendingFocus = null;
-          // The original manager/caller owns close and any explicit editor
-          // focus transfer. Repair only an unusable result after it finishes.
-          if (window.ReadMDModal?.top()) return;
-          const active = document.activeElement;
-          const usable = active && active !== document.body && active.isConnected && !active.disabled &&
-            !active.closest('[inert],.hidden,[hidden]') && active.getClientRects().length && getComputedStyle(active).visibility !== 'hidden';
-          if (!usable) $('btn-more')?.focus({ preventScroll: true });
-        });
-      });
-      pendingFocus = pending;
-      pending.observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
-    };
-    const labels = () => {
-      for (const { button, label, key } of placements) {
-        const value = window.i18n?.t(key);
-        const text = value && value !== key ? value : button.getAttribute('aria-label') || button.title || '';
-        label.textContent = window.ReadMDKeys?.isMac ? text.replace(/\bCtrl\b/g, 'Cmd') : text;
-      }
-      const heading = compactGroup.querySelector('[data-i18n="shell.group.general"]');
-      const value = window.i18n?.t('shell.group.general');
-      if (heading && value && value !== 'shell.group.general') heading.textContent = value;
-    };
-    const visibility = () => {
-      for (const { button, wrapper, menuItem } of placements) {
-        const hidden = button.hidden || button.classList.contains('hidden') || button.getAttribute('aria-hidden') === 'true';
-        if (wrapper.hidden !== hidden) wrapper.hidden = hidden;
-        // The original menu's arrow-key selector uses .more-item, not computed
-        // visibility. Exclude a service-hidden graph without changing its state.
-        const item = menuItem || compact.matches && !hidden;
-        if (button.classList.contains('more-item') !== item) button.classList.toggle('more-item', item);
-        if (hidden && wrapper.contains(document.activeElement)) $('btn-more')?.focus({ preventScroll: true });
-      }
-    };
-    const project = () => {
-      const active = document.activeElement;
-      const modal = window.ReadMDModal?.top(), modalOpener = modal && modalOpeners.get(modal);
-      const openerParent = modalOpener?.parentNode;
-      const movedFocus = placements.find(({ button }) => button === active || button.contains(active));
-      const menuFocused = $('more-menu')?.contains(active);
-      const menuOpen = $('more-menu')?.classList.contains('open');
-      if (menuOpen) closeMoreMenu();
-      if (compact.matches) {
-        groupAnchor.after(compactGroup);
-        compactGroup.hidden = false;
-        for (const { button, wrapper } of placements) {
-          wrapper.prepend(button);
-          button.setAttribute('role', 'menuitem');
-          button.setAttribute('data-shell-menu-action', '');
-        }
-      } else {
-        for (const { button, anchor, role, menuAction } of placements) {
-          anchor.after(button);
-          if (role === null) button.removeAttribute('role');
-          else button.setAttribute('role', role);
-          if (!menuAction) button.removeAttribute('data-shell-menu-action');
-        }
-        compactGroup.hidden = true;
-        compactGroup.remove();
-      }
-      labels(); visibility();
-      if (modalOpener && modalOpener.parentNode !== openerParent) watchMovedOpener(modal);
-      if (!compact.matches && movedFocus && !movedFocus.button.disabled && !movedFocus.button.classList.contains('hidden')) movedFocus.button.focus({ preventScroll: true });
-      else if (movedFocus || menuFocused) $('btn-more')?.focus({ preventScroll: true });
-    };
-    for (const { button } of placements) new MutationObserver(visibility).observe(button, { attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden'] });
-    compact.addEventListener('change', project);
-    window.addEventListener('readmd:language-changed', labels);
-    project();
-  }
-  const shortcuts = () => {
-    const mac = !!window.ReadMDKeys?.isMac;
-    for (const el of [...toolbar.querySelectorAll('.tb-btn[title],.tb-btn[aria-label]'), ...side.querySelectorAll('#side-file-actions .tb-btn[title], #side-close-btn[title]')]) {
-      for (const attribute of ['title','aria-label']) {
-        const old = el.getAttribute(attribute);
-        const next = mac && old ? old.replace(/\bCtrl\b/g, 'Cmd') : old;
-        if (old !== next) el.setAttribute(attribute, next);
-      }
-    }
-    const command = $('btn-palette'), hint = $('shell-command-hint');
-    if (command && hint) {
-      const label = command.getAttribute('aria-label') || window.i18n?.t('editor.command') || '';
-      const title = `${label} (${mac ? 'Cmd' : 'Ctrl'}+K / ${mac ? 'Cmd' : 'Ctrl'}+Shift+P)`;
-      if (command.hasAttribute('title') && command.title !== title) command.title = title;
-      if (hint.textContent !== title) hint.textContent = title;
-    }
-  };
-  if (toolbar) new MutationObserver(shortcuts).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['title', 'aria-label'] });
-  window.addEventListener('readmd:language-changed', () => { shortcuts(); syncChromeDocumentDisclosure(); });
-  shortcuts(); syncChromeDocumentDisclosure();
+  const bar = $('doc-tabs-bar');
+  new ResizeObserver(() => syncTopTabOverflow({ reveal: true })).observe($('doc-tabs-container'));
+  bar.addEventListener('wheel', event => {
+    if (event.deltaX || !event.deltaY || event.ctrlKey || bar.scrollWidth <= bar.clientWidth) return;
+    event.preventDefault();
+    bar.scrollLeft += event.deltaY;
+  }, { passive: false });
+  syncSidebar();
 }
 
 function initMacWindowChrome(command) {
   document.body.classList.add('native-macos');
   // Reuse the packaged Mac brand, including its optical inset and rounded tile.
   // The original mark remains the default for browsers and other platforms.
-  for (const mark of document.querySelectorAll('.titlebar-mark,.welcome-mark')) {
+  for (const mark of document.querySelectorAll('.welcome-mark')) {
     mark.src = '/assets/ReadMD-macos.svg';
   }
   // Cocoa draws, localizes and operates the traffic lights. The web page has
@@ -31603,9 +31546,7 @@ function initMacWindowChrome(command) {
   };
   const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(update); } };
   new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
-  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
-    const bar = $(id); if (bar) new MutationObserver(schedule).observe(bar, { childList: true, subtree: true });
-  }
+  new MutationObserver(schedule).observe($('doc-tabs-bar'), { childList: true, subtree: true });
   for (const target of [$('app-titlebar'), $('toolbar'), document.querySelector('.zen-hover-trigger')]) {
     if (!target) continue;
     for (const event of ['pointerenter', 'pointerleave', 'focusin', 'focusout']) target.addEventListener(event, schedule);
@@ -31620,7 +31561,7 @@ function initMacWindowChrome(command) {
     if (Number.isFinite(inset) && inset >= 76 && inset <= 128) document.body.style.setProperty('--native-controls-leading', inset + 'px');
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', event => { if (event.button === 0 && !interactive(event.target)) press = { x: event.screenX, y: event.screenY }; });
   drag.addEventListener('pointermove', event => {
@@ -32177,66 +32118,15 @@ function syncSelectAccessibleName(el) {
 /* ----------------------------------------------------------------------------------------------
    顶层 UI 事件集中绑定与调度器
    ---------------------------------------------------------------------------------------------- */
-function closeMoreMenu(restoreFocus = false) {
-  const menu = $('more-menu');
-  const wasOpen = menu && menu.classList.contains('open');
-  if (menu) menu.classList.remove('open');
-  const button = $('btn-more');
-  if (button) button.setAttribute('aria-expanded', 'false');
-  if (restoreFocus && wasOpen && button && document.activeElement !== button && !button.contains(document.activeElement)) {
-    button.focus({ preventScroll: true });
-  }
-}
-
 function bindEvents() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   /* --- 1. 欢迎页与全局导航 (Welcome & Navigation) [联动: history.js, render.js, folder.js] --- */
   bindWelcomeEvents(); // 绑定欢迎页各个功能入口卡片事件
   if ($('btn-home')) $('btn-home').addEventListener('click', goHome); // 回到主页并深度清理状态 (history.js)
-  $('titlebar-home')?.addEventListener('click', goHome);
   $('btn-open').addEventListener('click', () => { loadFileDialog(); }); // 打开本地文件 (reader/render.js)
   $('btn-folder').addEventListener('click', openFolder); // 打开工作区文件夹 (reader/folder.js)
   syncDesktopControls();
-
-  /* --- 2. 更多功能下拉菜单交互 (More Dropdown Menu) --- */
-  const moreBtn = $('btn-more');
-  const moreMenu = $('more-menu');
-  if (moreBtn && moreMenu) {
-    moreBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      moreMenu.classList.toggle('open');
-      moreBtn.setAttribute('aria-expanded', moreMenu.classList.contains('open') ? 'true' : 'false');
-    });
-    moreMenu.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeMoreMenu(true);
-      } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
-        const items = Array.from(moreMenu.querySelectorAll('.more-group.open .more-item:not([disabled]):not(.hidden), .more-group-header'));
-        if (!items.length) return;
-        e.preventDefault();
-        const currentIndex = items.indexOf(document.activeElement);
-        let nextIndex;
-        if (e.key === 'Home') {
-          nextIndex = 0;
-        } else if (e.key === 'End') {
-          nextIndex = items.length - 1;
-        } else if (e.key === 'ArrowDown') {
-          nextIndex = currentIndex === -1 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
-        } else {
-          nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
-        }
-        items[nextIndex].focus();
-      }
-    });
-    document.addEventListener('click', e => {
-      if (moreMenu.classList.contains('open') && !moreMenu.contains(e.target) && e.target !== moreBtn) {
-        closeMoreMenu();
-      }
-    });
-  }
-
 
   /* --- 3. 万物转 MD 模态框与文件批量导入 [联动: features/convert.js] --- */
   $('btn-convert').addEventListener('click', openConvertModal);
@@ -32248,7 +32138,7 @@ function bindEvents() {
   });
   $('convert-modal').addEventListener('click', e => { if (e.target === $('convert-modal')) closeConvertModal(); });
   if ($('btn-open-plugins')) $('btn-open-plugins').addEventListener('click', openPluginModal);
-  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { closeMoreMenu(); openPluginModal(); });
+  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { openPluginModal(); });
   if ($('plugin-close')) $('plugin-close').addEventListener('click', closePluginModal);
   if ($('plugin-modal')) $('plugin-modal').addEventListener('click', e => { if (e.target === $('plugin-modal')) closePluginModal(); });
 
@@ -32259,15 +32149,14 @@ function bindEvents() {
   $('btn-ocr').addEventListener('click', () => chooseFile('ocr')); // 触发离线 OCR 识别
   $('btn-web').addEventListener('click', openWebDialog);           // 打开网页抓取弹窗
   if ($('btn-clipboard-new')) $('btn-clipboard-new').addEventListener('click', createFromClipboard); // 智能自适应全类型剪贴板新建
-  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { closeMoreMenu(); launchPresentationMode(); });
-  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { closeMoreMenu(); if (window.runAllCodeChunks) runAllCodeChunks(); });
-  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { closeMoreMenu(); openStyleModal(); });
+  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { launchPresentationMode(); });
+  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { if (window.runAllCodeChunks) runAllCodeChunks(); });
+  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { openStyleModal(); });
   if ($('btn-zen')) $('btn-zen').addEventListener('click', () => toggleZenMode()); // 顶栏常驻禅模式按钮
   $('btn-zen')?.addEventListener('contextmenu', event => {
     event.preventDefault();
     window.ReadMDViewMode.toggleFullscreen();
   });
-  if ($('btn-zen-menu')) $('btn-zen-menu').addEventListener('click', () => { closeMoreMenu(); toggleZenMode(); });
 
   const _openKnowledgeGraph = () => {
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
@@ -32282,9 +32171,7 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.open(curDir);
   };
   if ($('btn-graph')) $('btn-graph').addEventListener('click', _openKnowledgeGraph);
-  if ($('btn-graph-menu')) $('btn-graph-menu').addEventListener('click', () => { closeMoreMenu(); _openKnowledgeGraph(); });
   if ($('btn-backlinks-menu')) $('btn-backlinks-menu').addEventListener('click', () => {
-    closeMoreMenu();
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
     if (!hasDoc) {
       if (typeof showToast === 'function') {
@@ -32308,43 +32195,10 @@ function bindEvents() {
     });
   });
 
-  // 全局快捷键与无障碍键盘导航 (Esc 退出全屏或关闭顶层弹窗 / F5 演说放映 / F11 全屏)
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       if (window.launchPresentationMode) launchPresentationMode();
-    } else if (e.key === 'Escape') {
-      if ($('more-menu') && $('more-menu').classList.contains('open')) {
-        e.preventDefault();
-        closeMoreMenu(true);
-        return;
-      }
-      const openModals = [
-        ['pet-settings-modal', typeof closePetSettings === 'function' ? closePetSettings : () => $('pet-settings-modal').classList.add('hidden')],
-        ['code-chunk-modal', closeCodeChunkModal],
-        ['diagram-modal', closeDiagramModal],
-        ['doc-import-modal', closeDocImportModal],
-        ['style-custom-modal', closeStyleModal],
-        ['plugin-modal', closePluginModal],
-        ['convert-modal', closeConvertModal],
-        ['export-modal', closeExportModal],
-        ['img-modal', closeImgModal],
-        ['formula-modal', closeFormulaModal],
-        ['url-modal', typeof closeWebDialog === 'function' ? closeWebDialog : () => $('url-modal').classList.add('hidden')],
-        ['share-modal', typeof closeShareDialog === 'function' ? closeShareDialog : () => $('share-modal').classList.add('hidden')],
-        ['history-modal', () => $('history-modal').classList.add('hidden')],
-        ['fix-modal', () => $('fix-modal').classList.add('hidden')],
-        ['tpl-modal', () => $('tpl-modal').classList.add('hidden')],
-        ['presentation-modal', () => window.closePresentationMode?.()],
-      ];
-      for (const [id, closeFn] of openModals) {
-        const el = $(id);
-        if (el && !el.classList.contains('hidden')) {
-          e.preventDefault();
-          if (typeof closeFn === 'function') closeFn();
-          break;
-        }
-      }
     }
   });
 
@@ -32463,9 +32317,6 @@ function bindEvents() {
     else if (b.id === 'btn-insert-table') openTableModal();
     else cmInsertSyntax(b.dataset.md);
   }));
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation(); const menu = $(b.dataset.menu); const wasHidden = menu.classList.contains('hidden'); closeMdPopups(); if (wasHidden) menu.classList.remove('hidden');
-  }));
   // LaTeX 公式选择器模态框 [联动: reader/formula.js]
   $('formula-open').addEventListener('click', () => openFormulaModal('inline'));
   $('formula-close').addEventListener('click', closeFormulaModal);
@@ -32473,7 +32324,7 @@ function bindEvents() {
   $('formula-modal').addEventListener('click', e => { if (e.target === $('formula-modal')) closeFormulaModal(); });
 
   // 编辑保存与退出
-  $('edit-save').addEventListener('click', saveEdit);
+  $('edit-save').addEventListener('click', () => saveEdit({ exitAfterSave: true }));
   $('edit-area').addEventListener('input', () => {
     const tab = getActiveTab();
     if (tab) { tab.editGeneration = (tab.editGeneration || 0) + 1; tab.inputGeneration = (tab.inputGeneration || 0) + 1; }
@@ -32496,26 +32347,7 @@ function bindEvents() {
 
 
   /* --- 7. 实时分栏预览与滚动同步控制 (Split Preview) [联动: editor/preview.js] --- */
-  $('pv-trigger').addEventListener('click', e => {
-    e.stopPropagation();
-    const m = $('pv-menu');
-    const show = m.classList.contains('hidden');
-    closeMdPopups();
-    m.classList.toggle('hidden', !show);
-    $('pv-trigger').setAttribute('aria-expanded', show ? 'true' : 'false');
-  });
-  document.querySelectorAll('.pv-btn').forEach(b => b.addEventListener('click', () => { setPvLayout(b.dataset.pv); closeMdPopups(); }));
-  const pvSyncEl = $('pv-sync');
-  if (pvSyncEl) pvSyncEl.addEventListener('change', e => { state.pvSync = e.target.checked; saveSettings(); });
-  const publicationToggle=$('pv-publication');
-  if(publicationToggle)publicationToggle.addEventListener('change',async event=>{
-    const wanted=event.target.checked,view=cmView,tab=state.activeTabId;publicationToggle.disabled=true;
-    try{const ready=!wanted||(await ReadMDCapabilities.ensure('typst')&&await ReadMDCapabilities.ensurePublication(view.state.doc.toString(),{...state.export?.options,pdf:{engine:"typst"}}));if(cmView!==view||state.activeTabId!==tab||!state.editing){publicationToggle.checked=!!state.pvPublication;return;}state.pvPublication=publicationToggle.checked=!!(wanted&&ready);if(pvSyncEl)pvSyncEl.disabled=!!state.pvPublication;pvLast='';schedulePreview();}
-    finally{publicationToggle.disabled=false;}
-  });
-  const pvWrap = $('preview-wrap');
-  if (pvWrap) pvWrap.addEventListener('scroll', pvSyncFromPreview);
-  bindPvSplitter(); // 绑定分栏拖拽调整手柄
+  bindPreviewControls();
 
   /* --- 8. 轻量图片编辑器控制 (Image Studio) [联动: editor/image.js] --- */
   $('img-file').addEventListener('click', () => $('img-file-input').click());
@@ -32592,7 +32424,7 @@ function bindEvents() {
   /* --- 9. 文件另存、重命名与历史记录 [联动: reader/render.js, core/history.js, core/tabs.js] --- */
   $('btn-saveas').addEventListener('click', saveAs);
   $('file-title').addEventListener('click', openFileRename); // 标题栏就地重命名
-  $('btn-recent').addEventListener('click', openHistoryModal);
+  $('side-recent-clear').addEventListener('click', clearRecent);
   $('btn-reload').addEventListener('click', () => { if (state.file && state.mode === 'file') loadFile(state.file, { force: true }); });
   $('recent-clear').addEventListener('click', clearRecent);
   $('history-clear').addEventListener('click', clearRecent);
@@ -32600,14 +32432,12 @@ function bindEvents() {
   $('history-modal').addEventListener('click', e => { if (e.target === $('history-modal')) $('history-modal').classList.add('hidden'); });
 
   /* --- 10. 目录大纲与自动修正查看 [联动: reader/toc.js, reader/fixes.js] --- */
-  $('btn-toc').addEventListener('click', () => toggleSide('toc'));
   $('btn-fix').addEventListener('click', showFixModal);
   $('fix-close').addEventListener('click', () => $('fix-modal').classList.add('hidden'));
   $('fix-save').addEventListener('click', handleSaveDocumentFix);
   $('fix-modal').addEventListener('click', e => { if (e.target === $('fix-modal')) $('fix-modal').classList.add('hidden'); });
 
   /* --- 11. 全文搜索、主题外观与字号缩放 [联动: reader/search.js, core/settings.js] --- */
-  $('btn-search').addEventListener('click', toggleSearch);
   $('search-close').addEventListener('click', () => closeSearch({ restoreFocus: true }));
   $('search-next').addEventListener('click', () => jumpToMark(1));
   $('search-prev').addEventListener('click', () => jumpToMark(-1));
@@ -32801,17 +32631,15 @@ function bindEvents() {
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
   /* --- 16. 侧边栏 Tab 切换与滚动监听 --- */
-  $('tab-toc').addEventListener('click', () => showSide('toc'));
-  $('tab-files').addEventListener('click', () => showSide('files'));
   $('content').addEventListener('scroll', () => {
     $('top-btn').classList.toggle('hidden', $('content').scrollTop < 600);
   });
 
   /* --- 17. 客户端内版本检查、语言切换、开机自启与自动升级 [联动: core/i18n.js, features/updater.js] --- */
-  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { closeMoreMenu(); if (window.i18n) window.i18n.openModal(); });
-  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { closeMoreMenu(); if (typeof openPetSettings === 'function') openPetSettings(); });
-  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { closeMoreMenu(); toggleAutostart(); });
-  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { closeMoreMenu(); checkUpdate(false); });
+  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { if (window.i18n) window.i18n.openModal(); });
+  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { if (typeof openPetSettings === 'function') openPetSettings(); });
+  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { toggleAutostart(); });
+  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { checkUpdate(false); });
 
   if ($('status-update-badge')) $('status-update-badge').addEventListener('click', openUpdateModal);
   if ($('update-close')) $('update-close').addEventListener('click', closeUpdateModal);
@@ -33038,6 +32866,8 @@ function bindEvents() {
       labelEl.textContent = window.i18n.meta[lang].native || lang;
     }
     updateStatus();
+    setFixes(state.fixes, state.stats);
+    localizeFixReport();
     updateDocStatistics();
     updatePvLabel();
     syncBuildVersionLabels();
@@ -33051,54 +32881,13 @@ function bindEvents() {
   bindGlobalDragAndDrop();      // 全局拖拽支持
   bindTabOverflowEvents();      // 标签栏左右滚动溢出支持
   bindTabContextMenuEvents();   // 标签右键菜单
-  window.addEventListener('resize', () => {
-    renderTabsBar();
-  });
 
   /* --- 19. 全局键盘快捷键矩阵 (Global Keyboard Shortcuts) --- */
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
 
-    // 模态弹窗 ESC 优先拦截与层级关闭
     if (e.key === 'Escape') {
-      const allModalIds = [
-        'close-confirm-modal',
-        'confirm-modal',
-        'plugin-modal',
-        'pet-settings-modal',
-        'code-chunk-modal', 'diagram-modal', 'doc-import-modal', 'frontmatter-modal',
-        'table-modal', 'export-preview-modal', 'export-modal', 'convert-modal',
-        'update-modal', 'style-custom-modal', 'lang-modal', 'ai-history-modal',
-        'ai-settings-modal', 'formula-modal', 'presentation-modal'
-      ];
-      const activeModal = allModalIds.find(id => $(id) && !$(id).classList.contains('hidden'));
-      if (activeModal) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (activeModal === 'close-confirm-modal' || activeModal === 'confirm-modal') return;
-        if (activeModal === 'code-chunk-modal') closeCodeChunkModal();
-        else if (activeModal === 'diagram-modal') closeDiagramModal();
-        else if (activeModal === 'doc-import-modal') closeDocImportModal();
-        else if (activeModal === 'frontmatter-modal') closeFrontmatterModal();
-        else if (activeModal === 'table-modal') closeTableModal();
-        else if (activeModal === 'export-preview-modal') $(activeModal).classList.add('hidden');
-        else if (activeModal === 'export-modal') closeExportModal();
-        else if (activeModal === 'convert-modal') $('convert-modal').classList.add('hidden');
-        else if (activeModal === 'plugin-modal') closePluginModal();
-        else if (activeModal === 'pet-settings-modal') {
-          if (typeof window.closePetSettings === 'function') window.closePetSettings();
-          else $('pet-settings-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'update-modal') {
-          if (!isUpdateDownloading()) $('update-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'style-custom-modal') closeStyleModal();
-        else if (activeModal === 'lang-modal' && window.i18n) window.i18n.closeModal();
-        else if (activeModal.startsWith('ai-')) closeAiModal(activeModal);
-        else if (activeModal === 'presentation-modal') window.closePresentationMode?.();
-        else $(activeModal).classList.add('hidden');
-        return;
-      }
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (document.body.classList.contains('zen-mode')) {
         e.preventDefault();
         toggleZenMode(false);
@@ -33108,7 +32897,7 @@ function bindEvents() {
 
     if (e.key === 'F2') { e.preventDefault(); openFileRename(); } // F2: 文件重命名
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('btn-open').click(); } // Ctrl+O: 打开文件
-    else if (mod && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
+    else if (mod && !e.shiftKey && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
       e.preventDefault();
       toggleSearch();
     }
@@ -33151,30 +32940,12 @@ function bindEvents() {
     else if (mod && e.key === 'ArrowLeft') { e.preventDefault(); historyBack(); } // Alt/Ctrl+Left: 历史后退
     else if (mod && e.key === 'ArrowRight') { e.preventDefault(); historyForward(); } // Alt/Ctrl+Right: 历史前进
     else if (e.key === 'Escape') {
-      // Layer 1: 模态框与上下文菜单/搜索栏（一旦命中立即阻断返回）
-      if ($('graph-modal') && !$('graph-modal').classList.contains('hidden')) { if (window.ReadMDGraph) window.ReadMDGraph.close(); return; }
       if ($('backlinks-panel') && !$('backlinks-panel').classList.contains('hidden')) { $('backlinks-panel').classList.add('hidden'); return; }
-      if ($('ai-history-modal') && !$('ai-history-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-history-modal'); else $('ai-history-modal').classList.add('hidden'); return; }
-      if ($('ai-settings-modal') && !$('ai-settings-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-settings-modal'); else $('ai-settings-modal').classList.add('hidden'); return; }
-      if ($('chat-import-modal') && !$('chat-import-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('chat-import-modal'); else $('chat-import-modal').classList.add('hidden'); return; }
-      if ($('style-custom-modal') && !$('style-custom-modal').classList.contains('hidden')) { closeStyleModal(); return; }
-      if ($('formula-modal') && !$('formula-modal').classList.contains('hidden')) { closeFormulaModal(); return; }
-      if ($('img-modal') && !$('img-modal').classList.contains('hidden')) { closeImgModal(); return; }
-      if ($('history-modal') && !$('history-modal').classList.contains('hidden')) { $('history-modal').classList.add('hidden'); return; }
-      if ($('export-preview-modal') && !$('export-preview-modal').classList.contains('hidden')) { $('export-preview-modal').classList.add('hidden'); return; }
       if ($('tab-context-menu') && !$('tab-context-menu').classList.contains('hidden')) { closeTabContextMenu({ restoreFocus: true }); return; }
-      if ($('more-menu') && $('more-menu').classList.contains('open')) { closeMoreMenu(true); return; }
       if ($('search-bar') && !$('search-bar').classList.contains('hidden')) { closeSearch({ restoreFocus: true }); return; }
       if ($('edit-ai-bar') && !$('edit-ai-bar').classList.contains('hidden')) { if (typeof closeEditAiBar === 'function') closeEditAiBar(); return; }
-      if ($('fix-modal') && !$('fix-modal').classList.contains('hidden')) { $('fix-modal').classList.add('hidden'); return; }
-      if ($('share-modal') && !$('share-modal').classList.contains('hidden')) { $('share-modal').classList.add('hidden'); return; }
-      if ($('tpl-modal') && !$('tpl-modal').classList.contains('hidden')) { $('tpl-modal').classList.add('hidden'); return; }
-      if ($('convert-modal') && !$('convert-modal').classList.contains('hidden')) { $('convert-modal').classList.add('hidden'); return; }
-      if ($('table-modal') && !$('table-modal').classList.contains('hidden')) { closeTableModal(); return; }
-      if ($('lang-modal') && !$('lang-modal').classList.contains('hidden') && window.i18n) { window.i18n.closeModal(); return; }
-      if (typeof closeWebDialog === 'function' && $('url-modal') && !$('url-modal').classList.contains('hidden')) { closeWebDialog(); return; }
-      const openPopups = document.querySelectorAll('.md-menu:not(.hidden), .pv-menu:not(.hidden)');
-      if (openPopups.length > 0) { closeMdPopups(); return; }
+      const openPopups = document.querySelectorAll('.md-menu:not(.hidden)');
+      if (openPopups.length > 0) { closeMdPopups({ restoreFocus: true }); return; }
 
       // Layer 2: AI 面板分层退出（全屏退回分屏，分屏收起归还焦点，绝不穿透退出编辑器）
       const aiPanel = $('ai-panel');
@@ -33191,7 +32962,7 @@ function bindEvents() {
       }
 
       // Layer 3: 侧边栏与禅模式
-      if ($('side') && !$('side').classList.contains('hidden')) { $('side').classList.add('hidden'); return; }
+      if (!$('side').classList.contains('hidden')) { closeSide({ restoreFocus: true }); return; }
       if (document.body.classList.contains('zen-mode')) { toggleZenMode(false); return; }
 
       // Layer 4: 兜底清理其他小弹层
@@ -33208,82 +32979,9 @@ function bindEvents() {
   });
 
 
-  document.addEventListener('click', closeMdPopups);
-  setupModalAccessibility();
-}
-
-function getModalRoots() {
-  return [
-    'close-confirm-modal', 'code-chunk-modal', 'diagram-modal', 'doc-import-modal',
-    'frontmatter-modal', 'table-modal', 'export-preview-modal', 'export-modal',
-    'convert-modal', 'plugin-modal', 'pet-settings-modal', 'graph-modal', 'update-modal',
-    'style-custom-modal', 'lang-modal', 'ai-history-modal', 'ai-settings-modal',
-    'formula-modal', 'presentation-modal', 'img-modal', 'history-modal', 'share-modal',
-    'tpl-modal', 'url-modal', 'save-conflict-modal', 'fix-modal', 'continuous-modal', 'confirm-modal'
-  ].map(id => $(id)).filter(Boolean);
-}
-
-function isVisibleModal(modal) {
-  return modal && !modal.classList.contains('hidden');
-}
-
-function getModalFocusable(modal) {
-  return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
-    .filter(el => !el.closest('.hidden'));
-}
-
-function setupModalAccessibility() {
-  if (window.ReadMDModal) return;
-  const modalOpeners = new Map();
-  const openModalStack = [];
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Tab') return;
-    const modal = [...openModalStack].reverse().find(isVisibleModal);
-    if (!modal) return;
-    const focusable = getModalFocusable(modal);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!modal.contains(event.target)) {
-      event.preventDefault();
-      first.focus();
-      return;
-    }
-    if (event.shiftKey && event.target === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && event.target === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }, true);
-
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      const modal = mutation.target;
-      const visible = !modal.classList.contains('hidden');
-      const stackIndex = openModalStack.indexOf(modal);
-      if (visible) {
-        if (stackIndex < 0) openModalStack.push(modal);
-        if (!modalOpeners.has(modal)) {
-          const opener = document.activeElement;
-          modalOpeners.set(modal, modal.contains(opener) ? null : opener);
-        }
-        if (!modal.contains(document.activeElement)) {
-          const focusable = getModalFocusable(modal);
-          if (focusable.length) focusable[0].focus();
-        }
-      } else if (!visible) {
-        if (stackIndex >= 0) openModalStack.splice(stackIndex, 1);
-        if (modal.contains(document.activeElement)) {
-          const opener = modalOpeners.get(modal);
-          if (opener && opener.isConnected) opener.focus({ preventScroll: true });
-        }
-        modalOpeners.delete(modal);
-      }
-    }
+  document.addEventListener('click', event => {
+    if (!event.target.closest('#edit-bar .md-menu')) closeMdPopups();
   });
-  getModalRoots().forEach(modal => observer.observe(modal, { attributes: true, attributeFilter: ['class'] }));
 }
 
 function syncDesktopControls() {

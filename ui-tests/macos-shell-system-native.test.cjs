@@ -18,9 +18,10 @@ const shell=load({prepare(){throw Error('Native preparation forbidden');}});
 function predicate(script,label,call){const at=script.indexOf("'"+label+"'");assert(at>=0);const start=script.lastIndexOf(call+'(',at);assert(start>=0);return script.slice(start+call.length+1,at).replace(/,\s*$/,'').trim();}
 function editorContext(){
  let body=shell.B;
- const context=vm.createContext({state:{original:'\ufeff'+shell.B.replaceAll('\n','\r\n')},cmView:{state:{doc:{toString:()=>body}}},config:{b:shell.B,addition:shell.ADDITION},getActiveTab:()=>({isDirty:false}),text:value=>String(value??'').replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n')});
+ const state={editing:true,original:'\ufeff'+shell.B.replaceAll('\n','\r\n')};
+ const context=vm.createContext({state,cmView:{state:{doc:{toString:()=>body}}},config:{b:shell.B,addition:shell.ADDITION},getActiveTab:()=>({isDirty:state.editing&&body!==shell.B}),text:value=>String(value??'').replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n')});
  const preview=fs.readFileSync(path.join(repo,'assets/js/editor/preview.js'),'utf8'),begin=preview.indexOf('function getEditContent()'),end=preview.indexOf('\nfunction setPvLayout(',begin);assert(begin>=0&&end>begin);vm.runInContext(preview.slice(begin,end),context);
- return{context,append:()=>{body+=shell.ADDITION;}};
+ return{context,append:()=>{body+=shell.ADDITION;},saved:()=>{state.editing=false;state.original='\ufeff'+body.replaceAll('\n','\r\n');}};
 }
 function png(){
  const crc=bytes=>{let c=0xffffffff;for(const byte of bytes){c^=byte;for(let bit=0;bit<8;bit++)c=c&1?0xedb88320^(c>>>1):c>>>1;}return(c^0xffffffff)>>>0;};
@@ -31,7 +32,9 @@ function png(){
 async function closedDriver(quit,{script=shell.driver('closed_stays_closed',{a:'/owned/a.md',b:'/owned/b.md',fix:'/owned/fix.md',ack:'/owned/ack.txt'},{csp,cases:shell.cases,a:shell.A,b:shell.B,fix:shell.FIX,addition:shell.ADDITION}),profile=fresh('terminal'),onRelease=()=>{},dropTerminal=false,syncFailure=false}={}){
  const b={id:'b',path:'/owned/b.md',content:shell.B+shell.ADDITION,isDirty:false},fix={id:'fix',path:'/owned/fix.md'},messages=[],events=[];let quitCalls=0,held=0,blocked=false,releases=0;
  const files=JSON.parse(script.match(/files=(\{[^;]*?\}),config=/)[1]);
+ const home={},nodes={'app-titlebar':{querySelector:()=>null},'btn-home':home,'side-shortcuts':{lastElementChild:home}};
  const context={__readmdSessionReady:Promise.resolve(),hasPy:true,URL,Date,setTimeout,clearTimeout,editorPrefs:{aiCompletion:false},state:{tabs:[b,fix],activeTabId:'b'},getActiveTab:()=>b,
+  $:id=>nodes[id],
   document:{body:{classList:{contains:key=>['native-macos','shell-single-chrome'].includes(key)}},querySelector:key=>key==='.titlebar-mark'?{complete:true,naturalWidth:1,src:'http://owned.invalid/assets/ReadMD-macos.svg'}:{content:csp}},
   ReadMDSession:{whenIdle:async()=>{},flush:async()=>true},requestAnimationFrame:fn=>fn(),fetch:async()=>({status:403}),apiFetch:async()=>({ok:true,json:async()=>({modules:{ocr:'idle',transcribe:'idle'}})}),
   py:{native_titlebar:'macos',request_quit:async()=>{quitCalls++;events.push('guard');return quit({postQuit:()=>context.window.ipc.postMessage('readmd:quit')});}},window:{ReadMDLifecycle:{busy:()=>false}}};
@@ -89,7 +92,8 @@ test('plan and three generated scripts stay inert and parse',()=>{
 });
 test('logical editor predicates accept actual BOM/CRLF getEditContent',()=>{
  const state=editorContext(),script=shell.driver('shell_edit_save',{},{}),opening=predicate(script,'editor_opens_exact_saved_source','check'),saving=predicate(script,'visible_save_did_not_settle','until');
- assert.match(state.context.getEditContent(),/\r\n/);assert.equal(vm.runInContext('('+opening+')',state.context),true);state.append();assert.match(state.context.getEditContent(),/\r\n/);assert.equal(vm.runInContext('('+saving+')()',state.context),true);
+ assert.match(state.context.getEditContent(),/\r\n/);assert.equal(vm.runInContext('('+opening+')',state.context),true);state.append();assert.match(state.context.getEditContent(),/\r\n/);
+ assert.equal(vm.runInContext('('+saving+')()',state.context),false);state.saved();assert.equal(vm.runInContext('('+saving+')()',state.context),true);
 });
 test('the unchanged physical verifier rejects LF-only, missing BOM and altered original bytes',()=>{
  const directory=fresh('physical-bytes'),files={a:path.join(directory,'a.md'),b:path.join(directory,'b.md'),fix:path.join(directory,'fix.md')};
@@ -103,8 +107,12 @@ for(const [name,quit]of[['throws',async()=>{throw Error('owned_quit_failure');}]
  const run=await closedDriver(quit);await run.running;assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,false);assert.equal(JSON.parse(fs.readFileSync(path.join(run.profile,'native-qa-result.json'))).ok,false);assert(!run.messages.includes('readmd:quit'));
 });
 test('only strict guard true permits one success, with no terminal before acceptance',async()=>{
- let release,called=false;const accepted=new Promise(resolve=>{release=resolve;});const run=await closedDriver(async({postQuit})=>{postQuit();called=true;return accepted;});
- while(!called)await new Promise(setImmediate);const before=run.terminals().length;assert.equal(run.releases(),0);release(true);await run.running;assert.equal(before,0);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert.equal(run.messages.filter(m=>m==='readmd:quit').length,1);assert.equal(run.quitCalls(),1);assert(run.ipcUnchanged());assert.equal(run.releases(),1);assert(run.events.indexOf('host_held_quit')<run.events.indexOf('terminal_persisted'));assert(run.events.indexOf('terminal_persisted')<run.events.indexOf('host_release'));
+ const entered=Promise.withResolvers(),accepted=Promise.withResolvers();
+ const run=await closedDriver(async({postQuit})=>{postQuit();entered.resolve();return accepted.promise;});
+ await Promise.race([entered.promise,run.running.then(()=>assert.fail('Driver ended before requesting quit'))]);
+ const before=run.terminals().length;
+ try{assert.equal(run.releases(),0);}finally{accepted.resolve(true);}
+ await run.running;assert.equal(before,0);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert.equal(run.messages.filter(m=>m==='readmd:quit').length,1);assert.equal(run.quitCalls(),1);assert(run.ipcUnchanged());assert.equal(run.releases(),1);assert(run.events.indexOf('host_held_quit')<run.events.indexOf('terminal_persisted'));assert(run.events.indexOf('terminal_persisted')<run.events.indexOf('host_release'));
 });
 for(const count of [0,2])test('strict true with '+count+' guard quit messages cannot release the controlled host',async()=>{
  const run=await closedDriver(async({postQuit})=>{for(let i=0;i<count;i++)postQuit();return true;});await run.running;assert.equal(run.quitCalls(),1);assert.equal(run.terminals().length,1);assert.equal(run.terminals()[0].ok,true);assert.equal(run.releases(),0);assert(run.ipcUnchanged());

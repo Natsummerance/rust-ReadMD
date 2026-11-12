@@ -83,7 +83,7 @@ test('Plugin Center entry point and modal cards render correctly', async ({ page
 
   // 1. 打开更多菜单并打开万物转 MD 模态框
   await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toHaveClass(/open/);
+  await expect(page.locator('#more-menu')).toBeVisible();
   await page.locator('.more-group:has(#btn-convert) .more-group-header').click();
   await page.locator('#btn-convert').click();
   await expect(page.locator('#convert-modal')).toBeVisible();

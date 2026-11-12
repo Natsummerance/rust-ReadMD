@@ -41,6 +41,13 @@ async function localized(page, extra = {}) {
   await page.evaluate(({lines,extra}) => window.__readmdRustDispatch.state({info:{...window.__bongoPet.state.petInfo,lines,...extra}}),{lines,extra});
 }
 async function regionPayload(page) { return page.evaluate(()=>window.__petCommands.filter(c=>c.payload?.type==='interaction-regions').at(-1).payload); }
+async function rightClickPet(page) {
+  const point = await page.evaluate(() => {
+    const rect = window.__bongoPet.opaqueRegions.reduce((a, b) => a.width * a.height > b.width * b.height ? a : b);
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  });
+  await page.mouse.click(point.x, point.y, { button: 'right' });
+}
 
 test('awake and resting pets leave the surrounding desktop fully transparent', async ({page}) => {
   await mount(page,'mochi');
@@ -97,15 +104,52 @@ test('click opens localized dialogue and accessible actions that issue real comp
 
 test('right-click menu buttons receive native hit regions and character switches persist through the bridge', async ({page}) => {
   await mount(page);await localized(page);
-  await page.locator('#bongocat-canvas').click({button:'right',position:{x:160,y:365}});
-  const menu=page.getByRole('menu');await expect(menu).toBeVisible();
+  const menu=page.getByRole('menu');
+  await page.mouse.click(4, 4, { button: 'right' });
+  await expect(menu).toBeHidden();
+  await rightClickPet(page);
+  await expect(menu).toBeVisible();
+  await page.mouse.click(4, 4);
+  await expect(menu).toBeHidden();
+  await rightClickPet(page);
+  await expect(menu).toBeVisible();
   await menu.getByRole('menuitem',{name:'Change character',exact:true}).click();
   await menu.getByRole('menuitemradio',{name:'Hermes',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bongoPet.presentation)).toBe('hermes');
   expect(await page.evaluate(()=>window.__petCommands.some(c=>c.payload?.type==='character' && c.payload.slug==='hermes' && c.payload.renderer==='hermes-sprite'))).toBe(true);
-  await page.locator('#bongocat-canvas').click({button:'right',position:{x:160,y:365}});
+  await expect.poll(() => page.evaluate(() => window.__bongoPet.spritePose?.img.src.includes('hermes-sprite'))).toBe(true);
+  await rightClickPet(page);
   await menu.getByRole('menuitem',{name:/settings/i}).click();
   expect(await page.evaluate(()=>window.__petCommands.some(c=>c.payload?.type==='open-app' && c.payload.target==='pet-settings'))).toBe(true);
+  expect(await page.evaluate(()=>window.__petCommands.some(c=>c.payload?.type==='open-menu'))).toBe(false);
+});
+
+test('native menu coordinates scale, dialogue stays below the menu and leaving dismisses it', async ({ page }) => {
+  await mount(page); await localized(page);
+  await page.evaluate(() => {
+    const info = window.__bongoPet.state.petInfo;
+    window.__readmdRustDispatch.state({ bounds: { width: 400, height: 525 }, info });
+    window.__readmdRustDispatch.control({ type: 'pet' });
+  });
+  await expect(page.locator('.readmd-pet-life__bubble')).toHaveClass(/is-visible/);
+  const open = () => page.evaluate(() => window.__readmdRustDispatch.control({ type: 'show-context-menu', x: 50, y: 35 }));
+  await open();
+  const menu = page.getByRole('menu');
+  await expect(menu).toBeVisible();
+  const box = await menu.boundingBox();
+  expect(box.x).toBeCloseTo(40);
+  expect(box.y).toBeCloseTo(28);
+  const native = await regionPayload(page);
+  expect(native.rects).toContainEqual({ x: box.x * 1.25, y: box.y * 1.25, width: box.width * 1.25, height: box.height * 1.25 });
+  const settings = menu.getByRole('menuitem', { name: /settings/i });
+  await settings.focus();
+  await page.evaluate(() => window.__readmdRustDispatch.state({ info: window.__bongoPet.state.petInfo, activity: { toolRunning: true } }));
+  await expect(settings).toBeFocused();
+  await settings.click();
+  await expect(menu).toBeHidden();
+  await open();
+  await page.evaluate(() => window.__readmdRustDispatch.control({ type: 'surface-hover', hovered: false }));
+  await expect(menu).toBeHidden();
 });
 
 test('locked position suppresses browser drag but keeps click dialogue', async ({page}) => {

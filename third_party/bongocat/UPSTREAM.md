@@ -32,7 +32,7 @@ the renderer reuses ReadMD's existing packaged Cubism runtime and PIXI chunks.
 The remaining ReadMD characters retain their full authored sprite actions or
 Live2D portrait. Only BongoCat has keyboard/mouse layers; no extra forearms or
 instruments are attached to the other characters.
-`assets/pet/bongocat-preview.png` is a preview rendered from the unchanged
-bundled cat model and its original instrument artwork.
+`assets/pet/bongocat-preview.png` is an unchanged copy of the bundled model's
+`resources/cover.png` for the ReadMD character gallery and workbench.
 Input identities live only in memory; no keyboard text or input sequence is
 written to logs, health reports or settings.

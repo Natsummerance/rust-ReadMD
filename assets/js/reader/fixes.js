@@ -7,25 +7,50 @@
 
 let documentInspectionGeneration = 0;
 let documentFixOwner = null;
+const fixLabels = new WeakMap();
+
+function fixLabel(element, text) {
+  if (!element) return;
+  fixLabels.set(element, text);
+  element.textContent = text();
+}
+
+function describeReaderFix(fix) {
+  if (typeof fix === 'string') return fix;
+  const messages = {
+    heading_space: 'fixes.headingSpace', table_separator: 'fixes.tableSeparator',
+    table_alignment: 'fixes.tableAlignment', inline_delimiter: 'fixes.closedDelimiter',
+    inline_math: 'fixes.closedDelimiter',
+  };
+  const line = fix.end_line ? `${fix.line}–${fix.end_line}` : fix.line;
+  const position = i18n.t('inspection.atLine', { line });
+  const message = messages[fix.code];
+  return message ? `${position} · ${i18n.t(message, { ...fix, delimiter: `\u2068${fix.delimiter ?? '$'}\u2069` })}` : position;
+}
+
+function localizeFixReport() {
+  if ($('fix-modal')?.classList.contains('hidden')) return;
+  for (const element of [$('fix-count'), ...($('fix-list')?.children || [])]) {
+    const text = element && fixLabels.get(element);
+    if (text) element.textContent = text();
+  }
+}
+
 function showFixModal() {
   documentFixOwner = captureDocumentFixOwner();
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const list = $('fix-list');
   if (list) list.innerHTML = '';
   const fixes = state.fixes || [];
-  const fixCount = $('fix-count');
-  if (fixCount) {
-    fixCount.textContent = fixes.length ? (_t('fixes.countTotal', { count: fixes.length }) || ('（共 ' + fixes.length + ' 处）')) : '';
-  }
+  fixLabel($('fix-count'), () => fixes.length ? i18n.t('fixes.countTotal', { count: fixes.length }) : '');
   if (!fixes.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = _t('fixes.noFixes') || '本篇文档未发现需要修正的内容';
+    fixLabel(li, () => i18n.t('fixes.noFixes'));
     if (list) list.appendChild(li);
   } else {
     fixes.forEach(f => {
       const li = document.createElement('li');
-      li.textContent = f;
+      fixLabel(li, () => describeReaderFix(f));
       if (list) list.appendChild(li);
     });
   }
@@ -41,7 +66,7 @@ async function inspectCurrentDocument(generation) {
   const list = $('fix-list');
   const status = document.createElement('li');
   status.className = 'document-inspection-summary';
-  status.textContent = i18n.t('inspection.loading');
+  fixLabel(status, () => i18n.t('inspection.loading'));
   list?.appendChild(status);
   try {
     const response = await apiFetch('/api/document/analyze', {
@@ -51,22 +76,24 @@ async function inspectCurrentDocument(generation) {
     const result = await response.json();
     if (generation !== documentInspectionGeneration || tabId !== state.activeTabId || $('fix-modal').classList.contains('hidden')) return;
     if (text !== (state.editing ? getEditContent() : (state.original ?? state.fixed ?? ''))) {
-      status.textContent = i18n.t('inspection.changed'); return;
+      fixLabel(status, () => i18n.t('inspection.changed')); return;
     }
     if (!response.ok || !result.ok) throw new Error('inspection_failed');
-    status.textContent = i18n.t('inspection.summary', { count: result.diagnostics.length });
+    fixLabel(status, () => i18n.t('inspection.summary', { count: result.diagnostics.length }));
     for (const issue of result.diagnostics) {
       const row = document.createElement('li');
       row.className = 'document-inspection-issue';
       const key = 'inspection.' + issue.code;
-      row.textContent = i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target;
+      fixLabel(row, () => i18n.t('inspection.atLine', { line: issue.position.line }) + ' · ' + i18n.t(key) + ' · ' + issue.target);
       list?.appendChild(row);
     }
     if (result.truncated) {
-      const row = document.createElement('li'); row.textContent = i18n.t('inspection.limited'); list?.appendChild(row);
+      const row = document.createElement('li');
+      fixLabel(row, () => i18n.t('inspection.limited'));
+      list?.appendChild(row);
     }
   } catch (_) {
-    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) status.textContent = i18n.t('inspection.failed');
+    if (generation === documentInspectionGeneration && tabId === state.activeTabId && status.isConnected) fixLabel(status, () => i18n.t('inspection.failed'));
   }
 }
 

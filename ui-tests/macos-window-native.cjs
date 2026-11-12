@@ -16,18 +16,16 @@ function driver(file,ack){return String.raw`(async()=>{
   await window.__readmdSessionReady;await loadFile(${JSON.stringify(file)});
   await until(()=>host()?.chrome?.buttons?.length===3);
   check(py.native_titlebar==='macos'&&document.body.classList.contains('native-macos'),'native_macos_bridge');
-  await until(()=>document.querySelector('.titlebar-mark')?.complete&&document.querySelector('.titlebar-mark')?.naturalWidth===1024);
-  check(new URL(document.querySelector('.titlebar-mark').src).pathname==='/assets/ReadMD-macos.svg','native_header_uses_packaged_mac_brand');
-  check($('titlebar-home').getBoundingClientRect().width>=44&&getComputedStyle(document.querySelector('.titlebar-mark')).width==='34px','mac_brand_optical_size_and_home_hit_target');
+  check(!$('app-titlebar').querySelector('img')&&$('side-shortcuts').lastElementChild===$('btn-home')&&$('btn-home').getBoundingClientRect().width>=44,'native_header_no_brand_and_rail_home_target');
   check(getComputedStyle(document.body).fontFamily.includes('-apple-system'),'native_system_chrome_font');
   const chrome=host().chrome;
   check(chrome.systemControls&&chrome.fullSizeContent&&chrome.titleHidden&&chrome.transparentTitlebar,'actual_cocoa_titlebar_style');
   check(getComputedStyle($('window-controls')).display==='none'&&!document.querySelector('.window-resize-edge'),'no_duplicate_windows_controls');
   const geometry=()=>{
-   const c=host().chrome,header=$('app-titlebar').getBoundingClientRect(),logo=$('titlebar-home').getBoundingClientRect();
+   const c=host().chrome,header=$('app-titlebar').getBoundingClientRect(),actions=$('titlebar-actions').getBoundingClientRect();
    const right=Math.max(...c.buttons.map(b=>b.x+b.width));
-   return header.top===0&&Math.abs(header.height-48)<1&&c.buttons.every(b=>b.width>8&&b.height>8&&b.x>=0&&b.y>=0&&b.y+b.height<=48)
-    &&c.leadingInset>=right+10&&logo.left>=right+10&&header.right<=innerWidth+1;
+   return header.top===0&&Math.abs(header.height-52)<1&&c.buttons.every(b=>b.width>8&&b.height>8&&b.x>=0&&b.y>=0&&b.y+b.height<=52)
+    &&c.leadingInset>=right+10&&actions.left>=right+10&&header.right<=innerWidth+1;
   };
   for(const[width,height]of [[1024,680],[1160,820]]){
    py.window_control('qa_window_size',{width,height});await until(()=>Math.abs(innerWidth-width)<2&&Math.abs(innerHeight-height)<2&&geometry());
@@ -36,15 +34,14 @@ function driver(file,ack){return String.raw`(async()=>{
   const largest={width:Math.min(1920,screen.availWidth-24),height:Math.min(1080,screen.availHeight-24)};
   py.window_control('qa_window_size',largest);await until(()=>Math.abs(innerWidth-largest.width)<2&&Math.abs(innerHeight-largest.height)<2&&geometry());check(true,'native_header_largest_available_screen');
   py.window_control('qa_window_size',{width:1160,height:820});await until(()=>innerWidth===1160&&geometry());
-  const logo=$('titlebar-home').getBoundingClientRect(),name=$('window-drag-region').getBoundingClientRect(),actions=$('titlebar-actions').getBoundingClientRect();
-  check(logo.right>innerWidth-20&&name.right<=logo.left&&logo.left-name.right<=12&&actions.right<=name.left,'mac_top_row_mirrored_and_right_aligned');
-  check($('btn-open').getBoundingClientRect().left>$('btn-folder').getBoundingClientRect().left&&$('btn-folder').getBoundingClientRect().left>$('btn-zen').getBoundingClientRect().left,'mac_global_actions_reverse_in_top_row');
+  const tabs=$('doc-tabs-bar').getBoundingClientRect(),ai=$('btn-ai').getBoundingClientRect();
+  check(tabs.width>0&&$('doc-tabs-bar').getAttribute('aria-orientation')==='horizontal'&&$('btn-zen').getBoundingClientRect().right<=tabs.left+1&&tabs.right<=ai.left+1&&ai.right>=innerWidth-20,'native_top_row_sidebar_tabs_and_ai');
   await i18n.setLanguage('ar',false);await until(geometry);check(true,'rtl_respects_native_left_controls');await i18n.setLanguage('en',false);
   state.theme='dark';applySettings();await until(()=>document.body.dataset.theme==='dark');check(geometry(),'dark_header_fits');
   state.theme='light';applySettings();await until(()=>document.body.dataset.theme==='light');check(geometry(),'light_header_fits');
-  const contentTop=$('content').getBoundingClientRect().top,headerHeight=$('app-titlebar').getBoundingClientRect().height,toolbarHeight=$('toolbar').getBoundingClientRect().height;
+  const contentTop=$('content').getBoundingClientRect().top,headerHeight=$('app-titlebar').getBoundingClientRect().height;
   toggleZenMode(true);await new Promise(r=>setTimeout(r,280));
-  check(contentTop-$('content').getBoundingClientRect().top>=headerHeight+toolbarHeight-2,'zen_releases_header_layout_height');
+  check(contentTop-$('content').getBoundingClientRect().top>=headerHeight-2,'zen_releases_header_layout_height');
   toggleZenMode(false);await until(()=>!document.body.classList.contains('zen-mode')&&host().chrome.buttons.every(b=>!b.hidden));
   await click('minimize');await until(()=>host()?.minimized===true);check(true,'actual_native_yellow_minimizes');
   // Restoration must reactivate the reader as well as de-miniaturize it.

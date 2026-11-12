@@ -402,3 +402,24 @@ pub(crate) fn events_after(
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|_| "review_persistence_failed")
 }
+
+pub(crate) fn visit_proposals(
+    tx: &Transaction<'_>,
+    id: &str,
+    mut visit: impl FnMut(u64, &str) -> Result<bool, &'static str>,
+) -> Result<(), &'static str> {
+    let mut statement = tx.prepare(
+        "SELECT event_id, payload FROM review_events WHERE document_id=?1 AND kind='propose' ORDER BY event_id",
+    ).map_err(|_| "review_persistence_failed")?;
+    let mut rows = statement.query([id]).map_err(|_| "review_persistence_failed")?;
+    while let Some(row) = rows.next().map_err(|_| "review_persistence_failed")? {
+        let event: i64 = row.get(0).map_err(|_| "review_persistence_failed")?;
+        let event = u64::try_from(event).map_err(|_| "review_persistence_failed")?;
+        let payload = row.get_ref(1).and_then(|value| Ok(value.as_str()?))
+            .map_err(|_| "review_persistence_failed")?;
+        if visit(event, payload)? {
+            break;
+        }
+    }
+    Ok(())
+}

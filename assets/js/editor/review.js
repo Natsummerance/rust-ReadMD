@@ -16,7 +16,7 @@ window.ReadMDReview = (() => {
     const key='error.'+code, localized=t(key);
     if (code && localized !== key) return localized;
     if (code === 'cancelled') return t('ai.stopped');
-    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
+    return t(/budget|limit/.test(code) ? 'review.limit' : /conflict|stale|recovery|overlapping_edits/.test(code) ? 'review.conflict' : /progress|busy/.test(code) ? 'review.busy' : 'review.persistenceFailed');
   }
   function notifyError(error) { if (typeof showToast === 'function') showToast(message(error), 6000); }
   function source(tab) {
@@ -133,10 +133,14 @@ window.ReadMDReview = (() => {
   }
   function remoteEdits(before, snapshot, op) {
     if (before === snapshot.content) return [];
+    if (Array.isArray(snapshot.transaction_edits)) {
+      if (apply(before, snapshot.transaction_edits) !== snapshot.content) throw failure('review_conflict');
+      return snapshot.transaction_edits;
+    }
     if (op?.edits && apply(before, op.edits) === snapshot.content) return op.edits;
     if (op?.kind === 'resolve' && op.previous) {
       const edits = op.previous.changes.filter(change => op.ids.includes(change.id)).flatMap(change => {
-        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.original }];
+        if (op.decision === 'withdraw' && change.application === 'applied' && change.decision !== 'withdrawn') return [{ from: change.from, to: change.to, insert: change.restore_original ?? change.original }];
         if (op.decision === 'accept' && change.application === 'proposed') return [{ from: change.from, to: change.to, insert: change.replacement }];
         return [];
       }).sort((a, b) => a.from - b.from);
@@ -320,7 +324,7 @@ window.ReadMDReview = (() => {
         } catch (error) {
           // Retain the same id and exact payload: an explicit retry can recover
           // a committed operation whose network acknowledgement was lost.
-          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
+          const rejected = op.kind !== 'edit' && /conflict|stale|budget|invalid|overlapping_edits|no_history|nothing_to_|undo_unavailable|redo_unavailable|cancelled|ai_not_configured|ai_http_error|ai_network_error|review_ai_/.test(error.code || '');
           if (!rejected) { rec.queue.unshift(op); rec.error = error; }
           op.reject?.(error); delete op.resolve; delete op.reject;
           notifyError(error); refresh(rec);
@@ -916,7 +920,7 @@ window.ReadMDReview = (() => {
         if (typeof state !== 'undefined' && !state.editing && typeof toggleEdit === 'function') await toggleEdit();
         if (activeTab() === tab) navigate(1, tab);
       });
-      footer.insertBefore(marker, document.getElementById('status-mods'));
+      footer.insertBefore(marker, document.getElementById('editor-status-group'));
     }
     if (marker) {
       marker.hidden = !(pending || conflict);

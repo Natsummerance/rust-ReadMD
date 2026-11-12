@@ -1,4 +1,4 @@
-const {waitForPage}=require('./page-condition.cjs');
+const {waitForPage,revealDocumentSearch}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs/promises');
 const os = require('os');
@@ -24,7 +24,7 @@ async function setEditorContent(page, content) {
   const cmContent = page.locator('#edit-cm .cm-content');
   if (await cmContent.count()) {
     await cmContent.click();
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press('ControlOrMeta+A');
     await page.keyboard.type(content);
   } else {
     await page.locator('#edit-area').fill(content);
@@ -80,7 +80,7 @@ test('single row commands, formula picker and responsive preview', async ({ page
   expect(await page.locator('#main-col').evaluate(e => getComputedStyle(e).flexDirection)).toBe('row');
   await page.setViewportSize({ width: 580, height: 600 });
   expect(await page.locator('#main-col').evaluate(e => getComputedStyle(e).flexDirection)).toBe('column');
-  await expect(page.locator('#pv-trigger')).toContainText(/窄屏已自动切换|下方预览|窄屏置底/);
+  await expect(page.locator('[data-pv="left"]')).toHaveAttribute('aria-pressed', 'true');
   expect(errors).toEqual([]);
 });
 
@@ -121,7 +121,7 @@ test('export scroll, history and AI narrow layout remain usable', async ({ page 
   expect(await opts.evaluate(e => e.scrollHeight > e.clientHeight)).toBeTruthy();
   await expect(page.locator('.export-foot')).toBeVisible();
   await page.locator('#export-modal').evaluate(e => e.classList.add('hidden'));
-  await page.locator('#btn-recent').click(); await expect(page.locator('#history-modal')).toBeVisible();
+  await page.locator('#btn-recent').click(); await expect(page.locator('#side-recent-list')).toBeVisible();
   await page.evaluate(() => document.querySelector('#ai-panel').classList.remove('hidden'));
   expect((await page.locator('#ai-panel').boundingBox()).width).toBeLessThanOrEqual(685);
   await expect(page.locator('#ai-model-summary')).toBeVisible();
@@ -878,7 +878,8 @@ test('v2.3.7 custom styles and html head injection modal', async ({ page }) => {
   await page.waitForSelector('#btn-more');
 
   await page.locator('#btn-more').click();
-  await page.locator('.more-group:has(#btn-style-custom) .more-group-header').click();
+  const styleGroup = page.locator('.more-group:has(#btn-style-custom) .more-group-header');
+  if (await styleGroup.getAttribute('aria-expanded') !== 'true') await styleGroup.click();
   await page.locator('#btn-style-custom').click();
 
   const modal = page.locator('#style-custom-modal');
@@ -895,6 +896,7 @@ test('v2.3.7 custom styles and html head injection modal', async ({ page }) => {
 
   // 验证输入框可编辑
   const headInput = page.locator('#style-custom-head');
+  await headInput.locator('..').locator('summary').click();
   await headInput.fill('<!-- meta injection -->');
 
   // 取消并关闭
@@ -929,24 +931,21 @@ test('v2.3.7 btn-home visibility state with tabs and welcome mode', async ({ pag
 
 test('v2.3.7 presentation mode floating toolbar, themes, font zoom & escape', async ({ page }) => {
   await page.goto('/');
-  await page.waitForSelector('#statusbar');
+  await waitForPage(page, () => window.__readmdAppReady);
 
-  // 准备文档内容
-  await page.evaluate(() => {
-    state.mode = 'file';
-    state.file = 'presentation.md';
-    state.original = '# Slide 1\nHello World\n<!-- slide -->\n# Slide 2\nContent 2';
-    state.tabs = [{ id: 'p1', name: 'presentation.md', original: state.original }];
-    state.activeTabId = 'p1';
-    renderTabsBar();
-    updateStatus();
+  await page.evaluate(async () => {
+    await window.__readmdSessionReady;
+    const content = '# Slide 1\nHello World\n<!-- slide -->\n# Slide 2\nContent 2';
+    const source = await uploadFile(new File([content], 'presentation.md', { type: 'text/markdown' }));
+    await loadFile(source);
   });
 
-  // 触发演示模式
-  await page.evaluate(() => window.launchPresentationMode());
+  await page.keyboard.press('F5');
 
   const modal = page.locator('#presentation-modal');
   await expect(modal).toBeVisible();
+  await expect(page.frameLocator('.presentation-iframe').getByText('Hello World', { exact: true })).toBeVisible();
+  await expect(modal).toHaveAttribute('aria-busy', 'false');
 
   // 检查悬浮工具栏与控件
   const toolbar = page.locator('#presentation-toolbar');
@@ -972,7 +971,13 @@ test('v2.3.7 presentation mode floating toolbar, themes, font zoom & escape', as
   // 点击关闭按钮退出演示
   const closeBtn = page.locator('#presentation-close-btn');
   await closeBtn.click();
-  await expect(modal).toHaveClass(/hidden/);
+  await expect(modal).toBeHidden();
+
+  await page.keyboard.press('F5');
+  await expect(modal).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(modal).toBeHidden();
+  await expect(page.locator('.presentation-iframe')).toHaveAttribute('src', 'about:blank');
 });
 
 test('in-app updates refuse binaries without a verified checksum', async ({ page }) => {
@@ -1373,8 +1378,8 @@ test('browser mode opens, edits, and saves a local document end to end', async (
     await page.locator('#edit-save').click();
 
     await expect(page.locator('#toast')).toContainText(/已保存/);
-    await waitForPage(page, () => state.editing === true && state.original.includes('Saved live'));
-    await expect(page.locator('#edit-bar')).toBeVisible();
+    await waitForPage(page, () => !state.editing && state.original.includes('Saved live'));
+    await expect(page.locator('#content .markdown-body h1')).toHaveText('Saved live');
     const importedPath = await page.evaluate(() => state.file);
     await expect(await fs.readFile(importedPath, 'utf8')).toContain('Authorized browser write');
     await expect(await fs.readFile(documentPath, 'utf8')).toContain('Original body');
@@ -1450,33 +1455,16 @@ test('upload failures surface the server recovery detail', async ({ page }) => {
 });
 
 test('save conflicts offer save-as, reload, and cancel recovery', async ({ page }) => {
-  await page.route('**/api/save', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ ok: false, conflict: true, error: 'mtime changed' }),
-  }));
-  await page.route('**/api/file?p=**', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      ok: true, path: 'C:/doc.md', dir: 'C:/', name: 'doc.md',
-      content: '# external update', original: '# external update',
-      encoding: 'utf-8', mtime: 9, fixes: [], stats: {},
-    }),
-  }));
   await page.goto('/');
   await waitForPage(page, () => typeof saveEdit === 'function');
-  await page.evaluate(async () => {
-    state.file = 'C:/doc.md';
-    state.mode = 'file';
-    state.original = '# saved';
-    state.fixed = '# draft';
-    state.tabs = [{ id: 'one', path: 'C:/doc.md', title: 'doc.md', name: 'doc.md', content: '# draft', original: '# saved' }];
-    state.activeTabId = 'one';
-    syncStateFromActiveTab();
+  const source = await page.evaluate(async () => {
+    const path = await uploadFile(new File(['# saved'], 'save-conflict.md', { type: 'text/markdown' }));
+    await loadFile(path);
     await toggleEdit();
+    return { path, id: getActiveTab().id };
   });
-  await setEditorContent(page, '# external update');
+  await setEditorContent(page, '# local draft');
+  await fs.writeFile(source.path, '# external update', 'utf8');
   await page.locator('#edit-save').click();
   await expect(page.locator('#save-conflict-modal')).toBeVisible();
   await expect(page.locator('#save-conflict-modal')).toHaveAttribute('aria-describedby', 'save-conflict-desc');
@@ -1486,14 +1474,14 @@ test('save conflicts offer save-as, reload, and cancel recovery', async ({ page 
   await expect(page.locator('#save-conflict-modal')).toBeHidden();
   await expect(page.locator('#edit-save')).toBeFocused();
 
-  const closing = page.evaluate(() => closeTab('one'));
+  const closing = page.evaluate(id => closeTab(id), source.id);
   await expect(page.locator('#close-confirm-modal')).toBeVisible();
   await page.locator('#close-confirm-save').click();
   await expect(page.locator('#save-conflict-modal')).toBeVisible();
   await page.keyboard.press('Escape');
   await closing;
   await expect(page.locator('#save-conflict-modal')).toBeHidden();
-  await waitForPage(page, () => state.tabs.length === 1 && state.activeTabId === 'one' && state.editing);
+  await waitForPage(page, id => state.tabs.length === 1 && state.activeTabId === id && state.editing, source.id);
 
   await page.evaluate(() => {
     window.__conflictSavedContent = '';
@@ -1505,9 +1493,10 @@ test('save conflicts offer save-as, reload, and cancel recovery', async ({ page 
   await page.locator('#edit-save').click();
   await expect(page.locator('#save-conflict-modal')).toBeVisible();
   await page.locator('#save-conflict-save-as').click();
-  await waitForPage(page, () => window.__conflictSavedContent === '# external update');
+  await waitForPage(page, () => window.__conflictSavedContent === '# local draft');
   await expect(page.locator('#edit-bar')).toBeVisible();
   await waitForPage(page, () => state.editing && getActiveTab()?.isDirty);
+  expect(await fs.readFile(source.path, 'utf8')).toBe('# external update');
 });
 
 test('tab switches preserve paged reading positions', async ({ page }) => {
@@ -1544,7 +1533,7 @@ test('search highlights a term spanning adjacent inline elements', async ({ page
   await page.evaluate(async () => {
     await renderVirtual('clipboard', 'inline.md', '', 'Before read<span>me</span> after', []);
   });
-  await page.locator('#btn-search').click();
+  await (await revealDocumentSearch(page)).click();
   await page.locator('#search-input').fill('readme');
   await expect(page.locator('#search-count')).toHaveText('1/1');
   await expect(page.locator('#content mark.hl')).toHaveText('readme');
@@ -1576,7 +1565,7 @@ test('enter immediately jumps even when the search debounce has not fired', asyn
   await waitForPage(page, () => state.pagination.enabled && state.pagination.totalPages > 1);
   await page.evaluate(() => renderPage(0));
 
-  await page.locator('#btn-search').click();
+  await (await revealDocumentSearch(page)).click();
   await expect(page.locator('#search-input')).toBeVisible();
   await page.evaluate(() => {
     const input = document.getElementById('search-input');
@@ -1674,25 +1663,28 @@ test('core workflow controls satisfy accessibility contracts', async ({ page }) 
   const toolbarOverflow = await page.locator('#toolbar')
     .evaluate(el => ({scrollWidth: el.scrollWidth, clientWidth: el.clientWidth}));
   expect(toolbarOverflow.scrollWidth).toBeLessThanOrEqual(toolbarOverflow.clientWidth + 1);
-  for (const id of ['btn-open', 'btn-search', 'btn-edit', 'btn-more']) {
+  for (const id of ['btn-toc', 'btn-edit', 'btn-more']) {
     await expect(page.locator(`#${id}`)).toBeVisible();
   }
+  const open = page.locator('#btn-open');
+  await page.locator('#tab-files').click(); await expect(open).toBeVisible();
   await expect(page.locator('#search-input')).toHaveAttribute('aria-label', /搜索|search/i);
   await expect(page.locator('#btn-print')).toBeDisabled();
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'false');
   await page.locator('#btn-more').click();
-  await expect(page.locator('#more-menu')).toHaveClass(/open/);
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#more-menu')).toBeVisible();
+  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#btn-search')).toBeVisible();
 
-  const firstGroupHeader = page.locator('.more-group-header').first();
+  const firstGroupHeader = page.locator('.more-group').filter({ has: page.locator('#btn-convert') }).locator('.more-group-header');
   await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'false');
   await firstGroupHeader.click();
   await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'true');
   await firstGroupHeader.click();
   await expect(firstGroupHeader).toHaveAttribute('aria-expanded', 'false');
   await page.keyboard.press('Escape');
-  await expect(page.locator('#btn-more')).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.locator('#btn-more')).toBeFocused();
+  await expect(page.locator('#btn-more')).toHaveAttribute('aria-selected', 'false');
+  await expect(page.locator('#btn-toc')).toBeFocused();
 
   await page.evaluate(() => document.getElementById('export-modal').classList.remove('hidden'));
   const pdfTab = page.locator('#export-tab-pdf');
@@ -1803,11 +1795,11 @@ test('tabs, status regions, and stacked dialogs meet keyboard contracts', async 
 
   await page.setViewportSize({ width: 600, height: 600 });
   await page.evaluate(() => renderTabsBar());
-  await page.locator('#doc-tabs-secondary-bar .tab-item').first().focus();
+  await page.locator('#doc-tabs-bar .tab-item').first().focus();
   await page.keyboard.press('End');
-  await expect(page.locator('#doc-tabs-secondary-bar .tab-item').last()).toBeFocused();
+  await expect(page.locator('#doc-tabs-bar .tab-item').last()).toBeFocused();
   await page.keyboard.press('Home');
-  await expect(page.locator('#doc-tabs-secondary-bar .tab-item').first()).toBeFocused();
+  await expect(page.locator('#doc-tabs-bar .tab-item').first()).toBeFocused();
   await page.setViewportSize({ width: 720, height: 600 });
 
   await expect(page.locator('#doc-tabs-bar .tab-item').first()).toHaveAttribute('aria-controls', 'content');
@@ -1826,7 +1818,7 @@ test('tabs, status regions, and stacked dialogs meet keyboard contracts', async 
     state.fixed = state.original;
     state.mode = 'virtual';
   });
-  await page.locator('#btn-search').click();
+  await (await revealDocumentSearch(page)).click();
   await page.locator('#search-input').fill('target');
   await page.keyboard.press('Escape');
   await expect(page.locator('#search-bar')).toBeHidden();

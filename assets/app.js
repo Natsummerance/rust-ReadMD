@@ -67,66 +67,15 @@ function syncSelectAccessibleName(el) {
 /* ----------------------------------------------------------------------------------------------
    顶层 UI 事件集中绑定与调度器
    ---------------------------------------------------------------------------------------------- */
-function closeMoreMenu(restoreFocus = false) {
-  const menu = $('more-menu');
-  const wasOpen = menu && menu.classList.contains('open');
-  if (menu) menu.classList.remove('open');
-  const button = $('btn-more');
-  if (button) button.setAttribute('aria-expanded', 'false');
-  if (restoreFocus && wasOpen && button && document.activeElement !== button && !button.contains(document.activeElement)) {
-    button.focus({ preventScroll: true });
-  }
-}
-
 function bindEvents() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
 
   /* --- 1. 欢迎页与全局导航 (Welcome & Navigation) [联动: history.js, render.js, folder.js] --- */
   bindWelcomeEvents(); // 绑定欢迎页各个功能入口卡片事件
   if ($('btn-home')) $('btn-home').addEventListener('click', goHome); // 回到主页并深度清理状态 (history.js)
-  $('titlebar-home')?.addEventListener('click', goHome);
   $('btn-open').addEventListener('click', () => { loadFileDialog(); }); // 打开本地文件 (reader/render.js)
   $('btn-folder').addEventListener('click', openFolder); // 打开工作区文件夹 (reader/folder.js)
   syncDesktopControls();
-
-  /* --- 2. 更多功能下拉菜单交互 (More Dropdown Menu) --- */
-  const moreBtn = $('btn-more');
-  const moreMenu = $('more-menu');
-  if (moreBtn && moreMenu) {
-    moreBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      moreMenu.classList.toggle('open');
-      moreBtn.setAttribute('aria-expanded', moreMenu.classList.contains('open') ? 'true' : 'false');
-    });
-    moreMenu.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeMoreMenu(true);
-      } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
-        const items = Array.from(moreMenu.querySelectorAll('.more-group.open .more-item:not([disabled]):not(.hidden), .more-group-header'));
-        if (!items.length) return;
-        e.preventDefault();
-        const currentIndex = items.indexOf(document.activeElement);
-        let nextIndex;
-        if (e.key === 'Home') {
-          nextIndex = 0;
-        } else if (e.key === 'End') {
-          nextIndex = items.length - 1;
-        } else if (e.key === 'ArrowDown') {
-          nextIndex = currentIndex === -1 || currentIndex === items.length - 1 ? 0 : currentIndex + 1;
-        } else {
-          nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
-        }
-        items[nextIndex].focus();
-      }
-    });
-    document.addEventListener('click', e => {
-      if (moreMenu.classList.contains('open') && !moreMenu.contains(e.target) && e.target !== moreBtn) {
-        closeMoreMenu();
-      }
-    });
-  }
-
 
   /* --- 3. 万物转 MD 模态框与文件批量导入 [联动: features/convert.js] --- */
   $('btn-convert').addEventListener('click', openConvertModal);
@@ -138,7 +87,7 @@ function bindEvents() {
   });
   $('convert-modal').addEventListener('click', e => { if (e.target === $('convert-modal')) closeConvertModal(); });
   if ($('btn-open-plugins')) $('btn-open-plugins').addEventListener('click', openPluginModal);
-  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { closeMoreMenu(); openPluginModal(); });
+  if ($('btn-plugin-menu')) $('btn-plugin-menu').addEventListener('click', () => { openPluginModal(); });
   if ($('plugin-close')) $('plugin-close').addEventListener('click', closePluginModal);
   if ($('plugin-modal')) $('plugin-modal').addEventListener('click', e => { if (e.target === $('plugin-modal')) closePluginModal(); });
 
@@ -149,15 +98,14 @@ function bindEvents() {
   $('btn-ocr').addEventListener('click', () => chooseFile('ocr')); // 触发离线 OCR 识别
   $('btn-web').addEventListener('click', openWebDialog);           // 打开网页抓取弹窗
   if ($('btn-clipboard-new')) $('btn-clipboard-new').addEventListener('click', createFromClipboard); // 智能自适应全类型剪贴板新建
-  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { closeMoreMenu(); launchPresentationMode(); });
-  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { closeMoreMenu(); if (window.runAllCodeChunks) runAllCodeChunks(); });
-  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { closeMoreMenu(); openStyleModal(); });
+  if ($('btn-presentation-menu')) $('btn-presentation-menu').addEventListener('click', () => { launchPresentationMode(); });
+  if ($('btn-run-all-chunks')) $('btn-run-all-chunks').addEventListener('click', () => { if (window.runAllCodeChunks) runAllCodeChunks(); });
+  if ($('btn-style-custom')) $('btn-style-custom').addEventListener('click', () => { openStyleModal(); });
   if ($('btn-zen')) $('btn-zen').addEventListener('click', () => toggleZenMode()); // 顶栏常驻禅模式按钮
   $('btn-zen')?.addEventListener('contextmenu', event => {
     event.preventDefault();
     window.ReadMDViewMode.toggleFullscreen();
   });
-  if ($('btn-zen-menu')) $('btn-zen-menu').addEventListener('click', () => { closeMoreMenu(); toggleZenMode(); });
 
   const _openKnowledgeGraph = () => {
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
@@ -172,9 +120,7 @@ function bindEvents() {
     if (window.ReadMDGraph) window.ReadMDGraph.open(curDir);
   };
   if ($('btn-graph')) $('btn-graph').addEventListener('click', _openKnowledgeGraph);
-  if ($('btn-graph-menu')) $('btn-graph-menu').addEventListener('click', () => { closeMoreMenu(); _openKnowledgeGraph(); });
   if ($('btn-backlinks-menu')) $('btn-backlinks-menu').addEventListener('click', () => {
-    closeMoreMenu();
     const hasDoc = (state && (state.mode === 'file' || state.mode === 'virtual') && !!state.original);
     if (!hasDoc) {
       if (typeof showToast === 'function') {
@@ -198,43 +144,10 @@ function bindEvents() {
     });
   });
 
-  // 全局快捷键与无障碍键盘导航 (Esc 退出全屏或关闭顶层弹窗 / F5 演说放映 / F11 全屏)
   window.addEventListener('keydown', e => {
     if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       if (window.launchPresentationMode) launchPresentationMode();
-    } else if (e.key === 'Escape') {
-      if ($('more-menu') && $('more-menu').classList.contains('open')) {
-        e.preventDefault();
-        closeMoreMenu(true);
-        return;
-      }
-      const openModals = [
-        ['pet-settings-modal', typeof closePetSettings === 'function' ? closePetSettings : () => $('pet-settings-modal').classList.add('hidden')],
-        ['code-chunk-modal', closeCodeChunkModal],
-        ['diagram-modal', closeDiagramModal],
-        ['doc-import-modal', closeDocImportModal],
-        ['style-custom-modal', closeStyleModal],
-        ['plugin-modal', closePluginModal],
-        ['convert-modal', closeConvertModal],
-        ['export-modal', closeExportModal],
-        ['img-modal', closeImgModal],
-        ['formula-modal', closeFormulaModal],
-        ['url-modal', typeof closeWebDialog === 'function' ? closeWebDialog : () => $('url-modal').classList.add('hidden')],
-        ['share-modal', typeof closeShareDialog === 'function' ? closeShareDialog : () => $('share-modal').classList.add('hidden')],
-        ['history-modal', () => $('history-modal').classList.add('hidden')],
-        ['fix-modal', () => $('fix-modal').classList.add('hidden')],
-        ['tpl-modal', () => $('tpl-modal').classList.add('hidden')],
-        ['presentation-modal', () => window.closePresentationMode?.()],
-      ];
-      for (const [id, closeFn] of openModals) {
-        const el = $(id);
-        if (el && !el.classList.contains('hidden')) {
-          e.preventDefault();
-          if (typeof closeFn === 'function') closeFn();
-          break;
-        }
-      }
     }
   });
 
@@ -353,9 +266,6 @@ function bindEvents() {
     else if (b.id === 'btn-insert-table') openTableModal();
     else cmInsertSyntax(b.dataset.md);
   }));
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation(); const menu = $(b.dataset.menu); const wasHidden = menu.classList.contains('hidden'); closeMdPopups(); if (wasHidden) menu.classList.remove('hidden');
-  }));
   // LaTeX 公式选择器模态框 [联动: reader/formula.js]
   $('formula-open').addEventListener('click', () => openFormulaModal('inline'));
   $('formula-close').addEventListener('click', closeFormulaModal);
@@ -363,7 +273,7 @@ function bindEvents() {
   $('formula-modal').addEventListener('click', e => { if (e.target === $('formula-modal')) closeFormulaModal(); });
 
   // 编辑保存与退出
-  $('edit-save').addEventListener('click', saveEdit);
+  $('edit-save').addEventListener('click', () => saveEdit({ exitAfterSave: true }));
   $('edit-area').addEventListener('input', () => {
     const tab = getActiveTab();
     if (tab) { tab.editGeneration = (tab.editGeneration || 0) + 1; tab.inputGeneration = (tab.inputGeneration || 0) + 1; }
@@ -386,26 +296,7 @@ function bindEvents() {
 
 
   /* --- 7. 实时分栏预览与滚动同步控制 (Split Preview) [联动: editor/preview.js] --- */
-  $('pv-trigger').addEventListener('click', e => {
-    e.stopPropagation();
-    const m = $('pv-menu');
-    const show = m.classList.contains('hidden');
-    closeMdPopups();
-    m.classList.toggle('hidden', !show);
-    $('pv-trigger').setAttribute('aria-expanded', show ? 'true' : 'false');
-  });
-  document.querySelectorAll('.pv-btn').forEach(b => b.addEventListener('click', () => { setPvLayout(b.dataset.pv); closeMdPopups(); }));
-  const pvSyncEl = $('pv-sync');
-  if (pvSyncEl) pvSyncEl.addEventListener('change', e => { state.pvSync = e.target.checked; saveSettings(); });
-  const publicationToggle=$('pv-publication');
-  if(publicationToggle)publicationToggle.addEventListener('change',async event=>{
-    const wanted=event.target.checked,view=cmView,tab=state.activeTabId;publicationToggle.disabled=true;
-    try{const ready=!wanted||(await ReadMDCapabilities.ensure('typst')&&await ReadMDCapabilities.ensurePublication(view.state.doc.toString(),{...state.export?.options,pdf:{engine:"typst"}}));if(cmView!==view||state.activeTabId!==tab||!state.editing){publicationToggle.checked=!!state.pvPublication;return;}state.pvPublication=publicationToggle.checked=!!(wanted&&ready);if(pvSyncEl)pvSyncEl.disabled=!!state.pvPublication;pvLast='';schedulePreview();}
-    finally{publicationToggle.disabled=false;}
-  });
-  const pvWrap = $('preview-wrap');
-  if (pvWrap) pvWrap.addEventListener('scroll', pvSyncFromPreview);
-  bindPvSplitter(); // 绑定分栏拖拽调整手柄
+  bindPreviewControls();
 
   /* --- 8. 轻量图片编辑器控制 (Image Studio) [联动: editor/image.js] --- */
   $('img-file').addEventListener('click', () => $('img-file-input').click());
@@ -482,7 +373,7 @@ function bindEvents() {
   /* --- 9. 文件另存、重命名与历史记录 [联动: reader/render.js, core/history.js, core/tabs.js] --- */
   $('btn-saveas').addEventListener('click', saveAs);
   $('file-title').addEventListener('click', openFileRename); // 标题栏就地重命名
-  $('btn-recent').addEventListener('click', openHistoryModal);
+  $('side-recent-clear').addEventListener('click', clearRecent);
   $('btn-reload').addEventListener('click', () => { if (state.file && state.mode === 'file') loadFile(state.file, { force: true }); });
   $('recent-clear').addEventListener('click', clearRecent);
   $('history-clear').addEventListener('click', clearRecent);
@@ -490,14 +381,12 @@ function bindEvents() {
   $('history-modal').addEventListener('click', e => { if (e.target === $('history-modal')) $('history-modal').classList.add('hidden'); });
 
   /* --- 10. 目录大纲与自动修正查看 [联动: reader/toc.js, reader/fixes.js] --- */
-  $('btn-toc').addEventListener('click', () => toggleSide('toc'));
   $('btn-fix').addEventListener('click', showFixModal);
   $('fix-close').addEventListener('click', () => $('fix-modal').classList.add('hidden'));
   $('fix-save').addEventListener('click', handleSaveDocumentFix);
   $('fix-modal').addEventListener('click', e => { if (e.target === $('fix-modal')) $('fix-modal').classList.add('hidden'); });
 
   /* --- 11. 全文搜索、主题外观与字号缩放 [联动: reader/search.js, core/settings.js] --- */
-  $('btn-search').addEventListener('click', toggleSearch);
   $('search-close').addEventListener('click', () => closeSearch({ restoreFocus: true }));
   $('search-next').addEventListener('click', () => jumpToMark(1));
   $('search-prev').addEventListener('click', () => jumpToMark(-1));
@@ -691,17 +580,15 @@ function bindEvents() {
   $('share-modal').addEventListener('click', e => { if (e.target === $('share-modal')) $('share-modal').classList.add('hidden'); });
 
   /* --- 16. 侧边栏 Tab 切换与滚动监听 --- */
-  $('tab-toc').addEventListener('click', () => showSide('toc'));
-  $('tab-files').addEventListener('click', () => showSide('files'));
   $('content').addEventListener('scroll', () => {
     $('top-btn').classList.toggle('hidden', $('content').scrollTop < 600);
   });
 
   /* --- 17. 客户端内版本检查、语言切换、开机自启与自动升级 [联动: core/i18n.js, features/updater.js] --- */
-  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { closeMoreMenu(); if (window.i18n) window.i18n.openModal(); });
-  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { closeMoreMenu(); if (typeof openPetSettings === 'function') openPetSettings(); });
-  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { closeMoreMenu(); toggleAutostart(); });
-  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { closeMoreMenu(); checkUpdate(false); });
+  if ($('btn-lang')) $('btn-lang').addEventListener('click', () => { if (window.i18n) window.i18n.openModal(); });
+  if ($('btn-pet')) $('btn-pet').addEventListener('click', () => { if (typeof openPetSettings === 'function') openPetSettings(); });
+  if ($('btn-autostart')) $('btn-autostart').addEventListener('click', () => { toggleAutostart(); });
+  if ($('btn-check-update')) $('btn-check-update').addEventListener('click', () => { checkUpdate(false); });
 
   if ($('status-update-badge')) $('status-update-badge').addEventListener('click', openUpdateModal);
   if ($('update-close')) $('update-close').addEventListener('click', closeUpdateModal);
@@ -928,6 +815,8 @@ function bindEvents() {
       labelEl.textContent = window.i18n.meta[lang].native || lang;
     }
     updateStatus();
+    setFixes(state.fixes, state.stats);
+    localizeFixReport();
     updateDocStatistics();
     updatePvLabel();
     syncBuildVersionLabels();
@@ -941,54 +830,13 @@ function bindEvents() {
   bindGlobalDragAndDrop();      // 全局拖拽支持
   bindTabOverflowEvents();      // 标签栏左右滚动溢出支持
   bindTabContextMenuEvents();   // 标签右键菜单
-  window.addEventListener('resize', () => {
-    renderTabsBar();
-  });
 
   /* --- 19. 全局键盘快捷键矩阵 (Global Keyboard Shortcuts) --- */
   document.addEventListener('keydown', e => {
     const mod = e.ctrlKey || e.metaKey;
 
-    // 模态弹窗 ESC 优先拦截与层级关闭
     if (e.key === 'Escape') {
-      const allModalIds = [
-        'close-confirm-modal',
-        'confirm-modal',
-        'plugin-modal',
-        'pet-settings-modal',
-        'code-chunk-modal', 'diagram-modal', 'doc-import-modal', 'frontmatter-modal',
-        'table-modal', 'export-preview-modal', 'export-modal', 'convert-modal',
-        'update-modal', 'style-custom-modal', 'lang-modal', 'ai-history-modal',
-        'ai-settings-modal', 'formula-modal', 'presentation-modal'
-      ];
-      const activeModal = allModalIds.find(id => $(id) && !$(id).classList.contains('hidden'));
-      if (activeModal) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (activeModal === 'close-confirm-modal' || activeModal === 'confirm-modal') return;
-        if (activeModal === 'code-chunk-modal') closeCodeChunkModal();
-        else if (activeModal === 'diagram-modal') closeDiagramModal();
-        else if (activeModal === 'doc-import-modal') closeDocImportModal();
-        else if (activeModal === 'frontmatter-modal') closeFrontmatterModal();
-        else if (activeModal === 'table-modal') closeTableModal();
-        else if (activeModal === 'export-preview-modal') $(activeModal).classList.add('hidden');
-        else if (activeModal === 'export-modal') closeExportModal();
-        else if (activeModal === 'convert-modal') $('convert-modal').classList.add('hidden');
-        else if (activeModal === 'plugin-modal') closePluginModal();
-        else if (activeModal === 'pet-settings-modal') {
-          if (typeof window.closePetSettings === 'function') window.closePetSettings();
-          else $('pet-settings-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'update-modal') {
-          if (!isUpdateDownloading()) $('update-modal').classList.add('hidden');
-        }
-        else if (activeModal === 'style-custom-modal') closeStyleModal();
-        else if (activeModal === 'lang-modal' && window.i18n) window.i18n.closeModal();
-        else if (activeModal.startsWith('ai-')) closeAiModal(activeModal);
-        else if (activeModal === 'presentation-modal') window.closePresentationMode?.();
-        else $(activeModal).classList.add('hidden');
-        return;
-      }
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
       if (document.body.classList.contains('zen-mode')) {
         e.preventDefault();
         toggleZenMode(false);
@@ -998,7 +846,7 @@ function bindEvents() {
 
     if (e.key === 'F2') { e.preventDefault(); openFileRename(); } // F2: 文件重命名
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('btn-open').click(); } // Ctrl+O: 打开文件
-    else if (mod && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
+    else if (mod && !e.shiftKey && e.key.toLowerCase() === 'f') { // Ctrl+F: 全文搜索
       e.preventDefault();
       toggleSearch();
     }
@@ -1041,30 +889,12 @@ function bindEvents() {
     else if (mod && e.key === 'ArrowLeft') { e.preventDefault(); historyBack(); } // Alt/Ctrl+Left: 历史后退
     else if (mod && e.key === 'ArrowRight') { e.preventDefault(); historyForward(); } // Alt/Ctrl+Right: 历史前进
     else if (e.key === 'Escape') {
-      // Layer 1: 模态框与上下文菜单/搜索栏（一旦命中立即阻断返回）
-      if ($('graph-modal') && !$('graph-modal').classList.contains('hidden')) { if (window.ReadMDGraph) window.ReadMDGraph.close(); return; }
       if ($('backlinks-panel') && !$('backlinks-panel').classList.contains('hidden')) { $('backlinks-panel').classList.add('hidden'); return; }
-      if ($('ai-history-modal') && !$('ai-history-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-history-modal'); else $('ai-history-modal').classList.add('hidden'); return; }
-      if ($('ai-settings-modal') && !$('ai-settings-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('ai-settings-modal'); else $('ai-settings-modal').classList.add('hidden'); return; }
-      if ($('chat-import-modal') && !$('chat-import-modal').classList.contains('hidden')) { if (typeof closeAiModal === 'function') closeAiModal('chat-import-modal'); else $('chat-import-modal').classList.add('hidden'); return; }
-      if ($('style-custom-modal') && !$('style-custom-modal').classList.contains('hidden')) { closeStyleModal(); return; }
-      if ($('formula-modal') && !$('formula-modal').classList.contains('hidden')) { closeFormulaModal(); return; }
-      if ($('img-modal') && !$('img-modal').classList.contains('hidden')) { closeImgModal(); return; }
-      if ($('history-modal') && !$('history-modal').classList.contains('hidden')) { $('history-modal').classList.add('hidden'); return; }
-      if ($('export-preview-modal') && !$('export-preview-modal').classList.contains('hidden')) { $('export-preview-modal').classList.add('hidden'); return; }
       if ($('tab-context-menu') && !$('tab-context-menu').classList.contains('hidden')) { closeTabContextMenu({ restoreFocus: true }); return; }
-      if ($('more-menu') && $('more-menu').classList.contains('open')) { closeMoreMenu(true); return; }
       if ($('search-bar') && !$('search-bar').classList.contains('hidden')) { closeSearch({ restoreFocus: true }); return; }
       if ($('edit-ai-bar') && !$('edit-ai-bar').classList.contains('hidden')) { if (typeof closeEditAiBar === 'function') closeEditAiBar(); return; }
-      if ($('fix-modal') && !$('fix-modal').classList.contains('hidden')) { $('fix-modal').classList.add('hidden'); return; }
-      if ($('share-modal') && !$('share-modal').classList.contains('hidden')) { $('share-modal').classList.add('hidden'); return; }
-      if ($('tpl-modal') && !$('tpl-modal').classList.contains('hidden')) { $('tpl-modal').classList.add('hidden'); return; }
-      if ($('convert-modal') && !$('convert-modal').classList.contains('hidden')) { $('convert-modal').classList.add('hidden'); return; }
-      if ($('table-modal') && !$('table-modal').classList.contains('hidden')) { closeTableModal(); return; }
-      if ($('lang-modal') && !$('lang-modal').classList.contains('hidden') && window.i18n) { window.i18n.closeModal(); return; }
-      if (typeof closeWebDialog === 'function' && $('url-modal') && !$('url-modal').classList.contains('hidden')) { closeWebDialog(); return; }
-      const openPopups = document.querySelectorAll('.md-menu:not(.hidden), .pv-menu:not(.hidden)');
-      if (openPopups.length > 0) { closeMdPopups(); return; }
+      const openPopups = document.querySelectorAll('.md-menu:not(.hidden)');
+      if (openPopups.length > 0) { closeMdPopups({ restoreFocus: true }); return; }
 
       // Layer 2: AI 面板分层退出（全屏退回分屏，分屏收起归还焦点，绝不穿透退出编辑器）
       const aiPanel = $('ai-panel');
@@ -1081,7 +911,7 @@ function bindEvents() {
       }
 
       // Layer 3: 侧边栏与禅模式
-      if ($('side') && !$('side').classList.contains('hidden')) { $('side').classList.add('hidden'); return; }
+      if (!$('side').classList.contains('hidden')) { closeSide({ restoreFocus: true }); return; }
       if (document.body.classList.contains('zen-mode')) { toggleZenMode(false); return; }
 
       // Layer 4: 兜底清理其他小弹层
@@ -1098,82 +928,9 @@ function bindEvents() {
   });
 
 
-  document.addEventListener('click', closeMdPopups);
-  setupModalAccessibility();
-}
-
-function getModalRoots() {
-  return [
-    'close-confirm-modal', 'code-chunk-modal', 'diagram-modal', 'doc-import-modal',
-    'frontmatter-modal', 'table-modal', 'export-preview-modal', 'export-modal',
-    'convert-modal', 'plugin-modal', 'pet-settings-modal', 'graph-modal', 'update-modal',
-    'style-custom-modal', 'lang-modal', 'ai-history-modal', 'ai-settings-modal',
-    'formula-modal', 'presentation-modal', 'img-modal', 'history-modal', 'share-modal',
-    'tpl-modal', 'url-modal', 'save-conflict-modal', 'fix-modal', 'continuous-modal', 'confirm-modal'
-  ].map(id => $(id)).filter(Boolean);
-}
-
-function isVisibleModal(modal) {
-  return modal && !modal.classList.contains('hidden');
-}
-
-function getModalFocusable(modal) {
-  return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
-    .filter(el => !el.closest('.hidden'));
-}
-
-function setupModalAccessibility() {
-  if (window.ReadMDModal) return;
-  const modalOpeners = new Map();
-  const openModalStack = [];
-  document.addEventListener('keydown', event => {
-    if (event.key !== 'Tab') return;
-    const modal = [...openModalStack].reverse().find(isVisibleModal);
-    if (!modal) return;
-    const focusable = getModalFocusable(modal);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (!modal.contains(event.target)) {
-      event.preventDefault();
-      first.focus();
-      return;
-    }
-    if (event.shiftKey && event.target === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && event.target === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }, true);
-
-  const observer = new MutationObserver(mutations => {
-    for (const mutation of mutations) {
-      const modal = mutation.target;
-      const visible = !modal.classList.contains('hidden');
-      const stackIndex = openModalStack.indexOf(modal);
-      if (visible) {
-        if (stackIndex < 0) openModalStack.push(modal);
-        if (!modalOpeners.has(modal)) {
-          const opener = document.activeElement;
-          modalOpeners.set(modal, modal.contains(opener) ? null : opener);
-        }
-        if (!modal.contains(document.activeElement)) {
-          const focusable = getModalFocusable(modal);
-          if (focusable.length) focusable[0].focus();
-        }
-      } else if (!visible) {
-        if (stackIndex >= 0) openModalStack.splice(stackIndex, 1);
-        if (modal.contains(document.activeElement)) {
-          const opener = modalOpeners.get(modal);
-          if (opener && opener.isConnected) opener.focus({ preventScroll: true });
-        }
-        modalOpeners.delete(modal);
-      }
-    }
+  document.addEventListener('click', event => {
+    if (!event.target.closest('#edit-bar .md-menu')) closeMdPopups();
   });
-  getModalRoots().forEach(modal => observer.observe(modal, { attributes: true, attributeFilter: ['class'] }));
 }
 
 function syncDesktopControls() {

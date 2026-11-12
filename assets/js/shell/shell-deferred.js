@@ -810,7 +810,7 @@
 
   /* ---------- tooltips (label + shortcut chips) ---------- */
   let tip = null, tipTimer = 0, tipFor = null, tipWarm = 0;
-  const TIP_SCOPE = '#toolbar [title], #statusbar [title], #side-tabs [title]';
+  const TIP_SCOPE = '#toolbar [title], #side-rail button[title], #side-file-actions button[title], #side-recent-clear[title], #status-summary[title], #edit-bar button[title], #cm-selection-toolbar button[title]';
   function ensureTip() {
     if (tip) return tip;
     tip = document.createElement('div');
@@ -894,7 +894,6 @@
   }
 
   bindIndicator(byId('doc-tabs-bar'));
-  bindIndicator(byId('doc-tabs-secondary-bar'));
   bindEdgeFade(byId('doc-tabs-bar'));
   bindTooltips();
 

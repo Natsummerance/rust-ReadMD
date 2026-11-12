@@ -166,7 +166,7 @@ async function run() {
       // editing assistant. Select the ordinary no-preview layout first when
       // this journey specifically exercises the persistent sidebar.
       if (await page.evaluate(() => state.editing && state.pvLayout !== 'none')) {
-        await page.locator('#pv-trigger').click(); await page.locator('#pv-menu [data-pv="none"]').click();
+        await page.locator('#edit-view-trigger').click(); await page.locator('#edit-view-menu [data-pv="none"]').click();
         await waitFor(() => state.pvLayout === 'none', null, 'existing single-editor layout');
       }
       await page.locator('#btn-ai').click();

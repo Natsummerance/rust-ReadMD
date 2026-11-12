@@ -3290,13 +3290,16 @@ fn h_settings(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
             None => Ok(Response::json(&app.settings_all())),
         };
     }
-    let patch = body_value(req);
-    let merged = app.update_settings_checked(&patch)
+    let merged = persist_settings_patch(app, &body_value(req))?;
+    ok_json(json!({ "ok": true, "persisted": true, "settings": merged }))
+}
+
+fn persist_settings_patch(app: &App, patch: &Value) -> ApiResult<Value> {
+    app.update_settings_checked(patch)
         .map_err(|error| {
             let code = crate::settings_persistence::generic_error_code(&error);
             ApiError::new(if code == "session_version_required" {428} else {507}, code)
-        })?;
-    ok_json(json!({ "ok": true, "persisted": true, "settings": merged }))
+        })
 }
 
 /// KERNEL BRIDGE — a token-protected session CAS, separate from preferences.
@@ -3483,6 +3486,14 @@ fn write_style_file(path: &Path, value: &Value) -> bool {
     file.write_all(text.as_bytes()).is_ok()
 }
 
+pub(crate) fn supported_interface_language(code: &str) -> bool {
+    static CATALOG: OnceLock<Value> = OnceLock::new();
+    let catalog = CATALOG.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../assets/i18n/meta.json")).expect("packaged language catalog")
+    });
+    catalog.get(code).is_some()
+}
+
 fn h_language(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     if req.method == "GET" {
         return ok_json(json!({ "ok": true, "language": app.setting("language"), "engine": "rust" }));
@@ -3491,10 +3502,10 @@ fn h_language(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         .field("lang")
         .or_else(|| req.field("language"))
         .ok_or_else(|| ApiError::bad_request("missing_language"))?;
-    if !matches!(lang.as_str(), "zh-CN" | "zh-TW" | "en" | "ja" | "ko" | "fr" | "de" | "es" | "ru") {
+    if !supported_interface_language(&lang) {
         return Err(ApiError::bad_request("unsupported_language").noted("language", lang));
     }
-    app.update_settings(&json!({ "language": lang }));
+    persist_settings_patch(app, &json!({ "language": lang }))?;
     ok_json(json!({ "ok": true, "language": lang, "applied": true }))
 }
 

@@ -253,8 +253,9 @@ test('selection toolbar appears, formats, and fires readmd:ai-inline', async ({ 
   await page.mouse.move(box.x + 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 120, box.y + box.height / 2, { steps: 6 });
-  await page.mouse.up();
   const toolbar = page.locator('#cm-selection-toolbar');
+  await expect(toolbar).toBeHidden();
+  await page.mouse.up();
   await expect(toolbar).toBeVisible();
   await expect(toolbar).toHaveAttribute('role', 'toolbar');
   // Toolbar sits above the selection (below it on touch screens, where the

@@ -48,7 +48,11 @@ function saveEditorPrefs() {
 }
 
 let cmCompartments = null;
-let cmPointerDown = false;
+let cmSelectionGesture = null;
+let cmSelectionSuppressed = null;
+let cmSelectionTimer = 0;
+const CM_SELECTION_SETTLE_MS = 140;
+const CM_SELECTION_SLOP_SQUARED = 16;
 let cmReusedState = false;
 let cmLayoutCleanup = null;
 
@@ -166,7 +170,7 @@ function createEditor(doc) {
         }
         slashOnUpdate(u);
         if (u.selectionSet && !u.docChanged) scheduleDocStatistics();
-        if (u.selectionSet || u.docChanged) updateCmSelectionToolbar();
+        if (u.selectionSet || u.docChanged) scheduleCmSelectionToolbar();
         if (u.geometryChanged && !slash.open) repositionCmSelectionToolbar();
       }),
     ],
@@ -179,8 +183,22 @@ function createEditor(doc) {
   window.ReadMDReview?.mount(cmView, tab, doc);
   syncSearchMode();
   applyEditorViewClasses();
-  cmView.dom.addEventListener('pointerdown', () => { cmPointerDown = true; hideCmSelectionToolbar(); });
-  cmView.dom.addEventListener('keyup', () => setTimeout(updateCmSelectionToolbar, 10));
+  const view = cmView;
+  view.dom.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
+    cmSelectionGesture = {
+      view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
+      travel: 0, clicks: 1, modified: event.shiftKey || event.altKey || event.ctrlKey || event.metaKey,
+    };
+    cmSelectionSuppressed = null;
+    hideCmSelectionToolbar();
+  }, true);
+  view.dom.addEventListener('mousedown', event => {
+    if (cmSelectionGesture?.view === view) cmSelectionGesture.clicks = event.detail;
+  }, true);
+  view.dom.addEventListener('keydown', event => {
+    if (!event.isComposing) cmSelectionSuppressed = null;
+  }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
     repositionCmSelectionToolbar();
@@ -192,11 +210,35 @@ function createEditor(doc) {
 
 }
 
-document.addEventListener('pointerup', () => {
-  if (!cmPointerDown) return;
-  cmPointerDown = false;
-  setTimeout(updateCmSelectionToolbar, 10);
-});
+function trackSelectionTravel(event) {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  gesture.travel = Math.max(gesture.travel, (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2);
+}
+document.addEventListener('pointermove', trackSelectionTravel, { capture: true, passive: true });
+document.addEventListener('pointerup', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  trackSelectionTravel(event);
+  cmSelectionGesture = null;
+  // CodeMirror may finish the range in its mouseup handler. Inspect that
+  // settled range rather than inferring or rewriting the user's selection.
+  requestAnimationFrame(() => {
+    if (cmView !== gesture.view || cmSelectionGesture) return;
+    const { from, to } = cmView.state.selection.main;
+    if (from !== to && gesture.type === 'mouse' && gesture.clicks === 1 &&
+        !gesture.modified && gesture.travel < CM_SELECTION_SLOP_SQUARED) {
+      cmSelectionSuppressed = { view: cmView, from, to };
+    }
+    scheduleCmSelectionToolbar();
+  });
+}, true);
+document.addEventListener('pointercancel', event => {
+  if (cmSelectionGesture?.id !== event.pointerId) return;
+  cmSelectionGesture = null;
+  hideCmSelectionToolbar();
+}, true);
+window.addEventListener('blur', () => { cmSelectionGesture = null; hideCmSelectionToolbar(); });
 
 /* vendor 包只导出 historyKeymap，不直接导出 undo / redo：从键位表里取命令 */
 function cmHistoryCommand(key) {
@@ -225,8 +267,31 @@ function cmRedo() {
 }
 
 function hideCmSelectionToolbar() {
+  clearTimeout(cmSelectionTimer);
+  cmSelectionTimer = 0;
   const toolbar = $('cm-selection-toolbar');
   if (toolbar) toolbar.classList.add('hidden');
+}
+
+function selectionToolbarRange() {
+  if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
+  const selection = cmView.state.selection.main;
+  if (!selection || selection.empty) return null;
+  const suppressed = cmSelectionSuppressed;
+  if (suppressed?.view === cmView && suppressed.from === selection.from && suppressed.to === selection.to) return null;
+  cmSelectionSuppressed = null;
+  return selection;
+}
+
+function scheduleCmSelectionToolbar() {
+  hideCmSelectionToolbar();
+  const selection = selectionToolbarRange(), view = cmView;
+  if (!selection) return;
+  cmSelectionTimer = setTimeout(() => {
+    cmSelectionTimer = 0;
+    const current = selectionToolbarRange();
+    if (cmView === view && current?.from === selection.from && current.to === selection.to) updateCmSelectionToolbar();
+  }, CM_SELECTION_SETTLE_MS);
 }
 
 /* Selection toolbar buttons -> toolbar command (same code path as #md-tool). */
@@ -251,12 +316,8 @@ function cmSelectionMarks(view, from, to) {
 function updateCmSelectionToolbar() {
   const toolbar = $('cm-selection-toolbar');
   if (!toolbar) return;
-  if (!state.editing || !cmView || cmPointerDown || slash.open) {
-    toolbar.classList.add('hidden');
-    return;
-  }
-  const sel = cmView.state.selection.main;
-  if (!sel || sel.empty || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
+  const sel = selectionToolbarRange();
+  if (!sel || !cmView.hasFocus && !toolbar.contains(document.activeElement)) {
     toolbar.classList.add('hidden');
     return;
   }
@@ -881,11 +942,6 @@ function cmInsertSyntax(kind) {
 }
 
 
-function closeMdPopups() {
-  document.querySelectorAll('.md-menu, .pv-menu').forEach(el => el.classList.add('hidden'));
-  const trigger = $('pv-trigger'); if (trigger) trigger.setAttribute('aria-expanded', 'false');
-  document.querySelectorAll('#edit-bar [data-menu]').forEach(b => b.setAttribute('aria-expanded', 'false'));
-}
 
 /* ============================================================
    Editor Studio PRO: Code Chunk / Diagram / Doc Import Modals
@@ -1417,6 +1473,9 @@ function updateDocStatistics() {
   const hiddenMetadata=[...(window.ReadMDFormula?.metadataRanges(docText)||[]),...(window.ReadMDPublication?.metadataRanges(docText)||[])].sort((a,b)=>a.from-b.from);
   let visibleText='',visibleAt=0;for(const hidden of hiddenMetadata){visibleText+=docText.slice(visibleAt,hidden.from);visibleAt=hidden.to;}visibleText+=docText.slice(visibleAt);
   const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };
+  if (state.editing && typeof updateSidebarStatistics === 'function') {
+    updateSidebarStatistics({ words: stats.words, minutes: Math.max(stats.minutes, stats.words ? 1 : 0) });
+  }
   const nf = n => { try { return Number(n).toLocaleString((window.i18n && window.i18n.currentLang) || undefined); } catch (e) { return String(n); } };
   let selWords = 0;
   if (cmView && T && T.textStats) {
@@ -1435,6 +1494,7 @@ function updateDocStatistics() {
     }
   }
   const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };
+  statsEl.classList.toggle('has-selection', selWords > 0);
   statsEl.textContent = selWords
     ? _t('editor.statsSelection', { words: nf(selWords), total: params.total })
     : _t('editor.statsLine', params);
@@ -1740,19 +1800,65 @@ function tableCellControls(view, context, modal, picker) {
   tableCellSession = session;
   root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
   const current = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
-    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc;
+    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc && !view.state.readOnly &&
+    window.ReadMDCollaborationShare?.canEdit() !== false;
   const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
   const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
   const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
   const label = document.createElement('label'); label.setAttribute('for', input.id);
   const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
+  const moves = [[-1, 'pm.up', 'M12 19V5m-5 5 5-5 5 5'], [1, 'pm.down', 'M12 5v14m-5-5 5 5 5-5']].map(([step, key, icon]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
+    button.dataset.tableMove = step < 0 ? 'up' : 'down'; button.disabled = true;
+    button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
+    button.title = t(key); button.setAttribute('aria-label', t(key));
+    button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
+    button.addEventListener('click', () => void moveRow(step)); actions.append(button);
+    return { step, button };
+  });
   const apply = document.createElement('button'), cancel = document.createElement('button');
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
   const buttons = [];
+  function rowMove(step) {
+    const row = session.cell?.row, next = row + step;
+    if (!(row > 0 && next > 0 && next < context.rows.length)) return null;
+    const doc = context.editorDoc;
+    return window.ReadMDTransforms.tableRowSwap(doc.line(context.rows[row][0].line), doc.line(context.rows[next][0].line));
+  }
+  function updateMoveButtons() {
+    for (const { button, step } of moves) button.disabled = session.busy || !rowMove(step);
+  }
+  async function moveRow(step) {
+    if (!current() || session.busy) return;
+    const edit = rowMove(step);
+    if (!edit) return;
+    session.busy = true; apply.disabled = true; updateMoveButtons();
+    status.textContent = t('review.busy');
+    try {
+      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
+      if (!current()) return;
+      // Reordering source would invalidate these anchors. Keep any review
+      // touching the affected lines available for an explicit decision first.
+      const changes = ReadMDReview.snapshot(tab).changes;
+      if (changes.some(change => change.decision !== 'withdrawn' && (change.from === change.to
+        ? edit.from <= change.from && change.from <= edit.to
+        : change.from < edit.to && edit.from < change.to))) {
+        status.textContent = t('review.conflict'); return;
+      }
+      await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current);
+      if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal();
+    } catch (_) {
+      if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
+    } finally {
+      session.busy = false;
+      if (current()) { updateMoveButtons(); apply.disabled = !session.stamp; }
+    }
+  }
   async function select(cell) {
     if (!current() || session.busy) return;
     const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
+    updateMoveButtons();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
     if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
@@ -1761,7 +1867,8 @@ function tableCellControls(view, context, modal, picker) {
       const stamp = await ReadMDReview.captureManualRange(cell.from, cell.to, tab);
       if (!current() || token !== session.serial) return;
       if (stamp.editorDoc !== context.editorDoc || stamp.original !== cell.original) throw Error('review_stale_generation');
-      session.stamp = stamp; apply.disabled = false; status.textContent = ''; input.focus();
+      session.stamp = stamp;
+      if (!session.busy) { apply.disabled = false; status.textContent = ''; input.focus(); }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
   }
   for (const row of context.rows) {
@@ -1781,10 +1888,10 @@ function tableCellControls(view, context, modal, picker) {
     if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
     if (input.value === session.cell.value) { closeTableModal(); return; }
     const stamp = session.stamp;
-    session.busy = true; apply.disabled = true; input.disabled = true;
+    session.busy = true; apply.disabled = true; input.disabled = true; updateMoveButtons();
     try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
     catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
-    finally { session.busy = false; }
+    finally { session.busy = false; if (current()) updateMoveButtons(); }
   });
   root.append(gridWrap, label, input, actions, status); void select(context.selected);
 }
@@ -2840,153 +2947,3 @@ function slashOnUpdate(u) {
 }
 
 window.addEventListener('resize', () => { if (slash.open) positionSlashMenu(); });
-
-/* ============================================================
-   Edit bar: view menu (line numbers / focus / typewriter), slash button,
-   keyboard navigation inside the edit-bar menus.
-   ============================================================ */
-
-function editMenuArrowNav(e) {
-  const items = [...e.currentTarget.querySelectorAll('button')].filter(b => b.offsetParent !== null && !b.disabled);
-  if (!items.length) return;
-  const i = items.indexOf(document.activeElement);
-  let next = null;
-  if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
-  else if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length];
-  else if (e.key === 'Home') next = items[0];
-  else if (e.key === 'End') next = items[items.length - 1];
-  if (next) { e.preventDefault(); next.focus(); }
-}
-
-// Move the original controls, including their bound handlers, into a single
-// overflow menu. Measure translated labels instead of assuming English widths.
-function bindEditorToolbarOverflow() {
-  const bar = $('edit-bar'), menu = $('edit-overflow-menu'), more = $('edit-overflow-wrap'), trigger = $('edit-overflow-trigger');
-  if (!bar || !menu || !more || !trigger || bar.dataset.overflowBound) return;
-  bar.dataset.overflowBound = '1';
-  menu.addEventListener('click', event => { if (event.target.closest('button')) closeMdPopups(); });
-  const candidates = [
-    ['[data-menu="md-text-menu"]', 'editor.text'],
-    ['#formula-open'], ['#edit-slash-btn'],
-    ['#edit-view-trigger', 'editor.view'],
-    ['.md-fmt-group [data-md="strike"]'], ['.md-fmt-group [data-md="code"]'],
-    ['[data-menu="md-structure-menu"]', 'editor.structure'],
-    ['[data-menu="md-insert-menu"]', 'editor.insert'],
-    ['#edit-redo'], ['#edit-undo'], ['.md-fmt-group [data-md="link"]'],
-    ['.md-fmt-group [data-md="italic"]']
-  ].map(([selector, heading]) => {
-    const button = bar.querySelector(selector);
-    if (!button) return null;
-    const popup = heading ? $(button.dataset.menu || 'edit-view-menu') : null;
-    const original = popup ? button.closest('.md-menu-wrap') : button;
-    const anchor = document.createComment('editor toolbar position');
-    original.before(anchor);
-    const section = document.createElement('div');
-    section.className = 'editor-overflow-group';
-    const nodes = popup ? [...popup.childNodes] : [button];
-    if (popup) {
-      const caption = document.createElement('span');
-      caption.className = 'editor-overflow-heading';
-      caption.dataset.i18n = heading;
-      caption.textContent = window.i18n ? i18n.t(heading) : button.textContent;
-      section.append(caption);
-    } else if (button.classList.contains('icon') || button.id === 'edit-slash-btn') {
-      const label = document.createElement('span');
-      label.className = 'editor-overflow-label';
-      label.dataset.i18n = button.dataset.i18nAria;
-      label.textContent = button.getAttribute('aria-label');
-      button.append(label);
-    }
-    return { button, popup, original, anchor, section, nodes, moved:false };
-  }).filter(Boolean);
-  const restore = candidate => {
-    if (!candidate.moved) return;
-    if (candidate.popup) {
-      candidate.popup.append(...candidate.nodes);
-      candidate.original.classList.remove('editor-overflowed');
-    } else candidate.anchor.after(candidate.original);
-    candidate.section.remove(); candidate.moved = false;
-  };
-  const move = candidate => {
-    if (candidate.popup) candidate.original.classList.add('editor-overflowed');
-    candidate.section.append(...candidate.nodes);
-    menu.append(candidate.section); candidate.moved = true;
-  };
-  const required = () => {
-    const style = getComputedStyle(bar);
-    const children = [...bar.children].filter(el => getComputedStyle(el).display !== 'none');
-    return children.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0)
-      + Math.max(0, children.length - 1) * (parseFloat(style.columnGap) || 0)
-      + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-  };
-  let frame = 0;
-  const schedule = () => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      if (!bar.getBoundingClientRect().width) return;
-      const focused = document.activeElement;
-      closeMdPopups(); candidates.forEach(restore);
-      more.classList.add('hidden');
-      const width = bar.clientWidth;
-      if (required() > width + .5) {
-        more.classList.remove('hidden');
-        for (const candidate of candidates) {
-          move(candidate);
-          if (required() <= width + .5) break;
-        }
-      }
-      // Floating menus open inward when their anchor is close to the edge.
-      const r = more.getBoundingClientRect();
-      more.classList.toggle('editor-menu-end', r.left > window.innerWidth / 2);
-      if (focused && focused !== document.activeElement && focused.getClientRects().length) focused.focus({ preventScroll:true });
-    });
-  };
-  new ResizeObserver(schedule).observe(bar);
-  window.addEventListener('readmd:language-changed', schedule);
-  document.fonts?.ready.then(schedule);
-  schedule();
-}
-
-function bindEditBarExtras() {
-  const trig = $('edit-view-trigger');
-  const menu = $('edit-view-menu');
-  if (trig && menu && !trig.dataset.bound) {
-    trig.dataset.bound = '1';
-    trig.addEventListener('click', e => {
-      e.stopPropagation();
-      const show = menu.classList.contains('hidden');
-      closeMdPopups();
-      menu.classList.toggle('hidden', !show);
-      trig.setAttribute('aria-expanded', show ? 'true' : 'false');
-      if (show && e.detail === 0) { const first = menu.querySelector('button'); if (first) first.focus(); }
-    });
-    [['edit-view-lines', 'lineNumbers'], ['edit-view-focus', 'focus'], ['edit-view-typewriter', 'typewriter'], ['edit-view-ai-completion', 'aiCompletion']].forEach(([id, key]) => {
-      const b = $(id);
-      if (b) b.addEventListener('click', e => { e.stopPropagation(); setEditorPref(key); });
-    });
-  }
-  const slashBtn = $('edit-slash-btn');
-  if (slashBtn && !slashBtn.dataset.bound) {
-    slashBtn.dataset.bound = '1';
-    slashBtn.addEventListener('mousedown', e => e.preventDefault());
-    slashBtn.addEventListener('click', e => { e.stopPropagation(); closeMdPopups(); if (cmView) openSlashAtCursor(cmView); });
-  }
-  document.querySelectorAll('#edit-bar .md-menu').forEach(m => {
-    if (m.dataset.navBound) return;
-    m.dataset.navBound = '1';
-    m.addEventListener('keydown', editMenuArrowNav);
-  });
-  document.querySelectorAll('#md-tool [data-menu]').forEach(b => {
-    if (b.dataset.ariaBound) return;
-    b.dataset.ariaBound = '1';
-    b.addEventListener('click', e => requestAnimationFrame(() => {
-      const m = $(b.dataset.menu);
-      const open = !!(m && !m.classList.contains('hidden'));
-      b.setAttribute('aria-expanded', open ? 'true' : 'false');
-      if (open && e.detail === 0) { const first = m.querySelector('button'); if (first) first.focus(); }
-    }));
-  });
-  applyEditorViewClasses();
-  bindEditorToolbarOverflow();
-}

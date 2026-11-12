@@ -1,1 +1,211 @@
-/* ReadMD pet surface — see tokens.css for the design tokens used here. */
+/* Desktop pet workbench. */
+#pet-settings-box.pet-workbench {
+  padding: var(--space-5);
+  gap: var(--space-2);
+}
+#pet-settings-box .pet-sheet-head { align-items: center; }
+#pet-settings-box .pet-workbench-tabs {
+  justify-content: flex-start;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+#pet-settings-box .pet-workbench-tabs button {
+  padding: var(--space-1) var(--space-2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#pet-settings-box.pet-workbench .pet-sheet-body {
+  grid-template-columns: minmax(168px, 1fr) minmax(0, 2.2fr);
+  gap: var(--space-4);
+}
+#pet-settings-box.pet-workbench .pet-preview-stage {
+  min-width: 0;
+  background: transparent;
+  border-radius: 0;
+  border-inline-end: 1px solid var(--color-separator);
+  padding: var(--space-3) var(--space-4) var(--space-2) 0;
+  padding-inline: 0 var(--space-4);
+}
+#pet-settings-box .pet-preview-aura { min-height: 108px; height: 108px; }
+#pet-status-card .pet-preview-character { max-height: 100%; filter: none; }
+.is-bongocat-preview { image-rendering: auto; filter: none; }
+#pet-preview-character.is-bongocat-preview { width: min(100%, 170px); max-height: 100%; }
+#pet-settings-box .pet-preview-badge {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  align-items: center;
+}
+#pet-settings-box #pet-active-slug {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+#pet-say-hello {
+  max-width: 100%;
+  flex-shrink: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+#pet-interaction-preview:empty, #pet-choice-feedback:empty { display: none; }
+#pet-interaction-preview { margin: 0; }
+#pet-choice-feedback {
+  flex: none;
+  margin: var(--space-1) 0;
+  overflow-wrap: anywhere;
+}
+#pet-settings-box .apple-grouped-list { padding-inline: 0 var(--space-1); }
+.pet-library-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-block-end: var(--space-2);
+}
+.pet-search-field {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-m);
+  color: var(--fg3);
+  background: var(--color-surface-sunken);
+}
+#pet-settings-box #pet-roster-search {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(var(--touch-target) - 2px);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg);
+}
+/* Keep one focus ring around the full search field. */
+#pet-settings-box input#pet-roster-search:focus { outline: none; }
+.pet-search-field:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+#pet-settings-box .pet-library-tools > button { flex: none; width: var(--touch-target); }
+#pet-settings-box #pet-roster {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(104px, 100%), 1fr));
+  align-items: stretch;
+  padding: var(--space-1);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.pet-roster-item { position: relative; display: grid; min-width: 0; }
+#pet-settings-box .pet-character-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 96px;
+  min-width: 0;
+  width: 100%;
+  padding: var(--space-2);
+  cursor: pointer;
+  color: var(--fg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-m);
+  background: transparent;
+}
+#pet-settings-box .pet-character-card:hover { background: var(--color-hover); }
+#pet-settings-box .pet-character-card[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--color-selected);
+  border-color: var(--color-border-strong);
+}
+#pet-settings-box .pet-character-card:disabled { cursor: wait; }
+#pet-settings-box .pet-card-art {
+  display: block;
+  width: 72px;
+  max-width: 100%;
+  height: 54px;
+  min-height: 54px;
+  background: transparent center / contain no-repeat;
+}
+#pet-settings-box .pet-character-card strong {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+#pet-settings-box .pet-fav-btn {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--fg3);
+  cursor: pointer;
+  opacity: 0;
+}
+#pet-settings-box .pet-roster-item:is(:hover, :focus-within) .pet-fav-btn,
+#pet-settings-box .pet-fav-btn[aria-pressed="true"] { opacity: 1; }
+#pet-settings-box .pet-fav-btn svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.6; fill: none; }
+#pet-settings-box .pet-fav-btn[aria-pressed="true"] { color: var(--accent); }
+#pet-settings-box .pet-fav-btn[aria-pressed="true"] svg { fill: currentColor; }
+.pet-roster-empty { grid-column: 1 / -1; color: var(--fg3); margin: var(--space-3) 0; }
+.pet-runtime-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.pet-runtime-choices label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-s);
+  color: var(--fg2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.pet-runtime-choices input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.pet-runtime-choices label:has(:checked) {
+  border-color: var(--accent);
+  background: var(--color-selected);
+  color: var(--fg);
+}
+.pet-runtime-choices label:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pet-runtime-choices label:has(:disabled) { opacity: .55; cursor: default; }
+#pet-settings-box:not([data-pet-tab="settings"]) .pet-sheet-foot { display: none; }
+#pet-settings-box .pet-sheet-foot, #pet-settings-box .pet-foot-actions { flex-wrap: wrap; }
+#pet-settings-box .pet-sheet-foot .tb-btn { max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; }
+
+@media (hover: none) {
+  #pet-settings-box .pet-fav-btn { opacity: 1; }
+}
+@media (max-width: 640px) {
+  #pet-settings-box.pet-workbench { padding: var(--space-3); }
+  #pet-settings-box.pet-workbench .pet-preview-stage {
+    height: auto;
+    padding: var(--space-1) 0 var(--space-2);
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--color-separator);
+    align-items: center;
+    gap: var(--space-1) var(--space-2);
+    margin-block-end: var(--space-2);
+  }
+  #pet-settings-box .pet-preview-aura { min-height: 64px; height: 64px; width: 84px; }
+  #pet-settings-box .pet-preview-stage .apple-list-row { margin: 0; padding: 0; border: 0; }
+  #pet-settings-box #pet-roster { overflow: visible; }
+}

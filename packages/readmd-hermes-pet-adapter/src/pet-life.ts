@@ -53,7 +53,7 @@ function injectStyles(): void {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 2147483647;
+  z-index: 10;
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
 }
 .readmd-pet-life__bubble {
@@ -89,13 +89,8 @@ function injectStyles(): void {
   background: rgba(28, 30, 38, 0.92);
   border-radius: 2px;
 }
-.readmd-pet-life__bubble[data-pet-interactive] { pointer-events:auto; width:min(260px,85%); max-width:85%; padding:12px; box-sizing:border-box; }
-.readmd-pet-life__actions { display:grid;grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; margin-top:8px; }
-.readmd-pet-life__actions:empty { display:none; }
-.readmd-pet-life__actions button { min-height:44px; border:1px solid #ffffff18; border-radius:8px; background:#ffffff0b; color:inherit; font:inherit; cursor:pointer; overflow-wrap:anywhere; }
-.readmd-pet-life__actions button:hover { background:#ffffff20; }
-.readmd-pet-life.is-dropping::after { content:"↓";position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:24px;color:#83b7ff;border:2px dashed #83b7ff;border-radius:50%;padding:14px; }
-.readmd-pet-life.is-sleeping .readmd-pet-life__bubble[data-pet-interactive] { pointer-events:auto; width:min(260px,85%); max-width:85%; padding:12px; box-sizing:border-box; }
+.readmd-pet-life__bubble[data-pet-interactive] { width:min(260px,85%); max-width:85%; padding:12px; box-sizing:border-box; }
+.readmd-pet-life__bubble.is-visible[data-pet-interactive] { pointer-events:auto; }
 .readmd-pet-life__actions { display:grid;grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; margin-top:8px; }
 .readmd-pet-life__actions:empty { display:none; }
 .readmd-pet-life__actions button { min-height:44px; border:1px solid #ffffff18; border-radius:8px; background:#ffffff0b; color:inherit; font:inherit; cursor:pointer; overflow-wrap:anywhere; }

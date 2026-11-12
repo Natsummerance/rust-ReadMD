@@ -237,37 +237,18 @@ function bindTabOverflowEvents() {
   const overflowWrap = $('doc-tabs-overflow-wrap');
   if (!overflowBtn || !dropdown || !overflowWrap) return;
 
-  let isPinned = false;
-
-  const setOverflowMenu = visible => {
-    isPinned = visible;
-    dropdown.classList.toggle('hidden', !visible);
-    overflowBtn.setAttribute('aria-expanded', visible ? 'true' : 'false');
-    if (visible) setTimeout(() => dropdown.querySelector('[role="menuitem"]')?.focus(), 20);
-  };
-
-  overflowWrap.addEventListener('mouseenter', () => {
-    if (!isPinned) setOverflowMenu(true);
-  });
-  overflowWrap.addEventListener('mouseleave', () => {
-    if (!isPinned) setOverflowMenu(false);
-  });
-
-  overflowBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    setOverflowMenu(!isPinned);
+  overflowBtn.addEventListener('click', () => {
+    setTopTabMenu(dropdown.classList.contains('hidden'), { focus: true });
   });
 
   overflowBtn.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowDown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (event.key !== 'ArrowDown') return;
     event.preventDefault();
-    setOverflowMenu(true);
+    setTopTabMenu(true, { focus: true });
   });
 
   document.addEventListener('click', e => {
-    if (!overflowWrap.contains(e.target)) {
-      setOverflowMenu(false);
-    }
+    if (!overflowWrap.contains(e.target)) setTopTabMenu(false);
   });
 
   dropdown.addEventListener('keydown', event => {
@@ -281,7 +262,8 @@ function bindTabOverflowEvents() {
       (event.key === 'Home' ? items[0] : items[items.length - 1])?.focus();
     } else if (event.key === 'Escape') {
       event.preventDefault();
-      setOverflowMenu(false);
+      event.stopPropagation();
+      setTopTabMenu(false);
       overflowBtn.focus();
     }
   });

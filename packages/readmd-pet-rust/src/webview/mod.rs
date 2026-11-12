@@ -56,14 +56,7 @@ pub const PRELOAD_ABI: &str = r#"
   };
   window.addEventListener('error', (event) => send({type: 'renderer-error', message: String(event.message || 'script_error')}));
   window.addEventListener('unhandledrejection', (event) => send({type: 'renderer-error', message: String(event.reason || 'promise_rejection')}));
-  // Electron's host opens the companion menu for a native context-menu
-  // request. WRY has no cross-platform context-menu callback, so preserve
-  // that observable behavior at the ABI boundary and keep Chromium's own
-  // editing menu from leaking into the transparent pet surface.
-  window.addEventListener('contextmenu', (event) => {
-    try { event.preventDefault(); } catch (_) {}
-    send({type: 'control', payload: {type: 'open-menu'}});
-  });
+  window.addEventListener('contextmenu', (event) => event.preventDefault());
   send({type: 'abi-ready'});
 })();
 "#;
@@ -127,6 +120,8 @@ impl WebViewHost {
         let protocol_root = renderer_root.clone();
         let builder = WebViewBuilder::new()
             .with_transparent(true)
+            // The pet panel is non-activating. Menu items still need the first click.
+            .with_accept_first_mouse(true)
             // WebView2 does not dispatch document-start IPC while its
             // controller is created hidden. The native window is hidden
             // immediately after construction by the host when the snapshot

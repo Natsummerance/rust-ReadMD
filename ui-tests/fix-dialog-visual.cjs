@@ -19,7 +19,7 @@ async function main() {
   const args = options(process.argv.slice(2));
   assert(args.bin && !args.base, 'Explicit prebuilt kernel required');
   const playwright = args.playwright || require.resolve('playwright', { paths: [ROOT + '/ui-tests'] });
-  const { expect } = require(path.join(path.dirname(playwright), '@playwright/test'));
+  const { expect } = require('@playwright/test');
   const report = { passed: false, driverSha256: sha(fs.readFileSync(__filename)),
     binarySha256: sha(fs.readFileSync(args.bin)), sourceBefore: binding(), checks: [], cases: [],
     realCspAndToken: true, realDocumentAnalysis: true, actualHeadlessBrowser: true,
@@ -43,7 +43,7 @@ async function main() {
     });
     await page.evaluate(async () => { setEditorPref('aiCompletion', false); await ReadMDShellLoader.load(); });
     async function openFix() {
-      if (await page.locator('#btn-more').getAttribute('aria-expanded') !== 'true') await page.locator('#btn-more').click();
+      if (await page.locator('#btn-more').getAttribute('aria-selected') !== 'true') await page.locator('#btn-more').click();
       const group = page.locator('.more-group').filter({ has: page.locator('#btn-fix') });
       if (!await group.evaluate(node => node.classList.contains('open'))) await group.locator('.more-group-header').click();
       await page.locator('#btn-fix').click();
@@ -80,7 +80,7 @@ async function main() {
         const box = document.getElementById('fix-box'), list = document.getElementById('fix-list');
         const note = box.querySelector('.fix-note'), controls = ['fix-ai-btn', 'fix-close', 'fix-save'];
         const buttons = Object.fromEntries(controls.map(id => { const node = document.getElementById(id), css = getComputedStyle(node); return [id,
-          { ...rect(node), background: css.backgroundColor, color: css.color, name: node.textContent.trim() }]; }));
+          { ...rect(node), background: css.backgroundColor, color: css.color, name: node.getAttribute('aria-label') || node.textContent.trim() }]; }));
         const css = getComputedStyle(box), save = getComputedStyle(document.getElementById('fix-save'));
         return { box: rect(box), note: rect(note), list: { ...rect(list), clientWidth: list.clientWidth, scrollWidth: list.scrollWidth, clientHeight: list.clientHeight, scrollHeight: list.scrollHeight },
           buttons, radius: css.borderTopLeftRadius, padding: css.paddingTop,
@@ -95,7 +95,6 @@ async function main() {
           focused: document.activeElement.id };
       });
       report.cases.push({ ...item, diagnosticCount: analysis.diagnostics.length, metrics });
-      await page.screenshot({ path: path.join(args.evidence, item.name + '.png') });
       assert(metrics.noteBeforeList && metrics.note.bottom <= metrics.list.y + 1, 'Reading-scope explanation must precede the scrolling diagnostics');
       assert(metrics.savePrimary && !metrics.aiPrimary, 'Save As is primary; AI is secondary');
       assert.equal(metrics.radius, '16px');
@@ -133,8 +132,8 @@ async function main() {
       await page.keyboard.press('Escape');
       await until(() => page.locator('#fix-modal').evaluate(node => node.classList.contains('hidden')), 'original Escape close');
       const menuReturn = await page.evaluate(() => ({ active: document.activeElement.id || document.activeElement.tagName,
-        openerVisible: $('btn-more').getClientRects().length > 0 && getComputedStyle($('btn-more')).visibility !== 'hidden',
-        moreClosed: !$('more-menu').classList.contains('open'),
+        openerVisible: $('btn-fix').getClientRects().length > 0,
+        moreSelected: $('btn-more').getAttribute('aria-selected') === 'true',
         remainingInert: document.querySelectorAll('[data-rm-inert]').length }));
       report.cases.at(-1).menuReturn = menuReturn;
       assert.equal(menuReturn.remainingInert, 0, 'Original modal manager releases the background');
@@ -160,14 +159,13 @@ async function main() {
     report.checks.push('Original close and backdrop handlers; zero model/task-start calls and zero page errors');
     report.modalServiceControlPassed = true;
     report.modalServiceControl = 'Visible #btn-more focused then real showFixModal() called; original Escape handler returned focus. This is a separate modal-service control, not the real menu flow.';
-    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-more' && item.menuReturn.openerVisible && item.menuReturn.moreClosed);
-    assert.equal(report.menuFocusReturnPassed, true, 'Every real More-menu repair flow must restore focus to the visible More opener');
+    report.menuFocusReturnPassed = report.cases.every(item => item.menuReturn.active === 'btn-fix' && item.menuReturn.openerVisible && item.menuReturn.moreSelected);
+    assert.equal(report.menuFocusReturnPassed, true, 'Every real repair flow must restore focus to its visible sidebar action');
     report.visualScopePassed = true;
-    report.menuFocusBoundary = 'The shell closes the original More menu and exposes its visible opener before the original repair handler opens its modal; every actual menu flow restores focus to that opener.';
+    report.menuFocusBoundary = 'The More sidebar stays open behind the repair dialog. Closing the dialog restores focus to the action that opened it.';
     report.passed = true;
   } catch (error) {
     report.failure = { phase, message: error.message, stack: error.stack };
-    if (test) await test.page.screenshot({ path: path.join(args.evidence, 'first-failure.png') }).catch(() => {});
     process.exitCode = 1;
   } finally {
     if (test) { report.pageErrors = test.errors; await test.close(); }

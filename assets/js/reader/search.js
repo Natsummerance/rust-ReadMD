@@ -337,32 +337,33 @@ function updateSearchCount() {
   $('search-count').textContent = total ? ((state.searchIndex % total) + 1) + '/' + total : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
 }
 
-function toggleSearch() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  if (state.mode === 'welcome' || (!state.editing && !state.file && state.original == null)) {
-    showToast(_t('toast.searchNeedsDocument') || '请先打开文档，再按 Ctrl+F 搜索');
-    return;
-  }
+function openSidebarSearch() {
   const bar = $('search-bar');
-  syncSearchMode();
   if (bar.classList.contains('hidden')) {
     bar.classList.remove('hidden');
     if (state.editing) {
       const selected = window.cmView ? window.cmView.state.sliceDoc(window.cmView.state.selection.main.from, window.cmView.state.selection.main.to) : $('edit-area').value.slice($('edit-area').selectionStart, $('edit-area').selectionEnd);
       if (selected && selected.length <= 256 && !selected.includes('\n')) $('search-input').value = selected;
-      searchEditor($('search-input').value, { jump: false });
     }
-    $('search-input').focus();
-    $('search-input').select();
-  } else {
-    closeSearch({ restoreFocus: true });
   }
+  syncSearchMode();
 }
 
-function closeSearch({ restoreFocus = false } = {}) {
+function toggleSearch() {
+  if ($('btn-search').disabled) {
+    showToast(window.i18n?.t('toast.searchNeedsDocument') || '请打开文档');
+    return;
+  }
+  showSide('search');
+  $('search-input').focus();
+  $('search-input').select();
+}
+
+function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
   $('search-bar').classList.add('hidden');
   clearMarks();
   editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+  if (closeSidebar && $('side').dataset.view === 'search') closeSide();
   if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
   if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
   if (restoreFocus) {

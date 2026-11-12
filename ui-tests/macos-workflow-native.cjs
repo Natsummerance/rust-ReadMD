@@ -71,7 +71,7 @@ function driver(phase,file) {
         cmView.dispatch({changes:{from:cmView.state.doc.length,insert:${JSON.stringify(unsaved)}}});
         check(hasUnsavedEditorChanges(),'conflict_fixture_dirty');
         window.ipc.postMessage(JSON.stringify({readmd_native_qa_result:{ok:true,phase:'external_ready',checks:['editor_ready_for_external_write']}}));
-        await until(async()=>{const response=await apiFetch('/api/file?p='+encodeURIComponent(file));const value=await response.json();return value.original?.replace(/\r\n/g,'\n')===${JSON.stringify(external)};});
+        await until(async()=>{const response=await apiFetch('/api/file?p='+encodeURIComponent(file));const value=await response.json();return (value.original??value.content)?.replace(/\r\n/g,'\n')===${JSON.stringify(external)};});
         const saving=saveEdit();
         await until(()=>!document.getElementById('save-conflict-modal').classList.contains('hidden'));
         check(true,'real_save_conflict_dialog');

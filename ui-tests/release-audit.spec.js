@@ -151,10 +151,10 @@ test('F11 enters immersive Zen once without layout jitter', async ({ page }) => 
   });
 
   await expect(page.locator('body')).toHaveClass(/zen-mode/);
-  for (const selector of ['#header', '#statusbar', '#doc-tabs-container', '#doc-tabs-secondary-bar']) {
+  for (const selector of ['#side-rail', '#statusbar']) {
     await expect(page.locator(selector)).toBeHidden();
   }
-  await expect(page.locator('#toolbar')).toHaveCSS('transform', /matrix\(1, 0, 0, 1, 0, -\d+/);
+  await expect(page.locator('#app-titlebar')).toHaveCSS('transform', /matrix\(1, 0, 0, 1, 0, -\d+/);
   expect(await page.evaluate(() => document.activeElement)).toBeTruthy();
 
   const settledTail = samples.slice(-5);

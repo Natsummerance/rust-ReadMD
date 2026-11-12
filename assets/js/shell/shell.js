@@ -95,14 +95,37 @@
 
 function syncWindowPreferences() {
   if (!hasPy || (!py.custom_titlebar && py.native_titlebar !== 'macos') || !py.window_control) return;
-  const t = key => window.i18n?.t(key) || key;
-  const label = key => t(key).replace(/\s*[（(][^()（）]*[)）]\s*$/u, '');
-  const preferences = { closeToTray: state.closeToTray !== false, labels: [t('window.show'), t('toolbar.open'), t('window.exit')], fileLabels: [t('menu.file'), t('menu.save'), t('menu.saveAs')], editLabels: ['shell.group.edit','editor.undo','editor.redo','editor.cut','editor.copy','editor.paste'].map(label) };
-  if (py.native_titlebar === 'macos') preferences.menuLabels = Object.fromEntries(Object.entries({new:'menu.new',folder:'menu.openFolder',plugins:'cmd.plugins',pet:'cmd.pet',settings:'menu.settings',hide:'mac.hide',
-    'close-document':'toolbar.close',view:'shell.group.view',zen:'menu.zenMode',fullscreen:'toolbar.fullScreen',minimize:'window.minimize','select-all':'mac.selectAll'}).map(([action,key])=>[action,label(key)]));
+  const translated = key => {
+    const value = window.i18n?.t(key);
+    return typeof value === 'string' && value !== key ? value.trim() : '';
+  };
+  const preferences = { closeToTray: state.closeToTray !== false };
+  if (py.native_titlebar === 'macos') {
+    const keys = {
+      show: 'window.show', open: 'menu.open', exit: 'window.exit',
+      file: 'menu.file', new: 'menu.new', folder: 'menu.openFolder', save: 'menu.save',
+      'save-as': 'menu.saveAs', 'close-document': 'toolbar.close',
+      edit: 'toolbar.edit', undo: 'editor.undo', redo: 'editor.redo',
+      cut: 'editor.cut', copy: 'editor.copy', paste: 'editor.paste', 'select-all': 'mac.selectAll',
+      view: 'shell.group.view', zen: 'menu.zenMode', fullscreen: 'toolbar.fullScreen',
+      minimize: 'window.minimize', plugins: 'cmd.plugins', pet: 'cmd.pet', settings: 'menu.settings', hide: 'mac.hide',
+    };
+    const labels = {};
+    for (const [action, key] of Object.entries(keys)) {
+      let text = translated(key);
+      if (['edit', 'undo', 'redo', 'fullscreen'].includes(action)) text = text.replace(/\s*[（(](?:[^()（）]*\+[^()（）]+|F11)[)）]$/iu, '');
+      if (text) labels[action] = text;
+    }
+    preferences.menuLabels = labels;
+  } else {
+    const labels = ['window.show', 'toolbar.open', 'window.exit'].map(translated);
+    if (labels.every(Boolean)) preferences.labels = labels;
+  }
   py.window_control('preferences', preferences);
-  $('btn-close-to-tray')?.setAttribute('aria-checked', String(state.closeToTray !== false));
-  if ($('close-to-tray-status')) $('close-to-tray-status').textContent = t(state.closeToTray !== false ? 'app.enabled' : 'app.disabled');
+  $('btn-close-to-tray')?.setAttribute('aria-checked', String(preferences.closeToTray));
+  const status = $('close-to-tray-status');
+  const statusLabel = translated(preferences.closeToTray ? 'app.enabled' : 'app.disabled');
+  if (status && statusLabel) status.textContent = statusLabel;
 }
 
 // Native menus enter the existing UI workflows. Modal guards, revision checks,
@@ -142,13 +165,12 @@ function initWindowChrome() {
   actions.dataset.initialized = 'true';
   initSingleChromeNavigation();
   const title = $('window-title');
-  const native = !!(hasPy && py.custom_titlebar && py.window_control);
   const macNative = !!(hasPy && py.native_titlebar === 'macos' && py.window_control);
-  const command = (action, options) => { if (native || macNative) py.window_control(action, options); };
+  const custom = !macNative && !!(hasPy && py.custom_titlebar && py.window_control);
+  const command = (action, options) => { if (custom || macNative) py.window_control(action, options); };
   const updateTitle = () => {
     title.textContent = document.title.replace(/\s*[-–·]\s*ReadMD$/, '') || 'ReadMD';
     title.title = title.textContent;
-    syncChromeDocumentDisclosure();
     command('title', { title: document.title });
   };
   new MutationObserver(updateTitle).observe(document.querySelector('title'), { childList: true, subtree: true, characterData: true });
@@ -162,20 +184,24 @@ function initWindowChrome() {
     if (!actions.contains(document.activeElement)) $('toolbar')?.classList.remove('zen-toolbar-revealed');
   }, 0));
   if (macNative) initMacWindowChrome(command);
-  if (!native) return;
+  if (custom || macNative) {
+    syncWindowPreferences();
+    window.addEventListener('readmd:language-changed', syncWindowPreferences);
+  }
+  if (!custom) return;
   document.body.classList.add('custom-titlebar');
   $('window-controls').classList.remove('hidden');
-  $('btn-close-to-tray').classList.remove('hidden');
+  const trayToggle = $('btn-close-to-tray');
   $('window-minimize').onclick = () => command('minimize');
   $('window-maximize').onclick = () => command('maximize');
   $('window-close').onclick = () => command('close');
-  $('btn-close-to-tray').onclick = async () => {
+  trayToggle.onclick = async () => {
     const previous = state.closeToTray; state.closeToTray = previous === false;
     syncWindowPreferences();
     if (!await saveSettings()) { state.closeToTray = previous; syncWindowPreferences(); }
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions,#window-controls');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', e => { if (e.button === 0 && !interactive(e.target)) press = { x: e.screenX, y: e.screenY }; });
   drag.addEventListener('pointermove', e => {
@@ -198,227 +224,107 @@ function initWindowChrome() {
     button.setAttribute('aria-pressed', String(!!status.maximized));
     button.innerHTML = status.maximized ? '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3h7v7M6 3v3h4v4h3"/><rect x="3" y="6" width="7" height="7"/></svg>' : '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg>';
     $('window-close').title = window.i18n?.t(status.trayAvailable && state.closeToTray !== false ? 'window.hide' : 'window.close') || '';
-    $('btn-close-to-tray').disabled = !status.trayAvailable;
+    trayToggle.classList.toggle('hidden', !status.trayAvailable);
+    trayToggle.disabled = !status.trayAvailable;
   };
-  syncWindowPreferences();
-  window.addEventListener('readmd:language-changed', syncWindowPreferences);
 }
 
-// This layer projects the existing document/tab services into the shell. It
-// never clones a tab, installs a second close handler or changes editor state.
-function syncChromeDocumentDisclosure() {
-  const button = $('titlebar-documents'), side = $('side'), section = $('side-documents');
-  if (!button || !side) return;
-  const tabs = state.tabs || [];
-  const legacy = $('file-title');
-  const available = tabs.length > 0 || !!(legacy && !legacy.classList.contains('hidden') && legacy.textContent);
-  button.disabled = !available;
-  button.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
-  $('btn-toc')?.setAttribute('aria-expanded', String(!side.classList.contains('hidden')));
-  const label = window.i18n?.t('tabs.openDocs') || 'tabs.openDocs';
-  const name = $('window-title')?.textContent || document.title;
-  button.setAttribute('aria-label', `${label}: ${name}${tabs.length > 1 ? ` (${tabs.length})` : ''}`);
-  button.title = `${name}\n${label}`;
-  if (section) section.hidden = !available;
-  const icon = $('titlebar-document-icon'); if (icon) icon.hidden = !available;
-  const count = $('titlebar-tab-count');
-  if (count) { count.textContent = String(tabs.length); count.classList.toggle('hidden', tabs.length < 2); }
-  const active = tabs.find(tab => tab.id === state.activeTabId);
-  $('titlebar-dirty')?.classList.toggle('hidden', !active?.isDirty && !active?.externalChanged);
-  if (active?.isDirty || active?.externalChanged) button.setAttribute('aria-description', window.i18n?.t(active.externalChanged ? 'toast.saveConflict' : 'tabs.dirty') || '');
-  else button.removeAttribute('aria-description');
+// The rail stays in place. Its views use the original document services and
+// controls, so changing panel does not rebind a command or change the document.
+function syncSidebar() {
+  const side = $('side');
+  const open = !side.classList.contains('hidden');
+  const view = side.dataset.view;
+  $('btn-toc').setAttribute('aria-expanded', String(open));
+  for (const button of $('side-tabs').querySelectorAll('[data-side-view]')) {
+    const current = button.dataset.sideView === view;
+    button.setAttribute('aria-selected', String(open && current));
+    button.tabIndex = current && !button.disabled ? 0 : -1;
+  }
+  if (!$('side-tabs').querySelector('[tabindex="0"]')) $('tab-files').tabIndex = 0;
+}
+
+function showSide(view = $('side').dataset.view, { loadFiles = true } = {}) {
+  const side = $('side');
+  const next = $('side-' + view);
+  if (!next?.classList.contains('side-view') || view === 'search' && $('btn-search').disabled) view = 'files';
+  if (side.dataset.view === 'search' && view !== 'search') closeSearch({ closeSidebar: false });
+  side.dataset.view = view;
+  for (const panel of side.querySelectorAll('.side-view')) panel.hidden = panel.id !== 'side-' + view;
+  side.classList.remove('hidden');
+  syncSidebar();
+  if (view === 'files') {
+    if (state.folderFiles.length || !loadFiles) renderFolderList();
+    else void listFolder(state.folder || state.dir || '', { reveal: false });
+  } else if (view === 'toc') {
+    buildToc();
+  } else if (view === 'recent') {
+    refreshSidebarRecent();
+  } else if (view === 'search') {
+    openSidebarSearch();
+  }
+}
+
+function closeSide({ restoreFocus = false } = {}) {
+  const side = $('side');
+  if (side.classList.contains('hidden')) return;
+  const focused = side.contains(document.activeElement);
+  if (!$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+  side.classList.add('hidden');
+  syncSidebar();
+  if (restoreFocus || focused) $('btn-toc').focus({ preventScroll: true });
+}
+
+function toggleSide(view) {
+  const side = $('side');
+  if (!side.classList.contains('hidden') && (!view || view === side.dataset.view)) closeSide();
+  else showSide(view);
 }
 
 function initSingleChromeNavigation() {
-  const side = $('side'), disclosure = $('titlebar-documents'), toolbar = $('toolbar');
-  if (!side || !disclosure || disclosure.dataset.bound) return;
-  disclosure.dataset.bound = 'true';
-  let opener = $('btn-toc'), lastFocus = document.activeElement;
-  document.addEventListener('focusin', event => { lastFocus = event.target; });
-  disclosure.addEventListener('click', () => {
-    opener = disclosure;
-    side.classList.remove('hidden');
-    syncChromeDocumentDisclosure();
-    if (state.tabs?.length) focusVisibleTab(state.activeTabId || state.tabs[0].id);
-    else $('file-title')?.focus();
+  const side = $('side'), rail = $('side-tabs');
+  if (!side || !rail || rail.dataset.bound) return;
+  rail.dataset.bound = 'true';
+  $('btn-toc').addEventListener('click', () => toggleSide());
+  $('doc-tabs-new').addEventListener('click', () => newDocument());
+  const buttons = [...rail.querySelectorAll('[data-side-view]')];
+  for (const button of buttons) button.addEventListener('click', () => {
+    const view = button.dataset.sideView;
+    if (view === 'search' && (side.classList.contains('hidden') || side.dataset.view !== view)) toggleSearch();
+    else toggleSide(view);
   });
-  $('btn-toc')?.setAttribute('aria-controls', 'side');
-  $('btn-toc')?.addEventListener('pointerdown', () => { opener = $('btn-toc'); });
+  rail.addEventListener('keydown', event => {
+    if (event.isComposing || !['ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
+    const items = buttons.filter(button => !button.disabled);
+    const from = items.indexOf(document.activeElement);
+    if (from < 0) return;
+    const next = event.key === 'Home' ? items[0] : event.key === 'End' ? items.at(-1) :
+      items[(from + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+    event.preventDefault();
+    showSide(next.dataset.sideView);
+    next.focus({ preventScroll: true });
+  });
+  // Some document lifecycle paths hide the panel directly. Keep the rail
+  // state correct and clear search marks when those paths close it.
   new MutationObserver(() => {
-    syncChromeDocumentDisclosure();
-    if (side.classList.contains('hidden') && (side.contains(document.activeElement) || document.activeElement === document.body && side.contains(lastFocus))) {
-      const target = opener && !opener.disabled ? opener : $('btn-toc');
-      target?.focus({ preventScroll: true });
-    }
+    if (side.classList.contains('hidden') && !$('search-bar').classList.contains('hidden')) closeSearch({ closeSidebar: false });
+    syncSidebar();
   }).observe(side, { attributes: true, attributeFilter: ['class'] });
-  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
-    const bar = $(id);
-    if (bar) new MutationObserver(syncChromeDocumentDisclosure).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
-  }
-  if ($('file-title')) new MutationObserver(syncChromeDocumentDisclosure).observe($('file-title'), { childList: true, attributes: true, attributeFilter: ['class'] });
-  side.addEventListener('keydown', event => {
-    if (event.isComposing || event.keyCode === 229 || event.key !== 'Escape' || window.ReadMDModal?.top()) return;
-    if (event.defaultPrevented) {
-      event.stopPropagation();
-      if (event.target.matches('.tab-title-input')) event.composedPath().find(node => node instanceof HTMLElement && node.matches('.tab-item'))?.focus({ preventScroll: true });
-      return;
-    }
-    if (event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
-    event.preventDefault(); event.stopPropagation();
-    side.classList.add('hidden');
-  });
-  // These are the same menu buttons and business listeners. Close their menu
-  // and expose a visible opener before the existing action opens its dialog.
-  const relayMenuAction = event => {
-    const action = event.target.closest('[data-shell-menu-action],.more-item');
-    if (!action || event.type === 'contextmenu' && action.id !== 'btn-zen') return;
-    closeMoreMenu();
-    $('btn-more')?.focus({ preventScroll: true });
-  };
-  for (const type of ['click','contextmenu']) $('more-menu')?.addEventListener(type, relayMenuAction, true);
-  // Compact chrome relocates the original controls, including their business
-  // listeners. Keep its header out of the desktop menu's keyboard item list.
-  const compactGroup = $('shell-compact-group'), compactActions = $('shell-compact-actions');
-  if (compactGroup && compactActions) {
-    const compact = window.matchMedia('(max-width: 640px)');
-    const groupAnchor = document.createComment('compact menu position');
-    compactGroup.before(groupAnchor);
-    const placements = [
-      ['btn-open', 'toolbar.open'], ['btn-palette', 'editor.command'],
-      ['btn-search', 'toolbar.search'], ['btn-ai', 'toolbar.ai'], ['btn-graph', 'graph.title'],
-    ].map(([id, key]) => {
-      const button = $(id);
-      if (!button) return null;
-      const anchor = document.createComment(id + ' desktop position');
-      button.before(anchor);
-      const wrapper = document.createElement('div'), label = document.createElement('span');
-      wrapper.className = 'shell-menu-action shell-compact-action';
-      wrapper.dataset.shellCompact = id;
-      label.className = 'shell-menu-label';
-      label.dataset.i18n = key;
-      label.setAttribute('aria-hidden', 'true');
-      wrapper.append(label);
-      compactActions.append(wrapper);
-      return { button, anchor, wrapper, label, key, role: button.getAttribute('role'),
-        menuItem: button.classList.contains('more-item'), menuAction: button.hasAttribute('data-shell-menu-action') };
-    }).filter(Boolean);
-    const modalOpeners = new WeakMap();
-    let pendingFocus = null;
-    window.addEventListener('readmd:modal-opened', () => {
-      const modal = window.ReadMDModal?.top();
-      if (!modal) return;
-      const origin = placements.find(({ button }) => button === document.activeElement || button.contains(document.activeElement));
-      if (origin) modalOpeners.set(modal, origin.button);
-      else modalOpeners.delete(modal);
-    });
-    const watchMovedOpener = modal => {
-      if (pendingFocus) {
-        pendingFocus.observer.disconnect();
-        if (pendingFocus.frame !== null) cancelAnimationFrame(pendingFocus.frame);
-      }
-      const pending = { observer: null, frame: null };
-      pending.observer = new MutationObserver(() => {
-        if (pending.frame !== null) return;
-        pending.frame = requestAnimationFrame(() => {
-          pending.frame = null;
-          if (pendingFocus !== pending || modal.isConnected && !modal.classList.contains('hidden') && getComputedStyle(modal).display !== 'none') return;
-          pending.observer.disconnect(); pendingFocus = null;
-          // The original manager/caller owns close and any explicit editor
-          // focus transfer. Repair only an unusable result after it finishes.
-          if (window.ReadMDModal?.top()) return;
-          const active = document.activeElement;
-          const usable = active && active !== document.body && active.isConnected && !active.disabled &&
-            !active.closest('[inert],.hidden,[hidden]') && active.getClientRects().length && getComputedStyle(active).visibility !== 'hidden';
-          if (!usable) $('btn-more')?.focus({ preventScroll: true });
-        });
-      });
-      pendingFocus = pending;
-      pending.observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
-    };
-    const labels = () => {
-      for (const { button, label, key } of placements) {
-        const value = window.i18n?.t(key);
-        const text = value && value !== key ? value : button.getAttribute('aria-label') || button.title || '';
-        label.textContent = window.ReadMDKeys?.isMac ? text.replace(/\bCtrl\b/g, 'Cmd') : text;
-      }
-      const heading = compactGroup.querySelector('[data-i18n="shell.group.general"]');
-      const value = window.i18n?.t('shell.group.general');
-      if (heading && value && value !== 'shell.group.general') heading.textContent = value;
-    };
-    const visibility = () => {
-      for (const { button, wrapper, menuItem } of placements) {
-        const hidden = button.hidden || button.classList.contains('hidden') || button.getAttribute('aria-hidden') === 'true';
-        if (wrapper.hidden !== hidden) wrapper.hidden = hidden;
-        // The original menu's arrow-key selector uses .more-item, not computed
-        // visibility. Exclude a service-hidden graph without changing its state.
-        const item = menuItem || compact.matches && !hidden;
-        if (button.classList.contains('more-item') !== item) button.classList.toggle('more-item', item);
-        if (hidden && wrapper.contains(document.activeElement)) $('btn-more')?.focus({ preventScroll: true });
-      }
-    };
-    const project = () => {
-      const active = document.activeElement;
-      const modal = window.ReadMDModal?.top(), modalOpener = modal && modalOpeners.get(modal);
-      const openerParent = modalOpener?.parentNode;
-      const movedFocus = placements.find(({ button }) => button === active || button.contains(active));
-      const menuFocused = $('more-menu')?.contains(active);
-      const menuOpen = $('more-menu')?.classList.contains('open');
-      if (menuOpen) closeMoreMenu();
-      if (compact.matches) {
-        groupAnchor.after(compactGroup);
-        compactGroup.hidden = false;
-        for (const { button, wrapper } of placements) {
-          wrapper.prepend(button);
-          button.setAttribute('role', 'menuitem');
-          button.setAttribute('data-shell-menu-action', '');
-        }
-      } else {
-        for (const { button, anchor, role, menuAction } of placements) {
-          anchor.after(button);
-          if (role === null) button.removeAttribute('role');
-          else button.setAttribute('role', role);
-          if (!menuAction) button.removeAttribute('data-shell-menu-action');
-        }
-        compactGroup.hidden = true;
-        compactGroup.remove();
-      }
-      labels(); visibility();
-      if (modalOpener && modalOpener.parentNode !== openerParent) watchMovedOpener(modal);
-      if (!compact.matches && movedFocus && !movedFocus.button.disabled && !movedFocus.button.classList.contains('hidden')) movedFocus.button.focus({ preventScroll: true });
-      else if (movedFocus || menuFocused) $('btn-more')?.focus({ preventScroll: true });
-    };
-    for (const { button } of placements) new MutationObserver(visibility).observe(button, { attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden'] });
-    compact.addEventListener('change', project);
-    window.addEventListener('readmd:language-changed', labels);
-    project();
-  }
-  const shortcuts = () => {
-    const mac = !!window.ReadMDKeys?.isMac;
-    for (const el of [...toolbar.querySelectorAll('.tb-btn[title],.tb-btn[aria-label]'), ...side.querySelectorAll('#side-file-actions .tb-btn[title], #side-close-btn[title]')]) {
-      for (const attribute of ['title','aria-label']) {
-        const old = el.getAttribute(attribute);
-        const next = mac && old ? old.replace(/\bCtrl\b/g, 'Cmd') : old;
-        if (old !== next) el.setAttribute(attribute, next);
-      }
-    }
-    const command = $('btn-palette'), hint = $('shell-command-hint');
-    if (command && hint) {
-      const label = command.getAttribute('aria-label') || window.i18n?.t('editor.command') || '';
-      const title = `${label} (${mac ? 'Cmd' : 'Ctrl'}+K / ${mac ? 'Cmd' : 'Ctrl'}+Shift+P)`;
-      if (command.hasAttribute('title') && command.title !== title) command.title = title;
-      if (hint.textContent !== title) hint.textContent = title;
-    }
-  };
-  if (toolbar) new MutationObserver(shortcuts).observe(toolbar, { subtree: true, attributes: true, attributeFilter: ['title', 'aria-label'] });
-  window.addEventListener('readmd:language-changed', () => { shortcuts(); syncChromeDocumentDisclosure(); });
-  shortcuts(); syncChromeDocumentDisclosure();
+  const bar = $('doc-tabs-bar');
+  new ResizeObserver(() => syncTopTabOverflow({ reveal: true })).observe($('doc-tabs-container'));
+  bar.addEventListener('wheel', event => {
+    if (event.deltaX || !event.deltaY || event.ctrlKey || bar.scrollWidth <= bar.clientWidth) return;
+    event.preventDefault();
+    bar.scrollLeft += event.deltaY;
+  }, { passive: false });
+  syncSidebar();
 }
 
 function initMacWindowChrome(command) {
   document.body.classList.add('native-macos');
   // Reuse the packaged Mac brand, including its optical inset and rounded tile.
   // The original mark remains the default for browsers and other platforms.
-  for (const mark of document.querySelectorAll('.titlebar-mark,.welcome-mark')) {
+  for (const mark of document.querySelectorAll('.welcome-mark')) {
     mark.src = '/assets/ReadMD-macos.svg';
   }
   // Cocoa draws, localizes and operates the traffic lights. The web page has
@@ -441,9 +347,7 @@ function initMacWindowChrome(command) {
   };
   const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(update); } };
   new MutationObserver(schedule).observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
-  for (const id of ['doc-tabs-bar', 'doc-tabs-secondary-bar']) {
-    const bar = $(id); if (bar) new MutationObserver(schedule).observe(bar, { childList: true, subtree: true });
-  }
+  new MutationObserver(schedule).observe($('doc-tabs-bar'), { childList: true, subtree: true });
   for (const target of [$('app-titlebar'), $('toolbar'), document.querySelector('.zen-hover-trigger')]) {
     if (!target) continue;
     for (const event of ['pointerenter', 'pointerleave', 'focusin', 'focusout']) target.addEventListener(event, schedule);
@@ -458,7 +362,7 @@ function initMacWindowChrome(command) {
     if (Number.isFinite(inset) && inset >= 76 && inset <= 128) document.body.style.setProperty('--native-controls-leading', inset + 'px');
   };
   const drag = $('app-titlebar');
-  const interactive = target => target.closest('button,a,input,select,textarea,#titlebar-actions');
+  const interactive = target => target.closest('button,a,input,select,textarea,.tab-item,#doc-tabs-dropdown,#window-controls');
   let press = null;
   drag.addEventListener('pointerdown', event => { if (event.button === 0 && !interactive(event.target)) press = { x: event.screenX, y: event.screenY }; });
   drag.addEventListener('pointermove', event => {

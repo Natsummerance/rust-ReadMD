@@ -21,13 +21,27 @@ for(const status of ['unavailable','disabled'])test(`a ${status} module stops po
   expect(await page.evaluate(()=>ensureModule('convert',1500))).toBe(false);expect(polls).toBe(1);
   expect(await page.evaluate(()=>ensureModule('convert',1500))).toBe(true);expect(starts).toBe(2);expect(polls).toBe(2);
 });
-test('module details stay compact and localize immediately when the language changes',async({page})=>{
-  await page.goto('/');await waitForPage(page,()=>window.__readmdAppReady);
-  await page.evaluate(async()=>{await i18n.setLanguage('zh-CN',false);state.modules={convert:'ready',ocr:'loading',transcribe:'unavailable',pdf_editor:'error'};updateModuleUi();});
-  const indicator=page.locator('#status-mods');await expect(indicator).toHaveText('●');
-  await expect(indicator).toHaveAttribute('data-module-state','unavailable');
-  const chinese=await indicator.getAttribute('aria-label');expect(chinese).toContain('语音识别');expect(chinese).toContain('编辑 PDF');expect(chinese).not.toMatch(/pdf_editor|transcribe/);
-  expect((await indicator.boundingBox()).width).toBeLessThanOrEqual(12);
-  await page.evaluate(()=>i18n.setLanguage('en',false));const english=await indicator.getAttribute('aria-label');expect(english).not.toBe(chinese);expect(english).not.toMatch(/pdf_editor|transcribe|系统引擎/);
-  expect(await indicator.getAttribute('title')).toBe(english);
+test('module details are available from the plugin entry and follow the language', async ({ page }) => {
+  await page.goto('/');
+  await waitForPage(page, () => window.__readmdAppReady);
+  await page.evaluate(async () => {
+    await i18n.setLanguage('zh-CN', false);
+    state.modules = { convert:'ready', ocr:'loading', transcribe:'unavailable', pdf_editor:'error' };
+    updateModuleUi();
+  });
+  await page.locator('#btn-more').click();
+  await page.locator('.more-group').filter({ has: page.locator('#btn-plugin-menu') }).locator('.more-group-header').click();
+  const entry = page.locator('#btn-plugin-menu');
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveAccessibleName(await page.evaluate(() => i18n.t('menu.plugins')));
+  const chinese = await entry.getAttribute('aria-description');
+  expect(chinese).toContain('语音识别');
+  expect(chinese).toContain('编辑 PDF');
+  expect(chinese).not.toMatch(/pdf_editor|transcribe/);
+  await page.evaluate(() => i18n.setLanguage('en', false));
+  const english = await entry.getAttribute('aria-description');
+  expect(english).not.toBe(chinese);
+  expect(english).not.toMatch(/pdf_editor|transcribe|系统引擎/);
+  await expect(entry).toHaveAttribute('title', english);
+  await expect(page.locator('#status-mods')).toHaveCount(0);
 });

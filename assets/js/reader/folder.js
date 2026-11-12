@@ -20,7 +20,7 @@ async function openFolder() {
 }
 
 let folderRequestEpoch = 0;
-async function listFolder(dir) {
+async function listFolder(dir, { reveal = true } = {}) {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const epoch = ++folderRequestEpoch;
   try {
@@ -32,8 +32,8 @@ async function listFolder(dir) {
     }
     state.folder = d.dir;
     state.folderFiles = d.files || [];
-    renderFolderList();
-    showSide('files');
+    if (reveal) showSide('files', { loadFiles: false });
+    else renderFolderList();
     return true;
   } catch (e) {
     if (epoch === folderRequestEpoch) showToast((_t('toast.readFolderFail') || '读取文件夹失败') + ': ' + e.message);
@@ -145,11 +145,6 @@ function renderTreeNodes(container, childrenObj, depth) {
         toggle.classList.add('empty');
       }
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.dir;
-      icon.setAttribute('aria-hidden', 'true');
-
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
@@ -191,7 +186,6 @@ function renderTreeNodes(container, childrenObj, depth) {
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
-      row.appendChild(icon);
       row.appendChild(nameEl);
       row.title = item.path;
       nodeEl.appendChild(row);
@@ -245,62 +239,7 @@ function handleTreeKeydown(event, row) {
   row.closest('.tree-node')?.parentElement?.closest('.tree-node')?.querySelector(':scope > .tree-row')?.focus();
 }
 
-function showSide(tab) {
-  $('side').classList.remove('hidden');
-  const tabs = { toc: $('tab-toc'), files: $('tab-files') };
-  Object.entries(tabs).forEach(([name, button]) => {
-    const active = name === tab;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', active ? 'true' : 'false');
-    button.tabIndex = active ? 0 : -1;
-  });
-  $('file-list').classList.toggle('hidden', tab !== 'files');
-  $('toc-list').classList.toggle('hidden', tab !== 'toc');
-  if (tab === 'files') {
-    if (state.folderFiles.length) renderFolderList();
-    else listFolder(state.dir || '');
-  } else {
-    buildToc();
-    updateTreeTabIndex();
-  }
-}
-
-(function bindSideTabKeys() {
-  const tablist = $('#side-tabs') || document.getElementById('side-tabs');
-  if (!tablist) return;
-  tablist.addEventListener('keydown', event => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const next = event.key === 'ArrowRight' ? 'files' : 'toc';
-    showSide(next);
-    $(next === 'files' ? 'tab-files' : 'tab-toc').focus();
-  });
-  document.addEventListener('keydown', event => {
-    const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
-    if (row) handleTreeKeydown(event, row);
-  });
-})();
-
-function toggleSide(tab) {
-  const side = $('side');
-  if (!side) return;
-  if (!side.classList.contains('hidden')) {
-    const isCurrentTab = (tab === 'files' && !$('file-list').classList.contains('hidden')) ||
-                         (tab === 'toc' && !$('toc-list').classList.contains('hidden'));
-    if (!tab || isCurrentTab) {
-      side.classList.add('hidden');
-      return;
-    }
-  }
-  showSide(tab || 'toc');
-}
-
-(function bindSideClose() {
-  const btn = $('side-close-btn');
-  if (btn) {
-    btn.addEventListener('click', (e) => {
-      e.preventDefault();
-      $('side')?.classList.add('hidden');
-    });
-  }
-})();
+document.addEventListener('keydown', event => {
+  const row = event.target instanceof Element ? event.target.closest('#file-list .tree-row') : null;
+  if (row) handleTreeKeydown(event, row);
+});

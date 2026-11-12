@@ -86,6 +86,7 @@ function chatFixture(options = {}) {
  const context = vm.createContext({window,document,state,ReadMDReview:review,DOMException,TextDecoder,crypto:require('node:crypto').webcrypto,
   AbortController:class {constructor(){const control = trackedController();controllers.push(control);return control;}},setTimeout,clearTimeout,
   $:id=>nodes.get(id) || null,_t:key=>key,getActiveTab:()=>state.tabs.find(tab=>tab.id === state.activeTabId),
+  confirmAction:async()=>true,
   showToast:value=>toasts.push(value),renderSafeMarkdown:value=>value,renderMath(){},
   navigator:{clipboard:{writeText:async value=>copied.push(value)}},
   renderVirtual:async(_type,_name,_dir,value)=>savedCopies.push(value),saveAs:async()=>true,

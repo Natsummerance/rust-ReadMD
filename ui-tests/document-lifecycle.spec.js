@@ -19,6 +19,28 @@ async function change(page, text) { await page.evaluate(text => cmView.dispatch(
 const current = page => page.evaluate(() => getEditContent());
 const history = page => page.evaluate(async () => (await (await apiFetch('/api/documents/history')).json()).entries);
 
+test('save shortcut keeps editing while the save button returns to the reader', async ({ page }) => {
+  const source = await file(page, '# 原始正文\r\n');
+  const saveInPlace = async (shortcut, title) => {
+    await change(page, '# ' + title + '\n');
+    await page.keyboard.press(shortcut);
+    await expect.poll(() => page.evaluate(() => ({ editing: state.editing, dirty: getActiveTab().isDirty })))
+      .toEqual({ editing: true, dirty: false });
+    expect(await fs.readFile(source, 'utf8')).toBe('# ' + title + '\r\n');
+  };
+  await saveInPlace('Control+s', '快捷保存');
+  await saveInPlace('Meta+s', '再次保存');
+  await page.evaluate(() => cmUndo());
+  await expect.poll(() => current(page)).toBe('# 快捷保存\r\n');
+  await change(page, '# 保存退出\n');
+  await page.locator('#edit-save').click();
+  await expect(page.locator('#edit-bar')).toBeHidden();
+  await expect(page.locator('#content .markdown-body h1')).toHaveText('保存退出');
+  expect(await fs.readFile(source, 'utf8')).toBe('# 保存退出\r\n');
+  expect(await page.evaluate(() => ({ editing: state.editing, dirty: getActiveTab().isDirty })))
+    .toEqual({ editing: false, dirty: false });
+});
+
 test('saving preserves undo and a central version without sibling backups', async ({ page }) => {
   const source = await file(page); await change(page, '# Saved\n');
   expect(await page.evaluate(() => saveEdit())).toBe(true);
@@ -194,7 +216,9 @@ test('external change refuses overwrite and confirmed reload retains the discard
 });
 
 test('editing copies and recovered virtual documents retain resource references and their base directory', async ({ page }) => {
+  await expect.poll(() => page.evaluate(() => i18n.t('storage.copySuffix'))).toBe('copy');
   await page.evaluate(async () => {
+    await window.__readmdSessionReady;
     await renderVirtual('url', 'clip.md', 'C:/clips', '![image](photo.png)', [], { assets: [{ path: 'C:/clips/photo.png', name: 'photo.png' }] });
     await ReadMDRecovery.createCopy(); await ReadMDRecovery.flush();
   });

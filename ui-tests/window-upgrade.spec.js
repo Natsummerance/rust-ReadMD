@@ -5,10 +5,24 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/update/check', r => r.fulfill({ contentType:'application/json', body:'{"ok":false,"error_code":"update_network_error"}' }));
   await page.addInitScript(() => localStorage.setItem('readmd_language', 'en'));
   await page.goto('/');
-  await waitForPage(page, () => window.ReadMDRecovery && document.getElementById('btn-open').closest('#app-titlebar'));
+  await waitForPage(page, () => window.ReadMDRecovery && window.__readmdAppReady);
+  // Playwright contexts share the disposable kernel and its persisted session.
+  await page.evaluate(async () => {
+    await window.__readmdSessionReady;
+    for (const tab of [...state.tabs]) await closeTab(tab.id, true);
+  });
+  await expect.poll(() => page.evaluate(() => state.tabs.length)).toBe(0);
 });
 async function document(page, content) {
-  await page.evaluate(async text => { const path = await uploadFile(new File([text], 'window-fixture.md')); await loadFile(path); await toggleEdit(); }, content);
+  const opened = await page.evaluate(async text => {
+    // A unique upload keeps this document's review identity separate from other cases.
+    const path = await uploadFile(new File([text], 'window-' + crypto.randomUUID() + '.md'));
+    if (!path) throw new Error('Window fixture upload failed');
+    await loadFile(path);
+    await toggleEdit();
+    return { source: state.original, editor: getEditContent() };
+  }, content);
+  expect(opened).toEqual({ source: content, editor: content });
 }
 async function beginClose(page) { await page.evaluate(() => { window.closingTest = closeTab(state.activeTabId); }); }
 
@@ -23,8 +37,8 @@ test('undo to the saved content clears the dirty marker and closes without a dia
   await document(page, '# Original\r\n');
   await page.evaluate(() => cmView.dispatch({changes:{from:0,to:cmView.state.doc.length,insert:'# Changed\n'}}));
   expect(await page.evaluate(() => getActiveTab().isDirty)).toBe(true);
-  await page.evaluate(() => cmUndo());
-  expect(await page.evaluate(() => hasUnsavedEditorChanges())).toBe(false);
+  await page.locator('#edit-undo').click();
+  await expect.poll(() => page.evaluate(() => hasUnsavedEditorChanges())).toBe(false);
   await page.locator('.tab-close').click();
   await expect.poll(() => page.evaluate(() => state.tabs.length)).toBe(0);
   await expect(page.locator('#close-confirm-modal')).toBeHidden();
@@ -55,16 +69,44 @@ test('an AI copy still asks to save its newly created content', async ({page}) =
   await page.evaluate(async () => { await renderVirtual('ai', 'AI-copy.md', '', '# AI result\n', []); });
   await beginClose(page); await expect(page.locator('#close-confirm-modal')).toBeVisible(); await page.locator('#close-confirm-cancel').click();
 });
-test('global actions move above tabs and browser mode hides native window controls', async ({page}) => {
-  for (const id of ['btn-open','btn-folder','btn-recent','btn-palette','btn-theme','btn-zen','rd-prefs-btn']) await expect(page.locator('#app-titlebar #' + id)).toBeVisible();
-  for (const id of ['btn-toc','btn-search','btn-edit','btn-print','btn-more','btn-ai']) expect(await page.locator('#toolbar #' + id).count()).toBe(1);
-  expect(await page.locator('#btn-more').evaluate(button => button.nextElementSibling.id)).toBe('btn-ai');
+test('titlebar actions share the tab row and the side rail retains its shortcuts', async ({page}) => {
+  await page.evaluate(() => renderVirtual('clipboard', 'Chrome.md', '', '# Chrome\n\nTitlebar test.', []));
+  for (const id of ['btn-toc','btn-edit','btn-zen','btn-ai','doc-tabs-bar']) await expect(page.locator('#app-titlebar #' + id)).toBeVisible();
+  for (const id of ['rd-prefs-btn','btn-more','btn-search','btn-print','btn-theme','btn-home']) await expect(page.locator('#side-rail #' + id)).toBeVisible();
   await expect(page.locator('#window-controls')).toBeHidden();
-  await page.locator('#btn-more').click(); await expect(page.locator('#more-menu')).toBeVisible();
-  await page.keyboard.press('Escape'); await expect(page.locator('#more-menu')).toBeHidden();
+  let releaseListing;
+  const listingGate = new Promise(resolve => { releaseListing = resolve; });
+  await page.route(url => url.pathname === '/api/list', async route => {
+    await listingGate;
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    const load = listFolder;
+    listFolder = (...args) => {
+      const listing = load(...args);
+      window.pendingFileListing ??= listing;
+      return listing;
+    };
+  });
+  try {
+    await page.locator('#tab-files').click();
+    for (const id of ['btn-open','btn-folder','btn-reload']) {
+      await expect(page.locator('#side-file-actions #' + id)).toBeVisible();
+    }
+    await page.locator('#btn-more').click();
+    await expect(page.locator('#more-menu')).toBeVisible();
+  } finally {
+    releaseListing();
+  }
+  expect(await page.evaluate(() => window.pendingFileListing)).toBe(true);
+  await expect(page.locator('#more-menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#more-menu')).toBeHidden();
+  await expect(page.locator('#side-rail')).toBeVisible();
 });
 test('reading preferences fit a narrow viewport and retain 44px chrome targets', async ({page}) => {
   await page.setViewportSize({width:360,height:740});
+  await page.evaluate(() => renderVirtual('clipboard', 'Preferences.md', '', '# Preferences\n\nReader fixture.', []));
   await page.locator('#rd-prefs-btn').click();
   await page.locator('#rd-prefs').evaluate(panel => Promise.all(panel.getAnimations({subtree:true}).map(animation => animation.finished.catch(()=>{}))));
   const panel=await page.locator('#rd-prefs').boundingBox();
@@ -107,6 +149,15 @@ for (const size of [{width:1160,height:820},{width:1024,height:680},{width:720,h
     __readmdWindowState({maximized:false,fullscreen:false,trayAvailable:true});
   });
   await page.locator('#window-controls').waitFor();
+  const windowControls = await page.locator('#window-controls').boundingBox();
+  const ai = await page.locator('#btn-ai').boundingBox();
+  expect(windowControls.x).toBeGreaterThanOrEqual(ai.x + ai.width);
+  expect(windowControls.x + windowControls.width).toBeGreaterThan(size.width - 16);
+  for (const op of ['minimize','maximize','close']) {
+    await expect(page.locator('#window-' + op)).toHaveAttribute('title', /\S/);
+  }
+  await page.evaluate(() => __readmdWindowState({maximized:false,fullscreen:false,trayAvailable:false}));
+  await expect(page.locator('#btn-close-to-tray')).toBeHidden();
   const boxes=await page.locator('#app-titlebar button:not(.hidden)').evaluateAll(elements=>elements.filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height};}));
   for(const r of boxes){expect(r.x).toBeGreaterThanOrEqual(0);expect(r.right).toBeLessThanOrEqual(size.width);expect(r.w).toBeGreaterThanOrEqual(44);expect(r.h).toBeGreaterThanOrEqual(44);}
   await page.evaluate(() => openPluginModal()); await expect(page.locator('#plugin-cards-grid .plugin-card').first()).toBeVisible();
@@ -115,5 +166,4 @@ for (const size of [{width:1160,height:820},{width:1024,height:680},{width:720,h
   await expect(page.locator('#plugin-cards-grid button[data-action="install"]')).toHaveCount(0);
   const box=await page.locator('#plugin-box').boundingBox();expect(box.y).toBeGreaterThanOrEqual(0);expect(box.y+box.height).toBeLessThanOrEqual(size.height);
   expect(await page.locator('#plugin-box').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBe(true);
-  await page.screenshot({path:`test-results/window-${size.width}.png`});
 });

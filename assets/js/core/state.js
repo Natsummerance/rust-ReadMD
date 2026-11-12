@@ -69,6 +69,8 @@ const state = {
   readingFont: 'sans',      // reader lane: sans | serif
   readingWidth: 'normal',   // narrow | normal | wide
   readingLeading: 'normal', // compact | normal | relaxed
+  readingHeadingColor: 'default',
+  readingBoldColor: 'default',
   aiPanelWidth: 432,
   autoReload: true,
   closeToTray: true,

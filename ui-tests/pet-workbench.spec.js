@@ -22,11 +22,12 @@ async function setup(page, overrides = {}, failConfigure = false) {
   await page.goto('/');
   await waitForPage(page, () => typeof window.openPetSettings === 'function');
   await page.evaluate(() => window.openPetSettings());
-  await expect(page.locator('#pet-renderer-row')).toBeVisible();
+  await expect(page.locator('#pet-roster-search')).toBeVisible();
+  await expect(page.locator('#pet-settings-box select')).toHaveCount(0);
   return { status, gallery, configs };
 }
 
-test('character search and cards persist sprite and Live2D choices with top filter and favorites', async ({ page }) => {
+test('one character gallery searches, favorites and selects sprite and Live2D pets', async ({ page }) => {
   const { gallery, configs } = await setup(page);
   await expect(page.locator('label:has(#pet-enabled)')).toBeVisible();
 
@@ -39,10 +40,11 @@ test('character search and cards persist sprite and Live2D choices with top filt
 
   // Favorite button exists on card and clicking it favorites the pet
   const amberCard = page.locator('#pet-roster .pet-character-card[data-slug="amber"]');
-  const favBtn = amberCard.locator('.pet-fav-btn');
+  const favBtn = page.locator('.pet-fav-btn[data-favorite-slug="amber"]');
   await expect(favBtn).toBeAttached();
+  await amberCard.hover();
   await favBtn.click();
-  await expect(favBtn).toHaveClass(/is-favorite/);
+  await expect(favBtn).toHaveAttribute('aria-pressed', 'true');
   // Now amber is favorited and moves to the top of the roster!
   await expect(page.locator('#pet-roster .pet-character-card').first()).toHaveAttribute('data-slug', 'amber');
 
@@ -54,16 +56,14 @@ test('character search and cards persist sprite and Live2D choices with top filt
   expect(gallery.active).toBe('custom-cat');
   await expect(page.locator('#pet-active-slug')).toHaveText('My Cat');
 
-  // Switch top renderer dropdown to Live2D
-  await page.locator('#pet-roster-search').fill('');
-  await page.locator('#pet-renderer').selectOption('live2d');
-  // Under Live2D, only Live2D pets are shown
+  await page.locator('#pet-roster-search').fill('live2d');
   await expect(page.locator('#pet-roster .pet-character-card')).toHaveCount(1);
   await expect(page.locator('#pet-roster .pet-character-card')).toHaveAttribute('data-slug', 'arch-chan');
   await page.locator('#pet-roster .pet-character-card').click();
   await expect.poll(() => configs.at(-1)?.renderer).toBe('live2d');
   expect(configs.at(-1).in_app).toBe(false);
   await expect(page.locator('#pet-roster .pet-character-card')).toHaveAttribute('aria-pressed', 'true');
+  expect(gallery.active).toBe('custom-cat');
   await expect(page.locator('#pet-status-dot')).toHaveClass(/is-running/);
 
   // Search non-existent character
@@ -96,6 +96,33 @@ test('quiet mode keeps deliberate greetings and keyboard interaction available',
   await expect(page.locator('#pet-quick-quiet')).toHaveAttribute('aria-pressed', 'false');
   await page.locator('#pet-quick-chat').click();
   await expect(page.locator('#ai-panel')).toBeVisible();
+});
+
+test('BongoCat shares its transparent cover with the workbench and previews a greeting in desktop mode', async ({ page }) => {
+  const { configs } = await setup(page, { in_app: false });
+  const card = page.locator('#pet-roster [data-slug="bongocat"]');
+  const art = card.locator('.pet-card-art');
+  await expect(art).toHaveClass(/is-bongocat-preview/);
+  await expect(art).toHaveCSS('background-image', /bongocat-preview\.png/);
+  await card.click();
+  const preview = page.locator('#pet-preview-character');
+  await expect(preview).toHaveClass(/is-bongocat-preview/);
+  await expect(preview).toHaveCSS('background-image', /bongocat-preview\.png/);
+  await expect(preview).toHaveCSS('filter', 'none');
+  await expect(page.locator('#pet-status-card')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  expect(configs.at(-1).in_app).toBe(false);
+  expect(await page.evaluate(async () => {
+    const image = new Image();
+    image.src = '/assets/pet/bongocat-preview.png';
+    await image.decode();
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, 1, 1).data[3];
+  })).toBe(0);
+  await page.locator('#pet-say-hello').click();
+  await expect(page.locator('#pet-interaction-preview')).not.toBeEmpty();
+  await expect(page.locator('#readmd-pet-widget')).toBeHidden();
 });
 
 test('desktop status does not report a stopped process as running', async ({ page }) => {

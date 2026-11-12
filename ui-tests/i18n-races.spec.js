@@ -30,3 +30,31 @@ test('the latest language wins when real dictionary responses arrive out of orde
   });
   expect(result).toEqual({obsolete:false,language:'ar',html:'ar',dir:'rtl',saved:'ar'});
 });
+
+test('a missing dictionary leaves the selected language and icon markup intact',async({page})=>{
+  const result=await page.evaluate(async()=>{
+    await i18n.setLanguage('ar');
+    const original=i18n.fetchDict;
+    i18n.fetchDict=async code=>code==='zh-CN'?null:original.call(i18n,code);
+    const button=document.createElement('button');
+    button.innerHTML='<svg aria-hidden="true"></svg>';
+    const icon=button.firstElementChild;
+    button.dataset.i18n='toolbar.open';
+    button.dataset.i18nTitle='test.missing';
+    button.title='Open';
+    document.body.appendChild(button);
+    const changed=await i18n.setLanguage('zh-CN');
+    i18n.translateDOM();
+    const name='$& / {name}';
+    const outcome={changed,language:document.documentElement.lang,dir:document.documentElement.dir,
+      saved:localStorage.getItem('readmd_language'),icon:icon===button.firstElementChild,
+      title:button.title,text:button.textContent,open:i18n.t('toolbar.open'),
+      literal:i18n.t('lang.autoDetected',{name}).includes(name),taiwan:i18n.matchLanguage('zh-Hant-TW')};
+    button.remove();
+    i18n.fetchDict=original;
+    return outcome;
+  });
+  expect(result).toEqual({changed:false,language:'ar',dir:'rtl',saved:'ar',icon:true,title:'Open',
+    text:result.open,open:result.open,literal:true,taiwan:'zh-TW'});
+  expect(result.text).not.toBe('toolbar.open');
+});

@@ -1007,12 +1007,13 @@ pub fn describe(app: &App, canonical: &Path, include_content: bool) -> Result<Va
                 .collect::<Vec<_>>());
             value["frontmatter"] = front_matter(&md);
         } else if kind == "markdown" {
-            let fix = crate::readmd_fix::fix_markdown(&text);
+            let fix = crate::readmd_fix::fix_markdown_for_reader(&text);
             let fixed_text = fix.text;
             let orig = if fixed_text == text { Value::Null } else { json!(text) };
             value["content"] = json!(fixed_text);
             value["original"] = orig;
             value["fixes"] = json!(fix.fixes);
+            value["fix_details"] = json!(fix.diagnostics);
             value["stats"] = fix.stats;
             value["words"] = json!(count_words(&fixed_text));
             value["title"] = json!(title_of(canonical, &fixed_text));

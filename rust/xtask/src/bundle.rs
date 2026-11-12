@@ -37,6 +37,7 @@ pub const SOURCES: &[&str] = &[
     "js/editor/publication-inline-text.js",
     "js/editor/review.js",
     "js/editor/editor.js",
+    "js/editor/toolbar.js",
     "js/editor/formula-studio.js",
     "js/editor/formula-inline.js",
     "js/editor/formula-properties.js",

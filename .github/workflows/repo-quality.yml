@@ -321,6 +321,8 @@ jobs:
         run: node --test tests/frontend/toolbar.test.mjs tests/test_dragdrop_dispatch.js tools/test/check-styles.test.mjs tools/test/check-wiring.test.mjs tools/test/check-no-python.test.mjs tools/test/privacy-scan.test.mjs tools/test/check-assets.test.mjs tools/test/release-contract.test.mjs tools/test/publish-release.test.mjs tools/test/i18n-add.test.mjs tools/test/zip.test.mjs tools/test/native-build-env.test.mjs tools/test/reader-local-paths.test.mjs tools/test/local-image-auth.test.cjs tools/test/native-picker.test.mjs tools/test/deferred-model-modules.test.cjs tools/test/native-capability-ready.test.cjs tools/test/native-window-preferences.test.cjs tools/test/plugin-panel-readiness.test.cjs tools/test/macos-sign.test.mjs tools/test/native-startup-ready.test.mjs tools/test/refresh-macos-release.test.mjs ui-tests/native-auth-bootstrap.test.cjs
       - name: P0 lifecycle ownership and recovery guards
         run: node --test ui-tests/close-confirm-adapter.test.cjs ui-tests/close-save-target-adapter.test.cjs ui-tests/lifecycle-order-adapter.test.cjs ui-tests/session-cas-adapter.test.cjs ui-tests/session-load-barrier.test.cjs ui-tests/durable-review-adapter.test.cjs
+      - name: Formula source ownership and editor byte protections
+        run: node --test tools/test/math-document-context-frontend.test.cjs tools/test/math-source-only-frontend.test.cjs
       - name: Managed Node input and streaming package regressions
         run: node --test tools/test/node-runtime-preparation.test.mjs tools/test/stream-capability-pack.test.mjs tools/test/capability-publication.test.mjs
       - name: Strict chat stream and conversation ownership regressions
@@ -477,16 +479,41 @@ jobs:
           node ui-tests/shell-compact-browser.cjs --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-compact-browser" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
           node - <<'JS'
           const a=require('node:assert/strict'),r=require('./.cache/p1-shell-compact-browser/report.json');
-          for(const k of ['passed','realCspAndToken','actualHeadlessBrowser','sourceUnchanged','ownedScratchRemoved'])a.equal(r[k],true);
-          a.equal(r.modelsRequested,false);a.equal(r.nativeCertified,false);
-          const expected=['390-welcome','360-reading','390-reading','412-reading','600-reading','640-reading','390-reading-ar-dark','641-reading-graph','360-editing','390-editing','412-editing','1024-editing','1160-editing-mac','390-roundtrip'];
-          a.deepEqual(r.cases.map(c=>c.label).sort(),expected.sort());a.equal(r.checks.length,22);
-          const lower=r.cases.find(c=>c.label==='640-reading'),upper=r.cases.find(c=>c.label==='641-reading-graph');
-          a.equal(lower.compact,true);a.equal(upper.compact,false);a(upper.buttons.some(b=>b.id==='btn-graph'));
-          for(const c of [lower,upper]){a.equal(c.overflow,0);a(c.header.overflow<=1);}
-          a.equal(r.focusProjections.length,10);a(r.focusProjections.every(p=>p.modalOpen&&p.focusInModal&&p.headerOverflow<=1&&!p.menuOpen&&p.width===p.expectedWidth));
-          a.deepEqual(r.forbiddenRequests,[]);a.deepEqual(r.pageErrors,[]);a.deepEqual(r.aiPreconditions,{emptyCurrent:true,noConnections:true,automaticCompletion:false});
+          a.equal(r.passed,true);a.equal(r.runtimeSourceUnchanged,true);a.equal(r.nativeUiCertified,false);
+          a.equal(r.scenario,'compact');a.equal(r.inferenceRequests.length,0);a.equal(r.pageErrors.length,0);
+          for(const width of [360,390,412,600,640,641,1024,1160])a(r.checks.some(c=>c.passed&&c.name.endsWith(' at '+width)));
+          a(r.checks.some(c=>c.passed&&c.name.includes('restores to the rail')));
           JS
+      - name: P1 tab context menu keeps keyboard focus through review resume
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/tab-context-focus-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-tab-context-focus"
+      - name: Retain tab context focus evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-tab-context-focus
+          path: .cache/p1-tab-context-focus/report.json
+      - name: P1 withdraw adjacent review items in the production editor
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/adjacent-review-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-adjacent-review-browser"
+      - name: Retain adjacent review editor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-adjacent-review-browser
+          path: .cache/p1-adjacent-review-browser/report.json
+      - name: P1 move Markdown table rows through the production editor and reopen
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/table-row-move-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-table-row-move"
+      - name: Retain table row movement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: P1-table-row-move
+          path: .cache/p1-table-row-move/report.json
       - name: P1 document repair, pending review, saved bytes and explicit restart
         env:
           READMD_CODE_BROWSER: chromium
@@ -505,7 +532,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             .cache/p1-shell-browser/*/report.json
-            .cache/p1-shell-browser/*/*.png
       - name: Retain compact chrome browser receipts
         if: always()
         uses: actions/upload-artifact@v4
@@ -514,7 +540,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             .cache/p1-shell-compact-browser/report.json
-            .cache/p1-shell-compact-browser/*.png
       - name: Retain document repair browser receipt
         if: always()
         uses: actions/upload-artifact@v4
@@ -532,7 +557,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             .cache/p1-fix-dialog-browser/report.json
-            .cache/p1-fix-dialog-browser/*.png
       - name: Retain OpenAPI baseline receipt and first failure
         if: always()
         uses: actions/upload-artifact@v4

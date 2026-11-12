@@ -1,4 +1,4 @@
-const {waitForPage}=require('./page-condition.cjs');
+const {waitForPage,revealDocumentSearch}=require('./page-condition.cjs');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs/promises');
 const os = require('os');
@@ -103,8 +103,9 @@ test('long-document interaction stays bounded from 1k through 50k lines', async 
     });
     results[size].pageTurnMs = median(pageTurnSamples);
 
+    const search = await revealDocumentSearch(page);
     let started = Date.now();
-    await page.locator('#btn-search').click();
+    await search.click();
     await expect(page.locator('#search-input')).toBeVisible();
     await page.locator('#search-input').fill('READMD_PERF_UNIQUE_ANCHOR_7351');
     await page.locator('#search-input').press('Enter');
