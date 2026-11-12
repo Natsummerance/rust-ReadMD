@@ -6,10 +6,11 @@ fn strings(deck:&Deck)->String {
         Shape::Text{lines,..}=>lines.iter().map(|line|plain(line)).collect::<String>(),
         Shape::Table{rows,..}=>rows.iter().flatten().flatten().map(|line|plain(line)).collect(),
         Shape::Image{alt,..}=>alt.clone(),
+        Shape::Accent{..}=>String::new(),
     }).collect()
 }
 fn assert_bounds(deck:&Deck){
-    for slide in &deck.slides {for shape in &slide.shapes{let rect=match shape{Shape::Text{rect,..}|Shape::Image{rect,..}|Shape::Table{rect,..}=>rect};
+    for slide in &deck.slides {for shape in &slide.shapes{let rect=match shape{Shape::Text{rect,..}|Shape::Image{rect,..}|Shape::Table{rect,..}|Shape::Accent{rect,..}=>rect};
         assert!(rect[0]>=0.&&rect[1]>=0.&&rect[0]+rect[2]<=W+0.01&&rect[1]+rect[3]<=H+0.01,"{rect:?}");
     }}
 }

@@ -2022,6 +2022,7 @@
   "search.next": "Ya me landa (Enter)",
   "search.noMatches": "Ata kima mosi ve me monana",
   "search.placeholder": "Sosa na mukanda... (Enter Ya me landa, Shift+Enter Ya me luta)",
+  "search.results": "Bima ya bo me sosa",
   "search.prev": "Ya me luta (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "Bantangu {count}",
   "ai.taskRunning": "Ke tala diaka…",
   "ai.thinking": "Ke yindula…",
-  "warn.pptx_math_image": "Bampila ya matematiki kele bibumbwa ya kifwanisu; kisina na yo kele na banotisi ya paje."
+  "warn.pptx_math_image": "Bampila ya matematiki kele bibumbwa ya kifwanisu; kisina na yo kele na banotisi ya paje.",
+  "export.fmtPngLong": "PNG ya nda",
+  "export.fmtPngPages": "PNG na lutiti",
+  "export.importPresetPack": "Kotisa mbandu"
 }

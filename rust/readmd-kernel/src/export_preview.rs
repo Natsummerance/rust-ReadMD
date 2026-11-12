@@ -81,7 +81,7 @@ pub fn prepare(format:&str,content:&str,base:&str,options:&Value,name:&str,asset
 /// Snapshot provenance is internal state, not completed client defaults. The
 /// artifact handed to preview is generated with the same typed options as save.
 pub(crate) fn snapshot_key(frozen:&crate::export_snapshot::Frozen)->String{
-    let packet=json!([frozen.content,frozen.options,frozen.resolved_options,frozen.engine_identity,frozen.font_identity,frozen.asset_identity]);
+    let packet=json!([frozen.format,frozen.content,frozen.options,frozen.resolved_options,frozen.engine_identity,frozen.font_identity,frozen.asset_identity]);
     format!("snapshot:{}:{:x}",frozen.snapshot_id,Sha256::digest(packet.to_string().as_bytes()))
 }
 pub(crate) fn prepare_snapshot(frozen:&crate::export_snapshot::Frozen,data:&Path)->Result<Arc<Artifact>,String>{

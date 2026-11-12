@@ -100,26 +100,43 @@ test('quiet mode keeps deliberate greetings and keyboard interaction available',
 
 test('BongoCat shares its transparent cover with the workbench and previews a greeting in desktop mode', async ({ page }) => {
   const { configs } = await setup(page, { in_app: false });
+  await page.locator('#pet-roster-search').fill('BongoCat');
   const card = page.locator('#pet-roster [data-slug="bongocat"]');
   const art = card.locator('.pet-card-art');
   await expect(art).toHaveClass(/is-bongocat-preview/);
-  await expect(art).toHaveCSS('background-image', /bongocat-preview\.png/);
+  const cover = await art.evaluate(el => getComputedStyle(el).backgroundImage);
+  await expect(art).toHaveCSS('filter', 'none');
   await card.click();
   const preview = page.locator('#pet-preview-character');
   await expect(preview).toHaveClass(/is-bongocat-preview/);
-  await expect(preview).toHaveCSS('background-image', /bongocat-preview\.png/);
+  expect(cover).toMatch(/bongocat-cover\.png/);
+  await expect(preview).toHaveCSS('background-image', cover);
   await expect(preview).toHaveCSS('filter', 'none');
-  await expect(page.locator('#pet-status-card')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  for (const layer of [art, preview, page.locator('#pet-preview-aura'), page.locator('#pet-status-card')]) {
+    await expect(layer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  }
+  await expect(page.locator('#pet-preview-aura')).toHaveCSS('background-image', 'none');
+  await expect(page.locator('#pet-status-card')).toHaveCSS('background-image', 'none');
   expect(configs.at(-1).in_app).toBe(false);
-  expect(await page.evaluate(async () => {
+  expect(await preview.evaluate(async el => {
     const image = new Image();
-    image.src = '/assets/pet/bongocat-preview.png';
+    image.src = getComputedStyle(el).backgroundImage.slice(5, -2);
     await image.decode();
     const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
     const context = canvas.getContext('2d');
     context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, 1, 1).data[3];
-  })).toBe(0);
+    const exteriorIsClear = (x, y, w, h) => !context.getImageData(x, y, w, h).data.some((channel, i) => i % 4 === 3 && channel);
+    const at = (x, y) => context.getImageData(x, y, 1, 1).data;
+    const paw = at(425, 203), mousepad = at(150, 260), keyboard = at(450, 300);
+    return {
+      clearExterior: exteriorIsClear(10, 20, 75, 108) && exteriorIsClear(527, 20, 75, 160),
+      pinkPaw: paw[3] === 255 && paw[0] > paw[1] + 60,
+      grayMousepad: mousepad[3] === 255 && mousepad[0] > 120 && mousepad[0] < 200,
+      keyboardOutline: keyboard[3] === 255 && keyboard[0] < 50,
+    };
+  })).toEqual({ clearExterior: true, pinkPaw: true, grayMousepad: true, keyboardOutline: true });
   await page.locator('#pet-say-hello').click();
   await expect(page.locator('#pet-interaction-preview')).not.toBeEmpty();
   await expect(page.locator('#readmd-pet-widget')).toBeHidden();

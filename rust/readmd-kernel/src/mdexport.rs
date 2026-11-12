@@ -1154,7 +1154,11 @@ pub fn export_html(
     let embedded_md = embed_images_for_html(&html_markdown, base_dir, &mut warns);
     let footnotes = crate::html_footnotes::render(&embedded_md)?;
 
-    let marked_js = read_asset_file(assets_dir, "marked.min.js");
+    let mut marked_js = read_asset_file(assets_dir, "marked.min.js");
+    if !marked_js.is_empty() && crate::quoted_strong::candidate(&embedded_md) {
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/quoted-strong.js"));
+    }
     let mathjax_js = read_asset_file(assets_dir, "mathjax/tex-svg.js");
     if marked_js.is_empty() {
         warns.push("marked.min.js 未找到，HTML 导出可能无法渲染".to_string());
@@ -1164,7 +1168,19 @@ pub fn export_html(
     }
 
     let display_options=crate::export_styles::html_display_options(options);
-    let mut css = build_export_css(&display_options);
+    let layout = options["htmlLayout"].as_str().filter(|value| matches!(*value, "reading" | "docs" | "magazine"));
+    let mut css = String::new();
+    if layout.is_some() {
+        css.push_str(include_str!("../../../assets/css/tokens.css"));
+        css.push('\n');
+    }
+    css.push_str(&build_export_css(&display_options));
+    if layout.is_some() {
+        css.push('\n');
+        css.push_str(include_str!("../../../assets/css/export-html-layouts.css"));
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/export-html-layout.js"));
+    }
     if options["htmlTheme"].as_str()==Some("dark") {css.push_str("\n:not(pre) > code { color:#ff99b0; }");}
     if math.formulas>0{css.push('\n');css.push_str(crate::html_math::CSS);}
     if footnotes.is_some(){css.push('\n');css.push_str(crate::html_footnotes::CSS);}
@@ -1198,6 +1214,11 @@ pub fn export_html(
         .replace("__MARKED__", &marked_js)
         .replace("__MATHJAX__", &mathjax_js)
         .replace("__MD__", &md_esc);
+    if let Some(layout) = layout {
+        let tone = if options["htmlTheme"] == "dark" {"dark"} else {"light"};
+        html = html.replacen("<body>", &format!("<body data-readmd-html-layout=\"{layout}\" data-readmd-html-tone=\"{tone}\">"), 1);
+        html = html.replacen("  var highlights = ", "  ReadMDExportHtmlLayout.mount(root, document.body.dataset.readmdHtmlLayout, { tone: document.body.dataset.readmdHtmlTone });\n  var highlights = ", 1);
+    }
     if let Some(footnotes)=footnotes{
         // The original source stays available for offline copy/recovery. Only
         // real typed notes select this pre-rendered path; plain HTML retains
@@ -3012,6 +3033,13 @@ pub(crate) fn validate_caption_author_export(format:&str,content:&str,options:&V
     Ok(())
 }
 pub(crate) fn export_document_with_resolved_options(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{
+    if crate::image_export::is_image(format) {
+        return crate::publication_budget::run("pdf", resolved.values(), || {
+            crate::image_export::export(format, Path::new(out_path), data_dir, assets_dir, |pdf| {
+                export_within_budget("pdf", content, base_dir, &pdf.to_string_lossy(), resolved, source_name, assets_dir, data_dir)
+            })
+        });
+    }
     crate::publication_budget::run(format,resolved.values(),||export_within_budget(format,content,base_dir,out_path,resolved,source_name,assets_dir,data_dir))
 }
 fn export_within_budget(format:&str,content:&str,base_dir:&str,out_path:&str,resolved:&crate::publication_typography::ResolvedOptions,source_name:&str,assets_dir:&Path,data_dir:&Path)->Result<ExportResult,String>{

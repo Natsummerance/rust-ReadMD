@@ -1,0 +1,99 @@
+.readmd-html-layout {
+  --article-surface: var(--export-layout-paper);
+  --article-border: var(--export-layout-border);
+  --article-accent: var(--export-layout-accent);
+  box-sizing: border-box;
+  min-inline-size: 0;
+}
+.readmd-html-layout .readmd-layout-article {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+.readmd-html-layout .readmd-layout-article > :first-child { margin-block-start: 0; }
+.readmd-html-layout .readmd-layout-article > :last-child { margin-block-end: 0; }
+.readmd-html-layout .readmd-layout-article :is(h2,h3,h4) { scroll-margin-block-start: 2rem; }
+.readmd-html-layout .readmd-layout-article img { max-inline-size: 100%; block-size: auto; }
+
+@media screen {
+  body[data-readmd-html-layout] { padding: clamp(1rem, 4vw, 3.5rem); }
+  body[data-readmd-html-layout] #content { max-width: 1120px; }
+  body[data-readmd-html-layout="reading"] { background: var(--export-reading-bg); }
+  body[data-readmd-html-layout="docs"] { background: var(--export-docs-bg); }
+  body[data-readmd-html-layout="magazine"] { background: var(--export-magazine-bg); }
+  .readmd-html-layout .readmd-layout-article {
+    background: var(--article-surface);
+    border: 1px solid var(--article-border);
+    border-radius: 14px;
+    padding: clamp(1.15rem, 4vw, 3.4rem);
+  }
+  .readmd-html-layout[data-layout="reading"] {
+    --article-surface: var(--export-reading-paper);
+    --article-border: var(--export-reading-border);
+    max-inline-size: 770px;
+    margin-inline: auto;
+  }
+  .readmd-html-layout[data-layout="reading"] .readmd-layout-article h1 {
+    letter-spacing: -.025em;
+    line-height: 1.22;
+  }
+  .readmd-html-layout[data-layout="docs"]:has(.readmd-layout-nav) {
+    display: grid;
+    grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr);
+    align-items: start;
+    gap: clamp(1rem, 3vw, 2rem);
+  }
+  .readmd-html-layout[data-layout="magazine"] {
+    --article-surface: var(--export-magazine-paper);
+    --article-border: var(--export-magazine-border);
+    --article-accent: var(--export-magazine-accent);
+    max-inline-size: 850px;
+    margin-inline: auto;
+  }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article {
+    border-block-start: 4px solid var(--article-accent);
+    border-radius: 2px 2px 14px 14px;
+  }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article h1 {
+    font-family: Georgia, "Songti SC", "SimSun", serif;
+    font-size: clamp(1.8rem, 5vw, 3.3rem);
+    line-height: 1.14;
+    letter-spacing: -.035em;
+    padding-block-end: .45em;
+    border-block-end: 1px solid var(--article-border);
+  }
+  .readmd-layout-nav {
+    position: sticky;
+    inset-block-start: 1.4rem;
+    max-block-size: calc(100vh - 3rem);
+    overflow: auto;
+    padding: 1rem;
+    border: 1px solid var(--article-border);
+    border-radius: 12px;
+    background: var(--article-surface);
+    color: var(--export-docs-nav);
+    font-size: .85em;
+  }
+  .readmd-layout-nav ul { margin: .6em 0 0; padding: 0; list-style: none; }
+  .readmd-layout-nav li { padding-block: .25em; line-height: 1.35; }
+  .readmd-layout-nav li[data-level="h3"] { padding-inline-start: .8em; }
+  .readmd-layout-nav li[data-level="h4"] { padding-inline-start: 1.4em; }
+  .readmd-layout-nav a { color: inherit; text-decoration: none; }
+  .readmd-layout-nav a:hover { color: var(--article-accent); text-decoration: underline; }
+  body[data-readmd-html-tone="dark"] { background: var(--export-dark-bg); }
+  .readmd-html-layout[data-tone="dark"] {
+    --article-surface: var(--export-dark-paper);
+    --article-border: var(--export-dark-border);
+    --article-accent: var(--export-dark-accent);
+  }
+  .readmd-html-layout[data-tone="dark"] :is(.readmd-layout-nav,.readmd-layout-article) { color: var(--export-dark-ink); }
+  .readmd-html-layout[data-tone="dark"] .readmd-layout-article :is(h1,h2,h3,h4,h5,h6) { color: var(--export-dark-title); }
+}
+@media screen and (max-width: 640px) {
+  .readmd-html-layout[data-layout="docs"]:has(.readmd-layout-nav) { display: block; }
+  .readmd-layout-nav { position: static; max-block-size: 10rem; margin-block-end: 1rem; }
+}
+@media print {
+  .readmd-layout-nav { display: none; }
+}
+#export-preview-mini-content .readmd-layout-nav { position: static; }
+#export-preview-mini-content .readmd-layout-article { padding: 7%; }

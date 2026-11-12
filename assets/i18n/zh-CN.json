@@ -1390,7 +1390,7 @@
   "export.themeDark": "暗色",
   "export.themeLight": "亮色",
   "export.themeSepia": "米色",
-  "export.title": "文档导出设置",
+  "export.title": "导出",
   "export.toc": "包含目录",
   "export.watermark": "水印",
   "export.zoomPreview": "点击放大预览",
@@ -2035,6 +2035,7 @@
   "search.next": "下一个 (Enter)",
   "search.noMatches": "无匹配结果",
   "search.placeholder": "搜索正文",
+  "search.results": "搜索结果",
   "search.prev": "上一个 (Shift+Enter)",
   "search.refineBeforeReplace": "匹配数量过多，请缩小搜索范围后再全部替换。",
   "search.replaceAll": "全部替换",
@@ -2950,5 +2951,8 @@
   "plugin.summary": "{total} 项能力 · {installed} 项已安装 · {active} 项已启用",
   "plugin.unsupportedBuild": "当前版本暂不支持",
   "toast.savingImage": "正在保存剪贴板图片…",
-  "warn.pptx_math_image": "公式以图片保留，公式源码写入幻灯片备注。"
+  "warn.pptx_math_image": "公式以图片保留，公式源码写入幻灯片备注。",
+  "export.fmtPngLong": "长图 PNG",
+  "export.fmtPngPages": "分图 PNG",
+  "export.importPresetPack": "导入预设"
 }

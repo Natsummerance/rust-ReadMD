@@ -2022,6 +2022,7 @@
   "search.next": "Seterusnya (Masukkan)",
   "search.noMatches": "Tiada hasil yang sepadan",
   "search.placeholder": "Cari dalam dokumen… (Masukkan Seterusnya, Shift+Enter Sebelumnya)",
+  "search.results": "Hasil carian",
   "search.prev": "Sebelumnya (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} pusingan",
   "ai.taskRunning": "Semakan sedang dijalankan…",
   "ai.thinking": "Memikirkan…",
-  "warn.pptx_math_image": "Persamaan dikekalkan sebagai imej, dengan sumbernya dalam nota slaid."
+  "warn.pptx_math_image": "Persamaan dikekalkan sebagai imej, dengan sumbernya dalam nota slaid.",
+  "export.fmtPngLong": "PNG panjang",
+  "export.fmtPngPages": "PNG setiap halaman",
+  "export.importPresetPack": "Import pratetap"
 }

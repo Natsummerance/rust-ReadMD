@@ -2022,6 +2022,7 @@
   "search.next": "다음(Enter)",
   "search.noMatches": "일치하는 결과가 없습니다",
   "search.placeholder": "문서 내에서 검색… (다음 입력, Shift+이전 입력)",
+  "search.results": "검색 결과",
   "search.prev": "이전(Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count}회",
   "ai.taskRunning": "검토 중…",
   "ai.thinking": "생각 중…",
-  "warn.pptx_math_image": "수식은 이미지로 유지되며 원본 수식은 슬라이드 노트에 저장됩니다."
+  "warn.pptx_math_image": "수식은 이미지로 유지되며 원본 수식은 슬라이드 노트에 저장됩니다.",
+  "export.fmtPngLong": "긴 PNG",
+  "export.fmtPngPages": "페이지별 PNG",
+  "export.importPresetPack": "프리셋 가져오기"
 }

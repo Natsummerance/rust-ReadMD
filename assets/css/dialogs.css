@@ -148,9 +148,61 @@
 #ai-history-box .ai-history-actions { flex-wrap: wrap; }
 #ai-history-box .ai-history-actions button { max-width: 100%; height: auto; white-space: normal; }
 
+#export-box { width: min(1120px, calc(100vw - 32px)); }
+#export-box .export-side { flex-basis: clamp(256px, 30vw, 330px); padding-inline-end: var(--space-2); }
+#export-box .export-preset-title { margin: var(--space-2) 0 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); }
+#export-box .exp-preset-cards { gap: var(--space-2); align-content: start; }
+#export-box .exp-preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 6px;
+  min-height: 78px;
+  text-align: start;
+}
+#export-box .exp-preset-swatch {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 4px;
+  height: 42px;
+  min-width: 0;
+  padding: 7px 12%;
+  border: 1px solid var(--color-separator);
+  border-radius: 5px;
+  background: var(--preset-paper, var(--color-surface));
+}
+#export-box .exp-preset-swatch i {
+  display: block;
+  width: 85%;
+  height: 2px;
+  margin: 0;
+  border-radius: 1px;
+  background: var(--preset-ink, var(--color-fg));
+  opacity: .38;
+}
+#export-box .exp-preset-swatch i:first-child {
+  width: 48%;
+  height: 4px;
+  background: var(--preset-accent, var(--color-accent));
+  opacity: 1;
+}
+#export-box .exp-preset-swatch i:last-child { width: 68%; }
+#export-box .exp-preset-swatch[data-preview-format="pptx"] {
+  padding-inline-start: 15%;
+  box-shadow: inset 3px 0 var(--preset-accent, var(--color-accent));
+}
+#export-box .exp-preset-name { padding-inline: 4px; }
+#export-box .export-preview-viewport { height: clamp(245px, 48vh, 455px); }
+#export-box .export-preview-card.is-slide-preview .export-preview-viewport {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
 @media (max-width: 640px) {
   #export-box .export-body { overflow: auto; overscroll-behavior: contain; }
   #export-box .export-side, #export-box .export-main-col { flex: none; max-height: none; overflow: visible; }
+  #export-box .exp-preset-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---- Auto-fix report ---- */

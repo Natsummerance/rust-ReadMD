@@ -2022,6 +2022,7 @@
   "search.next": "التالي (Enter)",
   "search.noMatches": "لا توجد نتائج مطابقة",
   "search.placeholder": "البحث في المستند... (Enter للتالي، Shift+Enter للسابق)",
+  "search.results": "نتائج البحث",
   "search.prev": "السابق (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} جولات",
   "ai.taskRunning": "المراجعة جارية…",
   "ai.thinking": "جارٍ التفكير…",
-  "warn.pptx_math_image": "تُحفظ المعادلات كصور، ويُحفظ مصدرها في ملاحظات الشرائح."
+  "warn.pptx_math_image": "تُحفظ المعادلات كصور، ويُحفظ مصدرها في ملاحظات الشرائح.",
+  "export.fmtPngLong": "PNG طويل",
+  "export.fmtPngPages": "صفحات PNG",
+  "export.importPresetPack": "استيراد القوالب"
 }

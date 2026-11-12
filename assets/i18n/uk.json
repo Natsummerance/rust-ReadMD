@@ -2022,6 +2022,7 @@
   "search.next": "Наступний (Enter)",
   "search.noMatches": "Нічого не знайдено",
   "search.placeholder": "Пошук у документі… (Enter — наступний, Shift+Enter — попередній)",
+  "search.results": "Результати пошуку",
   "search.prev": "Попередній (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "Раундів: {count}",
   "ai.taskRunning": "Триває перевірка…",
   "ai.thinking": "Міркування…",
-  "warn.pptx_math_image": "Формули зберігаються як зображення, а їхній вихідний код — у нотатках до слайдів."
+  "warn.pptx_math_image": "Формули зберігаються як зображення, а їхній вихідний код — у нотатках до слайдів.",
+  "export.fmtPngLong": "Довгий PNG",
+  "export.fmtPngPages": "PNG за сторінками",
+  "export.importPresetPack": "Імпортувати шаблони"
 }

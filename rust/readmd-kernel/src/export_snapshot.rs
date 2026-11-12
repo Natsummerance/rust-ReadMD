@@ -96,7 +96,7 @@ impl Service {
         let call_id = text(request, "call_id")?;
         if call_id.is_empty() || call_id.len() > 256 { return Err(INVALID); }
         let format = text(request, "format")?;
-        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex" | "presentation" | "pptx") { return Err("unsupported_format"); }
+        if !matches!(format, "html" | "pdf" | "docx" | "epub" | "tex" | "presentation" | "pptx" | "png" | "png-pages") { return Err("unsupported_format"); }
         let name = text(request, "suggested_name")?;
         if name.is_empty() || name.len() > 256 || name.chars().any(|c| c.is_control() || "/\\:".contains(c)) { return Err(INVALID); }
         let options = request.get("options").filter(|value| value.is_object()).ok_or(INVALID)?.clone();
@@ -1029,6 +1029,7 @@ fn remove_inputs(directory: &Path, resources: &[Resource]) -> Result<(), &'stati
 }
 
 fn runtime_locks(format:&str,options:&Value)->Vec<String> {
+    let format = crate::image_export::layout_format(format);
     let engine=if format=="pdf" {options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust")}else{"rust"};
     let mut names=vec![format!("fonts-{}-universal.lock.json",crate::publication_fonts::VERSION)];
     if engine=="typst"||format=="docx" {names.push(format!("typst-0.15.1-{}.lock.json",crate::capability_packs::platform()));}
@@ -1036,7 +1037,7 @@ fn runtime_locks(format:&str,options:&Value)->Vec<String> {
     names
 }
 pub(crate) fn needs_fonts(format:&str,content:&str,options:&Value)->bool {
-    crate::publication_fonts::required_for_export(format,content,options)
+    crate::publication_fonts::required_for_export(crate::image_export::layout_format(format),content,options)
 }
 fn managed_fonts_absent(fonts:&Value)->bool {fonts["managed"].as_array().is_none_or(Vec::is_empty)}
 fn missing_engine_error(options:&Value)->&'static str {
@@ -1044,10 +1045,18 @@ fn missing_engine_error(options:&Value)->&'static str {
 }
 fn runtime_identity(data: &Path, assets: &Path, format: &str, options: &Value) -> Result<(Value, Value), &'static str> {
     if crate::speech::cancelled() {return Err("cancelled");}
-    let selected = if format == "pdf" { options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust") } else { "rust" };
+    let selected = if crate::image_export::layout_format(format) == "pdf" { options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust") } else { "rust" };
     if !matches!(selected, "rust" | "typst" | "xelatex" | "pdflatex") { return Err(INVALID); }
     let mut engine = json!({"application":env!("CARGO_PKG_VERSION"),"format":format,"engine":selected,
         "platform":crate::capability_packs::platform(),"snapshot_schema":1});
+    if crate::image_export::is_image(format) && cfg!(not(any(target_os = "macos", target_os = "windows"))) {
+        let _lease = crate::capability_packs::lease(data, assets, "pdfium").map_err(|_| "pdf_engine_unavailable")?;
+        let (program, library) = crate::capability_packs::pdfium_resources(data, assets).map_err(|_| "pdf_engine_unavailable")?;
+        engine["raster"] = json!({
+            "worker": digest(&read_absolute(&program, MAX_SNAPSHOT_BYTES)?),
+            "library": digest(&read_absolute(&library, MAX_SNAPSHOT_BYTES)?)
+        });
+    }
     if format=="docx" {
         engine["projection"]=match crate::capability_packs::lease(data,assets,"typst") {
             Ok(lease)=>{

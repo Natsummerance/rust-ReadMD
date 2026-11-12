@@ -1170,14 +1170,25 @@
 
   /* ---------------- public entry points ---------------- */
   /** Structural upgrades; runs before link/image fix-ups so new anchors get handlers. */
+  function upgradeTextBlocks(body) {
+    upgradeFootnotes(body);
+    body.querySelectorAll('blockquote').forEach(upgradeCallout);
+    upgradeDefinitionLists(body);
+  }
+
+  function enhanceSearchProjection(body) {
+    // A detached page needs the same searchable text without scheduling
+    // highlighting, layout measurements or event handlers on the reader.
+    upgradeTextBlocks(body);
+    upgradeFigures(body);
+  }
+
   function enhance(body) {
     if (!body || body.__rdEnhanced) return;
     body.__rdEnhanced = true;
     if (hlObserver) hlObserver.disconnect();
     try {
-      upgradeFootnotes(body);
-      body.querySelectorAll('blockquote').forEach(upgradeCallout);
-      upgradeDefinitionLists(body);
+      upgradeTextBlocks(body);
       upgradeCode(body);
       upgradeTables(body);
       upgradeFigures(body);
@@ -1268,6 +1279,7 @@
 
   window.ReadMDReader = {
     enhance,
+    enhanceSearchProjection,
     prepare: prepareSource,
     enhanceFootnotes: upgradeFootnotes,
     afterRender,

@@ -281,3 +281,25 @@ body[data-theme="sepia"] {
   --rd-mark: #f3dd9a; --rd-mark-fg: #3a2c10;
   --rd-hit: #f0c86a; --rd-hit-cur: #d9892b; --rd-hit-cur-fg: #2a1d0b;
 }
+
+/* The HTML layouts use these colours in the preview and in standalone exports. */
+:root {
+  --export-layout-paper: #ffffff;
+  --export-layout-border: #e7e9ee;
+  --export-layout-accent: #365d95;
+  --export-reading-bg: #f1f4f1;
+  --export-reading-paper: #fbfcf9;
+  --export-reading-border: #e3eae3;
+  --export-docs-bg: #f3f6fc;
+  --export-docs-nav: #273752;
+  --export-magazine-bg: #f6efe5;
+  --export-magazine-paper: #fffaf2;
+  --export-magazine-border: #ebdbcb;
+  --export-magazine-accent: #a76745;
+  --export-dark-bg: #151a24;
+  --export-dark-paper: #1d2430;
+  --export-dark-border: #39475b;
+  --export-dark-accent: #a7bbff;
+  --export-dark-ink: #e5ebf5;
+  --export-dark-title: #f2f6ff;
+}

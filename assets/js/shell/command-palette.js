@@ -3,8 +3,8 @@
 (function () {
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
-  const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=0bf1a18dee19';
+  const JS = '/assets/js/shell/shell-deferred.js' + q + (q ? '&' : '?') + 'rev=ec6d91677df7';
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=6f8b634c4fee';
   let cssPending = null;
   let pending = null;
 

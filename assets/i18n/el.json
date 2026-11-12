@@ -2022,6 +2022,7 @@
   "search.next": "Επόμενο (Enter)",
   "search.noMatches": "Δεν βρέθηκαν αποτελέσματα",
   "search.placeholder": "Αναζήτηση στο έγγραφο… (Enter Επόμενο, Shift+Enter Προηγούμενο)",
+  "search.results": "Αποτελέσματα αναζήτησης",
   "search.prev": "Προηγούμενο (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} γύροι",
   "ai.taskRunning": "Έλεγχος σε εξέλιξη…",
   "ai.thinking": "Σκέψη…",
-  "warn.pptx_math_image": "Οι εξισώσεις διατηρούνται ως εικόνες, με τον πηγαίο κώδικά τους στις σημειώσεις διαφανειών."
+  "warn.pptx_math_image": "Οι εξισώσεις διατηρούνται ως εικόνες, με τον πηγαίο κώδικά τους στις σημειώσεις διαφανειών.",
+  "export.fmtPngLong": "Μακρύ PNG",
+  "export.fmtPngPages": "PNG ανά σελίδα",
+  "export.importPresetPack": "Εισαγωγή προτύπων"
 }

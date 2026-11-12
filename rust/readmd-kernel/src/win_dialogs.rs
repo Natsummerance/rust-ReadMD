@@ -353,6 +353,8 @@ impl DialogShape {
             "pdf" => Some(("pdf", "PDF 文档 (*.pdf)|*.pdf|所有文件 (*.*)|*.*")),
             "docx" => Some(("docx", "Word 文档 (*.docx)|*.docx|所有文件 (*.*)|*.*")),
             "pptx" => Some(("pptx", "PowerPoint (*.pptx)|*.pptx|所有文件 (*.*)|*.*")),
+            "png" => Some(("png", "PNG (*.png)|*.png|所有文件 (*.*)|*.*")),
+            "png-pages" => Some(("zip", "PNG ZIP (*.zip)|*.zip|所有文件 (*.*)|*.*")),
             "epub" => Some(("epub", "EPUB 电子书 (*.epub)|*.epub|所有文件 (*.*)|*.*")),
             "html" => Some(("html", "HTML 网页 (*.html)|*.html|所有文件 (*.*)|*.*")),
             "tex" => Some(("tex", "LaTeX 文档 (*.tex)|*.tex|所有文件 (*.*)|*.*")),

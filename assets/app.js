@@ -446,7 +446,7 @@ function bindEvents() {
   const activateExportFormat = btn => {
     exportFormatTabs.forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
     $('export-opts').setAttribute('aria-labelledby', btn.id);
-    state.export.fmt = btn.dataset.fmt;
+    rememberExportFormat(btn.dataset.fmt);
     renderExportPresetSelect();
     renderExportSections();
   };
@@ -473,6 +473,7 @@ function bindEvents() {
   $('export-print').addEventListener('click', () => window.print());
   $('export-run').addEventListener('click', runExport);
   $('exp-save-preset').addEventListener('click', expSavePreset);
+  $('plugin-preset-pack').addEventListener('click', importExportPresetPack);
   $('exp-reset').addEventListener('click', () => {
     state.export.options = expDeepMerge(state.export.defaults, {});
     state.export.selectedPreset = '__default__';

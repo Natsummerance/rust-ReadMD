@@ -2081,12 +2081,27 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
             ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&sub, &Fmt::default()));
         }
         let author = text(style, &["meta", "author"], "").trim().to_string();
-        if !author.is_empty() {
-            ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&author, &Fmt::default()));
-        }
         let date = text(style, &["cover", "date"], "").trim().to_string();
-        if !date.is_empty() {
-            ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&date, &Fmt::default()));
+        if text(style, &["cover", "variant"], "") == "lab" {
+            let cell = |value: &str| vec![Inline::Text(value.chars().take(256).collect())];
+            let header = [cell("项目"), cell("填写内容")];
+            let fields = [
+                ("课程名称", text(style, &["cover", "course"], "")),
+                ("姓名", &author),
+                ("学号", text(style, &["cover", "studentId"], "")),
+                ("专业班级", text(style, &["cover", "class"], "")),
+                ("辅导教师", text(style, &["cover", "teacher"], "")),
+                ("实验日期", &date),
+            ];
+            let rows: Vec<_> = fields.iter().map(|(label, value)| vec![cell(label), cell(value)]).collect();
+            ctx.table(&[Align::Left, Align::Left], &header, &rows);
+        } else {
+            if !author.is_empty() {
+                ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&author, &Fmt::default()));
+            }
+            if !date.is_empty() {
+                ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&date, &Fmt::default()));
+            }
         }
         if !front_section || toc { ctx.para("", "<w:r><w:br w:type=\"page\"/></w:r>"); }
     }

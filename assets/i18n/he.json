@@ -2022,6 +2022,7 @@
   "search.next": "הבא (Enter)",
   "search.noMatches": "אין תוצאות תואמות",
   "search.placeholder": "חפש בתוך מסמכים... (Enter Next, Shift+Enter Previous)",
+  "search.results": "תוצאות חיפוש",
   "search.prev": "הקודם (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} סבבים",
   "ai.taskRunning": "הבדיקה מתבצעת…",
   "ai.thinking": "חושב…",
-  "warn.pptx_math_image": "המשוואות נשמרות כתמונות, והמקור שלהן נשמר בהערות השקופיות."
+  "warn.pptx_math_image": "המשוואות נשמרות כתמונות, והמקור שלהן נשמר בהערות השקופיות.",
+  "export.fmtPngLong": "PNG ארוך",
+  "export.fmtPngPages": "PNG לפי עמוד",
+  "export.importPresetPack": "ייבוא הגדרות קבועות"
 }

@@ -2022,6 +2022,7 @@
   "search.next": "Li jmiss (Daħħal)",
   "search.noMatches": "Ebda riżultati li jaqblu",
   "search.placeholder": "Fittex fi ħdan id-dokumenti... (Daħħal Li jmiss, Shift+Enter Previous)",
+  "search.results": "Riżultati tat-tfittxija",
   "search.prev": "Preċedenti (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} rawnds",
   "ai.taskRunning": "Reviżjoni għaddejja…",
   "ai.thinking": "Qed jaħseb…",
-  "warn.pptx_math_image": "L-ekwazzjonijiet jinżammu bħala stampi, bis-sors tagħhom fin-noti tas-slajds."
+  "warn.pptx_math_image": "L-ekwazzjonijiet jinżammu bħala stampi, bis-sors tagħhom fin-noti tas-slajds.",
+  "export.fmtPngLong": "PNG twil",
+  "export.fmtPngPages": "PNG għal kull paġna",
+  "export.importPresetPack": "Importa ssettjar minn qabel"
 }

@@ -2022,6 +2022,7 @@
   "search.next": "পরবর্তী (Enter)",
   "search.noMatches": "কোনো মিল পাওয়া যায়নি",
   "search.placeholder": "ডকুমেন্টে খুঁজুন… (Enter পরবর্তী, Shift+Enter পূর্ববর্তী)",
+  "search.results": "অনুসন্ধানের ফলাফল",
   "search.prev": "পূর্ববর্তী (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} দফা",
   "ai.taskRunning": "পর্যালোচনা চলছে…",
   "ai.thinking": "চিন্তা করা হচ্ছে…",
-  "warn.pptx_math_image": "সমীকরণ ছবিরূপে সংরক্ষিত থাকে এবং তার উৎস স্লাইডের নোটে থাকে।"
+  "warn.pptx_math_image": "সমীকরণ ছবিরূপে সংরক্ষিত থাকে এবং তার উৎস স্লাইডের নোটে থাকে।",
+  "export.fmtPngLong": "দীর্ঘ PNG",
+  "export.fmtPngPages": "পাতাভিত্তিক PNG",
+  "export.importPresetPack": "প্রিসেট আমদানি"
 }

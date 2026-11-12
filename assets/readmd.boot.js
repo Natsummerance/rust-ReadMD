@@ -71,6 +71,96 @@ if(__exports != exports)module.exports = exports;return module.exports}));
 ;
 'use strict';
 
+// A matched typographic quote can be wrapped in ** without spaces in CJK
+// prose. Use Marked's inline mask so escaped characters, links, and code
+// cannot supply the closing quote. The token's raw slice stays byte-for-byte.
+(function (markdown) {
+  if (!markdown?.use || !markdown.Tokenizer) return;
+  const quotes = new Map([['“','”'], ['‘','’'], ['「','」'], ['『','』'], ['《','》'], ['〈','〉'], ['【','】'], ['（','）']]);
+  const eastAsian = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+  markdown.use({ tokenizer: {
+    emStrong(src, mask, previous) {
+      const open = src.startsWith('**') && src[2];
+      const close = quotes.get(open);
+      if (!close) return false;
+      const visible = mask.slice(-src.length);
+      if (!visible.startsWith('**' + open)) return false;
+      let depth = 1;
+      for (let i = 3; i < Math.min(visible.length, 4096); i++) {
+        if (visible[i] === '\n' || visible[i] === '\r') break;
+        if (visible[i] === open) depth++;
+        if (visible[i] !== close || --depth !== 0) continue;
+        const end = i + 3;
+        if (visible.slice(i + 1, end) !== '**' || visible[end] === '*' ||
+            !eastAsian.test(previous || '') && !eastAsian.test(String.fromCodePoint(src.codePointAt(end) ?? 0))) break;
+        const text = src.slice(2, i + 1);
+        return { type: 'strong', raw: src.slice(0, end), text, tokens: this.lexer.inlineTokens(text) };
+      }
+      return false;
+    },
+  } });
+})(globalThis.marked);
+
+;
+'use strict';
+
+globalThis.ReadMDExportHtmlLayout = (() => {
+  const layouts = new Set(['reading', 'docs', 'magazine']);
+  let nextAnchor = 0;
+  function mount(root, layout, { links = true, contentsLabel, tone = "light" } = {}) {
+    if (!root || !layouts.has(layout)) return;
+    const doc = root.ownerDocument;
+    const wrap = doc.createElement('div');
+    wrap.className = 'readmd-html-layout';
+    wrap.dataset.layout = layout;
+    wrap.dataset.tone = tone;
+    const article = doc.createElement('div');
+    article.className = 'readmd-layout-article';
+    while (root.firstChild) article.appendChild(root.firstChild);
+    if (layout === 'docs') {
+      const headings = [...article.querySelectorAll('h2,h3,h4')].slice(0, 200);
+      if (headings.length) {
+        const navigation = doc.createElement('nav');
+        navigation.className = 'readmd-layout-nav';
+        const label = contentsLabel || (/^zh/i.test(doc.documentElement.lang) ? '目录' : 'Contents');
+        navigation.setAttribute('aria-label', label);
+        const title = doc.createElement('strong');
+        title.textContent = label;
+        const list = doc.createElement('ul');
+        const ids = new Set();
+        for (const heading of headings) {
+          const item = doc.createElement('li');
+          item.dataset.level = heading.localName;
+          const link = doc.createElement(links ? 'a' : 'span');
+          if (links) {
+            if (!heading.id || ids.has(heading.id) || doc.getElementById(heading.id)) {
+              do { heading.id = 'readmd-section-' + ++nextAnchor; }
+              while (ids.has(heading.id) || doc.getElementById(heading.id));
+            }
+            ids.add(heading.id);
+            link.href = '#' + encodeURIComponent(heading.id);
+            if (!doc.body.dataset.readmdHtmlLayout) link.addEventListener('click', event => {
+              event.preventDefault();
+              heading.scrollIntoView({ block: 'start' });
+            });
+          }
+          link.textContent = heading.textContent;
+          item.appendChild(link);
+          list.appendChild(item);
+        }
+        navigation.append(title, list);
+        wrap.appendChild(navigation);
+      }
+    }
+    wrap.appendChild(article);
+    root.replaceChildren(wrap);
+  }
+  return Object.freeze({ mount });
+})();
+
+;
+'use strict';
+
 /*
  * Modal layer manager.
  *
@@ -1821,6 +1911,7 @@ function setTopTabMenu(open, { focus = false } = {}) {
 
 function renderTabsBar() {
   window.ReadMDSession?.persist();
+  if (typeof syncFileSidebar === 'function') syncFileSidebar();
   const bar = $('doc-tabs-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');
@@ -3267,7 +3358,7 @@ async function closeAllTabs() {
 /* ---------------- 最近文件与历史记录 ---------------- */
 
 async function getRecentEntries() {
-  if (hasPy && py.get_recent) {
+  if (window.READMD_ENGINE !== 'rust' && hasPy && py.get_recent) {
     try { return await py.get_recent() || []; } catch (e) { return []; }
   }
   try {
@@ -3282,33 +3373,43 @@ async function getRecentEntries() {
 
 async function removeRecent(path) {
   if (!path) return false;
-  let ok = true;
-  if (hasPy && py.remove_recent) {
-    try { ok = (await py.remove_recent(path)) !== false; } catch (e) { ok = false; }
-  } else {
-    try {
+  try {
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.remove_recent) {
+      if ((await py.remove_recent(path)) === false) return false;
+    } else {
       const response = await apiFetch('/api/recent/remove', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path })
       });
-      ok = !!(response && response.ok);
-    } catch (e) { ok = false; }
-  }
-  if (!ok) return false;
-  await refreshRecent();
-  const historyModal = $('history-modal');
-  if (historyModal && !historyModal.classList.contains('hidden')) {
-    const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-    const rec = await getRecentEntries();
-    const list = $('history-list');
-    if (!rec.length) {
-      if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-    } else {
-      renderRecentList(list, rec, p => { historyModal.classList.add('hidden'); loadFile(p); });
+      if (!response.ok || !(await response.json()).ok) return false;
     }
-  }
+  } catch (_) { return false; }
+  await animateRecentExit(row => row.dataset.recentPath === path);
+  await refreshRecent({ slide: true });
   return true;
+}
+
+function recentMotionAllowed() {
+  return typeof Element.prototype.animate === 'function' &&
+    !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+async function animateRecentExit(choose) {
+  if (!recentMotionAllowed()) return;
+  const animations = [];
+  for (const id of ['side-recent-list', 'recent-list', 'history-list']) {
+    const list = $(id);
+    if (!list?.getClientRects().length) continue;
+    const rows = [...list.querySelectorAll('.recent-item')].filter(choose);
+    rows.forEach((row, index) => {
+      animations.push(row.animate(
+        [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-5px) scale(.985)' }],
+        { duration: 135, delay: Math.min(index, 5) * 14, easing: 'ease-in', fill: 'forwards' }
+      ));
+    });
+  }
+  await Promise.allSettled(animations.map(animation => animation.finished));
 }
 
 async function checkRecentStatus(paths) {
@@ -3338,17 +3439,21 @@ async function checkRecentStatus(paths) {
   }));
 }
 
-function renderRecentList(list, rec, onOpen) {
+function renderRecentList(list, rec, onOpen, slide = false) {
   if (!list) return;
-  list.innerHTML = '';
+  const oldRows = [...list.querySelectorAll('.recent-item')];
+  const motion = slide && recentMotionAllowed() && list.getClientRects().length;
+  const first = new Map(motion ? oldRows.map(row => [row.dataset.recentPath, row.offsetTop]) : []);
+  const focusIndex = oldRows.findIndex(row => row.contains(document.activeElement));
+  const focusRemove = document.activeElement?.classList.contains('recent-remove');
+  const fragment = document.createDocumentFragment();
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const slice = rec.slice(0, 24);
-  if (!slice.length) return;
-
   const itemMap = new Map();
   slice.forEach(p => {
     const li = document.createElement('li');
     li.className = 'recent-item';
+    li.dataset.recentPath = p;
 
     const card = document.createElement('div');
     card.className = 'recent-card';
@@ -3392,18 +3497,36 @@ function renderRecentList(list, rec, onOpen) {
     removeBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
-      li.classList.add('removing');
-      if (!(await removeRecent(p))) li.classList.remove('removing');
+      if (removeBtn.getAttribute('aria-busy') === 'true') return;
+      removeBtn.setAttribute('aria-busy', 'true');
+      try {
+        if (!await removeRecent(p)) showToast(_t('error.internal_error'));
+      } finally {
+        removeBtn.removeAttribute('aria-busy');
+      }
     });
 
     card.appendChild(btn);
     card.appendChild(removeBtn);
     li.appendChild(card);
-    list.appendChild(li);
+    fragment.appendChild(li);
 
     itemMap.set(p, { li, card, btn, nm, dp });
   });
 
+  list.replaceChildren(fragment);
+  for (const { li } of itemMap.values()) {
+    if (!first.has(li.dataset.recentPath)) continue;
+    const dy = first.get(li.dataset.recentPath) - li.offsetTop;
+    if (dy) li.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }],
+      { duration: 230, easing: 'cubic-bezier(.2,.72,.24,1)' });
+  }
+  if (slide && focusIndex >= 0 && slice.length) {
+    list.children[Math.min(focusIndex, slice.length - 1)]
+      ?.querySelector(focusRemove ? '.recent-remove' : '.recent-card-btn')?.focus({ preventScroll: true });
+  }
+
+  if (!slice.length) return;
   checkRecentStatus(slice).then(items => {
     (items || []).forEach(item => {
       const entry = itemMap.get(item.path);
@@ -3424,72 +3547,70 @@ function renderRecentList(list, rec, onOpen) {
   }).catch(() => {});
 }
 
-function renderSidebarRecent(rec) {
+function renderSidebarRecent(rec, slide = false) {
   const list = $('side-recent-list');
   $('side-recent-clear').disabled = !rec.length;
-  renderRecentList(list, rec, loadFile);
-  if (!rec.length) {
-    const row = document.createElement('li');
-    row.className = 'side-empty';
-    row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
-    list.appendChild(row);
-  }
+  renderRecentList(list, rec, loadFile, slide);
+  if (!rec.length) showEmptyRecent(list, 'side-empty');
 }
 
-let recentSidebarRequest = 0;
-async function refreshSidebarRecent() {
-  const request = ++recentSidebarRequest;
+function showEmptyRecent(list, className) {
+  const row = document.createElement('li');
+  row.className = className;
+  row.textContent = window.i18n?.t('history.noRecentFiles') || '暂无记录';
+  list.replaceChildren(row);
+}
+
+function renderHistoryRecent(rec, slide = false) {
+  const modal = $('history-modal');
+  const list = $('history-list');
+  renderRecentList(list, rec, path => { modal.classList.add('hidden'); loadFile(path); }, slide);
+  if (!rec.length) showEmptyRecent(list, 'empty');
+}
+
+let recentRequest = 0;
+async function refreshRecent({ slide = false } = {}) {
+  const request = ++recentRequest;
   const rec = await getRecentEntries();
-  if (request === recentSidebarRequest) renderSidebarRecent(rec);
-}
-
-async function refreshRecent() {
+  if (request !== recentRequest) return;
+  renderSidebarRecent(rec, slide);
   const box = $('recent-box');
-  if (!box) return;
-  const request = ++recentSidebarRequest;
-  const rec = await getRecentEntries();
-  if (request === recentSidebarRequest) renderSidebarRecent(rec);
-  if (!rec.length) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden');
-  renderRecentList($('recent-list'), rec, loadFile);
+  if (box) {
+    box.classList.toggle('hidden', !rec.length);
+    renderRecentList($('recent-list'), rec, loadFile, slide);
+  }
+  if ($('history-modal')?.classList.contains('hidden') === false) renderHistoryRecent(rec, slide);
 }
 
 async function openHistoryModal() {
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const rec = await getRecentEntries();
-  const modal = $('history-modal');
-  const list = $('history-list');
-  list.innerHTML = '';
-  if (!rec.length) {
-    const li = document.createElement('li');
-    li.className = 'empty'; li.textContent = _t('history.noRecentFiles'); list.appendChild(li);
-  } else {
-    renderRecentList(list, rec, p => { modal.classList.add('hidden'); loadFile(p); });
-  }
-  modal.classList.remove('hidden');
+  renderHistoryRecent(rec);
+  $('history-modal').classList.remove('hidden');
 }
 
 async function clearRecent() {
-  return window.ReadMDTask.run('clear-recent', runClearRecent, { trigger: ['history-clear', 'recent-clear', 'side-recent-clear'] });
+  const cleared = await window.ReadMDTask.run('clear-recent', runClearRecent, {
+    trigger: ['history-clear', 'recent-clear', 'side-recent-clear']
+  });
+  if (cleared) await refreshRecent({ slide: true });
+  return cleared;
 }
 
 async function runClearRecent() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   try {
-  if (hasPy && py.clear_recent) {
-    const result = await py.clear_recent();
-    if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
-  } else {
-    const response = await apiFetch('/api/recent/clear', { method: 'POST' });
-    const result = await response.json();
-    if (!response.ok || result?.ok === false) throw new Error(result?.error || 'HTTP ' + response.status);
-  }
-  await refreshRecent();
-  const list = $('history-list');
-  if (list) list.innerHTML = '<li class="empty">' + _t('history.noRecentFiles') + '</li>';
-  return true;
-  } catch (e) {
-    showToast(_t('audit.clearFailed', { error: e.message }));
+    if (window.READMD_ENGINE !== 'rust' && hasPy && py.clear_recent) {
+      const result = await py.clear_recent();
+      if (result === false || result?.ok === false) throw new Error(result?.error || _t('audit.invalidResponse'));
+    } else {
+      const response = await apiFetch('/api/recent/clear', { method: 'POST' });
+      const result = await response.json();
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'HTTP ' + response.status);
+    }
+    await animateRecentExit(() => true);
+    return true;
+  } catch (error) {
+    showToast(_t('audit.clearFailed', { error: error.message }));
     return false;
   }
 }
@@ -5448,42 +5569,73 @@ function updateActiveTocHeading() {
    ReadMD Reader - In-Document Search & Highlighting
    ============================================================ */
 
-/* ---------------- 搜索 ---------------- */
-
-let globalSearchState = {
-  query: '',
-  matches: [],       // [{ pageIndex, matchIdxInPage }]
-  globalIndex: 0,
-};
-let enterAdvancePending = false;
+let globalSearchState = { query: '', matches: [], globalIndex: 0 };
 let editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+let readerMarkGroups = [];
+let activeMarkGroup = null;
+const pageSearchIndexes = new WeakMap();
+const searchHeadingSelector = 'h1,h2,h3,h4,h5,h6';
+const searchBlockSelector = `${searchHeadingSelector},article,blockquote,div,p,li,td,th,pre,dt,dd,summary,figcaption`;
+const searchRowBatchSize = 120;
+let searchResultRows = [];
+let searchResultFrame = 0;
+let activeSearchRow = null;
+let readerSearchObserver;
+let readerSearchRefresh = 0;
+
+function findSearchMatches(text, query, limit = Infinity) {
+  const matches = [];
+  if (!query) return { matches, capped: false };
+  const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
+  let match;
+  while ((match = re.exec(text)) && matches.length < limit) {
+    matches.push({ from: match.index, to: match.index + match[0].length, text });
+  }
+  return { matches, capped: !!match };
+}
 
 function searchEditor(query, { jump = true, index } = {}) {
   const view = window.cmView;
   const fallback = $('edit-area');
   if (!state.editing || (!view && !fallback)) return false;
-  const text = view ? view.state.doc : fallback.value;
-  if (editorFindState.doc !== text || editorFindState.query !== query) {
-    const matches = [];
-    if (query) {
-      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
-      const source = text.toString();
-      let match;
-      while ((match = re.exec(source)) && matches.length < 10000) matches.push({ from: match.index, to: match.index + match[0].length });
-      editorFindState.capped = !!match;
-    } else editorFindState.capped = false;
+  const doc = view ? view.state.doc : fallback.value;
+  if (editorFindState.doc !== doc || editorFindState.query !== query) {
+    const source = doc.toString();
+    const { matches, capped } = findSearchMatches(source, query, 10000);
+    if (matches.length) {
+      const headings = state.is_code ? [] : window.ReadMDHeadings.fromMarkdown(source);
+      let line = 1, nextBreak = source.indexOf('\n'), nextHeading = 0, section = '';
+      for (const match of matches) {
+        while (nextBreak !== -1 && nextBreak < match.from) {
+          line += 1;
+          nextBreak = source.indexOf('\n', nextBreak + 1);
+        }
+        while (headings[nextHeading]?.sourceLine <= line) section = headings[nextHeading++].text;
+        Object.assign(match, { line, section });
+      }
+    }
     const cursor = view ? view.state.selection.main.from : fallback.selectionStart;
-    editorFindState = { query, doc: text, matches, index: Math.max(0, matches.findIndex(match => match.from >= cursor)), capped: editorFindState.capped };
+    editorFindState = { query, doc, matches, index: Math.max(0, matches.findIndex(match => match.from >= cursor)), capped };
   }
-  if (index !== undefined && editorFindState.matches.length) editorFindState.index = (index + editorFindState.matches.length) % editorFindState.matches.length;
+  if (index !== undefined && editorFindState.matches.length) {
+    editorFindState.index = (index + editorFindState.matches.length) % editorFindState.matches.length;
+  }
   globalSearchState.query = query;
   state.lastQuery = query;
   const match = editorFindState.matches[editorFindState.index];
   if (jump && match) {
     if (view) view.dispatch({ selection: { anchor: match.from, head: match.to }, effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(match.from, { y: 'center' }) });
-    else { fallback.focus(); fallback.setSelectionRange(match.from, match.to); }
+    else {
+      // Native textarea selection scrolls the draft to the match on focus.
+      // Return focus to the search control so repeated Enter still works.
+      const searchControl = document.activeElement?.closest('#side-search');
+      const previousFocus = searchControl && document.activeElement;
+      fallback.focus();
+      fallback.setSelectionRange(match.from, match.to);
+      previousFocus?.focus({ preventScroll: true });
+    }
   }
-  updateSearchCount();
+  updateSearchCount({ reveal: jump });
   return true;
 }
 
@@ -5530,256 +5682,418 @@ function syncSearchMode() {
   if (!bar.classList.contains('hidden')) doSearch($('search-input').value, undefined, { jump: false });
 }
 
-function clearMarks() {
-  state.currentMarks.forEach(m => {
-    const p = m.parentNode;
-    if (!p) return;
-    p.replaceChild(document.createTextNode(m.textContent), m);
-    p.normalize();
-  });
+function clearReaderSearchMarks() {
+  const parents = new Set();
+  for (const group of readerMarkGroups) {
+    for (const mark of group) {
+      if (!mark.isConnected) continue;
+      parents.add(mark.parentNode);
+      mark.replaceWith(...mark.childNodes);
+    }
+  }
+  for (const parent of parents) parent.normalize();
+  readerMarkGroups = [];
+  activeMarkGroup = null;
   state.currentMarks = [];
   state.searchIndex = 0;
-  globalSearchState = { query: '', matches: [], globalIndex: 0 };
-  updateSearchCount();
-  if (window.ReadMDReader) window.ReadMDReader.flushPendingHighlight();
+  if (parents.size) window.ReadMDReader?.flushPendingHighlight();
 }
 
-function pageSearchText(page) {
-  if (typeof page.searchText === 'string') return page.searchText;
-  const transformed = transformAcademicCallouts(page.content);
-  const prot = protectMath(transformed);
-  const html = marked.parse(prot.src, { gfm: true, breaks: false });
-  const probe = document.createElement('div');
-  probe.innerHTML = restoreMath(html, prot.saved);
-  // Mirror the reader's DOM: callout markers such as "[!NOTE]" become
-  // non-searchable chrome labels, so they must not count as matches here.
-  page.searchText = (probe.textContent || '')
-    .replace(/\[![A-Za-z][\w-]*\][+-]?/g, '')
-    .toLowerCase();
-  return page.searchText;
-}
-
-function highlightTextMatches(body, query) {
+function readSearchText(body, retainNodes = false) {
   const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-    acceptNode: node => {
-      const parent = node.parentNode;
-      if (!parent || parent.nodeName === 'SCRIPT' || parent.nodeName === 'STYLE') return NodeFilter.FILTER_REJECT;
-      if (parent.nodeName === 'MARK' && parent.classList.contains('hl')) return NodeFilter.FILTER_REJECT;
-      // Reader chrome (code headers, line numbers, reading time) is not document text.
-      if (parent.closest && parent.closest('[data-rd-chrome]')) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
+    acceptNode: node => !node.nodeValue || node.parentElement?.closest('script,style,[data-rd-chrome]')
+      ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
   });
-  const nodes = [];
-  let node;
-  while ((node = walker.nextNode())) nodes.push(node);
-  const segments = nodes.map(textNode => textNode.textContent);
-  const haystack = segments.join('').toLowerCase();
-  const needle = query.toLowerCase();
-  if (!needle) return;
-
-  const positionAt = offset => {
-    for (let index = 0; index < nodes.length; index += 1) {
-      const length = segments[index].length;
-      if (offset <= length) return { node: nodes[index], start: offset };
-      offset -= length;
+  const chunks = [], segments = [];
+  let offset = 0, section = '', lastHeading = null, node;
+  while ((node = walker.nextNode())) {
+    const parent = node.parentElement;
+    const heading = parent?.closest(searchHeadingSelector);
+    if (heading && heading !== lastHeading) {
+      section = heading.dataset.readmdHeadingText ?? heading.textContent.trim();
+      lastHeading = heading;
     }
-    return null;
+    const text = node.nodeValue;
+    segments.push({ end: offset + text.length, section, node: retainNodes ? node : null });
+    chunks.push(text);
+    offset += text.length;
+  }
+  return { text: chunks.join(''), segments };
+}
+
+function searchSegmentAt(segments, position) {
+  let first = 0, end = segments.length;
+  while (first < end) {
+    const middle = Math.floor((first + end) / 2);
+    if (segments[middle].end <= position) first = middle + 1;
+    else end = middle;
+  }
+  return first;
+}
+
+function pageSearchIndex(page) {
+  const reader = window.ReadMDReader;
+  const cached = pageSearchIndexes.get(page);
+  if (cached && cached.reader === reader) return cached;
+  const transformed = transformAcademicCallouts(transformWikilinks(readerPrepare(page.content)));
+  const protectedMath = protectMath(transformed);
+  const html = marked.parse(protectedMath.src, { gfm: true, breaks: false });
+  const template = document.createElement('template');
+  template.innerHTML = sanitizeRenderedHtml(restoreMath(html, protectedMath.saved));
+  window.ReadMDHeadings.applyDom(template.content);
+  reader?.enhanceSearchProjection?.(template.content);
+  const index = { reader, ...readSearchText(template.content) };
+  pageSearchIndexes.set(page, index);
+  return index;
+}
+
+function readerSearchMatches(index, query, pageIndex = null) {
+  if (index.query === query) return index.matches;
+  const { matches } = findSearchMatches(index.text, query);
+  matches.forEach((match, matchIdxInPage) => Object.assign(match, {
+    section: index.segments[searchSegmentAt(index.segments, match.from)].section,
+    pageIndex, matchIdxInPage,
+  }));
+  Object.assign(index, { query, matches });
+  return matches;
+}
+
+function surroundInlineSearchMatch(segments, first, last, match) {
+  const start = segments[first].node, end = segments[last].node;
+  const block = start.parentElement.closest(searchBlockSelector);
+  if (!block || end.parentElement.closest(searchBlockSelector) !== block) return null;
+  const from = match.from - (segments[first - 1]?.end || 0);
+  const to = match.to - (segments[last - 1]?.end || 0);
+  const edge = (node, sibling) => {
+    while (node.parentNode !== block && !node[sibling]) node = node.parentNode;
+    return node;
   };
-
-  const ranges = [];
-  let position = haystack.indexOf(needle);
-  while (position !== -1) {
-    const start = positionAt(position);
-    const end = positionAt(position + needle.length);
-    if (!start || !end) break;
-    const range = document.createRange();
-    range.setStart(start.node, start.start);
-    range.setEnd(end.node, end.start);
-    ranges.push(range);
-    position = haystack.indexOf(needle, position + needle.length);
-  }
-
-  for (let index = ranges.length - 1; index >= 0; index -= 1) {
-    const range = ranges[index];
-    const mark = document.createElement('mark');
-    mark.className = 'hl';
-    mark.appendChild(range.extractContents());
-    range.insertNode(mark);
-    state.currentMarks.unshift(mark);
+  const range = document.createRange();
+  if (from === 0) range.setStartBefore(edge(start, 'previousSibling'));
+  else range.setStart(start, from);
+  if (to === end.length) range.setEndAfter(edge(end, 'nextSibling'));
+  else range.setEnd(end, to);
+  if (range.toString() !== match.text.slice(match.from, match.to)) return null;
+  const mark = document.createElement('mark');
+  mark.className = 'hl';
+  try {
+    range.surroundContents(mark);
+    return mark;
+  } catch (error) {
+    if (error.name !== 'InvalidStateError') throw error;
+    return null;
   }
 }
 
-function highlightCurrentPageForSearch(query) {
-  const body = document.querySelector('#content .markdown-body');
-  if (!body) return false;
-  state.currentMarks = [];
-  state.searchIndex = 0;
-  highlightTextMatches(body, query);
-  return true;
-}
-
-function focusPagedSearchMatch(match) {
-  if (!match || match.pageIndex === state.pagination.currentPage) {
-    if (match) jumpToLocalMark(match.matchIdxInPage);
-    return;
-  }
-
-  // Page replacement removes the previous DOM marks synchronously.  Do not
-  // queue the re-highlight behind a frame: low-end devices can starve frames
-  // while laying out a long page, which would leave the search result lost.
-  renderPage(match.pageIndex);
-  if (!highlightCurrentPageForSearch(globalSearchState.query)) return;
-  updateSearchCount();
-  enterAdvancePending = true;
-  jumpToLocalMark(match.matchIdxInPage);
-}
-
-function doSearch(q, jumpToIdx, { jump = true } = {}) {
-  if (searchEditor(q, { jump, index: jumpToIdx })) return;
-  clearMarks();
-  state.lastQuery = q;
-  if (!q) {
-    enterAdvancePending = false;
-    updateSearchCount();
-    return;
-  }
-
-  // 1. 分页模式下：在内存中预先对所有页进行关键词索引
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && state.pagination.pages && state.pagination.pages.length;
-  if (isPaged) {
-    const ql = q.toLowerCase();
-    if (!Array.isArray(state.pagination.searchText) || state.pagination.searchText.length !== state.pagination.pages.length) {
-      state.pagination.searchText = state.pagination.pages.map(pageSearchText);
-    }
-    const allMatches = [];
-    state.pagination.pages.forEach((pg, pIdx) => {
-      const text = state.pagination.searchText[pIdx];
-      let pos = 0;
-      let countInPage = 0;
-      while ((pos = text.indexOf(ql, pos)) !== -1) {
-        allMatches.push({ pageIndex: pIdx, matchIdxInPage: countInPage });
-        countInPage++;
-        pos += ql.length;
+function highlightReaderSearchMatches(index, matches) {
+  const { segments } = index;
+  readerMarkGroups = new Array(matches.length);
+  // Work from the end so splitting a text node leaves earlier offsets intact.
+  // A partially selected inline element stays intact inside its own mark.
+  for (let i = matches.length - 1; i >= 0; i -= 1) {
+    const match = matches[i];
+    const { from, to } = match;
+    const first = searchSegmentAt(segments, from), last = searchSegmentAt(segments, to - 1);
+    if (first !== last) {
+      const mark = surroundInlineSearchMatch(segments, first, last, match);
+      if (mark) {
+        readerMarkGroups[i] = [mark];
+        continue;
       }
-    });
-    globalSearchState = {
-      query: q,
-      matches: allMatches,
-      globalIndex: typeof jumpToIdx === 'number' ? jumpToIdx : 0,
-    };
+    }
+    const group = [];
+    for (let pos = last; pos >= first; pos -= 1) {
+      const { node, end } = segments[pos];
+      const start = segments[pos - 1]?.end || 0;
+      const left = Math.max(0, from - start);
+      const length = Math.min(to, end) - start - left;
+      const found = left ? node.splitText(left) : node;
+      if (length < found.length) found.splitText(length);
+      const mark = document.createElement('mark');
+      mark.className = 'hl';
+      found.replaceWith(mark);
+      mark.append(found);
+      group.unshift(mark);
+    }
+    readerMarkGroups[i] = group;
   }
+  state.currentMarks = readerMarkGroups.map(group => group[0]);
+}
 
-  // 2. 在当前页 DOM 中生成实际的高亮 mark 标签
-  if (!isPaged) {
-    globalSearchState = { query: q, matches: [], globalIndex: 0 };
+function currentSearchPages() {
+  const pagination = state.pagination;
+  return pagination?.enabled && pagination.mode === 'paged' && pagination.pages?.length ? pagination.pages : null;
+}
+
+function currentReaderSearch() {
+  return globalSearchState.tabId === state.activeTabId && globalSearchState.pages === currentSearchPages() &&
+    globalSearchState.body === document.querySelector('#content .markdown-body');
+}
+
+function searchResultSnippet(match) {
+  const { text, from, to } = match;
+  const before = text.slice(Math.max(0, from - 28), from);
+  const after = text.slice(to, to + 80);
+  const lineBefore = before.slice(before.lastIndexOf('\n') + 1);
+  const lineAfter = after.split('\n', 1)[0];
+  const excerpt = part => part.replace(/\s+/g, ' ');
+  return [
+    (from > before.length && before === lineBefore ? '…' : '') + excerpt(lineBefore),
+    excerpt(text.slice(from, Math.min(to, from + 110))) + (to - from > 110 ? '…' : ''),
+    excerpt(lineAfter) + (to + after.length < text.length && after === lineAfter ? '…' : ''),
+  ];
+}
+
+function locateReaderSearchMatch(matches, previous) {
+  if (!previous) return -1;
+  const candidates = matches.filter(match => match.pageIndex === previous.pageIndex);
+  const exact = candidates.find(match => match.from === previous.from && match.text === previous.text);
+  if (exact) return matches.indexOf(exact);
+  const snippet = searchResultSnippet(previous);
+  const nearby = candidates.filter(match => match.section === previous.section &&
+    searchResultSnippet(match).every((part, index) => part === snippet[index]));
+  if (nearby.length === 1) return matches.indexOf(nearby[0]);
+  return -1;
+}
+
+function refreshReaderSearch(query, previous, revealed = false) {
+  clearReaderSearchMarks();
+  const body = document.querySelector('#content .markdown-body');
+  const pages = currentSearchPages();
+  let matches = [];
+  if (body && query) {
+    const currentPage = pages ? state.pagination.currentPage : null;
+    const index = readSearchText(body, true);
+    const local = readerSearchMatches(index, query, currentPage);
+    if (pages) {
+      // Cache only text and offsets; marks and elements belong to the live page.
+      pageSearchIndexes.set(pages[currentPage], {
+        text: index.text, segments: index.segments.map(({ end, section }) => ({ end, section })),
+        reader: window.ReadMDReader, query, matches: local,
+      });
+      matches = pages.flatMap((page, pageIndex) => readerSearchMatches(pageSearchIndex(page), query, pageIndex));
+    } else matches = local;
+    highlightReaderSearchMatches(index, local);
   }
-  if (!highlightCurrentPageForSearch(q)) return;
-
+  const found = locateReaderSearchMatch(matches, previous);
+  globalSearchState = { query, matches, globalIndex: Math.max(0, found), body, pages, tabId: state.activeTabId, revealed: revealed && found >= 0 };
+  if (globalSearchState.revealed) selectReaderSearchMarks(matches[found]);
+  state.lastQuery = query;
+  readerSearchObserver?.takeRecords();
   updateSearchCount();
-  enterAdvancePending = true;
-
-  if (isPaged && globalSearchState.matches.length > 0) {
-    const curMatch = globalSearchState.matches[globalSearchState.globalIndex];
-    if (!jump) return;
-    if (curMatch && curMatch.pageIndex !== state.pagination.currentPage) {
-      focusPagedSearchMatch(curMatch);
-      return;
-    }
-    if (curMatch && curMatch.pageIndex === state.pagination.currentPage) {
-      jumpToLocalMark(curMatch.matchIdxInPage);
-    }
-  } else if (jump && state.currentMarks.length > 0) {
-    jumpToLocalMark(0);
-  }
+  return found;
 }
 
-function focusCurrentSearchMatch() {
-  const isPaged = state.pagination?.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
-  if (isPaged) {
-    const match = globalSearchState.matches[globalSearchState.globalIndex];
-    if (!match) return;
-    focusPagedSearchMatch(match);
-    return;
-  }
-  jumpToLocalMark(0);
+function doSearch(query, index, { jump = true } = {}) {
+  if ($('search-bar').classList.contains('hidden')) return;
+  clearTimeout(readerSearchRefresh);
+  if (searchEditor(query, { jump, index })) return;
+  const current = globalSearchState;
+  const sameDocument = current.tabId === state.activeTabId && current.pages === currentSearchPages() &&
+    (current.pages || current.body === document.querySelector('#content .markdown-body'));
+  const previous = query === current.query && sameDocument ? current.matches[current.globalIndex] : null;
+  refreshReaderSearch(query, previous, current.revealed);
+  if (jump) jumpToReaderSearchMatch(index ?? globalSearchState.globalIndex);
 }
 
-function jumpToLocalMark(idx) {
-  if (!state.currentMarks.length) return;
-  state.searchIndex = Math.max(0, Math.min(idx, state.currentMarks.length - 1));
-  state.currentMarks.forEach((m, i) => m.classList.toggle('cur', i === state.searchIndex));
-  revealSearchMark(state.currentMarks[state.searchIndex]);
+function selectReaderSearchMarks(match) {
+  if (match.pageIndex !== null && match.pageIndex !== state.pagination.currentPage) return null;
+  const group = readerMarkGroups[match.matchIdxInPage];
+  if (!group?.length) return null;
+  activeMarkGroup?.forEach(mark => mark.classList.remove('cur'));
+  activeMarkGroup = group;
+  state.searchIndex = match.matchIdxInPage;
+  group.forEach(mark => mark.classList.add('cur'));
+  return group[0];
+}
+
+function jumpToReaderSearchMatch(index) {
+  let match = globalSearchState.matches[index];
+  if (!match) return;
+  globalSearchState.globalIndex = index;
+  if (match.pageIndex !== null && match.pageIndex !== state.pagination.currentPage) {
+    renderPage(match.pageIndex);
+    index = refreshReaderSearch(globalSearchState.query, match);
+    if (index < 0) return;
+    match = globalSearchState.matches[index];
+  }
+  const mark = selectReaderSearchMarks(match);
+  if (!mark) return;
+  globalSearchState.revealed = true;
+  let fold = mark.closest('details:not([open])');
+  while (fold) {
+    fold.open = true;
+    fold = fold.parentElement?.closest('details:not([open])');
+  }
+  mark.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
+  updateSearchCount({ reveal: true });
 }
 
 function jumpToMark(dir) {
+  const query = $('search-input').value;
   if (state.editing) {
-    searchEditor($('search-input').value, { jump: false });
-    searchEditor($('search-input').value, { index: editorFindState.index + dir });
+    searchEditor(query, { jump: false });
+    searchEditor(query, { index: editorFindState.index + dir });
     return;
   }
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
-
-  if (isPaged) {
-    const total = globalSearchState.matches.length;
-    const nextGlobal = (globalSearchState.globalIndex + dir + total) % total;
-    globalSearchState.globalIndex = nextGlobal;
-    const targetMatch = globalSearchState.matches[nextGlobal];
-
-    if (targetMatch.pageIndex !== state.pagination.currentPage) {
-      focusPagedSearchMatch(targetMatch);
-    } else {
-      updateSearchCount();
-      jumpToLocalMark(targetMatch.matchIdxInPage);
-    }
-    return;
-  }
-
-  // 常规/连续模式单页跳转
-  if (!state.currentMarks.length) return;
-  state.searchIndex = (state.searchIndex + dir + state.currentMarks.length) % state.currentMarks.length;
-  state.currentMarks.forEach((m, i) => m.classList.toggle('cur', i === state.searchIndex));
-  revealSearchMark(state.currentMarks[state.searchIndex]);
-  updateSearchCount();
+  if (query !== globalSearchState.query || !currentReaderSearch()) doSearch(query, undefined, { jump: false });
+  const total = globalSearchState.matches.length;
+  if (total) jumpToReaderSearchMatch((globalSearchState.globalIndex + dir + total) % total);
 }
 
-function revealSearchMark(mark) {
-  if (!mark) return;
-  mark.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'center' });
-}
-
-function updateSearchCount() {
-  if (state.editing) {
-    const found = editorFindState;
-    const hasHits = !!found.matches.length;
-    $('search-prev').disabled = $('search-next').disabled = !hasHits;
-    $('search-replace-one').disabled = !hasHits;
-    $('search-replace-all').disabled = !hasHits || found.capped;
-    $('search-bar').classList.toggle('rd-search-empty', !!found.query && !hasHits);
-    $('search-count').textContent = hasHits ? `${found.index + 1}/${found.matches.length}${found.capped ? '+' : ''}` : found.query ? window.i18n.t('search.noMatches') : '';
-    return;
-  }
-  const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+function updateSearchCount({ reveal = false } = {}) {
   const bar = $('search-bar');
-  if (bar) {
-    const hasHits = state.currentMarks.length > 0 || globalSearchState.matches.length > 0;
-    bar.classList.toggle('rd-search-empty', !!state.lastQuery && !hasHits);
-    $('search-prev').disabled = !hasHits;
-    $('search-next').disabled = !hasHits;
-  }
-  const isPaged = state.pagination && state.pagination.enabled && state.pagination.mode === 'paged' && globalSearchState.matches.length > 0;
+  if (!bar) return;
+  const editor = state.editing;
+  const { matches, query } = editor ? editorFindState : globalSearchState;
+  const index = editor ? editorFindState.index : globalSearchState.globalIndex;
+  const total = matches.length;
+  const page = !editor ? matches[index]?.pageIndex : null;
+  const capped = editor && editorFindState.capped;
+  $('search-prev').disabled = $('search-next').disabled = !total;
+  $('search-replace-one').disabled = !editor || !total;
+  $('search-replace-all').disabled = !editor || !total || capped;
+  bar.classList.toggle('rd-search-empty', !!query && !total);
+  const label = total ? `${index + 1}/${total}${capped ? '+' : ''}${page == null ? '' : ` (P.${page + 1})`}`
+    : query ? (window.i18n?.t('search.noMatches') || '无匹配结果') : '';
+  const count = $('search-count');
+  if (count.textContent !== label) count.textContent = label;
+  updateSearchResultList(matches, index, reveal);
+}
 
-  if (isPaged) {
-    const total = globalSearchState.matches.length;
-    const cur = globalSearchState.globalIndex + 1;
-    const pIdx = globalSearchState.matches[globalSearchState.globalIndex]?.pageIndex;
-    const pageNum = (typeof pIdx === 'number' ? pIdx + 1 : state.pagination.currentPage + 1);
-    $('search-count').textContent = total ? `${cur}/${total} (P.${pageNum})` : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
+function appendSearchResultRows(list, end) {
+  const fragment = document.createDocumentFragment();
+  for (let index = list.children.length; index < end; index += 1) {
+    const match = searchResultRows[index];
+    const item = document.createElement('li');
+    const button = document.createElement('button');
+    button.className = 'search-result';
+    button.type = 'button';
+    button.tabIndex = -1;
+    button.dataset.searchResult = String(index);
+    const context = document.createElement('span');
+    context.className = 'search-result-context';
+    context.dir = 'auto';
+    const [before, matched, after] = searchResultSnippet(match);
+    const highlight = document.createElement('mark');
+    highlight.textContent = matched;
+    context.append(before, highlight, after);
+    button.append(context);
+    const location = [];
+    if (match.section) location.push(match.section);
+    if (match.line) location.push(window.i18n?.t('graph.linePrefix', { line: match.line }) || String(match.line));
+    if (match.pageIndex !== null && match.pageIndex !== undefined) {
+      location.push(window.i18n?.t('pagination.pageInfo', { current: match.pageIndex + 1, total: state.pagination.totalPages }) || String(match.pageIndex + 1));
+    }
+    if (location.length) {
+      const meta = document.createElement('span');
+      meta.className = 'search-result-location';
+      meta.dir = 'auto';
+      meta.textContent = location.join(' · ');
+      button.append(meta);
+    }
+    item.append(button);
+    fragment.append(item);
+  }
+  list.append(fragment);
+}
+
+function fillSearchResultList(list) {
+  const remaining = searchResultRows.length - list.children.length;
+  if (remaining <= 0) return;
+  searchResultFrame = requestAnimationFrame(() => {
+    searchResultFrame = 0;
+    appendSearchResultRows(list, Math.min(searchResultRows.length, list.children.length + searchRowBatchSize));
+    fillSearchResultList(list);
+  });
+}
+
+function updateSearchResultList(matches, index, reveal) {
+  const list = $('search-results');
+  if (!list) return;
+  const hasRows = matches.length > 0 && !$('search-bar').classList.contains('hidden');
+  let restoreResultFocus = false;
+  if (matches !== searchResultRows) {
+    restoreResultFocus = list.contains(document.activeElement);
+    cancelAnimationFrame(searchResultFrame);
+    searchResultFrame = 0;
+    searchResultRows = matches;
+    activeSearchRow = null;
+    list.replaceChildren();
+    list.scrollTop = 0;
+  }
+  list.hidden = !hasRows;
+  if (!hasRows) {
+    if (restoreResultFocus) $('search-input').focus({ preventScroll: true });
     return;
   }
+  const end = Math.min(matches.length, Math.max(searchRowBatchSize, index + 1));
+  if (list.children.length < end) appendSearchResultRows(list, end);
+  if (!searchResultFrame) fillSearchResultList(list);
+  const row = list.children[index]?.firstElementChild;
+  if (row !== activeSearchRow) {
+    if (activeSearchRow) {
+      activeSearchRow.removeAttribute('aria-current');
+      activeSearchRow.tabIndex = -1;
+    }
+    activeSearchRow = row;
+    row?.setAttribute('aria-current', 'true');
+    if (row) row.tabIndex = 0;
+  }
+  if (restoreResultFocus) row?.focus({ preventScroll: true });
+  if (reveal || restoreResultFocus) row?.scrollIntoView({ block: 'nearest' });
+}
 
-  const total = state.currentMarks.length;
-  $('search-count').textContent = total ? ((state.searchIndex % total) + 1) + '/' + total : (state.lastQuery ? (_t('search.noMatches') || '无结果') : '');
+function bindSearchResults() {
+  const list = $('search-results');
+  if (!list || readerSearchObserver) return;
+  const input = $('search-input');
+  input.addEventListener('input', () => {
+    if (input.value !== globalSearchState.query) updateSearchResultList([], 0, false);
+  });
+  list.addEventListener('click', event => {
+    const button = event.target.closest('button[data-search-result]');
+    if (!button || input.value !== globalSearchState.query) return;
+    const index = Number(button.dataset.searchResult);
+    if (state.editing) {
+      const doc = window.cmView?.state.doc ?? $('edit-area').value;
+      if (doc === editorFindState.doc) searchEditor(globalSearchState.query, { index });
+    } else if (currentReaderSearch()) {
+      jumpToReaderSearchMatch(index);
+    }
+  });
+  list.addEventListener('keydown', event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
+    const index = Number(event.target.dataset.searchResult);
+    if (!Number.isInteger(index)) return;
+    let next;
+    if (event.key === 'ArrowDown') next = index + 1;
+    else if (event.key === 'ArrowUp') next = index - 1;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = searchResultRows.length - 1;
+    else return;
+    event.preventDefault();
+    next = Math.max(0, Math.min(next, searchResultRows.length - 1));
+    if (list.children.length <= next) appendSearchResultRows(list, next + 1);
+    list.children[next]?.firstElementChild?.focus();
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' || event.isComposing || !activeSearchRow) return;
+    event.preventDefault();
+    activeSearchRow.focus();
+  });
+  window.addEventListener('readmd:language-changed', () => {
+    if (!$('search-bar').classList.contains('hidden')) {
+      searchResultRows = [];
+      updateSearchCount();
+    }
+  });
+  readerSearchObserver = new MutationObserver(records => {
+    if (state.editing || !input.value || records.every(record =>
+      (record.target.nodeType === Node.ELEMENT_NODE ? record.target : record.target.parentElement)?.closest('[data-rd-chrome]'))) return;
+    clearTimeout(readerSearchRefresh);
+    readerSearchRefresh = setTimeout(() => doSearch(input.value, undefined, { jump: false }), 24);
+  });
 }
 
 function openSidebarSearch() {
@@ -5791,6 +6105,8 @@ function openSidebarSearch() {
       if (selected && selected.length <= 256 && !selected.includes('\n')) $('search-input').value = selected;
     }
   }
+  bindSearchResults();
+  readerSearchObserver?.observe($('content'), { childList: true, subtree: true, characterData: true });
   syncSearchMode();
 }
 
@@ -5806,8 +6122,13 @@ function toggleSearch() {
 
 function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
   $('search-bar').classList.add('hidden');
-  clearMarks();
+  readerSearchObserver?.disconnect();
+  clearTimeout(readerSearchRefresh);
+  clearReaderSearchMarks();
+  globalSearchState = { query: '', matches: [], globalIndex: 0 };
   editorFindState = { query: '', doc: null, matches: [], index: 0, capped: false };
+  state.lastQuery = '';
+  updateSearchCount();
   if (closeSidebar && $('side').dataset.view === 'search') closeSide();
   if (restoreFocus && state.editing && window.cmView) { window.cmView.focus(); return; }
   if (restoreFocus && state.editing) { $('edit-area').focus(); return; }
@@ -5820,17 +6141,16 @@ function closeSearch({ restoreFocus = false, closeSidebar = true } = {}) {
 }
 
 function consumeInitialSearchJump() {
-  if (searchEditor($('search-input').value, { jump: true })) return;
-  focusCurrentSearchMatch();
+  const query = $('search-input').value;
+  if (searchEditor(query, { jump: true })) return;
+  if (!currentReaderSearch()) doSearch(query, undefined, { jump: false });
+  jumpToReaderSearchMatch(globalSearchState.globalIndex);
 }
 
 ;
 'use strict';
 
-const TREE_ICONS = {
-  dir: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>',
-  file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>'
-};
+const TREE_FOLDER_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>';
 /* ============================================================
    ReadMD Reader - Folder Tree Browser
    ============================================================ */
@@ -5872,13 +6192,16 @@ async function listFolder(dir, { reveal = true } = {}) {
 function renderFolderList() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('file-list');
-  box.innerHTML = '';
-  if (!state.folder) return;
+  box.replaceChildren();
+  if (!state.folder) {
+    syncFileSidebar(true);
+    return;
+  }
 
   const folderName = state.folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || state.folder;
   const header = document.createElement('div');
   header.className = 'dir-header';
-  header.innerHTML = TREE_ICONS.dir + '<span></span>';
+  header.innerHTML = TREE_FOLDER_ICON + '<span></span>';
   header.querySelector('span').textContent = folderName;
   header.title = state.folder;
   box.appendChild(header);
@@ -5889,12 +6212,13 @@ function renderFolderList() {
     empty.className = 'dir-label';
     empty.textContent = _t('sidebar.emptyFiles') || '（未找到 Markdown 文件）';
     box.appendChild(empty);
+    syncFileSidebar(true);
     return;
   }
 
 
   const normRoot = state.folder.replace(/\\/g, '/').replace(/\/$/, '');
-  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: {} };
+  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: Object.create(null) };
 
   state.folderFiles.forEach(fullPath => {
     const normPath = fullPath.replace(/\\/g, '/');
@@ -5911,7 +6235,7 @@ function renderFolderList() {
           name: part,
           type: isFile ? 'file' : 'dir',
           path: isFile ? fullPath : (normRoot + '/' + parts.slice(0, idx + 1).join('/')),
-          children: isFile ? null : {}
+          children: isFile ? null : Object.create(null)
         };
       }
       if (!isFile) {
@@ -5926,7 +6250,7 @@ function renderFolderList() {
   treeContainer.setAttribute('aria-label', _t('sidebar.files') || '文件');
   renderTreeNodes(treeContainer, rootNode.children, 0);
   box.appendChild(treeContainer);
-  updateTreeTabIndex();
+  syncFileSidebar(true);
 }
 
 function renderTreeNodes(container, childrenObj, depth) {
@@ -5936,7 +6260,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     if (itemA.type !== itemB.type) {
       return itemA.type === 'dir' ? -1 : 1;
     }
-    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    return itemA.name.localeCompare(itemB.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   keys.forEach(key => {
@@ -5951,13 +6275,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     row.setAttribute('role', 'treeitem');
     row.setAttribute('aria-level', String(depth + 1));
     row.tabIndex = -1;
-    if (item.type === 'file' && item.path === state.file) {
-      row.classList.add('active');
-      row.setAttribute('aria-selected', 'true');
-      row.setAttribute('aria-current', 'true');
-    } else {
-      row.setAttribute('aria-selected', 'false');
-    }
+    row.setAttribute('aria-selected', 'false');
 
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
@@ -5977,6 +6295,9 @@ function renderTreeNodes(container, childrenObj, depth) {
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
+      const icon = document.createElement('span');
+      icon.className = 'tree-icon';
+      icon.innerHTML = TREE_FOLDER_ICON;
       row.appendChild(icon);
       row.appendChild(nameEl);
       nodeEl.appendChild(row);
@@ -6003,11 +6324,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     } else {
       toggle.classList.add('empty');
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.file;
-      icon.setAttribute('aria-hidden', 'true');
-
+      row.dataset.filePath = normalizePath(item.path);
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
@@ -6027,6 +6344,70 @@ function renderTreeNodes(container, childrenObj, depth) {
   });
 }
 
+let sidebarActivePath = '';
+
+function syncFileSidebar(rebuilt = false) {
+  const box = $('file-list');
+  if (!box) return;
+  const listed = new Set(state.folderFiles.map(normalizePath));
+  const opened = new Map();
+  for (const tab of state.tabs) {
+    if (!tab.path || tab.isVirtual || tab._restoreUnavailable) continue;
+    const key = normalizePath(tab.path);
+    if (!listed.has(key)) opened.set(key, { name: tab.name || tab.path.split(/[\\/]/).pop(), path: tab.path, type: 'file' });
+  }
+  const existing = $('file-open-group');
+  const signature = JSON.stringify([...opened.values()]);
+  const refreshed = existing?.dataset.files !== signature && (opened.size > 0 || existing);
+  if (refreshed) {
+    existing?.remove();
+    if (opened.size) {
+      const group = document.createElement('div');
+      group.id = 'file-open-group';
+      group.dataset.files = signature;
+      const header = document.createElement('div');
+      header.id = 'file-open-label';
+      header.className = 'dir-header';
+      header.dataset.i18n = 'tabs.openDocs';
+      header.textContent = window.i18n.t('tabs.openDocs');
+      const tree = document.createElement('div');
+      tree.className = 'tree-children';
+      tree.setAttribute('role', 'tree');
+      tree.setAttribute('aria-labelledby', header.id);
+      renderTreeNodes(tree, Object.fromEntries(opened), 0);
+      group.append(header, tree);
+      box.appendChild(group);
+    }
+  }
+
+  const path = getActiveTab()?.path;
+  const active = path ? normalizePath(path) : '';
+  const changed = active !== sidebarActivePath;
+  if (rebuilt || refreshed || changed) {
+    sidebarActivePath = active;
+    let activeRow = null;
+    for (const row of box.querySelectorAll('.tree-row[data-file-path]')) {
+      const selected = row.dataset.filePath === active;
+      row.classList.toggle('active', selected);
+      row.setAttribute('aria-selected', String(selected));
+      if (selected) {
+        row.setAttribute('aria-current', 'true');
+        activeRow = row;
+      } else row.removeAttribute('aria-current');
+    }
+    if (activeRow && (changed || rebuilt)) {
+      for (let group = activeRow.closest('.tree-children.collapsed'); group; group = group.parentElement.closest('.tree-children.collapsed')) {
+        group.classList.remove('collapsed');
+        const parent = group.parentElement.querySelector(':scope > .tree-row');
+        parent?.setAttribute('aria-expanded', 'true');
+        parent?.querySelector('.tree-toggle')?.classList.add('open');
+      }
+      if (activeRow.offsetParent) activeRow.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  if (rebuilt || refreshed || changed) updateTreeTabIndex();
+}
+
 function visibleTreeRows() {
   return Array.from(document.querySelectorAll('#file-list .tree-row'))
     .filter(row => row.offsetParent !== null);
@@ -6034,7 +6415,8 @@ function visibleTreeRows() {
 
 function updateTreeTabIndex() {
   const rows = visibleTreeRows();
-  rows.forEach((row, index) => { row.tabIndex = index === 0 ? 0 : -1; });
+  const entry = rows.find(row => row === document.activeElement) || rows.find(row => row.classList.contains('active')) || rows[0];
+  rows.forEach(row => { row.tabIndex = row === entry ? 0 : -1; });
 }
 
 function handleTreeKeydown(event, row) {
@@ -7886,7 +8268,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     const renderer = new marked.Renderer();
 
     // 1. 分词并记录顶级 AST 节点的源码起始行号
-    const tokens = marked.lexer(content, { gfm: true, breaks: breaks });
+    const tokens = marked.lexer(content, { ...marked.defaults, gfm: true, breaks });
     let lineCursor = 1;
     tokens.forEach(tok => {
       tok.sourceLine = lineCursor;
@@ -14397,7 +14779,6 @@ function saveEditorPrefs() {
 
 let cmCompartments = null;
 let cmSelectionGesture = null;
-let cmSelectionSuppressed = null;
 let cmSelectionTimer = 0;
 const CM_SELECTION_SETTLE_MS = 140;
 const CM_SELECTION_SLOP_SQUARED = 16;
@@ -14536,16 +14917,14 @@ function createEditor(doc) {
     if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
     cmSelectionGesture = {
       view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
-      travel: 0, clicks: 1, modified: event.shiftKey || event.altKey || event.ctrlKey || event.metaKey,
+      dragPending: false, recenter: false,
     };
-    cmSelectionSuppressed = null;
     hideCmSelectionToolbar();
   }, true);
   view.dom.addEventListener('mousedown', event => {
-    if (cmSelectionGesture?.view === view) cmSelectionGesture.clicks = event.detail;
-  }, true);
-  view.dom.addEventListener('keydown', event => {
-    if (!event.isComposing) cmSelectionSuppressed = null;
+    const gesture = cmMouseSelectionGesture(view);
+    if (!gesture || event.button !== 0) return;
+    gesture.dragPending = event.detail === 1 && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
   }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
@@ -14558,27 +14937,28 @@ function createEditor(doc) {
 
 }
 
-function trackSelectionTravel(event) {
+function cmMouseSelectionGesture(view) {
   const gesture = cmSelectionGesture;
-  if (!gesture || gesture.id !== event.pointerId) return;
-  gesture.travel = Math.max(gesture.travel, (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2);
+  return gesture?.type === 'mouse' && gesture.view === view ? gesture : null;
 }
-document.addEventListener('pointermove', trackSelectionTravel, { capture: true, passive: true });
+
+// CodeMirror tracks a drag on document mousemove. Let the initial click place
+// the caret, then wait for intentional movement before extending the range.
+window.addEventListener('mousemove', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture?.dragPending || !(event.buttons & 1) || gesture.view.compositionStarted) return;
+  const distanceSquared = (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2;
+  if (distanceSquared < CM_SELECTION_SLOP_SQUARED) event.stopPropagation();
+  else gesture.dragPending = false;
+}, true);
 document.addEventListener('pointerup', event => {
   const gesture = cmSelectionGesture;
   if (!gesture || gesture.id !== event.pointerId) return;
-  trackSelectionTravel(event);
   cmSelectionGesture = null;
-  // CodeMirror may finish the range in its mouseup handler. Inspect that
-  // settled range rather than inferring or rewriting the user's selection.
+  if (gesture.recenter) scheduleCmTypewriterCenter(gesture.view);
+  // CodeMirror may finish the selection in mouseup, after pointerup.
   requestAnimationFrame(() => {
-    if (cmView !== gesture.view || cmSelectionGesture) return;
-    const { from, to } = cmView.state.selection.main;
-    if (from !== to && gesture.type === 'mouse' && gesture.clicks === 1 &&
-        !gesture.modified && gesture.travel < CM_SELECTION_SLOP_SQUARED) {
-      cmSelectionSuppressed = { view: cmView, from, to };
-    }
-    scheduleCmSelectionToolbar();
+    if (cmView === gesture.view && !cmSelectionGesture) scheduleCmSelectionToolbar();
   });
 }, true);
 document.addEventListener('pointercancel', event => {
@@ -14624,11 +15004,7 @@ function hideCmSelectionToolbar() {
 function selectionToolbarRange() {
   if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
   const selection = cmView.state.selection.main;
-  if (!selection || selection.empty) return null;
-  const suppressed = cmSelectionSuppressed;
-  if (suppressed?.view === cmView && suppressed.from === selection.from && suppressed.to === selection.to) return null;
-  cmSelectionSuppressed = null;
-  return selection;
+  return selection.empty ? null : selection;
 }
 
 function scheduleCmSelectionToolbar() {
@@ -14822,6 +15198,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  cmSelectionGesture = null;
   if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
@@ -15095,21 +15472,32 @@ function cmFocusExtension() {
 }
 
 /* Typewriter mode: the cursor line stays at the vertical centre. */
+function scheduleCmTypewriterCenter(view) {
+  const gesture = cmMouseSelectionGesture(view);
+  if (gesture) {
+    gesture.recenter = true;
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (cmView !== view || !view.hasFocus || !editorPrefs.typewriter || cmMouseSelectionGesture(view)) return;
+    const head = view.state.selection.main.head;
+    view.dispatch({ effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(head, { y: 'center' }) });
+  });
+}
+
 function cmTypewriterExtension() {
   const CM = window.ReadMDCodeMirror;
   return [
     CM.EditorView.scrollMargins.of(view => {
+      // Drag autoscroll uses these margins to detect the edge of the editor.
+      if (cmMouseSelectionGesture(view)) return null;
       const h = view.scrollDOM.clientHeight;
       return { top: h * 0.45, bottom: h * 0.45 };
     }),
     CM.EditorView.updateListener.of(u => {
       if (!u.selectionSet || !u.view.hasFocus) return;
       if (!u.transactions.some(tr => tr.isUserEvent('input') || tr.isUserEvent('delete') || tr.isUserEvent('select') || tr.isUserEvent('move'))) return;
-      const head = u.state.selection.main.head;
-      requestAnimationFrame(() => {
-        if (!cmView || cmView !== u.view) return;
-        u.view.dispatch({ effects: CM.EditorView.scrollIntoView(head, { y: 'center' }) });
-      });
+      scheduleCmTypewriterCenter(u.view);
     }),
   ];
 }
@@ -25474,7 +25862,7 @@ function renderPetSettings(status) {
 const petPreviewImages = new Map();
 const petPreviewRequests = new WeakMap();
 function petPreviewSource(slug) {
-  if (slug === 'bongocat') return '/assets/pet/bongocat-preview.png';
+  if (slug === 'bongocat') return '/assets/pet/bongocat-cover.png';
   if (!slug || slug === 'hermes') return '/assets/pet/hermes-sprite.png';
   return `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
 }
@@ -26988,11 +27376,12 @@ let exportNumberingControl = null;
 
 function getExportPresetNames() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const lang = window.i18n?.currentLang || 'en';
   return {
     minimal: _t('export.presetMinimal') || '',
     classic: _t('export.presetClassic') || '',
     business: _t('export.presetBusiness') || '',
-    ...Object.fromEntries((state.export.catalog || []).map(p=>[p.id,_t(p.label)]))
+    ...Object.fromEntries((state.export.catalog || []).map(p => [p.id, p.names?.[lang] || p.names?.en || _t(p.label)]))
   };
 }
 
@@ -28413,12 +28802,13 @@ function updateExportLivePreview() {
   const badge = $('export-preview-badge');
   const sel = $('exp-preset');
   const presetName = (sel && sel.selectedIndex >= 0) ? sel.options[sel.selectedIndex].text : (_t('export.presetDefault') || '');
-  const fmtLabel = fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
+  const fmtLabel = imageExport(fmt) ? _t(fmt === 'png' ? 'export.fmtPngLong' : 'export.fmtPngPages') :
+    fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
   if (badge) badge.textContent = fmtLabel + ' · ' + presetName;
   renderExportPresetCards();
 
   const docTitle = currentExportName();
-  if (window.READMD_ENGINE === 'rust' && ['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx'].includes(fmt)) {
+  if (window.READMD_ENGINE === 'rust' && SNAPSHOT_EXPORT_FORMATS.has(fmt)) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
     return;
   }
@@ -28464,6 +28854,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
   if (miniHost) {
     miniHost.setAttribute('aria-busy','false');
     miniHost.innerHTML = pageHtmlList[0] || restoredFullHtml;
+    if (isHtmlMode) ReadMDExportHtmlLayout.mount(miniHost, opts.htmlLayout, { links: false, contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
     renderMath(miniHost);
     const miniPage = $('export-preview-mini-page');
     const viewport = miniPage && miniPage.parentElement;
@@ -28501,6 +28892,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
         const bodyEl = document.createElement('div');
         bodyEl.className = 'export-page-body';
         bodyEl.innerHTML = pageHtml;
+        if (isHtmlMode) ReadMDExportHtmlLayout.mount(bodyEl, opts.htmlLayout, { contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
         sheet.appendChild(bodyEl);
 
         if (!isHtmlMode) {
@@ -28598,7 +28990,8 @@ function expFieldApplicable(f, secFmts, fmt) {
   if(f.k==='footnotes.title'&&effectiveExportOptions(state.export.options||{}).footnotes?.position!=='document')return false;
   if((f.k==='toc.depth'||f.k==='toc.leader')&&fmt!=='epub'&&!state.export.options?.toc?.enabled)return false;
   const fmts = f.fmts || secFmts || ['pdf', 'docx', 'html'];
-  return fmts.indexOf(fmt) >= 0;
+  if (imageExport(fmt)) return !f.k.startsWith('pdf.') && fmts.includes('pdf');
+  return fmts.includes(fmt);
 }
 
 function renderExportSections(preserveSections = false) {
@@ -28913,24 +29306,69 @@ function exportPresetOptions(name) {
   return expDeepMerge(state.export.defaults, preset);
 }
 
+const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx_defense', png: 'image_clean', 'png-pages': 'image_clean' };
+
+function presetFitsFormat(name, format) {
+  const entry = state.export.catalog?.find(profile => profile.id === name);
+  if (entry) return entry.formats.includes(format);
+  const customFormat = state.export.custom?.[name]?.presetFormat;
+  return !customFormat || customFormat === format;
+}
+
+function rememberExportFormat(next) {
+  if (state.export.fmt === next) return;
+  state.export.formatChoices ||= new Map();
+  const previous = { preset: $('exp-preset').value, options: state.export.options };
+  state.export.formatChoices.set(state.export.fmt, previous);
+  const remembered = state.export.formatChoices.get(next);
+  const fallback = EXPORT_FORMAT_DEFAULTS[next] || '__default__';
+  const fits = previous.preset && previous.preset !== '__default__' && presetFitsFormat(previous.preset, next);
+  state.export.fmt = next;
+  if (remembered || (fits && previous.preset !== '__custom__')) {
+    const choice = remembered || previous;
+    state.export.selectedPreset = choice.preset;
+    state.export.options = choice.options;
+  } else if (previous.preset === '__custom__' || (!fits && fallback === '__default__' && previous.preset !== '__default__')) {
+    // Carry shared typography across formats without bringing along a slide
+    // theme, a website layout, or a preset's format restriction.
+    const shared = { ...previous.options };
+    for (const key of ['htmlLayout', 'htmlTheme', 'pptxLayout', 'transition', 'presetFormat']) delete shared[key];
+    state.export.selectedPreset = '__custom__';
+    state.export.options = expDeepMerge(exportPresetOptions(fallback), shared);
+  } else {
+    state.export.selectedPreset = fallback;
+    state.export.options = exportPresetOptions(fallback);
+  }
+  exportProfileSession()?.selectPreset(state.export.options);
+}
+
 function renderExportPresetSelect() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('exp-preset');
   sel.textContent = '';
   const presetNames = getExportPresetNames();
   const catalog=state.export.catalog||[],fmt=state.export.fmt||'pdf';
-  const names = Object.keys(state.export.presets || {}).filter(n=>{const p=catalog.find(p=>p.id===n);return !p||p.formats?.includes(fmt);});
+  const entries = new Map(catalog.map(profile => [profile.id, profile]));
+  const names = Object.keys(state.export.presets || {}).filter(name => presetFitsFormat(name, fmt));
   sel.appendChild(new Option(_t('export.presetDefault') || 'Default', '__default__'));
   const categories=[['common','export.presetsCommon'],['book','export.presetsBook'],['academic','export.presetsAcademic']];
-  const added=new Set();
+  const added = new Set();
+  for (const name of names.filter(name => entries.get(name)?.names)) {
+    sel.appendChild(new Option(presetNames[name] || name, name));
+    added.add(name);
+  }
   categories.forEach(([category,key])=>{
-    const members=names.filter(n=>catalog.find(p=>p.id===n)?.category===category);
+    const members=names.filter(n=>!added.has(n) && entries.get(n)?.category===category);
     if(!members.length)return;
     const group=document.createElement('optgroup');group.label=_t(key);
     members.forEach(n=>{group.append(new Option(presetNames[n]||n,n));added.add(n);});sel.append(group);
   });
   names.filter(n=>!added.has(n)).forEach(n=>sel.append(new Option(presetNames[n]||n,n)));
-  const customNames=Object.keys(state.export.custom||{});
+  const customNames = Object.keys(state.export.custom || {}).filter(name => {
+    if (Object.hasOwn(state.export.presets, name)) return false;
+    const format = state.export.custom[name]?.presetFormat;
+    return !format || format === fmt;
+  });
   if(customNames.length){const group=document.createElement('optgroup');group.label=_t('export.presetCustom');customNames.forEach(n=>group.append(new Option(n,n)));sel.append(group);}
   sel.appendChild(new Option(_t('export.presetCustom') || '', '__custom__'));
   const last = state.export.last;
@@ -28958,11 +29396,11 @@ function renderExportPresetCards() {
   const host = $('exp-preset-cards');
   const sel = $('exp-preset');
   if (!host || !sel || !state.export.defaults) return;
-  host.textContent = '';
-  const recommended=state.export.fmt==='epub'?['book_novel','book_nonfiction','book_textbook']:['minimal','classic','business'];
+  const focused = host.contains(document.activeElement) ? document.activeElement.dataset.preset : null;
+  host.replaceChildren();
+  const catalog = new Map((state.export.catalog || []).map(profile => [profile.id, profile]));
   [...sel.options].forEach(o => {
     const v = o.value;
-    if(v!=='__default__'&&v!==sel.value&&!recommended.includes(v))return;
     if (v === '__custom__' && sel.value !== '__custom__') return;
     const opts = exportPresetOptions(v);
     const card = document.createElement('button');
@@ -28974,23 +29412,22 @@ function renderExportPresetCards() {
     const swatch = document.createElement('span');
     swatch.className = 'exp-preset-swatch';
     swatch.setAttribute('aria-hidden', 'true');
-    const h1 = (opts.headings && opts.headings.h1) || {};
-    [h1.color, (opts.table || {}).headerBg, (opts.link || {}).color, (opts.quote || {}).barColor].forEach(c => {
-      const dot = document.createElement('i');
-      if (c) dot.style.background = c;
-      swatch.appendChild(dot);
+    const profile = catalog.get(v);
+    const colors = profile?.previewColors || ['#ffffff', opts.headings?.h1?.color, opts.link?.color];
+    ['paper', 'ink', 'accent'].forEach((part, index) => {
+      const color = colors[index];
+      if (typeof color === 'string' && /^#[\da-f]{6}$/i.test(color)) swatch.style.setProperty('--preset-' + part, color);
     });
+    swatch.dataset.previewFormat = state.export.fmt;
+    for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
     const name = document.createElement('span');
     name.className = 'exp-preset-name';
     name.textContent = o.text;
-    const ty = opts.typography || {};
-    const meta = document.createElement('span');
-    meta.className = 'exp-preset-meta';
-    meta.textContent = [ty.size ? ty.size + 'pt' : '', ty.lineHeight || ''].filter(Boolean).join(' · ');
-    card.append(swatch, name, meta);
+    card.append(swatch, name);
     card.addEventListener('click', () => { sel.value = v; sel.onchange(); });
     host.appendChild(card);
   });
+  if (focused) [...host.children].find(card => card.dataset.preset === focused)?.focus({ preventScroll: true });
 }
 
 
@@ -29013,7 +29450,8 @@ async function parkPreparedExport(frozen) {
     exportPreviewSnapshots.delete(oldest.key); await discardPreparedExport(oldest);
   }
 }
-const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx']);
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx', 'png', 'png-pages']);
+const imageExport = format => format === 'png' || format === 'png-pages';
 function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
 function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
 function usesExportSnapshot(fmt, tab) {
@@ -29021,7 +29459,7 @@ function usesExportSnapshot(fmt, tab) {
 }
 async function oversizedUntrackedExport(fmt, tab, content) {
   if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
-  if (['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
+  if (imageExport(fmt) || ['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
   if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
   const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
   // This read does not create a review database. Only an explicit absence can
@@ -29201,6 +29639,7 @@ async function runExportOnce(taskId) {
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
   const fmt = state.export.fmt;
+  const layoutFormat = imageExport(fmt) ? 'pdf' : fmt;
   const rememberedOptions = collectExportOptions();
   let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
@@ -29238,11 +29677,11 @@ async function runExportOnce(taskId) {
     return false;
   }
   const engineCapability={typst:'typst',xelatex:'latex',pdflatex:'latex'}[options.pdf?.engine];
-  if(fmt==='pdf'&&engineCapability){
+  if(layoutFormat==='pdf'&&engineCapability){
     const epoch=exportOpenEpoch;
     if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,fmt)){await discardPreparedExport(frozen);return false;}
+  if((layoutFormat==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,layoutFormat)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -29259,7 +29698,7 @@ async function runExportOnce(taskId) {
       // Rendered labels can introduce CJK glyphs absent from the diagram
       // source. Install against the frozen SVGs, then bind missing fonts on
       // this same snapshot before committing its output.
-      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, fmt)) {
+      if ((layoutFormat === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, layoutFormat)) {
         await discardPreparedExport(frozen); busy(false); return false;
       }
       await bindSnapshotRuntime(frozen);
@@ -29423,6 +29862,34 @@ window.addEventListener('readmd:language-changed',()=>{
   renderExportWarns(warning.payload?warnMessages(warning.payload):warning.list,warning.payload);
 });
 
+function importExportPresetPack() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 256 * 1024) { showToast(i18n.t('plugin.installFailed')); return; }
+    try {
+      const pack = JSON.parse(await file.text());
+      const response = await apiFetch('/api/export/presets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ install_pack: pack }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) {
+        showToast(apiMessage(data, 'plugin.installFailed'));
+        return;
+      }
+      state.export.ready = false;
+      showToast(i18n.t('plugin.installed'));
+    } catch {
+      showToast(i18n.t('plugin.installFailed'));
+    }
+  }, { once: true });
+  input.click();
+}
+
 async function expSavePreset() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('exp-save-name');
@@ -29444,7 +29911,7 @@ async function expSavePreset() {
     if (!validateEpubNumericControls(true)) return;
     const options = collectExportOptions();
     if (expEpubNumericIssue(options)) { showToast(_t('error.epub_invalid_options')); return; }
-    const custom = Object.assign({}, state.export.custom, { [name]: options });
+    const custom = Object.assign({}, state.export.custom, { [name]: { ...options, presetFormat: state.export.fmt } });
     const last = { fmt: state.export.fmt, options, preset: name };
     button.disabled = true;
     try {
@@ -30184,7 +30651,6 @@ async function startUpdateDownload() {
   updateStatusFailures = 0;
   updatePollPending = false;
   const asset = updateInfo.asset;
-  const useMirror = $('update-use-mirror') && $('update-use-mirror').checked;
   if (!asset.expected_sha) {
     showToast(_t('update.unverifiedPackage') || '无法验证更新包');
     return;
@@ -30202,17 +30668,16 @@ async function startUpdateDownload() {
     let started = false;
     let startResult = null;
     if (hasPy && py.start_download_update) {
-      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, useMirror);
+      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, false);
       started = startResult && startResult.ok;
     } else {
-      const resp = await fetch('/api/update/download', {
+      const resp = await apiFetch('/api/update/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           download_url: asset.download_url,
           target_filename: asset.name,
           expected_sha: asset.expected_sha,
-          use_mirror: useMirror,
         }),
       });
       startResult = await resp.json();
@@ -31122,8 +31587,8 @@ async function applyReadyUpdate() {
 (function () {
   const VERSION = (document.documentElement && document.documentElement.dataset.version) || '';
   const q = VERSION ? '?v=' + encodeURIComponent(VERSION) : '';
-  const JS = '/assets/js/shell/shell-deferred.js' + q;
-  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=0bf1a18dee19';
+  const JS = '/assets/js/shell/shell-deferred.js' + q + (q ? '&' : '?') + 'rev=ec6d91677df7';
+  const CSS = '/assets/css/shell-deferred.css' + q + (q ? '&' : '?') + 'rev=6f8b634c4fee';
   let cssPending = null;
   let pending = null;
 
@@ -31465,12 +31930,12 @@ function showSide(view = $('side').dataset.view, { loadFiles = true } = {}) {
   side.classList.remove('hidden');
   syncSidebar();
   if (view === 'files') {
-    if (state.folderFiles.length || !loadFiles) renderFolderList();
-    else void listFolder(state.folder || state.dir || '', { reveal: false });
+    renderFolderList();
+    if (loadFiles && state.folder && !state.folderFiles.length) void listFolder(state.folder, { reveal: false });
   } else if (view === 'toc') {
     buildToc();
   } else if (view === 'recent') {
-    refreshSidebarRecent();
+    refreshRecent();
   } else if (view === 'search') {
     openSidebarSearch();
   }
@@ -32509,7 +32974,7 @@ function bindEvents() {
   const activateExportFormat = btn => {
     exportFormatTabs.forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', b === btn ? 'true' : 'false'); });
     $('export-opts').setAttribute('aria-labelledby', btn.id);
-    state.export.fmt = btn.dataset.fmt;
+    rememberExportFormat(btn.dataset.fmt);
     renderExportPresetSelect();
     renderExportSections();
   };
@@ -32536,6 +33001,7 @@ function bindEvents() {
   $('export-print').addEventListener('click', () => window.print());
   $('export-run').addEventListener('click', runExport);
   $('exp-save-preset').addEventListener('click', expSavePreset);
+  $('plugin-preset-pack').addEventListener('click', importExportPresetPack);
   $('exp-reset').addEventListener('click', () => {
     state.export.options = expDeepMerge(state.export.defaults, {});
     state.export.selectedPreset = '__default__';

@@ -493,19 +493,27 @@ fn begin_download(
 /// must pass SHA-256 before publication; an exhausted loop reports download failure.
 fn run_download(job: DownloadJob) {
     let _running = RunningDownloadGuard;
-    download_with(&job, &mut |url| {
-        // Release packages exceed 200 MiB: keep the 30-second inactivity timeout,
-        // but allow slow, progressing transfers up to two hours per source.
-        let transfer_budget = std::time::Duration::from_secs(2 * 60 * 60);
-        let resp = crate::updater::update_agent(transfer_budget, 5).get(url)
-            .timeout(transfer_budget).call().map_err(|_| ())?;
+    let candidates = crate::package_download::ranked(&job.url, job.prefer_mirror, None);
+    // Keep the existing verified staging/commit and report progress on the
+    // one transfer being attempted. The small ranking probes never land.
+    let budget = std::time::Duration::from_secs(2 * 60 * 60);
+    let agent = crate::updater::update_agent(budget, 0);
+    download_with_candidates(&job, candidates, &mut |url| {
+        let resp = crate::package_download::response(&agent, url, std::time::Instant::now() + budget, None)?;
         let total = resp.header("Content-Length").and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
         Ok((resp.into_reader(), total))
     });
 }
 
-fn download_with(job: &DownloadJob, transport: &mut dyn FnMut(&str) -> Result<(Box<dyn std::io::Read + Send + Sync>, u64), ()>) {
-    for url in crate::updater::download_candidates(&job.url, job.prefer_mirror) {
+type PackageTransport<'a> = dyn FnMut(&str) -> Result<(Box<dyn std::io::Read + Send + Sync>, u64), ()> + 'a;
+
+#[cfg(test)]
+fn download_with(job: &DownloadJob, transport: &mut PackageTransport<'_>) {
+    download_with_candidates(job, crate::updater::download_candidates(&job.url, job.prefer_mirror), transport);
+}
+
+fn download_with_candidates(job: &DownloadJob, candidates: Vec<String>, transport: &mut PackageTransport<'_>) {
+    for url in candidates {
         if download_state().cancel_requested { with_download_state(|state| { state.status = "cancelled".into(); state.running = false; }); cleanup_part(&job.part_path); return; }
         with_download_state(|state| { state.status = "downloading".into(); state.downloaded_bytes = 0; state.percent = 0; state.speed_bps = 0; });
         if let Ok((mut reader, total)) = transport(&url) {

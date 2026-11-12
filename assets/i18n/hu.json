@@ -2022,6 +2022,7 @@
   "search.next": "Következő (Enter)",
   "search.noMatches": "Nincs találat",
   "search.placeholder": "Keresés a dokumentumban… (Enter: Következő, Shift+Enter: Előző)",
+  "search.results": "Keresési eredmények",
   "search.prev": "Előző (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} kör",
   "ai.taskRunning": "Ellenőrzés folyamatban…",
   "ai.thinking": "Gondolkodás…",
-  "warn.pptx_math_image": "A képletek képként maradnak meg, forrásuk a dia jegyzeteiben található."
+  "warn.pptx_math_image": "A képletek képként maradnak meg, forrásuk a dia jegyzeteiben található.",
+  "export.fmtPngLong": "Hosszú PNG",
+  "export.fmtPngPages": "PNG oldalanként",
+  "export.importPresetPack": "Sablonok importálása"
 }

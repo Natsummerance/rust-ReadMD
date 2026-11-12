@@ -254,12 +254,12 @@ function showSide(view = $('side').dataset.view, { loadFiles = true } = {}) {
   side.classList.remove('hidden');
   syncSidebar();
   if (view === 'files') {
-    if (state.folderFiles.length || !loadFiles) renderFolderList();
-    else void listFolder(state.folder || state.dir || '', { reveal: false });
+    renderFolderList();
+    if (loadFiles && state.folder && !state.folderFiles.length) void listFolder(state.folder, { reveal: false });
   } else if (view === 'toc') {
     buildToc();
   } else if (view === 'recent') {
-    refreshSidebarRecent();
+    refreshRecent();
   } else if (view === 'search') {
     openSidebarSearch();
   }

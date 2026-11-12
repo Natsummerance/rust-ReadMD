@@ -2022,6 +2022,7 @@
   "search.next": "Kế tiếp (Enter)",
   "search.noMatches": "Không tìm thấy kết quả phù hợp",
   "search.placeholder": "Tìm kiếm trong tài liệu… (Enter Kế tiếp, Shift+Enter Trước đó)",
+  "search.results": "Kết quả tìm kiếm",
   "search.prev": "Trước đó (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} vòng",
   "ai.taskRunning": "Đang duyệt…",
   "ai.thinking": "Đang suy nghĩ…",
-  "warn.pptx_math_image": "Công thức được giữ dưới dạng hình ảnh, mã nguồn nằm trong ghi chú trang chiếu."
+  "warn.pptx_math_image": "Công thức được giữ dưới dạng hình ảnh, mã nguồn nằm trong ghi chú trang chiếu.",
+  "export.fmtPngLong": "PNG dài",
+  "export.fmtPngPages": "PNG theo trang",
+  "export.importPresetPack": "Nhập mẫu cài đặt"
 }

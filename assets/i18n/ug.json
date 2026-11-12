@@ -2022,6 +2022,7 @@
   "search.next": "كېيىنكىسى (Enter)",
   "search.noMatches": "ماس كەلگەن نەتىجە يوق",
   "search.placeholder": "ھۆججەت ئىچىدىن ئىزدەش… (كېيىنكىسىگە Enter، ئالدىنقىسىغا Shift+Enter)",
+  "search.results": "ئىزدەش نەتىجىلىرى",
   "search.prev": "ئالدىنقىسى (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} ئايلانما",
   "ai.taskRunning": "تەكشۈرۈلۈۋاتىدۇ…",
   "ai.thinking": "ئويلىنىۋاتىدۇ…",
-  "warn.pptx_math_image": "تەڭلىمىلەر رەسىم سۈپىتىدە ساقلىنىدۇ، ئەسلى كودى سىلايد ئىزاھاتىغا يېزىلىدۇ."
+  "warn.pptx_math_image": "تەڭلىمىلەر رەسىم سۈپىتىدە ساقلىنىدۇ، ئەسلى كودى سىلايد ئىزاھاتىغا يېزىلىدۇ.",
+  "export.fmtPngLong": "ئۇزۇن PNG",
+  "export.fmtPngPages": "بەت بويىچە PNG",
+  "export.importPresetPack": "ئالدىنقى تەڭشەكلەرنى ئەكىرىش"
 }

@@ -2022,6 +2022,7 @@
   "search.next": "နောက်တစ်ခု (Enter)",
   "search.noMatches": "တူညီသောရလဒ်များမရှိပါ။",
   "search.placeholder": "စာရွက်စာတမ်းများအတွင်း ရှာဖွေပါ... (နောက်သို့ထည့်ပါ၊ Shift+Enter Previous)",
+  "search.results": "ရှာဖွေမှုရလဒ်များ",
   "search.prev": "ယခင် (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} အကြိမ်",
   "ai.taskRunning": "စစ်ဆေးနေသည်…",
   "ai.thinking": "စဉ်းစားနေသည်…",
-  "warn.pptx_math_image": "ညီမျှခြင်းများကို ပုံအဖြစ် သိမ်းဆည်းပြီး မူရင်းကုဒ်ကို ဆလိုက်မှတ်စုများတွင် ထည့်ထားသည်။"
+  "warn.pptx_math_image": "ညီမျှခြင်းများကို ပုံအဖြစ် သိမ်းဆည်းပြီး မူရင်းကုဒ်ကို ဆလိုက်မှတ်စုများတွင် ထည့်ထားသည်။",
+  "export.fmtPngLong": "PNG အရှည်",
+  "export.fmtPngPages": "စာမျက်နှာလိုက် PNG",
+  "export.importPresetPack": "ကြိုတင်သတ်မှတ်ချက် တင်သွင်းရန်"
 }

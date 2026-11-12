@@ -1017,7 +1017,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     const renderer = new marked.Renderer();
 
     // 1. 分词并记录顶级 AST 节点的源码起始行号
-    const tokens = marked.lexer(content, { gfm: true, breaks: breaks });
+    const tokens = marked.lexer(content, { ...marked.defaults, gfm: true, breaks });
     let lineCursor = 1;
     tokens.forEach(tok => {
       tok.sourceLine = lineCursor;

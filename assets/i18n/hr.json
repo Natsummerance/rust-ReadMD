@@ -2022,6 +2022,7 @@
   "search.next": "Sljedeće (Enter)",
   "search.noMatches": "Nema pronađenih rezultata",
   "search.placeholder": "Pretraži dokument… (Enter Sljedeće, Shift+Enter Prethodno)",
+  "search.results": "Rezultati pretraživanja",
   "search.prev": "Prethodno (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} krugova",
   "ai.taskRunning": "Pregled je u tijeku…",
   "ai.thinking": "Razmišljanje…",
-  "warn.pptx_math_image": "Jednadžbe se čuvaju kao slike, a njihov izvor u bilješkama slajdova."
+  "warn.pptx_math_image": "Jednadžbe se čuvaju kao slike, a njihov izvor u bilješkama slajdova.",
+  "export.fmtPngLong": "Dugi PNG",
+  "export.fmtPngPages": "PNG po stranici",
+  "export.importPresetPack": "Uvezi predloške"
 }

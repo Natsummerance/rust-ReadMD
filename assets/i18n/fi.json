@@ -2022,6 +2022,7 @@
   "search.next": "Seuraava (Enter)",
   "search.noMatches": "Ei vastaavia tuloksia",
   "search.placeholder": "Hae asiakirjoista… (Enter Seuraava, Vaihto+Enter Edellinen)",
+  "search.results": "Hakutulokset",
   "search.prev": "Edellinen (Vaihto+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} kierrosta",
   "ai.taskRunning": "Tarkistus käynnissä…",
   "ai.thinking": "Ajatellaan…",
-  "warn.pptx_math_image": "Kaavat säilytetään kuvina ja niiden lähdekoodi dian muistiinpanoissa."
+  "warn.pptx_math_image": "Kaavat säilytetään kuvina ja niiden lähdekoodi dian muistiinpanoissa.",
+  "export.fmtPngLong": "Pitkä PNG",
+  "export.fmtPngPages": "PNG sivuittain",
+  "export.importPresetPack": "Tuo esiasetuksia"
 }

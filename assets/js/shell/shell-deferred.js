@@ -733,60 +733,6 @@
   /* ============================================================
      Chrome enhancements (progressive: the chrome works without them)
      ============================================================ */
-  /* ---------- tab strip: sliding active indicator ---------- */
-  function bindIndicator(bar) {
-    if (!bar || bar.__rmIndicator) return;
-    bar.__rmIndicator = true;
-    bar.classList.add('rm-has-indicator');
-    const ind = document.createElement('span');
-    ind.className = 'rm-tab-indicator';
-    ind.setAttribute('aria-hidden', 'true');
-    let last = null;          // last geometry, replayed after renderTabsBar() rebuilds the strip
-    let reinserted = true;
-    const apply = g => {
-      ind.style.width = g.w + 'px';
-      ind.style.height = g.h + 'px';
-      ind.style.transform = `translate(${g.x}px, ${g.y}px)`;
-    };
-    const place = () => {
-      const active = bar.querySelector('.tab-item.active');
-      if (!active || !active.offsetParent) {
-        // No active tab: keep the strip truly empty (so :empty rules still apply).
-        bar.classList.remove('rm-ind-ready');
-        if (ind.isConnected) ind.remove();
-        last = null;
-        return;
-      }
-      if (!ind.isConnected) { bar.insertBefore(ind, bar.firstChild); reinserted = true; }
-      const g = { x: active.offsetLeft, y: active.offsetTop, w: active.offsetWidth, h: active.offsetHeight };
-      if (reinserted) {
-        // A freshly inserted node has no "before" style, so replay the old
-        // geometry without animation, then slide to the new one.
-        ind.classList.add('rm-no-anim');
-        apply(last || g);
-        void ind.offsetWidth;
-        ind.classList.remove('rm-no-anim');
-        reinserted = false;
-      }
-      apply(g);
-      last = g;
-      bar.classList.add('rm-ind-ready');
-    };
-    let queued = false;
-    const schedule = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; place(); }); };
-    new MutationObserver(records => {
-      // Ignore our own re-insertion.
-      // Ignore our own mutations (indicator re-insertion, its classes, the bar's ready flag).
-      const relevant = records.some(r => (r.type === 'childList'
-        ? [...r.addedNodes, ...r.removedNodes].some(n => n !== ind)
-        : r.target !== ind && r.target !== bar));
-      if (!relevant) return;
-      place(); // synchronous: no frame with a stale pill after a re-render
-    }).observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
-    if (window.ResizeObserver) new ResizeObserver(schedule).observe(bar);
-    schedule();
-  }
-
   /* ---------- tab strip: edge fades when scrolled ---------- */
   function bindEdgeFade(bar) {
     if (!bar || bar.__rmFade) return;
@@ -810,7 +756,7 @@
 
   /* ---------- tooltips (label + shortcut chips) ---------- */
   let tip = null, tipTimer = 0, tipFor = null, tipWarm = 0;
-  const TIP_SCOPE = '#toolbar [title], #side-rail button[title], #side-file-actions button[title], #side-recent-clear[title], #status-summary[title], #edit-bar button[title], #cm-selection-toolbar button[title]';
+  const TIP_SCOPE = '#toolbar [title], #side-rail button[title], #side-file-actions button[title], .side-file-commands button[title], #side-recent-clear[title], #status-summary[title], #edit-bar button[title], #cm-selection-toolbar button[title]';
   function ensureTip() {
     if (tip) return tip;
     tip = document.createElement('div');
@@ -893,7 +839,6 @@
     ['pointerdown', 'keydown', 'scroll', 'blur'].forEach(ev => window.addEventListener(ev, hideTip, true));
   }
 
-  bindIndicator(byId('doc-tabs-bar'));
   bindEdgeFade(byId('doc-tabs-bar'));
   bindTooltips();
 

@@ -2022,6 +2022,7 @@
   "search.next": "Berikutnya (Enter)",
   "search.noMatches": "Tidak ada hasil yang cocok",
   "search.placeholder": "Cari di dokumen… (Enter Berikutnya, Shift+Enter Sebelumnya)",
+  "search.results": "Hasil pencarian",
   "search.prev": "Sebelumnya (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} putaran",
   "ai.taskRunning": "Peninjauan berlangsung…",
   "ai.thinking": "思考中…",
-  "warn.pptx_math_image": "Persamaan disimpan sebagai gambar, dengan sumbernya di catatan slide."
+  "warn.pptx_math_image": "Persamaan disimpan sebagai gambar, dengan sumbernya di catatan slide.",
+  "export.fmtPngLong": "PNG panjang",
+  "export.fmtPngPages": "PNG per halaman",
+  "export.importPresetPack": "Impor prasetel"
 }

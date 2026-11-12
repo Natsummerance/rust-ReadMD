@@ -2022,6 +2022,7 @@
   "search.next": "Volgende (Enter)",
   "search.noMatches": "Geen resultaten gevonden",
   "search.placeholder": "Zoeken in document… (Enter Volgende, Shift+Enter Vorige)",
+  "search.results": "Zoekresultaten",
   "search.prev": "Vorige (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} rondes",
   "ai.taskRunning": "Beoordeling bezig…",
   "ai.thinking": "Nadenken…",
-  "warn.pptx_math_image": "Formules blijven als afbeeldingen behouden, met hun broncode in de dianotities."
+  "warn.pptx_math_image": "Formules blijven als afbeeldingen behouden, met hun broncode in de dianotities.",
+  "export.fmtPngLong": "Lange PNG",
+  "export.fmtPngPages": "PNG per pagina",
+  "export.importPresetPack": "Voorinstellingen importeren"
 }

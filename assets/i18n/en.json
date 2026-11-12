@@ -2035,6 +2035,7 @@
   "search.next": "Next (Enter)",
   "search.noMatches": "No matches found",
   "search.placeholder": "Search document… (Enter Next, Shift+Enter Prev)",
+  "search.results": "Search results",
   "search.prev": "Previous (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "plugin.summary": "{total} capabilities · {installed} installed · {active} active",
   "plugin.unsupportedBuild": "Not available in this build",
   "toast.savingImage": "Saving clipboard image...",
-  "warn.pptx_math_image": "Equations are preserved as images, with their source in slide notes."
+  "warn.pptx_math_image": "Equations are preserved as images, with their source in slide notes.",
+  "export.fmtPngLong": "Long PNG",
+  "export.fmtPngPages": "PNG Pages",
+  "export.importPresetPack": "Import Presets"
 }

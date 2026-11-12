@@ -5,7 +5,7 @@ const normalize = text => text.replace(/\r\n?/g, '\n');
 const canonicalBytes = text => Buffer.from(text.replaceAll('\n', '\r\n'));
 // Derived from c5f8d80d after verifying its original full-file pins. These
 // digests cover the portions outside the explicitly changed layout spans.
-const editorBaseline = '067e5a8fda96e31577ec4832bc1f2505faac5fb2dc161aff03461431f452c08f';
+const editorBaseline = 'f724a59dfa093918b4ac8f00d234f50ab5f51ad95621afea5bc39037fb81da6f';
 const previewBaseline = 'deb39e48780735d19718221e0ef18b933c130092e3833ba282318f5987c5b160';
 
 function position(text, marker) {
@@ -32,6 +32,8 @@ function editorOutsideLayout(text) {
     ['  observeEditorLayout(cmView);\n  return true;\n\n}\n', '/* vendor 包只导出 historyKeymap'],
     ['function hideCmSelectionToolbar() {', '/* Selection toolbar buttons', false],
     ["function updateCmSelectionToolbar() {\n  const toolbar = $('cm-selection-toolbar');\n  if (!toolbar) return;\n", '  const text = cmView.state.sliceDoc(sel.from, sel.to).trim();'],
+    ['function destroyEditor() {\n\n', '  if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }\n'],
+    ['/* Typewriter mode: the cursor line stays at the vertical centre. */\n', 'function applyEditorViewClasses() {'],
     ["  cmView.dispatch({ changes: e.changes, selection: e.selection, scrollIntoView: true, userEvent: 'input.syntax' });\n  cmView.focus();\n}\n", '/* ============================================================\n   Editor Studio PRO: Code Chunk'],
     ['  const stats = T && T.textStats ? T.textStats(visibleText) : { words: 0, chars: visibleText.length, minutes: 0 };\n', '  const nf = n =>'],
     ['  const params = { words: nf(stats.words), chars: nf(stats.chars), min: nf(Math.max(stats.minutes, stats.words ? 1 : 0)), total: nf(stats.words) };\n', '  statsEl.textContent = selWords'],

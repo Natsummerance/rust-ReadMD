@@ -2022,6 +2022,7 @@
   "search.next": "Susunod (Enter)",
   "search.noMatches": "Walang nahanap na resulta",
   "search.placeholder": "Maghanap sa dokumento… (Enter Susunod, Shift+Enter Nakaraan)",
+  "search.results": "Mga resulta ng paghahanap",
   "search.prev": "Nakaraan (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} pag-ikot",
   "ai.taskRunning": "Isinasagawa ang pagsusuri…",
   "ai.thinking": "Nag-iisip…",
-  "warn.pptx_math_image": "Pinapanatili ang mga equation bilang larawan, at ang source nito ay nasa mga tala ng slide."
+  "warn.pptx_math_image": "Pinapanatili ang mga equation bilang larawan, at ang source nito ay nasa mga tala ng slide.",
+  "export.fmtPngLong": "Mahabang PNG",
+  "export.fmtPngPages": "PNG bawat pahina",
+  "export.importPresetPack": "Mag-import ng mga preset"
 }

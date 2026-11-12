@@ -1386,7 +1386,7 @@
   "export.themeDark": "暗色",
   "export.themeLight": "亮色",
   "export.themeSepia": "米色",
-  "export.title": "文檔匯出設定",
+  "export.title": "匯出",
   "export.toc": "包含目錄",
   "export.watermark": "水印",
   "export.zoomPreview": "點擊放大預覽",
@@ -2022,6 +2022,7 @@
   "search.next": "下一個 (Enter)",
   "search.noMatches": "無相符結果",
   "search.placeholder": "搜尋正文",
+  "search.results": "搜尋結果",
   "search.prev": "上一個 (Shift+Enter)",
   "search.refineBeforeReplace": "符合項目過多，請縮小搜尋範圍後再全部取代。",
   "search.replaceAll": "全部取代",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} 輪",
   "ai.taskRunning": "正在審閱…",
   "ai.thinking": "思考中…",
-  "warn.pptx_math_image": "公式以圖片保留，公式原始碼寫入投影片備註。"
+  "warn.pptx_math_image": "公式以圖片保留，公式原始碼寫入投影片備註。",
+  "export.fmtPngLong": "長圖 PNG",
+  "export.fmtPngPages": "分圖 PNG",
+  "export.importPresetPack": "匯入預設"
 }

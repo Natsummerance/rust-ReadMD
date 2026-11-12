@@ -2022,6 +2022,7 @@
   "search.next": "Sekva (Enter)",
   "search.noMatches": "Neniuj kongruoj trovitaj",
   "search.placeholder": "Serĉi en dokumento… (Enter Sekva, Shift+Enter Antaŭa)",
+  "search.results": "Serĉrezultoj",
   "search.prev": "Antaŭa (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} rondoj",
   "ai.taskRunning": "Reviziado daŭras…",
   "ai.thinking": "Pensante…",
-  "warn.pptx_math_image": "Ekvacioj konserviĝas kiel bildoj, kun sia fonto en la lumbildaj notoj."
+  "warn.pptx_math_image": "Ekvacioj konserviĝas kiel bildoj, kun sia fonto en la lumbildaj notoj.",
+  "export.fmtPngLong": "Longa PNG",
+  "export.fmtPngPages": "PNG laŭ paĝo",
+  "export.importPresetPack": "Importi antaŭagordojn"
 }

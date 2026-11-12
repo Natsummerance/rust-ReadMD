@@ -8572,6 +8572,14 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
     let (mut custom, mut last) = load_export_presets(app);
     if req.method == "POST" {
         let body = body_value(req);
+        if let Some(pack) = body.get("install_pack") {
+            if body.as_object().is_none_or(|object| object.len() != 1) {
+                return Err(ApiError::bad_request("invalid_presets"));
+            }
+            let count = crate::export_profile_packs::install(&app.paths.data_dir, pack)
+                .map_err(|code| ApiError::new(if code == "preset_name_conflict" {409} else {422}, code))?;
+            return ok_json(json!({"ok": true, "count": count}));
+        }
         if let Some(c) = body.get("custom") {
             let Some(map) = c.as_object() else {
                 return Err(ApiError::bad_request("invalid_presets"));
@@ -8583,7 +8591,7 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
                 if name.is_empty() || name.chars().count() > 64 {
                     continue;
                 }
-                if builtin.contains(&name) && !custom.contains_key(name) {
+                if (builtin.contains(&name) || name.starts_with("pack:")) && !custom.contains_key(name) {
                     return Ok(Response::json_status(409, &json!({ "ok": false, "error_code": "preset_name_conflict", "name": name })));
                 }
                 if next.len() >= EXPORT_PRESETS_MAX {
@@ -8622,10 +8630,12 @@ fn h_export_presets(app: &Arc<App>, req: &Request) -> ApiResult<Response> {
         return ok_json(json!({ "ok": true }));
     }
     let mut presets = serde_json::Map::new();
-    let catalog:Vec<_>=crate::export_profiles::catalog().iter().filter(|p|!custom.contains_key(p["id"].as_str().unwrap_or(""))).cloned().collect();
+    let mut catalog:Vec<_>=crate::export_profiles::catalog().iter().filter(|p|!custom.contains_key(p["id"].as_str().unwrap_or(""))).cloned().collect();
+    catalog.extend(crate::export_profile_packs::catalog(&app.paths.data_dir));
     for profile in &catalog {
         let n=profile["id"].as_str().unwrap();
-        presets.insert(n.to_string(), crate::export_profiles::preset(n).unwrap_or_else(|| json!({})));
+        let options = profile.get("options").cloned().or_else(|| crate::export_profiles::preset(n)).unwrap_or_else(|| json!({}));
+        presets.insert(n.to_string(), options);
     }
     ok_json(json!({
         "ok": true,

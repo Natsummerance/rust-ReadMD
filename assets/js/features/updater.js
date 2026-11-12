@@ -159,7 +159,6 @@ async function startUpdateDownload() {
   updateStatusFailures = 0;
   updatePollPending = false;
   const asset = updateInfo.asset;
-  const useMirror = $('update-use-mirror') && $('update-use-mirror').checked;
   if (!asset.expected_sha) {
     showToast(_t('update.unverifiedPackage') || '无法验证更新包');
     return;
@@ -177,17 +176,16 @@ async function startUpdateDownload() {
     let started = false;
     let startResult = null;
     if (hasPy && py.start_download_update) {
-      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, useMirror);
+      startResult = await py.start_download_update(asset.download_url, asset.name, asset.expected_sha, false);
       started = startResult && startResult.ok;
     } else {
-      const resp = await fetch('/api/update/download', {
+      const resp = await apiFetch('/api/update/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           download_url: asset.download_url,
           target_filename: asset.name,
           expected_sha: asset.expected_sha,
-          use_mirror: useMirror,
         }),
       });
       startResult = await resp.json();

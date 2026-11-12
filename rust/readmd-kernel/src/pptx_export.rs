@@ -64,12 +64,41 @@ impl TableStyle {
 enum Shape {
     Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool },
     Image { rect: Rect, media: usize, alt: String },
+    Accent { rect: Rect, color: &'static str, rounded: bool },
     Table { rect: Rect, rows: Vec<Vec<Vec<Line>>>, heights: Vec<f64>, columns: usize, aligns:Vec<TableAlign>, style:TableStyle },
 }
 #[derive(Default)]
-struct Slide { shapes: Vec<Shape>, notes: String }
+struct Slide { shapes: Vec<Shape>, notes: String, cover: bool }
 struct Media { bytes: Vec<u8>, extension: String, width: f64, height: f64, svg: Option<Vec<u8>> }
-struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String }
+#[derive(Clone, Copy)]
+enum Layout { Plain, Defense, Lab, Launch }
+
+impl Layout {
+    fn resolve(options: &Value) -> Result<Self> {
+        Ok(match options["pptxLayout"].as_str().unwrap_or("") {
+            "" => Self::Plain,
+            "defense" => Self::Defense,
+            "lab" => Self::Lab,
+            "launch" => Self::Launch,
+            _ => return Err(INVALID.into()),
+        })
+    }
+
+    fn accent_shapes(self, cover: bool) -> Vec<Shape> {
+        let accent = |rect, color, rounded| Shape::Accent { rect, color, rounded };
+        match (self, cover) {
+            (Self::Plain, _) => Vec::new(),
+            (Self::Defense, true) => vec![accent([0., 0., 18., H], "365BB0", false), accent([408., 114., 144., 4.], "365BB0", false)],
+            (Self::Defense, false) => vec![accent([LEFT, 26., 78., 4.], "365BB0", false), accent([LEFT, 512., WIDTH, 1.], "CBD8EC", false)],
+            (Self::Lab, true) => vec![accent([104., 104., 752., 330.], "E6F4EE", true), accent([432., 130., 96., 5.], "107E71", true)],
+            (Self::Lab, false) => vec![accent([35., 29., 4., 70.], "107E71", true), accent([LEFT, 512., WIDTH, 2.], "B7DED1", false)],
+            (Self::Launch, true) => vec![accent([0., 0., W, 105.], "202943", false), accent([384., 116., 192., 6.], "A7BAFF", true), accent([0., 507., W, 33.], "202943", false)],
+            (Self::Launch, false) => vec![accent([0., 0., W, 7.], "A7BAFF", false), accent([LEFT, 513., WIDTH, 1.], "455574", false)],
+        }
+    }
+}
+
+struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String, layout: Layout }
 
 fn escaped(value: &str) -> String {
     crate::mdexport::html_escape(&value.chars().filter(|&c| c=='\t'||c=='\n'||c=='\r'||c>=' ').collect::<String>(), true)
@@ -141,22 +170,30 @@ struct Builder { deck: Deck, page: Slide, y: f64, title: Line, base: String, sha
 impl Builder {
     fn new(base:&str, options:&Value) -> Result<Self> {
         let theme=options["theme"].as_str().unwrap_or("white");
-        let (background,foreground,accent)=match theme {
+        let layout = Layout::resolve(options)?;
+        let legacy = match theme {
             "black"=>("191919","FFFFFF","74A9FF"),"league"=>("28313A","FFFFFF","80CFFF"),
             "night"=>("111111","F2EEE2","E7AD52"),"moon"=>("002B36","E5F2F4","52B4C8"),
             "blood"=>("222222","F7F2F1","D96F6F"),"beige"=>("F7F3DE","333333","785728"),
             "solarized"=>("FDF6E3","586E75","268BD2"),"sky"=>("EAF6FC","243645","176FB3"),
             "white"|"simple"|"serif"=>("FFFFFF","24292F","2169C5"),_=>return Err(INVALID.into()),
         };
-        let transition=options["transition"].as_str().unwrap_or("slide");
+        let (background,foreground,accent) = match layout {
+            Layout::Plain => legacy,
+            Layout::Defense => ("F9FBFF", "172846", "365BB0"),
+            Layout::Lab => ("F8FBFA", "183E38", "107E71"),
+            Layout::Launch => ("131B31", "F1F5FF", "A7BAFF"),
+        };
+        let transition=options["transition"].as_str().unwrap_or(if matches!(layout, Layout::Plain) {"slide"} else {"none"});
         if !matches!(transition,"slide"|"fade"|"zoom"|"none"){return Err(INVALID.into());}
-        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into()},page:Slide::default(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options)})
+        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),layout},page:Slide::default(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options)})
     }
     fn push(&mut self, shape:Shape) -> Result<()> {
         let text_bytes=match &shape {
             Shape::Text{lines,..}=>lines.iter().flatten().map(|run|run.text.len()+run.href.as_ref().map_or(0,String::len)+256).sum::<usize>(),
             Shape::Table{rows,..}=>rows.iter().flatten().flatten().flatten().map(|run|run.text.len()+run.href.as_ref().map_or(0,String::len)+256).sum(),
             Shape::Image{alt,..}=>alt.len()+512,
+            Shape::Accent{..}=>128,
         };
         self.bytes=self.bytes.checked_add(text_bytes).ok_or(BUDGET)?;
         self.shapes+=1;if self.shapes>30000||self.bytes>LIMIT{return Err(BUDGET.into());}check()?;self.page.shapes.push(shape);Ok(())
@@ -165,7 +202,11 @@ impl Builder {
         if self.page.shapes.is_empty(){return Ok(());}
         if self.deck.slides.len()>=300{return Err(BUDGET.into());}
         self.bytes=self.bytes.checked_add(self.page.notes.len()).ok_or(BUDGET)?;if self.bytes>LIMIT{return Err(BUDGET.into());}
-        self.deck.slides.push(std::mem::take(&mut self.page));self.y=TOP;Ok(())
+        let mut page = std::mem::take(&mut self.page);
+        let mut accents = self.deck.layout.accent_shapes(page.cover);
+        accents.append(&mut page.shapes);
+        page.shapes = accents;
+        self.deck.slides.push(page);self.y=TOP;Ok(())
     }
     fn heading(&mut self, title:Line) -> Result<()> {
         self.title=title.clone();let lines=wrap(&title,32.,WIDTH)?;
@@ -188,6 +229,7 @@ impl Builder {
         if body.len()>5{return Ok(false);}
         let title_height=title_lines.len() as f64*55.+8.;let body_height=body.len() as f64*30.+8.;
         let y=(H-title_height-body_height-24.)/2.;self.title=title.clone();
+        self.page.cover = true;
         self.push(Shape::Text{rect:[LEFT,y,WIDTH,title_height],lines:title_lines,size:44.,bullet:None,center:true,code:false})?;
         if !body.is_empty(){self.push(Shape::Text{rect:[LEFT,y+title_height+24.,WIDTH,body_height],lines:body,size:24.,bullet:None,center:true,code:false})?;}
         Ok(true)
@@ -373,6 +415,9 @@ fn preview_html(deck:&Deck) -> Result<String> {
                 slides.push_str(&format!("<div style=\"{}font-size:{size}px;line-height:1.25;white-space:pre;text-align:{};{}\">",position(*rect),if *center{"center"}else{"left"},if *code{"background:#30343B;color:#FFFFFF;padding:0 8px;box-sizing:border-box;"}else{""}));
                 for (n,line) in lines.iter().enumerate(){slides.push_str("<div>");if n==0 {if let Some(bullet)=bullet{slides.push_str(&format!("<span style=\"position:absolute;left:-26px\">{}</span>",escaped(bullet)));}}slides.push_str(&line_html(line));slides.push_str("</div>");}slides.push_str("</div>");
             },
+            Shape::Accent{rect,color,rounded}=>{
+                slides.push_str(&format!("<div aria-hidden=\"true\" style=\"{}background:#{color};border-radius:{};\"></div>",position(*rect),if *rounded {"8px"}else{"0"}));
+            },
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
             Shape::Table{rect,rows,heights,columns,aligns,style}=>{
                 slides.push_str(&format!("<table style=\"{}table-layout:fixed;border-collapse:collapse;font-size:20px;line-height:25px;\">",position(*rect)));
@@ -415,6 +460,10 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let fill=if *code{"<a:solidFill><a:srgbClr val=\"30343B\"/></a:solidFill>"}else{"<a:noFill/>"};
             let mut rect=*rect;if *code{rect[0]+=8.;rect[2]-=16.;}
             format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Text {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>{fill}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody>{}</p:txBody></p:sp>",xfrm(rect),text_body(lines,*size,if *code{"FFFFFF"}else{deck.foreground},bullet.as_deref(),*center,links))
+        },
+        Shape::Accent{rect,color,rounded}=>{
+            let geometry = if *rounded {"roundRect"} else {"rect"};
+            format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Accent {id}\"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"{geometry}\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr></p:sp>",xfrm(*rect))
         },
         Shape::Image{rect,media,alt}=>{
             let svg=if deck.media[*media].svg.is_some(){format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"svg{media}\"/></a:ext></a:extLst>")}else{String::new()};

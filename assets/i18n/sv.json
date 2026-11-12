@@ -2022,6 +2022,7 @@
   "search.next": "Nästa (Enter)",
   "search.noMatches": "Inga matchande resultat",
   "search.placeholder": "Sök i dokument... (Enter Next, Shift+Enter Previous)",
+  "search.results": "Sökresultat",
   "search.prev": "Föregående (Skift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} omgångar",
   "ai.taskRunning": "Granskning pågår…",
   "ai.thinking": "Tänker…",
-  "warn.pptx_math_image": "Formler bevaras som bilder med källkoden i bildanteckningarna."
+  "warn.pptx_math_image": "Formler bevaras som bilder med källkoden i bildanteckningarna.",
+  "export.fmtPngLong": "Lång PNG",
+  "export.fmtPngPages": "PNG per sida",
+  "export.importPresetPack": "Importera förinställningar"
 }

@@ -183,11 +183,15 @@ fn worker_with_resources(executable:&Path,input:Value,dir:&Path)->ApiResult<Valu
 /// Read-only page rendering for the same OCR service used by desktop and MCP.
 /// No session, copied PDF, sidecar or dependency on an OS PDF renderer.
 pub(crate) fn raster_for_ocr(paths:&crate::paths::AppPaths,path:&str,page:usize)->Result<(usize,Vec<u8>),String>{
+    raster_pack_page(&paths.data_dir, &paths.assets_dir, Path::new(path), page)
+}
+
+pub(crate) fn raster_pack_page(data: &Path, assets: &Path, path: &Path, page: usize) -> Result<(usize, Vec<u8>), String> {
     use base64::Engine;
     if fs::metadata(path).map_or(true,|m|m.len()>LIMIT){return Err("ocr_failed".into());}
     if lopdf::Document::load(path).map_or(false,|d|d.is_encrypted()){return Err("pdf_read_only".into());}
-    let _resources=crate::capability_packs::lease(&paths.data_dir,&paths.assets_dir,"pdfium").map_err(|_|"pdf_engine_unavailable")?;
-    let (program,library)=crate::capability_packs::pdfium_resources(&paths.data_dir,&paths.assets_dir)?;
+    let _resources=crate::capability_packs::lease(data,assets,"pdfium").map_err(|_|"pdf_engine_unavailable")?;
+    let (program,library)=crate::capability_packs::pdfium_resources(data,assets)?;
     let dir=tempfile::Builder::new().prefix("readmd-pdf-ocr-").tempdir().map_err(|_|"ocr_failed")?;
     let result=worker_with_resources(&program,json!({"action":"render","library":library,"pdf":path,"password":"","page":page,"width":2200,"operations":[]}),dir.path()).map_err(|e|e.code.to_string())?;
     let count=result["pages"].as_u64().filter(|n|*n>0&&*n<=10000).ok_or("ocr_failed")? as usize;

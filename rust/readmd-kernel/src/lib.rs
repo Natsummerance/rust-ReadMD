@@ -474,6 +474,11 @@ pub mod error {
     pub type ApiResult<T> = std::result::Result<T, ApiError>;
 }
 
+mod package_download;
+mod quoted_strong;
+mod image_export;
+mod export_profile_packs;
+
 pub mod paths {
     use super::error::{Error, Result};
     use std::ffi::OsString;

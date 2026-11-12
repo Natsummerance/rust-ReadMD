@@ -2022,6 +2022,7 @@
   "search.next": "རྗེས་མ། (ནང་འཇུག་)",
   "search.noMatches": "མཐུན་པའི་གྲུབ་འབྲས་མེད།",
   "search.placeholder": "ཡིག་ཆའི་ནང་དུ་འཚོལ་ཞིབ། (རྗེས་མ་བླུགས། བརྗེ་སྒྱུར་+སྔོན་མ་བླུགས།)",
+  "search.results": "འཚོལ་ཞིབ་འབྲས་བུ།",
   "search.prev": "སྔོན་མ། (བརྗེ་སྒྱུར་+བཙུགས་)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "སྐོར་ {count}",
   "ai.taskRunning": "ཞིབ་བཤེར་བྱེད་བཞིན་པ…",
   "ai.thinking": "བསམ་བློ་གཏོང་བཞིན་པ...",
-  "warn.pptx_math_image": "མཉམ་བྱ་རྣམས་པར་རིས་སུ་ཉར་ཞིང་། དེའི་མ་ཡིག་སྟོན་ཤོག་གི་ཟིན་བྲིས་ནང་ཉར།"
+  "warn.pptx_math_image": "མཉམ་བྱ་རྣམས་པར་རིས་སུ་ཉར་ཞིང་། དེའི་མ་ཡིག་སྟོན་ཤོག་གི་ཟིན་བྲིས་ནང་ཉར།",
+  "export.fmtPngLong": "རིང་བའི PNG",
+  "export.fmtPngPages": "ཤོག་ངོས་ PNG",
+  "export.importPresetPack": "སྔོན་སྒྲིག་ནང་འདྲེན"
 }

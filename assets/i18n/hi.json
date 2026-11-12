@@ -2022,6 +2022,7 @@
   "search.next": "अगला (प्रवेश करें)",
   "search.noMatches": "कोई मेल खाता परिणाम नहीं",
   "search.placeholder": "दस्तावेज़ों में खोजें… (अगला दर्ज करें, Shift+पिछला दर्ज करें)",
+  "search.results": "खोज परिणाम",
   "search.prev": "पिछला (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} चरण",
   "ai.taskRunning": "समीक्षा जारी है…",
   "ai.thinking": "सोच रहा है…",
-  "warn.pptx_math_image": "समीकरण चित्रों के रूप में सुरक्षित रहते हैं और उनका स्रोत स्लाइड नोट्स में रहता है।"
+  "warn.pptx_math_image": "समीकरण चित्रों के रूप में सुरक्षित रहते हैं और उनका स्रोत स्लाइड नोट्स में रहता है।",
+  "export.fmtPngLong": "लंबा PNG",
+  "export.fmtPngPages": "पृष्ठवार PNG",
+  "export.importPresetPack": "प्रीसेट आयात करें"
 }

@@ -120,7 +120,14 @@ pub fn markdown_events<'a>(source:&'a str)->Result<Vec<(Event<'a>,Range<usize>)>
     if source.len()>tx::MAX_DOCUMENT_BYTES{return Err(BUDGET);}
     let bom=usize::from(source.starts_with('\u{feff}'))*3;
     fn unchanged<'a>(source:&'a str,bom:usize)->Result<Vec<(Event<'a>,Range<usize>)>,&'static str>{
-        let mut events=Vec::new();for(event,range)in Parser::new_ext(&source[bom..],crate::md_ast::options()).into_offset_iter(){if crate::speech::cancelled(){return Err("cancelled");}if events.len()>=MAX_NODES*16{return Err(BUDGET);}events.push((event,range.start+bom..range.end+bom));}Ok(events)
+        let text = &source[bom..];
+        let options = crate::md_ast::options();
+        let parsed: Box<dyn Iterator<Item = _>> = if crate::quoted_strong::candidate(text) {
+            Box::new(crate::quoted_strong::events(text, options).into_iter())
+        } else {
+            Box::new(Parser::new_ext(text, options).into_offset_iter())
+        };
+        let mut events=Vec::new();for(event,range)in parsed{if crate::speech::cancelled(){return Err("cancelled");}if events.len()>=MAX_NODES*16{return Err(BUDGET);}events.push((event,range.start+bom..range.end+bom));}Ok(events)
     }
     if !has_owned_syntax(source){return unchanged(source,bom);}
     let mut first_html=false;let mut starts=Vec::new();let mut count=0usize;

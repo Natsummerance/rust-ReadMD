@@ -8,6 +8,8 @@ use std::path::Path;
 /// Load order matters: later files use globals defined by earlier ones.
 pub const SOURCES: &[&str] = &[
     "vendor/marked.min.js",
+    "js/reader/quoted-strong.js",
+    "js/reader/export-html-layout.js",
     "js/core/modal.js",
     "js/core/task-feedback.js",
     "js/core/state.js",

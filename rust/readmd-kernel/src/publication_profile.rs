@@ -148,6 +148,7 @@ pub(crate) fn resolve(content: &str, options: &Value) -> Result<crate::publicati
 pub(crate) fn for_format(format:&str, content:&str, resolved:crate::publication_typography::ResolvedOptions)
     -> Result<crate::publication_typography::ResolvedOptions>
 {
+    let format = crate::image_export::layout_format(format);
     if format.eq_ignore_ascii_case("docx") { return Ok(resolved); }
     if resolved.values().get("footnotes").is_none_or(Value::is_null) && !content.contains("readmd-section") { return Ok(resolved); }
     let doc=crate::md_ast::parse(content);
@@ -173,6 +174,7 @@ pub(crate) fn validate_pdf_engine(options:&Value)->Result<()> {
     Ok(())
 }
 pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<()> {
+    let format = crate::image_export::layout_format(format);
     if format.eq_ignore_ascii_case("pdf") {validate_pdf_engine(options)?;}
     if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || format.eq_ignore_ascii_case("pdf") &&
         options.pointer("/pdf/engine").and_then(Value::as_str).is_none_or(|engine| engine == "rust")) {

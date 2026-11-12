@@ -2022,6 +2022,7 @@
   "search.next": "Tullia (Ilanngukkit)",
   "search.noMatches": "Naliginnaasumik inerneqanngilaq",
   "search.placeholder": "Allakkiat iluanni ujarlerneq... (Allaguk Tulliuttoq, Shift+Allaguk Siuliani)",
+  "search.results": "Ujarnerup inerneri",
   "search.prev": "Siuliani (Shift+Ilanngussaq)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count}-riarluni",
   "ai.taskRunning": "Misissuineq ingerlanneqarpoq…",
   "ai.thinking": "Isumaliortoq…",
-  "warn.pptx_math_image": "Naligiissitat assitut toqqorneqarput, aallaqqaataallu saqqummiussassap allattaaviiniippoq."
+  "warn.pptx_math_image": "Naligiissitat assitut toqqorneqarput, aallaqqaataallu saqqummiussassap allattaaviiniippoq.",
+  "export.fmtPngLong": "PNG takisooq",
+  "export.fmtPngPages": "PNG quppernerit",
+  "export.importPresetPack": "Piareersakkat eqqukkit"
 }

@@ -13,11 +13,12 @@ let exportNumberingControl = null;
 
 function getExportPresetNames() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const lang = window.i18n?.currentLang || 'en';
   return {
     minimal: _t('export.presetMinimal') || '',
     classic: _t('export.presetClassic') || '',
     business: _t('export.presetBusiness') || '',
-    ...Object.fromEntries((state.export.catalog || []).map(p=>[p.id,_t(p.label)]))
+    ...Object.fromEntries((state.export.catalog || []).map(p => [p.id, p.names?.[lang] || p.names?.en || _t(p.label)]))
   };
 }
 
@@ -1438,12 +1439,13 @@ function updateExportLivePreview() {
   const badge = $('export-preview-badge');
   const sel = $('exp-preset');
   const presetName = (sel && sel.selectedIndex >= 0) ? sel.options[sel.selectedIndex].text : (_t('export.presetDefault') || '');
-  const fmtLabel = fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
+  const fmtLabel = imageExport(fmt) ? _t(fmt === 'png' ? 'export.fmtPngLong' : 'export.fmtPngPages') :
+    fmt === 'presentation' ? (_t('export.fmtSlides') || 'Slides') : fmt.toUpperCase();
   if (badge) badge.textContent = fmtLabel + ' · ' + presetName;
   renderExportPresetCards();
 
   const docTitle = currentExportName();
-  if (window.READMD_ENGINE === 'rust' && ['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx'].includes(fmt)) {
+  if (window.READMD_ENGINE === 'rust' && SNAPSHOT_EXPORT_FORMATS.has(fmt)) {
     requestNativeExportPreview(fmt, opts, content, docTitle, presetName);
     return;
   }
@@ -1489,6 +1491,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
   if (miniHost) {
     miniHost.setAttribute('aria-busy','false');
     miniHost.innerHTML = pageHtmlList[0] || restoredFullHtml;
+    if (isHtmlMode) ReadMDExportHtmlLayout.mount(miniHost, opts.htmlLayout, { links: false, contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
     renderMath(miniHost);
     const miniPage = $('export-preview-mini-page');
     const viewport = miniPage && miniPage.parentElement;
@@ -1526,6 +1529,7 @@ function renderBrowserExportPreview(fmt, opts, content, presetName) {
         const bodyEl = document.createElement('div');
         bodyEl.className = 'export-page-body';
         bodyEl.innerHTML = pageHtml;
+        if (isHtmlMode) ReadMDExportHtmlLayout.mount(bodyEl, opts.htmlLayout, { contentsLabel: _t('tabs.toc'), tone: opts.htmlTheme });
         sheet.appendChild(bodyEl);
 
         if (!isHtmlMode) {
@@ -1623,7 +1627,8 @@ function expFieldApplicable(f, secFmts, fmt) {
   if(f.k==='footnotes.title'&&effectiveExportOptions(state.export.options||{}).footnotes?.position!=='document')return false;
   if((f.k==='toc.depth'||f.k==='toc.leader')&&fmt!=='epub'&&!state.export.options?.toc?.enabled)return false;
   const fmts = f.fmts || secFmts || ['pdf', 'docx', 'html'];
-  return fmts.indexOf(fmt) >= 0;
+  if (imageExport(fmt)) return !f.k.startsWith('pdf.') && fmts.includes('pdf');
+  return fmts.includes(fmt);
 }
 
 function renderExportSections(preserveSections = false) {
@@ -1938,24 +1943,69 @@ function exportPresetOptions(name) {
   return expDeepMerge(state.export.defaults, preset);
 }
 
+const EXPORT_FORMAT_DEFAULTS = { html: 'web_reading', pptx: 'pptx_defense', png: 'image_clean', 'png-pages': 'image_clean' };
+
+function presetFitsFormat(name, format) {
+  const entry = state.export.catalog?.find(profile => profile.id === name);
+  if (entry) return entry.formats.includes(format);
+  const customFormat = state.export.custom?.[name]?.presetFormat;
+  return !customFormat || customFormat === format;
+}
+
+function rememberExportFormat(next) {
+  if (state.export.fmt === next) return;
+  state.export.formatChoices ||= new Map();
+  const previous = { preset: $('exp-preset').value, options: state.export.options };
+  state.export.formatChoices.set(state.export.fmt, previous);
+  const remembered = state.export.formatChoices.get(next);
+  const fallback = EXPORT_FORMAT_DEFAULTS[next] || '__default__';
+  const fits = previous.preset && previous.preset !== '__default__' && presetFitsFormat(previous.preset, next);
+  state.export.fmt = next;
+  if (remembered || (fits && previous.preset !== '__custom__')) {
+    const choice = remembered || previous;
+    state.export.selectedPreset = choice.preset;
+    state.export.options = choice.options;
+  } else if (previous.preset === '__custom__' || (!fits && fallback === '__default__' && previous.preset !== '__default__')) {
+    // Carry shared typography across formats without bringing along a slide
+    // theme, a website layout, or a preset's format restriction.
+    const shared = { ...previous.options };
+    for (const key of ['htmlLayout', 'htmlTheme', 'pptxLayout', 'transition', 'presetFormat']) delete shared[key];
+    state.export.selectedPreset = '__custom__';
+    state.export.options = expDeepMerge(exportPresetOptions(fallback), shared);
+  } else {
+    state.export.selectedPreset = fallback;
+    state.export.options = exportPresetOptions(fallback);
+  }
+  exportProfileSession()?.selectPreset(state.export.options);
+}
+
 function renderExportPresetSelect() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const sel = $('exp-preset');
   sel.textContent = '';
   const presetNames = getExportPresetNames();
   const catalog=state.export.catalog||[],fmt=state.export.fmt||'pdf';
-  const names = Object.keys(state.export.presets || {}).filter(n=>{const p=catalog.find(p=>p.id===n);return !p||p.formats?.includes(fmt);});
+  const entries = new Map(catalog.map(profile => [profile.id, profile]));
+  const names = Object.keys(state.export.presets || {}).filter(name => presetFitsFormat(name, fmt));
   sel.appendChild(new Option(_t('export.presetDefault') || 'Default', '__default__'));
   const categories=[['common','export.presetsCommon'],['book','export.presetsBook'],['academic','export.presetsAcademic']];
-  const added=new Set();
+  const added = new Set();
+  for (const name of names.filter(name => entries.get(name)?.names)) {
+    sel.appendChild(new Option(presetNames[name] || name, name));
+    added.add(name);
+  }
   categories.forEach(([category,key])=>{
-    const members=names.filter(n=>catalog.find(p=>p.id===n)?.category===category);
+    const members=names.filter(n=>!added.has(n) && entries.get(n)?.category===category);
     if(!members.length)return;
     const group=document.createElement('optgroup');group.label=_t(key);
     members.forEach(n=>{group.append(new Option(presetNames[n]||n,n));added.add(n);});sel.append(group);
   });
   names.filter(n=>!added.has(n)).forEach(n=>sel.append(new Option(presetNames[n]||n,n)));
-  const customNames=Object.keys(state.export.custom||{});
+  const customNames = Object.keys(state.export.custom || {}).filter(name => {
+    if (Object.hasOwn(state.export.presets, name)) return false;
+    const format = state.export.custom[name]?.presetFormat;
+    return !format || format === fmt;
+  });
   if(customNames.length){const group=document.createElement('optgroup');group.label=_t('export.presetCustom');customNames.forEach(n=>group.append(new Option(n,n)));sel.append(group);}
   sel.appendChild(new Option(_t('export.presetCustom') || '', '__custom__'));
   const last = state.export.last;
@@ -1983,11 +2033,11 @@ function renderExportPresetCards() {
   const host = $('exp-preset-cards');
   const sel = $('exp-preset');
   if (!host || !sel || !state.export.defaults) return;
-  host.textContent = '';
-  const recommended=state.export.fmt==='epub'?['book_novel','book_nonfiction','book_textbook']:['minimal','classic','business'];
+  const focused = host.contains(document.activeElement) ? document.activeElement.dataset.preset : null;
+  host.replaceChildren();
+  const catalog = new Map((state.export.catalog || []).map(profile => [profile.id, profile]));
   [...sel.options].forEach(o => {
     const v = o.value;
-    if(v!=='__default__'&&v!==sel.value&&!recommended.includes(v))return;
     if (v === '__custom__' && sel.value !== '__custom__') return;
     const opts = exportPresetOptions(v);
     const card = document.createElement('button');
@@ -1999,23 +2049,22 @@ function renderExportPresetCards() {
     const swatch = document.createElement('span');
     swatch.className = 'exp-preset-swatch';
     swatch.setAttribute('aria-hidden', 'true');
-    const h1 = (opts.headings && opts.headings.h1) || {};
-    [h1.color, (opts.table || {}).headerBg, (opts.link || {}).color, (opts.quote || {}).barColor].forEach(c => {
-      const dot = document.createElement('i');
-      if (c) dot.style.background = c;
-      swatch.appendChild(dot);
+    const profile = catalog.get(v);
+    const colors = profile?.previewColors || ['#ffffff', opts.headings?.h1?.color, opts.link?.color];
+    ['paper', 'ink', 'accent'].forEach((part, index) => {
+      const color = colors[index];
+      if (typeof color === 'string' && /^#[\da-f]{6}$/i.test(color)) swatch.style.setProperty('--preset-' + part, color);
     });
+    swatch.dataset.previewFormat = state.export.fmt;
+    for (let i = 0; i < 3; i++) swatch.appendChild(document.createElement('i'));
     const name = document.createElement('span');
     name.className = 'exp-preset-name';
     name.textContent = o.text;
-    const ty = opts.typography || {};
-    const meta = document.createElement('span');
-    meta.className = 'exp-preset-meta';
-    meta.textContent = [ty.size ? ty.size + 'pt' : '', ty.lineHeight || ''].filter(Boolean).join(' · ');
-    card.append(swatch, name, meta);
+    card.append(swatch, name);
     card.addEventListener('click', () => { sel.value = v; sel.onchange(); });
     host.appendChild(card);
   });
+  if (focused) [...host.children].find(card => card.dataset.preset === focused)?.focus({ preventScroll: true });
 }
 
 
@@ -2038,7 +2087,8 @@ async function parkPreparedExport(frozen) {
     exportPreviewSnapshots.delete(oldest.key); await discardPreparedExport(oldest);
   }
 }
-const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx']);
+const SNAPSHOT_EXPORT_FORMATS = new Set(['html', 'pdf', 'docx', 'epub', 'tex', 'presentation', 'pptx', 'png', 'png-pages']);
+const imageExport = format => format === 'png' || format === 'png-pages';
 function exportSnapshotFailure(code) { const error = new Error(code); error.code = code; return error; }
 function exportSnapshotId() { return 'export-' + (window.crypto?.randomUUID?.() || crypto.randomUUID()); }
 function usesExportSnapshot(fmt, tab) {
@@ -2046,7 +2096,7 @@ function usesExportSnapshot(fmt, tab) {
 }
 async function oversizedUntrackedExport(fmt, tab, content) {
   if (window.READMD_ENGINE !== 'rust' || !SNAPSHOT_EXPORT_FORMATS.has(fmt) || new TextEncoder().encode(window.ReadMDReview?.lf(content) ?? content).byteLength <= 4 * 1024 * 1024) return null;
-  if (['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
+  if (imageExport(fmt) || ['presentation', 'pptx'].includes(fmt)) throw exportSnapshotFailure('review_budget');
   if (!tab || tab.reviewSession || window.ReadMDReview?.snapshot(tab) || window.ReadMDAiHarness?.hasTask(tab)) throw exportSnapshotFailure('review_budget');
   const path = tab.path || tab.reviewPath || ('draft:' + tab.id);
   // This read does not create a review database. Only an explicit absence can
@@ -2226,6 +2276,7 @@ async function runExportOnce(taskId) {
   if (!validateEpubNumericControls(true)) return false;
   if(window.ReadMDPublication?.lineSpacing.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.tracking.validateExport($('export-opts'),true)===false||window.ReadMDPublication?.baseline.validateExport($('export-opts'),true)===false)return false;
   const fmt = state.export.fmt;
+  const layoutFormat = imageExport(fmt) ? 'pdf' : fmt;
   const rememberedOptions = collectExportOptions();
   let options = effectiveExportOptions(rememberedOptions);
   if (fmt === 'epub' && expEpubNumericIssue(options)) { showToast(i18n.t('error.epub_invalid_options')); return false; }
@@ -2263,11 +2314,11 @@ async function runExportOnce(taskId) {
     return false;
   }
   const engineCapability={typst:'typst',xelatex:'latex',pdflatex:'latex'}[options.pdf?.engine];
-  if(fmt==='pdf'&&engineCapability){
+  if(layoutFormat==='pdf'&&engineCapability){
     const epoch=exportOpenEpoch;
     if(!await window.ReadMDCapabilities.ensure(engineCapability)||epoch!==exportOpenEpoch){await discardPreparedExport(frozen);return false;}
   }
-  if((fmt==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,fmt)){await discardPreparedExport(frozen);return false;}
+  if((layoutFormat==='pdf'||(fmt==='docx'&&frozen))&&!await ReadMDCapabilities.ensurePublication(content,fmt==='docx'?snapshotPublicationOptions(frozen,options):options,layoutFormat)){await discardPreparedExport(frozen);return false;}
   busy(true);
   let r = null;
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
@@ -2284,7 +2335,7 @@ async function runExportOnce(taskId) {
       // Rendered labels can introduce CJK glyphs absent from the diagram
       // source. Install against the frozen SVGs, then bind missing fonts on
       // this same snapshot before committing its output.
-      if ((fmt === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, fmt)) {
+      if ((layoutFormat === 'pdf' || fmt === 'docx') && !await ReadMDCapabilities.ensurePublication(content, fmt === 'docx' ? snapshotPublicationOptions(frozen, options) : options, layoutFormat)) {
         await discardPreparedExport(frozen); busy(false); return false;
       }
       await bindSnapshotRuntime(frozen);
@@ -2448,6 +2499,34 @@ window.addEventListener('readmd:language-changed',()=>{
   renderExportWarns(warning.payload?warnMessages(warning.payload):warning.list,warning.payload);
 });
 
+function importExportPresetPack() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > 256 * 1024) { showToast(i18n.t('plugin.installFailed')); return; }
+    try {
+      const pack = JSON.parse(await file.text());
+      const response = await apiFetch('/api/export/presets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ install_pack: pack }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) {
+        showToast(apiMessage(data, 'plugin.installFailed'));
+        return;
+      }
+      state.export.ready = false;
+      showToast(i18n.t('plugin.installed'));
+    } catch {
+      showToast(i18n.t('plugin.installFailed'));
+    }
+  }, { once: true });
+  input.click();
+}
+
 async function expSavePreset() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('exp-save-name');
@@ -2469,7 +2548,7 @@ async function expSavePreset() {
     if (!validateEpubNumericControls(true)) return;
     const options = collectExportOptions();
     if (expEpubNumericIssue(options)) { showToast(_t('error.epub_invalid_options')); return; }
-    const custom = Object.assign({}, state.export.custom, { [name]: options });
+    const custom = Object.assign({}, state.export.custom, { [name]: { ...options, presetFormat: state.export.fmt } });
     const last = { fmt: state.export.fmt, options, preset: name };
     button.disabled = true;
     try {

@@ -2022,6 +2022,7 @@
   "search.next": "ຕໍ່ໄປ (ໃສ່)",
   "search.noMatches": "ບໍ່ມີຜົນໄດ້ຮັບທີ່ກົງກັນ",
   "search.placeholder": "ຄົ້ນຫາພາຍໃນເອກະສານ... (ໃສ່ຕໍ່ໄປ, Shift+Enter Previous)",
+  "search.results": "ຜົນການຄົ້ນຫາ",
   "search.prev": "ກ່ອນໜ້າ (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} ຮອບ",
   "ai.taskRunning": "ກຳລັງກວດທານ…",
   "ai.thinking": "ກຳລັງຄິດ…",
-  "warn.pptx_math_image": "ສົມຜົນຖືກເກັບເປັນຮູບພາບ ແລະລະຫັດຕົ້ນສະບັບຢູ່ໃນບັນທຶກສະໄລດ໌."
+  "warn.pptx_math_image": "ສົມຜົນຖືກເກັບເປັນຮູບພາບ ແລະລະຫັດຕົ້ນສະບັບຢູ່ໃນບັນທຶກສະໄລດ໌.",
+  "export.fmtPngLong": "PNG ແບບຍາວ",
+  "export.fmtPngPages": "PNG ຕາມໜ້າ",
+  "export.importPresetPack": "ນຳເຂົ້າແມ່ແບບ"
 }

@@ -2022,6 +2022,7 @@
   "search.next": "Sonraki (Enter)",
   "search.noMatches": "Eşleşme bulunamadı",
   "search.placeholder": "Belgede ara… (Sonraki: Enter, Önceki: Shift+Enter)",
+  "search.results": "Arama sonuçları",
   "search.prev": "Önceki (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} tur",
   "ai.taskRunning": "İnceleme sürüyor…",
   "ai.thinking": "Düşünüyor…",
-  "warn.pptx_math_image": "Denklemler resim olarak korunur; kaynakları slayt notlarına kaydedilir."
+  "warn.pptx_math_image": "Denklemler resim olarak korunur; kaynakları slayt notlarına kaydedilir.",
+  "export.fmtPngLong": "Uzun PNG",
+  "export.fmtPngPages": "Sayfa başına PNG",
+  "export.importPresetPack": "Ön ayarları içe aktar"
 }

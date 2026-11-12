@@ -2022,6 +2022,7 @@
   "search.next": "Naslednje (Enter)",
   "search.noMatches": "Ni zadetkov",
   "search.placeholder": "Išči po dokumentu… (Enter za naslednje, Shift+Enter za prejšnje)",
+  "search.results": "Rezultati iskanja",
   "search.prev": "Prejšnje (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} krogov",
   "ai.taskRunning": "Pregled poteka…",
   "ai.thinking": "Razmišljanje…",
-  "warn.pptx_math_image": "Enačbe se ohranijo kot slike, njihova izvorna koda pa v opombah diapozitivov."
+  "warn.pptx_math_image": "Enačbe se ohranijo kot slike, njihova izvorna koda pa v opombah diapozitivov.",
+  "export.fmtPngLong": "Dolgi PNG",
+  "export.fmtPngPages": "PNG po straneh",
+  "export.importPresetPack": "Uvozi prednastavitve"
 }

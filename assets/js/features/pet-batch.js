@@ -937,7 +937,7 @@ function renderPetSettings(status) {
 const petPreviewImages = new Map();
 const petPreviewRequests = new WeakMap();
 function petPreviewSource(slug) {
-  if (slug === 'bongocat') return '/assets/pet/bongocat-preview.png';
+  if (slug === 'bongocat') return '/assets/pet/bongocat-cover.png';
   if (!slug || slug === 'hermes') return '/assets/pet/hermes-sprite.png';
   return `/api/pets/thumb?slug=${encodeURIComponent(slug)}`;
 }

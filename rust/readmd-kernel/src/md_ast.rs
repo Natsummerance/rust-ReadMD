@@ -589,11 +589,17 @@ fn parse_internal(src: &str, projection: Option<&crate::publication_rich::Projec
     };
     let src = expanded.as_str();
     let owned_syntax=crate::publication_inline_text::has_owned_syntax(src);
-    let events: Vec<Event> = if !owned_syntax{Parser::new_ext(src,options()).collect()}else{match crate::publication_inline_text::markdown_events(src){
-        Ok(events)=>events.into_iter().map(|(event,_)|event).collect(),
-        Err(code)if projection.is_some()=>return Err(crate::ApiError::new(422,code)),
-        Err(_)=>Parser::new_ext(src,options()).collect(),
-    }};
+    let events: Vec<Event> = if owned_syntax {
+        match crate::publication_inline_text::markdown_events(src) {
+            Ok(events) => events.into_iter().map(|(event, _)| event).collect(),
+            Err(code) if projection.is_some() => return Err(crate::ApiError::new(422, code)),
+            Err(_) => Parser::new_ext(src, options()).collect(),
+        }
+    } else if crate::quoted_strong::candidate(src) {
+        crate::quoted_strong::events(src, options()).into_iter().map(|(event, _)| event).collect()
+    } else {
+        Parser::new_ext(src, options()).collect()
+    };
     let mut b = Builder { ev: events, pos: 0, front_matter: None, slugs: HeadingIds::default(), projection, consumed_slots: std::collections::HashSet::new(), slot_error: None, projected_notes: Vec::new() };
     let mut blocks = b.blocks_until(None);
     if let Some(code) = b.slot_error { return Err(crate::ApiError::new(422, code)); }

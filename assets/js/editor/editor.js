@@ -49,7 +49,6 @@ function saveEditorPrefs() {
 
 let cmCompartments = null;
 let cmSelectionGesture = null;
-let cmSelectionSuppressed = null;
 let cmSelectionTimer = 0;
 const CM_SELECTION_SETTLE_MS = 140;
 const CM_SELECTION_SLOP_SQUARED = 16;
@@ -188,16 +187,14 @@ function createEditor(doc) {
     if (event.button !== 0 || !event.isPrimary || !event.target.closest('.cm-content')) return;
     cmSelectionGesture = {
       view, id: event.pointerId, type: event.pointerType, x: event.clientX, y: event.clientY,
-      travel: 0, clicks: 1, modified: event.shiftKey || event.altKey || event.ctrlKey || event.metaKey,
+      dragPending: false, recenter: false,
     };
-    cmSelectionSuppressed = null;
     hideCmSelectionToolbar();
   }, true);
   view.dom.addEventListener('mousedown', event => {
-    if (cmSelectionGesture?.view === view) cmSelectionGesture.clicks = event.detail;
-  }, true);
-  view.dom.addEventListener('keydown', event => {
-    if (!event.isComposing) cmSelectionSuppressed = null;
+    const gesture = cmMouseSelectionGesture(view);
+    if (!gesture || event.button !== 0) return;
+    gesture.dragPending = event.detail === 1 && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
   }, true);
   cmView.scrollDOM.addEventListener('scroll', () => {
     if (slash.open) positionSlashMenu();
@@ -210,27 +207,28 @@ function createEditor(doc) {
 
 }
 
-function trackSelectionTravel(event) {
+function cmMouseSelectionGesture(view) {
   const gesture = cmSelectionGesture;
-  if (!gesture || gesture.id !== event.pointerId) return;
-  gesture.travel = Math.max(gesture.travel, (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2);
+  return gesture?.type === 'mouse' && gesture.view === view ? gesture : null;
 }
-document.addEventListener('pointermove', trackSelectionTravel, { capture: true, passive: true });
+
+// CodeMirror tracks a drag on document mousemove. Let the initial click place
+// the caret, then wait for intentional movement before extending the range.
+window.addEventListener('mousemove', event => {
+  const gesture = cmSelectionGesture;
+  if (!gesture?.dragPending || !(event.buttons & 1) || gesture.view.compositionStarted) return;
+  const distanceSquared = (event.clientX - gesture.x) ** 2 + (event.clientY - gesture.y) ** 2;
+  if (distanceSquared < CM_SELECTION_SLOP_SQUARED) event.stopPropagation();
+  else gesture.dragPending = false;
+}, true);
 document.addEventListener('pointerup', event => {
   const gesture = cmSelectionGesture;
   if (!gesture || gesture.id !== event.pointerId) return;
-  trackSelectionTravel(event);
   cmSelectionGesture = null;
-  // CodeMirror may finish the range in its mouseup handler. Inspect that
-  // settled range rather than inferring or rewriting the user's selection.
+  if (gesture.recenter) scheduleCmTypewriterCenter(gesture.view);
+  // CodeMirror may finish the selection in mouseup, after pointerup.
   requestAnimationFrame(() => {
-    if (cmView !== gesture.view || cmSelectionGesture) return;
-    const { from, to } = cmView.state.selection.main;
-    if (from !== to && gesture.type === 'mouse' && gesture.clicks === 1 &&
-        !gesture.modified && gesture.travel < CM_SELECTION_SLOP_SQUARED) {
-      cmSelectionSuppressed = { view: cmView, from, to };
-    }
-    scheduleCmSelectionToolbar();
+    if (cmView === gesture.view && !cmSelectionGesture) scheduleCmSelectionToolbar();
   });
 }, true);
 document.addEventListener('pointercancel', event => {
@@ -276,11 +274,7 @@ function hideCmSelectionToolbar() {
 function selectionToolbarRange() {
   if (!state.editing || !cmView || cmSelectionGesture?.view === cmView || cmView.composing || slash.open) return null;
   const selection = cmView.state.selection.main;
-  if (!selection || selection.empty) return null;
-  const suppressed = cmSelectionSuppressed;
-  if (suppressed?.view === cmView && suppressed.from === selection.from && suppressed.to === selection.to) return null;
-  cmSelectionSuppressed = null;
-  return selection;
+  return selection.empty ? null : selection;
 }
 
 function scheduleCmSelectionToolbar() {
@@ -474,6 +468,7 @@ document.addEventListener('pointerdown', e => {
 
 function destroyEditor() {
 
+  cmSelectionGesture = null;
   if (cmLayoutCleanup) { cmLayoutCleanup(); cmLayoutCleanup = null; }
   hideCmSelectionToolbar();
   closeSlashMenu();
@@ -747,21 +742,32 @@ function cmFocusExtension() {
 }
 
 /* Typewriter mode: the cursor line stays at the vertical centre. */
+function scheduleCmTypewriterCenter(view) {
+  const gesture = cmMouseSelectionGesture(view);
+  if (gesture) {
+    gesture.recenter = true;
+    return;
+  }
+  requestAnimationFrame(() => {
+    if (cmView !== view || !view.hasFocus || !editorPrefs.typewriter || cmMouseSelectionGesture(view)) return;
+    const head = view.state.selection.main.head;
+    view.dispatch({ effects: window.ReadMDCodeMirror.EditorView.scrollIntoView(head, { y: 'center' }) });
+  });
+}
+
 function cmTypewriterExtension() {
   const CM = window.ReadMDCodeMirror;
   return [
     CM.EditorView.scrollMargins.of(view => {
+      // Drag autoscroll uses these margins to detect the edge of the editor.
+      if (cmMouseSelectionGesture(view)) return null;
       const h = view.scrollDOM.clientHeight;
       return { top: h * 0.45, bottom: h * 0.45 };
     }),
     CM.EditorView.updateListener.of(u => {
       if (!u.selectionSet || !u.view.hasFocus) return;
       if (!u.transactions.some(tr => tr.isUserEvent('input') || tr.isUserEvent('delete') || tr.isUserEvent('select') || tr.isUserEvent('move'))) return;
-      const head = u.state.selection.main.head;
-      requestAnimationFrame(() => {
-        if (!cmView || cmView !== u.view) return;
-        u.view.dispatch({ effects: CM.EditorView.scrollIntoView(head, { y: 'center' }) });
-      });
+      scheduleCmTypewriterCenter(u.view);
     }),
   ];
 }

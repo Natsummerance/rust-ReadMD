@@ -2022,6 +2022,7 @@
   "search.next": "Næste (Enter)",
   "search.noMatches": "Ingen matchende resultater",
   "search.placeholder": "Søg i dokumenter... (Enter Next, Shift+Enter Previous)",
+  "search.results": "Søgeresultater",
   "search.prev": "Forrige (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} runder",
   "ai.taskRunning": "Gennemgang i gang…",
   "ai.thinking": "Tænker…",
-  "warn.pptx_math_image": "Formler bevares som billeder med deres kildekode i diasnoterne."
+  "warn.pptx_math_image": "Formler bevares som billeder med deres kildekode i diasnoterne.",
+  "export.fmtPngLong": "Lang PNG",
+  "export.fmtPngPages": "PNG pr. side",
+  "export.importPresetPack": "Importér skabeloner"
 }

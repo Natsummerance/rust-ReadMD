@@ -9,16 +9,18 @@
 <meta name="readmd-startup-probe" content="0">
 <title>ReadMD</title>
 <link rel="icon" type="image/x-icon" href="/assets/readmd.ico">
-<link rel="stylesheet" href="/assets/css/tokens.css?v=0.0.6&amp;rev=2420a60d0b35">
+<link rel="stylesheet" href="/assets/css/tokens.css?v=0.0.6&amp;rev=38dae262359b">
 <link rel="stylesheet" href="/assets/style.css?v=0.0.6&amp;rev=c4c31c4022d7">
 <link rel="stylesheet" href="/assets/workspace-ui.css?v=0.0.6&amp;rev=66638534d6c1">
 <link rel="stylesheet" href="/assets/skill-workbench.css?v=0.0.6">
-<link rel="stylesheet" href="/assets/css/shell.css?v=0.0.6&amp;rev=f4de3555e253">
+<link rel="stylesheet" href="/assets/css/shell.css?v=0.0.6&amp;rev=cf88b0bddb9c">
+<link rel="stylesheet" href="/assets/css/search.css?v=0.0.6&amp;rev=5801fb85b072">
 <link rel="stylesheet" href="/assets/css/reader.css?v=0.0.6&amp;rev=ef4ffcf3cfa8">
 <link rel="stylesheet" href="/assets/css/editor.css?v=0.0.6&amp;rev=1aa43f222313">
 <link rel="stylesheet" href="/assets/css/ai.css?v=0.0.6">
 <link rel="stylesheet" href="/assets/css/panels.css?v=0.0.6&amp;rev=9af8536eb19d">
-<link rel="stylesheet" href="/assets/css/dialogs.css?v=0.0.6&amp;rev=2436b996054a">
+<link rel="stylesheet" href="/assets/css/dialogs.css?v=0.0.6&amp;rev=d7952635c886">
+<link rel="stylesheet" href="/assets/css/export-html-layouts.css?v=0.0.6&amp;rev=31669e862807">
 <link rel="stylesheet" href="/assets/css/pet.css?v=0.0.6&amp;rev=0b6fd7527793">
 </head>
 <body class="shell-single-chrome">
@@ -144,6 +146,12 @@
         </div>
       </header>
       <div id="file-list" class="side-body"></div>
+      <div class="side-file-commands">
+        <button id="btn-saveas" class="tb-btn icon" type="button" disabled title="另存为" aria-label="另存为" data-i18n-title="menu.saveAs" data-i18n-aria="menu.saveAs"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zm3 0v6h7V4m-7 16v-6h8v6"/></svg></button>
+        <button id="btn-clipboard-new" class="tb-btn icon" type="button" title="剪贴新建" aria-label="剪贴新建" data-i18n-title="menu.clipboard" data-i18n-aria="menu.clipboard"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H6v15h12V5h-3m-6-2h6v4H9zm3 7v6m-3-3h6"/></svg></button>
+        <button id="btn-document-copy" class="tb-btn icon" type="button" disabled title="编辑副本" aria-label="编辑副本" data-i18n-title="storage.createCopy" data-i18n-aria="storage.createCopy"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v12H8zm7-4H4v12"/></svg></button>
+        <button id="btn-document-history" class="tb-btn icon" type="button" title="恢复记录" aria-label="恢复记录" data-i18n-title="storage.history" data-i18n-aria="storage.history"><svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 10a7 7 0 1 1 1 7M5 5v5h5m2-2v4l3 2"/></svg></button>
+      </div>
     </section>
     <section id="side-toc" class="side-view" role="tabpanel" aria-labelledby="tab-toc" hidden>
       <header class="side-header"><h2 data-i18n="tabs.toc">目录</h2></header>
@@ -167,42 +175,39 @@
         </div>
         <button id="search-close" class="tb-btn" title="关闭 (Esc)" data-i18n-title="search.close" data-i18n-aria="search.close">&#10005;</button>
       </div>
+      <ul id="search-results" class="side-body" role="list" aria-label="搜索结果" data-i18n-aria="search.results" hidden></ul>
     </section>
     <section id="side-conversion" class="side-view" role="tabpanel" aria-labelledby="tab-conversion" hidden>
       <header class="side-header"><h2 data-i18n="menu.convert">转换</h2></header>
       <div class="side-body side-actions">
-        <button id="btn-convert" class="side-action" type="button"><span data-i18n="menu.convert">转换</span></button>
-        <button id="btn-web" class="side-action" type="button"><span data-i18n="menu.web">网页提取</span></button>
-        <button id="btn-ocr" class="side-action" type="button"><span data-i18n="menu.ocr">扫描识别</span></button>
-        <button id="btn-pdf-edit" class="side-action" type="button"><span data-i18n="pdf.title">编辑 PDF</span></button>
-        <button id="btn-clipboard-new" class="side-action" type="button"><span data-i18n="menu.clipboard">剪贴新建</span></button>
-        <button id="btn-saveas" class="side-action" type="button" disabled><span data-i18n="menu.saveAs">另存为</span></button>
+        <button id="btn-convert" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15m-4-4 4 4-4 4m5 4H5m4-4-4 4 4 4"/></svg><span data-i18n="menu.convert">转换</span></button>
+        <button id="btn-web" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v11H4zm0 3h16m-8 3v3m-2-2h4"/></svg><span data-i18n="menu.web">网页提取</span></button>
+        <button id="btn-ocr" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4m12-4h4v4M4 16v4h4m12-4v4h-4M7 12h10"/></svg><span data-i18n="menu.ocr">扫描识别</span></button>
+        <button id="btn-pdf-edit" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4H6v16h12v-6m-5-10 5 5h-5zm-4 10 7-7 2 2-7 7-3 1z"/></svg><span data-i18n="pdf.title">编辑 PDF</span></button>
       </div>
     </section>
     <section id="side-interaction" class="side-view" role="tabpanel" aria-labelledby="tab-interaction" hidden>
       <header class="side-header"><h2 data-i18n="menu.grpInteract">互动</h2></header>
       <div class="side-body side-actions">
-        <button id="btn-backlinks-menu" class="side-action" type="button" disabled><span data-i18n="graph.backlinks">反向链接</span></button>
-        <button id="btn-graph" class="side-action hidden" type="button" disabled title="知识图谱 (Ctrl+G)" aria-label="知识图谱" data-i18n-title="graph.title" data-i18n-aria="graph.title"><span data-i18n="graph.title">知识图谱</span></button>
-        <button id="btn-presentation-menu" class="side-action" type="button" disabled><span data-i18n="menu.presentation">演讲演示</span></button>
-        <button id="btn-run-all-chunks" class="side-action hidden" type="button" disabled><span data-i18n="menu.runCode">运行代码</span></button>
-        <button id="btn-document-copy" class="side-action" type="button" disabled><span data-i18n="storage.createCopy">编辑副本</span></button>
-        <button id="btn-document-history" class="side-action" type="button"><span data-i18n="storage.history">恢复记录</span></button>
-        <button id="btn-fix" class="side-action" type="button" disabled><span data-i18n="menu.fix">修复详情</span></button>
-        <button id="btn-share" class="side-action" type="button" disabled><span data-i18n="menu.share">共享</span></button>
+        <button id="btn-backlinks-menu" class="side-action" type="button" disabled><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7 7 4 4 7m3-3v8a4 4 0 0 0 4 4h6m0-3 3 3-3 3"/></svg><span data-i18n="graph.backlinks">反向链接</span></button>
+        <button id="btn-graph" class="side-action hidden" type="button" disabled title="知识图谱 (Ctrl+G)" aria-label="知识图谱" data-i18n-title="graph.title" data-i18n-aria="graph.title"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h1m10 1h1M7 7l9 2m-9 1 4 7m5-7-4 7M5 4h4v4H5zm10 3h4v4h-4zm-6 9h4v4H9z"/></svg><span data-i18n="graph.title">知识图谱</span></button>
+        <button id="btn-presentation-menu" class="side-action" type="button" disabled><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4zm8 11v4m-3 0h6m-5-12 4 2.5-4 2.5z"/></svg><span data-i18n="menu.presentation">演讲演示</span></button>
+        <button id="btn-run-all-chunks" class="side-action hidden" type="button" disabled><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6 17 12 7 18zm12 0v12"/></svg><span data-i18n="menu.runCode">运行代码</span></button>
+        <button id="btn-fix" class="side-action" type="button" disabled><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m13 5 6 6M5 19l2-6L16 4l4 4-9 9zm11-4 2 2 2-2"/></svg><span data-i18n="menu.fix">修复详情</span></button>
+        <button id="btn-share" class="side-action" type="button" disabled><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4m-4 4 4-4 4 4M6 11H4v9h16v-9h-2"/></svg><span data-i18n="menu.share">共享</span></button>
       </div>
     </section>
     <section id="side-settings" class="side-view" role="tabpanel" aria-labelledby="tab-settings" hidden>
       <header class="side-header"><h2 data-i18n="menu.grpSettings">设置</h2></header>
       <div class="side-body side-actions">
-        <button id="btn-style-custom" class="side-action" type="button"><span data-i18n="menu.customStyle">样式定制</span></button>
-        <button id="btn-lang" class="side-action" type="button"><span data-i18n="menu.lang">界面语言</span><em id="lang-current-label">简体中文</em></button>
-        <button id="btn-plugin-menu" class="side-action" type="button"><span data-i18n="menu.plugins">插件工坊</span></button>
-        <button id="btn-pet" class="side-action" type="button"><span data-i18n="menu.pet">桌宠</span><em id="pet-status-label" data-i18n="app.disabled">未开启</em></button>
-        <button id="btn-assoc" class="side-action" type="button"><span data-i18n="menu.assoc">设为默认</span></button>
-        <button id="btn-autostart" class="side-action" type="button"><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
-        <button id="btn-close-to-tray" class="side-action hidden" type="button" role="switch" aria-checked="true"><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
-        <button id="btn-check-update" class="side-action" type="button"><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">v0.0.6</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
+        <button id="btn-style-custom" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12M6 12h12M6 18h12M9 4v4m6 2v4m-6 2v4"/></svg><span data-i18n="menu.customStyle">样式定制</span></button>
+        <button id="btn-lang" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11m-5-2v2m3 0a9 9 0 0 1-8 8m1-6a8 8 0 0 0 6 5m1 7 4-9 4 9m-7-3h6"/></svg><span data-i18n="menu.lang">界面语言</span><em id="lang-current-label">简体中文</em></button>
+        <button id="btn-plugin-menu" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h6V3a2 2 0 1 1 4 0v2h4v5h2a2 2 0 1 1 0 4h-2v5h-5v-2a2 2 0 1 0-4 0v2H5z"/></svg><span data-i18n="menu.plugins">插件工坊</span></button>
+        <button id="btn-pet" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11V6l4 3h6l4-3v5a7 7 0 1 1-14 0zm4 2h.1m5.9 0h.1m-4 3h2"/></svg><span data-i18n="menu.pet">桌宠</span><em id="pet-status-label" data-i18n="app.disabled">未开启</em></button>
+        <button id="btn-assoc" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h9l5 5v11H5zm9 0v5h5m-10 5 2 2 4-4"/></svg><span data-i18n="menu.assoc">设为默认</span></button>
+        <button id="btn-autostart" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-4-7a8 8 0 1 0 8 0"/></svg><span data-i18n="menu.autoStart">开机自启</span><em id="autostart-status-label" data-i18n="app.disabled">未开启</em></button>
+        <button id="btn-close-to-tray" class="side-action hidden" type="button" role="switch" aria-checked="true"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4zm4 14h8m-4-12v6m-2-2 2 2 2-2"/></svg><span data-i18n="window.closeToTray">关闭时驻留托盘</span><em id="close-to-tray-status"></em></button>
+        <button id="btn-check-update" class="side-action" type="button"><svg class="side-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 11a7 7 0 1 0-2 6m2-10v4h-4m3 4v5m-2-2 2 2 2-2"/></svg><span data-i18n="menu.checkUpdate">检查更新</span><em id="menu-version-label">v0.0.6</em><i id="update-menu-dot" class="update-dot hidden"></i></button>
       </div>
     </section>
     <div id="statusbar" class="hidden" role="group" tabindex="-1" data-i18n-aria="pm.details" aria-label="详情">
@@ -1201,7 +1206,7 @@
 <div id="export-modal" class="hidden" role="dialog" aria-modal="true" aria-label="导出文档" data-i18n-aria="export.title">
   <div id="export-box">
     <div class="export-head">
-      <h3 data-i18n="export.title">导出文档</h3>
+      <h3 data-i18n="export.title">导出</h3>
       <button id="export-close" class="modal-close-btn" aria-label="关闭" data-i18n-aria="toolbar.close">
         <svg class="modal-close-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
@@ -1225,16 +1230,18 @@
               <button id="export-tab-pptx" class="exp-fmt" data-fmt="pptx" role="tab" aria-selected="false" aria-controls="export-opts">PPTX</button>
             </div>
           </div>
+          <div class="exp-fmt-group">
+            <span class="exp-fmt-group-title" data-i18n="editor.image">图片</span>
+            <div class="exp-fmt-btn-row">
+              <button id="export-tab-png" class="exp-fmt" data-fmt="png" role="tab" aria-selected="false" aria-controls="export-opts" data-i18n="export.fmtPngLong">长图 PNG</button>
+              <button id="export-tab-png-pages" class="exp-fmt" data-fmt="png-pages" role="tab" aria-selected="false" aria-controls="export-opts" data-i18n="export.fmtPngPages">分图 PNG</button>
+            </div>
+          </div>
         </div>
 
-        <details class="export-preset-list">
-          <summary data-i18n="export.presetList">全部预设</summary>
-          <div class="exp-preset-row">
-            <label for="exp-preset" data-i18n="export.stylePreset">样式预设</label>
-            <select id="exp-preset"></select>
-          </div>
-        </details>
-        <div id="exp-preset-cards" class="exp-preset-cards" role="group" aria-label="样式预设" data-i18n-aria="export.stylePreset"></div>
+        <h4 id="export-preset-title" class="export-preset-title" data-i18n="export.stylePreset">样式预设</h4>
+        <select id="exp-preset" hidden aria-hidden="true"></select>
+        <div id="exp-preset-cards" class="exp-preset-cards" role="group" aria-labelledby="export-preset-title"></div>
         <div class="exp-preset-actions">
           <button id="exp-save-preset" class="tb-btn" data-i18n="export.savePreset">存为预设&#8230;</button>
           <button id="exp-reset" class="tb-btn" data-i18n="export.restoreDefaults">恢复默认</button>
@@ -1414,6 +1421,7 @@
             </div>
           </div>
         </details>
+        <button id="plugin-preset-pack" class="tb-btn" type="button" data-i18n="export.importPresetPack">导入预设</button>
         <button id="plugin-offline-pack" class="tb-btn" type="button" data-i18n="pdf.installPack">安装离线能力包</button>
       </div>
     </footer>
@@ -1449,7 +1457,6 @@
       </div>
 
       <div class="update-options">
-        <label class="ai-sel"><input id="update-use-mirror" type="checkbox"> <span data-i18n="update.useMirror">使用国内镜像加速下载</span></label>
       </div>
     </div>
     <div class="update-foot">
@@ -1751,7 +1758,7 @@
   </div>
 </div>
 
-<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=438907ea69c3"></script>
+<script defer src="/assets/readmd.boot.js?v=0.0.6&amp;rev=dc5558353335"></script>
 <script defer src="/assets/js/platform/harmony.js?v=0.0.5"></script>
 </body>
 </html>

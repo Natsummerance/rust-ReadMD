@@ -2022,6 +2022,7 @@
   "search.next": "Ibikurikira (Injira)",
   "search.noMatches": "Nta bisubizo bihuye",
   "search.placeholder": "Shakisha mu nyandiko… (Injira Ibikurikira, Shift + Injira Mbere)",
+  "search.results": "Ibisubizo by’ishakisha",
   "search.prev": "Mbere (Shift + Injira)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "Inshuro {count}",
   "ai.taskRunning": "Isuzuma rirakorwa…",
   "ai.thinking": "Biratekereza…",
-  "warn.pptx_math_image": "Ingero z’imibare zibikwa nk’amashusho, inkomoko yazo ikabikwa mu bisobanuro by’amapaji."
+  "warn.pptx_math_image": "Ingero z’imibare zibikwa nk’amashusho, inkomoko yazo ikabikwa mu bisobanuro by’amapaji.",
+  "export.fmtPngLong": "PNG ndende",
+  "export.fmtPngPages": "PNG kuri buri rupapuro",
+  "export.importPresetPack": "Kuzana ingero"
 }

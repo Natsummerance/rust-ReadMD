@@ -2022,6 +2022,7 @@
   "search.next": "Suivant (Entrer)",
   "search.noMatches": "Aucun résultat correspondant",
   "search.placeholder": "Rechercher dans les documents… (Entrée Suivant, Maj+Entrée Précédent)",
+  "search.results": "Résultats de recherche",
   "search.prev": "Précédent (Maj+Entrée)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} tours",
   "ai.taskRunning": "Révision en cours…",
   "ai.thinking": "Réflexion en cours…",
-  "warn.pptx_math_image": "Les équations sont conservées en images, avec leur source dans les notes des diapositives."
+  "warn.pptx_math_image": "Les équations sont conservées en images, avec leur source dans les notes des diapositives.",
+  "export.fmtPngLong": "PNG long",
+  "export.fmtPngPages": "PNG par page",
+  "export.importPresetPack": "Importer les préréglages"
 }

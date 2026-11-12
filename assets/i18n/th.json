@@ -2022,6 +2022,7 @@
   "search.next": "ถัดไป (Enter)",
   "search.noMatches": "ไม่พบผลลัพธ์ที่ตรงกัน",
   "search.placeholder": "ค้นหาในเอกสาร… (Enter ถัดไป, Shift+Enter ก่อนหน้า)",
+  "search.results": "ผลการค้นหา",
   "search.prev": "ก่อนหน้า (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} รอบ",
   "ai.taskRunning": "กำลังตรวจทาน…",
   "ai.thinking": "กำลังคิด…",
-  "warn.pptx_math_image": "เก็บสมการเป็นรูปภาพ พร้อมบันทึกซอร์สของสมการไว้ในบันทึกย่อของสไลด์"
+  "warn.pptx_math_image": "เก็บสมการเป็นรูปภาพ พร้อมบันทึกซอร์สของสมการไว้ในบันทึกย่อของสไลด์",
+  "export.fmtPngLong": "PNG แบบยาว",
+  "export.fmtPngPages": "PNG แยกหน้า",
+  "export.importPresetPack": "นำเข้าค่าที่ตั้งไว้"
 }

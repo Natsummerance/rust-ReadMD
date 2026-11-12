@@ -2022,6 +2022,7 @@
   "search.next": "अर्को (Enter)",
   "search.noMatches": "कुनै मेल फेला परेन",
   "search.placeholder": "कागजातमा खोज्नुहोस्… (अर्को Enter, अघिल्लो Shift+Enter)",
+  "search.results": "खोज नतिजाहरू",
   "search.prev": "अघिल्लो (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} चरण",
   "ai.taskRunning": "समीक्षा हुँदैछ…",
   "ai.thinking": "सोच्दैछ…",
-  "warn.pptx_math_image": "समीकरण चित्रका रूपमा सुरक्षित रहन्छन् र तिनको स्रोत स्लाइडका टिप्पणीमा राखिन्छ।"
+  "warn.pptx_math_image": "समीकरण चित्रका रूपमा सुरक्षित रहन्छन् र तिनको स्रोत स्लाइडका टिप्पणीमा राखिन्छ।",
+  "export.fmtPngLong": "लामो PNG",
+  "export.fmtPngPages": "पृष्ठअनुसार PNG",
+  "export.importPresetPack": "पूर्वनिर्धारित शैली आयात"
 }

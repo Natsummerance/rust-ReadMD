@@ -250,28 +250,27 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     let total = entry["downloadBytes"]
         .as_u64()
         .ok_or("capability_catalog_invalid")?;
-    // The same proxy logic as application updates; no credential-bearing URL
-    // is accepted from the caller or recorded in events/errors.
-    let response = crate::updater::update_agent_with_read_timeout(
-        Duration::from_secs(600),
-        5,
-        Duration::from_secs(2),
-    )
-    .get(entry["url"].as_str().ok_or("capability_catalog_invalid")?)
-    .call()
-    .map_err(|_| "capability_download_failed")?;
-    let host = response
-        .get_url()
-        .strip_prefix("https://")
-        .and_then(|url| url.split('/').next());
-    if !matches!(
-        host,
-        Some(
-            "github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com"
-        )
-    ) {
-        return Err("capability_download_failed".into());
+    let url = entry["url"].as_str().ok_or("capability_catalog_invalid")?;
+    let budget = Duration::from_secs(600);
+    let agent = crate::updater::update_agent_with_read_timeout(budget, 0, Duration::from_secs(2));
+    let deadline = Instant::now() + budget;
+    let mut last_error = "capability_download_failed";
+    for candidate in crate::package_download::ranked(url, false, Some(total)) {
+        if is_cancelled(id) { return Err("cancelled".into()); }
+        update(id, |job| job.received = 0);
+        let Ok(response) = crate::package_download::response(&agent, &candidate, deadline, None) else { continue; };
+        match receive_pack(app, entry, id, total, deadline, response) {
+            Ok(file) => return install(app, file.path(), entry["id"].as_str().unwrap_or(""), id),
+            Err(code @ ("capability_download_failed" | "capability_download_integrity")) => last_error = code,
+            Err(code) => return Err(code.into()),
+        }
     }
+    Err(last_error.into())
+}
+
+fn receive_pack(
+    app: &Arc<App>, entry: &Value, id: &str, total: u64, deadline: Instant, response: ureq::Response,
+) -> Result<tempfile::NamedTempFile, &'static str> {
     if response
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok())
@@ -286,7 +285,6 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     let mut reader = response.into_reader();
     let mut digest = Sha256::new();
     let mut received = 0u64;
-    let deadline = Instant::now() + Duration::from_secs(600);
     let mut buffer = [0u8; 65536];
     loop {
         if is_cancelled(id) {
@@ -318,9 +316,7 @@ fn download(app: &Arc<App>, entry: &Value, id: &str, _transfer: crate::capabilit
     file.as_file_mut()
         .sync_all()
         .map_err(|_| "capability_install_failed")?;
-    // Extraction and real probing remain cancellable. Only the short atomic
-    // commit closes cancellation, under the same job lock as the UI request.
-    install(app, file.path(), entry["id"].as_str().unwrap_or(""), id)
+    Ok(file)
 }
 fn start_uninstall(app: &Arc<App>, v: &Value) -> ApiResult<Response> {
     let owned = scope(app);

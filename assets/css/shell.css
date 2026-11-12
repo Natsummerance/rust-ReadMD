@@ -140,13 +140,13 @@ body.shell-single-chrome #window-drag-region {
   display: flex; align-items: center; flex: 1 1 auto; min-width: 0; width: auto;
   max-width: none; height: 100%; gap: 2px; overflow: visible;
 }
-body.shell-single-chrome :is(#toolbar, #side-rail, .side-header) .tb-btn {
+body.shell-single-chrome :is(#toolbar, #side-rail, .side-header, .side-file-commands) .tb-btn {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 44px; height: 44px; min-width: 44px; min-height: 44px; margin: 0;
   padding: 5px; border: 0; border-radius: var(--radius-m); background: transparent;
   background-clip: content-box; color: var(--color-fg-muted); box-shadow: none;
 }
-body.shell-single-chrome :is(#toolbar, #side-rail, .side-header) .tb-btn:is(:hover, :focus-visible):not(:disabled) {
+body.shell-single-chrome :is(#toolbar, #side-rail, .side-header, .side-file-commands) .tb-btn:is(:hover, :focus-visible):not(:disabled) {
   color: var(--color-fg); background-color: var(--color-hover);
 }
 body.shell-single-chrome :is(#toolbar, #side-rail) .tb-btn:is([aria-selected="true"], [aria-expanded="true"], [aria-pressed="true"]):not(:disabled) {
@@ -158,7 +158,7 @@ body.shell-single-chrome :is(#toolbar, #side-rail) :is(#btn-ai, #status-update-b
 body.shell-single-chrome :is(#toolbar, #side-rail) :is(#btn-ai, #status-update-badge):is(:hover, :focus-visible, .active, [aria-pressed="true"]) {
   color: var(--color-accent-fg); background-color: var(--color-accent);
 }
-body.shell-single-chrome :is(#toolbar, #side-rail, .side-header) .tb-btn:is(.hidden,[hidden]) { display: none; }
+body.shell-single-chrome :is(#toolbar, #side-rail, .side-header, .side-file-commands) .tb-btn:is(.hidden,[hidden]) { display: none; }
 body.shell-single-chrome :is(#toolbar, #side-rail) .tb-ic { width: 18px; height: 18px; }
 body.shell-single-chrome #doc-tabs-container {
   display: flex; flex: 0 1 auto; min-width: 0; max-width: none; height: 44px; gap: 2px; margin: 0;
@@ -169,23 +169,26 @@ body.shell-single-chrome #doc-tabs-bar {
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; direction: ltr;
 }
 body.shell-single-chrome #doc-tabs-bar .tab-item {
-  position: relative; isolation: isolate; flex: 0 0 auto; gap: 4px; min-width: 70px;
-  max-width: min(200px, 29vw); height: 44px; padding: 0 0 0 var(--space-2); border: 0;
-  border-radius: var(--radius-s); background: transparent; box-shadow: none;
+  position: relative; flex: 0 0 auto; gap: 2px; min-width: 0;
+  max-width: min(200px, 29vw); height: var(--touch-target); padding: 0 0 0 var(--space-2);
+  border: 0; border-radius: var(--radius-s); background: transparent; box-shadow: none;
 }
-body.shell-single-chrome #doc-tabs-bar .tab-item::before {
-  content: ""; position: absolute; inset: 5px 0; z-index: -1; border-radius: inherit; pointer-events: none;
-}
-body.shell-single-chrome #doc-tabs-bar .tab-item:hover::before { background: var(--color-hover); }
-body.shell-single-chrome #doc-tabs-bar .tab-item.active::before {
-  background: var(--color-selected); box-shadow: inset 0 -1px var(--color-accent);
+body.shell-single-chrome #doc-tabs-bar .tab-item.active::after {
+  content: ""; position: absolute; pointer-events: none; inset: auto 8px 3px;
+  height: 2px; border-radius: 1px; background: var(--color-accent);
 }
 body.shell-single-chrome #doc-tabs-bar .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.shell-single-chrome #doc-tabs-bar .tab-close {
-  flex: 0 0 44px; width: 44px; height: 44px; min-width: 44px; min-height: 44px;
-  margin: 0; border: 0; background-clip: content-box; padding: 8px; opacity: 0; font-size: var(--text-lg);
+  display: grid; place-items: center; flex: 0 0 28px; width: 28px; min-width: 28px;
+  height: var(--touch-target); min-height: var(--touch-target);
+  margin: 0; border: 0; background-clip: content-box; padding: 8px 2px; opacity: 0; font-size: var(--text-lg);
 }
 body.shell-single-chrome #doc-tabs-bar .tab-item:is(.active,:hover,:focus-within) .tab-close { opacity: 1; }
+@media (pointer: coarse) {
+  body.shell-single-chrome #doc-tabs-bar .tab-close {
+    flex-basis: var(--touch-target); width: var(--touch-target); min-width: var(--touch-target); opacity: .75;
+  }
+}
 body.shell-single-chrome #doc-tabs-bar .tab-item.tab-drag-over-left { box-shadow: inset 2px 0 var(--accent); }
 body.shell-single-chrome #doc-tabs-bar .tab-item.tab-drag-over-right { box-shadow: inset -2px 0 var(--accent); }
 body.shell-single-chrome #doc-tabs-overflow-wrap { position: relative; flex: 0 0 44px; height: 44px; }
@@ -252,21 +255,41 @@ body.shell-single-chrome .side-header h2 {
   min-width: 0; margin: 0; font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere;
 }
 body.shell-single-chrome .side-file-actions { display: flex; flex: none; gap: 0; }
+body.shell-single-chrome .side-file-commands {
+  display: flex; flex: none; flex-wrap: wrap; align-items: center;
+  padding: 0 var(--space-2); border-block-start: 1px solid var(--color-separator);
+}
 body.shell-single-chrome .side-view .side-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 body.shell-single-chrome #side-recent-list { margin: 0; padding: 4px 8px; list-style: none; }
 body.shell-single-chrome #side-recent-list .recent-card { border: 0; border-radius: var(--radius-s); background: transparent; box-shadow: none; }
-body.shell-single-chrome #side-recent-list .recent-card:hover { background: var(--color-hover); }
+body.shell-single-chrome #side-recent-list .recent-card:is(:hover, :focus-within) {
+  background: var(--color-hover); transform: none;
+}
+body.shell-single-chrome #side-recent-list .recent-card-btn {
+  padding: var(--space-1) var(--space-2); text-align: start;
+}
+body.shell-single-chrome #side-recent-list .recent-remove:is(:hover, :focus-visible) {
+  border-radius: var(--radius-s); color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent); transform: none;
+}
 body.shell-single-chrome #side-recent-list .recent-card-btn { min-height: 44px; }
 body.shell-single-chrome .side-empty { padding: var(--space-2); color: var(--color-fg-muted); }
 body.shell-single-chrome .side-actions { padding: 0 var(--space-2) var(--space-2); overscroll-behavior: contain; }
 .side-action {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  display: flex; align-items: center; gap: var(--space-2);
   width: 100%; min-height: var(--touch-target); padding: var(--space-1) var(--space-2);
   border: 0; border-radius: var(--radius-s); background: transparent; color: var(--color-fg);
   font: inherit; font-size: var(--text-sm); line-height: 1.35; text-align: start;
   cursor: pointer; -webkit-app-region: no-drag;
 }
-.side-action > span { min-width: 0; overflow-wrap: anywhere; }
+.side-action-icon {
+  flex: 0 0 17px; width: 17px; height: 17px; color: var(--color-fg-muted);
+  fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round;
+}
+.side-action > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.side-action:not(:disabled):is(:hover, :focus-visible) > .side-action-icon { color: var(--accent); }
+.side-action:disabled > .side-action-icon { color: inherit; }
+#file-open-group { padding-block-start: var(--space-2); }
 .side-action > em {
   max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--color-fg-subtle); font: inherit; font-size: var(--text-xs);

@@ -2022,6 +2022,7 @@
   "search.next": "Дараах (Enter)",
   "search.noMatches": "Тохирох үр дүн олдсонгүй",
   "search.placeholder": "Баримтаас хайх… (Enter Дараах, Shift+Enter Өмнөх)",
+  "search.results": "Хайлтын үр дүн",
   "search.prev": "Өмнөх (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} үе",
   "ai.taskRunning": "Хянаж байна…",
   "ai.thinking": "Бодож байна…",
-  "warn.pptx_math_image": "Тэгшитгэлийг зургаар хадгалж, эх кодыг слайдын тэмдэглэлд оруулна."
+  "warn.pptx_math_image": "Тэгшитгэлийг зургаар хадгалж, эх кодыг слайдын тэмдэглэлд оруулна.",
+  "export.fmtPngLong": "Урт PNG",
+  "export.fmtPngPages": "Хуудас тус бүр PNG",
+  "export.importPresetPack": "Загвар импортлох"
 }

@@ -245,6 +245,81 @@ test('pasting a URL over a selection creates a link', async ({ page }) => {
   expect(await docText(page)).toBe('Read the [docs](https://example.com/docs) today');
 });
 
+test('mouse selection starts only after a deliberate drag', async ({ page }) => {
+  await openEditor(page, 'First line has some text here.\nSecond line has some text too.\n');
+  const { x, y, anchor, across, dragAnchor, dragHead } = await page.evaluate(() => {
+    const first = cmView.contentDOM.querySelector('.cm-line').getBoundingClientRect();
+    const x = Math.round(cmView.coordsAtPos(7).left), y = Math.ceil(first.bottom) - 1;
+    return {
+      x, y,
+      anchor: cmView.posAtCoords({ x, y }),
+      across: cmView.posAtCoords({ x, y: y + 2 }),
+      dragAnchor: cmView.posAtCoords({ x: x + 18, y }),
+      dragHead: cmView.posAtCoords({ x: x + 45, y: y + 2 }),
+    };
+  });
+  expect(across - anchor).toBeGreaterThan(20);
+  const selection = () => page.evaluate(() => cmView.state.selection.main.toJSON());
+  const toolbar = page.locator('#cm-selection-toolbar');
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + 2);
+  expect(await selection()).toEqual({ anchor, head: anchor });
+  await page.mouse.up();
+  expect(await selection()).toEqual({ anchor, head: anchor });
+  await expect(toolbar).toBeHidden();
+
+  await page.mouse.move(x + 18, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 45, y + 2, { steps: 4 });
+  expect(await selection()).toEqual({ anchor: dragAnchor, head: dragHead });
+  await expect(toolbar).toBeHidden();
+  // Once the drag has begun, moving back to the start still adjusts the range.
+  await page.mouse.move(x + 18, y);
+  expect(await selection()).toEqual({ anchor: dragAnchor, head: dragAnchor });
+  await page.mouse.move(x + 45, y + 2);
+  await page.mouse.up();
+  await expect(toolbar).toBeVisible();
+});
+
+test('typewriter mode keeps text under the mouse until release and scrolls at the edge', async ({ page }) => {
+  await openEditor(page, Array.from({ length: 100 }, (_, i) => `Line ${i + 1} has text to select.`).join('\n'));
+  await page.evaluate(() => setEditorPref('typewriter', true));
+  const { x, y, edge, top, anchor, head } = await page.evaluate(() => {
+    const scroller = cmView.scrollDOM.getBoundingClientRect();
+    const lines = [...cmView.contentDOM.querySelectorAll('.cm-line')];
+    const row = lines.find(line => line.getBoundingClientRect().top > scroller.top + scroller.height * 0.65);
+    const rect = cmView.coordsAtPos(cmView.posAtDOM(row) + 8);
+    const x = Math.round(rect.left), y = Math.round((rect.top + rect.bottom) / 2);
+    return {
+      x, y, edge: Math.floor(scroller.bottom) - 2, top: cmView.scrollDOM.scrollTop,
+      anchor: cmView.posAtCoords({ x, y }), head: cmView.posAtCoords({ x: x + 28, y }),
+    };
+  });
+  const snapshot = () => page.evaluate(() => ({ top: cmView.scrollDOM.scrollTop, ...cmView.state.selection.main.toJSON() }));
+  const measureFrames = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 1, y);
+  await measureFrames();
+  expect(await snapshot()).toEqual({ top, anchor, head: anchor });
+
+  await page.mouse.move(x + 28, y, { steps: 6 });
+  await measureFrames();
+  expect(await snapshot()).toEqual({ top, anchor, head });
+  await page.mouse.move(x + 28, edge);
+  await expect.poll(async () => (await snapshot()).top).toBeGreaterThan(top);
+  await page.mouse.up();
+
+  await expect.poll(() => page.evaluate(() => {
+    const { top, bottom } = cmView.scrollDOM.getBoundingClientRect();
+    const caret = cmView.coordsAtPos(cmView.state.selection.main.head);
+    return caret ? Math.abs((top + bottom - caret.top - caret.bottom) / 2) : Infinity;
+  })).toBeLessThan(24);
+});
+
 test('selection toolbar appears, formats, and fires readmd:ai-inline', async ({ page }, testInfo) => {
   const source = 'Intro line.\n\nSecond line.\n\nPolish this sentence please.\n';
   await openEditor(page, source);

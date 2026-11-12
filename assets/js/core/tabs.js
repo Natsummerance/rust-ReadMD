@@ -111,6 +111,7 @@ function setTopTabMenu(open, { focus = false } = {}) {
 
 function renderTabsBar() {
   window.ReadMDSession?.persist();
+  if (typeof syncFileSidebar === 'function') syncFileSidebar();
   const bar = $('doc-tabs-bar');
   const dropdown = $('doc-tabs-dropdown');
   const overflowWrap = $('doc-tabs-overflow-wrap');

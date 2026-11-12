@@ -2022,6 +2022,7 @@
   "search.next": "បន្ទាប់ (បញ្ចូល)",
   "search.noMatches": "គ្មានលទ្ធផលដែលត្រូវគ្នា។",
   "search.placeholder": "ស្វែងរកក្នុងឯកសារ… (បញ្ចូលបន្ទាប់ ប្ដូរ + បញ្ចូលមុន)",
+  "search.results": "លទ្ធផលស្វែងរក",
   "search.prev": "មុន (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} ជុំ",
   "ai.taskRunning": "កំពុងពិនិត្យ…",
   "ai.thinking": "កំពុងគិត...",
-  "warn.pptx_math_image": "សមីការត្រូវបានរក្សាទុកជារូបភាព ហើយកូដប្រភពរបស់វាស្ថិតក្នុងកំណត់ចំណាំស្លាយ។"
+  "warn.pptx_math_image": "សមីការត្រូវបានរក្សាទុកជារូបភាព ហើយកូដប្រភពរបស់វាស្ថិតក្នុងកំណត់ចំណាំស្លាយ។",
+  "export.fmtPngLong": "PNG វែង",
+  "export.fmtPngPages": "PNG តាមទំព័រ",
+  "export.importPresetPack": "នាំចូលគំរូ"
 }

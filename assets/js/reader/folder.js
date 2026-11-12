@@ -1,9 +1,6 @@
 'use strict';
 
-const TREE_ICONS = {
-  dir: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>',
-  file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>'
-};
+const TREE_FOLDER_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8L9 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>';
 /* ============================================================
    ReadMD Reader - Folder Tree Browser
    ============================================================ */
@@ -45,13 +42,16 @@ async function listFolder(dir, { reveal = true } = {}) {
 function renderFolderList() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
   const box = $('file-list');
-  box.innerHTML = '';
-  if (!state.folder) return;
+  box.replaceChildren();
+  if (!state.folder) {
+    syncFileSidebar(true);
+    return;
+  }
 
   const folderName = state.folder.replace(/\\/g, '/').split('/').filter(Boolean).pop() || state.folder;
   const header = document.createElement('div');
   header.className = 'dir-header';
-  header.innerHTML = TREE_ICONS.dir + '<span></span>';
+  header.innerHTML = TREE_FOLDER_ICON + '<span></span>';
   header.querySelector('span').textContent = folderName;
   header.title = state.folder;
   box.appendChild(header);
@@ -62,12 +62,13 @@ function renderFolderList() {
     empty.className = 'dir-label';
     empty.textContent = _t('sidebar.emptyFiles') || '（未找到 Markdown 文件）';
     box.appendChild(empty);
+    syncFileSidebar(true);
     return;
   }
 
 
   const normRoot = state.folder.replace(/\\/g, '/').replace(/\/$/, '');
-  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: {} };
+  const rootNode = { name: folderName, type: 'dir', path: state.folder, children: Object.create(null) };
 
   state.folderFiles.forEach(fullPath => {
     const normPath = fullPath.replace(/\\/g, '/');
@@ -84,7 +85,7 @@ function renderFolderList() {
           name: part,
           type: isFile ? 'file' : 'dir',
           path: isFile ? fullPath : (normRoot + '/' + parts.slice(0, idx + 1).join('/')),
-          children: isFile ? null : {}
+          children: isFile ? null : Object.create(null)
         };
       }
       if (!isFile) {
@@ -99,7 +100,7 @@ function renderFolderList() {
   treeContainer.setAttribute('aria-label', _t('sidebar.files') || '文件');
   renderTreeNodes(treeContainer, rootNode.children, 0);
   box.appendChild(treeContainer);
-  updateTreeTabIndex();
+  syncFileSidebar(true);
 }
 
 function renderTreeNodes(container, childrenObj, depth) {
@@ -109,7 +110,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     if (itemA.type !== itemB.type) {
       return itemA.type === 'dir' ? -1 : 1;
     }
-    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    return itemA.name.localeCompare(itemB.name, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   keys.forEach(key => {
@@ -124,13 +125,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     row.setAttribute('role', 'treeitem');
     row.setAttribute('aria-level', String(depth + 1));
     row.tabIndex = -1;
-    if (item.type === 'file' && item.path === state.file) {
-      row.classList.add('active');
-      row.setAttribute('aria-selected', 'true');
-      row.setAttribute('aria-current', 'true');
-    } else {
-      row.setAttribute('aria-selected', 'false');
-    }
+    row.setAttribute('aria-selected', 'false');
 
     const toggle = document.createElement('span');
     toggle.className = 'tree-toggle';
@@ -150,6 +145,9 @@ function renderTreeNodes(container, childrenObj, depth) {
       nameEl.textContent = item.name;
 
       row.appendChild(toggle);
+      const icon = document.createElement('span');
+      icon.className = 'tree-icon';
+      icon.innerHTML = TREE_FOLDER_ICON;
       row.appendChild(icon);
       row.appendChild(nameEl);
       nodeEl.appendChild(row);
@@ -176,11 +174,7 @@ function renderTreeNodes(container, childrenObj, depth) {
     } else {
       toggle.classList.add('empty');
 
-      const icon = document.createElement('span');
-      icon.className = 'tree-icon';
-      icon.innerHTML = TREE_ICONS.file;
-      icon.setAttribute('aria-hidden', 'true');
-
+      row.dataset.filePath = normalizePath(item.path);
       const nameEl = document.createElement('span');
       nameEl.className = 'tree-name';
       nameEl.textContent = item.name;
@@ -200,6 +194,70 @@ function renderTreeNodes(container, childrenObj, depth) {
   });
 }
 
+let sidebarActivePath = '';
+
+function syncFileSidebar(rebuilt = false) {
+  const box = $('file-list');
+  if (!box) return;
+  const listed = new Set(state.folderFiles.map(normalizePath));
+  const opened = new Map();
+  for (const tab of state.tabs) {
+    if (!tab.path || tab.isVirtual || tab._restoreUnavailable) continue;
+    const key = normalizePath(tab.path);
+    if (!listed.has(key)) opened.set(key, { name: tab.name || tab.path.split(/[\\/]/).pop(), path: tab.path, type: 'file' });
+  }
+  const existing = $('file-open-group');
+  const signature = JSON.stringify([...opened.values()]);
+  const refreshed = existing?.dataset.files !== signature && (opened.size > 0 || existing);
+  if (refreshed) {
+    existing?.remove();
+    if (opened.size) {
+      const group = document.createElement('div');
+      group.id = 'file-open-group';
+      group.dataset.files = signature;
+      const header = document.createElement('div');
+      header.id = 'file-open-label';
+      header.className = 'dir-header';
+      header.dataset.i18n = 'tabs.openDocs';
+      header.textContent = window.i18n.t('tabs.openDocs');
+      const tree = document.createElement('div');
+      tree.className = 'tree-children';
+      tree.setAttribute('role', 'tree');
+      tree.setAttribute('aria-labelledby', header.id);
+      renderTreeNodes(tree, Object.fromEntries(opened), 0);
+      group.append(header, tree);
+      box.appendChild(group);
+    }
+  }
+
+  const path = getActiveTab()?.path;
+  const active = path ? normalizePath(path) : '';
+  const changed = active !== sidebarActivePath;
+  if (rebuilt || refreshed || changed) {
+    sidebarActivePath = active;
+    let activeRow = null;
+    for (const row of box.querySelectorAll('.tree-row[data-file-path]')) {
+      const selected = row.dataset.filePath === active;
+      row.classList.toggle('active', selected);
+      row.setAttribute('aria-selected', String(selected));
+      if (selected) {
+        row.setAttribute('aria-current', 'true');
+        activeRow = row;
+      } else row.removeAttribute('aria-current');
+    }
+    if (activeRow && (changed || rebuilt)) {
+      for (let group = activeRow.closest('.tree-children.collapsed'); group; group = group.parentElement.closest('.tree-children.collapsed')) {
+        group.classList.remove('collapsed');
+        const parent = group.parentElement.querySelector(':scope > .tree-row');
+        parent?.setAttribute('aria-expanded', 'true');
+        parent?.querySelector('.tree-toggle')?.classList.add('open');
+      }
+      if (activeRow.offsetParent) activeRow.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  if (rebuilt || refreshed || changed) updateTreeTabIndex();
+}
+
 function visibleTreeRows() {
   return Array.from(document.querySelectorAll('#file-list .tree-row'))
     .filter(row => row.offsetParent !== null);
@@ -207,7 +265,8 @@ function visibleTreeRows() {
 
 function updateTreeTabIndex() {
   const rows = visibleTreeRows();
-  rows.forEach((row, index) => { row.tabIndex = index === 0 ? 0 : -1; });
+  const entry = rows.find(row => row === document.activeElement) || rows.find(row => row.classList.contains('active')) || rows[0];
+  rows.forEach(row => { row.tabIndex = row === entry ? 0 : -1; });
 }
 
 function handleTreeKeydown(event, row) {

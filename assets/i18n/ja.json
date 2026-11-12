@@ -2022,6 +2022,7 @@
   "search.next": "次へ（入力）",
   "search.noMatches": "一致する結果はありません",
   "search.placeholder": "ドキュメント内を検索… (Enter Next、Shift+Enter Previous)",
+  "search.results": "検索結果",
   "search.prev": "前へ (Shift+Enter)",
   "search.refineBeforeReplace": "Too many matches. Refine the search before replacing all.",
   "search.replaceAll": "Replace All",
@@ -2950,5 +2951,8 @@
   "ai.taskRounds": "{count} ラウンド",
   "ai.taskRunning": "レビュー中…",
   "ai.thinking": "思考中…",
-  "warn.pptx_math_image": "数式は画像として保持し、数式ソースはスライドのノートに保存します。"
+  "warn.pptx_math_image": "数式は画像として保持し、数式ソースはスライドのノートに保存します。",
+  "export.fmtPngLong": "縦長 PNG",
+  "export.fmtPngPages": "ページ別 PNG",
+  "export.importPresetPack": "プリセットを読み込む"
 }
