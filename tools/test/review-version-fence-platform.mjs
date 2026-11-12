@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {Readable} from 'node:stream';
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {createPreviousWriterInput} from './review-version-fence-input.mjs';
@@ -25,8 +26,9 @@ fs.mkdirSync(unpacked);
 const input=createPreviousWriterInput({directory:own,name,expected:proof,writerSourceCommit:published.runtimeSourceCommit,writerRunId:published.ciRunId,consumerSourceCommit:process.env.GITHUB_SHA});
 let consumerFailed=false;
 try{
- const response=await fetch('https://github.com/Natsummerance/rust-ReadMD/releases/download/V0.0.6/'+name,{headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(300000)});
- await input.receive(response);
+ const artifact=path.join(repo,'.cache/p1-previous-writer-artifact',name);
+ if(!fs.lstatSync(artifact).isFile())throw Error('Expected a regular archived writer package');
+ await input.receive(new Response(Readable.toWeb(fs.createReadStream(artifact))));
  const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
  if(fs.statSync(archive).size!==proof.size||sha(archive)!==proof.sha256)throw Error('Previous package differs from certified published fixture');
  input.phase('extract');

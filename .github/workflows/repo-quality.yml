@@ -22,6 +22,9 @@ jobs:
     uses: ./.github/workflows/p1-space-acceptance.yml
 
   kernel:
+    permissions:
+      actions: read
+      contents: read
     name: Kernel tests · ${{ matrix.os }}
     timeout-minutes: 90
     runs-on: ${{ matrix.os }}
@@ -121,6 +124,14 @@ jobs:
       - name: Build independent maintenance PDF inspector offline in the same target
         timeout-minutes: 5
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features --example table_pdf_inspector
+      - name: Download the archived previous writer
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: Natsummerance/rust-ReadMD
+          run-id: 41981825560
+          artifact-ids: ${{ runner.os == 'Windows' && '13394464219' || runner.os == 'Linux' && '13394009501' || runner.arch == 'ARM64' && '13394129290' || '13393808994' }}
+          path: .cache/p1-previous-writer-artifact
       - name: P1 previous released writer cannot downgrade resource history
         run: node tools/test/review-version-fence-platform.mjs
       - name: P1 real code cancellation, HTTP and MCP lifecycle
