@@ -377,14 +377,15 @@ window.ReadMDReview = (() => {
   function canParkForClose(tab) {
     const rec = tab && records.get(tab), snapshot = rec?.snapshot, recovery = snapshot?.recovery;
     // A persisted external-change marker may remain for the next open. It must
-    // not block closing a clean reader whose live, stored and disk bodies agree.
+    // not block closing when the editor source, stored review and disk agree.
+    // The reader may project formatting fixes without modifying that source.
     return Boolean(tab?.path && !tab.isDirty && !tab.unsavedCreation && !tab._reviewRestorePending &&
       !tab._renamePending && rec?.error?.code === 'review_recovery_required' &&
       recovery?.reason === 'external_change' && recovery.external_path === snapshot.path &&
       !snapshot.save_intent && !snapshot.changes.length && !rec.queue.length && !rec.processing &&
       !rec.saving && !rec.adopting && !rec.adoption && !rec.renaming &&
       snapshot.content === recovery.external_content && snapshot.content === rec.local &&
-      snapshot.content === lf(tab.content) && snapshot.content === source(tab));
+      snapshot.content === source(tab));
   }
   async function flush(tab = activeTab(), { park = false } = {}) {
     if (park && canParkForClose(tab)) return true;

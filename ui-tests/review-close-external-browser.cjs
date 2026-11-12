@@ -19,7 +19,7 @@ async function run(divergent) {
       const name = '恢复测试 ' + i + '.md';
       const file = virtual ? '' : path.join(profile.documents, name);
       const key = (virtual ? 'draft:' : 'file:') + 'external-close-' + i;
-      const text = '# 测试 ' + i + '\n\n原件。\n';
+      const text = (i === 1 ? '#测试 ' : '# 测试 ') + i + '\n\n原件。\n';
       rows.push({key, path:file, name, dir:profile.documents, source:virtual?'recovery':'file',
         originPath:file, reviewPath:virtual?key:'', dirty:false, unsavedCreation:false});
       if (virtual) {
@@ -32,7 +32,9 @@ async function run(divergent) {
       fs.writeFileSync(file, text, {flag:'wx'});
       if (i !== 1) continue;
       target = file;
-      await api('/api/file?p='+encodeURIComponent(file));
+      const reader = await api('/api/file?p='+encodeURIComponent(file));
+      assert.equal(reader.original,text);
+      assert.notEqual(reader.content,text);
       const review = await api('/api/review', {action:'open', path:file});
       const inserted = '在其他编辑器保存。\n';
       const edit = await api('/api/review', {action:'edit', document_id:review.document_id,
