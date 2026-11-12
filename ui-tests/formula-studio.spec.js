@@ -9,6 +9,28 @@ async function edit(page,src,position=src.length){
   await page.evaluate(async({src,position})=>{await renderVirtual('clipboard','equation.md','',src,[]);await toggleEdit();setEditorPref('aiCompletion',false);cmView.dispatch({selection:{anchor:position}});},{src,position});
 }
 async function ready(page){await expect(page.locator('#formula-preview > mjx-container > svg')).toBeVisible();await expect(page.locator('#formula-apply')).toBeEnabled();}
+test('cold formula catalog paints each template once and retains assistive math', async ({ page }) => {
+  await edit(page, '# Empty of math\n');
+  await page.locator('#formula-open').click();
+  const previews = page.locator('#formula-list .formula-template-preview');
+  const templates = await page.evaluate(async () => (await ReadMDFormula.load()).templates.filter(t => t.category === 'structures').length);
+  expect(templates).toBeGreaterThan(0);
+  await expect(previews).toHaveCount(templates);
+  const layers = await previews.evaluateAll(nodes => nodes.map(node => {
+    const assistive = node.querySelector('mjx-assistive-mml');
+    const style = assistive && getComputedStyle(assistive);
+    return {
+      svg: node.querySelectorAll(':scope > mjx-container > svg').length,
+      mathml: assistive?.querySelectorAll('math').length || 0,
+      clipped: style?.position === 'absolute' && (style.clipPath !== 'none' || style.clip !== 'auto'),
+    };
+  }));
+  expect(layers).toEqual(Array.from({ length: templates }, () => ({ svg: 1, mathml: 1, clipped: true })));
+  await page.locator('[data-math-id="fraction"]').click();
+  await ready(page);
+  await expect(page.locator('#formula-preview > mjx-container > svg')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Edit symbol a', exact: true })).toBeVisible();
+});
 test('visual symbol replacement stages the whole equation and applies one undoable change',async({page})=>{
   const src='# Research\n\n';await edit(page,src);
   await page.locator('#formula-open').click();

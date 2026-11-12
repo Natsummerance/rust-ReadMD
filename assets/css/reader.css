@@ -7,3 +7,14 @@
 .restore-unavailable { max-width:var(--line-width);margin:var(--space-8) auto;padding:var(--space-6);overflow-wrap:anywhere; }
 .restore-unavailable .modal-actions { justify-content:flex-start;flex-wrap:wrap; }
 .restore-unavailable .tb-btn { min-width:44px;min-height:44px; }
+
+/* Direct MathJax SVG conversion can precede its generated stylesheet.
+   Keep the alternate MathML in the accessibility tree without painting it. */
+mjx-assistive-mml {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+}
