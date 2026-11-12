@@ -140,6 +140,17 @@ jobs:
           test "$(tr -d '\r\n' < VERSION)" = "$APP_VERSION"
           cargo run --offline --locked --manifest-path rust/Cargo.toml -p xtask -- bundle-boot --check
 
+      - name: Assemble locked Linux PDFium capability pack
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/prepare-linux-pdfium.mjs .cache/release-pdfium linux-x64
+          cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --no-default-features --features pdfium-worker --bin readmd-pdf-worker --target x86_64-unknown-linux-gnu
+          registry=$(dirname "$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" -type d -name pdfium-render-0.9.4 -print -quit)")
+          READMD_REGISTRY_SRC="$registry" READMD_PDFIUM_CRATE="$registry/pdfium-render-0.9.4" node tools/build-pdf-pack.mjs .cache/release-pdfium rust/target/x86_64-unknown-linux-gnu/release/readmd-pdf-worker dist/ReadMD-PDFium-linux-x64.readmd-pack linux-x64
+          rm -r .cache/release-pdfium
+
       - name: Build release binary with Cargo
         run: cargo build --offline --locked --manifest-path rust/Cargo.toml --release -p readmd-kernel --target ${{ matrix.platform.target }}
 
@@ -159,6 +170,12 @@ jobs:
           READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
           READMD_REQUIRE_TOKEN: '1'
         run: node ui-tests/node_modules/@playwright/test/cli.js test --config ui-tests/p0-lifecycle.config.cjs
+
+      - name: Verify platform image exports and installed PDFium
+        if: runner.os != 'macOS'
+        env:
+          READMD_BIN: ${{ github.workspace }}/rust/target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin_name }}
+        run: node ui-tests/platform-image-export.cjs
 
       - name: Upload lifecycle results and failure traces
         if: always() && runner.os != 'macOS'
@@ -210,7 +227,7 @@ jobs:
           mkdir -p "$PKG_DIR"
           cp "rust/target/${{ matrix.platform.target }}/release/readmd" "$PKG_DIR/ReadMD"
           cp -r assets "$PKG_DIR/assets"
-          cp LICENSE README.md "$PKG_DIR/"
+          cp LICENSE README.md dist/ReadMD-PDFium-linux-x64.readmd-pack "$PKG_DIR/"
           cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$PKG_DIR/"
           node tools/privacy-scan.mjs "$PKG_DIR"
           tar -czvf "dist/${{ matrix.platform.asset_name }}.tar.gz" -C dist/ReadMD-linux-x86_64 .
@@ -227,6 +244,7 @@ jobs:
           cp dist/pet/ReadMD-Pet-Rust-linux-x86_64.zip "$DEB_DIR/usr/share/readmd/"
           chmod +x "$DEB_DIR/usr/bin/readmd"
           cp -r assets "$DEB_DIR/usr/share/readmd/"
+          cp dist/ReadMD-PDFium-linux-x64.readmd-pack "$DEB_DIR/usr/share/readmd/"
           if [ -f "assets/icon-256.png" ]; then
             cp "assets/icon-256.png" "$DEB_DIR/usr/share/icons/hicolor/512x512/apps/readmd.png"
           fi

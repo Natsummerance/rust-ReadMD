@@ -2075,14 +2075,16 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         let ct = text(style, &["cover", "title"], "").trim();
         let ct = if ct.is_empty() { title.as_str() } else { ct };
         let al = jc(text(style, &["cover", "align"], "center"));
-        ctx.para(&format!("<w:pStyle w:val=\"Title\"/><w:jc w:val=\"{al}\"/>"), &run_xml(ct, &Fmt::default()));
+        let lab = text(style, &["cover", "variant"], "") == "lab";
+        let spacing = if lab { "<w:spacing w:before=\"1200\" w:after=\"520\"/>" } else { "" };
+        ctx.para(&format!("<w:pStyle w:val=\"Title\"/>{spacing}<w:jc w:val=\"{al}\"/>"), &run_xml(ct, &Fmt::default()));
         let sub = text(style, &["cover", "subtitle"], "").trim().to_string();
         if !sub.is_empty() {
             ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&sub, &Fmt::default()));
         }
         let author = text(style, &["meta", "author"], "").trim().to_string();
         let date = text(style, &["cover", "date"], "").trim().to_string();
-        if text(style, &["cover", "variant"], "") == "lab" {
+        if lab {
             let cell = |value: &str| vec![Inline::Text(value.chars().take(256).collect())];
             let header = [cell("项目"), cell("填写内容")];
             let fields = [

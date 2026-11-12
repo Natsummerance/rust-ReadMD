@@ -97,3 +97,26 @@
 }
 #export-preview-mini-content .readmd-layout-nav { position: static; }
 #export-preview-mini-content .readmd-layout-article { padding: 7%; }
+
+@media screen {
+  .readmd-html-layout .readmd-layout-article table {
+    border-collapse: collapse;
+    border-block: 1px solid var(--article-border);
+  }
+  .readmd-html-layout .readmd-layout-article :is(th,td) {
+    border-inline: 0;
+    border-block-color: var(--article-border);
+  }
+  .readmd-html-layout[data-layout="reading"] .readmd-layout-article > h2 {
+    margin-block-start: 2.2em;
+    letter-spacing: -.012em;
+  }
+  .readmd-html-layout[data-layout="docs"] .readmd-layout-article > h2 {
+    border-block-end: 1px solid var(--article-border);
+    padding-block-end: .4em;
+  }
+  .readmd-html-layout[data-layout="magazine"] .readmd-layout-article > h1 + p {
+    font-size: 1.14em;
+    line-height: 1.65;
+  }
+}

@@ -88,11 +88,11 @@ impl Layout {
         let accent = |rect, color, rounded| Shape::Accent { rect, color, rounded };
         match (self, cover) {
             (Self::Plain, _) => Vec::new(),
-            (Self::Defense, true) => vec![accent([0., 0., 18., H], "365BB0", false), accent([408., 114., 144., 4.], "365BB0", false)],
+            (Self::Defense, true) => vec![accent([0., 0., 10., H], "365BB0", false), accent([84., 78., 88., 4.], "365BB0", false)],
             (Self::Defense, false) => vec![accent([LEFT, 26., 78., 4.], "365BB0", false), accent([LEFT, 512., WIDTH, 1.], "CBD8EC", false)],
-            (Self::Lab, true) => vec![accent([104., 104., 752., 330.], "E6F4EE", true), accent([432., 130., 96., 5.], "107E71", true)],
+            (Self::Lab, true) => vec![accent([104., 54., 752., 432.], "E6F4EE", true), accent([432., 70., 96., 4.], "107E71", true)],
             (Self::Lab, false) => vec![accent([35., 29., 4., 70.], "107E71", true), accent([LEFT, 512., WIDTH, 2.], "B7DED1", false)],
-            (Self::Launch, true) => vec![accent([0., 0., W, 105.], "202943", false), accent([384., 116., 192., 6.], "A7BAFF", true), accent([0., 507., W, 33.], "202943", false)],
+            (Self::Launch, true) => vec![accent([0., 0., W, 7.], "A7BAFF", false), accent([84., 76., 104., 4.], "A7BAFF", true), accent([0., 504., W, 36.], "202943", false)],
             (Self::Launch, false) => vec![accent([0., 0., W, 7.], "A7BAFF", false), accent([LEFT, 513., WIDTH, 1.], "455574", false)],
         }
     }
@@ -224,14 +224,33 @@ impl Builder {
         }
         if !self.deck.slides.is_empty()||blocks.len()>2{return Ok(false);}
         let mut paragraphs=Vec::new();if !ordinary(blocks,&mut paragraphs)?{return Ok(false);}
-        let title_lines=wrap(title,44.,WIDTH)?;if title_lines.len()>2{return Ok(false);}
-        let mut body=Vec::new();for values in paragraphs{if !body.is_empty(){body.push(Vec::new());}body.extend(wrap(&values,24.,WIDTH)?);}
-        if body.len()>5{return Ok(false);}
-        let title_height=title_lines.len() as f64*55.+8.;let body_height=body.len() as f64*30.+8.;
-        let y=(H-title_height-body_height-24.)/2.;self.title=title.clone();
+        let (width, title_size, body_size, centered) = match self.deck.layout {
+            Layout::Plain => (WIDTH, 44., 24., true),
+            Layout::Defense => (704., 47., 22., false),
+            Layout::Lab => (660., 45., 22., true),
+            Layout::Launch => (736., 57., 23., false),
+        };
+        let title_lines = wrap(title, title_size, width)?;
+        if title_lines.len() > 2 { return Ok(false); }
+        let mut body = Vec::new();
+        for values in paragraphs {
+            if !body.is_empty() { body.push(Vec::new()); }
+            body.extend(wrap(&values, body_size, width)?);
+        }
+        if body.len() > 5 { return Ok(false); }
+        let title_height = title_lines.len() as f64 * title_size * 1.25 + 8.;
+        let body_height = body.len() as f64 * body_size * 1.25 + 8.;
+        let gap = if body.is_empty() { 0. } else { 22. };
+        let y = (H - title_height - body_height - gap) / 2.;
+        let x = if centered { (W - width) / 2. } else { 84. };
+        self.title = title.clone();
         self.page.cover = true;
-        self.push(Shape::Text{rect:[LEFT,y,WIDTH,title_height],lines:title_lines,size:44.,bullet:None,center:true,code:false})?;
-        if !body.is_empty(){self.push(Shape::Text{rect:[LEFT,y+title_height+24.,WIDTH,body_height],lines:body,size:24.,bullet:None,center:true,code:false})?;}
+        self.push(Shape::Text { rect: [x, y, width, title_height], lines: title_lines,
+            size: title_size, bullet: None, center: centered, code: false })?;
+        if !body.is_empty() {
+            self.push(Shape::Text { rect: [x, y + title_height + gap, width, body_height],
+                lines: body, size: body_size, bullet: None, center: centered, code: false })?;
+        }
         Ok(true)
     }
     fn continuation(&mut self) -> Result<()> {let notes=self.page.notes.clone();self.finish()?;self.page.notes=notes;self.heading(self.title.clone())}
