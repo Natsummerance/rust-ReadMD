@@ -100,3 +100,14 @@ fn unsupported_html_and_cancel_keep_existing_output_untouched(){
     assert!(export("# Test\n\n<video src=\"movie.mp4\"></video>","",out.to_str().unwrap(),&json!({}),"Test").is_err());assert_eq!(fs::read(&out).unwrap(),b"original bytes");
     crate::speech::with_cancel(std::sync::Arc::new(||true),||{assert_eq!(export("# Test","",out.to_str().unwrap(),&json!({}),"Test").err().as_deref(),Some("cancelled"));});assert_eq!(fs::read(out).unwrap(),b"original bytes");
 }
+
+#[test]
+fn launch_cover_preserves_words_and_cjk_lines() {
+    let lines = wrap(&text("Evaluating document recovery"), 57., 736.).unwrap();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(plain(&lines[1]).trim(), "recovery");
+    let cjk = "这一行中文在窄文本框内仍会正常换行";
+    let lines = wrap(&text(cjk), 30., 126.).unwrap();
+    assert!(lines.len() > 1);
+    assert_eq!(lines.iter().map(|line| plain(line)).collect::<String>(), cjk);
+}

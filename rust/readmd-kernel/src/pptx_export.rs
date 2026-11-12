@@ -149,21 +149,48 @@ fn advance(c: char, size: f64, code: bool) -> f64 {
 // Explicit shared line breaks keep the preview and editable text boxes aligned.
 // A small metric reserve accommodates substitute Office fonts without clipping.
 fn wrap(runs: &[Run], size: f64, width: f64) -> Result<Vec<Line>> {
-    let mut lines=Vec::new();let mut line=Line::new();let mut used=0.;
-    let mut characters=0usize;
-    for run in runs {
-        for c in run.text.chars() {
-            characters+=1;if characters%256==0{check()?;}
-            let next=advance(c,size,run.code)*if run.bold{1.06}else{1.};
-            if c=='\n'||used+next>width*0.94&&!line.is_empty() {if lines.len()>=5000{return Err(BUDGET.into());}lines.push(std::mem::take(&mut line));used=0.;}
-            if c=='\n' {continue;}
-            if let Some(last)=line.last_mut().filter(|last| last.bold==run.bold&&last.italic==run.italic&&last.strike==run.strike&&last.code==run.code&&last.href==run.href) {last.text.push(c);} else {
-                let mut chunk=run.clone();chunk.text=c.to_string();line.push(chunk);
+    let mut lines = Vec::new();
+    let mut line = Line::new();
+    let mut used = 0.;
+    let limit = width * 0.94;
+    let mut glyphs = runs.iter().flat_map(|run| run.text.chars().map(move |c| (run, c)));
+    let word_char = |c: char| !c.is_whitespace() && (c as u32) < 0x2e80;
+    let glyph_width = |run: &Run, c| advance(c, size, run.code) * if run.bold { 1.06 } else { 1. };
+    let mut within_word = false;
+    let mut characters = 0usize;
+    while let Some((run, c)) = glyphs.next() {
+        characters += 1;
+        if characters % 256 == 0 { check()?; }
+        let next = glyph_width(run, c);
+        let word = word_char(c);
+        let mut whole_word = next;
+        if word && !within_word && used + next <= limit && !line.is_empty() {
+            for (i, (style, character)) in glyphs.clone().take_while(|&(_, ch)| word_char(ch)).enumerate() {
+                if i % 256 == 0 { check()?; }
+                whole_word += glyph_width(style, character);
+                if whole_word > limit { break; }
             }
-            used+=next;
         }
+        let move_word = whole_word <= limit && used + whole_word > limit;
+        if c == '\n' || (!line.is_empty() && (used + next > limit || move_word)) {
+            if lines.len() >= 5000 { return Err(BUDGET.into()); }
+            lines.push(std::mem::take(&mut line));
+            used = 0.;
+        }
+        within_word = word;
+        if c == '\n' { continue; }
+        if let Some(last) = line.last_mut().filter(|last| last.bold == run.bold && last.italic == run.italic
+            && last.strike == run.strike && last.code == run.code && last.href == run.href) {
+            last.text.push(c);
+        } else {
+            let mut chunk = run.clone();
+            chunk.text = c.to_string();
+            line.push(chunk);
+        }
+        used += next;
     }
-    if !line.is_empty()||lines.is_empty(){lines.push(line);}Ok(lines)
+    if !line.is_empty() || lines.is_empty() { lines.push(line); }
+    Ok(lines)
 }
 
 struct Builder { deck: Deck, page: Slide, y: f64, title: Line, base: String, shapes: usize, bytes: usize, table_style:TableStyle }
