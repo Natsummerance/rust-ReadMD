@@ -111,3 +111,36 @@ fn launch_cover_preserves_words_and_cjk_lines() {
     assert!(lines.len() > 1);
     assert_eq!(lines.iter().map(|line| plain(line)).collect::<String>(), cjk);
 }
+
+#[test]
+fn slide_ornaments_and_native_fade_preserve_editable_title_and_table() {
+    let source = "# ReadMD release\n\nAn editable presentation.\n\n---\n\n## Results\n\n| Key | Value |\n|---|---|\n| A | 42 |\n";
+    let opts = json!({"pptxLayout":"launch","transition":"fade","pptxTitleFade":true});
+    let deck = build(source, "", "Deck", &opts).unwrap();
+    assert_bounds(&deck);
+    let html = preview_html(&deck).unwrap();
+    assert!(html.contains("linear-gradient(90deg,#11182E,#293B72)"));
+    assert!(html.contains("border-radius:50%"));
+
+    let entries = crate::convert::parse_zip_entries(&package(&deck, "Deck").unwrap()).unwrap();
+    let read_slide = |n| {
+        let entry = format!("ppt/slides/slide{n}.xml");
+        let xml = &entries.iter().find(|(name, _)| *name == entry).unwrap().1;
+        std::str::from_utf8(xml).unwrap()
+    };
+    let slide = read_slide(1);
+    let title = deck.slides[0].shapes.iter().position(|shape| matches!(shape, Shape::Text {..})).unwrap() + 2;
+    assert!(slide.contains("<a:gradFill"));
+    assert!(slide.contains("<a:prstGeom prst=\"ellipse\""));
+    assert!(slide.contains(&format!("<p:spTgt spid=\"{title}\"/>")));
+    assert!(slide.contains("<p:animEffect transition=\"in\" filter=\"fade\""));
+    assert!(slide.find("<p:transition").unwrap() < slide.find("<p:timing>").unwrap());
+    assert!(read_slide(2).contains("<a:tbl>"));
+    crate::math_document::parse_xml(slide).unwrap();
+
+    let disabled = build(source, "", "Deck", &json!({"pptxLayout":"launch","pptxTitleFade":false})).unwrap();
+    let bytes = package(&disabled, "Deck").unwrap();
+    assert!(crate::convert::parse_zip_entries(&bytes).unwrap().iter().all(|(_, part)|
+        !part.windows(b"<p:timing>".len()).any(|window| window == b"<p:timing>")));
+    assert!(build(source, "", "Deck", &json!({"pptxTitleFade":"true"})).is_err());
+}

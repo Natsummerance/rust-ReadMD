@@ -54,6 +54,7 @@ fn validate(pack: &Pack) -> Result<(), &'static str> {
             let allowed = match key.as_str() {
                 "htmlLayout" => fmt == "html" && matches!(value.as_str(), Some("reading" | "docs" | "magazine")),
                 "pptxLayout" => fmt == "pptx" && matches!(value.as_str(), Some("defense" | "lab" | "launch")),
+                "pptxTitleFade" => fmt == "pptx" && value.is_boolean(),
                 "transition" => fmt == "pptx" && matches!(value.as_str(), Some("none" | "fade" | "slide" | "zoom")),
                 "htmlTheme" => fmt == "html" && matches!(value.as_str(), Some("light" | "dark" | "sepia")),
                 "page" | "typography" | "headings" | "table" | "images" | "quote" | "code"

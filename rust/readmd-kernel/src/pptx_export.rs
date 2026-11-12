@@ -8,6 +8,9 @@ use std::{collections::BTreeMap, path::Path};
 
 const W: f64 = 960.;
 const H: f64 = 540.;
+mod design;
+use design::{Geometry, Paint};
+
 const LEFT: f64 = 54.;
 const WIDTH: f64 = W - 2. * LEFT;
 const TOP: f64 = 112.;
@@ -64,7 +67,7 @@ impl TableStyle {
 enum Shape {
     Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool },
     Image { rect: Rect, media: usize, alt: String },
-    Accent { rect: Rect, color: &'static str, rounded: bool },
+    Accent { rect: Rect, geometry: Geometry, paint: Paint },
     Table { rect: Rect, rows: Vec<Vec<Vec<Line>>>, heights: Vec<f64>, columns: usize, aligns:Vec<TableAlign>, style:TableStyle },
 }
 #[derive(Default)]
@@ -84,21 +87,9 @@ impl Layout {
         })
     }
 
-    fn accent_shapes(self, cover: bool) -> Vec<Shape> {
-        let accent = |rect, color, rounded| Shape::Accent { rect, color, rounded };
-        match (self, cover) {
-            (Self::Plain, _) => Vec::new(),
-            (Self::Defense, true) => vec![accent([0., 0., 10., H], "365BB0", false), accent([84., 78., 88., 4.], "365BB0", false)],
-            (Self::Defense, false) => vec![accent([LEFT, 26., 78., 4.], "365BB0", false), accent([LEFT, 512., WIDTH, 1.], "CBD8EC", false)],
-            (Self::Lab, true) => vec![accent([104., 54., 752., 432.], "E6F4EE", true), accent([432., 70., 96., 4.], "107E71", true)],
-            (Self::Lab, false) => vec![accent([35., 29., 4., 70.], "107E71", true), accent([LEFT, 512., WIDTH, 2.], "B7DED1", false)],
-            (Self::Launch, true) => vec![accent([0., 0., W, 7.], "A7BAFF", false), accent([84., 76., 104., 4.], "A7BAFF", true), accent([0., 504., W, 36.], "202943", false)],
-            (Self::Launch, false) => vec![accent([0., 0., W, 7.], "A7BAFF", false), accent([LEFT, 513., WIDTH, 1.], "455574", false)],
-        }
-    }
 }
 
-struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String, layout: Layout }
+struct Deck { slides: Vec<Slide>, media: Vec<Media>, warnings: Vec<String>, background: &'static str, foreground: &'static str, accent: &'static str, transition: String, title_fade: bool, layout: Layout }
 
 fn escaped(value: &str) -> String {
     crate::mdexport::html_escape(&value.chars().filter(|&c| c=='\t'||c=='\n'||c=='\r'||c>=' ').collect::<String>(), true)
@@ -213,7 +204,11 @@ impl Builder {
         };
         let transition=options["transition"].as_str().unwrap_or(if matches!(layout, Layout::Plain) {"slide"} else {"none"});
         if !matches!(transition,"slide"|"fade"|"zoom"|"none"){return Err(INVALID.into());}
-        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),layout},page:Slide::default(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options)})
+        let title_fade = match options.get("pptxTitleFade") {
+            None => false,
+            Some(value) => value.as_bool().ok_or(INVALID)?,
+        };
+        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),title_fade,layout},page:Slide::default(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options)})
     }
     fn push(&mut self, shape:Shape) -> Result<()> {
         let text_bytes=match &shape {
@@ -230,7 +225,7 @@ impl Builder {
         if self.deck.slides.len()>=300{return Err(BUDGET.into());}
         self.bytes=self.bytes.checked_add(self.page.notes.len()).ok_or(BUDGET)?;if self.bytes>LIMIT{return Err(BUDGET.into());}
         let mut page = std::mem::take(&mut self.page);
-        let mut accents = self.deck.layout.accent_shapes(page.cover);
+        let mut accents = design::ornaments(self.deck.layout, page.cover);
         accents.append(&mut page.shapes);
         page.shapes = accents;
         self.deck.slides.push(page);self.y=TOP;Ok(())
@@ -257,7 +252,11 @@ impl Builder {
             Layout::Lab => (660., 45., 22., true),
             Layout::Launch => (736., 57., 23., false),
         };
-        let title_lines = wrap(title, title_size, width)?;
+        let mut heading = title.clone();
+        if !matches!(self.deck.layout, Layout::Plain) {
+            heading.iter_mut().for_each(|run| run.bold = true);
+        }
+        let title_lines = wrap(&heading, title_size, width)?;
         if title_lines.len() > 2 { return Ok(false); }
         let mut body = Vec::new();
         for values in paragraphs {
@@ -461,8 +460,8 @@ fn preview_html(deck:&Deck) -> Result<String> {
                 slides.push_str(&format!("<div style=\"{}font-size:{size}px;line-height:1.25;white-space:pre;text-align:{};{}\">",position(*rect),if *center{"center"}else{"left"},if *code{"background:#30343B;color:#FFFFFF;padding:0 8px;box-sizing:border-box;"}else{""}));
                 for (n,line) in lines.iter().enumerate(){slides.push_str("<div>");if n==0 {if let Some(bullet)=bullet{slides.push_str(&format!("<span style=\"position:absolute;left:-26px\">{}</span>",escaped(bullet)));}}slides.push_str(&line_html(line));slides.push_str("</div>");}slides.push_str("</div>");
             },
-            Shape::Accent{rect,color,rounded}=>{
-                slides.push_str(&format!("<div aria-hidden=\"true\" style=\"{}background:#{color};border-radius:{};\"></div>",position(*rect),if *rounded {"8px"}else{"0"}));
+            Shape::Accent{rect,geometry,paint}=>{
+                slides.push_str(&format!(r#"<div aria-hidden="true" style="{}{}border-radius:{};"></div>"#,position(*rect),paint.css(),geometry.css()));
             },
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
             Shape::Table{rect,rows,heights,columns,aligns,style}=>{
@@ -507,9 +506,8 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let mut rect=*rect;if *code{rect[0]+=8.;rect[2]-=16.;}
             format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Text {id}\"/><p:cNvSpPr txBox=\"1\"/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>{fill}<a:ln><a:noFill/></a:ln></p:spPr><p:txBody>{}</p:txBody></p:sp>",xfrm(rect),text_body(lines,*size,if *code{"FFFFFF"}else{deck.foreground},bullet.as_deref(),*center,links))
         },
-        Shape::Accent{rect,color,rounded}=>{
-            let geometry = if *rounded {"roundRect"} else {"rect"};
-            format!("<p:sp><p:nvSpPr><p:cNvPr id=\"{id}\" name=\"Accent {id}\"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst=\"{geometry}\"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val=\"{color}\"/></a:solidFill><a:ln><a:noFill/></a:ln></p:spPr></p:sp>",xfrm(*rect))
+        Shape::Accent{rect,geometry,paint}=>{
+            format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="Accent {id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{}"><a:avLst/></a:prstGeom>{}</p:spPr></p:sp>"#,xfrm(*rect),geometry.xml(),paint.xml())
         },
         Shape::Image{rect,media,alt}=>{
             let svg=if deck.media[*media].svg.is_some(){format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"svg{media}\"/></a:ext></a:extLst>")}else{String::new()};
@@ -549,7 +547,11 @@ fn package(deck:&Deck,title:&str) -> Result<Vec<u8>> {
         for id in media{rels.push_str(&relation(&format!("image{id}"),"image",&format!("../media/image{id}.{}",deck.media[id].extension),false));if deck.media[id].svg.is_some(){rels.push_str(&relation(&format!("svg{id}"),"image",&format!("../media/image{id}.svg"),false));}}
         let shapes=slide.shapes.iter().enumerate().map(|(i,shape)|shape_xml(shape,i+2,deck,&links)).collect::<String>();
         let transition=match deck.transition.as_str(){"fade"=>"<p:transition spd=\"med\"><p:fade/></p:transition>","slide"=>"<p:transition spd=\"med\"><p:push dir=\"l\"/></p:transition>","zoom"=>"<p:transition spd=\"med\"><p:zoom dir=\"in\"/></p:transition>",_=>""};
-        add(&format!("ppt/slides/slide{n}.xml"),xml("sld",&format!("<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree>{}{shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{transition}",deck.background,group())).into_bytes())?;
+        let timing = if deck.title_fade {
+            slide.shapes.iter().position(|shape| matches!(shape, Shape::Text { code: false, size, .. } if *size >= 32.))
+                .map(|index| design::title_fade(index + 2)).unwrap_or_default()
+        } else { String::new() };
+        add(&format!("ppt/slides/slide{n}.xml"),xml("sld",&format!("<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:effectLst/></p:bgPr></p:bg><p:spTree>{}{shapes}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>{transition}{timing}",deck.background,group())).into_bytes())?;
         add(&format!("ppt/slides/_rels/slide{n}.xml.rels"),relationships(&rels).into_bytes())?;
         let note=Shape::Text{rect:[36.,100.,600.,600.],lines:slide.notes.lines().map(text).collect(),size:14.,bullet:None,center:false,code:false};
         let notes_shape=shape_xml(&note,2,deck,&BTreeMap::new())

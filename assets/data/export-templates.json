@@ -62,7 +62,7 @@
     "ro":"Susținerea lucrării de absolvire","mt":"Difiża tat-teżi","ne":"शोधप्रबन्धको मौखिक परीक्षा",
     "eo":"Defendo de tezo","sl":"Zagovor zaključnega dela","tr":"Tez savunması",
     "uk":"Захист дипломної роботи","el":"Υποστήριξη διπλωματικής εργασίας","hu":"Szakdolgozat védése"
-  },"formats":["pptx"],"options":{"pptxLayout":"defense","transition":"none"},"previewColors":["#f9fbff","#172846","#365bb0"]},
+  },"formats":["pptx"],"options":{"pptxLayout":"defense","transition":"fade"},"previewColors":["#f9fbff","#172846","#365bb0"]},
   {"id":"pptx_lab","category":"slides","names":{"zh-CN":"实验汇报","zh-HK":"實驗匯報","zh-TW":"實驗匯報","en":"Lab Presentation",
     "ja":"実験発表","ko":"실험 발표","fr":"Présentation des résultats d’expérience",
     "de":"Präsentation von Laborversuchen","es":"Presentación de resultados de laboratorio","pt":"Apresentação de resultados de laboratório",
@@ -78,7 +78,7 @@
     "ro":"Prezentarea rezultatelor experimentului","mt":"Preżentazzjoni tar-riżultati tal-esperiment","ne":"प्रयोगका नतिजाको प्रस्तुति",
     "eo":"Prezento de eksperimentaj rezultoj","sl":"Predstavitev rezultatov poskusa","tr":"Deney sonuçları sunumu",
     "uk":"Презентація результатів експерименту","el":"Παρουσίαση αποτελεσμάτων πειράματος","hu":"Kísérleti eredmények bemutatása"
-  },"formats":["pptx"],"options":{"pptxLayout":"lab","transition":"none"},"previewColors":["#f8fbfa","#183e38","#107e71"]},
+  },"formats":["pptx"],"options":{"pptxLayout":"lab","transition":"fade","pptxTitleFade":true},"previewColors":["#f8fbfa","#183e38","#107e71"]},
   {"id":"pptx_launch","category":"slides","names":{"zh-CN":"产品发布","zh-HK":"產品發表","zh-TW":"產品發表","en":"Product Launch",
     "ja":"製品発表","ko":"제품 출시","fr":"Lancement de produit",
     "de":"Produkteinführung","es":"Lanzamiento de producto","pt":"Lançamento de produto",
@@ -94,7 +94,7 @@
     "ro":"Lansare de produs","mt":"Tnedija ta’ prodott","ne":"उत्पादन सार्वजनिक गर्ने प्रस्तुति",
     "eo":"Lanĉo de produkto","sl":"Predstavitev novega izdelka","tr":"Ürün lansmanı",
     "uk":"Запуск продукту","el":"Κυκλοφορία προϊόντος","hu":"Termékbevezetés"
-  },"formats":["pptx"],"options":{"pptxLayout":"launch","transition":"none"},"previewColors":["#131b31","#f1f5ff","#a7baff"]},
+  },"formats":["pptx"],"options":{"pptxLayout":"launch","transition":"fade","pptxTitleFade":true},"previewColors":["#131b31","#f1f5ff","#a7baff"]},
   {"id":"paper_lab_report","category":"manuscript","names":{"zh-CN":"实验报告","zh-HK":"實驗報告","zh-TW":"實驗報告","en":"Lab Report",
     "ja":"実験レポート","ko":"실험 보고서","fr":"Rapport de laboratoire",
     "de":"Laborbericht","es":"Informe de laboratorio","pt":"Relatório de laboratório",

@@ -193,6 +193,7 @@ function getExportSections() {
     { title: _t('export.secSlides') || '', fmts: ['pptx'], fields: [
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
       { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
+      { k: 'pptxTitleFade', label: [_t('editor.headingWord'), _t('presentation.transitionFade')].join(' · '), type: 'checkbox', default: false },
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];
@@ -1970,7 +1971,7 @@ function rememberExportFormat(next) {
     // Carry shared typography across formats without bringing along a slide
     // theme, a website layout, or a preset's format restriction.
     const shared = { ...previous.options };
-    for (const key of ['htmlLayout', 'htmlTheme', 'pptxLayout', 'transition', 'presetFormat']) delete shared[key];
+    for (const key of ['htmlLayout', 'htmlTheme', 'pptxLayout', 'transition', 'pptxTitleFade', 'presetFormat']) delete shared[key];
     state.export.selectedPreset = '__custom__';
     state.export.options = expDeepMerge(exportPresetOptions(fallback), shared);
   } else {

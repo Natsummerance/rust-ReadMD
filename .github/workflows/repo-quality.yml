@@ -131,6 +131,7 @@ jobs:
           repository: Natsummerance/rust-ReadMD
           run-id: 41981825560
           artifact-ids: ${{ runner.os == 'Windows' && '13394464219' || runner.os == 'Linux' && '13394009501' || runner.arch == 'ARM64' && '13394129290' || '13393808994' }}
+          merge-multiple: true
           path: .cache/p1-previous-writer-artifact
       - name: P1 previous released writer cannot downgrade resource history
         run: node tools/test/review-version-fence-platform.mjs
