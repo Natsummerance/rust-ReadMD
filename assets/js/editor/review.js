@@ -353,7 +353,7 @@ window.ReadMDReview = (() => {
       pump(rec);
     }
   }
-  async function flush(tab = activeTab()) {
+  async function flushReview(tab) {
     // Closing/switching an unseen reader is not an editing operation. Explicit
     // capture/mutation/save create their own record before flushing instead.
     const rec = tab && records.get(tab); if (!rec || rec.unsupported) return true;
@@ -374,9 +374,25 @@ window.ReadMDReview = (() => {
     }
     return rec.snapshot.content === rec.local;
   }
-  async function flushAll() {
+  function canParkForClose(tab) {
+    const rec = tab && records.get(tab), snapshot = rec?.snapshot, recovery = snapshot?.recovery;
+    // A persisted external-change marker may remain for the next open. It must
+    // not block closing a clean reader whose live, stored and disk bodies agree.
+    return Boolean(tab?.path && !tab.isDirty && !tab.unsavedCreation && !tab._reviewRestorePending &&
+      !tab._renamePending && rec?.error?.code === 'review_recovery_required' &&
+      recovery?.reason === 'external_change' && recovery.external_path === snapshot.path &&
+      !snapshot.save_intent && !snapshot.changes.length && !rec.queue.length && !rec.processing &&
+      !rec.saving && !rec.adopting && !rec.adoption && !rec.renaming &&
+      snapshot.content === recovery.external_content && snapshot.content === rec.local &&
+      snapshot.content === lf(tab.content) && snapshot.content === source(tab));
+  }
+  async function flush(tab = activeTab(), { park = false } = {}) {
+    if (park && canParkForClose(tab)) return true;
+    return flushReview(tab);
+  }
+  async function flushAll(options) {
     const tabs = typeof state !== 'undefined' && Array.isArray(state.tabs) ? [...state.tabs] : [activeTab()].filter(Boolean);
-    for (const tab of tabs) if (!await flush(tab)) return false;
+    for (const tab of tabs) if (!await flush(tab, options)) return false;
     return true;
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
@@ -721,13 +737,14 @@ window.ReadMDReview = (() => {
   function finishSave(tab) { const rec = records.get(tab); if (rec) { rec.saving = false; pump(rec); refresh(rec); } }
   // A rename moves the durable identity, not the text. Lock the local queue
   // while its CAS is in flight and only adopt a matching server receipt.
-  async function beginRename(tab) {
+  async function beginRename(tab, options) {
     if (!tab) return null;
     const restoring = restores.get(tab);
     if (restoring) await restoring;
-    if (!await flush(tab)) return null;
+    if (!await flush(tab, options)) return null;
     const rec = records.get(tab);
-    if (rec?.unsupported || rec?.renaming || rec?.error || rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
+    if (rec?.unsupported || rec?.renaming || (rec?.error && !(options?.park && canParkForClose(tab))) ||
+        rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
     if (rec) { rec.renaming = true; rec.renameEpoch++; }
     return { review_session: rec?.snapshot ? cas(rec) : undefined };
   }

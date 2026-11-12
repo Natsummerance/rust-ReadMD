@@ -944,7 +944,7 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (tab._restoreDescriptor) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab, { park: true })) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
@@ -1000,7 +1000,7 @@ async function closeOtherTabs(keepTabId) {
   if (!keepTab) return;
   if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight || tab._restoreDescriptor))) { showToast(window.i18n.t('error.review_needs_recovery')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -1046,7 +1046,7 @@ async function closeAllTabs() {
   if (state.tabs.some(tab => tab._restoreDescriptor)) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -1232,15 +1232,15 @@ async function closeAllTabs() {
     });
     return settingsSaveQueue;
   }
-  async function recoveryBarrier(allowClose = false) {
+  async function recoveryBarrier(allowClose = false, park = false) {
     if (!ready) await window.__readmdSessionReady;
-    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park })) return false;
     if (await window.ReadMDRecovery?.flush() === false) return false;
     captureReaderState(getActiveTab());
     return !closing || allowClose;
   }
-  async function flush(allowClose = false) {
-    if (!await recoveryBarrier(allowClose)) return false;
+  async function flush(allowClose = false, park = false) {
+    if (!await recoveryBarrier(allowClose, park)) return false;
     const value = snapshot();
     if (!value) return false;
     try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
@@ -1265,14 +1265,14 @@ async function closeAllTabs() {
     const reserved = [], flags = new Map();
     const body = document.body, inert = body?.inert;
     try {
-      if (!await flush(true)) return false;
+      if (!await flush(true, true)) return false;
       const owners = [...state.tabs];
       for (const tab of owners) { flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
       if (body) body.inert = true;
       // Existing review reservations defer completed AI receipts as well as
       // writes. A large/unseen reader without a review snapshot needs no CAS.
       for (const tab of owners) if (window.ReadMDReview?.snapshot(tab)) {
-        if (!await window.ReadMDReview.beginRename(tab)) return false;
+        if (!await window.ReadMDReview.beginRename(tab, { park: true })) return false;
         reserved.push(tab);
       }
       if (tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending)) return false;

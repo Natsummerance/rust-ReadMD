@@ -2744,7 +2744,7 @@ async function closeTab(tabId, force = false, trigger = 'programmatic') {
   if (tab._restoreDescriptor) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (tab._renamePending || tab._renameInFlight) { showToast(window.i18n.t('review.busy')); return; }
   if(state.activeTabId===tabId&&window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab)) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flush(tab, { park: true })) return;
   if (state.editing && state.activeTabId === tabId) syncActiveTabDirty();
   let discardShared=false;
   if (tab.isDirty && !force) {
@@ -2800,7 +2800,7 @@ async function closeOtherTabs(keepTabId) {
   if (!keepTab) return;
   if (state.tabs.some(tab => tab !== keepTab && (tab._renamePending || tab._renameInFlight || tab._restoreDescriptor))) { showToast(window.i18n.t('error.review_needs_recovery')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -2846,7 +2846,7 @@ async function closeAllTabs() {
   if (state.tabs.some(tab => tab._restoreDescriptor)) { showToast(window.i18n.t('error.review_needs_recovery')); return false; }
   if (state.tabs.some(tab => tab._renamePending || tab._renameInFlight)) { showToast(window.i18n.t('review.busy')); return; }
   if(window.ReadMDInlineMath&&!await ReadMDInlineMath.leave())return;
-  if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return;
+  if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return;
   if (state.editing) syncActiveTabDirty();
   const candidates = [...state.tabs], accepted = new Map(), discardedShared=new Set();
   const text = tab => state.editing && state.activeTabId === tab.id ? getEditContent() : tab.content;
@@ -3032,15 +3032,15 @@ async function closeAllTabs() {
     });
     return settingsSaveQueue;
   }
-  async function recoveryBarrier(allowClose = false) {
+  async function recoveryBarrier(allowClose = false, park = false) {
     if (!ready) await window.__readmdSessionReady;
-    if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+    if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park })) return false;
     if (await window.ReadMDRecovery?.flush() === false) return false;
     captureReaderState(getActiveTab());
     return !closing || allowClose;
   }
-  async function flush(allowClose = false) {
-    if (!await recoveryBarrier(allowClose)) return false;
+  async function flush(allowClose = false, park = false) {
+    if (!await recoveryBarrier(allowClose, park)) return false;
     const value = snapshot();
     if (!value) return false;
     try { localStorage.setItem(storageKey, JSON.stringify(value)); } catch (_) {}
@@ -3065,14 +3065,14 @@ async function closeAllTabs() {
     const reserved = [], flags = new Map();
     const body = document.body, inert = body?.inert;
     try {
-      if (!await flush(true)) return false;
+      if (!await flush(true, true)) return false;
       const owners = [...state.tabs];
       for (const tab of owners) { flags.set(tab, tab._renameInFlight); tab._renameInFlight = true; }
       if (body) body.inert = true;
       // Existing review reservations defer completed AI receipts as well as
       // writes. A large/unseen reader without a review snapshot needs no CAS.
       for (const tab of owners) if (window.ReadMDReview?.snapshot(tab)) {
-        if (!await window.ReadMDReview.beginRename(tab)) return false;
+        if (!await window.ReadMDReview.beginRename(tab, { park: true })) return false;
         reserved.push(tab);
       }
       if (tabs.some(tab => !state.tabs.includes(tab) || tab._renamePending)) return false;
@@ -14114,7 +14114,7 @@ window.ReadMDReview = (() => {
       pump(rec);
     }
   }
-  async function flush(tab = activeTab()) {
+  async function flushReview(tab) {
     // Closing/switching an unseen reader is not an editing operation. Explicit
     // capture/mutation/save create their own record before flushing instead.
     const rec = tab && records.get(tab); if (!rec || rec.unsupported) return true;
@@ -14135,9 +14135,25 @@ window.ReadMDReview = (() => {
     }
     return rec.snapshot.content === rec.local;
   }
-  async function flushAll() {
+  function canParkForClose(tab) {
+    const rec = tab && records.get(tab), snapshot = rec?.snapshot, recovery = snapshot?.recovery;
+    // A persisted external-change marker may remain for the next open. It must
+    // not block closing a clean reader whose live, stored and disk bodies agree.
+    return Boolean(tab?.path && !tab.isDirty && !tab.unsavedCreation && !tab._reviewRestorePending &&
+      !tab._renamePending && rec?.error?.code === 'review_recovery_required' &&
+      recovery?.reason === 'external_change' && recovery.external_path === snapshot.path &&
+      !snapshot.save_intent && !snapshot.changes.length && !rec.queue.length && !rec.processing &&
+      !rec.saving && !rec.adopting && !rec.adoption && !rec.renaming &&
+      snapshot.content === recovery.external_content && snapshot.content === rec.local &&
+      snapshot.content === lf(tab.content) && snapshot.content === source(tab));
+  }
+  async function flush(tab = activeTab(), { park = false } = {}) {
+    if (park && canParkForClose(tab)) return true;
+    return flushReview(tab);
+  }
+  async function flushAll(options) {
     const tabs = typeof state !== 'undefined' && Array.isArray(state.tabs) ? [...state.tabs] : [activeTab()].filter(Boolean);
-    for (const tab of tabs) if (!await flush(tab)) return false;
+    for (const tab of tabs) if (!await flush(tab, options)) return false;
     return true;
   }
   async function ensure(tab = activeTab(), initial) { const rec = record(tab, initial); return rec ? open(rec) : null; }
@@ -14482,13 +14498,14 @@ window.ReadMDReview = (() => {
   function finishSave(tab) { const rec = records.get(tab); if (rec) { rec.saving = false; pump(rec); refresh(rec); } }
   // A rename moves the durable identity, not the text. Lock the local queue
   // while its CAS is in flight and only adopt a matching server receipt.
-  async function beginRename(tab) {
+  async function beginRename(tab, options) {
     if (!tab) return null;
     const restoring = restores.get(tab);
     if (restoring) await restoring;
-    if (!await flush(tab)) return null;
+    if (!await flush(tab, options)) return null;
     const rec = records.get(tab);
-    if (rec?.unsupported || rec?.renaming || rec?.error || rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
+    if (rec?.unsupported || rec?.renaming || (rec?.error && !(options?.park && canParkForClose(tab))) ||
+        rec?.saving || rec?.adopting || rec?.adoption || rec?.processing || rec?.queue.length) return null;
     if (rec) { rec.renaming = true; rec.renameEpoch++; }
     return { review_session: rec?.snapshot ? cas(rec) : undefined };
   }
@@ -23321,7 +23338,7 @@ window.addEventListener('readmd:language-changed', () => {
     try {
       if (window.ReadMDInlineMath && !await ReadMDInlineMath.leave()) return false;
       if (state.editing) syncActiveTabDirty();
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (await flush() === false) return false;
       if (window.ReadMDPdf && !await window.ReadMDPdf.prepareClose()) return false;
       if (window.ReadMDCollaborationShare && !await window.ReadMDCollaborationShare.prepareClose()) return false;
@@ -23329,9 +23346,9 @@ window.addEventListener('readmd:language-changed', () => {
       if (window.ReadMDCodeRuns && !await window.ReadMDCodeRuns.cancelAll()) { showToast(t('task.cancelRetry')); return false; }
       if (window.ReadMDAiHarness && !await window.ReadMDAiHarness.pauseAll()) return false;
       const unchanged=closeStamp();
-      if (await window.ReadMDSession?.flush() === false) return false;
+      if (await window.ReadMDSession?.flush(false, true) === false) return false;
       await queue;
-      if (window.ReadMDReview && !await window.ReadMDReview.flushAll()) return false;
+      if (window.ReadMDReview && !await window.ReadMDReview.flushAll({ park: true })) return false;
       if (!unchanged()) return false;
       window.ipc?.postMessage('readmd:quit');
       return true;

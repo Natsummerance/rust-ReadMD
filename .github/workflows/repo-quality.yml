@@ -483,6 +483,10 @@ jobs:
           node ui-tests/shell-single-chrome-browser.cjs --case shell --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/shell" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
           node ui-tests/shell-single-chrome-browser.cjs --case rtl --bin "${{ github.workspace }}/rust/target/debug/readmd" --evidence "${{ github.workspace }}/.cache/p1-shell-browser/rtl" --playwright "${{ github.workspace }}/ui-tests/node_modules/playwright"
           node -e "const a=require('node:assert/strict');for(const n of ['shell','rtl']){const r=require('./.cache/p1-shell-browser/'+n+'/report.json');a.equal(r.passed,true);a.equal(r.runtimeSourceUnchanged,true);a.equal(r.inferenceRequests.length,0);a.equal(r.pageErrors.length,0);a.equal(r.nativeUiCertified,false);a(r.checks.length>=5);a(r.checks.every(c=>c.passed));}"
+      - name: Close tabs while an identical external recovery body remains durable
+        env:
+          READMD_CODE_BROWSER: chromium
+        run: node ui-tests/review-close-external-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/review-close-external-browser"
       - name: P1 compact shell retains every original action
         env:
           READMD_CODE_BROWSER: chromium
