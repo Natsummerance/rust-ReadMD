@@ -23,7 +23,8 @@ test('one global chrome has horizontal tabs and one set of sidebar commands',()=
   assert(containingTag(html,'statusbar').includes('side'));
   assert(containingTag(html,'search-bar').includes('side-search'));
   assert(containingTag(html,'btn-convert').includes('side-conversion'));
-  assert(containingTag(html,'btn-document-history').includes('side-interaction'));
+  for (const id of ['btn-saveas','btn-clipboard-new','btn-document-history']) assert(containingTag(html,id).includes('side-files'));
+  assert(containingTag(html,'side-recent-clear').includes('side-recent'));
   assert(containingTag(html,'btn-style-custom').includes('side-settings'));
   assert(containingTag(html,'pv-sync').includes('edit-view-menu'));
   for (const id of ['btn-open','btn-print','btn-ai','btn-edit','doc-tabs-bar','edit-save','statusbar']) {
