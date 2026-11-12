@@ -178,8 +178,12 @@ impl Transport for ReviewTransport<'_> {
         let worker_cancelled=check.clone();let worker_deadline=self.deadline.min(Instant::now()+self.request_timeout);
         let timeout=self.request_timeout;let response_limit=self.response_limit;
         let url=url.to_owned();let headers=headers.clone();let body=body.to_owned();
+        let worker_network=network.worker_guard();
         std::thread::Builder::new().name("readmd-task-stream".into()).spawn(move||{
             let _permit=permit;
+            // Retire both socket directions even when a full queue leaves the
+            // consumer idle. Releasing the response alone need not wake a relay.
+            let _network=worker_network;
             let should_stop=||worker_stopped.load(Ordering::Acquire)||worker_cancelled()||Instant::now()>=worker_deadline;
             let agent=ureq::AgentBuilder::new().resolver(resolver).timeout(timeout).timeout_connect(timeout.min(Duration::from_secs(10)))
                 .timeout_read(timeout).timeout_write(timeout.min(Duration::from_secs(10))).redirects(0).build();

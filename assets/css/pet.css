@@ -79,7 +79,7 @@
 #pet-settings-box #pet-roster-search {
   flex: 1;
   min-width: 0;
-  min-height: calc(var(--touch-target) - 2px);
+  min-height: var(--touch-target);
   width: 100%;
   margin: 0;
   padding: 0;

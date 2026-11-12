@@ -42,9 +42,12 @@ test('search Enter cycles matches without leaving the field', async ({ page }) =
 test('welcome Ctrl+P respects the document guard', async ({ page }) => {
   await page.goto('/');
   await waitForPage(page, () => window.__readmdAppReady === true);
+  const notice = await page.evaluate(() => i18n.t('toast.openDocumentToUse'));
+  expect(notice).not.toBe('toast.openDocumentToUse');
   await page.keyboard.press('Control+P');
   await expect(page.locator('#export-modal')).toBeHidden();
-  await expect(page.locator('#toast')).toContainText(/请先打开文档|Open a document/);
+  await expect(page.locator('#toast')).toHaveText(notice);
+  await expect(page.locator('#toast')).toBeVisible();
 });
 
 test('reading mode supports F11 Zen and Escape exit', async ({ page }) => {

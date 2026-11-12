@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {options}=require('./v006-table-clipboard-kernel.cjs'),{startKernel}=require('./v006-refactor-host.cjs');
 const {nodePack,installNodePack,api:request,settle,sha}=require('./node-runtime-fixture.cjs');
 const {sameWorker}=require('./code-mcp-eof.cjs');
-const {StatusProbeObserver,prepareStatusFirst,observeRunProgress,waitBusy,before:assertBeforeDeadline,sameLive,sampleStorage}=require('./node-runtime-status-observer.cjs');
+const {StatusProbeObserver,prepareStatusFirst,observeRunProgress,waitBusy,before:assertBeforeDeadline,sameLive,sampleStorage,snapshots}=require('./node-runtime-status-observer.cjs');
 const {ownedNodeWorker}=require('./node-runtime-http-stdio.cjs');
 const ROOT=path.resolve(__dirname,'../..'),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const TIMER="setTimeout(()=>console.log('LATE'),60000)";
@@ -45,8 +45,8 @@ async function main(){
     assertBeforeDeadline(preparationDeadline,now,'unique Run dispatch');
     report.runRequestDispatched=true;
     running=api('/api/code/run',{confirm:true,lang:'javascript',code:TIMER,task_id:task}).then(receipt=>{Object.assign(report.running,{settled:true,settledAtMs:at(),receipt});return receipt;},e=>{Object.assign(report.running,{settled:true,settledAtMs:at(),error:safe(e.message)});throw e;});running.catch(()=>{});
-    const progress=await observeRunProgress({observer,now,deadline:timerDeadline,finished:()=>report.running.settled,findTimer:()=>{
-      const found=ownedNodeWorker(host.pid,dirs.tmp,TIMER);
+    const progress=await observeRunProgress({observer,now,deadline:timerDeadline,finished:()=>report.running.settled,readWorkers:()=>snapshots(host.pid),findTimer:workers=>{
+      const found=ownedNodeWorker(host.pid,dirs.tmp,TIMER,workers);
       if(found){timerWorker=found;report.anchorStillPendingAtTimerObservation=!anchor.settled;report.probeStillActiveAtTimerObservation=null;report.pendingStatusesAtTimerObservation=report.statuses.filter(row=>!row.settled).length;}
       return found;
     }});

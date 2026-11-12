@@ -10,15 +10,15 @@ const SOURCE='# 😀\n\n```javascript cmd output=true\nconsole.log(6*7);\n```\n\
 const EXPECTED='# 😀\n\n```javascript cmd output=true\nconsole.log(6*7);\n```\n\nPending.\n\n```javascript cmd output=true\nconsole.log(6*7);\n```\n\n<!-- code_chunk_output -->\n\n42\n\n<!-- /code_chunk_output -->\n\nTail.\n';
 const encoded=text=>Buffer.from('\ufeff'+text.replaceAll('\n','\r\n'));
 const cas=(s,action,extra={})=>({action,document_id:s.document_id,generation:s.generation,review_revision:s.review_revision,call_id:crypto.randomUUID(),...extra});
-function ownedNodeWorker(parent,tmp,code){
-  for(const candidate of processes(parent)){
+function ownedNodeWorker(parent,tmp,code,workers=processes(parent)){
+  for(const candidate of workers){
     const match=candidate.args?.match(/(?:"([^"\n]+main\.js)"|([^\s"\n]+main\.js))\s*$/),script=match?.[1]||match?.[2];if(!script)continue;
     try{
       const metadata=fs.lstatSync(script);assert(metadata.isFile()&&!metadata.isSymbolicLink(),'owned Node script must be an ordinary file');
       const canonical=fs.realpathSync(script),prefix=fs.realpathSync(tmp)+path.sep;
       assert(process.platform==='win32'?canonical.toLowerCase().startsWith(prefix.toLowerCase()):canonical.startsWith(prefix),'owned Node script escaped its fixture');
       assert.equal(sha(fs.readFileSync(script)),sha(code),'owned timer script bytes');assert(candidate.birth,'owned timer process birth');
-      if(process.platform!=='win32')assert.equal(Number(ps(candidate.pid,'pgid')),candidate.pid,'owned timer process group');
+      if(process.platform!=='win32')assert.equal(candidate.pgid??Number(ps(candidate.pid,'pgid')),candidate.pid,'owned timer process group');
       return{...candidate,script};
     }catch(error){if(error.code!=='ENOENT')throw error;}
   }

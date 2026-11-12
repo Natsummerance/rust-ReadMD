@@ -33,6 +33,7 @@ impl NetworkOwner {
             connections: AtomicUsize::new(0), workers: AtomicUsize::new(0), cancelled, deadline }))
     }
     pub(crate) fn resolver(&self) -> Resolver { Resolver(self.0.clone()) }
+    pub(super) fn worker_guard(&self) -> Self { Self(self.0.clone()) }
     pub(super) fn stop(&self) { self.0.stop(); }
 }
 impl Drop for NetworkOwner { fn drop(&mut self) { self.stop(); } }
@@ -42,7 +43,7 @@ impl State {
         self.stopped.store(true, Ordering::Release);
         // Lock registration too: a connection created concurrently with stop
         // is either captured here or rejected and closed by register().
-        for socket in self.sockets.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+        for socket in self.sockets.lock().unwrap_or_else(|e| e.into_inner()).drain(..) {
             let _ = socket.shutdown(Shutdown::Both);
         }
     }

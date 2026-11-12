@@ -138,10 +138,10 @@ class StatusProbeObserver {
     if(state.retiring){assert(matches(state.retiring.directory,selected.journalDirectory));assert(matches(state.retiring.journal,selected.journalIdentity));assert(matches(state.retiring.lease,selected.ownerIdentity));}
     return state;
   }
-  observeLive(){
+  observeLive(workers=this.readSnapshots(this.hostPid)){
     assert(this.selected);if(this.worker)return this.worker;
     const selected=this.selected;
-    for(const row of this.readSnapshots(this.hostPid)){
+    for(const row of workers){
       if(row.args!==selected.program+' --permission --eval '+this.probeSource&&row.args!=='"'+selected.program+'" --permission --eval '+this.probeSource)continue;
       assert(live(row,this.hostPid),'probe identity/state/group mismatch');
       this.journalState();const m=metadata(selected.binaryFd),named=fs.lstatSync(selected.program,{bigint:true});
@@ -189,12 +189,15 @@ async function prepareStatusFirst({observer,pending,now=()=>performance.now(),sl
   record({stage:'status_work_window_unavailable'});throw failure('status_work_window_unavailable','No unique owned Header+Created within the original6s preparation bound; Run was not requested');
   } catch(error) { observer.close?.(); throw error; }
 }
-async function observeRunProgress({observer,findTimer,finished,now=()=>performance.now(),sleep=pause,deadline}){
+async function observeRunProgress({observer,findTimer,finished,readWorkers=()=>undefined,now=()=>performance.now(),sleep=pause,deadline}){
   try {
   let timer,timerObservedAt;
   while(now()<deadline&&!finished()){
-    if(!observer.worker){observer.observeLive();before(deadline,now,'actual probe witness');}
-    if(!timer){const found=findTimer();const at=before(deadline,now,'actual timer witness');if(found){timer=found;timerObservedAt=at;}}
+    // Use one snapshot of the host's children for both witnesses. Starting a
+    // second set of ps processes between samples can miss the short probe.
+    const workers=(!observer.worker||!timer)?readWorkers():undefined;
+    if(!observer.worker){observer.observeLive(workers);before(deadline,now,'actual probe witness');}
+    if(!timer){const found=findTimer(workers);const at=before(deadline,now,'actual timer witness');if(found){timer=found;timerObservedAt=at;}}
     if(observer.worker&&!observer.hashProof){const ready=observer.retirementReady();before(deadline,now,'probe retirement witness');if(ready){await observer.hashRetired(deadline);before(deadline,now,'complete probe hash witness');}}
     if(timer&&observer.worker&&observer.hashProof){before(deadline,now,'complete Run proof');return {timer,timerObservedAt,busyDeadline:timerObservedAt+3000,probe:observer.worker,hash:observer.hashProof};}
     await sleep(10);
