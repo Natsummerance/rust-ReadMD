@@ -1,0 +1,708 @@
+{
+  "source": "7f6ae01f9af6bec216edd018bd8c29ee8c0b7c9b",
+  "workflow": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44303233653",
+  "scope": "Default Rust PDF and its long PNG and page PNG exports through authenticated HTTP, frozen preview, and commit.",
+  "inputs": [
+    {
+      "name": "ordinary",
+      "sha256": "8c3ac471f168f7a41ccfa14d078f2adfe18aba4864b5684ad720f3becdcde77a"
+    },
+    {
+      "name": "merged",
+      "sha256": "239c486fc3d09a867e70ed21aae9a3a3f639d3861fea025db7f8335fa15f524f"
+    },
+    {
+      "name": "grid",
+      "sha256": "c16aecfd3de206341b651ed59ebc25d33c5607e673d5aa4dc004506540bd9f85"
+    },
+    {
+      "name": "invalid",
+      "sha256": "8af754cddc541c98af6bc61d9e7053f3603ae9794c7dcac4ed1199097f4b1480"
+    }
+  ],
+  "researchSource": {
+    "file": "research.md",
+    "sha256": "c41d5469388d526f8f4726590ab5465c4240e1f63e82ef1d59ac9e2e8b7636e4"
+  },
+  "firstFailures": [
+    "The previous default renderer refused enhanced table geometry. Its ordinary scientific table lacked bottom rules on intermediate pages.",
+    "The first enhanced candidate placed a continuation line 0.506 pt above the header separator and deferred oversized groups to fresh pages even when useful space remained."
+  ],
+  "hosts": [
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "rasterBackend": "Quartz",
+      "binarySha256": "54c85d2eeca732cca8b615d73e8ecdd4d9be8166996c4c346b717e7e7529af93",
+      "regular": {
+        "regularRowHeightPt": 26.850000000000023,
+        "tallRowHeightPt": 145.64999999999998
+      },
+      "merged": {
+        "regularRowHeightPt": 26.849999999999966,
+        "tallRowHeightPt": 115.95000000000005,
+        "mergedContentPages": [
+          1,
+          2,
+          3
+        ],
+        "mergedContentLines": 64
+      },
+      "grid": {
+        "verticalBoundariesPt": [
+          67.195,
+          162.241,
+          257.287,
+          352.332
+        ],
+        "horizontalBoundariesPt": [
+          51.354,
+          78.204,
+          113.904,
+          149.604,
+          176.454
+        ],
+        "coveredContents": [
+          "GORIGIN",
+          "GCOVERTOP",
+          "GCOVERLOW",
+          "GCOVEREND"
+        ],
+        "words": 12
+      },
+      "research": {
+        "passed": true,
+        "doseRows": 42,
+        "pages": 3,
+        "doseRowsByPage": [
+          10,
+          17,
+          15
+        ],
+        "remainingBodyPtByPage": [
+          19.97,
+          8.07,
+          65.07
+        ],
+        "repeatedHeaders": 3,
+        "mergedGroupPages": {
+          "Fresh dilution": [
+            1,
+            2
+          ],
+          "Held dilution": [
+            2,
+            3
+          ]
+        },
+        "mergedTextLines": 19,
+        "footnoteLinked": true,
+        "pngSegments": [
+          {
+            "page": "page-001.png",
+            "pagePixels": [
+              874,
+              1240
+            ],
+            "sourceRows": [
+              126,
+              1110
+            ],
+            "longPngRows": [
+              0,
+              984
+            ]
+          },
+          {
+            "page": "page-002.png",
+            "pagePixels": [
+              874,
+              1240
+            ],
+            "sourceRows": [
+              88,
+              1135
+            ],
+            "longPngRows": [
+              984,
+              2031
+            ]
+          },
+          {
+            "page": "page-003.png",
+            "pagePixels": [
+              874,
+              1240
+            ],
+            "sourceRows": [
+              88,
+              1087
+            ],
+            "longPngRows": [
+              2031,
+              3030
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "format": "pdf",
+            "sha256": "910098671154507a84ff143d42a5d6aaf78f035cdb84336d235539e189d89f48",
+            "bytes": 16089
+          },
+          {
+            "format": "png",
+            "sha256": "9738dd9b8d8c1ba0c62c94d77b998f0f648412f68d0a9ca9dec3cf1334e663f5",
+            "bytes": 495784
+          },
+          {
+            "format": "png-pages",
+            "sha256": "ade185580cbe68b008ceacb93ee11c0e2cdb7f6922c756d287a0a3f64d38cd46",
+            "bytes": 507984
+          }
+        ]
+      },
+      "invalidGeometry": [
+        {
+          "format": "pdf",
+          "target": "ordinary.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "pdf",
+          "target": "invalid.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "ordinary.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "invalid.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "ordinary.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "invalid.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        }
+      ],
+      "reviewSnapshot": {
+        "pdf": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 7941,
+          "sha256": "72b5b53a024cdaaceeee7839f40239929534c91f80164f908c688e5f9c3a2483"
+        },
+        "png": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 22990,
+          "sha256": "7fa32db53c72bb16a9bfa8d8003fdc7dbb54d56c99697b588717aa9851b4fc4e"
+        },
+        "png-pages": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 39126,
+          "sha256": "e4fc57d41007603597d63312930b59a6147e43d7abe7c4f4c16093c165a26339"
+        }
+      },
+      "rasterBudget": {
+        "png": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 617027
+        },
+        "png-pages": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 643841
+        }
+      }
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "rasterBackend": "Windows.Data.Pdf",
+      "binarySha256": "51e59b71c523f07552894487704dc6a62d95f405f7f07916ca986658ddff3584",
+      "validationJob": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44303233653/job/134798054058",
+      "artifactSha256": "sha256:df5f3471ea817da87ee505f420a108126bb5132ab2f762a8851845a6a1e45988",
+      "regular": {
+        "regularRowHeightPt": 26.850000000000023,
+        "tallRowHeightPt": 145.64999999999998
+      },
+      "merged": {
+        "regularRowHeightPt": 26.849999999999966,
+        "tallRowHeightPt": 115.95000000000005,
+        "mergedContentPages": [
+          1,
+          2,
+          3
+        ],
+        "mergedContentLines": 64
+      },
+      "grid": {
+        "verticalBoundariesPt": [
+          67.195,
+          162.241,
+          257.287,
+          352.332
+        ],
+        "horizontalBoundariesPt": [
+          51.354,
+          78.204,
+          113.904,
+          149.604,
+          176.454
+        ],
+        "coveredContents": [
+          "GORIGIN",
+          "GCOVERTOP",
+          "GCOVERLOW",
+          "GCOVEREND"
+        ],
+        "words": 12
+      },
+      "research": {
+        "passed": true,
+        "doseRows": 42,
+        "pages": 3,
+        "doseRowsByPage": [
+          10,
+          17,
+          15
+        ],
+        "remainingBodyPtByPage": [
+          19.97,
+          8.07,
+          65.07
+        ],
+        "repeatedHeaders": 3,
+        "mergedGroupPages": {
+          "Fresh dilution": [
+            1,
+            2
+          ],
+          "Held dilution": [
+            2,
+            3
+          ]
+        },
+        "mergedTextLines": 19,
+        "footnoteLinked": true,
+        "pngSegments": [
+          {
+            "page": "page-001.png",
+            "pagePixels": [
+              1128,
+              1600
+            ],
+            "sourceRows": [
+              168,
+              1427
+            ],
+            "longPngRows": [
+              0,
+              1259
+            ]
+          },
+          {
+            "page": "page-002.png",
+            "pagePixels": [
+              1128,
+              1600
+            ],
+            "sourceRows": [
+              119,
+              1459
+            ],
+            "longPngRows": [
+              1259,
+              2599
+            ]
+          },
+          {
+            "page": "page-003.png",
+            "pagePixels": [
+              1128,
+              1600
+            ],
+            "sourceRows": [
+              119,
+              1396
+            ],
+            "longPngRows": [
+              2599,
+              3876
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "format": "pdf",
+            "sha256": "abd52af349a97078857dff16ec7c004b4089725510c96840d9be8b862a63c618",
+            "bytes": 16089
+          },
+          {
+            "format": "png",
+            "sha256": "7b149e54168009e35fc8b2d6cc84244cf3d298b52b30a246a1777a162292cd3f",
+            "bytes": 578879
+          },
+          {
+            "format": "png-pages",
+            "sha256": "589a033165ea37a822d817b371dcbcb9edc4dbf4e297b5aa7a17a63c3e87d6ff",
+            "bytes": 596993
+          }
+        ]
+      },
+      "invalidGeometry": [
+        {
+          "format": "pdf",
+          "target": "ordinary.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "pdf",
+          "target": "invalid.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "ordinary.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "invalid.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "ordinary.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "invalid.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        }
+      ],
+      "reviewSnapshot": {
+        "pdf": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 7941,
+          "sha256": "72b5b53a024cdaaceeee7839f40239929534c91f80164f908c688e5f9c3a2483"
+        },
+        "png": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 27399,
+          "sha256": "cb575b2cd557bd8736f763b86ca01f303b89869ec93106d939b84f5c2c12952c"
+        },
+        "png-pages": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 51024,
+          "sha256": "72a5fcac9d94ed7443766e400075f13a3f5347365203b3a0b6f6061bd06123b7"
+        }
+      },
+      "rasterBudget": {
+        "png": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 717900
+        },
+        "png-pages": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 757265
+        }
+      }
+    },
+    {
+      "platform": "linux",
+      "arch": "x64",
+      "rasterBackend": "PDFium capability pack",
+      "binarySha256": "0b4b1e16df47bda1adde78573ee0b8dc318c3b17843fff6e8d664a05517a63a3",
+      "validationJob": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44303233653/job/134798054588",
+      "artifactSha256": "sha256:5e148d03b44b88fbc795d2471458577d6ef6415ba05daa6a4af550d732915c54",
+      "pdfiumPackSha256": "7c6bf60c0d0b721abbb5502f769d61dc6c3b5351bae417e66db5c2e66873d2b7",
+      "regular": {
+        "regularRowHeightPt": 26.850000000000023,
+        "tallRowHeightPt": 145.64999999999998
+      },
+      "merged": {
+        "regularRowHeightPt": 26.849999999999966,
+        "tallRowHeightPt": 115.95000000000005,
+        "mergedContentPages": [
+          1,
+          2,
+          3
+        ],
+        "mergedContentLines": 64
+      },
+      "grid": {
+        "verticalBoundariesPt": [
+          67.195,
+          162.241,
+          257.287,
+          352.332
+        ],
+        "horizontalBoundariesPt": [
+          51.354,
+          78.204,
+          113.904,
+          149.604,
+          176.454
+        ],
+        "coveredContents": [
+          "GORIGIN",
+          "GCOVERTOP",
+          "GCOVERLOW",
+          "GCOVEREND"
+        ],
+        "words": 12
+      },
+      "research": {
+        "passed": true,
+        "doseRows": 42,
+        "pages": 3,
+        "doseRowsByPage": [
+          10,
+          17,
+          15
+        ],
+        "remainingBodyPtByPage": [
+          19.97,
+          8.07,
+          65.07
+        ],
+        "repeatedHeaders": 3,
+        "mergedGroupPages": {
+          "Fresh dilution": [
+            1,
+            2
+          ],
+          "Held dilution": [
+            2,
+            3
+          ]
+        },
+        "mergedTextLines": 19,
+        "footnoteLinked": true,
+        "pngSegments": [
+          {
+            "page": "page-001.png",
+            "pagePixels": [
+              2200,
+              3122
+            ],
+            "sourceRows": [
+              343,
+              2770
+            ],
+            "longPngRows": [
+              0,
+              2427
+            ]
+          },
+          {
+            "page": "page-002.png",
+            "pagePixels": [
+              2200,
+              3122
+            ],
+            "sourceRows": [
+              248,
+              2832
+            ],
+            "longPngRows": [
+              2427,
+              5011
+            ]
+          },
+          {
+            "page": "page-003.png",
+            "pagePixels": [
+              2200,
+              3122
+            ],
+            "sourceRows": [
+              248,
+              2709
+            ],
+            "longPngRows": [
+              5011,
+              7472
+            ]
+          }
+        ],
+        "outputs": [
+          {
+            "format": "pdf",
+            "sha256": "af4a56ecd8154f3bfa8ca409939a8c02bc2ff2eae07cb220de202f8a1828f1ce",
+            "bytes": 16089
+          },
+          {
+            "format": "png",
+            "sha256": "8899d98dbb0f05a34fc46422d099fe702fecea6798cd4d0af84f1db285522991",
+            "bytes": 1348512
+          },
+          {
+            "format": "png-pages",
+            "sha256": "010695e29950979a6943c43190c77bf5e88da90bd9bd957b175dcc6d9ebdf41f",
+            "bytes": 1414412
+          }
+        ]
+      },
+      "invalidGeometry": [
+        {
+          "format": "pdf",
+          "target": "ordinary.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "pdf",
+          "target": "invalid.pdf",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "ordinary.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png",
+          "target": "invalid.png",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "ordinary.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        },
+        {
+          "format": "png-pages",
+          "target": "invalid.zip",
+          "status": 200,
+          "errorCode": "publication_table_unsupported",
+          "preservesTarget": true,
+          "passed": true
+        }
+      ],
+      "reviewSnapshot": {
+        "pdf": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 7941,
+          "sha256": "72b5b53a024cdaaceeee7839f40239929534c91f80164f908c688e5f9c3a2483"
+        },
+        "png": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 66555,
+          "sha256": "a92b5e59af4a8ee0fb3057a0c114b7e4953eed3a01a69780344aeeea2b13a086"
+        },
+        "png-pages": {
+          "previewPages": 1,
+          "preservedOnCancel": true,
+          "preservedOnConflict": true,
+          "reviewAcceptedAfterWrite": true,
+          "bytes": 150961,
+          "sha256": "2457dcd80da64ccf3033130e86c5b81a004ca6001d07ca43957802689eab749d"
+        }
+      },
+      "rasterBudget": {
+        "png": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 1633456
+        },
+        "png-pages": {
+          "inputPages": 129,
+          "errorCode": "export_snapshot_budget",
+          "priorBytesPreserved": 1775267
+        }
+      }
+    }
+  ],
+  "remaining": [
+    "Visual row height and column width editing, clipboard interoperability and native Office round trips on Windows and Linux remain in R019.",
+    "Nested enhanced tables in Rust quote/callout blocks and raw HTML merged tables remain unsupported. No P1/P2 or release certification."
+  ]
+}
