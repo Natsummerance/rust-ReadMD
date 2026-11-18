@@ -100,7 +100,10 @@ async function exercise() {
     await until(()=>reader.count().then(n=>n===2),'two reader tables');
     assert.equal(await reader.first().locator('[rowspan]').count(),0);
     const cell = reader.nth(1).locator('td[rowspan="2"][colspan="2"]');
-    assert.equal(await cell.innerText(),'Alpha\nBravo\nCharlie\nDelta');
+    // Reader CSS and the article become visible asynchronously after Save.
+    // innerText is empty while the ready reader is still hidden for layout.
+    await until(async () => await cell.isVisible() &&
+      (await cell.innerText()) === 'Alpha\nBravo\nCharlie\nDelta', 'merged reader content painted');
     assert.equal(await cell.locator('strong').innerText(),'Alpha');
     assert.equal(await cell.locator('a').innerText(),'Delta');
     assert.deepEqual(await cell.evaluate(e=>[getComputedStyle(e).textAlign,getComputedStyle(e).verticalAlign]),['right','bottom']);
