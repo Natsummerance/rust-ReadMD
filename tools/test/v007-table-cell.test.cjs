@@ -346,3 +346,30 @@ test('Tab selects source content without formatting, and Enter cannot insert an 
   assert.equal(f.text(), duplicates);
   assert.equal(manual(f.store).length, 0);
 });
+
+test('table rewrite helpers protect attributed source when incremental syntax is unavailable', () => {
+  const T = require('../../assets/js/editor/md-transforms.js');
+  const cursor = geometryTable.indexOf('Delta');
+  assert.deepEqual(T.tableNavEdit(geometryTable, cursor, 1), { blocked: true });
+  assert.deepEqual(T.tableEnterEdit(geometryTable, cursor), { blocked: true });
+});
+
+test('split cells retain individual alignment through column insertion and rich-text sorting', async () => {
+  const source = '| Key | Qty |\n|---|---|\n| **Zulu** {align=right} | 4 |\n| Alpha {valign=bottom} | 3 |';
+  const f = await ready(source), ui = modal(f);
+  f.select(source.indexOf('Zulu')+1);
+  f.context.openTableModal();
+  const action = name => ui.get('table-cell-controls').querySelectorAll('button').find(b=>b.dataset.tableMove===name);
+  assert.equal(action('insert-column').disabled,false);
+  action('sort-asc').click();
+  await until(()=>f.text()!==source);
+  assert.equal(f.text(), '| Key | Qty |\n|---|---|\n| Alpha {valign=bottom} | 3 |\n| **Zulu** {align=right} | 4 |');
+  await f.history();
+  assert.equal(f.text(),source);
+  f.select(source.indexOf('Zulu')+1);
+  f.context.openTableModal();
+  action('insert-column').click();
+  await until(()=>f.text()!==source);
+  assert.match(f.text(),/\*\*Zulu\*\* \{align=right\} \| \| 4 \|/);
+  assert.match(f.text(),/Alpha \{valign=bottom\} \| \| 3 \|/);
+});

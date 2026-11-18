@@ -148,6 +148,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
     const cells = rows.map(row => row.map(parseCell));
     const hasAttributes = cells.some(row => row.some(Boolean));
     const owners = cells.map(row => row.map(() => null));
+    let hasSpans = false;
     for (let row = 0; row < cells.length; row++) {
       for (let column = 0; column < width; column++) {
         const cell = cells[row][column];
@@ -156,6 +157,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         const { rowspan = 1, colspan = 1 } = cell.attributes;
         if (rowspan === 1 && colspan === 1) continue;
         if (row === 0 && rowspan > 1 || row + rowspan > rows.length || column + colspan > width) return null;
+        hasSpans = true;
         const owner = { row, column, rowspan, colspan };
         for (let r = row; r < row + rowspan; r++) {
           for (let c = column; c < column + colspan; c++) {
@@ -165,7 +167,7 @@ if(__exports != exports)module.exports = exports;return module.exports}));
         }
       }
     }
-    return { cells, owners, hasAttributes };
+    return { cells, owners, hasAttributes, hasSpans };
   }
 
   function suffix(attributes, afterText) {
@@ -12436,6 +12438,8 @@ async function exportAndInsertImgOnce() {
    ============================================================ */
 
 (function (root) {
+  const tableAttributes = root ? root.ReadMDTableAttributes :
+    typeof module !== 'undefined' && module.exports ? require('./table-attributes.js') : null;
   const LIST_RE = /^(?:[-*+][ \t]+\[[ xX]\](?:[ \t]+|$)|[-*+](?:[ \t]+|$)|\d{1,9}[.)](?:[ \t]+|$))/;
   const HEADING_RE = /^#{1,6}(?:[ \t]+|$)/;
   const WORD_RE = /[A-Za-z0-9_À-ɏͰ-ϿЀ-ӿ]/;
@@ -13062,11 +13066,19 @@ async function exportAndInsertImgOnce() {
     return edit(t.from, t.to, insert, t.from + off + c.from, t.from + off + c.to);
   }
 
+  // This guard also covers a cursor position outside the incremental syntax
+  // tree. The heuristic reformatter cannot safely edit an attributed table.
+  function hasCellAttributes(lines) {
+    return tableAttributes && lines.some((line, index) =>
+      index !== 1 && line.includes('}') && splitRow(line).some(tableAttributes.parseCell));
+  }
+
   /* Tab / Shift+Tab: realign the table and move to the next / previous cell
      (a new row is added after the last cell). */
   function tableNavEdit(doc, pos, dir) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     let r = t.row, c = Math.min(cellIndex(rows[r], t.colText), cols - 1);
@@ -13084,6 +13096,7 @@ async function exportAndInsertImgOnce() {
   function tableEnterEdit(doc, pos) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     const empty = splitRow(rows[t.row]).every(c => !c);
@@ -13136,7 +13149,7 @@ async function exportAndInsertImgOnce() {
   } else root.ReadMDTableStructure = factory(root.ReadMDHeadings, root.marked, root.ReadMDTableAttributes);
 })(typeof window !== 'undefined' ? window : null, (headings, marked, tableAttributes) => {
   function columnEdit(context, column, insert) {
-    if (context.layout?.hasAttributes) return null;
+    if (context.layout?.hasSpans) return null;
     const width = context.rows[0].length;
     if (insert ? width >= tableAttributes.maxColumns || (width + 1) * context.rows.length > 256 : width === 1) return null;
     const output = context.lines.map(({ line, segments }, index) => {
@@ -13174,13 +13187,13 @@ async function exportAndInsertImgOnce() {
   }
   const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   function sortRows(context, column, ascending, language) {
-    if (context.layout?.hasAttributes) return null;
+    if (context.layout?.hasSpans) return null;
     const data = context.rows.slice(1);
     if (data.length < 2) return null;
     const collator = new Intl.Collator(language, {numeric: true});
     const keyed = data.map((row, index) => {
       const cell = row[column];
-      const text = (cell.value ?? headings.inlineText(marked.Lexer.lexInline(cell.original))).trim();
+      const text = (cell.value ?? headings.inlineText(marked.Lexer.lexInline(cell.content ?? cell.original))).trim();
       const number = decimal(text);
       return { index, text, number, group: !text ? 2 : number ? 0 : 1 };
     });
@@ -16919,7 +16932,7 @@ function tableCellControls(view, context, modal, picker) {
   const structureCache = new Map();
   const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
   function structuralEdit(action) {
-    if (!session.cell || context.layout.hasAttributes || cellChanged()) return null;
+    if (!session.cell || context.layout.hasSpans || cellChanged()) return null;
     if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
     return structureCache.get(action);
   }
@@ -17024,7 +17037,10 @@ function tableCellControls(view, context, modal, picker) {
       if (!current() || token !== session.serial) return;
       if (stamp.editorDoc !== context.editorDoc || stamp.original !== context.editorDoc.sliceString(cell.from, cell.contentTo)) throw Error('review_stale_generation');
       session.stamp = stamp;
-      if (!session.busy) { apply.disabled = false; status.textContent = ''; input.focus(); }
+      if (!session.busy) {
+        apply.disabled = false; status.textContent = '';
+        if (!properties.contains?.(document.activeElement)) input.focus();
+      }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
   }
   for (const row of context.rows) {
@@ -17060,7 +17076,7 @@ function tableCellControls(view, context, modal, picker) {
     finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
   });
   root.append(gridWrap, label, input, properties);
-  if (context.layout.hasAttributes) {
+  if (context.layout.hasSpans) {
     const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
     locked.dataset.i18n = 'editor.tableCellStructureLocked'; locked.textContent = t(locked.dataset.i18n);
     root.append(locked);
@@ -17473,7 +17489,8 @@ function cmTableTab(view, dir) {
   const rows = cmAttributedTableRows(view, hit.range.head);
   if (rows) return cmNavigateAttributedTable(view, rows, hit.range.head, dir);
   if (cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir), 'input.table');
+  const edit = T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir);
+  return edit?.blocked || cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter inside a table adds a row; Enter on an empty last row leaves it. */
@@ -17481,12 +17498,14 @@ function cmTableEnter(view) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
   if (!T || !hit || !hit.range.empty) return false;
-  if (cmAttributedTableRows(view, hit.range.head)) {
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (!rows && cmInCode(view.state, hit.range.head)) return false;
+  const edit = rows ? null : T.tableEnterEdit(view.state.doc.toString(), hit.range.head);
+  if (rows || edit?.blocked) {
     showToast(window.i18n?.t('editor.tableCellStructureLocked') || 'editor.tableCellStructureLocked');
     return true;
   }
-  if (cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableEnterEdit(view.state.doc.toString(), hit.range.head), 'input.table');
+  return cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter at the end of an unclosed opening fence (```js) closes the block

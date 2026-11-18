@@ -44,6 +44,7 @@
     const cells = rows.map(row => row.map(parseCell));
     const hasAttributes = cells.some(row => row.some(Boolean));
     const owners = cells.map(row => row.map(() => null));
+    let hasSpans = false;
     for (let row = 0; row < cells.length; row++) {
       for (let column = 0; column < width; column++) {
         const cell = cells[row][column];
@@ -52,6 +53,7 @@
         const { rowspan = 1, colspan = 1 } = cell.attributes;
         if (rowspan === 1 && colspan === 1) continue;
         if (row === 0 && rowspan > 1 || row + rowspan > rows.length || column + colspan > width) return null;
+        hasSpans = true;
         const owner = { row, column, rowspan, colspan };
         for (let r = row; r < row + rowspan; r++) {
           for (let c = column; c < column + colspan; c++) {
@@ -61,7 +63,7 @@
         }
       }
     }
-    return { cells, owners, hasAttributes };
+    return { cells, owners, hasAttributes, hasSpans };
   }
 
   function suffix(attributes, afterText) {

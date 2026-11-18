@@ -7,6 +7,8 @@
    ============================================================ */
 
 (function (root) {
+  const tableAttributes = root ? root.ReadMDTableAttributes :
+    typeof module !== 'undefined' && module.exports ? require('./table-attributes.js') : null;
   const LIST_RE = /^(?:[-*+][ \t]+\[[ xX]\](?:[ \t]+|$)|[-*+](?:[ \t]+|$)|\d{1,9}[.)](?:[ \t]+|$))/;
   const HEADING_RE = /^#{1,6}(?:[ \t]+|$)/;
   const WORD_RE = /[A-Za-z0-9_À-ɏͰ-ϿЀ-ӿ]/;
@@ -633,11 +635,19 @@
     return edit(t.from, t.to, insert, t.from + off + c.from, t.from + off + c.to);
   }
 
+  // This guard also covers a cursor position outside the incremental syntax
+  // tree. The heuristic reformatter cannot safely edit an attributed table.
+  function hasCellAttributes(lines) {
+    return tableAttributes && lines.some((line, index) =>
+      index !== 1 && line.includes('}') && splitRow(line).some(tableAttributes.parseCell));
+  }
+
   /* Tab / Shift+Tab: realign the table and move to the next / previous cell
      (a new row is added after the last cell). */
   function tableNavEdit(doc, pos, dir) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     let r = t.row, c = Math.min(cellIndex(rows[r], t.colText), cols - 1);
@@ -655,6 +665,7 @@
   function tableEnterEdit(doc, pos) {
     const t = findTable(doc, pos);
     if (!t) return null;
+    if (hasCellAttributes(t.lines)) return { blocked: true };
     const rows = t.lines.slice();
     const cols = Math.max(...rows.map(r => splitRow(r).length));
     const empty = splitRow(rows[t.row]).every(c => !c);

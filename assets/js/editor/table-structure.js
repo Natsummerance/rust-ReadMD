@@ -7,7 +7,7 @@
   } else root.ReadMDTableStructure = factory(root.ReadMDHeadings, root.marked, root.ReadMDTableAttributes);
 })(typeof window !== 'undefined' ? window : null, (headings, marked, tableAttributes) => {
   function columnEdit(context, column, insert) {
-    if (context.layout?.hasAttributes) return null;
+    if (context.layout?.hasSpans) return null;
     const width = context.rows[0].length;
     if (insert ? width >= tableAttributes.maxColumns || (width + 1) * context.rows.length > 256 : width === 1) return null;
     const output = context.lines.map(({ line, segments }, index) => {
@@ -45,13 +45,13 @@
   }
   const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   function sortRows(context, column, ascending, language) {
-    if (context.layout?.hasAttributes) return null;
+    if (context.layout?.hasSpans) return null;
     const data = context.rows.slice(1);
     if (data.length < 2) return null;
     const collator = new Intl.Collator(language, {numeric: true});
     const keyed = data.map((row, index) => {
       const cell = row[column];
-      const text = (cell.value ?? headings.inlineText(marked.Lexer.lexInline(cell.original))).trim();
+      const text = (cell.value ?? headings.inlineText(marked.Lexer.lexInline(cell.content ?? cell.original))).trim();
       const number = decimal(text);
       return { index, text, number, group: !text ? 2 : number ? 0 : 1 };
     });

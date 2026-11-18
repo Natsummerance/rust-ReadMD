@@ -1899,7 +1899,7 @@ function tableCellControls(view, context, modal, picker) {
   const structureCache = new Map();
   const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
   function structuralEdit(action) {
-    if (!session.cell || context.layout.hasAttributes || cellChanged()) return null;
+    if (!session.cell || context.layout.hasSpans || cellChanged()) return null;
     if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
     return structureCache.get(action);
   }
@@ -2004,7 +2004,10 @@ function tableCellControls(view, context, modal, picker) {
       if (!current() || token !== session.serial) return;
       if (stamp.editorDoc !== context.editorDoc || stamp.original !== context.editorDoc.sliceString(cell.from, cell.contentTo)) throw Error('review_stale_generation');
       session.stamp = stamp;
-      if (!session.busy) { apply.disabled = false; status.textContent = ''; input.focus(); }
+      if (!session.busy) {
+        apply.disabled = false; status.textContent = '';
+        if (!properties.contains?.(document.activeElement)) input.focus();
+      }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
   }
   for (const row of context.rows) {
@@ -2040,7 +2043,7 @@ function tableCellControls(view, context, modal, picker) {
     finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
   });
   root.append(gridWrap, label, input, properties);
-  if (context.layout.hasAttributes) {
+  if (context.layout.hasSpans) {
     const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
     locked.dataset.i18n = 'editor.tableCellStructureLocked'; locked.textContent = t(locked.dataset.i18n);
     root.append(locked);
@@ -2453,7 +2456,8 @@ function cmTableTab(view, dir) {
   const rows = cmAttributedTableRows(view, hit.range.head);
   if (rows) return cmNavigateAttributedTable(view, rows, hit.range.head, dir);
   if (cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir), 'input.table');
+  const edit = T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir);
+  return edit?.blocked || cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter inside a table adds a row; Enter on an empty last row leaves it. */
@@ -2461,12 +2465,14 @@ function cmTableEnter(view) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
   if (!T || !hit || !hit.range.empty) return false;
-  if (cmAttributedTableRows(view, hit.range.head)) {
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (!rows && cmInCode(view.state, hit.range.head)) return false;
+  const edit = rows ? null : T.tableEnterEdit(view.state.doc.toString(), hit.range.head);
+  if (rows || edit?.blocked) {
     showToast(window.i18n?.t('editor.tableCellStructureLocked') || 'editor.tableCellStructureLocked');
     return true;
   }
-  if (cmInCode(view.state, hit.range.head)) return false;
-  return cmDispatchEdit(view, T.tableEnterEdit(view.state.doc.toString(), hit.range.head), 'input.table');
+  return cmDispatchEdit(view, edit, 'input.table');
 }
 
 /* Enter at the end of an unclosed opening fence (```js) closes the block
