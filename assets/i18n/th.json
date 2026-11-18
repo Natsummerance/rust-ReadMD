@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "กึ่งกลาง",
   "editor.tableCellSelectRange": "เลือกเซลล์ซ้ายบน จากนั้นกด Shift ค้างไว้แล้วคลิกเซลล์ขวาล่าง หรือระบุจำนวนแถวและคอลัมน์",
   "editor.tableCellInvalidRange": "เลือกพื้นที่สี่เหลี่ยมภายในส่วนหัวหรือส่วนเนื้อหาที่ไม่ทับเซลล์ที่ผสานแล้ว",
-  "editor.tableCellStructureLocked": "ล้างคุณสมบัติเซลล์เพื่อแก้ไขแถวหรือคอลัมน์ หรือเรียงลำดับตาราง",
+  "editor.tableCellStructureLocked": "แยกเซลล์ที่ผสานก่อน",
   "editor.tableDimensions": "ตาราง {rows} × {cols}",
   "editor.tableHeaderPrefix": "ส่วนหัว",
   "editor.taskList": "รายการงาน",

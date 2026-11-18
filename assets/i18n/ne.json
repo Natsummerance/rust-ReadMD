@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "बीचमा",
   "editor.tableCellSelectRange": "माथिल्लो बायाँ सेल छान्नुहोस्, अनि Shift थिचेर तल्लो दायाँ सेल क्लिक गर्नुहोस् वा पङ्क्ति र स्तम्भको सङ्ख्या लेख्नुहोस्।",
   "editor.tableCellInvalidRange": "शीर्षक वा मुख्य भागभित्र गाभिएका सेलमाथि नपर्ने आयत छान्नुहोस्।",
-  "editor.tableCellStructureLocked": "पङ्क्ति वा स्तम्भ सम्पादन गर्न अथवा तालिका क्रमबद्ध गर्न सेलका गुण हटाउनुहोस्।",
+  "editor.tableCellStructureLocked": "पहिले गाभिएका सेलहरू छुट्याउनुहोस्।",
   "editor.tableDimensions": "{rows} × {cols} तालिका",
   "editor.tableHeaderPrefix": "हेडर",
   "editor.taskList": "कार्य सूची",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Qiterleq",
   "editor.tableCellSelectRange": "Celli qulaatungaaniittoq toqqaruk. Shift toorlugu celli ataatungaaniittoq tooruk imaluunniit rækkerit kolonnillu amerlassusaat allakkit.",
   "editor.tableCellInvalidRange": "Tabelip qulaani imaluunniit iluani cellinut kattutereersimasunut qallinngitsumik toqqaasigit.",
-  "editor.tableCellStructureLocked": "Rækkerit kolonnilluunniit allanngortinniarlugit imaluunniit tabeli tulleriiaarniarlugu cellit pissusii piiakkit.",
+  "editor.tableCellStructureLocked": "Cellit kattussat siulliullugit avikkit.",
   "editor.tableDimensions": "{rows} × {cols} tabeli",
   "editor.tableHeaderPrefix": "Qulequtaq",
   "editor.taskList": "suliassat allattorsimaffiat",

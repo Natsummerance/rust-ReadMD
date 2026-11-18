@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Tengah",
   "editor.tableCellSelectRange": "Pilih sel kiri atas, kemudian tekan Shift sambil mengklik sel kanan bawah atau masukkan bilangan baris dan lajur.",
   "editor.tableCellInvalidRange": "Pilih segi empat tepat dalam pengepala atau isi jadual yang tidak bertindih dengan sel tergabung.",
-  "editor.tableCellStructureLocked": "Kosongkan sifat sel untuk menyunting baris atau lajur, atau mengisih jadual.",
+  "editor.tableCellStructureLocked": "Pisahkan sel yang digabungkan dahulu.",
   "editor.tableDimensions": "{rows} × {cols} jadual",
   "editor.tableHeaderPrefix": "Pengepala",
   "editor.taskList": "senarai tugas",

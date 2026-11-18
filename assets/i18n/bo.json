@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "དཀྱིལ།",
   "editor.tableCellSelectRange": "འགོའི་རེའུ་མིག་འདེམས་ནས་ Shift མནན་ཏེ་མཇུག་གི་རེའུ་མིག་ལ་གནོན་ནམ་ཡང་ན་ཕྲེང་གྲངས་འཇུག་རོགས།",
   "editor.tableCellInvalidRange": "མགོ་ཡང་ན་ནང་དོན་ནང་སྔར་མཉམ་སྦྱར་བ་དང་མ་འདྲེས་པའི་བཞི་གྲུ་འདེམས་རོགས།",
-  "editor.tableCellStructureLocked": "ཕྲེང་བཅོས་པའམ་རིམ་པ་སྒྲིག་པར་རེའུ་མིག་གི་ཁྱད་ཆོས་སུབ་རོགས།",
+  "editor.tableCellStructureLocked": "སྔོན་ལ་ཟླ་སྒྲིལ་བྱས་པའི་རེའུ་མིག་ཁ་ཕྲལ།",
   "editor.tableDimensions": "{rows} × {cols} རེའུ་མིག",
   "editor.tableHeaderPrefix": "མགོ་བོ།",
   "editor.taskList": "ལས་འགན་ཐོ་གཞུང་།",

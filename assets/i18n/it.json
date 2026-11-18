@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Al centro",
   "editor.tableCellSelectRange": "Seleziona la cella in alto a sinistra, poi fai clic in basso a destra tenendo premuto Maiusc o inserisci il numero di righe e colonne.",
   "editor.tableCellInvalidRange": "Scegli un rettangolo nell’intestazione o nel corpo che non si sovrapponga a celle unite.",
-  "editor.tableCellStructureLocked": "Rimuovi le proprietà delle celle per modificare righe o colonne o ordinare la tabella.",
+  "editor.tableCellStructureLocked": "Dividi prima le celle unite.",
   "editor.tableDimensions": "Tabella {rows} × {cols}",
   "editor.tableHeaderPrefix": "Intestazione",
   "editor.taskList": "Elenco attività",

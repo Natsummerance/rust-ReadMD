@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Keskelle",
   "editor.tableCellSelectRange": "Valitse vasen yläsolu ja napsauta oikeaa alasolua vaihtonäppäin painettuna tai syötä rivien ja sarakkeiden määrä.",
   "editor.tableCellInvalidRange": "Valitse otsikosta tai rungosta suorakulmio, joka ei mene yhdistettyjen solujen päälle.",
-  "editor.tableCellStructureLocked": "Poista solun ominaisuudet, jos haluat muokata rivejä tai sarakkeita tai lajitella taulukon.",
+  "editor.tableCellStructureLocked": "Jaa ensin yhdistetyt solut.",
   "editor.tableDimensions": "{rows} × {cols} pöytä",
   "editor.tableHeaderPrefix": "Otsikko",
   "editor.taskList": "tehtävälista",

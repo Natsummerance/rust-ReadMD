@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Giữa",
   "editor.tableCellSelectRange": "Chọn ô trên cùng bên trái, rồi giữ Shift khi bấm ô dưới cùng bên phải hoặc nhập số hàng và cột.",
   "editor.tableCellInvalidRange": "Chọn vùng chữ nhật trong phần đầu hoặc phần thân không chồng lên ô đã gộp.",
-  "editor.tableCellStructureLocked": "Xóa thuộc tính ô để sửa hàng, cột hoặc sắp xếp bảng.",
+  "editor.tableCellStructureLocked": "Tách các ô đã gộp trước.",
   "editor.tableDimensions": "Bảng {rows} × {cols}",
   "editor.tableHeaderPrefix": "Tiêu đề cột",
   "editor.taskList": "Danh sách công việc",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Orta",
   "editor.tableCellSelectRange": "Sol üst hücreyi seçin, ardından Shift tuşuyla sağ alt hücreye tıklayın veya satır ve sütun sayısını girin.",
   "editor.tableCellInvalidRange": "Başlıkta veya gövdede, birleştirilmiş hücrelerle çakışmayan bir dikdörtgen seçin.",
-  "editor.tableCellStructureLocked": "Satırları, sütunları düzenlemek veya tabloyu sıralamak için hücre özelliklerini temizleyin.",
+  "editor.tableCellStructureLocked": "Önce birleştirilmiş hücreleri bölün.",
   "editor.tableDimensions": "{rows} × {cols} Tablo",
   "editor.tableHeaderPrefix": "Başlık",
   "editor.taskList": "Görev Listesi",

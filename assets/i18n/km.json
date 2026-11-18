@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "កណ្ដាល",
   "editor.tableCellSelectRange": "ជ្រើសក្រឡាខាងលើឆ្វេង រួចចុចក្រឡាខាងក្រោមស្ដាំដោយសង្កត់ Shift ឬបញ្ចូលចំនួនជួរដេក និងជួរឈរ។",
   "editor.tableCellInvalidRange": "ជ្រើសចតុកោណនៅក្នុងក្បាល ឬតួតារាងដែលមិនត្រួតលើក្រឡាដែលបានបញ្ចូលរួច។",
-  "editor.tableCellStructureLocked": "សម្អាតលក្ខណសម្បត្តិក្រឡា ដើម្បីកែជួរដេក ជួរឈរ ឬតម្រៀបតារាង។",
+  "editor.tableCellStructureLocked": "បំបែកក្រឡាដែលបានបញ្ចូលគ្នាជាមុនសិន។",
   "editor.tableDimensions": "តារាង {rows} × {cols}",
   "editor.tableHeaderPrefix": "បឋមកថា",
   "editor.taskList": "បញ្ជីកិច្ចការ",

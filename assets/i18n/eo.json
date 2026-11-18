@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Meze",
   "editor.tableCellSelectRange": "Elektu la supran maldekstran ĉelon, poste alklaku la malsupran dekstran ĉelon tenante Shift aŭ enigu la nombron de vicoj kaj kolumnoj.",
   "editor.tableCellInvalidRange": "Elektu rektangulon en la tabelkapo aŭ korpo, kiu ne interkovras kunfanditajn ĉelojn.",
-  "editor.tableCellStructureLocked": "Forigu ĉelajn ecojn por redakti vicojn aŭ kolumnojn aŭ ordigi la tabelon.",
+  "editor.tableCellStructureLocked": "Unue dividu la kunfanditajn ĉelojn.",
   "editor.tableDimensions": "{rows} × {cols} Tabelo",
   "editor.tableHeaderPrefix": "Kaplinio",
   "editor.taskList": "Taskolisto",

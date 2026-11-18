@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Μέση",
   "editor.tableCellSelectRange": "Επιλέξτε το πάνω αριστερό κελί και έπειτα κάντε κλικ στο κάτω δεξί κρατώντας πατημένο το Shift ή εισαγάγετε τον αριθμό γραμμών και στηλών.",
   "editor.tableCellInvalidRange": "Επιλέξτε ένα ορθογώνιο στην κεφαλίδα ή στο σώμα που δεν επικαλύπτει συγχωνευμένα κελιά.",
-  "editor.tableCellStructureLocked": "Εκκαθαρίστε τις ιδιότητες κελιών για να επεξεργαστείτε γραμμές ή στήλες ή να ταξινομήσετε τον πίνακα.",
+  "editor.tableCellStructureLocked": "Διαιρέστε πρώτα τα συγχωνευμένα κελιά.",
   "editor.tableDimensions": "Πίνακας {rows} × {cols}",
   "editor.tableHeaderPrefix": "Κεφαλίδα",
   "editor.taskList": "Λίστα εργασιών",

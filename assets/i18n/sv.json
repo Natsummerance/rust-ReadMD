@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Mitten",
   "editor.tableCellSelectRange": "Välj cellen längst upp till vänster. Håll sedan ned Skift och klicka längst ned till höger, eller ange antal rader och kolumner.",
   "editor.tableCellInvalidRange": "Välj en rektangel i sidhuvudet eller tabelldelen som inte överlappar sammanfogade celler.",
-  "editor.tableCellStructureLocked": "Rensa cellegenskaperna för att redigera rader eller kolumner eller sortera tabellen.",
+  "editor.tableCellStructureLocked": "Dela först de sammanfogade cellerna.",
   "editor.tableDimensions": "{rows} × {cols} tabell",
   "editor.tableHeaderPrefix": "Rubrik",
   "editor.taskList": "uppgiftslista",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Mittig",
   "editor.tableCellSelectRange": "Wählen Sie die Zelle links oben. Geben Sie die Anzahl der Zeilen und Spalten ein oder klicken Sie mit gedrückter Umschalttaste rechts unten.",
   "editor.tableCellInvalidRange": "Wählen Sie einen rechteckigen Bereich im Kopf oder im Tabellenkörper, der keine verbundenen Zellen überlappt.",
-  "editor.tableCellStructureLocked": "Entfernen Sie die Zelleigenschaften, um Zeilen oder Spalten zu bearbeiten oder die Tabelle zu sortieren.",
+  "editor.tableCellStructureLocked": "Zuerst die verbundenen Zellen teilen.",
   "editor.tableDimensions": "{rows} × {cols}-Tabelle",
   "editor.tableHeaderPrefix": "Kopfzeile",
   "editor.taskList": "Aufgabenliste",

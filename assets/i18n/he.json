@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "אמצע",
   "editor.tableCellSelectRange": "בחרו בתא בתחילת הטווח, ואז לחצו על התא בקצה הנגדי תוך לחיצה על Shift, או הזינו את מספר השורות והעמודות.",
   "editor.tableCellInvalidRange": "בחרו מלבן בכותרת או בגוף הטבלה שאינו חופף לתאים ממוזגים.",
-  "editor.tableCellStructureLocked": "נקו את מאפייני התאים כדי לערוך שורות או עמודות או למיין את הטבלה.",
+  "editor.tableCellStructureLocked": "תחילה יש לפצל את התאים הממוזגים.",
   "editor.tableDimensions": "טבלה {rows} × {cols}",
   "editor.tableHeaderPrefix": "כּוֹתֶרֶת",
   "editor.taskList": "רשימת משימות",

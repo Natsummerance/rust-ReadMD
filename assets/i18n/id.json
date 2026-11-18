@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Tengah",
   "editor.tableCellSelectRange": "Pilih sel kiri atas, lalu tahan Shift dan klik sel kanan bawah atau masukkan jumlah baris dan kolom.",
   "editor.tableCellInvalidRange": "Pilih persegi panjang di bagian kepala atau isi tabel yang tidak bertumpang tindih dengan sel gabungan.",
-  "editor.tableCellStructureLocked": "Hapus properti sel untuk mengedit baris atau kolom, atau mengurutkan tabel.",
+  "editor.tableCellStructureLocked": "Pisahkan sel yang digabung terlebih dahulu.",
   "editor.tableDimensions": "Tabel {rows} × {cols}",
   "editor.tableHeaderPrefix": "Tajuk",
   "editor.taskList": "Daftar Tugas",

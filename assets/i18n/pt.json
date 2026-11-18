@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Meio",
   "editor.tableCellSelectRange": "Selecione a célula superior esquerda e clique na inferior direita com Shift premido ou indique o número de linhas e colunas.",
   "editor.tableCellInvalidRange": "Escolha um retângulo no cabeçalho ou no corpo que não se sobreponha a células unidas.",
-  "editor.tableCellStructureLocked": "Limpe as propriedades das células para editar linhas ou colunas ou ordenar a tabela.",
+  "editor.tableCellStructureLocked": "Primeiro, divida as células mescladas.",
   "editor.tableDimensions": "Tabela {rows} × {cols}",
   "editor.tableHeaderPrefix": "Cabeçalho",
   "editor.taskList": "lista de tarefas",

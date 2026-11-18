@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "ກາງ",
   "editor.tableCellSelectRange": "ເລືອກເຊລຊ້າຍເທິງ ແລ້ວກົດ Shift ຄ້າງໄວ້ເວລາຄລິກເຊລຂວາລຸ່ມ ຫຼືໃສ່ຈຳນວນແຖວແລະຖັນ.",
   "editor.tableCellInvalidRange": "ເລືອກຂອບເຂດສີ່ຫຼ່ຽມໃນສ່ວນຫົວ ຫຼື ສ່ວນເນື້ອໃນທີ່ບໍ່ທັບເຊລທີ່ລວມແລ້ວ.",
-  "editor.tableCellStructureLocked": "ລຶບຄຸນສົມບັດເຊລເພື່ອແກ້ໄຂແຖວແລະຖັນ ຫຼືຈັດລຳດັບຕາຕະລາງ.",
+  "editor.tableCellStructureLocked": "ແຍກເຊລທີ່ລວມກັນກ່ອນ.",
   "editor.tableDimensions": "ຕາຕະລາງ {rows} × {cols}",
   "editor.tableHeaderPrefix": "ສ່ວນຫົວ",
   "editor.taskList": "ບັນຊີລາຍຊື່ວຽກງານ",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Nofs",
   "editor.tableCellSelectRange": "Agħżel iċ-ċellula ta’ fuq fuq ix-xellug, imbagħad żomm Shift u kklikkja dik t’isfel fuq il-lemin jew daħħal l-għadd ta’ ringieli u kolonni.",
   "editor.tableCellInvalidRange": "Agħżel rettangolu fl-intestatura jew fil-korp li ma jikkoinċidix ma’ ċelluli magħquda.",
-  "editor.tableCellStructureLocked": "Neħħi l-proprjetajiet taċ-ċelluli biex teditja r-ringieli jew il-kolonni jew biex issortja t-tabella.",
+  "editor.tableCellStructureLocked": "L-ewwel aqsam iċ-ċelloli magħquda.",
   "editor.tableDimensions": "{rows} × {cols} tabella",
   "editor.tableHeaderPrefix": "Intestatura",
   "editor.taskList": "lista tal-kompiti",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Középen",
   "editor.tableCellSelectRange": "Válassza ki a bal felső cellát, majd a Shift billentyűt lenyomva kattintson a jobb alsó cellára, vagy adja meg a sorok és oszlopok számát.",
   "editor.tableCellInvalidRange": "Jelöljön ki egy téglalapot a táblázat fejében vagy törzsében, amely nem fed át egyesített cellákat.",
-  "editor.tableCellStructureLocked": "A sorok vagy oszlopok szerkesztéséhez vagy a táblázat rendezéséhez törölje a cellatulajdonságokat.",
+  "editor.tableCellStructureLocked": "Előbb ossza fel az egyesített cellákat.",
   "editor.tableDimensions": "{rows} × {cols} táblázat",
   "editor.tableHeaderPrefix": "Fejléc",
   "editor.taskList": "Feladatlista",

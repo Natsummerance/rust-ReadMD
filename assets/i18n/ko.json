@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "가운데",
   "editor.tableCellSelectRange": "왼쪽 위 셀을 선택한 다음 Shift를 누른 채 오른쪽 아래 셀을 클릭하거나 행·열 수를 입력하세요.",
   "editor.tableCellInvalidRange": "머리글이나 본문 하나에 속하며 병합된 셀과 겹치지 않는 직사각형을 선택하세요.",
-  "editor.tableCellStructureLocked": "행·열을 편집하거나 정렬하려면 셀 속성을 지우세요.",
+  "editor.tableCellStructureLocked": "먼저 병합된 셀을 분할하세요.",
   "editor.tableDimensions": "{rows} × {cols} 테이블",
   "editor.tableHeaderPrefix": "헤더",
   "editor.taskList": "작업 목록",

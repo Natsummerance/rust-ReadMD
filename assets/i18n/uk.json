@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Посередині",
   "editor.tableCellSelectRange": "Виберіть верхню ліву клітинку, потім клацніть нижню праву з натиснутою Shift або введіть кількість рядків і стовпців.",
   "editor.tableCellInvalidRange": "Виберіть прямокутник у заголовку чи тілі таблиці, який не перекриває об’єднані клітинки.",
-  "editor.tableCellStructureLocked": "Очистьте властивості клітинок, щоб редагувати рядки чи стовпці або відсортувати таблицю.",
+  "editor.tableCellStructureLocked": "Спочатку розділіть об’єднані клітинки.",
   "editor.tableDimensions": "Таблиця {rows} × {cols}",
   "editor.tableHeaderPrefix": "Заголовок",
   "editor.taskList": "Список завдань",

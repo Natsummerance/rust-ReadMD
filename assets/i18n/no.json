@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Midtstilt",
   "editor.tableCellSelectRange": "Velg cellen øverst til venstre og klikk nederst til høyre mens du holder Skift, eller skriv inn antall rader og kolonner.",
   "editor.tableCellInvalidRange": "Velg et rektangel i hodet eller hoveddelen som ikke overlapper sammenslåtte celler.",
-  "editor.tableCellStructureLocked": "Fjern celleegenskapene for å redigere rader eller kolonner eller sortere tabellen.",
+  "editor.tableCellStructureLocked": "Del opp de sammenslåtte cellene først.",
   "editor.tableDimensions": "{rows} × {cols} tabell",
   "editor.tableHeaderPrefix": "Overskrift",
   "editor.taskList": "oppgaveliste",

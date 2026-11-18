@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Centro",
   "editor.tableCellSelectRange": "Selecciona la celda superior izquierda y, con Mayús, haz clic en la inferior derecha o introduce el número de filas y columnas.",
   "editor.tableCellInvalidRange": "Elige un rectángulo dentro del encabezado o del cuerpo que no se superponga a celdas combinadas.",
-  "editor.tableCellStructureLocked": "Borra las propiedades de celda para editar filas o columnas, o para ordenar la tabla.",
+  "editor.tableCellStructureLocked": "Primero divide las celdas combinadas.",
   "editor.tableDimensions": "Tabla {rows} × {cols}",
   "editor.tableHeaderPrefix": "Encabezamiento",
   "editor.taskList": "lista de tareas",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "ئوتتۇرا",
   "editor.tableCellSelectRange": "باشلىنىش كاتەكچىسىنى تاللاپ، Shift نى بېسىپ ئاخىرقى كاتەكچىنى چېكىڭ ياكى قۇر ۋە ستون سانىنى كىرگۈزۈڭ.",
   "editor.tableCellInvalidRange": "جەدۋەل بېشى ياكى تېنى ئىچىدىن بىرلەشتۈرۈلگەن كاتەكچىلەرگە قاپلاشمايدىغان تىك تۆت بۇلۇڭنى تاللاڭ.",
-  "editor.tableCellStructureLocked": "قۇر ۋە ستونلارنى تەھرىرلەش ياكى جەدۋەلنى رەتلەش ئۈچۈن كاتەكچە خاسلىقلىرىنى تازىلاڭ.",
+  "editor.tableCellStructureLocked": "ئاۋۋال بىرلەشتۈرۈلگەن كاتەكچىلەرنى ئايرىڭ.",
   "editor.tableDimensions": "{rows} × {cols} جەدۋەل",
   "editor.tableHeaderPrefix": "جەدۋەل بېشى",
   "editor.taskList": "ۋەزىپە تىزىملىكى",

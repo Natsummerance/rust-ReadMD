@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Hagati",
   "editor.tableCellSelectRange": "Hitamo selire yo hejuru ibumoso, ukande iyo hasi iburyo ufashe Shift, cyangwa wandike umubare w’imirongo n’inkingi.",
   "editor.tableCellInvalidRange": "Hitamo urukiramende mu mutwe cyangwa mu mubiri w’imbonerahamwe rutarenza kuri selire zahujwe.",
-  "editor.tableCellStructureLocked": "Kuraho imiterere ya selire kugira ngo uhindure imirongo cyangwa inkingi, cyangwa utondeke imbonerahamwe.",
+  "editor.tableCellStructureLocked": "Banza utandukanye utugari twahujwe.",
   "editor.tableDimensions": "{rows} × {cols} kumeza",
   "editor.tableHeaderPrefix": "Umutwe",
   "editor.taskList": "urutonde rwibikorwa",

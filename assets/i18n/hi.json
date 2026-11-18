@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "बीच में",
   "editor.tableCellSelectRange": "ऊपरी बायाँ सेल चुनें, फिर Shift दबाकर निचले दाएँ सेल पर क्लिक करें या पंक्ति और स्तंभ की संख्या भरें।",
   "editor.tableCellInvalidRange": "शीर्षक या मुख्य भाग में ऐसा आयत चुनें जो मर्ज किए गए सेल से न टकराए।",
-  "editor.tableCellStructureLocked": "पंक्तियाँ या स्तंभ संपादित करने या तालिका क्रमबद्ध करने के लिए सेल गुण हटाएँ।",
+  "editor.tableCellStructureLocked": "पहले मर्ज किए गए सेल विभाजित करें।",
   "editor.tableDimensions": "{rows} × {cols} तालिका",
   "editor.tableHeaderPrefix": "हैडर",
   "editor.taskList": "कार्य सूची",

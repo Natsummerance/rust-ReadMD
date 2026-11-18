@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Sredina",
   "editor.tableCellSelectRange": "Odaberite gornju lijevu ćeliju pa uz Shift kliknite donju desnu ili unesite broj redaka i stupaca.",
   "editor.tableCellInvalidRange": "Odaberite pravokutnik u zaglavlju ili tijelu tablice koji se ne preklapa sa spojenim ćelijama.",
-  "editor.tableCellStructureLocked": "Izbrišite svojstva ćelija za uređivanje redaka ili stupaca te za sortiranje tablice.",
+  "editor.tableCellStructureLocked": "Prvo razdijelite spojene ćelije.",
   "editor.tableDimensions": "Tablica {rows} × {cols}",
   "editor.tableHeaderPrefix": "Zaglavlje",
   "editor.taskList": "Popis zadataka",

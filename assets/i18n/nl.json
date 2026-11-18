@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Midden",
   "editor.tableCellSelectRange": "Selecteer de cel linksboven. Houd Shift ingedrukt en klik rechtsonder, of voer het aantal rijen en kolommen in.",
   "editor.tableCellInvalidRange": "Kies een rechthoek in de kop of hoofdtekst die geen samengevoegde cellen overlapt.",
-  "editor.tableCellStructureLocked": "Wis de celeigenschappen om rijen of kolommen te bewerken of de tabel te sorteren.",
+  "editor.tableCellStructureLocked": "Splits eerst de samengevoegde cellen.",
   "editor.tableDimensions": "{rows} × {cols}-tabel",
   "editor.tableHeaderPrefix": "Koptekst",
   "editor.taskList": "Takenlijst",

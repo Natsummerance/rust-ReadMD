@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "По середине",
   "editor.tableCellSelectRange": "Выберите верхнюю левую ячейку, затем нажмите на нижнюю правую с клавишей Shift или введите число строк и столбцов.",
   "editor.tableCellInvalidRange": "Выберите прямоугольную область в заголовке или в теле таблицы без пересечения с объединёнными ячейками.",
-  "editor.tableCellStructureLocked": "Удалите свойства ячеек, чтобы изменить строки или столбцы либо отсортировать таблицу.",
+  "editor.tableCellStructureLocked": "Сначала разделите объединённые ячейки.",
   "editor.tableDimensions": "Таблица {rows} × {cols}",
   "editor.tableHeaderPrefix": "Заголовок",
   "editor.taskList": "список задач",

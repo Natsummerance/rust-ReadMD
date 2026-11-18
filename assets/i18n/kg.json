@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Na kati-kati",
   "editor.tableCellSelectRange": "Sola selile ya zulu na diboko ya nkento. Fina Shift mpi fweta selile ya nsi na diboko ya bakala, to sonika ntalu ya milongo ti makolone.",
   "editor.tableCellInvalidRange": "Sola kisika ya makonda iya na ntu to na nitu ya tablo yina ke kutana ve ti baselile ya kuvukisa.",
-  "editor.tableCellStructureLocked": "Katula bifu ya baselile sambu na kusoba milongo to makolone to kutula tablo na ndonga.",
+  "editor.tableCellStructureLocked": "Kabula ntete baselile ya kuvukisa.",
   "editor.tableDimensions": "Tablo {rows} × {cols}",
   "editor.tableHeaderPrefix": "Ntu-diambu",
   "editor.taskList": "Mulongo ya bisalu",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Lár",
   "editor.tableCellSelectRange": "Roghnaigh an chill ag barr ar chlé, ansin brúigh Shift agus cliceáil ar an gcill ag bun ar dheis, nó cuir isteach líon na rónna agus na gcolún.",
   "editor.tableCellInvalidRange": "Roghnaigh dronuilleog laistigh den cheanntásc nó den chorp nach bhforluíonn le cealla cumaiscthe.",
-  "editor.tableCellStructureLocked": "Glan airíonna na gceall chun rónna nó colúin a chur in eagar nó an tábla a shórtáil.",
+  "editor.tableCellStructureLocked": "Roinn na cealla cumaiscthe ar dtús.",
   "editor.tableDimensions": "tábla {rows} × {cols}",
   "editor.tableHeaderPrefix": "Ceanntásc",
   "editor.taskList": "liosta tascanna",

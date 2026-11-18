@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Mijloc",
   "editor.tableCellSelectRange": "Selectează celula din stânga sus, apoi apasă Shift și fă clic pe cea din dreapta jos sau introdu numărul de rânduri și coloane.",
   "editor.tableCellInvalidRange": "Alege un dreptunghi în antet sau în corp care nu se suprapune peste celule îmbinate.",
-  "editor.tableCellStructureLocked": "Șterge proprietățile celulelor pentru a edita rânduri sau coloane ori pentru a sorta tabelul.",
+  "editor.tableCellStructureLocked": "Scindați mai întâi celulele îmbinate.",
   "editor.tableDimensions": "{rows} × {cols} masa",
   "editor.tableHeaderPrefix": "Antet",
   "editor.taskList": "lista de sarcini",

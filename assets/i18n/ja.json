@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "中央",
   "editor.tableCellSelectRange": "左上のセルを選び、Shift キーを押しながら右下のセルをクリックするか、行数と列数を入力してください。",
   "editor.tableCellInvalidRange": "見出し行内または本文内で、結合済みのセルと重ならない長方形の範囲を選んでください。",
-  "editor.tableCellStructureLocked": "行や列を編集したり並べ替えたりするには、セルのプロパティを解除してください。",
+  "editor.tableCellStructureLocked": "先に結合セルを分割してください。",
   "editor.tableDimensions": "{rows} × {cols}表",
   "editor.tableHeaderPrefix": "ヘッダ",
   "editor.taskList": "タスクリスト",

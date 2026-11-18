@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Milieu",
   "editor.tableCellSelectRange": "Sélectionnez la cellule en haut à gauche, puis saisissez le nombre de lignes et de colonnes ou cliquez en bas à droite en maintenant Maj.",
   "editor.tableCellInvalidRange": "Choisissez une zone rectangulaire dans l’en-tête ou dans le corps, sans chevaucher de cellules fusionnées.",
-  "editor.tableCellStructureLocked": "Effacez les propriétés des cellules pour modifier les lignes, les colonnes ou le tri.",
+  "editor.tableCellStructureLocked": "Scindez d’abord les cellules fusionnées.",
   "editor.tableDimensions": "Tableau {rows} × {cols}",
   "editor.tableHeaderPrefix": "En-tête",
   "editor.taskList": "liste de tâches",

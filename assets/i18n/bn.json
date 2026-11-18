@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "মাঝে",
   "editor.tableCellSelectRange": "উপরের বাঁদিকের সেল বেছে নিন। তারপর Shift চেপে নিচের ডানদিকের সেলে ক্লিক করুন অথবা সারি ও কলামের সংখ্যা লিখুন।",
   "editor.tableCellInvalidRange": "শিরোনাম বা মূল অংশে এমন একটি আয়তক্ষেত্র বেছে নিন যা একত্র করা সেলের সঙ্গে মেলে না।",
-  "editor.tableCellStructureLocked": "সারি বা কলাম সম্পাদনা করতে বা টেবিল সাজাতে সেলের বৈশিষ্ট্য সরান।",
+  "editor.tableCellStructureLocked": "আগে মার্জ করা সেল ভাগ করুন।",
   "editor.tableDimensions": "{rows} × {cols} টেবিল",
   "editor.tableHeaderPrefix": "হেডার",
   "editor.taskList": "কাজের তালিকা",

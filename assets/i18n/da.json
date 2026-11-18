@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "Midte",
   "editor.tableCellSelectRange": "Vælg cellen øverst til venstre, og klik derefter nederst til højre med Skift nede, eller indtast antallet af rækker og kolonner.",
   "editor.tableCellInvalidRange": "Vælg et rektangel i hovedet eller tabellens krop uden overlap med flettede celler.",
-  "editor.tableCellStructureLocked": "Ryd celleegenskaberne for at redigere rækker eller kolonner eller sortere tabellen.",
+  "editor.tableCellStructureLocked": "Opdel først de flettede celler.",
   "editor.tableDimensions": "{rows} × {cols} tabel",
   "editor.tableHeaderPrefix": "Overskrift",
   "editor.taskList": "opgaveliste",

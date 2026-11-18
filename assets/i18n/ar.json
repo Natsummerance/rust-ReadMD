@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "الوسط",
   "editor.tableCellSelectRange": "حدد الخلية العلوية اليسرى، ثم انقر على السفلية اليمنى مع الضغط على Shift، أو أدخل عدد الصفوف والأعمدة.",
   "editor.tableCellInvalidRange": "اختر مستطيلاً ضمن الرأس أو المتن دون تداخل مع خلايا مدمجة.",
-  "editor.tableCellStructureLocked": "امسح خصائص الخلايا لتحرير الصفوف أو الأعمدة أو فرز الجدول.",
+  "editor.tableCellStructureLocked": "قسّم الخلايا المدمجة أولًا.",
   "editor.tableDimensions": "جدول {rows} × {cols}",
   "editor.tableHeaderPrefix": "رأس الجدول",
   "editor.taskList": "قائمة المهام",

@@ -1246,7 +1246,7 @@
   "editor.tableCellMiddle": "အလယ်",
   "editor.tableCellSelectRange": "ဘယ်ဘက်အပေါ်ရှိ ဆဲလ်ကို ရွေးပါ။ ထို့နောက် Shift နှိပ်ထားပြီး ညာဘက်အောက်ရှိ ဆဲလ်ကို နှိပ်ပါ သို့မဟုတ် အတန်းနှင့် ကော်လံ အရေအတွက် ထည့်ပါ။",
   "editor.tableCellInvalidRange": "ခေါင်းပိုင်း သို့မဟုတ် ကိုယ်ထည်အတွင်း ပေါင်းထားသော ဆဲလ်များနှင့် မထပ်သည့် ထောင့်မှန်စတုဂံကို ရွေးပါ။",
-  "editor.tableCellStructureLocked": "အတန်းများ၊ ကော်လံများ တည်းဖြတ်ရန် သို့မဟုတ် ဇယား စီရန် ဆဲလ်ဂုဏ်သတ္တိများကို ရှင်းပါ။",
+  "editor.tableCellStructureLocked": "ပေါင်းထားသော ဆဲလ်များကို အရင် ခွဲပါ။",
   "editor.tableDimensions": "{rows} × {cols} ဇယား",
   "editor.tableHeaderPrefix": "ခေါင်းစီး",
   "editor.taskList": "အလုပ်စာရင်း",
