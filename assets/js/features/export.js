@@ -24,8 +24,20 @@ function getExportPresetNames() {
 
 function getExportSections() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
-  const tableHeaderBold = { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' };
-  const tableWidth = { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 };
+  const tableOptions = { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
+      { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
+      { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
+      { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
+      { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' },
+      { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
+      { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
+      { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
+      { k: 'table.bandColor', label: _t('export.tableBandColor') || '', type: 'color' },
+      { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
+      { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
+      { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
+      { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 },
+    ]};
   const sections = [
     /* --- EPUB 电子书专属参数 --- */
     { title: _t('export.secEpubMeta') || '', fmts: ['epub'], fields: [
@@ -126,20 +138,7 @@ function getExportSections() {
       { k: 'footnotes.longNote', label: _t('export.noteLongNote'), type:'select', opts:[['split',_t('export.noteLongNoteSplit')],['keepParagraphs',_t('export.noteLongNoteKeepParagraphs')]], fmts:['pdf','docx','epub'], engines:['typst'], default:'split' },
     ]},
     { title: _t('export.secHeadings') || '', fmts: ['pdf', 'docx', 'html', 'epub'], headingRows: true },
-    { title: _t('export.secTable') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
-      { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
-      { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
-      { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
-      tableHeaderBold,
-      { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
-      { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
-      { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
-      { k: 'table.bandColor', label: _t('export.tableBandColor') || '', type: 'color' },
-      { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
-      { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
-      { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
-      tableWidth,
-    ]},
+    tableOptions,
     { title: _t('export.secCode') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
       { k: 'code.bg', label: _t('export.codeBg') || '', type: 'color' },
       { k: 'code.color', label: _t('export.codeColor') || '', type: 'color' },
@@ -196,10 +195,15 @@ function getExportSections() {
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
       { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
       { k: 'pptxTitleFade', label: [_t('editor.headingWord'), _t('presentation.transitionFade')].join(' · '), type: 'checkbox', default: false },
-      tableWidth, tableHeaderBold,
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];
+  if (state.export.fmt === 'pptx') {
+    return [...sections.filter(section => section.fmts?.includes('pptx')), {
+      ...tableOptions, fmts: ['pptx'],
+      fields: tableOptions.fields.filter(field => !['table.cellPadding', 'table.cellSize'].includes(field.k)),
+    }];
+  }
   const texPdf = state.export.fmt === 'pdf' && ['xelatex','pdflatex'].includes(state.export.options?.pdf?.engine);
   if (!texPdf) return sections;
   // Show only controls actually supported by the selected output engine.
@@ -942,7 +946,7 @@ function cancelNativeExportPreview() {
   nativeExportPreview.pagePending = false;
   if (nativeExportPreview.blobUrl) URL.revokeObjectURL(nativeExportPreview.blobUrl);
   nativeExportPreview.signature = ''; nativeExportPreview.data = null; nativeExportPreview.missingCapability = null; nativeExportPreview.blobUrl = '';
-  document.querySelectorAll('.export-slide-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
+  document.querySelectorAll('.export-slide-frame, .export-epub-frame').forEach(frame => { frame._readmdDispose?.(); frame.remove(); });
   $('export-preview-mini-page')?.classList.remove('is-slide-preview', 'is-source-preview', 'is-html-preview');
   $('export-preview-card')?.classList.remove('is-slide-preview');
   $('export-preview-modal')?.classList.remove('is-slide-preview');
@@ -1035,8 +1039,14 @@ function renderNativeExportCapabilityRequired(generation) {
 function requestNativeExportPreview(fmt, options, content, suggestedName, presetName) {
   const payload = { format: fmt, content, baseDir: state.dir || '', suggestedName, options };
   const originTab = typeof getActiveTab === 'function' ? getActiveTab() : null;
+  const review = window.ReadMDReview?.snapshot?.(originTab);
+  const sourceSignature = JSON.stringify([
+    originTab?.id ?? state.activeTabId,
+    originTab?.path || originTab?.reviewPath || state.file,
+    review?.document_id, review?.generation, review?.review_revision,
+  ]);
   const signature = JSON.stringify(payload);
-  if (nativeExportPreview.signature === signature) {
+  if (nativeExportPreview.signature === signature && nativeExportPreview.sourceSignature === sourceSignature) {
     if (nativeExportPreview.data) renderNativeExportPreview(presetName, options);
     else if (nativeExportPreview.missingCapability) renderNativeExportCapabilityRequired(nativeExportPreview.generation);
     else if (!$('export-preview-modal')?.classList.contains('hidden')) {
@@ -1049,7 +1059,8 @@ function requestNativeExportPreview(fmt, options, content, suggestedName, preset
   cancelNativeExportPreview();
   nativeExportPreview.lastFormat = fmt;
   const generation = nativeExportPreview.generation;
-  nativeExportPreview.signature = signature; nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
+  nativeExportPreview.signature = signature; nativeExportPreview.sourceSignature = sourceSignature;
+  nativeExportPreview.page = 1; nativeExportPreview.pageCache.clear();
   const mini = $('export-preview-mini-content');
   if (mini) window.ReadMDTask.loading(mini, 'export.previewGenerating');
   $('export-preview-mini-page')?.classList.add('is-native-preview');
@@ -1366,19 +1377,39 @@ function renderSourceExportPreview(data, presetName) {
   for (const id of ['export-preview-prev-btn', 'export-preview-next-btn']) { const button = $(id); if (button) { button.disabled = true; button.classList.remove('is-visible'); button.onclick = null; } }
 }
 
+const epubPreviewFrames = new WeakMap();
+
 function renderEpubExportPreview(data, presetName) {
-  const frame=()=>{
-    const el=document.createElement('iframe');el.className='export-epub-frame';el.title=_t('export.actualPreview');
-    el.addEventListener('load',()=>{
+  const generation = nativeExportPreview.generation;
+  const title = _t('export.actualPreview');
+  const reuseFrame = host => {
+    const frame = host.querySelector('.export-epub-frame');
+    const mounted = epubPreviewFrames.get(frame);
+    if (!mounted || mounted.generation !== generation || mounted.data !== data) return false;
+    // A link can navigate the frame away from the preview document.
+    const url = frame.contentDocument?.URL;
+    if (url !== 'about:srcdoc' && (mounted.loaded || url !== 'about:blank')) return false;
+    frame.title = title;
+    return true;
+  };
+  const createFrame = () => {
+    const el = document.createElement('iframe');
+    el.className = 'export-epub-frame';
+    el.title = title;
+    const mounted = { generation, data, loaded: false };
+    epubPreviewFrames.set(el, mounted);
+    el.addEventListener('load', () => {
+      const doc = el.contentDocument;
+      if (doc?.URL === 'about:srcdoc') mounted.loaded = true;
       // srcdoc inherits the host URL as its base. A bare #anchor would load
       // that URL inside the frame (blocked by the native CSP), so keep EPUB
       // chapter/footnote navigation in the already loaded viewing document.
-      el.contentDocument?.addEventListener('click',event=>{
+      doc?.addEventListener('click',event=>{
         const link=event.target.closest('a[href]'),href=link?.getAttribute('href');
         if(!href?.startsWith('#'))return;
         event.preventDefault();
         let id;try{id=decodeURIComponent(href.slice(1));}catch(_){return;}
-        const target=el.contentDocument.getElementById(id);
+        const target=doc.getElementById(id);
         if(!target)return;
         target.scrollIntoView({block:'start'});
         // Fractional device scaling can round the anchor above the viewport.
@@ -1386,18 +1417,29 @@ function renderEpubExportPreview(data, presetName) {
         el.contentWindow.scrollBy(0,-8);
       });
     });
-    el.setAttribute('sandbox','allow-same-origin');el.srcdoc=data.html;return el;
+    el.setAttribute('sandbox', 'allow-same-origin');
+    el.srcdoc = data.html;
+    return el;
   };
   const mini=$('export-preview-mini-content'),miniPage=$('export-preview-mini-page');
   miniPage?.classList.add('is-native-preview');
   if(miniPage?.parentElement)miniPage.style.transform='scale('+Math.min(2.5,(miniPage.parentElement.clientWidth-32)/110,(miniPage.parentElement.clientHeight-32)/148)+')';
-  if(mini){mini.replaceChildren(frame());mini.setAttribute('aria-busy','false');}
-  const meta=$('export-preview-paper-meta');if(meta)meta.textContent='EPUB · '+_t('export.actualPreview')+' · '+presetName;
+  if (mini) {
+    if (!reuseFrame(mini)) mini.replaceChildren(createFrame());
+    mini.setAttribute('aria-busy', 'false');
+  }
+  const meta=$('export-preview-paper-meta');if(meta)meta.textContent='EPUB · '+title+' · '+presetName;
   let style=$('export-preview-dynamic-style');if(style)style.textContent='';
   const modal=$('export-preview-modal');if(!modal||modal.classList.contains('hidden'))return;
   const wrapper=modal.querySelector('.export-preview-paper-wrapper');if(!wrapper)return;
-  wrapper.setAttribute('aria-busy','false');wrapper.replaceChildren();
-  const host=document.createElement('div');host.id='export-preview-full-page';host.className='export-epub-preview';host.append(frame());wrapper.append(host);
+  wrapper.setAttribute('aria-busy', 'false');
+  if (!reuseFrame(wrapper)) {
+    const host = document.createElement('div');
+    host.id = 'export-preview-full-page';
+    host.className = 'export-epub-preview';
+    host.append(createFrame());
+    wrapper.replaceChildren(host);
+  }
   const count=$('export-preview-pages-meta');if(count)count.textContent='';
   ['export-preview-prev-btn','export-preview-next-btn'].forEach(id=>{const button=$(id);if(button){button.disabled=true;button.classList.remove('is-visible');button.onclick=null;}});
 }
@@ -1738,7 +1780,7 @@ function renderExportSections(preserveSections = false) {
         if (profile) profile.change(el.dataset.k,value);
       }
       state.export.options = collectExportOptions();
-      if(el.dataset.k==='cover.enabled'||el.dataset.k==='page.differentOddEven')applyExportOptionsToDom();
+      if (['cover.enabled', 'page.differentOddEven', 'table.style', 'table.banded'].includes(el.dataset.k)) applyExportOptionsToDom();
       const sel = $('exp-preset');
       if (sel) sel.value = '__custom__';
       state.export.selectedPreset = '__custom__';
@@ -1856,6 +1898,15 @@ function applyExportOptionsToDom() {
     if (el.type === 'checkbox') el.checked = !!v;
     else el.value = v;
   });
+  if (state.export.fmt === 'pptx') {
+    for (const key of ['headerBg', 'headerColor', 'banded', 'bandColor']) {
+      const control = document.querySelector('#export-opts [data-k="table.' + key + '"]');
+      if (!control) continue;
+      const hidden = opts.table?.style === 'three-line' || (key === 'bandColor' && !opts.table?.banded);
+      control.disabled = hidden;
+      control.closest('.exp-field').hidden = hidden;
+    }
+  }
   window.ReadMDPublication?.lineSpacing.refreshExport($('export-opts'),opts.typography);
   window.ReadMDPublication?.tracking.refreshExport($('export-opts'),opts.typography);
   window.ReadMDPublication?.baseline.refreshExport($('export-opts'),opts.typography);

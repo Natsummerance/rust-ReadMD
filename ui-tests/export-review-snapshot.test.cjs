@@ -292,6 +292,55 @@ test('native preview and the final export reuse the same frozen snapshot and bin
   assert.equal(app.calls.filter(call => call.body.action === 'figures').length, 1);
 });
 
+test('native preview distinguishes same-name sources and review heads while reusing identical inputs', async () => {
+  const app = await fixture();
+  const first = app.tab;
+  const second = { ...first, id: 'tab-other', path: 'Other/A.md' };
+  app.state.tabs.push(second);
+  const heads = new Map([[first, app.snapshot], [second, { ...app.snapshot, document_id: 'document-b' }]]);
+  app.review.snapshot = tab => heads.get(tab);
+  app.nodes.set('export-preview-modal', { classList: { contains: () => true, remove() {} } });
+  let pending;
+  app.context.setTimeout = fn => { pending = fn; return 1; };
+  app.context.clearTimeout = () => { pending = null; };
+  const prepared = [], rendered = [];
+  app.context.prepareReviewExport = async (format, options, _name, tab) => {
+    const stamp = heads.get(tab);
+    const label = [tab.path, stamp.document_id, stamp.review_revision, format, options.table.style].join('/');
+    prepared.push(label);
+    return { stamp, previewData: { label }, previewDataAt: Date.now() };
+  };
+  app.context.renderNativeExportPreview = preset => {
+    rendered.push([vm.runInContext('nativeExportPreview.data.label', app.context), preset]);
+  };
+  async function preview(format, style, preset = 'Default') {
+    app.context.requestNativeExportPreview(format, { table: { style } }, app.snapshot.content, 'A', preset);
+    const run = pending;
+    pending = null;
+    if (run) await run();
+  }
+
+  await preview('pptx', 'grid');
+  await preview('pptx', 'grid', 'Same settings');
+  app.state.activeTabId = second.id;
+  await preview('pptx', 'grid');
+  heads.get(second).review_revision++;
+  await preview('pptx', 'grid');
+  await preview('pptx', 'three-line');
+  await preview('docx', 'three-line');
+  assert.deepEqual(prepared, [
+    'A.md/document-a/1/pptx/grid',
+    'Other/A.md/document-b/1/pptx/grid',
+    'Other/A.md/document-b/2/pptx/grid',
+    'Other/A.md/document-b/2/pptx/three-line',
+    'Other/A.md/document-b/2/docx/three-line',
+  ]);
+  assert.deepEqual(rendered, [
+    [prepared[0], 'Default'], [prepared[0], 'Same settings'],
+    ...prepared.slice(1).map(label => [label, 'Default']),
+  ]);
+});
+
 test('a lost commit acknowledgement reconciles its durable receipt without invoking another export', async () => {
   const app = await fixture({ loseCommitAck: true }); await app.run();
   assert.deepEqual(app.calls.filter(call => call.url === '/api/export/snapshot').map(call => call.body.action), ['prepare', 'figures', 'commit', 'reconcile']);

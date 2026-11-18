@@ -61,6 +61,8 @@ jobs:
         run: node tools/ci-test-temp.mjs
       - name: Portable input diagnostics, package privacy and table edit ownership
         run: node --test --test-concurrency=2 --test-timeout=20000 tools/test/review-version-fence-input.test.mjs tools/test/vscode-package-privacy.test.mjs tools/test/v007-table-cell.test.cjs
+      - name: Export preview identity and EPUB reading position
+        run: node --test ui-tests/export-review-snapshot.test.cjs tools/test/export-epub-preview.test.cjs
       - name: Prepare reviewed native Node input and immutable offline pack
         run: node tools/ci-prepare-node-runtime.mjs
       - name: Prepare pinned Linux SVG source and dependencies
@@ -520,7 +522,7 @@ jobs:
         with:
           name: P1-adjacent-review-browser
           path: .cache/p1-adjacent-review-browser/report.json
-      - name: P1 move Markdown table rows through the production editor and reopen
+      - name: P1 edit and sort Markdown tables through the production editor and reopen
         env:
           READMD_CODE_BROWSER: chromium
         run: node ui-tests/table-row-move-browser.cjs "${{ github.workspace }}/rust/target/debug/readmd" "${{ github.workspace }}/.cache/p1-table-row-move"

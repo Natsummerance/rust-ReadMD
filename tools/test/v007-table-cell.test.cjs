@@ -143,3 +143,21 @@ test('unsupported rich cells remain source-exact and replacement rejects newline
  for(const value of['line\nnext','line\rnext','\ud800','\udc00','a\0b'])assert.equal(f.context.cmTableCellReplacement(value),null);
  assert.equal(f.context.cmTableCellReplacement('42😀'),'42😀');
 });
+
+test('sort keeps numeric precision, equal-key order and empty cells last in either direction', () => {
+  const keys = ['**10**', '2e0', '02.00', '-2.01', '', '9007199254740993',
+    '9007199254740992', '-0.2', '[Beta](https://example.invalid)', 'Alpha'];
+  const lines = keys.map((value, index) => '| ' + value + ' | ' + index + ' |');
+  const source = '| Key | ID |\n| --- | --- |\n' + lines.join('\n');
+  const f = app(service(Buffer.from(source)));
+  f.select(3);
+  const ctx = f.hit();
+  for (const [ascending, expected] of [
+    [true, [3, 7, 1, 2, 0, 6, 5, 9, 8, 4]],
+    [false, [5, 6, 0, 1, 2, 7, 3, 8, 9, 4]],
+  ]) {
+    const edit = require('../../assets/js/editor/table-structure.js').sortRows(ctx, 0, ascending, 'en');
+    const result = source.slice(0, edit.from) + edit.insert + source.slice(edit.to);
+    assert.equal(result, source.slice(0, source.indexOf(lines[0])) + expected.map(i => lines[i]).join('\n'));
+  }
+});

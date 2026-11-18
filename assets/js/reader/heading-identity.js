@@ -120,5 +120,5 @@
       if(!explicit)heading.dataset.readmdAutoId='true';
     }
   }
-  return {slug,createIds,attributes,heading,fromMarkdown,applyDom};
+  return {slug,createIds,attributes,inlineText,heading,fromMarkdown,applyDom};
 });

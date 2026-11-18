@@ -4245,7 +4245,9 @@ fn safe_start(tag: &str, attrs: &[(String, Option<String>)]) -> String {
 
 /// `_PresentationHTMLSanitizer` + `_sanitize_slide_html`
 fn sanitize_slide_html(markdown: &str) -> String {
-    let (protected, code_blocks) = protect_blocks(markdown);
+    let marker = format!("READMDSLIDELITERAL{}X", uuid::Uuid::new_v4().simple());
+    let (protected, literals) = protect_slide_literals(markdown, &marker);
+    let (protected, code_blocks) = protect_blocks(&protected);
     let mut inline_counter = 0usize;
     let mut inline_blocks: Vec<(String, String)> = Vec::new();
     let protected = protect_inline_code(&protected, &mut inline_counter, &mut inline_blocks);
@@ -4318,7 +4320,8 @@ fn sanitize_slide_html(markdown: &str) -> String {
     }
 
     let clean = restore_blocks(&out, &inline_blocks);
-    restore_blocks(&clean, &code_blocks)
+    let clean = restore_blocks(&clean, &code_blocks);
+    restore_slide_literals(&clean, &marker, &literals)
 }
 
 // ---------------------------------------------------- block protection
@@ -4494,14 +4497,33 @@ fn meta_get<'a>(meta: &'a [(String, String)], key: &str) -> Option<&'a str> {
 // ---------------------------------------------------- split helpers
 
 /// `(?=^#{1,max}\s)` MULTILINE split points.
-fn heading_split_points(c: &[char], max_hashes: usize, exact: bool) -> Vec<usize> {
+fn heading_split_points(c: &[char], max_hashes: usize, exact: bool, skip_notes: bool) -> Vec<usize> {
     let mut pts = Vec::new();
     let mut i = 0usize;
+    let mut in_notes = false;
+    let dash_subslides = skip_notes && find_directive(c, 0, &["subslide"], true, true).is_none();
     while i < c.len() {
         let line_start = i == 0 || c[i - 1] == '\n';
         if !line_start {
             i += 1;
             continue;
+        }
+        if skip_notes {
+            if let Some(end) = directive_end(c, i, &["note"], false, false) {
+                in_notes = true;
+                i = end;
+                continue;
+            }
+            if in_notes {
+                let dash = i + c[i..].iter().take_while(|&&ch| is_space_or_tab(ch)).count();
+                if directive_end(c, i, &["subslide"], true, true).is_some()
+                    || (dash_subslides && starts_with_chars(c, dash, &['-', '-']) && line_tail_blank(c, dash + 2))
+                {
+                    in_notes = false;
+                }
+                i += 1;
+                continue;
+            }
         }
         let mut k = 0usize;
         while i + k < c.len() && c[i + k] == '#' {
@@ -4722,7 +4744,7 @@ fn auto_split_long_chunk(chunk: &str, max_chars: usize) -> Vec<String> {
     }
     let (protected_chunk, block_map) = protect_blocks(&chunk);
     let c: Vec<char> = protected_chunk.chars().collect();
-    let h3 = split_at_points(&protected_chunk, &heading_split_points(&c, 3, true));
+    let h3 = split_at_points(&protected_chunk, &heading_split_points(&c, 3, true, false));
     let h3: Vec<String> = h3
         .iter()
         .map(|s| py_strip(s).to_string())
@@ -4789,15 +4811,73 @@ fn split_on_blank_runs(s: &str) -> Vec<String> {
 
 /// `split_slides_structure` — [[(content, note)]]
 pub(crate) fn split_slides_structure(content: &str) -> Vec<Vec<(String, String)>> {
-    split_slides_content(content, true)
+    split_slides_content(content, true).into_iter().map(|group| {
+        group.into_iter().map(|(body, notes)| (body, notes.unwrap_or_default())).collect()
+    }).collect()
 }
 /// The native slide writer consumes Markdown, not an HTML-template string.
-/// Escaping `>`/`&` before parsing changes authored blockquotes and text.
-pub(crate) fn split_slides_markdown(content: &str) -> Vec<Vec<(String, String)>> {
+/// An automatic continuation inherits the previous chunk's notes.
+pub(crate) fn split_slides_markdown(content: &str) -> Vec<Vec<(String, Option<String>)>> {
     split_slides_content(content, false)
 }
-fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, String)>> {
+
+// Protect real Markdown literal ranges before scanning for headings and
+// directives, so examples and formulas cannot change slide/notes ownership.
+fn protect_slide_literals<'a>(source: &'a str, marker: &str) -> (String, Vec<&'a str>) {
+    use pulldown_cmark::{Event, Parser, Tag};
+
+    let mut body = String::with_capacity(source.len());
+    let mut literals = Vec::new();
+    let mut cursor = 0;
+    for (event, range) in Parser::new_ext(source, crate::md_ast::options()).into_offset_iter() {
+        if !matches!(event, Event::Start(Tag::CodeBlock(_)) | Event::DisplayMath(_)) || range.start < cursor {
+            continue;
+        }
+        let literal = source[range.clone()].trim_end_matches(['\r', '\n']);
+        body.push_str(&source[cursor..range.start]);
+        body.push_str(&format!("{marker}{}Z", literals.len()));
+        literals.push(literal);
+        cursor = range.start + literal.len();
+    }
+    body.push_str(&source[cursor..]);
+    (body, literals)
+}
+
+fn restore_slide_literals(source: &str, marker: &str, literals: &[&str]) -> String {
+    let mut parts = source.split(marker);
+    let mut text = parts.next().unwrap_or_default().to_string();
+    for part in parts {
+        let entry = part.split_once('Z').and_then(|(index, rest)| {
+            let index = index.parse::<usize>().ok()?;
+            Some((literals.get(index)?, rest))
+        });
+        if let Some((literal, rest)) = entry {
+            text.push_str(literal);
+            text.push_str(rest);
+        } else {
+            text.push_str(marker);
+            text.push_str(part);
+        }
+    }
+    text
+}
+
+fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Option<String>)>> {
     let (_meta, body) = parse_frontmatter(content);
+    let marker = format!("READMDSLIDELITERAL{}X", uuid::Uuid::new_v4().simple());
+    let (body, literals) = protect_slide_literals(&body, &marker);
+    let finish_body = |text: &str| {
+        let restored = restore_slide_literals(text, &marker, &literals);
+        if sanitize { sanitize_slide_html(&restored) } else { restored }
+    };
+    let finish_notes = |notes: &[String]| {
+        let restored = restore_slide_literals(&notes.join("\n\n"), &marker, &literals);
+        if sanitize {
+            py_strip(&sanitize_slide_html(&restored)).to_string()
+        } else {
+            restored
+        }
+    };
     let bc: Vec<char> = body.chars().collect();
     let has_explicit_slide = find_directive(&bc, 0, &["slide"], true, false).is_some();
 
@@ -4808,7 +4888,7 @@ fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Strin
     {
         split_on_marker_line(&body, "---")
     } else {
-        let pts = heading_split_points(&bc, 3, false);
+        let pts = heading_split_points(&bc, 3, false, true);
         let splits: Vec<String> = split_at_points(&body, &pts)
             .into_iter()
             .map(|s| py_strip(&s).to_string())
@@ -4821,37 +4901,41 @@ fn split_slides_content(content: &str, sanitize: bool) -> Vec<Vec<(String, Strin
         }
     };
 
-    let mut matrix: Vec<Vec<(String, String)>> = Vec::new();
+    let mut matrix = Vec::new();
     for h_chunk in raw_horizontal {
         let h_chunk = py_strip(&h_chunk).to_string();
         if h_chunk.is_empty() {
             continue;
         }
         let hc: Vec<char> = h_chunk.chars().collect();
-        let raw_vertical: Vec<String> = if find_directive(&hc, 0, &["subslide"], true, false).is_some() {
+        let raw_vertical = if find_directive(&hc, 0, &["subslide"], true, false).is_some() {
             split_on_directive(&h_chunk, &["subslide"], true)
         } else if !has_explicit_slide && marker_line_present(&h_chunk, "--") {
             split_on_marker_line(&h_chunk, "--")
         } else {
-            let split = auto_split_long_chunk(&h_chunk, 800);
-            if split.is_empty() {
-                vec![h_chunk.clone()]
-            } else {
-                split
+            let (clean, notes) = extract_notes(&h_chunk);
+            let mut chunks = auto_split_long_chunk(&clean, 800);
+            if chunks.is_empty() {
+                chunks.push(String::new());
             }
+            // Browser slides retain a single notes panel at the end of the
+            // group. PPTX stores the notes once and inherits them as it paginates.
+            let owner = if sanitize { chunks.len() - 1 } else { 0 };
+            let mut notes = Some(finish_notes(&notes));
+            matrix.push(chunks.into_iter().enumerate().map(|(index, chunk)| {
+                (finish_body(&chunk), if index == owner { notes.take() } else { None })
+            }).collect());
+            continue;
         };
 
-        let mut vertical: Vec<(String, String)> = Vec::new();
+        let mut vertical = Vec::new();
         for v_chunk in raw_vertical {
             let v_chunk = py_strip(&v_chunk).to_string();
             if v_chunk.is_empty() {
                 continue;
             }
             let (clean, notes) = extract_notes(&v_chunk);
-            let clean = py_strip(&clean).to_string();
-            let clean = if sanitize { sanitize_slide_html(&clean) } else { clean };
-            let note_text = if sanitize { py_strip(&sanitize_slide_html(&notes.join("\n\n"))).to_string() } else { notes.join("\n\n") };
-            vertical.push((clean, note_text));
+            vertical.push((finish_body(py_strip(&clean)), Some(finish_notes(&notes))));
         }
         if !vertical.is_empty() {
             matrix.push(vertical);
@@ -4867,7 +4951,31 @@ fn marker_line_present(s: &str, marker: &str) -> bool {
 // ------------------------------------------------------------- template
 
 fn escape_template_md(md: &str) -> String {
-    md.replace("</textarea>", "&lt;/textarea&gt;")
+    static END_TAG: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let end_tag = END_TAG.get_or_init(|| {
+        regex::Regex::new(r"(?i-u:</textarea)[\t\n\x0C\r />]").expect("HTML textarea end tag")
+    });
+    end_tag.replace_all(md, |captures: &regex::Captures<'_>| {
+        html_escape(&captures[0], false)
+    }).into_owned()
+}
+
+fn presentation_slide(body: &str, notes: &str) -> String {
+    let notes = if notes.is_empty() {
+        String::new()
+    } else {
+        let options = crate::md_ast::options() & !pulldown_cmark::Options::ENABLE_YAML_STYLE_METADATA_BLOCKS;
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(&mut html, pulldown_cmark::Parser::new_ext(notes, options));
+        // Keep the rendered notes in a single HTML block while Reveal reads
+        // the Markdown template. A fence in notes cannot absorb the closing tag.
+        let html = sanitize_slide_html(&html).replace('\r', "&#13;").replace('\n', "&#10;");
+        let aside = html_escape(&format!("<aside class=\"notes\">{html}</aside>"), false);
+        format!("\n\n{aside}")
+    };
+    // Rust already split the deck and identified notes on source boundaries.
+    let body = escape_template_md(body);
+    format!("<section data-markdown data-separator=\"(?!)\" data-separator-notes=\"(?!)\"><textarea data-template>\n{body}{notes}\n</textarea></section>")
 }
 
 /// `_read_vendor` — strict UTF-8, like Python's `open(..., encoding='utf-8')`.
@@ -5190,28 +5298,9 @@ pub fn render_presentation_html(
     for v_slides in &matrix {
         if v_slides.len() == 1 {
             let (slide_content, note) = &v_slides[0];
-            let note_tag = if note.is_empty() {
-                String::new()
-            } else {
-                format!("\n<aside class=\"notes\">{note}</aside>")
-            };
-            let escaped_md = escape_template_md(slide_content);
-            sections.push(format!(
-                "<section data-markdown><textarea data-template>\n{escaped_md}{note_tag}\n</textarea></section>"
-            ));
+            sections.push(presentation_slide(slide_content, note));
         } else {
-            let mut sub_sections: Vec<String> = Vec::new();
-            for (slide_content, note) in v_slides {
-                let note_tag = if note.is_empty() {
-                    String::new()
-                } else {
-                    format!("\n<aside class=\"notes\">{note}</aside>")
-                };
-                let escaped_md = escape_template_md(slide_content);
-                sub_sections.push(format!(
-                    "<section data-markdown><textarea data-template>\n{escaped_md}{note_tag}\n</textarea></section>"
-                ));
-            }
+            let sub_sections = v_slides.iter().map(|(body, notes)| presentation_slide(body, notes)).collect::<Vec<_>>();
             sections.push(format!("<section>\n{}\n</section>", sub_sections.join("\n")));
         }
     }

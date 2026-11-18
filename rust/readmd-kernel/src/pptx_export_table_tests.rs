@@ -131,3 +131,164 @@ fn table_header_weight_and_width_match_preview_and_editable_grid() {
         }
     }
 }
+
+fn preview_tables(deck: &Deck) -> Vec<XmlNode> {
+    let html = preview_html(deck).unwrap();
+    html.split("<table ").skip(1).map(|part| {
+        let (table, _) = part.split_once("</table>").unwrap();
+        let root = crate::math_document::parse_xml(&format!("<table {table}</table>")).unwrap();
+        let table = root.children().next().unwrap().clone();
+        table
+    }).collect()
+}
+
+fn assert_row_colors(cells: &[&XmlNode], preview: &XmlNode, ink: &str, fill: Option<&str>) {
+    assert_eq!(cells.len(), preview.children().count());
+    for (cell, html) in cells.iter().zip(preview.children()) {
+        assert_eq!(cell.text(), html.text());
+        let properties = child(cell, "tcPr");
+        let css = &html.attributes["style"];
+        match fill {
+            Some(color) => {
+                assert_eq!(child(child(properties, "solidFill"), "srgbClr").attributes["val"], color);
+                assert!(css.contains(&format!("background-color:#{color};color:#{ink};")), "{css}");
+            }
+            None => {
+                child(properties, "noFill");
+                assert!(!css.contains("background-color:"), "{css}");
+            }
+        }
+        let text = child(cell, "txBody");
+        child(text, "p");
+        let mut runs = Vec::new();
+        descendants(text, "rPr", &mut runs);
+        for run in runs {
+            assert_eq!(child(child(run, "solidFill"), "srgbClr").attributes["val"], ink);
+        }
+    }
+}
+
+fn assert_colors(deck: &Deck, expected: &[(&str, Option<&str>)]) {
+    let native = native_tables(deck);
+    let preview = preview_tables(deck);
+    assert_eq!(native.len(), 1);
+    assert_eq!(preview.len(), 1);
+    let rows = rows(&native[0]);
+    assert_eq!(rows.len(), expected.len());
+    assert_eq!(preview[0].children().count(), expected.len());
+    for ((cells, html), &(ink, fill)) in rows.iter().zip(preview[0].children()).zip(expected) {
+        assert_row_colors(cells, html, ink, fill);
+    }
+}
+
+#[test]
+fn editable_grid_colors_match_preview_and_banding_can_be_disabled() {
+    let mut options = json!({
+        "theme":"white",
+        "table":{"style":"grid","headerBg":"#68225b","headerColor":"#f8ffd0","banded":true,"bandColor":"#e9f2fb"}
+    });
+    let deck = build(SOURCE, "", "Colors", &options).unwrap();
+    assert_colors(&deck, &[
+        ("F8FFD0", Some("68225B")),
+        ("24292F", None),
+        ("24292F", Some("E9F2FB")),
+    ]);
+
+    options["table"]["banded"] = json!(false);
+    let deck = build(SOURCE, "", "Colors", &options).unwrap();
+    assert_colors(&deck, &[
+        ("F8FFD0", Some("68225B")),
+        ("24292F", None),
+        ("24292F", None),
+    ]);
+}
+
+#[test]
+fn presets_and_dark_slides_keep_band_ink_legible() {
+    let business = crate::export_styles::preset_style("business");
+    let minimal = crate::export_styles::preset_style("minimal");
+    for (options, expected) in [
+        (business, [("FFFFFF", Some("1F3864")), ("24292F", None), ("24292F", Some("EEF3FA"))]),
+        (minimal, [("333333", Some("EEF1F5")), ("24292F", None), ("24292F", None)]),
+        (json!({"pptxLayout":"launch"}), [("FFFFFF", Some("3B6EF5")), ("F1F5FF", None), ("000000", Some("F3F5F9"))]),
+        (json!({"table":{"bandColor":"#171717"}}), [("FFFFFF", Some("3B6EF5")), ("24292F", None), ("FFFFFF", Some("171717"))]),
+        (json!({"theme":"night","table":{"bandColor":"#171717"}}), [("FFFFFF", Some("3B6EF5")), ("F2EEE2", None), ("F2EEE2", Some("171717"))]),
+    ] {
+        let deck = build(SOURCE, "", "Preset", &options).unwrap();
+        assert_colors(&deck, &expected);
+    }
+}
+
+#[test]
+fn three_line_tables_keep_slide_ink_and_restore_grid_colors_on_style_switch() {
+    let mut options = json!({
+        "theme":"night",
+        "table":{"style":"three-line","headerBg":"#101820","headerColor":"#e8eedd","banded":true,"bandColor":"#eeeeee"}
+    });
+    let original = options.clone();
+    let deck = build(SOURCE, "", "Three lines", &options).unwrap();
+    assert_colors(&deck, &[("F2EEE2", None); 3]);
+    assert_eq!(options, original);
+
+    options["table"]["style"] = json!("grid");
+    let deck = build(SOURCE, "", "Grid", &options).unwrap();
+    assert_colors(&deck, &[
+        ("E8EEDD", Some("101820")),
+        ("F2EEE2", None),
+        ("000000", Some("EEEEEE")),
+    ]);
+}
+
+#[test]
+fn invalid_table_colors_use_sanitized_hex_and_normalize_safe_case_and_newline() {
+    let options = json!({"table":{
+        "headerBg":"#100d1e\"/><a:bad/>",
+        "headerColor":"#E5EEd3\n",
+        "bandColor":"url(bad)"
+    }});
+    let deck = build(SOURCE, "", "Safe colors", &options).unwrap();
+    assert_colors(&deck, &[
+        ("E5EED3", Some("3B6EF5")),
+        ("24292F", None),
+        ("24292F", Some("F3F5F9")),
+    ]);
+}
+
+#[test]
+fn even_body_row_keeps_its_band_on_every_fragment_with_repeated_headers() {
+    let long_cell = "banded fragment ".repeat(64);
+    let source = format!(
+        "# Color continuation\n\n| Label | Value |\n| --- | --- |\n| Before | Plain |\n| Wrapped | {long_cell} |\n| After | Plain |\n| Again | Band |\n"
+    );
+    let deck = build(&source, "", "Continuation", &json!({
+        "table":{"widthPct":50,"headerBg":"#68225b","headerColor":"#f8ffd0","bandColor":"#e9f2fb"}
+    })).unwrap();
+    let native = native_tables(&deck);
+    let preview = preview_tables(&deck);
+    assert!(native.len() > 2);
+    assert_eq!(native.len(), preview.len());
+    let mut split_fragments = 0;
+    for (table, html_table) in native.iter().zip(&preview) {
+        let rows = rows(table);
+        assert_eq!(rows.len(), html_table.children().count());
+        for (index, (cells, html)) in rows.iter().zip(html_table.children()).enumerate() {
+            let label = cells[0].text();
+            let fill = if index == 0 {
+                assert_eq!(label, "Label");
+                assert_row_colors(cells, html, "F8FFD0", Some("68225B"));
+                continue;
+            } else if matches!(label.as_str(), "Wrapped" | "") {
+                assert!(!cells[1].text().is_empty());
+                split_fragments += 1;
+                Some("E9F2FB")
+            } else if label == "Again" {
+                Some("E9F2FB")
+            } else {
+                assert!(matches!(label.as_str(), "Before" | "After"));
+                None
+            };
+            assert_row_colors(cells, html, "24292F", fill);
+        }
+    }
+    assert!(split_fragments > 1);
+}

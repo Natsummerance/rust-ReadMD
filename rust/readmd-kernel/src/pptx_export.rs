@@ -9,7 +9,9 @@ use std::{collections::BTreeMap, path::Path};
 const W: f64 = 960.;
 const H: f64 = 540.;
 mod design;
+mod table_style;
 use design::{Geometry, Paint};
+use table_style::{TableAlign, TableRowKind, TableRowLayout, TableStyle};
 
 const LEFT: f64 = 54.;
 const WIDTH: f64 = W - 2. * LEFT;
@@ -27,57 +29,12 @@ type Rect = [f64; 4];
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Run { text: String, bold: bool, italic: bool, strike: bool, code: bool, href: Option<String> }
 type Line = Vec<Run>;
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TableAlign { Left, Center, Right, Justify }
-impl TableAlign {
-    fn option(value:&str) -> Self {match value {"center"=>Self::Center,"right"=>Self::Right,"justify"=>Self::Justify,_=>Self::Left}}
-    fn column(value:Align, fallback:Self) -> Self {match value {Align::Left=>Self::Left,Align::Center=>Self::Center,Align::Right=>Self::Right,Align::None=>fallback}}
-    fn css(self) -> &'static str {match self {Self::Left=>"left",Self::Center=>"center",Self::Right=>"right",Self::Justify=>"justify"}}
-    fn xml(self) -> &'static str {match self {Self::Left=>"l",Self::Center=>"ctr",Self::Right=>"r",Self::Justify=>"just"}}
-}
-#[derive(Clone, Debug)]
-struct TableStyle {
-    three_line: bool,
-    border_color: String,
-    border_width: f64,
-    default_align: TableAlign,
-    width_pct: f64,
-    header_bold: bool,
-}
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct TableBorders { left:f64, right:f64, top:f64, bottom:f64 }
-impl TableStyle {
-    fn from_options(options:&Value) -> Self {
-        let style=crate::export_styles::sanitize(options);
-        let three_line=crate::export_styles::three_line_table(&style);
-        let border_color=style["table"]["borderColor"].as_str().unwrap_or("#c8cdd4").trim().trim_start_matches('#').to_ascii_uppercase();
-        let width=style["table"]["borderWidth"].as_f64().unwrap_or(0.75);
-        let width_pct = style["table"]["widthPct"].as_f64().unwrap_or(100.);
-        let header_bold = style["table"]["headerBold"].as_bool().unwrap_or(true);
-        Self{three_line,border_color,width_pct,header_bold,border_width:if three_line{width.clamp(0.25,3.)}else{width},default_align:TableAlign::option(style["table"]["align"].as_str().unwrap_or("left"))}
-    }
-    fn borders(&self, row:usize, rows:usize) -> TableBorders {
-        let width=self.border_width;
-        if !self.three_line {return TableBorders{left:width,right:width,top:width,bottom:width};}
-        TableBorders{left:0.,right:0.,top:if row==0{width*2.}else{0.},bottom:if row+1==rows{width*2.}else if row==0{width}else{0.}}
-    }
-    fn border_css(&self, borders:TableBorders) -> String {
-        [("left",borders.left),("right",borders.right),("top",borders.top),("bottom",borders.bottom)].iter().map(|(side,width)|{
-            if *width==0.{format!("border-{side}:0;")}else{format!("border-{side}:{width}pt solid #{};",self.border_color)}
-        }).collect()
-    }
-    fn border_xml(&self, borders:TableBorders) -> String {
-        [("L",borders.left),("R",borders.right),("T",borders.top),("B",borders.bottom)].iter().map(|(side,width)|{
-            if *width==0.{format!("<a:ln{side}><a:noFill/></a:ln{side}>")}else{format!("<a:ln{side} w=\"{}\"><a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln{side}>",emu(*width),self.border_color)}
-        }).collect()
-    }
-}
 #[derive(Clone, Debug)]
 enum Shape {
     Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool },
     Image { rect: Rect, media: usize, alt: String },
     Accent { rect: Rect, geometry: Geometry, paint: Paint },
-    Table { rect: Rect, rows: Vec<Vec<Vec<Line>>>, heights: Vec<f64>, columns: usize, aligns:Vec<TableAlign>, style:TableStyle },
+    Table { rect: Rect, rows: Vec<Vec<Vec<Line>>>, row_layout: Vec<TableRowLayout>, columns: usize, aligns: Vec<TableAlign>, style: TableStyle },
 }
 #[derive(Default)]
 struct Slide { shapes: Vec<Shape>, notes: String, cover: bool }
@@ -193,7 +150,7 @@ fn wrap(runs: &[Run], size: f64, width: f64) -> Result<Vec<Line>> {
     Ok(lines)
 }
 
-struct Builder { deck: Deck, page: Slide, y: f64, title: Line, base: String, shapes: usize, bytes: usize, table_style:TableStyle }
+struct Builder { deck: Deck, page: Slide, authored_notes: String, y: f64, title: Line, base: String, shapes: usize, bytes: usize, table_style:TableStyle }
 impl Builder {
     fn new(base:&str, options:&Value) -> Result<Self> {
         let theme=options["theme"].as_str().unwrap_or("white");
@@ -217,7 +174,7 @@ impl Builder {
             None => false,
             Some(value) => value.as_bool().ok_or(INVALID)?,
         };
-        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),title_fade,layout},page:Slide::default(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options)})
+        Ok(Self{deck:Deck{slides:Vec::new(),media:Vec::new(),warnings:Vec::new(),background,foreground,accent,transition:transition.into(),title_fade,layout},page:Slide::default(),authored_notes:String::new(),y:TOP,title:Vec::new(),base:base.into(),shapes:0,bytes:0,table_style:TableStyle::from_options(options, foreground)})
     }
     fn push(&mut self, shape:Shape) -> Result<()> {
         let text_bytes=match &shape {
@@ -232,8 +189,12 @@ impl Builder {
     fn finish(&mut self) -> Result<()> {
         if self.page.shapes.is_empty(){return Ok(());}
         if self.deck.slides.len()>=300{return Err(BUDGET.into());}
-        self.bytes=self.bytes.checked_add(self.page.notes.len()).ok_or(BUDGET)?;if self.bytes>LIMIT{return Err(BUDGET.into());}
+        self.bytes = self.bytes.checked_add(self.authored_notes.len() + self.page.notes.len()).ok_or(BUDGET)?;
+        if self.bytes > LIMIT { return Err(BUDGET.into()); }
         let mut page = std::mem::take(&mut self.page);
+        // The note marker belongs to the source slide. Formula backups belong
+        // only to the page that contains the corresponding image.
+        page.notes.insert_str(0, &self.authored_notes);
         let mut accents = design::ornaments(self.deck.layout, page.cover);
         accents.append(&mut page.shapes);
         page.shapes = accents;
@@ -288,7 +249,10 @@ impl Builder {
         }
         Ok(true)
     }
-    fn continuation(&mut self) -> Result<()> {let notes=self.page.notes.clone();self.finish()?;self.page.notes=notes;self.heading(self.title.clone())}
+    fn continuation(&mut self) -> Result<()> {
+        self.finish()?;
+        self.heading(self.title.clone())
+    }
     fn paragraph(&mut self, values:Line,size:f64,bullet:Option<String>,code:bool) -> Result<()> {
         let indent=if bullet.is_some(){26.}else{0.};let lines=wrap(&values,size,WIDTH-indent-if code{20.}else{0.})?;
         let mut start=0;let line_height=size*1.25;
@@ -370,24 +334,54 @@ impl Builder {
             Ok(output)
         };
         let header = cell(header, self.table_style.header_bold)?;
-        let header_height=header.iter().map(Vec::len).max().unwrap_or(1) as f64*25.+16.;
-        if header_height>120.{return Err(BUDGET.into());}
-        if BOTTOM-self.y<header_height+42. {self.continuation()?;}
-        let mut table_rows=vec![header.clone()];let mut heights=vec![header_height];let mut used=header_height;
-        for source in rows {
-            let cells=cell(source, false)?;let total=cells.iter().map(Vec::len).max().unwrap_or(1);let mut start=0;
-            while start<total {
-                if BOTTOM-self.y-used<42. {
-                    if table_rows.len()>1 {self.push(Shape::Table{rect:[left,self.y,width,used],rows:std::mem::replace(&mut table_rows,vec![header.clone()]),heights:std::mem::replace(&mut heights,vec![header_height]),columns,aligns:aligns.clone(),style:self.table_style.clone()})?;}
-                    self.continuation()?;used=header_height;
+        let header_height = header.iter().map(Vec::len).max().unwrap_or(1) as f64 * 25. + 16.;
+        if header_height > 120. { return Err(BUDGET.into()); }
+        if BOTTOM - self.y < header_height + 42. { self.continuation()?; }
+        let header_layout = TableRowLayout { height: header_height, kind: TableRowKind::Header };
+        let mut table_rows = vec![header.clone()];
+        let mut row_layout = vec![header_layout];
+        let mut used = header_height;
+        for (index, source) in rows.iter().enumerate() {
+            // Band the even body rows, preserving the source row color on every fragment.
+            let kind = if index % 2 == 1 { TableRowKind::Band } else { TableRowKind::Body };
+            let cells = cell(source, false)?;
+            let total = cells.iter().map(Vec::len).max().unwrap_or(1);
+            let mut start = 0;
+            while start < total {
+                if BOTTOM - self.y - used < 42. {
+                    if table_rows.len() > 1 {
+                        self.push(Shape::Table {
+                            rect: [left,self.y,width,used],
+                            rows: std::mem::replace(&mut table_rows, vec![header.clone()]),
+                            row_layout: std::mem::replace(&mut row_layout, vec![header_layout]),
+                            columns,
+                            aligns: aligns.clone(),
+                            style: self.table_style.clone(),
+                        })?;
+                    }
+                    self.continuation()?;
+                    used = header_height;
                 }
-                let capacity=((BOTTOM-self.y-used-16.)/25.).floor().max(0.) as usize;
-                if capacity==0{return Err(BUDGET.into());}
-                let end=(start+capacity).min(total);let height=(end-start) as f64*25.+16.;
-                table_rows.push(cells.iter().map(|lines|lines[start.min(lines.len())..end.min(lines.len())].to_vec()).collect());heights.push(height);used+=height;start=end;
+                let capacity = ((BOTTOM - self.y - used - 16.) / 25.).floor().max(0.) as usize;
+                if capacity == 0 { return Err(BUDGET.into()); }
+                let end = (start + capacity).min(total);
+                let height = (end - start) as f64 * 25. + 16.;
+                table_rows.push(cells.iter().map(|lines| lines[start.min(lines.len())..end.min(lines.len())].to_vec()).collect());
+                row_layout.push(TableRowLayout { height, kind });
+                used += height;
+                start = end;
             }
         }
-        if !table_rows.is_empty(){self.push(Shape::Table{rect:[left,self.y,width,used],rows:table_rows,heights,columns,aligns,style:self.table_style.clone()})?;self.y+=used+18.;}Ok(())
+        self.push(Shape::Table {
+            rect: [left,self.y,width,used],
+            rows: table_rows,
+            row_layout,
+            columns,
+            aligns,
+            style: self.table_style.clone(),
+        })?;
+        self.y += used + 18.;
+        Ok(())
     }
     fn blocks(&mut self,blocks:&[Block],bullet:Option<String>,depth:usize) -> Result<()> {
         if depth>16{return Err(BUDGET.into());}
@@ -426,35 +420,34 @@ fn build(content:&str,base:&str,title:&str,options:&Value) -> Result<Deck> {
         check()?;
         if let pulldown_cmark::Event::Html(raw)|pulldown_cmark::Event::InlineHtml(raw)=event {if !comments_only(&raw){return Err(INVALID.into());}}
     }
-    // Preserve actual Markdown block ranges while reusing the established slide
-    // separator/notes convention. Literal headings or `---` in fences never
-    // become slide boundaries, including tilde and longer-backtick fences.
-    let mut protected=content.clone();let mut replacements=Vec::new();let mut code=false;
-    for (event,range) in pulldown_cmark::Parser::new_ext(&content,crate::md_ast::options()).into_offset_iter() {
-        match event {
-            pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(_))=>{
-                code=true;let key=format!("READMDPPTXBLOCK{}X{}",uuid::Uuid::new_v4().simple(),replacements.len());replacements.push((range,key));
-            },
-            pulldown_cmark::Event::End(pulldown_cmark::TagEnd::CodeBlock)=>code=false,
-            pulldown_cmark::Event::DisplayMath(_) if !code=>{let key=format!("READMDPPTXBLOCK{}X{}",uuid::Uuid::new_v4().simple(),replacements.len());replacements.push((range,key));},
-            _=>(),
-        }
-    }
-    for (range,key) in replacements.iter().rev(){protected.replace_range(range.clone(),key);}
-    let matrix=crate::mdexport::split_slides_markdown(&protected);let mut builder=Builder::new(base,options)?;
+    let matrix = crate::mdexport::split_slides_markdown(&content);
+    let mut builder = Builder::new(base, options)?;
     for group in matrix {
-    let mut section_heading=text(title.trim_end_matches(".md"));
-    for (chunk,notes) in group {
-        let mut chunk=chunk;let mut notes=notes;
-        for (range,key) in &replacements {chunk=chunk.replace(key,&content[range.clone()]);notes=notes.replace(key,&content[range.clone()]);}
-        check()?;builder.finish()?;
-        let (doc,warnings)=crate::mdexport::publication_document(&chunk,base,options)?;builder.deck.warnings.extend(warnings);
-        if notes.len()>256*1024{return Err(BUDGET.into());}
-        builder.page.notes=notes;let mut blocks=doc.blocks.as_slice();
-        let heading=if let Some(Block::Heading{inlines,..})=blocks.first() {blocks=&blocks[1..];let mut values=Vec::new();inline_runs(inlines,&Run::default(),&mut values)?;values}else{section_heading.clone()};
-        section_heading=heading.clone();
-        if !builder.cover(&heading,blocks)?{builder.heading(heading)?;builder.blocks(blocks,None,0)?;}
-    }
+        let mut section_heading = text(title.trim_end_matches(".md"));
+        for (chunk, notes) in group {
+            check()?;
+            builder.finish()?;
+            if let Some(notes) = notes {
+                if notes.len() > 256 * 1024 { return Err(BUDGET.into()); }
+                builder.authored_notes = notes;
+            }
+            let (doc, warnings) = crate::mdexport::publication_document(&chunk, base, options)?;
+            builder.deck.warnings.extend(warnings);
+            let mut blocks = doc.blocks.as_slice();
+            let heading = if let Some(Block::Heading { inlines, .. }) = blocks.first() {
+                blocks = &blocks[1..];
+                let mut values = Vec::new();
+                inline_runs(inlines, &Run::default(), &mut values)?;
+                values
+            } else {
+                section_heading.clone()
+            };
+            section_heading = heading.clone();
+            if !builder.cover(&heading, blocks)? {
+                builder.heading(heading)?;
+                builder.blocks(blocks, None, 0)?;
+            }
+        }
     }
     builder.finish()?;if builder.deck.slides.is_empty(){builder.heading(text(title))?;builder.finish()?;}
     Ok(builder.deck)
@@ -484,14 +477,32 @@ fn preview_html(deck:&Deck) -> Result<String> {
                 slides.push_str(&format!(r#"<div aria-hidden="true" style="{}{}border-radius:{};"></div>"#,position(*rect),paint.css(),geometry.css()));
             },
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
-            Shape::Table{rect,rows,heights,columns,aligns,style}=>{
+            Shape::Table{rect,rows,row_layout,columns,aligns,style}=>{
                 slides.push_str(&format!("<table style=\"{}table-layout:fixed;border-collapse:collapse;font-size:20px;line-height:25px;\">",position(*rect)));
-                for (n,row) in rows.iter().enumerate(){slides.push_str(&format!("<tr style=\"height:{}px\">",heights[n]));for (column,cell) in row.iter().enumerate(){slides.push_str(&format!("<td style=\"width:{}px;padding:8px 10px;vertical-align:top;{}text-align:{};box-sizing:border-box;\">",rect[2]/ *columns as f64,style.border_css(style.borders(n,rows.len())),aligns[column].css()));for line in cell{slides.push_str(&format!("<div style=\"white-space:pre\">{}</div>",line_html(line)));}slides.push_str("</td>");}slides.push_str("</tr>");}slides.push_str("</table>");
+                for (index, (row, layout)) in rows.iter().zip(row_layout).enumerate() {
+                    let borders = style.border_css(style.borders(index, rows.len()));
+                    let colors = style.row_paint(layout.kind).map(|paint| {
+                        format!("background-color:#{};color:#{};", paint.background, paint.foreground)
+                    }).unwrap_or_default();
+                    slides.push_str(&format!("<tr style=\"height:{}px\">", layout.height));
+                    for (column, cell) in row.iter().enumerate() {
+                        slides.push_str(&format!(
+                            "<td style=\"width:{}px;padding:8px 10px;vertical-align:top;{borders}text-align:{};box-sizing:border-box;{colors}\">",
+                            rect[2] / *columns as f64, aligns[column].css(),
+                        ));
+                        for line in cell {
+                            slides.push_str(&format!("<div style=\"white-space:pre\">{}</div>", line_html(line)));
+                        }
+                        slides.push_str("</td>");
+                    }
+                    slides.push_str("</tr>");
+                }
+                slides.push_str("</table>");
             },
         }}
         slides.push_str("</section>");if slides.len()>LIMIT{return Err(BUDGET.into());}
     }
-    Ok(format!("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{{margin:0;width:100%;height:100%;overflow:hidden;background:#{bg};color:#{fg};font-family:Arial,sans-serif}}a{{color:#{accent}}}#readmd-deck{{position:absolute;width:960px;height:540px;transform-origin:top left}}.readmd-slide{{position:relative;width:960px;height:540px;overflow:hidden}}.readmd-slide[hidden]{{display:none}}</style></head><body><main id=\"readmd-deck\">{slides}</main></body></html>",bg=deck.background,fg=deck.foreground,accent=deck.accent))
+    Ok(format!("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><style>html,body{{margin:0;width:100%;height:100%;overflow:hidden;background:#{bg};color:#{fg};font-family:Arial,sans-serif}}a{{color:#{accent}}}.readmd-slide table a{{color:inherit}}#readmd-deck{{position:absolute;width:960px;height:540px;transform-origin:top left}}.readmd-slide{{position:relative;width:960px;height:540px;overflow:hidden}}.readmd-slide[hidden]{{display:none}}</style></head><body><main id=\"readmd-deck\">{slides}</main></body></html>",bg=deck.background,fg=deck.foreground,accent=deck.accent))
 }
 
 pub(crate) fn preview(content:&str,base:&str,title:&str,options:&Value) -> Result<Value> {
@@ -517,6 +528,9 @@ fn text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,center:bool,l
 }
 fn aligned_text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,align:TableAlign,links:&BTreeMap<String,String>) -> String {
     let mut body="<a:bodyPr wrap=\"none\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\" anchor=\"t\"><a:noAutofit/></a:bodyPr><a:lstStyle/>".to_string();
+    // A split table row can continue after one of its cells runs out of lines.
+    let empty = [Line::new()];
+    let lines = if lines.is_empty() { empty.as_slice() } else { lines };
     for (index,line) in lines.iter().enumerate(){body.push_str(&paragraph(line,size,color,if index==0{bullet}else{None},align,links));}body
 }
 fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) -> String {
@@ -533,13 +547,28 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let svg=if deck.media[*media].svg.is_some(){format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"svg{media}\"/></a:ext></a:extLst>")}else{String::new()};
             format!("<p:pic><p:nvPicPr><p:cNvPr id=\"{id}\" name=\"Image {id}\" descr=\"{}\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"image{media}\">{svg}</a:blip><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic>",escaped(alt),xfrm(*rect))
         },
-        Shape::Table{rect,rows,heights,columns,aligns,style}=>{
+        Shape::Table{rect,rows,row_layout,columns,aligns,style}=>{
             let [x,y,w,h]=*rect;let mut body=format!("<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"Table {id}\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr firstRow=\"1\" bandRow=\"0\"/><a:tblGrid>",emu(x),emu(y),emu(w),emu(h));
             for _ in 0..*columns{body.push_str(&format!("<a:gridCol w=\"{}\"/>",emu(w/ *columns as f64)));}body.push_str("</a:tblGrid>");
-            for (index,row) in rows.iter().enumerate(){body.push_str(&format!("<a:tr h=\"{}\">",emu(heights[index])));for (column,cell) in row.iter().enumerate(){
-                body.push_str(&format!("<a:tc><a:txBody>{}</a:txBody><a:tcPr marL=\"127000\" marR=\"127000\" marT=\"101600\" marB=\"101600\" anchor=\"t\">",aligned_text_body(cell,20.,deck.foreground,None,aligns[column],links)));
-                body.push_str(&style.border_xml(style.borders(index,rows.len())));body.push_str("<a:noFill/></a:tcPr></a:tc>");
-            }body.push_str("</a:tr>");}body.push_str("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");body
+            for (index, (row, layout)) in rows.iter().zip(row_layout).enumerate() {
+                let borders = style.border_xml(style.borders(index, rows.len()));
+                let paint = style.row_paint(layout.kind);
+                let foreground = paint.map_or(deck.foreground, |paint| paint.foreground.as_str());
+                let fill = match paint {
+                    Some(paint) => format!("<a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill>", paint.background),
+                    None => "<a:noFill/>".to_owned(),
+                };
+                body.push_str(&format!("<a:tr h=\"{}\">", emu(layout.height)));
+                for (column, cell) in row.iter().enumerate() {
+                    let contents = aligned_text_body(cell, 20., foreground, None, aligns[column], links);
+                    body.push_str(&format!(
+                        "<a:tc><a:txBody>{contents}</a:txBody><a:tcPr marL=\"127000\" marR=\"127000\" marT=\"101600\" marB=\"101600\" anchor=\"t\">{borders}{fill}</a:tcPr></a:tc>"
+                    ));
+                }
+                body.push_str("</a:tr>");
+            }
+            body.push_str("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");
+            body
         },
     }
 }
@@ -609,3 +638,7 @@ mod tests;
 #[cfg(test)]
 #[path="pptx_export_table_tests.rs"]
 mod table_style_tests;
+
+#[cfg(test)]
+#[path="pptx_export_notes_tests.rs"]
+mod notes_tests;

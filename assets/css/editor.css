@@ -686,6 +686,19 @@ body.zen-mode #edit-wrap { background: var(--color-surface); }
   min-inline-size: 0;
   max-inline-size: 100%;
 }
+/* Keep column/row tools together above Apply and Cancel at every width. */
+.table-cell-editor-actions .table-structure-tools {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(var(--table-cell-target), 1fr));
+  gap: var(--space-1);
+}
+#table-cell-controls.table-cell-editor { container-type: inline-size; }
+@container (max-width: 25rem) {
+  .table-cell-editor-actions .table-structure-tools {
+    grid-template-columns: repeat(4, minmax(var(--table-cell-target), 1fr));
+  }
+}
 #table-cell-controls.table-cell-editor .table-cell-editor-actions .tb-btn {
   min-inline-size: var(--table-cell-target);
   max-inline-size: 100%;

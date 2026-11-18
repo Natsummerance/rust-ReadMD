@@ -1792,7 +1792,7 @@ function cmTableCellContext(view) {
     return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
   })) return unsupported();
   const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
-  return selected ? { from: node.from, to: node.to, rows, selected, editorDoc: doc } : unsupported();
+  return selected ? { from: node.from, to: node.to, rows, lines, selected, editorDoc: doc } : unsupported();
 }
 let tableCellSession = null;
 function tableCellControls(view, context, modal, picker) {
@@ -1813,32 +1813,49 @@ function tableCellControls(view, context, modal, picker) {
   const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
   const label = document.createElement('label'); label.setAttribute('for', input.id);
   const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
-  const rowActions = [
+  const structureBar = document.createElement('div'); structureBar.className = 'table-structure-tools'; actions.append(structureBar);
+  const structureActions = [
     ['up', 'pm.up', 'M12 19V5m-5 5 5-5 5 5'],
     ['down', 'pm.down', 'M12 5v14m-5-5 5 5 5-5'],
     ['insert', 'editor.insertRow', 'M3 5h18v4H3z M12 12v8m-4-4h8'],
     ['delete', 'editor.deleteRow', 'M3 5h18v4H3z M8 16h8'],
+    ['insert-column', 'editor.insertColumn', 'M4 3h4v18H4z M12 12h8m-4-4v8'],
+    ['delete-column', 'editor.deleteColumn', 'M4 3h4v18H4z M12 12h8'],
+    ['sort-asc', 'editor.sortAscending', 'M4 6h12M4 11h8M4 16h4m8 3V9m-3 3 3-3 3 3'],
+    ['sort-desc', 'editor.sortDescending', 'M4 6h4M4 11h8M4 16h10m-6-2V4m-3 7 3 3 3-3'],
   ].map(([action, key, icon]) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
     button.dataset.tableMove = action; button.disabled = true;
     button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
     button.title = t(key); button.setAttribute('aria-label', t(key));
     button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
-    button.addEventListener('click', () => void editRow(action)); actions.append(button);
+    button.addEventListener('click', () => void applyStructure(action)); structureBar.append(button);
     return { action, button };
   });
   const apply = document.createElement('button'), cancel = document.createElement('button');
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
   const buttons = [];
-  function rowEdit(action) {
+  const structureCache = new Map();
+  function structuralEdit(action) {
     if (!session.cell || (!input.disabled && input.value !== session.cell.value)) return null;
+    if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
+    return structureCache.get(action);
+  }
+  function planStructure(action) {
     const {rows, editorDoc} = context;
-    const row = session.cell.row;
+    const {row, column} = session.cell;
+    if (action === 'insert-column' || action === 'delete-column') {
+      return ReadMDTableStructure.columnEdit(context, column, action === 'insert-column');
+    }
+    if (action === 'sort-asc' || action === 'sort-desc') {
+      return ReadMDTableStructure.sortRows(context, column, action === 'sort-asc', window.i18n?.currentLang);
+    }
     const line = editorDoc.line(rows[row][0].line);
     if (action === 'insert') {
       const after = row === 0 ? editorDoc.line(line.number + 1) : line;
-      const insert = '\n|' + ' |'.repeat(rows[0].length);
+      const indent = after.text.match(/^ {0,3}/)[0];
+      const insert = '\n' + indent + '|' + ' |'.repeat(rows[0].length);
       if (rows.length >= 32 || (rows.length + 1) * rows[0].length > 256 ||
           context.to - context.from + insert.length > 65536) return null;
       return { from: after.to, to: after.to, insert };
@@ -1849,15 +1866,15 @@ function tableCellControls(view, context, modal, picker) {
     if (!adjacent || adjacent === rows[0]) return null;
     return window.ReadMDTransforms.tableRowSwap(line, editorDoc.line(adjacent[0].line));
   }
-  function updateMoveButtons() {
-    for (const {button, action} of rowActions) button.disabled = session.busy || !rowEdit(action);
+  function updateStructureButtons() {
+    for (const {button, action} of structureActions) button.disabled = session.busy || !structuralEdit(action);
   }
-  input.addEventListener('input', updateMoveButtons);
-  async function editRow(action) {
+  input.addEventListener('input', updateStructureButtons);
+  async function applyStructure(action) {
     if (!current() || session.busy) return;
-    const edit = rowEdit(action);
+    const edit = structuralEdit(action);
     if (!edit) return;
-    session.busy = true; apply.disabled = true; updateMoveButtons();
+    session.busy = true; input.readOnly = true; apply.disabled = true; updateStructureButtons();
     status.textContent = t('review.busy');
     try {
       const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
@@ -1877,13 +1894,14 @@ function tableCellControls(view, context, modal, picker) {
       if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
     } finally {
       session.busy = false;
-      if (current()) { updateMoveButtons(); apply.disabled = !session.stamp; }
+      if (current()) { input.readOnly = false; updateStructureButtons(); apply.disabled = !session.stamp; }
     }
   }
   async function select(cell) {
     if (!current() || session.busy) return;
+    structureCache.clear();
     const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
-    updateMoveButtons();
+    updateStructureButtons();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
     if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
@@ -1913,10 +1931,10 @@ function tableCellControls(view, context, modal, picker) {
     if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
     if (input.value === session.cell.value) { closeTableModal(); return; }
     const stamp = session.stamp;
-    session.busy = true; apply.disabled = true; input.disabled = true; updateMoveButtons();
+    session.busy = true; apply.disabled = true; input.disabled = true; updateStructureButtons();
     try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
     catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
-    finally { session.busy = false; if (current()) updateMoveButtons(); }
+    finally { session.busy = false; if (current()) updateStructureButtons(); }
   });
   root.append(gridWrap, label, input, actions, status); void select(context.selected);
 }

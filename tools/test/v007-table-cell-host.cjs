@@ -70,7 +70,7 @@ function app(store,{source=store.disk().toString('utf8')}={}){
   ReadMDInlineCompletion:{accept:()=>false},ReadMDTask:{run:(_,fn)=>fn()},renderActiveTab:async()=>{},renderTabsBar(){},updateUnloadGuard(){},updateStatus(){},apiFetch:store.fetch,
   CustomEvent:class{constructor(type,options){this.type=type;Object.assign(this,options);}},addEventListener(){},dispatchEvent:event=>{events.push(event);return true;}};
  context.window=context;vm.createContext(context);
- for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/editor/md-transforms.js','assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
+ for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/reader/heading-identity.js','assets/js/editor/md-transforms.js','assets/js/editor/table-structure.js','assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
  const CM=context.ReadMDCodeMirror,review=context.ReadMDReview;
  const view={transactions:[],focus(){},dispatch(spec){const tx=spec instanceof CM.Transaction?spec:view.state.update(spec);view.transactions.push(tx);view.state=tx.state;
    review.onEditorUpdate({view,transactions:[tx]});if(tx.docChanged){tab.editGeneration++;tab.content=view.state.doc.toString();tab.isDirty=lf(tab.original)!==tab.content;}
