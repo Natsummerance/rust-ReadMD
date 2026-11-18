@@ -226,6 +226,8 @@ test('endpoint merge, alignment, and split edit only the anchor suffix on the se
   f.select(duplicates.lastIndexOf('**Alpha**') + 3);
   f.context.openTableModal();
   assert.equal(ui.get('table-cell-input').disabled, true, 'rich content remains available to merge');
+  assert.equal(ui.get('table-cell-input').value, '**Alpha**');
+  assert.equal(ui.get('table-cell-controls').children.at(-1).textContent, '');
   assert.equal(ui.get('table-cell-merge').disabled, true);
   cellButton(ui, 2, 1).click({ shiftKey: true });
   assert.equal(ui.get('table-cell-rowspan').value, '2');

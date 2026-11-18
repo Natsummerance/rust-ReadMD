@@ -1988,7 +1988,7 @@ function tableCellControls(view, context, modal, picker) {
   async function select(cell) {
     if (!current() || session.busy) return;
     structureCache.clear();
-    const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
+    const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? cell.content; input.disabled = cell.value === null; apply.disabled = true;
     const owner = context.layout.owners[cell.row][cell.column], attrs = context.layout.cells[cell.row][cell.column]?.attributes;
     rowSpan.max = String(cell.row === 0 ? 1 : context.rows.length - cell.row);
     columnSpan.max = String(context.rows[0].length - cell.column);
@@ -1997,7 +1997,9 @@ function tableCellControls(view, context, modal, picker) {
     updateStructureButtons(); updatePropertyControls();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
-    if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
+    // Rich content stays visible while its plain-text replacement is disabled.
+    // Geometry actions have their own capture and can still operate on this cell.
+    if (cell.value === null) { status.textContent = ''; return; }
     status.textContent = t('review.busy');
     try {
       const stamp = await ReadMDReview.captureManualRange(cell.from, cell.contentTo, tab);

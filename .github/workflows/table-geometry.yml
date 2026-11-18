@@ -2,7 +2,11 @@ name: Table editing and Office export
 on:
   push:
     branches: ['codex/v007-table-validation-*']
+    paths-ignore: ['docs/**']
   workflow_dispatch:
+concurrency:
+  group: table-geometry-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -19,7 +23,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
-      READMD_CODE_BROWSER: chromium
+      READMD_CODE_BROWSER: ${{ matrix.os == 'ubuntu-24.04' && 'chrome' || 'chromium' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,9 +46,9 @@ jobs:
       - name: Browser dependencies
         working-directory: ui-tests
         run: npm ci --ignore-scripts
-      - if: runner.os == 'Linux'
-        working-directory: ui-tests
-        run: npx --no-install playwright install --with-deps chromium
+      - name: Check hosted Linux Chrome
+        if: runner.os == 'Linux'
+        run: google-chrome --version
       - if: runner.os == 'Windows'
         working-directory: ui-tests
         run: npx --no-install playwright install chromium
