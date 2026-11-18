@@ -12,10 +12,11 @@ const apply=(text,edits)=>{for(const e of [...edits].reverse())text=text.slice(0
 const deferred=()=>{let resolve;return{promise:new Promise(r=>{resolve=r;}),resolve:value=>resolve(value)};};
 const evidence=process.env.READMD_TABLE_CELL_EVIDENCE||path.join(OWN,'evidence');
 assert(path.isAbsolute(evidence)&&path.resolve(evidence).startsWith((PRIVATE?OWN:path.dirname(ROOT))+path.sep));fs.mkdirSync(evidence,{recursive:true,mode:0o700});
-function service(initial=initialBytes.toString('utf8')){
+function service(initial=initialBytes.toString('utf8'),{draft=false}={}){
  const dir=fs.mkdtempSync(path.join(evidence,'case-')),file=path.join(dir,'双表.md');fs.writeFileSync(file,initial,{flag:'wx',mode:0o600});
+ const identity=draft?'draft:table-tab':file;
  let snapshot=null,nextId=0,hold=null,failure=null;const calls=[],receipts=new Map(),undo=[],redo=[];
- const diskRevision=()=>sha(fs.readFileSync(file));
+ const diskRevision=()=>draft?'missing':sha(fs.readFileSync(file));
  const response=(data,status=200)=>({ok:status===200,status,json:async()=>clone(data)});
  function advance(){snapshot.generation++;snapshot.review_revision++;snapshot.revision=sha(snapshot.content);snapshot.last_event_id++;}
  function map(at,edits,end=false){let delta=0;for(const e of edits){if(at<e.from)break;if(at>=e.to){delta+=e.insert.length-e.to+e.from;continue;}return e.from+delta+(end?e.insert.length:0);}return at+delta;}
@@ -32,7 +33,8 @@ function service(initial=initialBytes.toString('utf8')){
   }
   assert.equal(url,'/api/review','No network/provider or unrelated API');
   if(body.action==='open'||body.action==='resume'){
-   if(!snapshot)snapshot={document_id:'owned-document',path:file,content:lf(body.content??fs.readFileSync(file,'utf8')),generation:1,review_revision:0,revision:'',disk_revision:diskRevision(),encoding:'utf-8-sig',line_ending:'crlf',changes:[],last_event_id:0};
+   if(draft)assert.equal(body.path,identity);
+   if(!snapshot)snapshot={document_id:'owned-document',path:identity,content:lf(body.content??fs.readFileSync(file,'utf8')),generation:1,review_revision:0,revision:'',disk_revision:diskRevision(),encoding:draft?'utf-8':'utf-8-sig',line_ending:draft?'lf':'crlf',changes:[],last_event_id:0};
    snapshot.revision=sha(snapshot.content);
    if(snapshot.disk_revision!==diskRevision()){snapshot.recovery={reason:'external_change'};snapshot.status='needs_recovery';}
    return response(body.action==='resume'?{found:true,snapshot:clone(snapshot)}:snapshot);
@@ -55,13 +57,13 @@ function service(initial=initialBytes.toString('utf8')){
   if(failure?.action===body.action&&failure.afterCommit){failure=null;return response({error_code:'review_persistence_failed'},503);}
   return response(snapshot);
  }
- return{dir,file,calls,fetch,snapshot:()=>clone(snapshot),disk:()=>fs.readFileSync(file),revision:diskRevision,history:undo,
+ return{dir,file,draft,calls,fetch,snapshot:()=>clone(snapshot),disk:()=>fs.readFileSync(file),revision:diskRevision,history:undo,
   fail(action,afterCommit=false){failure={action,afterCommit};},
   pause(action){const gate={action,entered:deferred(),release:deferred()};hold=gate;return gate;},
   external(text){fs.writeFileSync(file,text);},remoteHead(){snapshot.generation++;snapshot.review_revision++;snapshot.revision=sha(snapshot.content+'independent_revision');}};
 }
 function app(store,{source=store.disk().toString('utf8')}={}){
- const tab={id:'table-tab',path:store.file,name:'双表.md',original:source,content:lf(source),encoding:'utf-8-sig',revision:store.revision(),mtime:1,editGeneration:0,isDirty:false};
+ const tab={id:'table-tab',path:store.draft?'':store.file,name:'双表.md',original:source,content:lf(source),encoding:store.draft?'utf-8':'utf-8-sig',revision:store.revision(),mtime:1,editGeneration:0,isDirty:false};
  const state={editing:true,original:source,file:tab.path,encoding:tab.encoding,tabs:[tab],activeTabId:tab.id},calls=store.calls,toasts=[],events=[];
  const listeners=new Map(),area={value:source,focus(){}},context={console,TextEncoder,Uint32Array,setTimeout,clearTimeout,setInterval,clearInterval,
   document:{documentElement:{style:{}},addEventListener(name,fn){const list=listeners.get(name)||[];list.push(fn);listeners.set(name,list);},getElementById:id=>id==='edit-area'?area:null,querySelectorAll:()=>[],createElement:()=>({setAttribute(){},addEventListener(){},appendChild(){}})},
@@ -70,7 +72,7 @@ function app(store,{source=store.disk().toString('utf8')}={}){
   ReadMDInlineCompletion:{accept:()=>false},ReadMDTask:{run:(_,fn)=>fn()},renderActiveTab:async()=>{},renderTabsBar(){},updateUnloadGuard(){},updateStatus(){},apiFetch:store.fetch,
   CustomEvent:class{constructor(type,options){this.type=type;Object.assign(this,options);}},addEventListener(){},dispatchEvent:event=>{events.push(event);return true;}};
  context.window=context;vm.createContext(context);
- for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/reader/heading-identity.js','assets/js/editor/table-attributes.js','assets/js/editor/md-transforms.js','assets/js/editor/table-structure.js','assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
+ for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/reader/heading-identity.js','assets/js/editor/table-attributes.js','assets/js/editor/md-transforms.js','assets/js/editor/table-structure.js','assets/js/editor/table-resize.js', 'assets/js/editor/table-clipboard.js', 'assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
  const CM=context.ReadMDCodeMirror,review=context.ReadMDReview;
  const view={transactions:[],focus(){},dispatch(spec){const tx=spec instanceof CM.Transaction?spec:view.state.update(spec);view.transactions.push(tx);view.state=tx.state;
    review.onEditorUpdate({view,transactions:[tx]});if(tx.docChanged){tab.editGeneration++;tab.content=view.state.doc.toString();tab.isDirty=lf(tab.original)!==tab.content;}

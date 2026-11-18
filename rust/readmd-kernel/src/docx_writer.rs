@@ -11,7 +11,7 @@
 use crate::md_ast::{inline_plain, Align, Block, Document, Inline};
 use crate::publication_rich::{RichBibliography, RichBibliographyItem, RichLayoutNode, RichNode};
 use crate::publication_note_policies::{self as note_policy, NoteKind, NotePolicies, NotePolicyPatch, NoteSeparator, LongNote};
-use crate::table_geometry::{TableGeometry, VerticalAlign};
+use crate::table_geometry::{TableGeometry, VerticalAlign, PT_PER_CSS_PX};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -1408,11 +1408,23 @@ impl<'a> Ctx<'a> {
         let cell_hp = (num(st, &["table", "cellSize"], 10.0) * 2.0).round() as i64;
         let default_align = text(st, &["table", "align"], "left");
         let grid_w = (self.text_w_emu as f64 / 635.0 * width_pct / 100.0) as i64; // EMU → twips
-        let col_w = (grid_w / ncols as i64).max(200);
+        let tracks = layout.as_ref().filter(|_| geometry.has_track_sizes())
+            .map(|grid| geometry.tracks(grid.columns, grid.rows.len()));
+        let sized_columns = tracks.as_ref().filter(|tracks| tracks.has_column_widths());
+        let col_widths = if let Some(tracks) = sized_columns {
+            let available_pt = self.text_w_emu as f64 / 12700.0 * width_pct / 100.0;
+            tracks.column_widths_pt(available_pt).into_iter().map(twips).collect::<Vec<_>>()
+        } else {
+            vec![(grid_w / ncols as i64).max(200); ncols]
+        };
 
         let mut x = String::new();
         x.push_str("<w:tbl><w:tblPr>");
-        x.push_str(&format!("<w:tblW w:w=\"{}\" w:type=\"pct\"/>", (width_pct * 50.0).round() as i64));
+        if sized_columns.is_some() {
+            x.push_str(&format!("<w:tblW w:w=\"{}\" w:type=\"dxa\"/>", col_widths.iter().sum::<i64>()));
+        } else {
+            x.push_str(&format!("<w:tblW w:w=\"{}\" w:type=\"pct\"/>", (width_pct * 50.0).round() as i64));
+        }
         x.push_str("<w:jc w:val=\"center\"/>");
         let edge = |n: &str| format!("<w:{n} w:val=\"single\" w:sz=\"{bw}\" w:space=\"0\" w:color=\"{border}\"/>");
         x.push_str("<w:tblBorders>");
@@ -1423,7 +1435,11 @@ impl<'a> Ctx<'a> {
             } else { x.push_str(&edge(n)); }
         }
         x.push_str("</w:tblBorders>");
-        x.push_str("<w:tblLayout w:type=\"autofit\"/>");
+        x.push_str(if sized_columns.is_some() {
+            "<w:tblLayout w:type=\"fixed\"/>"
+        } else {
+            "<w:tblLayout w:type=\"autofit\"/>"
+        });
         x.push_str(&format!(
             "<w:tblCellMar><w:top w:w=\"{p}\" w:type=\"dxa\"/><w:left w:w=\"{h}\" w:type=\"dxa\"/><w:bottom w:w=\"{p}\" w:type=\"dxa\"/><w:right w:w=\"{h}\" w:type=\"dxa\"/></w:tblCellMar>",
             p = pad / 2,
@@ -1431,7 +1447,7 @@ impl<'a> Ctx<'a> {
         ));
         x.push_str("<w:tblLook w:val=\"04A0\" w:firstRow=\"1\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"0\" w:noVBand=\"1\"/>");
         x.push_str("</w:tblPr><w:tblGrid>");
-        for _ in 0..ncols {
+        for col_w in &col_widths {
             x.push_str(&format!("<w:gridCol w:w=\"{col_w}\"/>"));
         }
         x.push_str("</w:tblGrid>");
@@ -1439,7 +1455,14 @@ impl<'a> Ctx<'a> {
         let row_xml = |ctx: &mut Ctx, cells: &[Vec<Inline>], row: usize| -> String {
             let is_head = row == 0;
             let mut r = String::from("<w:tr>");
-            if is_head {
+            if let Some(height) = tracks.as_ref().and_then(|tracks| tracks.row_heights[row]) {
+                let height = twips(height as f64 * PT_PER_CSS_PX);
+                r.push_str(&format!("<w:trPr><w:cantSplit/><w:trHeight w:val=\"{height}\" w:hRule=\"atLeast\"/>"));
+                if is_head {
+                    r.push_str("<w:tblHeader/>");
+                }
+                r.push_str("</w:trPr>");
+            } else if is_head {
                 r.push_str("<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>");
             } else {
                 r.push_str("<w:trPr><w:cantSplit/></w:trPr>");
@@ -1470,7 +1493,7 @@ impl<'a> Ctx<'a> {
                 };
                 r.push_str("<w:tc><w:tcPr>");
                 let colspan = slot.map_or(1, |cell| cell.colspan);
-                let cell_width = col_w * colspan as i64;
+                let cell_width = col_widths[ci..ci + colspan].iter().sum::<i64>();
                 r.push_str(&format!("<w:tcW w:w=\"{cell_width}\" w:type=\"dxa\"/>"));
                 if colspan > 1 {
                     r.push_str(&format!("<w:gridSpan w:val=\"{colspan}\"/>"));
@@ -2471,6 +2494,28 @@ mod tests {
         let rejected = build(&invalid, &style, "Owned table", &|_| None);
         assert!(rejected.parts.is_empty());
         assert_eq!(rejected.warns, [crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED]);
+    }
+
+    #[test]
+    fn docx_table_track_sizes_write_physical_grid_spans_and_minimum_row_heights() {
+        let doc = parse(concat!(
+            "| Head {width=160 colspan=2 height=120} | Pair {width=96} | Edge |\n",
+            "| --- | --- | --- |\n",
+            "| One {rowspan=2 colspan=2} | Two | A |\n",
+            "| Three {height=112} | Four | B |\n",
+        ));
+        let style = crate::export_styles::sanitize(&serde_json::json!({"frontMatter":{"mode":"none"}}));
+        let package = build(&doc, &style, "Sized table", &|_| None);
+        assert!(!package.parts.is_empty(), "{:?}", package.warns);
+        let xml = part(&package, "word/document.xml");
+        assert!(xml.contains("<w:tblLayout w:type=\"fixed\"/>"));
+        assert!(xml.contains("<w:tblGrid><w:gridCol w:w=\"2400\"/><w:gridCol w:w=\"1440\"/>"));
+        assert_eq!(xml.matches("<w:tcW w:w=\"3840\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/>").count(), 3);
+        assert!(xml.contains("<w:trHeight w:val=\"1800\" w:hRule=\"atLeast\"/><w:tblHeader/>"));
+        assert!(xml.contains("<w:trHeight w:val=\"1680\" w:hRule=\"atLeast\"/>") && xml.contains("w:val=\"continue\""));
+        for word in ["One", "Two", "Three", "Four"] {
+            assert_eq!(xml.matches(&format!(">{word}</w:t>")).count(), 1);
+        }
     }
 
     #[test]

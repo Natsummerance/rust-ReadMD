@@ -50,10 +50,26 @@ pub(super) fn project<'a>(source: &str, events: Vec<SourceEvent<'a>>) -> Result<
                 let grid = rows.iter().map(|r| vec![Vec::new(); r.len()]).collect::<Vec<_>>();
                 let Some((header, body)) = grid.split_first() else { return Err(crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED.into()); };
                 let layout = geometry.layout(header, body, &aligns).map_err(|e| e.code)?;
-                out.push(Event::Html("<table class=\"readmd-table-geometry\"><thead>".into()));
+                let tracks = geometry.has_track_sizes().then(|| geometry.tracks(layout.columns, layout.rows.len()));
+                if let Some(tracks) = tracks.as_ref().filter(|tracks| tracks.has_column_widths()) {
+                    let mut opening = String::from("<table class=\"readmd-table-geometry readmd-table-geometry--columns\"><colgroup>");
+                    for width in &tracks.column_widths {
+                        match width {
+                            Some(width) => opening.push_str(&format!("<col width=\"{width}\" data-table-width=\"{width}\" />")),
+                            None => opening.push_str("<col />"),
+                        }
+                    }
+                    opening.push_str("</colgroup><thead>");
+                    out.push(Event::Html(opening.into()));
+                } else {
+                    out.push(Event::Html("<table class=\"readmd-table-geometry\"><thead>".into()));
+                }
                 for (r, slots) in layout.rows.iter().enumerate() {
                     if r == 1 { out.push(Event::Html("</thead><tbody>".into())); }
-                    out.push(Event::Html("<tr>".into()));
+                    match tracks.as_ref().and_then(|tracks| tracks.row_heights[r]) {
+                        Some(height) => out.push(Event::Html(format!("<tr height=\"{height}\" data-table-height=\"{height}\">").into())),
+                        None => out.push(Event::Html("<tr>".into())),
+                    }
                     let tag = if r == 0 { "th" } else { "td" };
                     for (c, slot) in slots.iter().enumerate() {
                         if (r, c) != (slot.origin_row, slot.origin_col) { continue; }

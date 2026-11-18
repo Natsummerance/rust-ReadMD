@@ -1202,6 +1202,7 @@
   /** Measurements that need final layout: stats, table scroll hints, progress. */
   function afterRender(body) {
     if (!body) return;
+    window.ReadMDTableView?.observe(body, byId('content'));
     watchTableScroll(body);
     const isReader = body === articleEl();
     if (isReader) {

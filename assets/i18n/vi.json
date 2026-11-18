@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Định dạng này tự động điều chỉnh chiều cao hàng và độ rộng cột.",
+  "editor.tableResizeColumn": "Độ rộng cột {index}",
+  "editor.tableResizeRow": "Chiều cao hàng {index}",
   "mac.hide": "Ẩn ReadMD",
   "mac.selectAll": "Chọn tất cả",
   "plugin.onDemand": "Xác minh khi sử dụng",

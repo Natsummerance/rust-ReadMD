@@ -36,6 +36,8 @@ pub const SOURCES: &[&str] = &[
     "js/editor/image.js",
     "js/editor/md-transforms.js",
     "js/editor/table-structure.js",
+    "js/editor/table-resize.js",
+    "js/editor/table-clipboard.js",
     "js/editor/publication-metadata.js",
     "js/editor/publication-numbering.js",
     "js/editor/publication-profile.js",

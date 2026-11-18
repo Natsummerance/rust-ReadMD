@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Ta oblika samodejno določi višino vrstic in širino stolpcev.",
+  "editor.tableResizeColumn": "Širina stolpca {index}",
+  "editor.tableResizeRow": "Višina vrstice {index}",
   "mac.hide": "Skrij ReadMD",
   "mac.selectAll": "Izberi vse",
   "plugin.onDemand": "Preveri ob uporabi",

@@ -387,6 +387,7 @@ async function renderPreview() {
   }
   if(window.ReadMDReader)ReadMDReader.enhanceFootnotes(pane);
   if(window.ReadMDPublication)ReadMDPublication.applyLayout(pane);
+  window.ReadMDTableView?.observe(pane);
   // Cache only a committed render. A second request for the same source must
   // not invalidate an in-flight render and then skip it as already displayed.
   pvLast = source;

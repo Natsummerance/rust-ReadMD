@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use crate::{
     api_codes::{PUBLICATION_LAYOUT_GEOMETRY, PUBLICATION_TABLE_UNSUPPORTED},
-    table_geometry::{TableGeometry, VerticalAlign},
+    table_geometry::{TableGeometry, VerticalAlign, PT_PER_CSS_PX},
 };
 
 use super::{
@@ -64,9 +64,12 @@ pub(super) fn build_flow(
         .unwrap_or(0)
         .max(1);
     let grid = geometry
+        .as_ref()
         .map(|geometry| geometry.grid(columns, row_values.len()))
         .transpose()
         .map_err(invalid)?;
+    let tracks = geometry.filter(TableGeometry::has_track_sizes)
+        .map(|geometry| geometry.tracks(columns, row_values.len()));
     let mut data = Vec::with_capacity(row_values.len());
     for row in row_values {
         crate::publication_budget::check().map_err(|code| invalid(&code))?;
@@ -130,10 +133,14 @@ pub(super) fn build_flow(
         rows.push(row);
     }
 
+    let available_width = geom.avail * number("widthPct", 100.0) / 100.0;
     let table = TableFlow {
         three_line,
         rows,
-        col_w: vec![geom.avail * number("widthPct", 100.0) / 100.0 / columns as f64; columns],
+        col_w: match &tracks {
+            Some(tracks) => tracks.column_widths_pt(available_width),
+            None => vec![available_width / columns as f64; columns],
+        },
         repeat_rows: 1,
         header_bg: hex_d(&style_table["headerBg"]),
         border_w: number("borderWidth", 0.75),
@@ -148,7 +155,11 @@ pub(super) fn build_flow(
         line_before: None,
     };
     Ok(match grid {
-        Some(grid) => Flowable::EnhancedTable(EnhancedTableFlow { table, grid }),
+        Some(grid) => Flowable::EnhancedTable(EnhancedTableFlow {
+            table,
+            grid,
+            row_heights_px: tracks.map_or_else(Vec::new, |tracks| tracks.row_heights),
+        }),
         None => Flowable::Table(table),
     })
 }
@@ -314,21 +325,26 @@ impl<'a> MeasuredTable<'a> {
         flow: &'a Flowable,
         geom: &DocGeometry,
     ) -> Result<Option<Self>, PdfError> {
-        let (table, grid) = match flow {
+        let (table, grid, row_heights_px) = match flow {
             Flowable::Table(table)
                 if table.three_line && table.repeat_rows == 1 && !table.rows.is_empty() =>
             {
-                (table, None)
+                (table, None, &[][..])
             }
-            Flowable::EnhancedTable(flow) => (&flow.table, Some(flow.grid.as_slice())),
+            Flowable::EnhancedTable(flow) => (
+                &flow.table,
+                Some(flow.grid.as_slice()),
+                flow.row_heights_px.as_slice(),
+            ),
             _ => return Ok(None),
         };
-        Self::measure(table, grid, geom).map(Some)
+        Self::measure(table, grid, row_heights_px, geom).map(Some)
     }
 
     fn measure(
         table: &'a TableFlow,
         grid: Option<&[Vec<CellGeometry>]>,
+        row_heights_px: &[Option<usize>],
         geom: &DocGeometry,
     ) -> Result<Self, PdfError> {
         let frame = geom.height - 2.0 * FRAME_PAD;
@@ -362,7 +378,9 @@ impl<'a> MeasuredTable<'a> {
             if row.len() != table.col_w.len() || !strut.is_finite() || strut <= EPS {
                 return Err(invalid(PUBLICATION_LAYOUT_GEOMETRY));
             }
-            heights.push(strut + padding);
+            let declared = row_heights_px.get(ri).copied().flatten()
+                .map_or(0.0, |height| height as f64 * PT_PER_CSS_PX);
+            heights.push((strut + padding).max(declared));
             for (ci, source_cell) in row.iter().enumerate() {
                 let geometry = grid.map_or(
                     CellGeometry {
@@ -746,4 +764,61 @@ fn edges(sizes: &[f64]) -> Vec<f64> {
         edges.push(edges.last().copied().unwrap_or(0.0) + size);
     }
     edges
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pdf_table_track_sizes_measure_source_columns_rows_and_repeated_headers() {
+        let mut source = concat!(
+            "| Head {width=160 height=120 colspan=2} | Pair {width=96} | Edge |\n",
+            "| --- | --- | --- |\n",
+            "| One {rowspan=2 colspan=2 height=80} | Two | A |\n",
+            "| Three {height=112} | Four | B |\n",
+            "| Short {height=20} | Untouched | C |\n",
+        ).to_string();
+        for index in 0..9 {
+            source.push_str(&format!("| Body{index} {{height=112}} | D | E |\n"));
+        }
+        let style = crate::export_styles::sanitize(&serde_json::json!({
+            "page": {"size":"A5", "marginTop":16, "marginBottom":16, "marginLeft":16, "marginRight":16},
+            "table": {"style":"grid", "widthPct":100, "cellSize":10, "cellPadding":6},
+            "cover": {"enabled":false}, "toc": {"enabled":false}
+        }));
+        let geom = DocGeometry::from_style(&style);
+        let styles = Styles::build(&style, "Helvetica");
+        let blocks = crate::md_ast::to_render_json(&crate::md_ast::parse(&source).blocks);
+        let flow = build_flow(&blocks[0], &style, "", &|_| None, &styles, &geom).unwrap();
+        let measured = MeasuredTable::for_flow(&flow, &geom).unwrap().unwrap();
+        assert_eq!(&measured.x[..3], &[0., 120., 192.]);
+        assert!((measured.x[3] - geom.avail).abs() < EPS);
+        assert_eq!(&measured.y[..4], &[0., 90., 150., 234.]);
+        assert!(measured.y[4] - measured.y[3] >= 25.5);
+
+        let doc = super::super::build(&blocks, &style, "", &|_| None, &mut Vec::new()).unwrap();
+        assert!(doc.pages.len() >= 2);
+        let mut painted = Vec::new();
+        for page in &doc.pages {
+            let top = doc.geom.page_h - doc.geom.top - FRAME_PAD;
+            let full_rule_at = |y: f64| page.items.iter().any(|item| matches!(item,
+                DrawItem::Line { x1, y1, x2, y2, .. }
+                    if (*y1 - y).abs() < EPS && (*y2 - y).abs() < EPS && (x2 - x1).abs() > EPS
+            ));
+            assert!(full_rule_at(top));
+            assert!(full_rule_at(top - 90.0));
+            let text: Vec<_> = page.items.iter().filter_map(|item| match item {
+                DrawItem::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            }).collect();
+            assert_eq!(text.iter().filter(|&&text| text == "Head").count(), 1);
+            painted.extend(text);
+        }
+        assert_eq!(painted.iter().copied().filter(|text| matches!(*text, "One" | "Two" | "Three" | "Four")).collect::<Vec<_>>(), ["One", "Two", "Three", "Four"]);
+        for index in 0..9 {
+            let expected = format!("Body{index}");
+            assert_eq!(painted.iter().filter(|&&text| text == expected.as_str()).count(), 1);
+        }
+    }
 }

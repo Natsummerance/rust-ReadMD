@@ -4,13 +4,23 @@
   else root.ReadMDTableAttributes = factory();
 })(typeof window !== 'undefined' ? window : null, () => {
   const maxColumns = 16, maxRows = 32;
-  const keys = ['colspan', 'rowspan', 'align', 'valign'];
-  const recognized = /(?:^|[ \t])(?:colspan|rowspan|align|valign)=/;
+  const dimensions = Object.freeze({
+    width: Object.freeze({ min: 32, max: 1200 }),
+    height: Object.freeze({ min: 20, max: 600 }),
+  });
+  const keys = ['colspan', 'rowspan', 'align', 'valign', 'width', 'height'];
+  const recognized = /(?:^|[ \t])(?:colspan|rowspan|align|valign|width|height)=/;
+  const validDimension = (axis, value) => {
+    const bounds = dimensions[axis];
+    return Boolean(bounds && Number.isInteger(value) && value >= bounds.min && value <= bounds.max);
+  };
   const valid = {
     colspan: value => Number.isInteger(value) && value >= 1 && value <= maxColumns,
     rowspan: value => Number.isInteger(value) && value >= 1 && value <= maxRows,
     align: value => ['left', 'center', 'right'].includes(value),
     valign: value => ['top', 'middle', 'bottom'].includes(value),
+    width: value => validDimension('width', value),
+    height: value => validDimension('height', value),
   };
 
   // Cell text is Markdown source. Remove precisely the one space that belongs
@@ -25,10 +35,11 @@
     if (beforeBrace % 2) return null;
     const attributes = {};
     for (const assignment of match[1].split(/ +/)) {
-      const pair = /^(colspan|rowspan|align|valign)=([a-z0-9]+)$/.exec(assignment);
+      const pair = /^(colspan|rowspan|align|valign|width|height)=([a-z0-9]+)$/.exec(assignment);
       if (!pair || Object.hasOwn(attributes, pair[1])) return { invalid: true };
       const [, name, raw] = pair;
-      const value = name.endsWith('span') && /^[1-9][0-9]*$/.test(raw) ? Number(raw) : raw;
+      const numeric = name.endsWith('span') || Object.hasOwn(dimensions, name);
+      const value = numeric && /^[1-9][0-9]*$/.test(raw) ? Number(raw) : raw;
       if (!valid[name](value)) return { invalid: true };
       attributes[name] = value;
     }
@@ -50,7 +61,8 @@
         const cell = cells[row][column];
         if (!cell) continue;
         if (cell.invalid) return null;
-        const { rowspan = 1, colspan = 1 } = cell.attributes;
+        const { rowspan = 1, colspan = 1, width: authoredWidth, height } = cell.attributes;
+        if (row > 0 && authoredWidth !== undefined || column > 0 && height !== undefined) return null;
         if (rowspan === 1 && colspan === 1) continue;
         if (row === 0 && rowspan > 1 || row + rowspan > rows.length || column + colspan > width) return null;
         hasSpans = true;
@@ -63,7 +75,9 @@
         }
       }
     }
-    return { cells, owners, hasAttributes, hasSpans };
+    const widths = cells[0].map(cell => cell?.attributes.width ?? null);
+    const heights = cells.map(row => row[0]?.attributes.height ?? null);
+    return { cells, owners, hasAttributes, hasSpans, widths, heights };
   }
 
   function suffix(attributes, afterText) {
@@ -74,5 +88,5 @@
       .map(name => name + '=' + attributes[name]).join(' ') + '}';
   }
 
-  return { parseCell, layout, suffix, maxColumns, maxRows };
+  return { parseCell, layout, suffix, maxColumns, maxRows, dimensions, validDimension };
 });

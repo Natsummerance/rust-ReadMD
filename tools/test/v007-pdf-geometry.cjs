@@ -36,7 +36,7 @@ function fileHash(file) {
 
 async function main() {
   const { values: args } = parseArgs({ options: {
-    bin: { type: 'string' }, evidence: { type: 'string' }, python: { type: 'string' }, 'pdfium-pack': { type: 'string' },
+    'edited-table': { type: 'string' }, bin: { type: 'string' }, evidence: { type: 'string' }, python: { type: 'string' }, 'pdfium-pack': { type: 'string' },
   } });
   assert(args.bin && args.evidence && args.python,
     'Usage: node tools/test/v007-pdf-geometry.cjs --bin READMD --evidence NEW_DIR --python PYTHON [--pdfium-pack PACK]');
@@ -159,6 +159,12 @@ async function main() {
     report.overBudget = await require('./table-geometry-over-budget.cjs')({ host, docs, options });
     phase = 'checking candidate identity';
     assert.equal(await fileHash(binary), report.binarySha256, 'Candidate executable changed during the run');
+    if (args['edited-table']) {
+      phase = 'exporting the exact saved browser document';
+      report.editedTable = await require('./table-track-export.cjs')({
+        host, docs, options, python: args.python, browserOutput: path.resolve(args['edited-table']),
+      });
+    }
     report.passed = true;
   } catch (error) {
     report.failure = { phase, error: error.message };

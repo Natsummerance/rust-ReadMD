@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Este formato ajusta automáticamente la altura de las filas y el ancho de las columnas.",
+  "editor.tableResizeColumn": "Ancho de la columna {index}",
+  "editor.tableResizeRow": "Alto de la fila {index}",
   "mac.hide": "Ocultar ReadMD",
   "mac.selectAll": "Seleccionar todo",
   "plugin.onDemand": "Verificar al usar",

@@ -1639,6 +1639,7 @@ function handleSmartExcelPaste(e) {
   if (cmView) {
     const ranges = cmView.state.selection.ranges;
     if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;
+    if (cmPasteTableClipboard(e, cmView)) return;
   } else if (!$('edit-area') || e.target !== $('edit-area')) return;
 
   const csv = e.clipboardData.getData('text/csv');
@@ -1761,13 +1762,27 @@ function cmTableCellReplacement(value) {
   }
   return clipboardTableCell(value);
 }
-function cmTableCellContext(view) {
+function cmTableCellContext(view, protectRange = false) {
   const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view), attributes = window.ReadMDTableAttributes;
-  if (!hit || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
-  let node = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
+  if (!view || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
+  const tree = CM.syntaxTree(view.state);
+  if (!hit) {
+    if (!protectRange) return null;
+    const { from, to } = view.state.selection.main;
+    let touchesTable = false;
+    tree.iterate({ from, to, enter(node) {
+      if (node.name === 'Table' && node.from < to && from < node.to) { touchesTable = true; return false; }
+    } });
+    return touchesTable ? { unsupported: true } : null;
+  }
+  let node = tree.resolveInner(hit.range.head, -1);
   while (node && node.name !== 'Table') {
     if (node.name === 'HTMLBlock' && /^\s*<table\b/i.test(view.state.doc.sliceString(node.from, node.to))) return { unsupported: true };
     node = node.parent;
+  }
+  if (!node && protectRange) {
+    node = tree.resolveInner(hit.range.head, 1);
+    while (node && node.name !== 'Table') node = node.parent;
   }
   if (!node) return null;
   const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
@@ -1805,9 +1820,43 @@ function cmTableCellContext(view) {
   const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
   return selected ? { from: node.from, to: node.to, rows, lines, layout, selected, editorDoc: doc } : unsupported();
 }
+
+async function cmCommitTableClipboard(edit, tab, doc, current) {
+  const review = window.ReadMDReview;
+  const options = { edits: edit.edits, preserveSelection: true, userEvent: 'input.paste.table' };
+  const stamp = await review.captureManualRange(edit.from, edit.to, tab, { allowDraft: true });
+  if (!current() || stamp.editorDoc !== doc || stamp.original !== doc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+  if (review.snapshot(tab).changes.some(change => change.decision !== 'withdrawn' && edit.edits.some(({ from, to }) =>
+    change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
+    throw Error('review_conflict');
+  }
+  await review.applyManualRange(edit.insert, stamp, tab, current, options);
+}
+
+function cmPasteTableClipboard(event, view) {
+  const clipboard = window.ReadMDTableClipboard;
+  const payload = clipboard?.read(event.clipboardData);
+  if (payload == null) return false;
+  const context = cmTableCellContext(view, true);
+  if (!context) return false;
+  event.preventDefault();
+  const edit = !context.unsupported && clipboard.plan(context, context.selected, payload, clipboardTableCell);
+  const toast = key => showToast(window.i18n?.t(key) || key);
+  if (!edit) { toast(clipboard.invalidRange); return true; }
+  if (!edit.edits.length) return true;
+  const tab = getActiveTab(), doc = view.state.doc, selection = view.state.selection;
+  const current = () => cmView === view && getActiveTab() === tab && state.editing && view.state.doc === doc &&
+    view.state.selection.eq(selection) && !view.state.readOnly && window.ReadMDCollaborationShare?.canEdit() !== false;
+  void cmCommitTableClipboard(edit, tab, doc, current).catch(() => {
+    if (cmView === view && getActiveTab() === tab) toast('review.conflict');
+  });
+  return true;
+}
+
 let tableCellSession = null;
+window.ReadMDModal?.setGuard?.('table-modal', () => !tableCellSession?.resize?.cancel());
 function tableCellControls(view, context, modal, picker) {
-  const t = key => window.i18n ? window.i18n.t(key) : key, root = document.createElement('div');
+  const t = (key, params) => window.i18n ? window.i18n.t(key, params) : key, root = document.createElement('div');
   root.id = 'table-cell-controls'; root.className = 'table-cell-editor'; picker.before(root);
   const status = document.createElement('p'); status.className = 'hint'; status.setAttribute('role', 'status');
   if (context.unsupported || !window.ReadMDReview?.captureManualRange || !window.ReadMDReview?.applyManualRange) {
@@ -1816,15 +1865,23 @@ function tableCellControls(view, context, modal, picker) {
   const tab = getActiveTab(), session = { view, tab, context, root, serial: 0, stamp: null, busy: false };
   tableCellSession = session;
   root.style.setProperty('--table-cell-columns', String(context.rows[0].length));
-  const current = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
-    cmView === view && getActiveTab() === tab && view.state.doc === context.editorDoc && !view.state.readOnly &&
+  const active = () => tableCellSession === session && !modal.classList.contains('hidden') && root.isConnected !== false &&
+    cmView === view && getActiveTab() === tab && !view.state.readOnly &&
     window.ReadMDCollaborationShare?.canEdit() !== false;
+  const current = () => active() && view.state.doc === context.editorDoc;
   const grid = document.createElement('table'); grid.className = 'table-cell-grid'; grid.style.width = '100%'; grid.style.tableLayout = 'fixed'; grid.setAttribute('aria-label', t('editor.table'));
   const gridWrap = document.createElement('div'); gridWrap.className = 'table-cell-grid-scroll'; gridWrap.style.maxWidth = '100%'; gridWrap.style.overflowX = 'auto'; gridWrap.append(grid);
   const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
   const label = document.createElement('label'); label.setAttribute('for', input.id);
   const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
   const structureBar = document.createElement('div'); structureBar.className = 'table-structure-tools'; actions.append(structureBar);
+  const clipboard = window.ReadMDTableClipboard, csvButton = document.createElement('button');
+  if (clipboard) {
+    const mod = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+    grid.title = t('editor.tableCellSelectRange') + ' · ' + mod + 'C / ' + mod + 'V';
+    csvButton.type = 'button'; csvButton.id = 'table-cell-copy-csv'; csvButton.className = 'tb-btn';
+    csvButton.textContent = t('editor.copy') + ' CSV'; actions.append(csvButton);
+  }
   const structureActions = [
     ['up', 'pm.up', 'M12 19V5m-5 5 5-5 5 5'],
     ['down', 'pm.down', 'M12 5v14m-5-5 5 5 5-5'],
@@ -1847,7 +1904,9 @@ function tableCellControls(view, context, modal, picker) {
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
   const properties = document.createElement('details'), summary = document.createElement('summary');
-  properties.id = 'table-cell-properties'; properties.open = context.layout.hasAttributes;
+  properties.id = 'table-cell-properties';
+  properties.open = context.layout.cells.some(row => row.some(cell =>
+    cell && Object.keys(cell.attributes).some(key => key !== 'width' && key !== 'height')));
   summary.dataset.i18n = 'editor.tableCellProperties'; summary.textContent = t(summary.dataset.i18n); properties.append(summary);
   const propertyFields = document.createElement('div'); propertyFields.className = 'table-cell-property-fields'; properties.append(propertyFields);
   function propertyField(tag, name, key) {
@@ -1898,6 +1957,10 @@ function tableCellControls(view, context, modal, picker) {
   const buttons = [];
   const structureCache = new Map();
   const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
+  const resize = grid.ownerDocument && window.ReadMDTableResize?.mount(grid, context,
+    () => current() && !session.busy && !cellChanged(), (axis, index, size) =>
+      commitStructure(ReadMDTableStructure.resizeTrack(context, axis, index, size), true), t);
+  session.resize = resize;
   function structuralEdit(action) {
     if (!session.cell || context.layout.hasSpans || cellChanged()) return null;
     if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
@@ -1929,6 +1992,8 @@ function tableCellControls(view, context, modal, picker) {
   }
   function updateStructureButtons() {
     for (const {button, action} of structureActions) button.disabled = session.busy || !structuralEdit(action);
+    csvButton.disabled = session.busy || cellChanged();
+    resize?.update();
   }
   function propertyEdit(action) {
     if (!session.cell || cellChanged()) return null;
@@ -1950,8 +2015,10 @@ function tableCellControls(view, context, modal, picker) {
     const hasRange = rowSpan.value !== '1' || columnSpan.value !== '1';
     rangeFeedback.textContent = hasRange && !owner && !canMerge && !cellChanged() ? t('editor.tableCellInvalidRange') : '';
     rangeFeedback.hidden = !rangeFeedback.textContent;
+    const clipRange = session.clipboardRange && clipboard?.rectangle(context, session.clipboardRange.anchor, session.clipboardRange.end);
     for (const { button, cell } of buttons) {
-      const inRange = owner ? owners[cell.row][cell.column] === owner :
+      const inRange = clipRange ? cell.row >= clipRange.row && cell.row < clipRange.row + clipRange.height &&
+        cell.column >= clipRange.column && cell.column < clipRange.column + clipRange.width : owner ? owners[cell.row][cell.column] === owner :
         canMerge && cell.row >= row && cell.row < row + Number(rowSpan.value) &&
           cell.column >= column && cell.column < column + Number(columnSpan.value);
       if (inRange) button.dataset.tableInRange = '';
@@ -1960,13 +2027,19 @@ function tableCellControls(view, context, modal, picker) {
   }
   input.addEventListener('input', () => { updateStructureButtons(); updatePropertyControls(); });
   function applyStructure(action) { return commitStructure(structuralEdit(action)); }
-  async function commitStructure(edit) {
+  async function commitStructure(edit, keepSelection = false) {
     if (!current() || session.busy || !edit) return;
+    let resizedCell = null;
     session.busy = true; input.readOnly = true; apply.disabled = true;
     updateStructureButtons(); updatePropertyControls();
     status.textContent = t('review.busy');
     try {
-      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
+      if (edit.edits) {
+        await cmCommitTableClipboard(edit, tab, context.editorDoc, current);
+        if (active()) closeTableModal();
+        return;
+      }
+      const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab, { allowDraft: keepSelection });
       if (!current() || stamp.editorDoc !== context.editorDoc ||
           stamp.original !== context.editorDoc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
       // A structural edit would invalidate these anchors. Keep any review
@@ -1976,19 +2049,32 @@ function tableCellControls(view, context, modal, picker) {
         change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
         status.textContent = t('review.conflict'); return;
       }
-      await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current);
-      if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal();
+      const options = keepSelection ? { preserveSelection: true, userEvent: 'input.table.resize' } : undefined;
+      const saved = await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current, options);
+      if (!active()) return;
+      if (!keepSelection) { closeTableModal(); return; }
+      const next = cmTableCellContext(view);
+      if (next?.from !== context.from || view.state.doc.toString() !== saved.content) throw Error('review_stale_generation');
+      const { row, column } = session.cell;
+      Object.assign(context, next);
+      for (const item of buttons) item.cell = context.rows[item.cell.row][item.cell.column];
+      structureCache.clear();
+      resizedCell = session.cell = context.rows[row][column];
+      session.stamp = null;
     } catch (_) {
       if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
     } finally {
       session.busy = false;
-      if (current()) { input.readOnly = false; updateStructureButtons(); updatePropertyControls(); apply.disabled = !session.stamp; }
+      if (current()) {
+        input.readOnly = false; updateStructureButtons(); updatePropertyControls(); apply.disabled = !session.stamp;
+        if (resizedCell) void captureSelectedCell(resizedCell, false);
+      }
     }
   }
-  async function select(cell) {
+  async function select(cell, focusInput = true) {
     if (!current() || session.busy) return;
     structureCache.clear();
-    const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? cell.content; input.disabled = cell.value === null; apply.disabled = true;
+    session.stamp = null; session.cell = cell; input.value = cell.value ?? cell.content; input.disabled = cell.value === null; apply.disabled = true;
     const owner = context.layout.owners[cell.row][cell.column], attrs = context.layout.cells[cell.row][cell.column]?.attributes;
     rowSpan.max = String(cell.row === 0 ? 1 : context.rows.length - cell.row);
     columnSpan.max = String(context.rows[0].length - cell.column);
@@ -1997,9 +2083,13 @@ function tableCellControls(view, context, modal, picker) {
     updateStructureButtons(); updatePropertyControls();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
+    await captureSelectedCell(cell, focusInput);
+  }
+  async function captureSelectedCell(cell, focusInput) {
+    const token = ++session.serial;
     // Rich content stays visible while its plain-text replacement is disabled.
     // Geometry actions have their own capture and can still operate on this cell.
-    if (cell.value === null) { status.textContent = ''; return; }
+    if (cell.value === null || !tab?.path || tab.path.startsWith('draft:')) { status.textContent = ''; return; }
     status.textContent = t('review.busy');
     try {
       const stamp = await ReadMDReview.captureManualRange(cell.from, cell.contentTo, tab);
@@ -2008,7 +2098,7 @@ function tableCellControls(view, context, modal, picker) {
       session.stamp = stamp;
       if (!session.busy) {
         apply.disabled = false; status.textContent = '';
-        if (!properties.contains?.(document.activeElement)) input.focus();
+        if (focusInput && !properties.contains?.(document.activeElement) && !grid.contains?.(document.activeElement)) input.focus();
       }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
   }
@@ -2019,14 +2109,23 @@ function tableCellControls(view, context, modal, picker) {
       button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.content; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
       button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
       button.addEventListener('click', event => {
-        if (!event?.shiftKey || !session.cell) { void select(cell); return; }
-        if (!current() || session.busy || rowSpan.disabled) return;
-        properties.open = true;
-        rowSpan.value = String(cell.row - session.cell.row + 1);
-        columnSpan.value = String(cell.column - session.cell.column + 1);
+        if (!current() || session.busy) return;
+        const clicked = context.rows[cell.row][cell.column];
+        if (!event?.shiftKey || !session.cell) {
+          session.clipboardRange = null;
+          if (clipboard) button.focus();
+          void select(clicked, !clipboard);
+          return;
+        }
+        if (clipboard) { session.clipboardRange = { anchor: session.cell, end: clicked }; button.focus(); }
+        if (!rowSpan.disabled && cell.row >= session.cell.row && cell.column >= session.cell.column) {
+          properties.open = true;
+          rowSpan.value = String(cell.row - session.cell.row + 1);
+          columnSpan.value = String(cell.column - session.cell.column + 1);
+        }
         updatePropertyControls();
       });
-      buttons.push({ button, cell }); td.append(button); tr.append(td);
+      buttons.push({ button, cell }); td.append(button); resize?.add(cell, td, tr); tr.append(td);
     }
     grid.append(tr);
   }
@@ -2044,6 +2143,9 @@ function tableCellControls(view, context, modal, picker) {
     catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
     finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
   });
+  clipboard?.bindGrid({ grid, csvButton, context, getCell: () => session.cell, getRange: () => session.clipboardRange,
+    ready: () => current() && !session.busy && !cellChanged(), encodeCell: clipboardTableCell,
+    report: key => { status.textContent = t(key); }, commit: commitStructure });
   root.append(gridWrap, label, input, properties);
   if (context.layout.hasSpans) {
     const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
@@ -2051,6 +2153,7 @@ function tableCellControls(view, context, modal, picker) {
     root.append(locked);
   }
   root.append(actions, status);
+  resize?.refresh();
   void select(context.selected);
 }
 

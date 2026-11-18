@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "ဤဖော်မတ်တွင် အတန်းအမြင့်နှင့် ကော်လံအကျယ်ကို အလိုအလျောက် သတ်မှတ်သည်။",
+  "editor.tableResizeColumn": "ကော်လံ {index} အကျယ်",
+  "editor.tableResizeRow": "အတန်း {index} အမြင့်",
   "mac.hide": "ReadMD ကို ဖျောက်ရန်",
   "mac.selectAll": "အားလုံး ရွေးရန်",
   "plugin.onDemand": "အသုံးပြုချိန်တွင် စစ်ဆေးရန်",

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "بۇ پىچىم قۇر ئېگىزلىكى ۋە ئىستون كەڭلىكىنى ئاپتوماتىك بەلگىلەيدۇ.",
+  "editor.tableResizeColumn": "{index}ـ ئىستون كەڭلىكى",
+  "editor.tableResizeRow": "{index}ـ قۇر ئېگىزلىكى",
   "mac.hide": "ReadMD نى يوشۇرۇش",
   "mac.selectAll": "ھەممىنى تاللاش",
   "plugin.onDemand": "ئىشلەتكەندە دەلىللەش",

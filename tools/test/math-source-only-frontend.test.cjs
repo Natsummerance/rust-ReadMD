@@ -180,11 +180,15 @@ test('approved review integration preserves source outside the formula and layou
         const body=text.slice(at+begin.length,stop);
         if(expected!==null)assert.equal(body,expected,name);
         else{
-          assert.deepEqual([...body.matchAll(/^function (\w+)\(/gm)].map(match=>match[1]),['cmTableCellLiteral','cmTableCellReplacement','cmTableCellContext','tableCellControls']);
+          assert.deepEqual([...body.matchAll(/^(?:async )?function (\w+)\(/gm)].map(match=>match[1]),['cmTableCellLiteral','cmTableCellReplacement','cmTableCellContext','cmCommitTableClipboard','cmPasteTableClipboard','tableCellControls']);
           assert.equal(body.split('let tableCellSession = null;').length,2);
         }
         text=text.slice(0,at)+text.slice(stop+end.length);
       }
+      const pasteGuard='    if (ranges.length !== 1 || cmInCode(cmView.state, ranges[0].from) || cmInCode(cmView.state, ranges[0].to)) return;\n';
+      const tablePaste='    if (cmPasteTableClipboard(e, cmView)) return;\n';
+      assert.equal(text.split(pasteGuard+tablePaste).length,2,'Dedicated table clipboard hook');
+      text=text.replace(pasteGuard+tablePaste,pasteGuard);
       bytes=editorOutsideLayout(text);
     }
     if(row.path==='assets/js/editor/preview.js'){

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "यह प्रारूप पंक्तियों की ऊँचाई और कॉलम की चौड़ाई अपने आप तय करता है।",
+  "editor.tableResizeColumn": "कॉलम {index} की चौड़ाई",
+  "editor.tableResizeRow": "पंक्ति {index} की ऊँचाई",
   "mac.hide": "ReadMD छिपाएँ",
   "mac.selectAll": "सभी चुनें",
   "plugin.onDemand": "उपयोग के समय सत्यापित करें",

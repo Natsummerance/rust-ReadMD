@@ -1182,7 +1182,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
 window.parseMarkdownWithSourceMap = parseMarkdownWithSourceMap;
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
-  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code',
+  'a', 'abbr', 'article', 'b', 'blockquote', 'br', 'caption', 'cite', 'code', 'col', 'colgroup',
   'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'figcaption', 'figure',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'input', 'ins',
   'button', 'kbd', 'li', 'mark', 'ol', 'p', 'pre', 'q', 's', 'section', 'span',

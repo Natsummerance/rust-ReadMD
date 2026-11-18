@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "ទ្រង់ទ្រាយនេះកំណត់កម្ពស់ជួរដេក និងទទឹងជួរឈរដោយស្វ័យប្រវត្តិ។",
+  "editor.tableResizeColumn": "ទទឹងជួរឈរ {index}",
+  "editor.tableResizeRow": "កម្ពស់ជួរដេក {index}",
   "mac.hide": "លាក់ ReadMD",
   "mac.selectAll": "ជ្រើសរើសទាំងអស់",
   "plugin.onDemand": "ផ្ទៀងផ្ទាត់ពេលប្រើ",

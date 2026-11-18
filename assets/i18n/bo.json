@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "རྣམ་གཞག་འདིས་ཕྲེང་གི་མཐོ་ཚད་དང་ཀ་ཐིག་གི་ཞེང་རང་འགུལ་གྱིས་སྒྲིག",
+  "editor.tableResizeColumn": "ཀ་ཐིག {index} གི་ཞེང་།",
+  "editor.tableResizeRow": "ཕྲེང་ {index} གི་མཐོ་ཚད།",
   "mac.hide": "ReadMD སྦ་བ།",
   "mac.selectAll": "ཚང་མ་འདེམས་པ།",
   "plugin.onDemand": "སྤྱོད་སྐབས་ཞིབ་བཤེར།",

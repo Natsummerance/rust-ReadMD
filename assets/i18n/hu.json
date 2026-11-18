@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Ez a formátum automatikusan határozza meg a sorok magasságát és az oszlopok szélességét.",
+  "editor.tableResizeColumn": "A(z) {index}. oszlop szélessége",
+  "editor.tableResizeRow": "A(z) {index}. sor magassága",
   "mac.hide": "ReadMD elrejtése",
   "mac.selectAll": "Összes kijelölése",
   "plugin.onDemand": "Ellenőrzés használatkor",

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Na mutindu yai, bula ya milongo ti bunene ya makolone ke kudibongisa yo mosi.",
+  "editor.tableResizeColumn": "Bunene bwa kolone {index}",
+  "editor.tableResizeRow": "Bula ya mulongo {index}",
   "mac.hide": "Kubumba ReadMD",
   "mac.selectAll": "Kusola yonso",
   "plugin.onDemand": "Kufimpa ntangu ya kusadila",

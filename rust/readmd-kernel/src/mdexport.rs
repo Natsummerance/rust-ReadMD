@@ -1143,7 +1143,9 @@ pub fn export_html(
     let author_text=crate::publication_inline_view::project(&reader_content,options)?;
     let reader_content=&author_text.content;
     let reader_content=section_flow_source(&reader_content,&style)?;
-    if crate::publication_sections::has_sections(&crate::md_ast::parse(content)){warns.push("publication_layout_paged_unsupported".into());}
+    let source_document = crate::md_ast::parse(content);
+    if crate::publication_sections::has_sections(&source_document){warns.push("publication_layout_paged_unsupported".into());}
+    let sized_tables = crate::table_geometry::document_has_track_sizes(&source_document);
     let math=crate::html_math::lower_dsl(crate::md_ast::source_without_front_matter(&reader_content),style["typography"]["size"].as_f64().unwrap_or(12.0))?;
     warns.extend(math.warnings.iter().cloned());
     let front=crate::publication_metadata::front_matter_blocks(&metadata,options);
@@ -1212,7 +1214,17 @@ pub fn export_html(
     let md_esc = json_dump_escaped(&embedded_md);
     let language=metadata.language.clone();
 
-    let mut html = EXPORT_TEMPLATE
+    let template = if sized_tables {
+        let width_fraction = style["table"]["widthPct"].as_f64().unwrap_or(100.0) / 100.0;
+        std::borrow::Cow::Owned(EXPORT_TEMPLATE.replacen(
+            "  var highlights = __HIGHLIGHTS__;",
+            &format!("  var highlights = __HIGHLIGHTS__;\n  window.ReadMDTableView?.observe(root, root, {width_fraction});"),
+            1,
+        ))
+    } else {
+        std::borrow::Cow::Borrowed(EXPORT_TEMPLATE)
+    };
+    let mut html = template
         .replacen("<html lang=\"zh-CN\">",&format!("<html lang=\"{}\">",esc_attr(language.as_deref().unwrap_or("zh-CN"))),1)
         .replace("__TITLE__", &esc_attr(&title))
         .replace("__CSS__", &css)
@@ -1943,6 +1955,9 @@ pub(crate) fn epub_build_entries(
     if crate::publication_sections::has_sections(&source_doc){warns.push("publication_layout_paged_unsupported".into());}
     warns.extend(crate::publication_metadata_formats::warnings(&metadata));
     warns.extend(crate::epub_writer::mathml_alignment_warnings(&source_doc));
+    if crate::table_geometry::document_has_track_sizes(&source_doc) {
+        warns.push(crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK.into());
+    }
     let mut resolver = HtmlImageResolver::new(base_dir);
     let mut packaged: Vec<(String, String, Vec<u8>)> = Vec::new(); // (href, media type, bytes)
     let mut by_src: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
@@ -6766,6 +6781,54 @@ mod tests {
             .unwrap_or_else(|e| panic!("embedded markdown is not valid JSON ({e}): {payload}"));
         assert!(parsed.contains("</script><b>raw</b>"), "round-trip lost the markup: {parsed}");
         assert!(parsed.contains("段落里的 <tag>"), "round-trip lost the CJK body: {parsed}");
+    }
+
+    #[test]
+    fn html_table_track_sizes_survive_the_standalone_footnote_projection() {
+        let source = concat!(
+            "| Head {colspan=2 height=120 width=160} | Pair {width=96} | Edge |\n",
+            "| --- | --- | --- |\n",
+            "| **One** {rowspan=2 colspan=2} | Two[^a] | A |\n",
+            "| Three {height=112} | Four | B |\n\n[^a]: Table note.\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tracks.html");
+        let options = serde_json::json!({"table": {"widthPct":75}});
+        let assets = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let result = export_html(source, "", path.to_str().unwrap(), &options, "Sized table", &assets).unwrap();
+        assert!(result.ok);
+        let html = fs::read_to_string(path).unwrap();
+        let payload = html.split_once("id=\"readmd-footnote-html\">").unwrap().1.split_once("</script>").unwrap().0;
+        let markup: String = serde_json::from_str(payload).unwrap();
+        assert!(markup.contains("readmd-table-geometry--columns"));
+        assert!(markup.contains("<colgroup><col width=\"160\" data-table-width=\"160\" /><col width=\"96\" data-table-width=\"96\" /><col /></colgroup>"));
+        assert!(markup.contains("<tr height=\"120\" data-table-height=\"120\">"));
+        assert!(markup.contains("<tr height=\"112\" data-table-height=\"112\">"));
+        assert!(markup.contains("<td colspan=\"2\" rowspan=\"2\"><strong>One</strong><br />\nTwo"));
+        assert!(markup.contains("role=\"doc-noteref\"") && markup.contains("Table note."));
+        assert!(html.contains("window.ReadMDTableView?.observe(root, root, 0.75);"));
+    }
+
+    #[test]
+    fn epub_table_track_size_fallback_preserves_merged_content_in_the_container() {
+        let source = concat!(
+            "| Head {width=160} | Pair |\n| --- | --- |\n",
+            "| **One** {colspan=2 rowspan=2} | Two |\n",
+            "| Three {height=112} | Four |\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tracks.epub");
+        let result = export_epub(source, "", path.to_str().unwrap(), &serde_json::json!({}), "Sized table").unwrap();
+        assert!(result.ok);
+        let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert_eq!(result.warns.unwrap().iter().filter(|value| value.as_str() == warning).count(), 1);
+        let bytes = fs::read(path).unwrap();
+        let entries = crate::convert::parse_zip_entries(&bytes).unwrap();
+        let markup = entries.iter().filter(|(name, _)| name.ends_with(".xhtml"))
+            .find_map(|(_, body)| std::str::from_utf8(body).ok().filter(|html| html.contains("<td colspan=\"2\" rowspan=\"2\">")))
+            .unwrap();
+        assert!(markup.contains("<strong>One</strong><br/>Two<br/>Three<br/>Four"));
+        assert!(!markup.contains("{width=") && !markup.contains("{height="));
     }
 
     /// The crate's own `shutil.which` mirror, `crate::plugin_manager::which`, is

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "У цьому форматі висота рядків і ширина стовпців визначаються автоматично.",
+  "editor.tableResizeColumn": "Ширина стовпця {index}",
+  "editor.tableResizeRow": "Висота рядка {index}",
   "mac.hide": "Сховати ReadMD",
   "mac.selectAll": "Вибрати все",
   "plugin.onDemand": "Перевіряти під час використання",

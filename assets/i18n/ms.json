@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Format ini menetapkan tinggi baris dan lebar lajur secara automatik.",
+  "editor.tableResizeColumn": "Lebar lajur {index}",
+  "editor.tableResizeRow": "Tinggi baris {index}",
   "mac.hide": "Sembunyikan ReadMD",
   "mac.selectAll": "Pilih Semua",
   "plugin.onDemand": "Sahkan semasa digunakan",

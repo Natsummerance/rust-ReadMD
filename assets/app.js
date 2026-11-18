@@ -861,6 +861,7 @@ function bindEvents() {
       }
     }
     else if (mod && !e.shiftKey && e.key.toLowerCase() === 'v') { // Ctrl+V: 智能剪贴板新建
+      if (e.defaultPrevented || window.ReadMDModal?.depth()) return;
       const t = e.target;
       const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || (t.closest && t.closest('.CodeMirror, .cm-editor, [contenteditable="true"]')));
       if (inField) return; // 输入框内放行浏览器原生粘贴

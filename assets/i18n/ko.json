@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "이 형식에서는 행 높이와 열 너비가 자동으로 정해집니다.",
+  "editor.tableResizeColumn": "{index}열 너비",
+  "editor.tableResizeRow": "{index}행 높이",
   "mac.hide": "ReadMD 가리기",
   "mac.selectAll": "모두 선택",
   "plugin.onDemand": "사용 시 검증",

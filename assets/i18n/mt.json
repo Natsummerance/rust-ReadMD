@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Dan il-format jistabbilixxi l-għoli tar-ringieli u l-wisa’ tal-kolonni awtomatikament.",
+  "editor.tableResizeColumn": "Wisa’ tal-kolonna {index}",
+  "editor.tableResizeRow": "Għoli tar-ringiela {index}",
   "mac.hide": "Aħbi ReadMD",
   "mac.selectAll": "Agħżel kollox",
   "plugin.onDemand": "Ivverifika waqt l-użu",

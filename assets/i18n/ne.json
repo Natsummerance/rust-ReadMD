@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "यो ढाँचाले पङ्क्तिको उचाइ र स्तम्भको चौडाइ स्वतः निर्धारण गर्छ।",
+  "editor.tableResizeColumn": "स्तम्भ {index} को चौडाइ",
+  "editor.tableResizeRow": "पङ्क्ति {index} को उचाइ",
   "mac.hide": "ReadMD लुकाउनुहोस्",
   "mac.selectAll": "सबै चयन गर्नुहोस्",
   "plugin.onDemand": "प्रयोग गर्दा प्रमाणित गर्नुहोस्",

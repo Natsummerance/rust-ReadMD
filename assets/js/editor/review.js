@@ -483,25 +483,32 @@ window.ReadMDReview = (() => {
   async function freshManualHead(rec, stamp) {
     // resume is the existing authorized physical-open path: it checks the
     // disk fingerprint and reports recovery instead of silently rebasing.
-    const latest = await request('/api/review', { action: 'resume', path: stamp.path });
+    const latest = await request('/api/review', { action: 'resume', path: stamp.path || rec.snapshot.path });
     if (!manualCurrent(rec, stamp) || latest.recovery || latest.status === 'needs_recovery' ||
         ['document_id', 'generation', 'review_revision', 'revision', 'disk_revision', 'content'].some(key => latest[key] !== stamp[key]) ||
         latest.path !== rec.snapshot.path) throw failure('review_stale_generation');
   }
-  async function captureManualRange(from, to, tab = activeTab()) {
+  const splitsSurrogate = (text, at) => at > 0 && at < text.length &&
+    /[\uD800-\uDBFF]/.test(text[at - 1]) && /[\uDC00-\uDFFF]/.test(text[at]);
+
+  async function captureManualRange(from, to, tab = activeTab(), { allowDraft = false } = {}) {
     const view = activeView(), editorDoc = view?.state.doc;
-    if (!tab?.path || tab.path.startsWith('draft:') || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
+    if (!tab || !view || activeTab() !== tab || !state.editing) throw failure('review_stale_generation');
     const path = tab.path, fileRevision = tab.revision || '', editGeneration = tab.editGeneration || 0;
+    const draft = !path || path.startsWith('draft:');
+    if (draft && !allowDraft) throw failure('review_stale_generation');
     const base = await capture(tab), rec = records.get(tab);
     if (!base || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to < from || to > base.content.length ||
-        [from, to].some(at => at > 0 && at < base.content.length && /[\uD800-\uDBFF]/.test(base.content[at - 1]) && /[\uDC00-\uDFFF]/.test(base.content[at]))) throw failure('review_conflict');
+        splitsSurrogate(base.content, from) || splitsSurrogate(base.content, to)) throw failure('review_conflict');
+    if (draft && !rec.snapshot.path?.startsWith('draft:')) throw failure('review_stale_generation');
     const stamp = { ...base, owner: tab, view, editorDoc, path, fileRevision, editGeneration,
       revision: rec.snapshot.revision, disk_revision: rec.snapshot.disk_revision, from, to, original: base.content.slice(from, to) };
     if (!manualCurrent(rec, stamp)) throw failure('review_stale_generation');
     await freshManualHead(rec, stamp);
     return Object.freeze(stamp);
   }
-  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent) {
+  async function applyManualRange(insert, stamp, tab = activeTab(), ownedCurrent,
+    { edits, preserveSelection = false, userEvent = 'input.table.cell' } = {}) {
     const rec = tab && records.get(tab);
     const owned = () => ownedCurrent === undefined || typeof ownedCurrent === 'function' && ownedCurrent() === true;
     if (typeof insert !== 'string' || !owned() || !manualCurrent(rec, stamp) || stamp.content.slice(stamp.from, stamp.to) !== stamp.original) throw failure('review_stale_generation');
@@ -510,11 +517,22 @@ window.ReadMDReview = (() => {
     // The dialog may have closed, or another FIFO operation started, during
     // the last await. No cancellation claim is made after this dispatch.
     if (!owned() || !manualCurrent(rec, stamp)) throw failure('review_stale_generation');
-    const edit = { from: stamp.from, to: stamp.to, insert }, after = apply(stamp.content, [edit]);
+    let changes = [{ from: stamp.from, to: stamp.to, insert }];
+    if (edits !== undefined) {
+      if (!Array.isArray(edits) || !edits.length || edits.some(edit => !edit || edit.from < stamp.from ||
+        edit.to > stamp.to || splitsSurrogate(stamp.content, edit.from) || splitsSurrogate(stamp.content, edit.to))) {
+        throw failure('review_conflict');
+      }
+      changes = edits.map(({from, to, insert}) => ({ from, to, insert }));
+      const relative = changes.map(edit => ({ ...edit, from: edit.from - stamp.from, to: edit.to - stamp.from }));
+      if (apply(stamp.original, relative) !== insert) throw failure('review_conflict');
+    }
+    const after = apply(stamp.content, changes);
     if (after === stamp.content) return rec.snapshot;
     // The ordinary CM listener owns enqueueEdit and its genuine manual FIFO.
     // Never send an AI proposal or manufacture a visible acknowledgement.
-    stamp.view.dispatch({ changes: edit, selection: { anchor: edit.from + insert.length }, scrollIntoView: true, userEvent: 'input.table.cell' });
+    const selection = preserveSelection ? undefined : { anchor: stamp.from + insert.length };
+    stamp.view.dispatch({ changes, selection, scrollIntoView: !preserveSelection, userEvent });
     if (stamp.view.state.doc.toString() !== after || rec.local !== after) throw failure('review_conflict');
     if (!await flush(tab)) throw rec.error || failure('review_persistence_failed');
     return rec.snapshot;

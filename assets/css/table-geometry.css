@@ -5,3 +5,18 @@
 .readmd-table-geometry :is(th, td)[valign="top"] { vertical-align: top !important; }
 .readmd-table-geometry :is(th, td)[valign="middle"] { vertical-align: middle !important; }
 .readmd-table-geometry :is(th, td)[valign="bottom"] { vertical-align: bottom !important; }
+
+.readmd-table-geometry--columns,
+.rd-article .rd-table-wrap .readmd-table-geometry--columns {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+}
+.readmd-table-geometry--columns :is(th, td),
+.rd-article .rd-table-wrap table.readmd-table-geometry--columns :is(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.rd-article .rd-table-wrap table.readmd-table-geometry--columns :is(th, td) {
+  padding-inline: min(var(--space-4), .5rem);
+}

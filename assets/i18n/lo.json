@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "ຮູບແບບນີ້ກຳນົດຄວາມສູງຂອງແຖວ ແລະ ຄວາມກວ້າງຂອງຖັນໂດຍອັດຕະໂນມັດ.",
+  "editor.tableResizeColumn": "ຄວາມກວ້າງຂອງຖັນ {index}",
+  "editor.tableResizeRow": "ຄວາມສູງຂອງແຖວ {index}",
   "mac.hide": "ເຊື່ອງ ReadMD",
   "mac.selectAll": "ເລືອກທັງໝົດ",
   "plugin.onDemand": "ກວດສອບເມື່ອໃຊ້",

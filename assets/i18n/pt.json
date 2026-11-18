@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Este formato define automaticamente a altura das linhas e a largura das colunas.",
+  "editor.tableResizeColumn": "Largura da coluna {index}",
+  "editor.tableResizeRow": "Altura da linha {index}",
   "mac.hide": "Ocultar ReadMD",
   "mac.selectAll": "Selecionar tudo",
   "plugin.onDemand": "Verificar ao usar",

@@ -2509,6 +2509,7 @@ pub struct TableCell {
 pub struct EnhancedTableFlow {
     table: TableFlow,
     grid: Vec<Vec<CellGeometry>>,
+    row_heights_px: Vec<Option<usize>>,
 }
 
 /// `styles.page_dimensions(style)` (`styles.py:235-239`) in **mm**.

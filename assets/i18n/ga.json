@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Socraíonn an fhormáid seo airde na rónna agus leithead na gcolún go huathoibríoch.",
+  "editor.tableResizeColumn": "Leithead cholún {index}",
+  "editor.tableResizeRow": "Airde ró {index}",
   "mac.hide": "Folaigh ReadMD",
   "mac.selectAll": "Roghnaigh gach rud",
   "plugin.onDemand": "Fíoraigh agus é in úsáid",

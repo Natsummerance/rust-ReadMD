@@ -3,9 +3,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {randomUUID, createHash} = require('node:crypto');
+const {createHash} = require('node:crypto');
 const {openOwned, until} = require('../tools/test/owned-browser-host.cjs');
-const {startKernel} = require('../tools/test/v006-refactor-host.cjs');
+const recover = require('./table-history-reopen.cjs');
 const zip = require('./zip-parts.cjs');
 const binary = path.resolve(process.argv[2] || ('rust/target/debug/readmd' + (process.platform === 'win32' ? '.exe' : '')));
 const output = path.resolve(process.argv[3] || 'table-geometry-evidence');
@@ -135,32 +135,10 @@ async function exercise() {
   } finally { await host.close(); }
 }
 
-async function recover({file,profile,documents,id,pid}) {
-  const tmp=fs.mkdtempSync(path.join(output,'reopen-'));
-  Object.assign(process.env,{TMPDIR:tmp,TMP:tmp,TEMP:tmp});
-  try {
-    const server=await startKernel(binary,profile,documents);
-    try {
-      assert.notEqual(server.pid,pid);
-      const call=async (route,body)=>{
-        const response=await server.api(route,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});
-        assert.equal(response.status,200);return response.json();
-      };
-      await call('/api/file?p='+encodeURIComponent(file));
-      const resume=await call('/api/review',{action:'resume',path:file});
-      let head=resume.snapshot;
-      assert.equal(head.document_id,id); assert.equal(head.content,states.at(-1));
-      for(const [action,sequence] of [['undo',states.slice(0,-1).reverse()],['redo',states.slice(1)]]) {
-        for (const expected of sequence) {
-          head=await call('/api/review',{action,document_id:id,generation:head.generation,review_revision:head.review_revision,call_id:randomUUID()});
-          assert.equal(head.content,expected,action);assert.deepEqual(fs.readFileSync(file),physical(states.at(-1)));
-        }
-      }
-      check('a fresh Rust process reopens the saved merged table and restores all six undo/redo revisions');
-    } finally { await server.stop(); }
-  } finally { fs.rmdirSync(tmp); }
-}
-exercise().then(recover).then(()=>{report.passed=true;}).catch(e=>{
+exercise().then(result=>recover(result,{binary,output,states,physical})).then(()=>{
+  check('a fresh Rust process reopens the saved merged table and restores all six undo/redo revisions');
+  report.passed=true;
+}).catch(e=>{
   report.failure=String(e.stack||e).replaceAll(output,'<fixture>').replaceAll(process.cwd(),'<source>');
   process.exitCode=1;
 }).finally(()=>{

@@ -6,6 +6,29 @@
     module.exports = factory(require('../reader/heading-identity.js'), require('../../vendor/marked.min.js'), require('./table-attributes.js'));
   } else root.ReadMDTableStructure = factory(root.ReadMDHeadings, root.marked, root.ReadMDTableAttributes);
 })(typeof window !== 'undefined' ? window : null, (headings, marked, tableAttributes) => {
+  function dimensionEdit(source, parsed, axis, size) {
+    const previous = parsed?.attributes[axis];
+    if (previous === size) return null;
+    if (previous !== undefined) {
+      const suffix = source.slice(parsed.from, parsed.to);
+      const from = parsed.from + suffix.indexOf(axis + '=') + axis.length + 1;
+      return { from, to: from + String(previous).length, insert: String(size) };
+    }
+    if (parsed) return { from: parsed.to - 1, to: parsed.to - 1, insert: ' ' + axis + '=' + size };
+    const end = source.length;
+    return { from: end, to: end, insert: tableAttributes.suffix({ [axis]: size }, end > 0) };
+  }
+
+  function resizeTrack(context, axis, index, size) {
+    if (!tableAttributes.validDimension(axis, size)) return null;
+    const row = axis === 'height' ? index : 0, column = axis === 'width' ? index : 0;
+    const cell = context.rows[row]?.[column];
+    if (!cell) return null;
+    const edit = dimensionEdit(cell.original, context.layout.cells[row][column], axis, size);
+    if (!edit || context.to - context.from - (edit.to - edit.from) + edit.insert.length > 65536) return null;
+    return { from: cell.from + edit.from, to: cell.from + edit.to, insert: edit.insert };
+  }
+
   function columnEdit(context, column, insert) {
     if (context.layout?.hasSpans) return null;
     const width = context.rows[0].length;
@@ -23,7 +46,17 @@
       }
       if (!suffix && /(?:^|[^\\])(?:\\\\)*\\$/.test(cells[width - 1])) cells[width - 1] += ' ';
       if (insert) cells.splice(column + 1, 0, index === 1 ? ' --- ' : ' ');
-      else cells.splice(column, 1);
+      else {
+        const row = index === 0 ? 0 : index - 1;
+        const height = context.layout?.heights?.[row];
+        if (column === 0 && index !== 1 && height != null) {
+          const target = context.rows[row][1];
+          const edit = dimensionEdit(target.original, context.layout.cells[row][1], 'height', height);
+          const offset = target.from - target.segmentFrom;
+          cells[1] = cells[1].slice(0, offset + edit.from) + edit.insert + cells[1].slice(offset + edit.to);
+        }
+        cells.splice(column, 1);
+      }
       return prefix + cells.join('|') + (suffix || '|');
     });
     const replacement = output.join('\n');
@@ -110,10 +143,9 @@
     const owner = context.layout.owners[cell.row][cell.column];
     if (!owner) return null;
     const { row, column, rowspan, colspan } = owner;
-    const { align, valign } = context.layout.cells[row][column].attributes;
-    const attrs = {};
-    if (align) attrs.align = align;
-    if (valign) attrs.valign = valign;
+    const attrs = { ...context.layout.cells[row][column].attributes };
+    delete attrs.colspan;
+    delete attrs.rowspan;
     const edit = attributeEdit(context, context.rows[row][column], attrs);
     return edit && { ...edit, affected: rectangle(context, row, column, rowspan, colspan) };
   }
@@ -128,5 +160,5 @@
     return edit && { ...edit, affected: rectangle(context, cell.row, cell.column, 1, 1) };
   }
 
-  return { columnEdit, sortRows, mergeCells, splitCell, alignCell };
+  return { columnEdit, sortRows, mergeCells, splitCell, alignCell, resizeTrack };
 });

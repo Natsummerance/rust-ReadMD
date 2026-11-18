@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Deze indeling bepaalt de rijhoogte en kolombreedte automatisch.",
+  "editor.tableResizeColumn": "Breedte van kolom {index}",
+  "editor.tableResizeRow": "Hoogte van rij {index}",
   "mac.hide": "Verberg ReadMD",
   "mac.selectAll": "Selecteer alles",
   "plugin.onDemand": "Controleren bij gebruik",

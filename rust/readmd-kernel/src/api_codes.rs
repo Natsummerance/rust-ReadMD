@@ -161,6 +161,7 @@ pub const WARN_DOCX_CITATION_INVALID: &str = "docx_citation_invalid";
 pub const WARN_DOCX_CITATION_CONFLICT: &str = "docx_citation_conflict";
 pub const WARN_DOCX_CITATION_RESOURCES_INVALID: &str = "docx_citation_resources_invalid";
 pub const WARN_PUBLICATION_LAYOUT_HEADING: &str = "publication_layout_heading_unsupported";
+pub const WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK: &str = "publication_table_track_size_fallback";
 pub const WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL: &str = "publication_continuous_columns_partial";
 pub const WARN_PUBLICATION_FONT_SUBSTITUTED: &str = "publication_font_substituted";
 pub const WARN_PPTX_MATH_IMAGE: &str = "pptx_math_image";
@@ -415,6 +416,7 @@ pub const WARN_CODES: &[&str] = &[
     WARN_PDF_ANCHOR_MISSING,
     WARN_PUBLICATION_LOCAL_UNSUPPORTED,
     WARN_PUBLICATION_LAYOUT_PAGED,WARN_PUBLICATION_LAYOUT_PARAGRAPH,WARN_PUBLICATION_LAYOUT_NOTES,WARN_PUBLICATION_LAYOUT_HEADING,
+    WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK,
     WARN_PUBLICATION_CONTINUOUS_COLUMNS_PARTIAL,
     WARN_PUBLICATION_FONT_SUBSTITUTED,
     WARN_PUBLICATION_METADATA_TITLE_FALLBACK,
@@ -478,7 +480,14 @@ const WARN_PREFIXES: &[(&str, &str, &str)] = &[
 pub fn warn_item(text: &str) -> Value {
     // Exact machine codes only. A lookalike suffix must not be accepted as a
     // known warning or interpolate arbitrary source into a translated message.
-    if [WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,WARN_MATH_RUN_STYLE_MATERIALIZED,WARN_MATH_REVISION_NOT_PRESERVED].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {return json!({"code":text,"params":{},"text":text});}
+    if [
+        WARN_MATH_PARAGRAPH_STYLE_MATERIALIZED,
+        WARN_MATH_RUN_STYLE_MATERIALIZED,
+        WARN_MATH_REVISION_NOT_PRESERVED,
+        WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK,
+    ].contains(&text) || EQUATION_ARRAY_WARNINGS.contains(&text) {
+        return json!({"code":text,"params":{},"text":text});
+    }
     for (prefix, code, param) in WARN_PREFIXES {
         if let Some(rest) = text.strip_prefix(prefix) {
             let mut params = serde_json::Map::new();
@@ -551,6 +560,16 @@ mod tests {
             assert!(WARN_CODES.contains(code));assert_eq!(warn_item(code)["code"],*code);
             assert_eq!(warn_item(&format!("{code}_lookalike"))["code"],WARN_OTHER);
         }
+    }
+
+    #[test]
+    fn table_track_size_fallback_warning_is_typed_and_matches_exactly() {
+        let code = WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert!(WARN_CODES.contains(&code));
+        let mut body = json!({"warns": [code]});
+        attach_warn_items(&mut body);
+        assert_eq!(body["warn_items"][0], json!({"code":code,"params":{},"text":code}));
+        assert_eq!(warn_item(&format!("{code}_lookalike"))["code"], WARN_OTHER);
     }
 
     #[test]

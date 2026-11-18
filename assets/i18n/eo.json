@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Ĉi tiu formato aŭtomate agordas la altojn de vicoj kaj la larĝojn de kolumnoj.",
+  "editor.tableResizeColumn": "Larĝo de kolumno {index}",
+  "editor.tableResizeRow": "Alto de vico {index}",
   "mac.hide": "Kaŝi ReadMD",
   "mac.selectAll": "Elekti ĉion",
   "plugin.onDemand": "Kontroli dum uzo",

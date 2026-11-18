@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Bu biçim satır yüksekliğini ve sütun genişliğini otomatik olarak belirler.",
+  "editor.tableResizeColumn": "{index}. sütun genişliği",
+  "editor.tableResizeRow": "{index}. satır yüksekliği",
   "mac.hide": "ReadMD’yi gizle",
   "mac.selectAll": "Tümünü seç",
   "plugin.onDemand": "Kullanırken doğrula",

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Awtomatikong itinatakda ng format na ito ang taas ng mga hanay at lapad ng mga kolum.",
+  "editor.tableResizeColumn": "Lapad ng kolum {index}",
+  "editor.tableResizeRow": "Taas ng hanay {index}",
   "mac.hide": "Itago ang ReadMD",
   "mac.selectAll": "Piliin lahat",
   "plugin.onDemand": "Suriin kapag ginamit",

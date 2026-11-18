@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "此格式會自動設定列高和欄寬。",
+  "editor.tableResizeColumn": "第{index}欄寬",
+  "editor.tableResizeRow": "第{index}列高",
   "mac.hide": "隱藏 ReadMD",
   "mac.selectAll": "全選",
   "plugin.onDemand": "使用時驗證",

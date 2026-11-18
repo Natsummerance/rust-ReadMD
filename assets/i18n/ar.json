@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "يحدد هذا التنسيق ارتفاع الصفوف وعرض الأعمدة تلقائيًا.",
+  "editor.tableResizeColumn": "عرض العمود {index}",
+  "editor.tableResizeRow": "ارتفاع الصف {index}",
   "mac.hide": "إخفاء ReadMD",
   "mac.selectAll": "تحديد الكل",
   "plugin.onDemand": "التحقق عند الاستخدام",

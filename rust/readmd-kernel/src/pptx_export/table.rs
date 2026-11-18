@@ -1,7 +1,7 @@
 //! Shared table geometry for editable slides and their HTML preview.
 use std::collections::BTreeMap;
 
-use crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED;
+use crate::api_codes::{PUBLICATION_TABLE_UNSUPPORTED, WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK};
 use crate::md_ast::{Align, Inline};
 use crate::table_geometry::{TableGeometry, TableLayout, TableSlot, VerticalAlign};
 
@@ -225,6 +225,10 @@ impl Builder {
         } = geometry
             .layout(header, body, aligns)
             .map_err(|error| error.code)?;
+        let warning = WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        if geometry.has_track_sizes() && !self.deck.warnings.iter().any(|value| value == warning) {
+            self.deck.warnings.push(warning.into());
+        }
         let enhanced = geometry.is_enhanced();
         let width = WIDTH * self.table_style.width_pct / 100.;
         let col_width = width / columns as f64;

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Ovaj format automatski određuje visinu redaka i širinu stupaca.",
+  "editor.tableResizeColumn": "Širina stupca {index}",
+  "editor.tableResizeRow": "Visina retka {index}",
   "mac.hide": "Sakrij ReadMD",
   "mac.selectAll": "Odaberi sve",
   "plugin.onDemand": "Provjeri pri uporabi",

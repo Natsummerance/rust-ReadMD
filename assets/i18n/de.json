@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Dieses Format legt Zeilenhöhen und Spaltenbreiten automatisch fest.",
+  "editor.tableResizeColumn": "Breite der Spalte {index}",
+  "editor.tableResizeRow": "Höhe der Zeile {index}",
   "mac.hide": "ReadMD ausblenden",
   "mac.selectAll": "Alles auswählen",
   "plugin.onDemand": "Bei Verwendung prüfen",

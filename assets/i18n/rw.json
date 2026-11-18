@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Ubu bwoko bwa dosiye bugena ubuhagarike bw’imirongo n’ubugari bw’inkingi bwikora.",
+  "editor.tableResizeColumn": "Ubugari bw’inkingi ya {index}",
+  "editor.tableResizeRow": "Ubuhagarike bw’umurongo wa {index}",
   "mac.hide": "Hisha ReadMD",
   "mac.selectAll": "Hitamo byose",
   "plugin.onDemand": "Genzura igihe ukoresha",

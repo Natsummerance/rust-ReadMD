@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Acest format stabilește automat înălțimea rândurilor și lățimea coloanelor.",
+  "editor.tableResizeColumn": "Lățimea coloanei {index}",
+  "editor.tableResizeRow": "Înălțimea rândului {index}",
   "mac.hide": "Ascunde ReadMD",
   "mac.selectAll": "Selectează tot",
   "plugin.onDemand": "Verifică la utilizare",

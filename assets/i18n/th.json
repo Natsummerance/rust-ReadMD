@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "รูปแบบนี้กำหนดความสูงของแถวและความกว้างของคอลัมน์โดยอัตโนมัติ",
+  "editor.tableResizeColumn": "ความกว้างคอลัมน์ {index}",
+  "editor.tableResizeRow": "ความสูงแถว {index}",
   "mac.hide": "ซ่อน ReadMD",
   "mac.selectAll": "เลือกทั้งหมด",
   "plugin.onDemand": "ตรวจสอบเมื่อใช้งาน",

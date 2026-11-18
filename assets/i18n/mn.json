@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Энэ формат мөрийн өндөр болон баганын өргөнийг автоматаар тохируулна.",
+  "editor.tableResizeColumn": "{index}-р баганын өргөн",
+  "editor.tableResizeRow": "{index}-р мөрийн өндөр",
   "mac.hide": "ReadMD-г нуух",
   "mac.selectAll": "Бүгдийг сонгох",
   "plugin.onDemand": "Ашиглах үед шалгах",

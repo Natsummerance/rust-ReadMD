@@ -37,11 +37,11 @@ jobs:
       - run: cargo fetch --locked --manifest-path rust/Cargo.toml
       - run: cargo build --locked --offline --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features
       - name: Editor guardrails and structural actions
-        run: node --test tools/test/v007-table-cell.test.cjs
+        run: node --test tools/test/v007-table-cell.test.cjs tools/test/v007-table-clipboard.test.cjs
       - name: Source geometry, Word and PowerPoint
         shell: bash
         run: |
-          for group in table_geometry enhanced_table_exports pptx_export::table_style_tests pdf_render::tests::rust_pdf_ export_snapshot_api::tests; do
+          for group in table_geometry table_track_size enhanced_table_exports pptx_export::table_style_tests pdf_render::tests::rust_pdf_ export_snapshot_api::tests; do
             cargo test --locked --offline --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features --lib "$group" -- --test-threads=1
           done
       - uses: actions/setup-python@v5
@@ -57,22 +57,6 @@ jobs:
           cargo build --offline --locked --manifest-path rust/Cargo.toml -p readmd-kernel --no-default-features --features pdfium-worker --bin readmd-pdf-worker
           registry=$(dirname "$(find "${CARGO_HOME:-$HOME/.cargo}/registry/src" -type d -name pdfium-render-0.9.4 -print -quit)")
           READMD_REGISTRY_SRC="$registry" READMD_PDFIUM_CRATE="$registry/pdfium-render-0.9.4" node tools/build-pdf-pack.mjs "$RUNNER_TEMP/pdfium" rust/target/debug/readmd-pdf-worker "$RUNNER_TEMP/pdfium.readmd-pack" linux-x64
-      - name: Default PDF, long PNG and page PNGs
-        shell: bash
-        run: |
-          args=(--evidence "$RUNNER_TEMP/rg" --python python)
-          if [[ "$RUNNER_OS" == Linux ]]; then
-            args+=(--bin rust/target/debug/readmd --pdfium-pack "$RUNNER_TEMP/pdfium.readmd-pack")
-          else
-            args+=(--bin rust/target/debug/readmd.exe)
-          fi
-          node tools/test/v007-pdf-geometry.cjs "${args[@]}"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: pdf-geometry-${{ runner.os }}
-          path: ${{ runner.temp }}/rg/
-          if-no-files-found: ignore
       - name: Browser dependencies
         working-directory: ui-tests
         run: npm ci --ignore-scripts
@@ -92,4 +76,30 @@ jobs:
         with:
           name: table-geometry-${{ runner.os }}
           path: ${{ runner.temp }}/rt/report.json
+          if-no-files-found: ignore
+
+      - name: Drag, copy and paste, save, undo and reopen
+        shell: bash
+        run: node ui-tests/table-tracks-browser.cjs "" "$RUNNER_TEMP/tt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: table-tracks-${{ runner.os }}
+          path: ${{ runner.temp }}/tt/report.json
+          if-no-files-found: ignore
+      - name: Default PDF, long PNG and page PNGs
+        shell: bash
+        run: |
+          args=(--edited-table "$RUNNER_TEMP/tt" --evidence "$RUNNER_TEMP/rg" --python python)
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            args+=(--bin rust/target/debug/readmd --pdfium-pack "$RUNNER_TEMP/pdfium.readmd-pack")
+          else
+            args+=(--bin rust/target/debug/readmd.exe)
+          fi
+          node tools/test/v007-pdf-geometry.cjs "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pdf-geometry-${{ runner.os }}
+          path: ${{ runner.temp }}/rg/
           if-no-files-found: ignore

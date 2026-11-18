@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "এই বিন্যাসে সারির উচ্চতা ও কলামের প্রস্থ স্বয়ংক্রিয়ভাবে নির্ধারিত হয়।",
+  "editor.tableResizeColumn": "{index} নম্বর কলামের প্রস্থ",
+  "editor.tableResizeRow": "{index} নম্বর সারির উচ্চতা",
   "mac.hide": "ReadMD আড়াল করুন",
   "mac.selectAll": "সব নির্বাচন করুন",
   "plugin.onDemand": "ব্যবহারের সময় যাচাই করুন",

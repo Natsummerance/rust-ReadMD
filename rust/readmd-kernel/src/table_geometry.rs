@@ -9,6 +9,11 @@ use crate::md_ast::{Align, Block, Document, Inline};
 const UNSUPPORTED: &str = crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED;
 const MAX_COLSPAN: usize = 16;
 const MAX_ROWSPAN: usize = 32;
+const MIN_COLUMN_WIDTH: usize = 32;
+const MAX_COLUMN_WIDTH: usize = 1200;
+const MIN_ROW_HEIGHT: usize = 20;
+const MAX_ROW_HEIGHT: usize = 600;
+pub(crate) const PT_PER_CSS_PX: f64 = 0.75;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -35,6 +40,10 @@ pub(crate) struct CellAttributes {
     rowspan: Option<usize>,
     align: Option<Align>,
     valign: Option<VerticalAlign>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    width: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    height: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -60,14 +69,18 @@ pub(crate) struct CellSuffix<'a> {
 }
 
 pub(crate) fn source_candidate(source: &str) -> bool {
-    source.contains('{') && source.contains('}') && ["colspan=", "rowspan=", "align=", "valign="].iter().any(|key| source.contains(key))
+    source.contains('{')
+        && source.contains('}')
+        && ["colspan=", "rowspan=", "align=", "valign=", "width=", "height="]
+            .iter()
+            .any(|key| source.contains(key))
 }
 
-fn span(value: &str, limit: usize) -> Option<usize> {
+fn integer(value: &str, min: usize, max: usize) -> Option<usize> {
     if value.starts_with('0') || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    value.parse().ok().filter(|n| (1..=limit).contains(n))
+    value.parse().ok().filter(|n| (min..=max).contains(n))
 }
 
 fn attributes(source: &str) -> Option<CellAttributes> {
@@ -78,8 +91,8 @@ fn attributes(source: &str) -> Option<CellAttributes> {
     for assignment in source.split(' ').filter(|part| !part.is_empty()) {
         let (key, value) = assignment.split_once('=')?;
         match key {
-            "colspan" if cell.colspan.is_none() => cell.colspan = Some(span(value, MAX_COLSPAN)?),
-            "rowspan" if cell.rowspan.is_none() => cell.rowspan = Some(span(value, MAX_ROWSPAN)?),
+            "colspan" if cell.colspan.is_none() => cell.colspan = Some(integer(value, 1, MAX_COLSPAN)?),
+            "rowspan" if cell.rowspan.is_none() => cell.rowspan = Some(integer(value, 1, MAX_ROWSPAN)?),
             "align" if cell.align.is_none() => cell.align = Some(match value {
                 "left" => Align::Left,
                 "center" => Align::Center,
@@ -92,6 +105,12 @@ fn attributes(source: &str) -> Option<CellAttributes> {
                 "bottom" => VerticalAlign::Bottom,
                 _ => return None,
             }),
+            "width" if cell.width.is_none() => {
+                cell.width = Some(integer(value, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)?);
+            }
+            "height" if cell.height.is_none() => {
+                cell.height = Some(integer(value, MIN_ROW_HEIGHT, MAX_ROW_HEIGHT)?);
+            }
             _ => return None,
         }
     }
@@ -112,7 +131,7 @@ pub(crate) fn cell_suffix(source: &str) -> Option<CellSuffix<'_>> {
         return None;
     }
     if !body.split([' ', '\t']).any(|word| {
-        word.split_once('=').is_some_and(|(key, _)| matches!(key, "colspan" | "rowspan" | "align" | "valign"))
+        word.split_once('=').is_some_and(|(key, _)| matches!(key, "colspan" | "rowspan" | "align" | "valign" | "width" | "height"))
     }) {
         return None;
     }
@@ -151,6 +170,60 @@ pub struct TableLayout<'a> {
     pub rows: Vec<Vec<TableSlot<'a>>>,
 }
 
+pub(crate) struct TableTracks {
+    /// Column preferences and row minimums are expressed in CSS pixels.
+    pub column_widths: Vec<Option<usize>>,
+    pub row_heights: Vec<Option<usize>>,
+}
+
+impl TableTracks {
+    pub(crate) fn has_column_widths(&self) -> bool {
+        self.column_widths.iter().any(Option::is_some)
+    }
+
+    /// Size each logical column within the requested table width in points.
+    /// Reserve space for flexible columns and shrink oversubscribed widths
+    /// proportionally. A smaller declared column can reach the floor first.
+    pub(crate) fn column_widths_pt(&self, available: f64) -> Vec<f64> {
+        let count = self.column_widths.len();
+        let mut fixed: Vec<_> = self.column_widths.iter().flatten().copied().collect();
+        if fixed.is_empty() {
+            return vec![available / count as f64; count];
+        }
+        let fixed_count = fixed.len();
+        let flex_count = count - fixed_count;
+        let floor = (MIN_COLUMN_WIDTH as f64 * PT_PER_CSS_PX).min(available / count as f64);
+        let mut budget = available - floor * flex_count as f64;
+        let mut desired = fixed.iter().sum::<usize>() as f64 * PT_PER_CSS_PX;
+        let mut scale = (budget / desired).min(1.0);
+        if scale < 1.0 {
+            fixed.sort_unstable();
+            for width in fixed.into_iter().take(fixed_count - 1) {
+                let width = width as f64 * PT_PER_CSS_PX;
+                if width * scale >= floor {
+                    break;
+                }
+                budget -= floor;
+                desired -= width;
+                scale = budget / desired;
+            }
+        }
+        let mut resolved: Vec<_> = self.column_widths.iter()
+            .map(|width| width.map_or(0.0, |width| (width as f64 * PT_PER_CSS_PX * scale).max(floor)))
+            .collect();
+        if flex_count > 0 {
+            let remainder = available - resolved.iter().sum::<f64>();
+            let flex_width = (remainder / flex_count as f64).max(floor);
+            for (actual, declared) in resolved.iter_mut().zip(&self.column_widths) {
+                if declared.is_none() {
+                    *actual = flex_width;
+                }
+            }
+        }
+        resolved
+    }
+}
+
 type Owners = HashMap<(usize, usize), CellPlacement>;
 
 fn columns(header: &[Vec<Inline>], rows: &[Vec<Vec<Inline>>]) -> usize {
@@ -160,6 +233,28 @@ fn columns(header: &[Vec<Inline>], rows: &[Vec<Vec<Inline>>]) -> usize {
 impl TableGeometry {
     pub fn is_enhanced(&self) -> bool {
         self.invalid || !self.placements.is_empty()
+    }
+
+    pub(crate) fn has_track_sizes(&self) -> bool {
+        self.placements.iter().any(|cell| cell.attributes.width.is_some() || cell.attributes.height.is_some())
+    }
+
+    /// Collect declarations after validating the table's rectangular grid.
+    pub(crate) fn tracks(&self, columns: usize, rows: usize) -> TableTracks {
+        let mut tracks = TableTracks {
+            column_widths: vec![None; columns],
+            row_heights: vec![None; rows],
+        };
+        // Collect declarations from source slots, including those covered by a merge.
+        for cell in &self.placements {
+            if let Some(width) = cell.attributes.width {
+                tracks.column_widths[cell.column] = Some(width);
+            }
+            if let Some(height) = cell.attributes.height {
+                tracks.row_heights[cell.row] = Some(height);
+            }
+        }
+        tracks
     }
 
     pub(crate) fn add(&mut self, row: usize, column: usize, attributes: Option<CellAttributes>) {
@@ -197,6 +292,12 @@ impl TableGeometry {
                 || attributes.align == Some(Align::None)
                 || !(1..=MAX_ROWSPAN).contains(&rowspan)
                 || !(1..=MAX_COLSPAN).contains(&colspan)
+                || attributes.width.is_some_and(|width| {
+                    row != 0 || !(MIN_COLUMN_WIDTH..=MAX_COLUMN_WIDTH).contains(&width)
+                })
+                || attributes.height.is_some_and(|height| {
+                    column != 0 || !(MIN_ROW_HEIGHT..=MAX_ROW_HEIGHT).contains(&height)
+                })
                 || row >= rows
                 || column >= columns
                 || rowspan > rows - row
@@ -329,11 +430,58 @@ pub(crate) fn validate_rust_pdf_document(doc: &Document) -> Result<(), &'static 
     validate_blocks(&doc.blocks, GeometrySupport::RustPdf)
 }
 
+pub(crate) fn document_has_track_sizes(doc: &Document) -> bool {
+    fn has_sizes(blocks: &[Block]) -> bool {
+        blocks.iter().any(|block| match block.unstyled() {
+            Block::Table { geometry, .. } => geometry.has_track_sizes(),
+            Block::Quote(inner) | Block::FootnoteDef { blocks: inner, .. } => has_sizes(inner),
+            Block::List { items, .. } => items.iter().any(|item| has_sizes(&item.blocks)),
+            _ => false,
+        })
+    }
+    has_sizes(&doc.blocks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::md_ast::{inline_plain, parse};
     use serde_json::json;
+
+    #[test]
+    fn table_track_sizes_belong_to_the_original_slot_even_under_a_merge() {
+        let source = concat!(
+            "| Header {width=160 height=120 colspan=2} | Covered {width=96} | Side |\n",
+            "| --- | --- | --- |\n",
+            "| **One** {rowspan=2 colspan=2 height=80 valign=middle} | Two | A |\n",
+            "| *Three* {height=112} | Four | B |\n",
+        );
+        let doc = parse(source);
+        assert!(validate_rust_pdf_document(&doc).is_ok());
+        let Block::Table { aligns, header, rows, geometry } = &doc.blocks[0] else { panic!("GFM table") };
+        let layout = geometry.layout(header, rows, aligns).unwrap();
+        let tracks = geometry.tracks(layout.columns, layout.rows.len());
+        assert_eq!(tracks.column_widths, [Some(160), Some(96), None]);
+        assert_eq!(tracks.row_heights, [Some(120), Some(80), Some(112)]);
+        let owner = &layout.rows[1][0];
+        assert_eq!(owner.valign, Some(VerticalAlign::Middle));
+        assert_eq!(owner.contents.iter().map(|cell| inline_plain(cell)).collect::<Vec<_>>(), ["One", "Two", "Three", "Four"]);
+
+        let render = crate::md_ast::to_render_json(&doc.blocks);
+        let json_geometry = TableGeometry::from_render_json(&render[0]["tableGeometry"]).unwrap();
+        json_geometry.grid(3, 3).unwrap();
+        assert_eq!(&json_geometry, geometry);
+    }
+
+    #[test]
+    fn table_track_widths_reserve_flexible_space_and_keep_fixed_preferences_when_possible() {
+        let widths = |column_widths, available| TableTracks { column_widths, row_heights: Vec::new() }.column_widths_pt(available);
+        assert_eq!(widths(vec![Some(160), None, Some(96), None], 300.0), [120.0, 54.0, 72.0, 54.0]);
+        assert_eq!(widths(vec![Some(32), Some(1200), None], 90.0), [24.0, 42.0, 24.0]);
+        assert_eq!(widths(vec![Some(160), Some(96)], 400.0), [120.0, 72.0]);
+        assert_eq!(widths(vec![Some(160), Some(96)], 150.0), [93.75, 56.25]);
+        assert_eq!(widths(vec![None, Some(1200), None], 30.0), [10.0, 10.0, 10.0]);
+    }
 
     #[test]
     fn source_cells_remain_distinct_while_layout_resolves_merged_content_and_alignment() {
@@ -385,6 +533,14 @@ mod tests {
             format!("{HEAD}| a {{valign=top bad=1}} | b |"),
             format!("{HEAD}| a {{align=*left*}} | b |"),
             format!("{HEAD}| a {{align=left}} | b | extra |"),
+            format!("{HEAD}| a {{width=100}} | b |"),
+            format!("{HEAD}| a | b {{height=125}} |"),
+            "| A {width=31} | B |\n|---|---|".into(),
+            "| A {width=1201} | B |\n|---|---|".into(),
+            "| A {width=64px} | B |\n|---|---|".into(),
+            "| A {width=96 width=160} | B |\n|---|---|".into(),
+            "| A {height=19} | B |\n|---|---|".into(),
+            "| A {height=601} | B |\n|---|---|".into(),
         ] {
             let doc = parse(&source);
             assert_eq!(validate_document(&doc, true), Err(UNSUPPORTED), "{source:?}");
@@ -453,6 +609,9 @@ mod tests {
             ("/placements/0/attributes", json!({"align": "none"})),
             ("/placements/0/attributes", json!({"valign": "center"})),
             ("/placements/0/attributes", json!([2, 2, null, null])),
+            ("/placements/0/attributes", json!({"width": 160})),
+            ("/placements/0/attributes", json!({"height": 601})),
+            ("/placements/0/attributes", json!({"height": "80"})),
         ] {
             let mut invalid = valid.clone();
             *invalid.pointer_mut(path).unwrap() = replacement;

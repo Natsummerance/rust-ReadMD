@@ -38,6 +38,28 @@ test('a fresh adapter resume and durable-history protocol undo only the cell; di
  assert.equal(first.store.calls.filter(x=>x.body.action==='undo').length,1);assert.equal(first.store.calls.filter(x=>x.body.action==='redo').length,1);
  // A fresh VM object is not a new Rust/OS process or SQLite certificate.
 });
+test('an unnamed table resize keeps its selection and resumes through the same draft history',async()=>{
+ const original='| Header | Notes |\n| --- | --- |\n| A | keep me |\n';
+ const resized=original.replace('Header |','Header {width=156} |');
+ const store=service(original,{draft:true}),first=app(store);
+ await first.ready();
+ const anchor=original.indexOf('keep me');first.select(anchor,anchor+7);
+ const edit=first.context.ReadMDTableStructure.resizeTrack(first.hit(),'width',0,156);
+ await assert.rejects(first.review.captureManualRange(edit.from,edit.to,first.tab),{code:'review_stale_generation'});
+ const stamp=await first.review.captureManualRange(edit.from,edit.to,first.tab,{allowDraft:true});
+ await first.review.applyManualRange(edit.insert,stamp,first.tab,undefined,{preserveSelection:true,userEvent:'input.table.resize'});
+ assert.equal(first.text(),resized);
+ const selection=first.view.state.selection.main;
+ assert.equal(first.view.state.sliceDoc(selection.from,selection.to),'keep me');
+ assert.equal(first.view.transactions.filter(tx=>tx.isUserEvent('input.table.resize')).length,1);
+ assert.equal(manual(store).length,1);
+ assert.deepEqual(store.calls.filter(({body})=>body.action==='resume').map(({body})=>body.path),['draft:table-tab','draft:table-tab']);
+ const reopened=app(store);await reopened.ready();
+ assert.equal(reopened.text(),resized);
+ await reopened.history();assert.equal(reopened.text(),original);
+ await reopened.history(true);assert.equal(reopened.text(),resized);
+ assert.equal(store.disk().toString('utf8'),original);
+});
 test('edit then durable undo equal-text ABA rejects the old Apply',async()=>{
  const f=await ready(),stamp=await f.capture(),before=f.text();f.type({from:0,insert:'X'});await f.review.flush(f.tab);await f.history(false);assert.equal(f.text(),before);assert(f.tab.editGeneration>stamp.editGeneration);
  const count=cellEdits(f.store).length;await assert.rejects(f.apply(stamp),{code:'review_stale_generation'});assert.equal(f.text(),before);assert.equal(cellEdits(f.store).length,count);

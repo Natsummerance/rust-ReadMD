@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Tämä tiedostomuoto määrittää rivikorkeudet ja sarakeleveydet automaattisesti.",
+  "editor.tableResizeColumn": "Sarakkeen {index} leveys",
+  "editor.tableResizeRow": "Rivin {index} korkeus",
   "mac.hide": "Kätke ReadMD",
   "mac.selectAll": "Valitse kaikki",
   "plugin.onDemand": "Tarkista käytettäessä",

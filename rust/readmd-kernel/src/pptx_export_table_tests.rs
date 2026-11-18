@@ -132,6 +132,25 @@ fn table_header_weight_and_width_match_preview_and_editable_grid() {
     }
 }
 
+#[test]
+fn pptx_table_track_size_fallback_keeps_all_editable_merged_text() {
+    let source = concat!(
+        "# Slide\n\n| Head {width=160} | Pair |\n| --- | --- |\n",
+        "| One {colspan=2 rowspan=2} | Two |\n",
+        "| Three {height=112} | Four |\n",
+    );
+    let options = settings("grid");
+    let deck = build(source, "", "Slide", &options).unwrap();
+    let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+    assert_eq!(deck.warnings.iter().filter(|value| value.as_str() == warning).count(), 1);
+    let tables = native_tables(&deck);
+    let rows = rows(&tables[0]);
+    assert_eq!(rows[1][0].attributes["gridSpan"], "2");
+    assert_eq!(rows[1][0].attributes["rowSpan"], "2");
+    assert_eq!(rows[1][0].text(), "OneTwoThreeFour");
+    assert!(rows[2][0].text().is_empty());
+}
+
 fn preview_tables(deck: &Deck) -> Vec<XmlNode> {
     let html = preview_html(deck).unwrap();
     html.split("<table ").skip(1).map(|part| {

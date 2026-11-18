@@ -3,6 +3,75 @@
 // links. Rendering must not reparse a cell as an independent document.
 (function (root) {
   const attributes = root.ReadMDTableAttributes;
+  const measured = new WeakMap();
+  const sizedColumns = 'table.readmd-table-geometry--columns';
+
+  function fitColumns(widths, available) {
+    const minimum = Math.min(attributes.dimensions.width.min, available / widths.length);
+    const fixed = widths.filter(width => width !== null);
+    const flexible = widths.length - fixed.length;
+    let room = available - flexible * minimum;
+    let total = fixed.reduce((sum, width) => sum + width, 0);
+    let scale = Math.min(1, room / total);
+    if (scale < 1 && fixed.length > 1) {
+      fixed.sort((a, b) => a - b);
+      for (const width of fixed.slice(0, -1)) {
+        if (width * scale >= minimum) break;
+        room -= minimum;
+        total -= width;
+        scale = room / total;
+      }
+    }
+    const fixedWidth = width => Math.max(minimum, width * scale);
+    const remaining = available - fixed.reduce((sum, width) => sum + fixedWidth(width), 0);
+    const autoWidth = flexible ? Math.max(minimum, remaining / flexible) : 0;
+    return widths.map(width => width === null ? autoWidth : fixedWidth(width));
+  }
+
+  function observe(scope, owner = scope, widthFraction = 1) {
+    if (!owner) return;
+    measured.get(owner)?.disconnect();
+    measured.delete(owner);
+    const byContainer = new Map();
+    for (const table of scope?.querySelectorAll?.(sizedColumns) || []) {
+      const cols = Array.from(table.querySelectorAll(':scope > colgroup > col'));
+      const widths = cols.map(col => {
+        const raw = col.dataset.tableWidth;
+        const value = Number(raw);
+        return /^[1-9]\d*$/.test(raw) && attributes.validDimension('width', value) ? value : null;
+      });
+      if (!widths.some(width => width !== null) || !table.parentElement) continue;
+      const parent = table.parentElement;
+      if (!byContainer.has(parent)) byContainer.set(parent, []);
+      byContainer.get(parent).push({ table, cols, widths });
+    }
+    if (!byContainer.size) return;
+
+    function measure(parent, width) {
+      if (width <= 0) return;
+      for (const { table, cols, widths } of byContainer.get(parent)) {
+        if (table.parentElement !== parent) continue;
+        const style = root.getComputedStyle(table);
+        const border = (parseFloat(style.borderLeftWidth) || 0) + (parseFloat(style.borderRightWidth) || 0);
+        const gap = style.borderCollapse === 'separate' ? (parseFloat(style.borderSpacing) || 0) * (cols.length + 1) : 0;
+        const sizes = fitColumns(widths, Math.max(1, width * widthFraction - border - gap));
+        table.style.width = (sizes.reduce((sum, size) => sum + size, 0) + border + gap) + 'px';
+        cols.forEach((col, index) => { col.style.width = sizes[index] + 'px'; });
+      }
+    }
+    for (const parent of byContainer.keys()) {
+      const style = root.getComputedStyle(parent);
+      measure(parent, parent.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0));
+    }
+    if (typeof root.ResizeObserver === 'function') {
+      const observer = new root.ResizeObserver(entries => {
+        for (const entry of entries) measure(entry.target, entry.contentRect.width);
+      });
+      for (const parent of byContainer.keys()) observer.observe(parent);
+      measured.set(owner, observer);
+    }
+  }
+
   function render(token, renderer) {
     const rows = [token.header, ...token.rows];
     if (!rows.some(row => row.some(cell => cell.text.endsWith('}')))) return false;
@@ -25,7 +94,8 @@
     }
     function renderRow(row, index) {
       const tag = index ? 'td' : 'th';
-      let result = '<tr>';
+      const height = layout.heights[index];
+      let result = height ? '<tr height="' + height + '" data-table-height="' + height + '">' : '<tr>';
       for (let column = 0; column < row.length; column++) {
         const owner = layout.owners[index][column];
         if (owner && (owner.row !== index || owner.column !== column)) continue;
@@ -47,9 +117,13 @@
       }
       return result + '</tr>';
     }
-    return '<table class="readmd-table-geometry"><thead>' + renderRow(rows[0], 0) + '</thead><tbody>' +
+    const sized = layout.widths.some(Boolean);
+    const colgroup = sized ? '<colgroup>' + layout.widths.map(width =>
+      width ? '<col width="' + width + '" data-table-width="' + width + '">' : '<col>').join('') + '</colgroup>' : '';
+    return '<table class="readmd-table-geometry' + (sized ? ' readmd-table-geometry--columns' : '') + '">' +
+      colgroup + '<thead>' + renderRow(rows[0], 0) + '</thead><tbody>' +
       rows.slice(1).map((row, i) => renderRow(row, i + 1)).join('') + '</tbody></table>';
   }
-  root.ReadMDTableView = { render };
+  root.ReadMDTableView = { render, observe };
   root.marked.use({ renderer: { table(token) { return render(token, this); } } });
 })(window);

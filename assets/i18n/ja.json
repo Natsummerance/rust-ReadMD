@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "この形式では行の高さと列幅が自動調整されます。",
+  "editor.tableResizeColumn": "{index} 列目の幅",
+  "editor.tableResizeRow": "{index} 行目の高さ",
   "mac.hide": "ReadMD を非表示",
   "mac.selectAll": "すべてを選択",
   "plugin.onDemand": "使用時に検証",

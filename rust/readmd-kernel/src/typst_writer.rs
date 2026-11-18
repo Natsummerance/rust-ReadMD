@@ -503,6 +503,10 @@ impl Writer<'_>{
                     let mut cells = Vec::new();
                     if geometry.is_enhanced() {
                         let layout = geometry.layout(header, rows, aligns).map_err(|error| error.code)?;
+                        let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+                        if geometry.has_track_sizes() && !self.warnings.iter().any(|value| value == warning) {
+                            self.warnings.push(warning.into());
+                        }
                         for (r, row) in layout.rows.iter().enumerate() {
                             for (c, slot) in row.iter().enumerate() {
                                 if (r, c) != (slot.origin_row, slot.origin_col) { continue; }
@@ -935,5 +939,24 @@ mod table_geometry_projection {
         assert!(!source.contains("table.cell(x:1,y:2,"));
         assert_eq!(source.matches("#linebreak()").count(), 3);
         assert!(!source.contains("{colspan"));
+    }
+
+    #[test]
+    fn typst_table_track_size_fallback_keeps_merged_text_and_reports_automatic_sizes() {
+        let md = concat!(
+            "| Head {width=160} | Pair |\n| --- | --- |\n",
+            "| **One** {colspan=2 rowspan=2} | Two |\n",
+            "| Three {height=112} | Four |\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let source = super::render(&crate::md_ast::parse(md), &serde_json::json!({}), "", dir.path(), "Grid").unwrap();
+        let warning = crate::api_codes::WARN_PUBLICATION_TABLE_TRACK_SIZE_FALLBACK;
+        assert_eq!(source.warnings.iter().filter(|value| value.as_str() == warning).count(), 1);
+        assert!(source.text.contains("table.cell(x:0,y:1,colspan:2,rowspan:2"));
+        assert_eq!(source.text.matches("#linebreak()").count(), 3);
+        for text in ["One", "Two", "Three", "Four"] {
+            assert!(source.text.contains(text));
+        }
+        assert!(!source.text.contains("{width=") && !source.text.contains("{height="));
     }
 }

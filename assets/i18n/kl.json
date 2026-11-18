@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Formatip uuma titarnerit portussusii aamma sukkanik silissutsit nammineq aalajangersartarpai.",
+  "editor.tableResizeColumn": "Sukaq {index} silissusia",
+  "editor.tableResizeRow": "Titarneq {index} portussusia",
   "mac.hide": "ReadMD toqqoruk",
   "mac.selectAll": "Tamaasa toqqakkit",
   "plugin.onDemand": "Atorneqarnerani misissuk",

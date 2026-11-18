@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Questo formato imposta automaticamente l’altezza delle righe e la larghezza delle colonne.",
+  "editor.tableResizeColumn": "Larghezza colonna {index}",
+  "editor.tableResizeRow": "Altezza riga {index}",
   "mac.hide": "Nascondi ReadMD",
   "mac.selectAll": "Seleziona tutto",
   "plugin.onDemand": "Verifica durante l’uso",

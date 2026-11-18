@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "This format sets row heights and column widths automatically.",
+  "editor.tableResizeColumn": "Column {index} width",
+  "editor.tableResizeRow": "Row {index} height",
   "mac.hide": "Hide ReadMD",
   "mac.selectAll": "Select All",
   "plugin.onDemand": "Verify when used",

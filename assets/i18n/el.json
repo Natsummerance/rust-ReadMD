@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Αυτή η μορφή ορίζει αυτόματα το ύψος των γραμμών και το πλάτος των στηλών.",
+  "editor.tableResizeColumn": "Πλάτος στήλης {index}",
+  "editor.tableResizeRow": "Ύψος γραμμής {index}",
   "mac.hide": "Απόκρυψη ReadMD",
   "mac.selectAll": "Επιλογή όλων",
   "plugin.onDemand": "Έλεγχος κατά τη χρήση",

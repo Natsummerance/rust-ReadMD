@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "פורמט זה קובע אוטומטית את גובה השורות ואת רוחב העמודות.",
+  "editor.tableResizeColumn": "רוחב עמודה {index}",
+  "editor.tableResizeRow": "גובה שורה {index}",
   "mac.hide": "הסתרת ReadMD",
   "mac.selectAll": "בחירת הכול",
   "plugin.onDemand": "אימות בעת השימוש",

@@ -1,4 +1,7 @@
 {
+  "warn.publication_table_track_size_fallback": "Dette formatet angir radhøyder og kolonnebredder automatisk.",
+  "editor.tableResizeColumn": "Bredde på kolonne {index}",
+  "editor.tableResizeRow": "Høyde på rad {index}",
   "mac.hide": "Skjul ReadMD",
   "mac.selectAll": "Velg alle",
   "plugin.onDemand": "Kontroller ved bruk",
