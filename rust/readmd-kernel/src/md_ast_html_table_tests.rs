@@ -23,7 +23,7 @@ fn native_html_table_projects_exact_cells_entities_rich_inlines_and_breaks_witho
     let source = parse(SIMPLE); let before = source.clone(); let projected = native_table_document(&source).unwrap();
     assert_eq!(source,before); assert!(matches!(projected,std::borrow::Cow::Owned(_)));
     let actual=tables(&projected.blocks);assert_eq!(actual.len(),1);
-    let Block::Table { aligns,header,rows }=actual[0] else{panic!("native table")};
+    let Block::Table { aligns,header,rows,.. }=actual[0] else{panic!("native table")};
     assert_eq!(aligns,&[Align::Left,Align::Right]);assert_eq!(header.iter().map(|cell|inline_plain(cell)).collect::<Vec<_>>(),["SIMPLE_HEAD_ALPHA","SIMPLE_HEAD_BETA"]);
     assert_eq!(rows.len(),2);assert_eq!(rows[0].len(),2);assert_eq!(rows[1].len(),2);
     assert_eq!(inline_plain(&rows[0][0]),"SIMPLE_CELL_ALPHA & literal *star* EM_ALPHA BR_ALPHA <x> LINK_ALPHA");

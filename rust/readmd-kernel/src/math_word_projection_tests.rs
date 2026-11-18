@@ -121,7 +121,7 @@ fn display_carriers_cannot_be_hidden_in_inline_links_or_table_cells(){
     let docs=[
         document(vec![Block::Paragraph(vec![inline()])]),
         document(vec![Block::Paragraph(vec![Inline::Link{href:"https://example.test/owned".into(),title:String::new(),children:vec![inline()]}])]),
-        document(vec![Block::Table{aligns:vec![Align::Left],header:vec![vec![Inline::Text("Head".into())]],rows:vec![vec![vec![inline()]]]}]),
+        document(vec![Block::Table{geometry: Default::default(),aligns:vec![Align::Left],header:vec![vec![Inline::Text("Head".into())]],rows:vec![vec![vec![inline()]]]}]),
     ];
     for doc in docs{for target in ["docx","typst","rust","html","epub","tex"]{assert_eq!(validate_document(&doc,target).unwrap_err(),"math_invalid_source");}}
 }

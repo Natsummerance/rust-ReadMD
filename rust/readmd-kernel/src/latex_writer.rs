@@ -539,6 +539,7 @@ pub(crate) fn render_document_with_resources(doc: &Document, opts: &LatexOptions
 
 /// Preflight precedes image/bibliography resource staging in actual exporters.
 pub(crate) fn validate_paragraphs(doc:&Document, opts:&LatexOptions)->Result<(),String> {
+    crate::table_geometry::validate_document(doc, false).map_err(str::to_owned)?;
     crate::math_word_projection::validate_document(doc,"tex")?;
     crate::publication_blocks::validate_author_render_document(doc).map_err(str::to_string)?;
     let original=opts.publication_style.clone().unwrap_or_else(||serde_json::json!({}));
@@ -802,6 +803,9 @@ pub(crate) fn render_document_with_geometry(doc: &Document, opts: &LatexOptions,
 
 /// Render only the body (no preamble).
 pub fn render_body(doc: &Document, images: ImageMap) -> String {
+    if let Err(code) = crate::table_geometry::validate_document(doc, false) {
+        return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported table geometry}}\n", escape_text(code));
+    }
     if let Err(code)=crate::math_word_projection::validate_document(doc,"tex"){return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported formula paragraph properties}}\n",escape_text(&code));}
     if let Err(error)=crate::publication_blocks::validate_author_render_document(doc){return format!("\\PackageError{{ReadMD}}{{{}}}{{Unsupported publication author text}}\n",escape_text(error));}
     let original=serde_json::json!({});
@@ -1265,7 +1269,7 @@ impl<'a> Writer<'a> {
                 let text = if self.author.is_some(){self.author_text(&label.text(),false)}else{self.text(&label.text())};
                 self.out.push_str(&format!("\\phantomsection\\label{{{}}}\n\\begin{{center}}{}{}\\end{{center}}\n\n", label_key(&label.id), text, rest));
             }
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, .. } => {
                 self.para_break();
                 self.table(aligns, header, rows);
             }

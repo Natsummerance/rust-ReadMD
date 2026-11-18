@@ -176,6 +176,12 @@ pub(crate) fn validate_pdf_engine(options:&Value)->Result<()> {
 pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<()> {
     let format = crate::image_export::layout_format(format);
     if format.eq_ignore_ascii_case("pdf") {validate_pdf_engine(options)?;}
+    if crate::table_geometry::source_candidate(content) {
+        let supported = matches!(format.to_ascii_lowercase().as_str(), "docx" | "pptx" | "epub" | "html" | "typst")
+            || (format.eq_ignore_ascii_case("pdf") && options.pointer("/pdf/engine").and_then(Value::as_str) == Some("typst"));
+        crate::table_geometry::validate_document(&crate::md_ast::parse(content), supported)
+            .map_err(|code| error(code, "source.table"))?;
+    }
     if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || format.eq_ignore_ascii_case("pdf") &&
         options.pointer("/pdf/engine").and_then(Value::as_str).is_none_or(|engine| engine == "rust")) {
         let document = crate::md_ast::parse(content);

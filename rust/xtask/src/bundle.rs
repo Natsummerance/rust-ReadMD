@@ -9,6 +9,8 @@ use std::path::Path;
 pub const SOURCES: &[&str] = &[
     "vendor/marked.min.js",
     "js/reader/quoted-strong.js",
+    "js/editor/table-attributes.js",
+    "js/reader/table-layout.js",
     "js/reader/export-html-layout.js",
     "js/core/modal.js",
     "js/core/task-feedback.js",

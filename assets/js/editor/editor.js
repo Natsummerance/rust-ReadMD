@@ -1566,9 +1566,12 @@ function clipboardTableRows(text, delimiter) {
 function clipboardTableCell(text) {
   // Office cells are text, not Markdown/HTML. Entities also avoid GFM's
   // backslash/pipe parity trap and survive subsequent table Tab/Enter edits.
-  return text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
+  const escaped = text.replace(/[&<>\t\\|`*_[\]~$:@]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || '&#' + ch.charCodeAt(0) + ';'))
     .replace(/\n/g, '<br>')
     .replace(/^ +| +$/g, spaces => '&#32;'.repeat(spaces.length));
+  if (!window.ReadMDTableAttributes?.parseCell(escaped.trim())) return escaped;
+  const brace = escaped.lastIndexOf('{');
+  return escaped.slice(0, brace) + '&#123;' + escaped.slice(brace + 1);
 }
 
 /* 智能 Excel / CSV 粘贴转 Markdown 表格 */
@@ -1759,7 +1762,7 @@ function cmTableCellReplacement(value) {
   return clipboardTableCell(value);
 }
 function cmTableCellContext(view) {
-  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view);
+  const CM = window.ReadMDCodeMirror, hit = view && cmSingleCursorLine(view), attributes = window.ReadMDTableAttributes;
   if (!hit || view !== cmView || !state.editing || view.state.readOnly || window.ReadMDCollaborationShare?.canEdit() === false || !CM?.syntaxTree) return null;
   let node = CM.syntaxTree(view.state).resolveInner(hit.range.head, -1);
   while (node && node.name !== 'Table') {
@@ -1769,12 +1772,12 @@ function cmTableCellContext(view) {
   if (!node) return null;
   const doc = view.state.doc, header = doc.lineAt(node.from), last = doc.lineAt(node.to);
   const unsupported = () => ({ unsupported: true });
-  if (node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > 32 ||
+  if (!attributes || node.parent?.name !== 'Document' || node.to - node.from > 65536 || last.number - header.number > attributes.maxRows + 1 ||
       !/^ {0,3}$/.test(header.text.slice(0, node.from - header.from)) || /<(?:table|tr|td|th|col|caption)\b/i.test(doc.sliceString(node.from, node.to))) return unsupported();
   const lines = [];
   for (let number = header.number; number <= last.number; number++) {
     const line = doc.line(number), segments = cmTableRowSegments(line.text);
-    if (!segments || !segments.length || segments.length > 16 || lines.length && segments.length !== lines[0].segments.length) return unsupported();
+    if (!segments || !segments.length || segments.length > attributes.maxColumns || lines.length && segments.length !== lines[0].segments.length) return unsupported();
     lines.push({ line, segments });
   }
   if (lines.length < 2 || (lines.length - 1) * lines[0].segments.length > 256 ||
@@ -1782,7 +1785,7 @@ function cmTableCellContext(view) {
   const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
     const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
     const body = raw.slice(leading).replace(/[ \t]*$/, ''), from = line.from + segment.from + leading;
-    return { row, column, from, to: from + body.length, original: body, value: cmTableCellLiteral(body), line: line.number,
+    return { row, column, from, to: from + body.length, original: body, line: line.number,
       segmentFrom: line.from + segment.from, segmentTo: line.from + segment.to };
   }));
   const parsedRows = [];
@@ -1791,8 +1794,16 @@ function cmTableCellContext(view) {
     const parsedCells = parsedRows[row].getChildren('TableCell');
     return cells.some(cell => cell.from !== cell.to && !parsedCells.some(parsed => parsed.from === cell.from && parsed.to === cell.to));
   })) return unsupported();
+  const layout = attributes.layout(rows.map(row => row.map(cell => cell.original)));
+  if (!layout) return unsupported();
+  for (const cell of rows.flat()) {
+    const attrs = layout.cells[cell.row][cell.column];
+    cell.content = attrs?.text ?? cell.original;
+    cell.contentTo = cell.from + cell.content.length + (attrs?.from > 0 ? 1 : 0);
+    cell.value = cmTableCellLiteral(cell.content);
+  }
   const selected = rows.flat().find(cell => cell.line === hit.line.number && hit.range.from >= cell.segmentFrom && hit.range.to <= cell.segmentTo);
-  return selected ? { from: node.from, to: node.to, rows, lines, selected, editorDoc: doc } : unsupported();
+  return selected ? { from: node.from, to: node.to, rows, lines, layout, selected, editorDoc: doc } : unsupported();
 }
 let tableCellSession = null;
 function tableCellControls(view, context, modal, picker) {
@@ -1835,10 +1846,60 @@ function tableCellControls(view, context, modal, picker) {
   const apply = document.createElement('button'), cancel = document.createElement('button');
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
+  const properties = document.createElement('details'), summary = document.createElement('summary');
+  properties.id = 'table-cell-properties'; properties.open = context.layout.hasAttributes;
+  summary.dataset.i18n = 'editor.tableCellProperties'; summary.textContent = t(summary.dataset.i18n); properties.append(summary);
+  const propertyFields = document.createElement('div'); propertyFields.className = 'table-cell-property-fields'; properties.append(propertyFields);
+  function propertyField(tag, name, key) {
+    const field = document.createElement(tag), caption = document.createElement('label');
+    field.id = 'table-cell-' + name; field.className = 'modal-input';
+    caption.setAttribute('for', field.id);
+    const text = document.createElement('span'); text.dataset.i18n = key; text.textContent = t(key);
+    caption.append(text, field); propertyFields.append(caption);
+    field.addEventListener('input', updatePropertyControls);
+    return field;
+  }
+  function spanField(name, key) {
+    const field = propertyField('input', name, key);
+    field.type = 'number'; field.min = '1'; field.step = '1'; field.value = '1';
+    return field;
+  }
+  function alignmentField(name, key, choices) {
+    const field = propertyField('select', name, key);
+    for (const [value, optionKey] of [['', 'export.presetDefault'], ...choices]) {
+      const option = document.createElement('option'); option.value = value;
+      option.dataset.i18n = optionKey; option.textContent = t(optionKey); field.append(option);
+    }
+    return field;
+  }
+  const rowSpan = spanField('rowspan', 'editor.tableCellRowSpan'), columnSpan = spanField('colspan', 'editor.tableCellColumnSpan');
+  const horizontal = alignmentField('align', 'editor.tableCellHorizontal', [
+    ['left', 'export.alignLeft'], ['center', 'export.alignCenter'], ['right', 'export.alignRight'],
+  ]);
+  const vertical = alignmentField('valign', 'editor.tableCellVertical', [
+    ['top', 'formula.ommlEnum.VerticalAlignmentValues.Top'], ['middle', 'editor.tableCellMiddle'], ['bottom', 'formula.ommlEnum.VerticalAlignmentValues.Bottom'],
+  ]);
+  const rangeFeedback = document.createElement('p'); rangeFeedback.className = 'table-cell-range-feedback';
+  rangeFeedback.setAttribute('aria-live', 'polite');
+  const propertyActions = document.createElement('div'); propertyActions.className = 'panel-feedback-row table-cell-property-actions';
+  properties.append(propertyActions, rangeFeedback);
+  function propertyAction(id, key, action) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn';
+    button.id = 'table-cell-' + id; button.dataset.i18n = key; button.textContent = t(key); button.disabled = true;
+    button.addEventListener('click', () => commitStructure(propertyEdit(action))); propertyActions.append(button);
+    return button;
+  }
+  const merge = propertyAction('merge', 'editor.tableCellMerge', 'merge');
+  const split = propertyAction('split', 'editor.tableCellSplit', 'split');
+  const applyProperties = propertyAction('properties-apply', 'editor.tableCellApplyProperties', 'align');
+  const rangeHelp = document.createElement('p'); rangeHelp.className = 'table-cell-range-feedback';
+  rangeHelp.dataset.i18n = 'editor.tableCellSelectRange'; rangeHelp.textContent = t(rangeHelp.dataset.i18n);
+  properties.append(rangeHelp);
   const buttons = [];
   const structureCache = new Map();
+  const cellChanged = () => !input.disabled && input.value !== session.cell?.value;
   function structuralEdit(action) {
-    if (!session.cell || (!input.disabled && input.value !== session.cell.value)) return null;
+    if (!session.cell || context.layout.hasAttributes || cellChanged()) return null;
     if (!structureCache.has(action)) structureCache.set(action, planStructure(action));
     return structureCache.get(action);
   }
@@ -1856,7 +1917,7 @@ function tableCellControls(view, context, modal, picker) {
       const after = row === 0 ? editorDoc.line(line.number + 1) : line;
       const indent = after.text.match(/^ {0,3}/)[0];
       const insert = '\n' + indent + '|' + ' |'.repeat(rows[0].length);
-      if (rows.length >= 32 || (rows.length + 1) * rows[0].length > 256 ||
+      if (rows.length >= ReadMDTableAttributes.maxRows + 1 || (rows.length + 1) * rows[0].length > 256 ||
           context.to - context.from + insert.length > 65536) return null;
       return { from: after.to, to: after.to, insert };
     }
@@ -1869,12 +1930,40 @@ function tableCellControls(view, context, modal, picker) {
   function updateStructureButtons() {
     for (const {button, action} of structureActions) button.disabled = session.busy || !structuralEdit(action);
   }
-  input.addEventListener('input', updateStructureButtons);
-  async function applyStructure(action) {
-    if (!current() || session.busy) return;
-    const edit = structuralEdit(action);
-    if (!edit) return;
-    session.busy = true; input.readOnly = true; apply.disabled = true; updateStructureButtons();
+  function propertyEdit(action) {
+    if (!session.cell || cellChanged()) return null;
+    const tools = window.ReadMDTableStructure, cell = session.cell;
+    if (action === 'merge') return tools.mergeCells(context, cell, Number(rowSpan.value), Number(columnSpan.value));
+    if (action === 'split') return tools.splitCell(context, cell);
+    return tools.alignCell(context, cell, horizontal.value, vertical.value);
+  }
+  function updatePropertyControls() {
+    if (!session.cell) return;
+    const { row, column } = session.cell, { owners } = context.layout;
+    const owner = owners[row][column];
+    const canMerge = propertyEdit('merge');
+    rowSpan.disabled = columnSpan.disabled = session.busy || Boolean(owner);
+    horizontal.disabled = vertical.disabled = session.busy;
+    merge.disabled = session.busy || !canMerge;
+    split.disabled = session.busy || !propertyEdit('split');
+    applyProperties.disabled = session.busy || !propertyEdit('align');
+    const hasRange = rowSpan.value !== '1' || columnSpan.value !== '1';
+    rangeFeedback.textContent = hasRange && !owner && !canMerge && !cellChanged() ? t('editor.tableCellInvalidRange') : '';
+    rangeFeedback.hidden = !rangeFeedback.textContent;
+    for (const { button, cell } of buttons) {
+      const inRange = owner ? owners[cell.row][cell.column] === owner :
+        canMerge && cell.row >= row && cell.row < row + Number(rowSpan.value) &&
+          cell.column >= column && cell.column < column + Number(columnSpan.value);
+      if (inRange) button.dataset.tableInRange = '';
+      else delete button.dataset.tableInRange;
+    }
+  }
+  input.addEventListener('input', () => { updateStructureButtons(); updatePropertyControls(); });
+  function applyStructure(action) { return commitStructure(structuralEdit(action)); }
+  async function commitStructure(edit) {
+    if (!current() || session.busy || !edit) return;
+    session.busy = true; input.readOnly = true; apply.disabled = true;
+    updateStructureButtons(); updatePropertyControls();
     status.textContent = t('review.busy');
     try {
       const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
@@ -1883,9 +1972,8 @@ function tableCellControls(view, context, modal, picker) {
       // A structural edit would invalidate these anchors. Keep any review
       // touching the affected lines available for an explicit decision first.
       const changes = ReadMDReview.snapshot(tab).changes;
-      if (changes.some(change => change.decision !== 'withdrawn' && (change.from === change.to
-        ? edit.from <= change.from && change.from <= edit.to
-        : change.from < edit.to && edit.from < change.to))) {
+      if (changes.some(change => change.decision !== 'withdrawn' && (edit.affected || [edit]).some(({ from, to }) =>
+        change.from === change.to ? from <= change.from && change.from <= to : change.from < to && from < change.to))) {
         status.textContent = t('review.conflict'); return;
       }
       await ReadMDReview.applyManualRange(edit.insert, stamp, tab, current);
@@ -1894,22 +1982,27 @@ function tableCellControls(view, context, modal, picker) {
       if (tableCellSession === session && getActiveTab() === tab) status.textContent = t('review.conflict');
     } finally {
       session.busy = false;
-      if (current()) { input.readOnly = false; updateStructureButtons(); apply.disabled = !session.stamp; }
+      if (current()) { input.readOnly = false; updateStructureButtons(); updatePropertyControls(); apply.disabled = !session.stamp; }
     }
   }
   async function select(cell) {
     if (!current() || session.busy) return;
     structureCache.clear();
     const token = ++session.serial; session.stamp = null; session.cell = cell; input.value = cell.value ?? ''; input.disabled = cell.value === null; apply.disabled = true;
-    updateStructureButtons();
+    const owner = context.layout.owners[cell.row][cell.column], attrs = context.layout.cells[cell.row][cell.column]?.attributes;
+    rowSpan.max = String(cell.row === 0 ? 1 : context.rows.length - cell.row);
+    columnSpan.max = String(context.rows[0].length - cell.column);
+    rowSpan.value = String(owner?.rowspan ?? 1); columnSpan.value = String(owner?.colspan ?? 1);
+    horizontal.value = attrs?.align ?? ''; vertical.value = attrs?.valign ?? '';
+    updateStructureButtons(); updatePropertyControls();
     label.textContent = t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1);
     for (const item of buttons) item.button.setAttribute('aria-pressed', String(item.cell === cell));
     if (cell.value === null) { status.textContent = t('error.publication_table_unsupported'); return; }
     status.textContent = t('review.busy');
     try {
-      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.to, tab);
+      const stamp = await ReadMDReview.captureManualRange(cell.from, cell.contentTo, tab);
       if (!current() || token !== session.serial) return;
-      if (stamp.editorDoc !== context.editorDoc || stamp.original !== cell.original) throw Error('review_stale_generation');
+      if (stamp.editorDoc !== context.editorDoc || stamp.original !== context.editorDoc.sliceString(cell.from, cell.contentTo)) throw Error('review_stale_generation');
       session.stamp = stamp;
       if (!session.busy) { apply.disabled = false; status.textContent = ''; input.focus(); }
     } catch (_) { if (current() && token === session.serial) status.textContent = t('review.conflict'); }
@@ -1918,25 +2011,42 @@ function tableCellControls(view, context, modal, picker) {
     const tr = document.createElement('tr');
     for (const cell of row) {
       const td = document.createElement(cell.row === 0 ? 'th' : 'td'), button = document.createElement('button');
-      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.original; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
+      button.type = 'button'; button.className = 'tb-btn'; button.textContent = cell.value ?? cell.content; button.dataset.tableRow = cell.row; button.dataset.tableColumn = cell.column;
       button.setAttribute('aria-label', t('editor.tableCell') + ' ' + (cell.row + 1) + ', ' + (cell.column + 1)); button.style.width = '100%'; button.style.overflow = 'hidden'; button.style.textOverflow = 'ellipsis';
-      button.addEventListener('click', () => { void select(cell); }); buttons.push({ button, cell }); td.append(button); tr.append(td);
+      button.addEventListener('click', event => {
+        if (!event?.shiftKey || !session.cell) { void select(cell); return; }
+        if (!current() || session.busy || rowSpan.disabled) return;
+        properties.open = true;
+        rowSpan.value = String(cell.row - session.cell.row + 1);
+        columnSpan.value = String(cell.column - session.cell.column + 1);
+        updatePropertyControls();
+      });
+      buttons.push({ button, cell }); td.append(button); tr.append(td);
     }
     grid.append(tr);
   }
   cancel.addEventListener('click', closeTableModal);
   apply.addEventListener('click', async () => {
     if (!current() || session.busy || !session.stamp) return;
-    const replacement = cmTableCellReplacement(input.value);
+    let replacement = cmTableCellReplacement(input.value);
     if (replacement === null) { status.textContent = t('error.publication_table_unsupported'); return; }
     if (input.value === session.cell.value) { closeTableModal(); return; }
+    const cell = session.cell;
+    if (replacement && context.layout.cells[cell.row][cell.column]) replacement += ' ';
     const stamp = session.stamp;
-    session.busy = true; apply.disabled = true; input.disabled = true; updateStructureButtons();
+    session.busy = true; apply.disabled = true; input.disabled = true; updateStructureButtons(); updatePropertyControls();
     try { await ReadMDReview.applyManualRange(replacement, stamp, tab, () => current() && session.stamp === stamp); if (tableCellSession === session && cmView === view && getActiveTab() === tab) closeTableModal(); }
     catch (_) { if (tableCellSession === session && cmView === view && getActiveTab() === tab) status.textContent = t('review.conflict'); }
-    finally { session.busy = false; if (current()) updateStructureButtons(); }
+    finally { session.busy = false; if (current()) { input.disabled = false; apply.disabled = false; updateStructureButtons(); updatePropertyControls(); } }
   });
-  root.append(gridWrap, label, input, actions, status); void select(context.selected);
+  root.append(gridWrap, label, input, properties);
+  if (context.layout.hasAttributes) {
+    const locked = document.createElement('p'); locked.className = 'table-cell-structure-status';
+    locked.dataset.i18n = 'editor.tableCellStructureLocked'; locked.textContent = t(locked.dataset.i18n);
+    root.append(locked);
+  }
+  root.append(actions, status);
+  void select(context.selected);
 }
 
 /* READMD_LITERAL_TABLE_CELL_HELPERS_END */
@@ -2296,11 +2406,53 @@ function cmSingleCursorLine(view) {
   return { range: r, line };
 }
 
+function cmAttributedTableRows(view, position) {
+  const parseCell = window.ReadMDTableAttributes?.parseCell, syntaxTree = window.ReadMDCodeMirror?.syntaxTree;
+  if (!parseCell || !syntaxTree) return null;
+  const tree = syntaxTree(view.state), doc = view.state.doc;
+  let table;
+  for (const bias of [-1, 1]) {
+    table = tree.resolveInner(position, bias);
+    while (table && table.name !== 'Table') table = table.parent;
+    if (table) break;
+  }
+  if (!table || !doc.sliceString(table.from, table.to).includes('{')) return null;
+  const rows = [];
+  for (let row = table.firstChild; row; row = row.nextSibling) {
+    if (row.name === 'TableHeader' || row.name === 'TableRow') rows.push(row);
+  }
+  return rows.some(row => row.getChildren('TableCell').some(cell => parseCell(doc.sliceString(cell.from, cell.to)))) ? rows : null;
+}
+
+function cmNavigateAttributedTable(view, rows, position, dir) {
+  const doc = view.state.doc, cells = [];
+  for (const row of rows) {
+    const text = doc.sliceString(row.from, row.to), segments = cmTableRowSegments(text);
+    if (!segments) return true;
+    for (const segment of segments) {
+      const raw = text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
+      const content = raw.slice(leading).replace(/[ \t]*$/, '');
+      const attributes = ReadMDTableAttributes.parseCell(content);
+      const from = row.from + segment.from + leading;
+      const length = attributes?.text?.length ?? content.length;
+      cells.push({ from, to: from + length, start: row.from + segment.from, end: row.from + segment.to });
+    }
+  }
+  const current = cells.findIndex(cell => cell.start <= position && position <= cell.end);
+  const target = current >= 0 ? cells[current + dir] :
+    dir > 0 ? cells.find(cell => cell.start > position) : cells.findLast(cell => cell.end < position);
+  if (target) view.dispatch({ selection: { anchor: target.from, head: target.to }, scrollIntoView: true });
+  return true;
+}
+
 /* Tab / Shift+Tab inside a GFM table: realign pipes and jump between cells. */
 function cmTableTab(view, dir) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || cmInCode(view.state, hit.range.head)) return false;
+  if (!T || !hit) return false;
+  const rows = cmAttributedTableRows(view, hit.range.head);
+  if (rows) return cmNavigateAttributedTable(view, rows, hit.range.head, dir);
+  if (cmInCode(view.state, hit.range.head)) return false;
   return cmDispatchEdit(view, T.tableNavEdit(view.state.doc.toString(), hit.range.head, dir), 'input.table');
 }
 
@@ -2308,7 +2460,12 @@ function cmTableTab(view, dir) {
 function cmTableEnter(view) {
   const T = window.ReadMDTransforms;
   const hit = cmSingleCursorLine(view);
-  if (!T || !hit || !hit.range.empty || cmInCode(view.state, hit.range.head)) return false;
+  if (!T || !hit || !hit.range.empty) return false;
+  if (cmAttributedTableRows(view, hit.range.head)) {
+    showToast(window.i18n?.t('editor.tableCellStructureLocked') || 'editor.tableCellStructureLocked');
+    return true;
+  }
+  if (cmInCode(view.state, hit.range.head)) return false;
   return cmDispatchEdit(view, T.tableEnterEdit(view.state.doc.toString(), hit.range.head), 'input.table');
 }
 

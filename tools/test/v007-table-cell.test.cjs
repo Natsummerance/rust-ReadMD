@@ -161,3 +161,188 @@ test('sort keeps numeric precision, equal-key order and empty cells last in eith
     assert.equal(result, source.slice(0, source.indexOf(lines[0])) + expected.map(i => lines[i]).join('\n'));
   }
 });
+
+const attrs = require('../../assets/js/editor/table-attributes.js');
+const structure = require('../../assets/js/editor/table-structure.js');
+const geometryTable = [
+  '| Title | Middle | Final |',
+  '| --- | :---: | --- |',
+  '| **Alpha**   | left\\|right | first |',
+  '| [Charlie](https://example.invalid)  | Delta {align=left} | last |',
+].join('\n');
+const duplicates = '# 前置 😀\n\n' + geometryTable + '\n\n' + geometryTable + '\n';
+const sourceWith = (source, match, replacement) => {
+  const from = source.lastIndexOf(match);
+  return source.slice(0, from) + replacement + source.slice(from + match.length);
+};
+const setTableField = (ui, name, value) => {
+  const field = ui.get('table-cell-' + name);
+  field.value = value;
+  field.listeners.input();
+};
+const cellButton = (ui, row, column) => ui.buttons().find(button => button.dataset.tableRow === row && button.dataset.tableColumn === column);
+
+test('cell suffixes are exact, bounded, ordered independently, and distinct from literal Markdown', () => {
+  const source = '**x**  {valign=middle  colspan=2 align=right rowspan=3}  ';
+  assert.deepEqual(attrs.parseCell(source), {
+    from: 6, to: source.length - 2, text: '**x**   ',
+    attributes: { valign: 'middle', colspan: 2, align: 'right', rowspan: 3 },
+  });
+  assert.equal(attrs.parseCell(' \t{align=left}  ').text, ' \t  ');
+  for (const source of [
+    'x {class=blue}', 'x\\{align=left}', 'x \\{align=left}', 'x {align=left\\}',
+    'x `{align=left}`', 'x\t{align=left}',
+  ]) assert.equal(attrs.parseCell(source), null, source);
+  for (const suffix of ['colspan=0', 'colspan=17', 'rowspan=33', 'colspan=02',
+    'align=RIGHT', 'valign=top align=', 'align=left align=right', 'align=left style=color', ' align=left', 'align=left\tvalign=top']) {
+    assert.deepEqual(attrs.parseCell('x {' + suffix + '}'), { invalid: true }, suffix);
+  }
+  assert.equal(attrs.suffix({ valign: 'top', rowspan: 2, colspan: 3, align: 'center' }, true),
+    ' {colspan=3 rowspan=2 align=center valign=top}');
+});
+
+test('shared geometry refuses bounds, overlap, and header crossing, and tracks all covered slots', () => {
+  const rows = [
+    ['H {colspan=2}', 'I', 'J'],
+    ['A {rowspan=2 colspan=2}', 'B', 'E'],
+    ['C', 'D {valign=top}', 'F {colspan=1 rowspan=1}'],
+  ];
+  const layout = attrs.layout(rows);
+  assert.equal(layout.hasAttributes, true);
+  assert.deepEqual(layout.owners[0][1], { row: 0, column: 0, rowspan: 1, colspan: 2 });
+  const owner = layout.owners[1][0];
+  for (const [row, column] of [[1, 1], [2, 0], [2, 1]]) assert.equal(layout.owners[row][column], owner);
+  assert.equal(layout.owners[2][2], null);
+  assert.equal(layout.cells[2][1].attributes.valign, 'top');
+  for (const [row, col, source] of [[0, 0, 'H {rowspan=2}'], [1, 0, 'A {rowspan=3}'], [1, 2, 'E {colspan=2}'], [2, 1, 'D {colspan=2}']]) {
+    const other = rows.map(row => [...row]);
+    other[row][col] = source;
+    assert.equal(attrs.layout(other), null, source);
+  }
+});
+
+test('endpoint merge, alignment, and split edit only the anchor suffix on the selected duplicate', async () => {
+  const f = await ready(duplicates), ui = modal(f);
+  f.select(duplicates.lastIndexOf('**Alpha**') + 3);
+  f.context.openTableModal();
+  assert.equal(ui.get('table-cell-input').disabled, true, 'rich content remains available to merge');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  cellButton(ui, 2, 1).click({ shiftKey: true });
+  assert.equal(ui.get('table-cell-rowspan').value, '2');
+  assert.equal(ui.get('table-cell-colspan').value, '2');
+  assert.equal(cellButton(ui, 2, 1).dataset.tableInRange, '');
+  const from = duplicates.lastIndexOf('**Alpha**') + '**Alpha**'.length;
+  await ui.get('table-cell-merge').click();
+  const merged = sourceWith(duplicates, '**Alpha**', '**Alpha** {colspan=2 rowspan=2}');
+  assert.equal(f.text(), merged);
+  assert.deepEqual(manual(f.store)[0].body.edits, [{ from, to: from, insert: ' {colspan=2 rowspan=2}' }]);
+  assert.equal(f.store.disk().toString(), duplicates);
+
+  f.select(from - 2);
+  f.context.openTableModal();
+  setTableField(ui, 'align', 'center');
+  setTableField(ui, 'valign', 'middle');
+  await ui.get('table-cell-properties-apply').click();
+  const aligned = sourceWith(duplicates, '**Alpha**', '**Alpha** {colspan=2 rowspan=2 align=center valign=middle}');
+  assert.equal(f.text(), aligned);
+
+  f.select(aligned.lastIndexOf('Delta') + 2);
+  f.context.openTableModal();
+  assert.equal(ui.get('table-cell-input').value, 'Delta');
+  assert.equal(ui.get('table-cell-align').value, 'left');
+  await ui.get('table-cell-split').click();
+  const split = sourceWith(duplicates, '**Alpha**', '**Alpha** {align=center valign=middle}');
+  assert.equal(f.text(), split);
+  assert.equal(manual(f.store).length, 3);
+  await f.history();
+  assert.equal(f.text(), aligned);
+  await f.history(true);
+  assert.equal(f.text(), split);
+});
+
+test('span inputs reject cross-section and overlapping rectangles, and cell properties fence structure changes', async () => {
+  const source = sourceWith(duplicates, 'left\\|right', 'left\\|right {colspan=2}');
+  const f = await ready(source), ui = modal(f);
+  f.select(source.lastIndexOf('Title') + 1);
+  f.context.openTableModal();
+  setTableField(ui, 'rowspan', '2');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  cellButton(ui, 1, 0).click();
+  setTableField(ui, 'colspan', '2');
+  assert.equal(ui.get('table-cell-merge').disabled, true);
+  const context = f.hit();
+  assert.equal(structure.columnEdit(context, 0, true), null);
+  assert.equal(structure.sortRows(context, 0, true, 'en'), null);
+  assert(ui.get('table-cell-controls').querySelectorAll('button').filter(button => button.dataset.tableMove).every(button => button.disabled));
+  assert.equal(f.text(), source);
+  assert.equal(manual(f.store).length, 0);
+});
+
+test('an affected review and cancellation during span capture leave source untouched', async () => {
+  const f = await ready(duplicates), ui = modal(f);
+  const from = duplicates.lastIndexOf('Charlie');
+  await f.review.propose([{ from, to: from + 'Charlie'.length, insert: 'Review' }], await f.review.capture(f.tab), f.tab);
+  const proposed = f.text();
+  f.select(proposed.lastIndexOf('**Alpha**') + 2);
+  f.context.openTableModal();
+  setTableField(ui, 'rowspan', '2');
+  setTableField(ui, 'colspan', '2');
+  await ui.get('table-cell-merge').click();
+  assert.equal(ui.get('table-cell-controls').children.at(-1).textContent, 'review.conflict');
+  assert.equal(f.text(), proposed);
+  assert.equal(manual(f.store).length, 0);
+
+  const gate = f.store.pause('resume');
+  const committing = ui.get('table-cell-merge').click();
+  await gate.entered.promise;
+  ui.get('table-cell-cancel').click();
+  gate.release.resolve();
+  await committing;
+  assert.equal(f.text(), proposed);
+  assert.equal(manual(f.store).length, 0);
+});
+
+test('empty anchors round-trip with exact whitespace, and literal edits cannot introduce metadata', async () => {
+  const source = '| A | B |\n| --- | --- |\n|   | Body |\n';
+  const f = await ready(source), ui = modal(f);
+  f.select(source.lastIndexOf('   |') + 1);
+  f.context.openTableModal();
+  setTableField(ui, 'colspan', '2');
+  await ui.get('table-cell-merge').click();
+  const merged = source.replace('   | Body', '   {colspan=2}| Body');
+  assert.equal(f.text(), merged);
+
+  f.select(merged.lastIndexOf('{colspan'));
+  f.context.openTableModal();
+  await until(() => !ui.get('table-cell-apply').disabled);
+  ui.get('table-cell-input').value = 'text {align=right}';
+  await ui.get('table-cell-apply').click();
+  const typed = merged.replace('{colspan=2}', 'text &#123;align=right} {colspan=2}');
+  assert.equal(f.text(), typed);
+
+  f.select(typed.lastIndexOf('Body') + 1);
+  f.context.openTableModal();
+  await ui.get('table-cell-split').click();
+  assert.equal(f.text(), typed.replace(' {colspan=2}', ''));
+  await f.history();
+  await f.history();
+  f.select(merged.lastIndexOf('Body') + 1);
+  f.context.openTableModal();
+  await ui.get('table-cell-split').click();
+  assert.equal(f.text(), source);
+});
+
+test('Tab selects source content without formatting, and Enter cannot insert an attributed row', async () => {
+  const f = await ready(duplicates), at = duplicates.lastIndexOf('**Alpha**') + 3;
+  f.select(at);
+  assert.equal(f.context.cmTableTab(f.view, 1), true);
+  const selection = () => f.view.state.sliceDoc(f.view.state.selection.main.from, f.view.state.selection.main.to);
+  assert.equal(selection(), 'left\\|right');
+  assert.equal(f.context.cmTableTab(f.view, -1), true);
+  assert.equal(selection(), '**Alpha**');
+  f.select(at);
+  assert.equal(f.context.cmTableEnter(f.view), true);
+  assert.equal(f.toasts.at(-1), 'editor.tableCellStructureLocked');
+  assert.equal(f.text(), duplicates);
+  assert.equal(manual(f.store).length, 0);
+});

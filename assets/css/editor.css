@@ -670,6 +670,57 @@ body.zen-mode #edit-wrap { background: var(--color-surface); }
   scroll-margin-inline: var(--space-1);
   transform: none;
 }
+.table-cell-grid .tb-btn[data-table-in-range]:not([aria-pressed="true"]) {
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 var(--hairline) var(--color-accent);
+}
+#table-cell-properties {
+  min-inline-size: 0;
+  border: var(--hairline) solid var(--color-border);
+  border-radius: var(--radius-s);
+  padding-inline: var(--space-2);
+}
+#table-cell-properties > summary {
+  min-block-size: var(--table-cell-target);
+  align-content: center;
+  cursor: pointer;
+}
+.table-cell-property-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+.table-cell-property-fields > label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.table-cell-property-fields .modal-input {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: var(--table-cell-target);
+}
+.table-cell-property-actions {
+  flex-wrap: wrap;
+  margin-block-start: var(--space-2);
+}
+.table-cell-property-actions .tb-btn {
+  min-block-size: var(--table-cell-target);
+  block-size: auto;
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.table-cell-range-feedback,
+.table-cell-structure-status {
+  margin: 0;
+  color: var(--color-fg-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.table-cell-range-feedback { margin-block: var(--space-2); }
 #table-cell-controls.table-cell-editor > .modal-input {
   box-sizing: border-box;
   inline-size: 100%;

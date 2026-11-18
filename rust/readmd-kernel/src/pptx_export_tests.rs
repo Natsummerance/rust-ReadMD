@@ -4,7 +4,7 @@ use std::fs;
 fn strings(deck:&Deck)->String {
     deck.slides.iter().flat_map(|slide|&slide.shapes).map(|shape|match shape{
         Shape::Text{lines,..}=>lines.iter().map(|line|plain(line)).collect::<String>(),
-        Shape::Table{rows,..}=>rows.iter().flatten().flatten().map(|line|plain(line)).collect(),
+        Shape::Table{rows,..}=>table::lines(rows).map(|line|plain(line)).collect(),
         Shape::Image{alt,..}=>alt.clone(),
         Shape::Accent{..}=>String::new(),
     }).collect()
@@ -58,7 +58,7 @@ fn table_rows_repeat_headers_and_preserve_all_cells_on_continuation(){
     let mut source="# Long table\n\n|Observation|Result|\n|---|---|\n".to_string();for n in 0..60{source.push_str(&format!("|row-{n:03}|value-{n:03}|\n"));}
     let deck=build(&source,"","Data",&json!({})).unwrap();assert!(deck.slides.len()>3);assert_bounds(&deck);
     let text=strings(&deck);for n in 0..60{assert!(text.contains(&format!("row-{n:03}")));assert!(text.contains(&format!("value-{n:03}")));}
-    for shape in deck.slides.iter().flat_map(|s|&s.shapes){if let Shape::Table{rows,..}=shape{assert_eq!(plain(&rows[0][0][0]),"Observation");}}
+    for shape in deck.slides.iter().flat_map(|s|&s.shapes){if let Shape::Table{rows,..}=shape{assert_eq!(plain(&rows[0].cells[0].lines[0]),"Observation");}}
 }
 
 #[test]

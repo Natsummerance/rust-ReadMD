@@ -106,6 +106,7 @@ pub mod mdexport;
 pub mod native_diagrams;
 /// Shared pulldown-cmark AST for the DOCX / LaTeX / PDF exporters.
 pub mod md_ast;
+pub mod table_geometry;
 /// AST-based Markdown → LaTeX writer used by the LaTeX export.
 pub mod latex_writer;
 /// AST-based Markdown → DOCX (WordprocessingML) writer.

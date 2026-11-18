@@ -2888,6 +2888,22 @@ pub struct TextSpan {
     pub advance: f64,
 }
 
+fn enhanced_table_error(blocks: &Value) -> Option<PdfError> {
+    let mut pending = vec![blocks];
+    while let Some(value) = pending.pop() {
+        if value["type"] == "table" && value.get("tableGeometry").is_some() {
+            return Some(PdfError::new(PdfErrorKind::Invalid, crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED));
+        }
+        if let Some(children) = value.as_array() {
+            pending.extend(children);
+        } else {
+            pending.extend(value.get("blocks"));
+            pending.extend(value.get("items"));
+        }
+    }
+    None
+}
+
 /// The story builder: `render()`'s cover/TOC preamble plus the
 /// `for blk in blocks:` dispatch (`:278-456`).
 pub fn build_story(
@@ -2901,6 +2917,9 @@ pub fn build_story(
     warns: &mut Vec<String>,
     toc_pages: &[TocEntry],
 ) -> Vec<Flowable> {
+    if let Some(error) = enhanced_table_error(blocks) {
+        return vec![Flowable::Error(error)];
+    }
     let mut story: Vec<Flowable> = Vec::new();
 
     // ---- cover (`:280-299`)
@@ -4765,6 +4784,9 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
     resolve:&dyn Fn(&str)->Option<String>,warns:&mut Vec<String>,lines:crate::publication_typography::LineContext)
     ->Result<RenderedDoc,PdfError>
 {
+    if let Some(error) = enhanced_table_error(blocks) {
+        return Err(error);
+    }
     let note_destinations=crate::rust_pdf_notes::validated_destinations(blocks,style).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
     let resolved_math=crate::math_render_json::resolve(blocks).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
     let blocks=resolved_math.as_ref();
@@ -6436,6 +6458,15 @@ mod tests {
 
     fn page_texts(doc: &RenderedDoc) -> Vec<String> {
         doc.pages.iter().map(|p| p.text.clone()).collect()
+    }
+
+    #[test]
+    fn rust_pdf_rejects_nested_enhanced_table_render_json() {
+        let doc = crate::md_ast::parse("> | Header |\n> | --- |\n> | Cell {valign=top} |");
+        let blocks = crate::md_ast::to_render_json(&doc.blocks);
+        let style = style_for(json!({}));
+        let error = render_bytes(&blocks, &style, "", &no_image, &mut Vec::new()).unwrap_err();
+        assert_eq!(error.message, crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED);
     }
 
     #[test]

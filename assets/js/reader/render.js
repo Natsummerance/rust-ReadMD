@@ -1064,7 +1064,7 @@ function parseMarkdownWithSourceMap(content, options = {}) {
     };
 
     renderer.table = function(token) {
-      const html = marked.Renderer.prototype.table.call(this, token);
+      const html = window.ReadMDTableView?.render(token, this) || marked.Renderer.prototype.table.call(this, token);
       const lineAttr = (token && token.sourceLine) ? ` data-source-line="${token.sourceLine}"` : '';
       if (lineAttr && html && html.startsWith('<table')) {
         return '<table' + lineAttr + html.slice(6);
@@ -1314,6 +1314,9 @@ function sanitizeRenderedHtml(html, { allowInteractive = true } = {}) {
         node.removeAttribute(attribute.name);
         return;
       }
+      if ((tag === 'td' || tag === 'th') &&
+          ((name === 'align' && ['left', 'center', 'right'].includes(value)) ||
+           (name === 'valign' && ['top', 'middle', 'bottom'].includes(value)))) return;
       if (name.startsWith('data-') || name === 'class' || name.startsWith('aria-') ||
           ['title', 'lang', 'dir', 'alt', 'width', 'height', 'loading',
            'colspan', 'rowspan', 'datetime', 'cite'].includes(name)) return;

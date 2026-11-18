@@ -23,7 +23,7 @@ fn xhtml_uses_numeric_point_sizes_and_keeps_scripts_links_and_escaped_content(){
 fn nested_base_uses_exact_body_local_heading_and_table_contexts(){
     let reset=|name:&str|authored(json!({"size":30}),vec![authored(json!({"size":"base"}),vec![leaf(name)])]);
     let mut settings=style();settings["headings"]["h1"]["size"]=json!(24);settings["table"]["cellSize"]=json!(10.5);
-    let source=output(vec![Block::Paragraph(vec![reset("BODY")]),Block::Styled{attributes:json!({"text":{"size":17.5}}),block:Box::new(Block::Paragraph(vec![reset("LOCAL")]))},Block::Heading{level:1,id:"h".into(),inlines:vec![reset("HEAD")],numbering:None},Block::Table{aligns:Vec::new(),header:vec![vec![reset("CELL")]],rows:Vec::new()}],&settings);
+    let source=output(vec![Block::Paragraph(vec![reset("BODY")]),Block::Styled{attributes:json!({"text":{"size":17.5}}),block:Box::new(Block::Paragraph(vec![reset("LOCAL")]))},Block::Heading{level:1,id:"h".into(),inlines:vec![reset("HEAD")],numbering:None},Block::Table{geometry: Default::default(),aligns:Vec::new(),header:vec![vec![reset("CELL")]],rows:Vec::new()}],&settings);
     for (size,name) in [("11.25","BODY"),("17.5","LOCAL"),("24","HEAD"),("10.5","CELL")]{assert!(source.contains(&format!("<span style=\"font-size:{size}pt\">{name}</span>")),"{source}");}
 }
 

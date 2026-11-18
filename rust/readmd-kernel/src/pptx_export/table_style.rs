@@ -74,12 +74,6 @@ pub(super) enum TableRowKind {
     Band,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) struct TableRowLayout {
-    pub(super) height: f64,
-    pub(super) kind: TableRowKind,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct TableBorders {
     left: f64,
@@ -163,7 +157,7 @@ impl TableStyle {
         }
     }
 
-    pub(super) fn borders(&self, row: usize, rows: usize) -> TableBorders {
+    pub(super) fn borders(&self, first_row: usize, last_row: usize, rows: usize) -> TableBorders {
         let width = self.border_width;
         if !self.three_line {
             return TableBorders {
@@ -176,10 +170,10 @@ impl TableStyle {
         TableBorders {
             left: 0.,
             right: 0.,
-            top: if row == 0 { width * 2. } else { 0. },
-            bottom: if row + 1 == rows {
+            top: if first_row == 0 { width * 2. } else { 0. },
+            bottom: if last_row + 1 == rows {
                 width * 2.
-            } else if row == 0 {
+            } else if last_row == 0 {
                 width
             } else {
                 0.

@@ -494,10 +494,32 @@ impl Writer<'_>{
                     let mut values=Vec::new();for item in items{let marker=match item.task{Some(true)=>text("☑ "),Some(false)=>text("☐ "),None=>String::new()};values.push(format!("[{marker}{}]",self.special_blocks(&item.blocks)?));}
                     format!("#{}({}{})\n",if *ordered{"enum"}else{"list"},if *ordered{format!("start:{start},")}else{String::new()},values.join(","))
                 },
-                Block::Table{header,rows,aligns}=>{
+                Block::Table{header,rows,aligns,geometry}=>{
                     let scholarly=crate::export_styles::three_line_table(self.style);
-                    let mut cells=Vec::new();for row in rows{for cell in row{cells.push(format!("[{}]",self.inlines(cell)?));}}
-                    let mut heads=Vec::new();for cell in header{heads.push(format!("[#text(fill:{},weight:{})[{}]]",color(if scholarly{&self.style["typography"]["color"]}else{&self.style["table"]["headerColor"]},if scholarly{"#111111"}else{"#ffffff"}),string(if self.style["table"]["headerBold"].as_bool().unwrap_or(true){"bold"}else{"regular"}),self.inlines(cell)?));}
+                    let header_style = |body: String| format!("[#text(fill:{},weight:{})[{}]]",
+                        color(if scholarly { &self.style["typography"]["color"] } else { &self.style["table"]["headerColor"] }, if scholarly { "#111111" } else { "#ffffff" }),
+                        string(if self.style["table"]["headerBold"].as_bool().unwrap_or(true) { "bold" } else { "regular" }), body);
+                    let mut heads = Vec::new();
+                    let mut cells = Vec::new();
+                    if geometry.is_enhanced() {
+                        let layout = geometry.layout(header, rows, aligns).map_err(|error| error.code)?;
+                        for (r, row) in layout.rows.iter().enumerate() {
+                            for (c, slot) in row.iter().enumerate() {
+                                if (r, c) != (slot.origin_row, slot.origin_col) { continue; }
+                                let mut pieces = Vec::new();
+                                for segment in &slot.contents { pieces.push(self.inlines(segment)?); }
+                                let body = pieces.join("#linebreak()");
+                                let body = if r == 0 { header_style(body) } else { format!("[{body}]") };
+                                let horizontal = match slot.align { crate::md_ast::Align::Center => "center", crate::md_ast::Align::Right => "right", _ => "left" };
+                                let vertical = match slot.valign { Some(crate::table_geometry::VerticalAlign::Middle) => "horizon", Some(crate::table_geometry::VerticalAlign::Bottom) => "bottom", _ => "top" };
+                                let cell = format!("table.cell(x:{c},y:{r},colspan:{},rowspan:{},align:{horizontal}+{vertical},{body})", slot.colspan, slot.rowspan);
+                                if r == 0 { heads.push(cell); } else { cells.push(cell); }
+                            }
+                        }
+                    } else {
+                        for row in rows { for cell in row { cells.push(format!("[{}]", self.inlines(cell)?)); } }
+                        for cell in header { heads.push(header_style(self.inlines(cell)?)); }
+                    }
                     let column_count=header.len().max(1);let alignments=(0..column_count).map(|i|match aligns.get(i){Some(crate::md_ast::Align::Center)=>"center",Some(crate::md_ast::Align::Right)=>"right",_=>"left"}).collect::<Vec<_>>().join(",");
                     let band=if self.style["table"]["banded"].as_bool().unwrap_or(true){color(&self.style["table"]["bandColor"],"#f3f5f9")}else{"none".into()};
                     if scholarly {
@@ -901,3 +923,17 @@ mod heading_numbering_tests;
 #[cfg(test)]
 #[path="typst_writer_paragraphs_tests.rs"]
 mod paragraph_tests;
+
+#[cfg(test)]
+mod table_geometry_projection {
+    #[test]
+    fn typst_places_origin_with_editable_text_from_every_covered_cell() {
+        let md = "| H | I | J |\n|---|---|---|\n| **A** {colspan=2 rowspan=2 align=right valign=middle} | B | East |\n| C | D | West |\n";
+        let dir = tempfile::tempdir().unwrap();
+        let source = super::render(&crate::md_ast::parse(md), &serde_json::json!({}), "", dir.path(), "Grid").unwrap().text;
+        assert!(source.contains("table.cell(x:0,y:1,colspan:2,rowspan:2,align:right+horizon"));
+        assert!(!source.contains("table.cell(x:1,y:2,"));
+        assert_eq!(source.matches("#linebreak()").count(), 3);
+        assert!(!source.contains("{colspan"));
+    }
+}

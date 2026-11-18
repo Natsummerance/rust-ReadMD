@@ -1159,6 +1159,12 @@ pub fn export_html(
         marked_js.push_str("\n;\n");
         marked_js.push_str(include_str!("../../../assets/js/reader/quoted-strong.js"));
     }
+    if !marked_js.is_empty() && crate::table_geometry::source_candidate(&embedded_md) {
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/editor/table-attributes.js"));
+        marked_js.push_str("\n;\n");
+        marked_js.push_str(include_str!("../../../assets/js/reader/table-layout.js"));
+    }
     let mathjax_js = read_asset_file(assets_dir, "mathjax/tex-svg.js");
     if marked_js.is_empty() {
         warns.push("marked.min.js 未找到，HTML 导出可能无法渲染".to_string());
@@ -1175,6 +1181,7 @@ pub fn export_html(
         css.push('\n');
     }
     css.push_str(&build_export_css(&display_options));
+    if crate::table_geometry::source_candidate(&embedded_md) { css.push_str(include_str!("../../../assets/css/table-geometry.css")); }
     if layout.is_some() {
         css.push('\n');
         css.push_str(include_str!("../../../assets/css/export-html-layouts.css"));
@@ -2789,6 +2796,9 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
 {
     crate::publication_profile::validate_pdf_engine(options).map_err(|error|error.code)?;
+    if crate::table_geometry::source_candidate(content) {
+        crate::table_geometry::validate_document(&crate::md_ast::parse(content), false).map_err(str::to_owned)?;
+    }
     // Direct native calls cannot bypass the source guard by naming another
     // engine in style options. This path always consumes Rust's table model.
     if crate::md_ast::native_table_source_candidate(content) {

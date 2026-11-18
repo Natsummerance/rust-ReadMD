@@ -1,0 +1,7 @@
+/* Cell choices take precedence over publication presets. */
+.readmd-table-geometry :is(th, td)[align="left"] { text-align: left !important; }
+.readmd-table-geometry :is(th, td)[align="center"] { text-align: center !important; }
+.readmd-table-geometry :is(th, td)[align="right"] { text-align: right !important; }
+.readmd-table-geometry :is(th, td)[valign="top"] { vertical-align: top !important; }
+.readmd-table-geometry :is(th, td)[valign="middle"] { vertical-align: middle !important; }
+.readmd-table-geometry :is(th, td)[valign="bottom"] { vertical-align: bottom !important; }

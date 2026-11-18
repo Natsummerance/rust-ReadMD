@@ -1,6 +1,6 @@
 //! Revision-bound Markdown -> editable PresentationML, without a host Office.
 //! One bounded deck model owns pagination and geometry for both preview and ZIP.
-use crate::md_ast::{Align, Block, Inline};
+use crate::md_ast::{Block, Inline};
 use crate::mdexport::{ExportResult, ZipEntry};
 use base64::Engine;
 use serde_json::{json, Value};
@@ -9,14 +9,17 @@ use std::{collections::BTreeMap, path::Path};
 const W: f64 = 960.;
 const H: f64 = 540.;
 mod design;
+mod table;
 mod table_style;
 use design::{Geometry, Paint};
-use table_style::{TableAlign, TableRowKind, TableRowLayout, TableStyle};
+use table::TableRow;
+use table_style::{TableAlign, TableStyle};
 
 const LEFT: f64 = 54.;
 const WIDTH: f64 = W - 2. * LEFT;
 const TOP: f64 = 112.;
 const BOTTOM: f64 = 492.;
+const MAX_SLIDES: usize = 300;
 const LIMIT: usize = crate::export_snapshot::MAX_SNAPSHOT_BYTES;
 const BUDGET: &str = "export_snapshot_budget";
 const INVALID: &str = "export_snapshot_render_failed";
@@ -34,7 +37,7 @@ enum Shape {
     Text { rect: Rect, lines: Vec<Line>, size: f64, bullet: Option<String>, center: bool, code: bool },
     Image { rect: Rect, media: usize, alt: String },
     Accent { rect: Rect, geometry: Geometry, paint: Paint },
-    Table { rect: Rect, rows: Vec<Vec<Vec<Line>>>, row_layout: Vec<TableRowLayout>, columns: usize, aligns: Vec<TableAlign>, style: TableStyle },
+    Table { rect: Rect, rows: Vec<TableRow>, columns: usize, style: TableStyle },
 }
 #[derive(Default)]
 struct Slide { shapes: Vec<Shape>, notes: String, cover: bool }
@@ -179,7 +182,7 @@ impl Builder {
     fn push(&mut self, shape:Shape) -> Result<()> {
         let text_bytes=match &shape {
             Shape::Text{lines,..}=>lines.iter().flatten().map(|run|run.text.len()+run.href.as_ref().map_or(0,String::len)+256).sum::<usize>(),
-            Shape::Table{rows,..}=>rows.iter().flatten().flatten().flatten().map(|run|run.text.len()+run.href.as_ref().map_or(0,String::len)+256).sum(),
+            Shape::Table{rows,..}=>table::lines(rows).flatten().map(|run|run.text.len()+run.href.as_ref().map_or(0,String::len)+256).sum(),
             Shape::Image{alt,..}=>alt.len()+512,
             Shape::Accent{..}=>128,
         };
@@ -188,7 +191,7 @@ impl Builder {
     }
     fn finish(&mut self) -> Result<()> {
         if self.page.shapes.is_empty(){return Ok(());}
-        if self.deck.slides.len()>=300{return Err(BUDGET.into());}
+        if self.deck.slides.len()>=MAX_SLIDES{return Err(BUDGET.into());}
         self.bytes = self.bytes.checked_add(self.authored_notes.len() + self.page.notes.len()).ok_or(BUDGET)?;
         if self.bytes > LIMIT { return Err(BUDGET.into()); }
         let mut page = std::mem::take(&mut self.page);
@@ -315,74 +318,6 @@ impl Builder {
         }
         if !pending.is_empty(){self.paragraph(pending,size,bullet,false)?;}Ok(())
     }
-    fn table(&mut self,aligns:&[Align],header:&[Vec<Inline>],rows:&[Vec<Vec<Inline>>]) -> Result<()> {
-        let columns=header.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
-        if columns==0{return Ok(());}if columns>16{return Err(BUDGET.into());}
-        let aligns=(0..columns).map(|column|TableAlign::column(aligns.get(column).copied().unwrap_or(Align::None),self.table_style.default_align)).collect::<Vec<_>>();
-        let width = WIDTH * self.table_style.width_pct / 100.;
-        let left = (W - width) / 2.;
-        let cell_width = width / columns as f64 - 20.;
-        let cell = |values: &[Vec<Inline>], bold: bool| -> Result<Vec<Vec<Line>>> {
-            let mut output = Vec::with_capacity(columns);
-            for col in 0..columns {
-                let mut runs = Vec::new();
-                if let Some(value) = values.get(col) {
-                    inline_runs(value, &Run { bold, ..Run::default() }, &mut runs)?;
-                }
-                output.push(wrap(&runs, 20., cell_width)?);
-            }
-            Ok(output)
-        };
-        let header = cell(header, self.table_style.header_bold)?;
-        let header_height = header.iter().map(Vec::len).max().unwrap_or(1) as f64 * 25. + 16.;
-        if header_height > 120. { return Err(BUDGET.into()); }
-        if BOTTOM - self.y < header_height + 42. { self.continuation()?; }
-        let header_layout = TableRowLayout { height: header_height, kind: TableRowKind::Header };
-        let mut table_rows = vec![header.clone()];
-        let mut row_layout = vec![header_layout];
-        let mut used = header_height;
-        for (index, source) in rows.iter().enumerate() {
-            // Band the even body rows, preserving the source row color on every fragment.
-            let kind = if index % 2 == 1 { TableRowKind::Band } else { TableRowKind::Body };
-            let cells = cell(source, false)?;
-            let total = cells.iter().map(Vec::len).max().unwrap_or(1);
-            let mut start = 0;
-            while start < total {
-                if BOTTOM - self.y - used < 42. {
-                    if table_rows.len() > 1 {
-                        self.push(Shape::Table {
-                            rect: [left,self.y,width,used],
-                            rows: std::mem::replace(&mut table_rows, vec![header.clone()]),
-                            row_layout: std::mem::replace(&mut row_layout, vec![header_layout]),
-                            columns,
-                            aligns: aligns.clone(),
-                            style: self.table_style.clone(),
-                        })?;
-                    }
-                    self.continuation()?;
-                    used = header_height;
-                }
-                let capacity = ((BOTTOM - self.y - used - 16.) / 25.).floor().max(0.) as usize;
-                if capacity == 0 { return Err(BUDGET.into()); }
-                let end = (start + capacity).min(total);
-                let height = (end - start) as f64 * 25. + 16.;
-                table_rows.push(cells.iter().map(|lines| lines[start.min(lines.len())..end.min(lines.len())].to_vec()).collect());
-                row_layout.push(TableRowLayout { height, kind });
-                used += height;
-                start = end;
-            }
-        }
-        self.push(Shape::Table {
-            rect: [left,self.y,width,used],
-            rows: table_rows,
-            row_layout,
-            columns,
-            aligns,
-            style: self.table_style.clone(),
-        })?;
-        self.y += used + 18.;
-        Ok(())
-    }
     fn blocks(&mut self,blocks:&[Block],bullet:Option<String>,depth:usize) -> Result<()> {
         if depth>16{return Err(BUDGET.into());}
         for block in blocks {
@@ -397,7 +332,7 @@ impl Builder {
                 Block::Quote(values)=>self.blocks(values,bullet.clone(),depth+1)?,
                 Block::Code{text:source,..}=>{let mut run=Run{text:source.clone(),..Default::default()};run.code=true;self.paragraph(vec![run],18.,None,true)?;},
                 Block::Math(latex)=>self.math(latex,None)?,Block::OfficeMath{latex,omml}=>self.math(latex,Some(omml))?,
-                Block::Table{aligns,header,rows}=>self.table(aligns,header,rows)?,
+                Block::Table{aligns,header,rows,geometry}=>self.table(geometry, aligns, header, rows)?,
                 Block::Hr|Block::PageBreak=>self.continuation()?,
                 Block::FootnoteDef{label,blocks}=>{self.paragraph(text(format!("[{label}]")),20.,None,false)?;self.blocks(blocks,None,depth+1)?;},
                 Block::Html(raw) if comments_only(raw)=>(),
@@ -477,28 +412,7 @@ fn preview_html(deck:&Deck) -> Result<String> {
                 slides.push_str(&format!(r#"<div aria-hidden="true" style="{}{}border-radius:{};"></div>"#,position(*rect),paint.css(),geometry.css()));
             },
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
-            Shape::Table{rect,rows,row_layout,columns,aligns,style}=>{
-                slides.push_str(&format!("<table style=\"{}table-layout:fixed;border-collapse:collapse;font-size:20px;line-height:25px;\">",position(*rect)));
-                for (index, (row, layout)) in rows.iter().zip(row_layout).enumerate() {
-                    let borders = style.border_css(style.borders(index, rows.len()));
-                    let colors = style.row_paint(layout.kind).map(|paint| {
-                        format!("background-color:#{};color:#{};", paint.background, paint.foreground)
-                    }).unwrap_or_default();
-                    slides.push_str(&format!("<tr style=\"height:{}px\">", layout.height));
-                    for (column, cell) in row.iter().enumerate() {
-                        slides.push_str(&format!(
-                            "<td style=\"width:{}px;padding:8px 10px;vertical-align:top;{borders}text-align:{};box-sizing:border-box;{colors}\">",
-                            rect[2] / *columns as f64, aligns[column].css(),
-                        ));
-                        for line in cell {
-                            slides.push_str(&format!("<div style=\"white-space:pre\">{}</div>", line_html(line)));
-                        }
-                        slides.push_str("</td>");
-                    }
-                    slides.push_str("</tr>");
-                }
-                slides.push_str("</table>");
-            },
+            Shape::Table{rect,rows,columns,style}=>slides.push_str(&table::preview(*rect, rows, *columns, style)),
         }}
         slides.push_str("</section>");if slides.len()>LIMIT{return Err(BUDGET.into());}
     }
@@ -524,10 +438,10 @@ fn paragraph(line:&Line,size:f64,color:&str,bullet:Option<&str>,align:TableAlign
     body.push_str(&format!("<a:endParaRPr sz=\"{}\"/></a:p>",(size*100.).round() as i64));body
 }
 fn text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,center:bool,links:&BTreeMap<String,String>) -> String {
-    aligned_text_body(lines,size,color,bullet,if center{TableAlign::Center}else{TableAlign::Left},links)
+    aligned_text_body(lines,size,color,bullet,if center{TableAlign::Center}else{TableAlign::Left},"t",links)
 }
-fn aligned_text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,align:TableAlign,links:&BTreeMap<String,String>) -> String {
-    let mut body="<a:bodyPr wrap=\"none\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\" anchor=\"t\"><a:noAutofit/></a:bodyPr><a:lstStyle/>".to_string();
+fn aligned_text_body(lines:&[Line],size:f64,color:&str,bullet:Option<&str>,align:TableAlign,anchor:&str,links:&BTreeMap<String,String>) -> String {
+    let mut body=format!("<a:bodyPr wrap=\"none\" lIns=\"0\" tIns=\"0\" rIns=\"0\" bIns=\"0\" anchor=\"{anchor}\"><a:noAutofit/></a:bodyPr><a:lstStyle/>");
     // A split table row can continue after one of its cells runs out of lines.
     let empty = [Line::new()];
     let lines = if lines.is_empty() { empty.as_slice() } else { lines };
@@ -547,29 +461,7 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let svg=if deck.media[*media].svg.is_some(){format!("<a:extLst><a:ext uri=\"{{96DAC541-7B7A-43D3-8B79-37D633B846F1}}\"><asvg:svgBlip xmlns:asvg=\"http://schemas.microsoft.com/office/drawing/2016/SVG/main\" r:embed=\"svg{media}\"/></a:ext></a:extLst>")}else{String::new()};
             format!("<p:pic><p:nvPicPr><p:cNvPr id=\"{id}\" name=\"Image {id}\" descr=\"{}\"/><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"image{media}\">{svg}</a:blip><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>{}<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic>",escaped(alt),xfrm(*rect))
         },
-        Shape::Table{rect,rows,row_layout,columns,aligns,style}=>{
-            let [x,y,w,h]=*rect;let mut body=format!("<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"Table {id}\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr firstRow=\"1\" bandRow=\"0\"/><a:tblGrid>",emu(x),emu(y),emu(w),emu(h));
-            for _ in 0..*columns{body.push_str(&format!("<a:gridCol w=\"{}\"/>",emu(w/ *columns as f64)));}body.push_str("</a:tblGrid>");
-            for (index, (row, layout)) in rows.iter().zip(row_layout).enumerate() {
-                let borders = style.border_xml(style.borders(index, rows.len()));
-                let paint = style.row_paint(layout.kind);
-                let foreground = paint.map_or(deck.foreground, |paint| paint.foreground.as_str());
-                let fill = match paint {
-                    Some(paint) => format!("<a:solidFill><a:srgbClr val=\"{}\"/></a:solidFill>", paint.background),
-                    None => "<a:noFill/>".to_owned(),
-                };
-                body.push_str(&format!("<a:tr h=\"{}\">", emu(layout.height)));
-                for (column, cell) in row.iter().enumerate() {
-                    let contents = aligned_text_body(cell, 20., foreground, None, aligns[column], links);
-                    body.push_str(&format!(
-                        "<a:tc><a:txBody>{contents}</a:txBody><a:tcPr marL=\"127000\" marR=\"127000\" marT=\"101600\" marB=\"101600\" anchor=\"t\">{borders}{fill}</a:tcPr></a:tc>"
-                    ));
-                }
-                body.push_str("</a:tr>");
-            }
-            body.push_str("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");
-            body
-        },
+        Shape::Table{rect,rows,columns,style}=>table::xml(*rect, rows, *columns, style, id, deck.foreground, links),
     }
 }
 fn theme(deck:&Deck) -> String {
@@ -588,7 +480,7 @@ fn package(deck:&Deck,title:&str) -> Result<Vec<u8>> {
         for (directory,kind) in [("slides","slide"),("notesSlides","notesSlide")]{types.push_str(&format!("<Override PartName=\"/ppt/{directory}/{kind}{n}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.{kind}+xml\"/>"));}
         let mut links=BTreeMap::new();
         let mut visit=|line:&Line| {for run in line{if let Some(href)=&run.href{let id=format!("link{}",links.len());links.entry(href.clone()).or_insert(id);}}};
-        for shape in &slide.shapes {match shape {Shape::Text{lines,..}=>for line in lines{visit(line);},Shape::Table{rows,..}=>for line in rows.iter().flatten().flatten(){visit(line);},_=>()}}
+        for shape in &slide.shapes {match shape {Shape::Text{lines,..}=>for line in lines{visit(line);},Shape::Table{rows,..}=>for line in table::lines(rows){visit(line);},_=>()}}
         let mut rels=relation("layout","slideLayout","../slideLayouts/slideLayout1.xml",false)+&relation("notes","notesSlide",&format!("../notesSlides/notesSlide{n}.xml"),false);
         for (href,id) in &links {rels.push_str(&relation(id,"hyperlink",href,true));}
         let mut media=std::collections::BTreeSet::new();for shape in &slide.shapes {if let Shape::Image{media:id,..}=shape{media.insert(*id);}}

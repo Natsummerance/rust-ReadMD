@@ -64,7 +64,7 @@ fn packaged_epub_scientific_table_keeps_three_line_rules_with_reflow(){
 #[test]
 fn data_table_reflow_does_not_convert_csl_intrinsic_label_table_to_fixed_columns(){
     use crate::publication_rich::{RichBibliography,RichBibliographyItem,RichNode};
-    let doc=Document{front_matter:None,blocks:vec![Block::Table{aligns:vec![Align::Left],header:vec![vec![Inline::Text("Data".into())]],rows:vec![vec![vec![Inline::Text("Original cell".into())]]]},
+    let doc=Document{front_matter:None,blocks:vec![Block::Table{geometry: Default::default(),aligns:vec![Align::Left],header:vec![vec![Inline::Text("Data".into())]],rows:vec![vec![vec![Inline::Text("Original cell".into())]]]},
         Block::Bibliography(RichBibliography{title:"References".into(),items:vec![RichBibliographyItem{key:"study".into(),first_field:vec![RichNode::text("[100]")],rich:vec![RichNode::text("Original reference body")] }],hanging_indent:false,line_spacing:1,entry_spacing:0,source_span:None})]};
     let chapters=render_chapters(&doc,"none",&mut |_|None);let xml=crate::math_document::parse_xml(&chapters[0].body).unwrap();let mut tables=Vec::new();descendants(&xml,"table",&mut tables);assert_eq!(tables.len(),2);
     assert!(tables[0].attributes.get("class").is_none());assert_eq!(tables[1].attributes.get("class").unwrap(),"bibliography-columns");

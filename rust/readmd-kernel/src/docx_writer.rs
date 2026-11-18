@@ -11,6 +11,7 @@
 use crate::md_ast::{inline_plain, Align, Block, Document, Inline};
 use crate::publication_rich::{RichBibliography, RichBibliographyItem, RichLayoutNode, RichNode};
 use crate::publication_note_policies::{self as note_policy, NoteKind, NotePolicies, NotePolicyPatch, NoteSeparator, LongNote};
+use crate::table_geometry::{TableGeometry, VerticalAlign};
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -1295,7 +1296,7 @@ impl<'a> Ctx<'a> {
                 self.para(&ppr, &omml);
             }
             Block::OfficeMath {omml,..} => {let(ppr,xml)=self.office_math_paragraph(omml,sc);self.para(&ppr,&xml);},
-            Block::Table { aligns, header, rows } => self.table(aligns, header, rows),
+            Block::Table { aligns, header, rows, geometry } => self.table(aligns, header, rows, geometry),
             Block::Hr => {
                 let c = color(self.style, &["hr", "color"], "#d8dce2");
                 self.para(
@@ -1383,10 +1384,18 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn table(&mut self, aligns: &[Align], header: &[Vec<Inline>], rows: &[Vec<Vec<Inline>>]) {
+    fn table(&mut self, aligns: &[Align], header: &[Vec<Inline>], rows: &[Vec<Vec<Inline>>], geometry: &TableGeometry) {
+        let layout = if geometry.is_enhanced() {
+            match geometry.layout(header, rows, aligns) {
+                Ok(layout) => Some(layout),
+                Err(error) => { self.warns.push(error.code); return; }
+            }
+        } else {
+            None
+        };
         let st = self.style;
         let scholarly = crate::export_styles::three_line_table(st);
-        let ncols = header.len().max(rows.iter().map(|r| r.len()).max().unwrap_or(0)).max(1);
+        let ncols = layout.as_ref().map_or_else(|| header.len().max(rows.iter().map(Vec::len).max().unwrap_or(0)).max(1), |grid| grid.columns);
         let border = color(st, &["table", "borderColor"], "#c8cdd4");
         let bw = ((num(st, &["table", "borderWidth"], 0.75) * 8.0).round() as i64).clamp(2, 96);
         let pad = twips(num(st, &["table", "cellPadding"], 6.0));
@@ -1397,7 +1406,7 @@ impl<'a> Ctx<'a> {
         let banded = flag(st, &["table", "banded"], true);
         let band = color(st, &["table", "bandColor"], "#f3f5f9");
         let cell_hp = (num(st, &["table", "cellSize"], 10.0) * 2.0).round() as i64;
-        let default_align = text(st, &["table", "align"], "left").to_string();
+        let default_align = text(st, &["table", "align"], "left");
         let grid_w = (self.text_w_emu as f64 / 635.0 * width_pct / 100.0) as i64; // EMU → twips
         let col_w = (grid_w / ncols as i64).max(200);
 
@@ -1427,7 +1436,8 @@ impl<'a> Ctx<'a> {
         }
         x.push_str("</w:tblGrid>");
 
-        let row_xml = |ctx: &mut Ctx, cells: &[Vec<Inline>], ri: usize, is_head: bool| -> String {
+        let row_xml = |ctx: &mut Ctx, cells: &[Vec<Inline>], row: usize| -> String {
+            let is_head = row == 0;
             let mut r = String::from("<w:tr>");
             if is_head {
                 r.push_str("<w:trPr><w:tblHeader/><w:cantSplit/></w:trPr>");
@@ -1435,14 +1445,19 @@ impl<'a> Ctx<'a> {
                 r.push_str("<w:trPr><w:cantSplit/></w:trPr>");
             }
             for ci in 0..ncols {
-                let align = match aligns.get(ci).copied().unwrap_or(Align::None) {
-                    Align::None => default_align.clone(),
-                    a => a.as_str().to_string(),
+                let slot = layout.as_ref().map(|grid| &grid.rows[row][ci]);
+                if slot.is_some_and(|cell| cell.origin_col != ci) {
+                    continue;
+                }
+                let align = match slot.map(|cell| cell.align).or_else(|| aligns.get(ci).copied()).unwrap_or(Align::None) {
+                    Align::None => default_align,
+                    value => value.as_str(),
                 };
+                let band_row = slot.map_or(row, |cell| cell.origin_row).saturating_sub(1);
                 let fill = if scholarly { None } else if is_head {
-                    Some(head_bg.clone())
-                } else if banded && ri % 2 == 1 {
-                    Some(band.clone())
+                    Some(head_bg.as_str())
+                } else if banded && band_row % 2 == 1 {
+                    Some(band.as_str())
                 } else {
                     None
                 };
@@ -1453,26 +1468,47 @@ impl<'a> Ctx<'a> {
                     block_base_hp:Some(ctx.author_local_base.unwrap_or((cell_hp as u32,cell_hp as u32))),
                     ..Fmt::default()
                 };
-                let content = cells.get(ci).map(|c| ctx.inlines(c, &f)).unwrap_or_default();
                 r.push_str("<w:tc><w:tcPr>");
-                r.push_str(&format!("<w:tcW w:w=\"{col_w}\" w:type=\"dxa\"/>"));
+                let colspan = slot.map_or(1, |cell| cell.colspan);
+                let cell_width = col_w * colspan as i64;
+                r.push_str(&format!("<w:tcW w:w=\"{cell_width}\" w:type=\"dxa\"/>"));
+                if colspan > 1 {
+                    r.push_str(&format!("<w:gridSpan w:val=\"{colspan}\"/>"));
+                }
+                if let Some(cell) = slot.filter(|cell| cell.rowspan > 1) {
+                    let merge = if cell.origin_row == row { "restart" } else { "continue" };
+                    r.push_str(&format!("<w:vMerge w:val=\"{merge}\"/>"));
+                }
                 if scholarly && is_head { r.push_str(&format!("<w:tcBorders>{}</w:tcBorders>",edge("bottom"))); }
                 if let Some(fl) = fill {
                     r.push_str(&format!("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{fl}\"/>"));
                 }
-                r.push_str("<w:vAlign w:val=\"center\"/></w:tcPr>");
-                r.push_str(&format!(
-                    "<w:p><w:pPr><w:pStyle w:val=\"TableText\"/><w:jc w:val=\"{}\"/></w:pPr>{content}</w:p></w:tc>",
-                    jc(&align)
-                ));
+                let valign = match slot.and_then(|cell| cell.valign).unwrap_or(VerticalAlign::Middle) {
+                    VerticalAlign::Top => "top",
+                    VerticalAlign::Middle => "center",
+                    VerticalAlign::Bottom => "bottom",
+                };
+                r.push_str(&format!("<w:vAlign w:val=\"{valign}\"/></w:tcPr>"));
+                let source_cell = cells.get(ci).map(Vec::as_slice).unwrap_or_default();
+                let paragraphs = match slot {
+                    Some(cell) if cell.contents.is_empty() => &[&[][..]],
+                    Some(cell) => cell.contents.as_slice(),
+                    None => std::slice::from_ref(&source_cell),
+                };
+                let align = jc(align);
+                for paragraph in paragraphs {
+                    let content = ctx.inlines(paragraph, &f);
+                    r.push_str(&format!("<w:p><w:pPr><w:pStyle w:val=\"TableText\"/><w:jc w:val=\"{align}\"/></w:pPr>{content}</w:p>"));
+                }
+                r.push_str("</w:tc>");
             }
             r.push_str("</w:tr>");
             r
         };
-        let h = row_xml(self, header, 0, true);
+        let h = row_xml(self, header, 0);
         x.push_str(&h);
         for (ri, r) in rows.iter().enumerate() {
-            let t = row_xml(self, r, ri, false);
+            let t = row_xml(self, r, ri + 1);
             x.push_str(&t);
         }
         x.push_str("</w:tbl>");
@@ -1907,6 +1943,9 @@ pub fn build(doc: &Document, style: &Value, source_name: &str, images: ImageLoad
     }
 }
 pub(crate) fn build_with_lines(doc: &Document, style: &Value, source_name: &str, images: ImageLoader, line_context: crate::publication_typography::LineContext) -> DocxPackage {
+    if let Err(error) = crate::md_ast::validate_table_geometry(doc, true) {
+        return DocxPackage { parts: Vec::new(), warns: vec![error.code] };
+    }
     let tables = match crate::md_ast::native_table_document(doc) {
         Ok(value) => value, Err(code) => return DocxPackage { parts: Vec::new(), warns: vec![code.into()] },
     };
@@ -2096,7 +2135,7 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
                 ("实验日期", &date),
             ];
             let rows: Vec<_> = fields.iter().map(|(label, value)| vec![cell(label), cell(value)]).collect();
-            ctx.table(&[Align::Left, Align::Left], &header, &rows);
+            ctx.table(&[Align::Left, Align::Left], &header, &rows, &TableGeometry::default());
         } else {
             if !author.is_empty() {
                 ctx.para(&format!("<w:pStyle w:val=\"Subtitle\"/><w:jc w:val=\"{al}\"/>"), &run_xml(&author, &Fmt::default()));
@@ -2137,6 +2176,9 @@ fn build_inner(doc: &Document, style: &Value, source_name: &str, images: ImageLo
         }
         ctx.style = style;
     } else { ctx.blocks(&doc.blocks, &Scope::default()); }
+    if ctx.warns.iter().any(|code| code == crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED) {
+        return DocxPackage { parts: Vec::new(), warns: vec![crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED.into()] };
+    }
     if let Some(error) = ctx.math_failure.take() {
         return DocxPackage { parts: Vec::new(), warns: vec![error] };
     }
@@ -2385,6 +2427,50 @@ mod tests {
     fn part<'p>(pkg: &'p DocxPackage, name: &str) -> &'p str {
         let (_, b) = pkg.parts.iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("missing {name}"));
         std::str::from_utf8(b).unwrap()
+    }
+
+    #[test]
+    fn enhanced_table_exports_editable_word_cells_with_independent_alignment() {
+        let doc = parse(concat!(
+            "| H1 {colspan=2} | H2 | H3 |\n",
+            "|---|---|---:|\n",
+            "| **One** {rowspan=2 colspan=2 align=center valign=top} | *Two* | Five {align=left valign=bottom} |\n",
+            "| Three | Four | Six |\n",
+        ));
+        let style = crate::export_styles::sanitize(&serde_json::json!({"frontMatter":{"mode":"none"}}));
+        let package = build(&doc, &style, "Owned table", &|_| None);
+        assert!(!package.parts.is_empty(), "{:?}", package.warns);
+        let xml = part(&package, "word/document.xml");
+        assert!(!xml.contains("colspan="));
+        let document = crate::math_document::parse_xml(xml).unwrap();
+        fn child<'a>(node: &'a crate::math_document::XmlNode, name: &str) -> &'a crate::math_document::XmlNode {
+            node.children().find(|item| item.name == name).unwrap_or_else(|| panic!("{name} missing under {}", node.name))
+        }
+        let body = child(child(&document, "w:document"), "w:body");
+        let table = child(body, "w:tbl");
+        let rows = table.children().filter(|node| node.name == "w:tr").map(|row| row.children().filter(|node| node.name == "w:tc").collect::<Vec<_>>()).collect::<Vec<_>>();
+        assert_eq!(rows.iter().map(Vec::len).collect::<Vec<_>>(), [2, 2, 2]);
+        let property = |cell, property| child(child(cell, "w:tcPr"), property).attributes["w:val"].clone();
+        assert_eq!(property(rows[0][0], "w:gridSpan"), "2");
+        assert_eq!(property(rows[1][0], "w:gridSpan"), "2");
+        assert_eq!(property(rows[1][0], "w:vMerge"), "restart");
+        assert_eq!(property(rows[1][0], "w:vAlign"), "top");
+        assert_eq!(property(rows[1][1], "w:vAlign"), "bottom");
+        assert_eq!(property(rows[2][0], "w:gridSpan"), "2");
+        assert_eq!(property(rows[2][0], "w:vMerge"), "continue");
+        assert_eq!(rows[2][0].text(), "");
+        let paragraphs: Vec<_> = rows[1][0].children().filter(|node| node.name == "w:p").collect();
+        assert_eq!(paragraphs.iter().map(|paragraph| paragraph.text()).collect::<Vec<_>>(), ["One", "Two", "Three", "Four"]);
+        for paragraph in paragraphs {
+            let align = child(child(paragraph, "w:pPr"), "w:jc");
+            assert_eq!(align.attributes["w:val"], "center");
+        }
+        let separate = child(rows[1][1], "w:p");
+        assert_eq!(child(child(separate, "w:pPr"), "w:jc").attributes["w:val"], "left");
+        let invalid = parse("| Head {rowspan=2} |\n|---|\n| Value |");
+        let rejected = build(&invalid, &style, "Owned table", &|_| None);
+        assert!(rejected.parts.is_empty());
+        assert_eq!(rejected.warns, [crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED]);
     }
 
     #[test]

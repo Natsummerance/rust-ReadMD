@@ -66,7 +66,7 @@ fn column_safety_rejects_nested_notes_explicit_breaks_and_complex_bibliographies
     let bib=crate::publication_rich::RichBibliography{title:"References".into(),items:vec![],hanging_indent:false,line_spacing:1,entry_spacing:0,source_span:None};assert!(!safe_column_block(&style,&Block::Bibliography(bib)));
     assert!(!safe_column_block(&style,&Block::Paragraph(vec![Inline::Display{display:crate::publication_rich::RichDisplay::Block,children:vec![Inline::Text("Nested display".into())]}])));
     assert!(!safe_column_block(&style,&Block::Html("<div>Unknown flow</div>".into())));
-    assert!(safe_column_block(&style,&Block::Math("x+1".into())));assert!(safe_column_block(&style,&Block::Table{aligns:vec![],header:vec![vec![Inline::Text("A".into())]],rows:vec![vec![vec![Inline::Text("B".into())]]]}));
+    assert!(safe_column_block(&style,&Block::Math("x+1".into())));assert!(safe_column_block(&style,&Block::Table{geometry: Default::default(),aligns:vec![],header:vec![vec![Inline::Text("A".into())]],rows:vec![vec![vec![Inline::Text("B".into())]]]}));
 }
 
 #[test]

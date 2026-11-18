@@ -8,9 +8,13 @@
 
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use serde_json::{json, Value};
+use std::ops::Range;
+
+use crate::table_geometry::{self, TableGeometry};
 
 /// Column alignment of a GFM table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Align {
     None,
     Left,
@@ -68,7 +72,7 @@ pub enum Block {
     Code { lang: String, text: String },
     Math(String),
     OfficeMath { latex: String, omml: String },
-    Table { aligns: Vec<Align>, header: Vec<Vec<Inline>>, rows: Vec<Vec<Vec<Inline>>> },
+    Table { aligns: Vec<Align>, header: Vec<Vec<Inline>>, rows: Vec<Vec<Vec<Inline>>>, geometry: TableGeometry },
     Hr,
     PageBreak,
     /// A source-owned section boundary, never an inline or copied body string.
@@ -92,6 +96,10 @@ pub(crate) fn native_table_document(doc: &Document) -> Result<std::borrow::Cow<'
     native_html_tables::project(doc)
 }
 pub(crate) fn native_table_source_candidate(source: &str) -> bool { native_html_tables::candidate(source) }
+
+pub(crate) fn validate_table_geometry(doc: &Document, allow_enhanced: bool) -> crate::ApiResult<()> {
+    table_geometry::validate_document(doc, allow_enhanced).map_err(|code| crate::ApiError::new(422, code))
+}
 
 mod native_html_tables {
     use super::*;
@@ -361,7 +369,7 @@ mod native_html_tables {
             }
             if index == 0 { header = values; } else { body.push(values); }
         }
-        Ok(Block::Table { aligns, header, rows: body })
+        Ok(Block::Table { aligns, header, rows: body, geometry: TableGeometry::default() })
     }
     fn fragment(html: &str) -> Result<Option<Vec<Block>>> {
         let Some(html)=prepared_html(html)?else{return Ok(None);};
@@ -589,16 +597,16 @@ fn parse_internal(src: &str, projection: Option<&crate::publication_rich::Projec
     };
     let src = expanded.as_str();
     let owned_syntax=crate::publication_inline_text::has_owned_syntax(src);
-    let events: Vec<Event> = if owned_syntax {
+    let events = if owned_syntax {
         match crate::publication_inline_text::markdown_events(src) {
-            Ok(events) => events.into_iter().map(|(event, _)| event).collect(),
+            Ok(events) => table_events(src, events),
             Err(code) if projection.is_some() => return Err(crate::ApiError::new(422, code)),
-            Err(_) => Parser::new_ext(src, options()).collect(),
+            Err(_) => markdown_events(src),
         }
     } else if crate::quoted_strong::candidate(src) {
-        crate::quoted_strong::events(src, options()).into_iter().map(|(event, _)| event).collect()
+        table_events(src, crate::quoted_strong::events(src, options()))
     } else {
-        Parser::new_ext(src, options()).collect()
+        markdown_events(src)
     };
     let mut b = Builder { ev: events, pos: 0, front_matter: None, slugs: HeadingIds::default(), projection, consumed_slots: std::collections::HashSet::new(), slot_error: None, projected_notes: Vec::new() };
     let mut blocks = b.blocks_until(None);
@@ -662,8 +670,84 @@ impl Block {
     pub fn unstyled(&self)->&Block{match self{Block::Styled{block,..}=>block.unstyled(),other=>other}}
 }
 
+struct MarkdownEvent<'a> {
+    event: Event<'a>,
+    table: Option<Box<TableEvent>>,
+}
+
+impl<'a> MarkdownEvent<'a> {
+    fn plain(event: Event<'a>) -> Self {
+        Self { event, table: None }
+    }
+}
+
+enum TableEvent {
+    Cell { attributes: Option<table_geometry::CellAttributes>, tail: String },
+    Excess,
+}
+
+fn markdown_events(source: &str) -> Vec<MarkdownEvent<'_>> {
+    let parser = Parser::new_ext(source, options());
+    if table_geometry::source_candidate(source) {
+        table_events(source, parser.into_offset_iter().collect())
+    } else {
+        parser.map(MarkdownEvent::plain).collect()
+    }
+}
+
+fn brace_is_inline_text(events: &[(Event<'_>, Range<usize>)], brace: usize) -> bool {
+    let mut depth = 0usize;
+    for (event, range) in events {
+        match event {
+            Event::End(TagEnd::TableCell) => break,
+            Event::Start(_) => depth += 1,
+            Event::End(_) => depth = depth.saturating_sub(1),
+            Event::Text(_) if depth == 0 && range.contains(&brace) => return true,
+            _ => (),
+        }
+    }
+    false
+}
+
+fn table_events<'a>(source: &str, events: Vec<(Event<'a>, Range<usize>)>) -> Vec<MarkdownEvent<'a>> {
+    if !table_geometry::source_candidate(source) {
+        return events.into_iter().map(|(event, _)| MarkdownEvent::plain(event)).collect();
+    }
+    let mut annotations = Vec::new();
+    let mut cell_end = None;
+    for (index, (event, range)) in events.iter().enumerate() {
+        let table = match event {
+            Event::Start(Tag::TableRow) => { cell_end = None; continue; }
+            Event::Start(Tag::TableCell) => {
+                cell_end = Some(range.end);
+                let Some(suffix) = source.get(range.clone()).and_then(table_geometry::cell_suffix) else { continue; };
+                if !brace_is_inline_text(&events[index + 1..], range.start + suffix.brace) {
+                    continue;
+                }
+                TableEvent::Cell { attributes: suffix.attributes, tail: suffix.tail.into() }
+            }
+            Event::End(TagEnd::TableRow) => {
+                // GFM pads short rows and discards surplus cells. Surplus
+                // cells would silently lose authored content in an enhanced table.
+                let Some(tail) = cell_end.and_then(|end| source.get(end..range.end)) else { continue; };
+                if matches!(tail.trim_matches([' ', '\t', '\r', '\n']), "" | "|") {
+                    continue;
+                }
+                TableEvent::Excess
+            }
+            _ => continue,
+        };
+        annotations.push((index, Box::new(table)));
+    }
+    let mut annotations = annotations.into_iter().peekable();
+    events.into_iter().enumerate().map(|(index, (event, _))| MarkdownEvent {
+        event,
+        table: annotations.next_if(|(at, _)| *at == index).map(|(_, annotation)| annotation),
+    }).collect()
+}
+
 struct Builder<'a> {
-    ev: Vec<Event<'a>>,
+    ev: Vec<MarkdownEvent<'a>>,
     pos: usize,
     front_matter: Option<String>,
     slugs: HeadingIds,
@@ -750,11 +834,11 @@ impl<'a> Builder<'a> {
         } else { Inline::Citation { source: citation.source.clone(), children: rich_inlines(&citation.rich) } }
     }
     fn peek(&self) -> Option<&Event<'a>> {
-        self.ev.get(self.pos)
+        self.ev.get(self.pos).map(|e| &e.event)
     }
 
     fn next(&mut self) -> Option<Event<'a>> {
-        let e = self.ev.get(self.pos).cloned();
+        let e = self.peek().cloned();
         if e.is_some() {
             self.pos += 1;
         }
@@ -836,7 +920,7 @@ impl<'a> Builder<'a> {
                 let mut office = None;
                 let mut stale = None;
                 let mut only_math = true;
-                while let Some(e) = self.ev.get(j) {
+                while let Some(e) = self.ev.get(j).map(|e| &e.event) {
                     match e {
                         Event::End(TagEnd::Paragraph) => break,
                         Event::DisplayMath(m) => maths.push(m.to_string()),
@@ -866,7 +950,7 @@ impl<'a> Builder<'a> {
                 }
                 if only_math && maths.len() == 1 {
                     self.pos = j + 1;
-                    if let Some(comment) = stale { self.ev.insert(self.pos, Event::Html(comment)); }
+                    if let Some(comment) = stale { self.ev.insert(self.pos, MarkdownEvent::plain(Event::Html(comment))); }
                     let latex = maths.remove(0).trim().to_string();
                     return Some(if let Some(metadata) = office {
                         Block::OfficeMath { latex, omml: metadata.omml }
@@ -920,7 +1004,7 @@ impl<'a> Builder<'a> {
                 // carrier with ordinary Markdown. Feed only that carrier back
                 // through the existing builder so its body is not discarded.
                 if let Some(events) = crate::publication_navigation::body_carrier_events(&html) {
-                    let events: Vec<Event<'a>> = events;
+                    let events = table_events(&html, events);
                     self.ev.splice(self.pos..self.pos, events);
                     return None;
                 }
@@ -984,6 +1068,8 @@ impl<'a> Builder<'a> {
                 let mut header = Vec::new();
                 let mut rows = Vec::new();
                 let mut cur_row: Vec<Vec<Inline>> = Vec::new();
+                let mut geometry = TableGeometry::default();
+                let mut excess = false;
                 let mut in_head = false;
                 loop {
                     match self.next() {
@@ -997,18 +1083,28 @@ impl<'a> Builder<'a> {
                         }
                         Some(Event::Start(Tag::TableRow)) => cur_row.clear(),
                         Some(Event::End(TagEnd::TableRow)) => {
+                            excess |= matches!(self.ev[self.pos - 1].table.as_deref(), Some(TableEvent::Excess));
                             if !in_head {
                                 rows.push(std::mem::take(&mut cur_row));
                             }
                         }
                         Some(Event::Start(Tag::TableCell)) => {
-                            cur_row.push(self.inlines_until(TagEnd::TableCell));
+                            let annotation = self.ev[self.pos - 1].table.take();
+                            let mut inlines = self.inlines_until(TagEnd::TableCell);
+                            if let Some(TableEvent::Cell { attributes, tail }) = annotation.as_deref() {
+                                let attributes = attributes.filter(|_| strip_cell_suffix(&mut inlines, tail));
+                                geometry.add(if in_head { 0 } else { rows.len() + 1 }, cur_row.len(), attributes);
+                            }
+                            cur_row.push(inlines);
                         }
                         Some(Event::End(TagEnd::Table)) | None => break,
                         _ => {}
                     }
                 }
-                Some(Block::Table { aligns, header, rows })
+                if excess && geometry.is_enhanced() {
+                    geometry.invalidate();
+                }
+                Some(Block::Table { aligns, header, rows, geometry })
             }
             Tag::FootnoteDefinition(label) => {
                 let blocks = self.blocks_until(Some(TagEnd::FootnoteDefinition));
@@ -1188,6 +1284,16 @@ fn merge_text(v: Vec<Inline>) -> Vec<Inline> {
         out.push(i);
     }
     out
+}
+
+fn strip_cell_suffix(inlines: &mut Vec<Inline>, tail: &str) -> bool {
+    let Some(Inline::Text(text)) = inlines.last_mut() else { return false; };
+    let Some(length) = text.strip_suffix(tail).map(str::len) else { return false; };
+    text.truncate(length);
+    if length == 0 {
+        inlines.pop();
+    }
+    true
 }
 
 /// Plain text of an inline list (alt text, slugs, bookmarks).
@@ -1449,7 +1555,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
             Block::Code { lang, text } => out.push(json!({"type": "code", "lang": lang, "content": text})),
             Block::Math(m) => out.push(json!({"type": "math", "display": true, "latex": m, "fallback": true})),
             Block::OfficeMath {latex,omml} => out.push(json!({"type":"math","display":true,"latex":latex,"omml":omml,"fallback":true})),
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, geometry } => {
                 let al: Vec<Value> = aligns
                     .iter()
                     .map(|a| if *a == Align::None { Value::Null } else { Value::String(a.as_str().into()) })
@@ -1462,6 +1568,9 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                 });
                 if has_align {
                     t["aligns"] = Value::Array(al);
+                }
+                if geometry.is_enhanced() {
+                    t["tableGeometry"] = json!(geometry);
                 }
                 out.push(t);
             }
@@ -1617,7 +1726,7 @@ mod tests {
     fn table_alignment_and_code_lang() {
         let b = p("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n\n```rust\nfn x() {}\n```\n");
         match &b[0] {
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, .. } => {
                 assert_eq!(aligns, &vec![Align::Left, Align::Center, Align::Right]);
                 assert_eq!(header.len(), 3);
                 assert_eq!(rows.len(), 1);

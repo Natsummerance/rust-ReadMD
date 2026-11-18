@@ -648,7 +648,38 @@ impl<'a, 'm> Writer<'a, 'm> {
             Block::Code { lang, text } => self.code(lang, text),
             Block::Math(m) => self.math(m, true),
             Block::OfficeMath {latex,omml} => self.office_math(latex,omml,true),
-            Block::Table { aligns, header, rows } => {
+            Block::Table { aligns, header, rows, geometry } => {
+                if geometry.is_enhanced() {
+                    let Ok(layout) = geometry.layout(header, rows, aligns) else {
+                        self.author_error.get_or_insert(crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED);
+                        return String::new();
+                    };
+                    let mut html = String::from("<table><thead>");
+                    for (r, row) in layout.rows.iter().enumerate() {
+                        if r == 1 { html.push_str("</thead><tbody>"); }
+                        let tag = if r == 0 { "th" } else { "td" };
+                        html.push_str("<tr>");
+                        for (c, slot) in row.iter().enumerate() {
+                            if (r, c) != (slot.origin_row, slot.origin_col) { continue; }
+                            html.push_str(&format!("<{tag}"));
+                            if slot.colspan > 1 { html.push_str(&format!(" colspan=\"{}\"", slot.colspan)); }
+                            if slot.rowspan > 1 { html.push_str(&format!(" rowspan=\"{}\"", slot.rowspan)); }
+                            let mut style = String::new();
+                            if slot.align != Align::None { style.push_str(&format!("text-align:{};", slot.align.as_str())); }
+                            if let Some(vertical) = slot.valign { style.push_str(&format!("vertical-align:{};", vertical.as_str())); }
+                            if !style.is_empty() { html.push_str(&format!(" style=\"{style}\"")); }
+                            html.push('>');
+                            for (i, content) in slot.contents.iter().enumerate() {
+                                if i > 0 { html.push_str("<br/>"); }
+                                html.push_str(&self.inlines(content));
+                            }
+                            html.push_str(&format!("</{tag}>"));
+                        }
+                        html.push_str("</tr>");
+                    }
+                    html.push_str(if rows.is_empty() { "</thead></table>" } else { "</tbody></table>" });
+                    return html;
+                }
                 let style = |ci: usize| -> String {
                     match aligns.get(ci).copied().unwrap_or(Align::None) {
                         Align::None => String::new(),

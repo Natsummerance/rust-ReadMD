@@ -157,12 +157,12 @@ pub fn parse_html(fragment:&str)->Result<Vec<Anchor>> {
 
 /// Expand only a validated navigation HTML block that also contains body
 /// content. The shared AST builder then retains strong/link/math/code semantics.
-pub(crate) fn body_carrier_events(fragment:&str)->Option<Vec<Event<'static>>> {
+pub(crate) fn body_carrier_events(fragment:&str)->Option<Vec<(Event<'static>,Range<usize>)>> {
     let anchors=parse_html(fragment).ok()?;if anchors.is_empty(){return None;}
     let mut previous=0;let mut body=false;
     for anchor in anchors{body|=!fragment[previous..anchor.from].trim().is_empty();previous=anchor.to;}
     if !body&&fragment[previous..].trim().is_empty(){return None;}
-    Some(carrier_events(fragment).into_iter().map(|(event,_)|event).collect())
+    Some(carrier_events(fragment))
 }
 
 fn nav_value<'a>(options:&'a Value)->Result<Option<&'a Value>> {

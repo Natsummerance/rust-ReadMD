@@ -70,7 +70,7 @@ function app(store,{source=store.disk().toString('utf8')}={}){
   ReadMDInlineCompletion:{accept:()=>false},ReadMDTask:{run:(_,fn)=>fn()},renderActiveTab:async()=>{},renderTabsBar(){},updateUnloadGuard(){},updateStatus(){},apiFetch:store.fetch,
   CustomEvent:class{constructor(type,options){this.type=type;Object.assign(this,options);}},addEventListener(){},dispatchEvent:event=>{events.push(event);return true;}};
  context.window=context;vm.createContext(context);
- for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/reader/heading-identity.js','assets/js/editor/md-transforms.js','assets/js/editor/table-structure.js','assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
+ for(const file of['assets/vendor/codemirror.bundle.js','assets/vendor/marked.min.js','assets/js/reader/heading-identity.js','assets/js/editor/table-attributes.js','assets/js/editor/md-transforms.js','assets/js/editor/table-structure.js','assets/js/editor/toolbar.js','assets/js/editor/editor.js','assets/js/editor/preview.js','assets/js/editor/review.js'])vm.runInContext(read(file),context,{filename:file});
  const CM=context.ReadMDCodeMirror,review=context.ReadMDReview;
  const view={transactions:[],focus(){},dispatch(spec){const tx=spec instanceof CM.Transaction?spec:view.state.update(spec);view.transactions.push(tx);view.state=tx.state;
    review.onEditorUpdate({view,transactions:[tx]});if(tx.docChanged){tab.editGeneration++;tab.content=view.state.doc.toString();tab.isDirty=lf(tab.original)!==tab.content;}
@@ -95,7 +95,7 @@ function modal(f){
    append(...items){for(const item of items){this.children.push(item);item.parentElement=this;}},appendChild(item){this.append(item);return item;},
    before(item){const list=this.parentElement.children;list.splice(list.indexOf(this),0,item);item.parentElement=this.parentElement;},
    remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);this.parentElement=null;},
-   addEventListener(k,fn){this.listeners[k]=fn;},focus(){focus=this;},querySelector(){return null;},querySelectorAll(selector){const all=[];function walk(node){for(const child of node.children){all.push(child);walk(child);}}walk(this);return selector==='button'?all.filter(n=>n.tag==='button'):this.children;},closest(selector){for(let n=this;n;n=n.parentElement)if(selector==='.hidden'&&n.classList.contains('hidden'))return n;return null;},click(){if(!this.disabled)return this.listeners.click?.();}};
+   addEventListener(k,fn){this.listeners[k]=fn;},focus(){focus=this;},querySelector(){return null;},querySelectorAll(selector){const all=[];function walk(node){for(const child of node.children){all.push(child);walk(child);}}walk(this);return selector==='button'?all.filter(n=>n.tag==='button'):this.children;},closest(selector){for(let n=this;n;n=n.parentElement)if(selector==='.hidden'&&n.classList.contains('hidden'))return n;return null;},click(event){if(!this.disabled)return this.listeners.click?.(event);}};
   Object.defineProperty(node,'innerHTML',{set(){this.children=[];}});nodes.push(node);return node;
  }
  const root=element('div','table-modal'),editorBar=element('div','edit-bar'),body=element(),picker=element('div','table-grid-picker'),label=element('div','table-grid-label');root.append(body);body.append(picker,label);root.classList.add('hidden');

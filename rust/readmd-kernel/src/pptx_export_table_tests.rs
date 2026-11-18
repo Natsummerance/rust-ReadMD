@@ -142,6 +142,10 @@ fn preview_tables(deck: &Deck) -> Vec<XmlNode> {
     }).collect()
 }
 
+fn preview_rows(table: &XmlNode) -> impl Iterator<Item = &XmlNode> {
+    table.children().filter(|row| row.local() == "tr")
+}
+
 fn assert_row_colors(cells: &[&XmlNode], preview: &XmlNode, ink: &str, fill: Option<&str>) {
     assert_eq!(cells.len(), preview.children().count());
     for (cell, html) in cells.iter().zip(preview.children()) {
@@ -175,8 +179,8 @@ fn assert_colors(deck: &Deck, expected: &[(&str, Option<&str>)]) {
     assert_eq!(preview.len(), 1);
     let rows = rows(&native[0]);
     assert_eq!(rows.len(), expected.len());
-    assert_eq!(preview[0].children().count(), expected.len());
-    for ((cells, html), &(ink, fill)) in rows.iter().zip(preview[0].children()).zip(expected) {
+    assert_eq!(preview_rows(&preview[0]).count(), expected.len());
+    for ((cells, html), &(ink, fill)) in rows.iter().zip(preview_rows(&preview[0])).zip(expected) {
         assert_row_colors(cells, html, ink, fill);
     }
 }
@@ -270,8 +274,8 @@ fn even_body_row_keeps_its_band_on_every_fragment_with_repeated_headers() {
     let mut split_fragments = 0;
     for (table, html_table) in native.iter().zip(&preview) {
         let rows = rows(table);
-        assert_eq!(rows.len(), html_table.children().count());
-        for (index, (cells, html)) in rows.iter().zip(html_table.children()).enumerate() {
+        assert_eq!(rows.len(), preview_rows(html_table).count());
+        for (index, (cells, html)) in rows.iter().zip(preview_rows(html_table)).enumerate() {
             let label = cells[0].text();
             let fill = if index == 0 {
                 assert_eq!(label, "Label");
@@ -291,4 +295,125 @@ fn even_body_row_keeps_its_band_on_every_fragment_with_repeated_headers() {
         }
     }
     assert!(split_fragments > 1);
+}
+
+#[test]
+fn merged_cells_keep_editable_grid_markers_and_all_original_paragraphs() {
+    let source = concat!(
+        "# Merged cells\n\n",
+        "| Header A {colspan=2 align=center} | Header B | Header C | Header D |\n",
+        "| :--- | :---: | ---: | :---: |\n",
+        "| **Cell anchor** {colspan=2 rowspan=2 align=right valign=bottom} | [East text](https://example.test/source) | Left override {align=left valign=top} | Middle override {valign=middle} |\n",
+        "| South text | Diagonal text | Visible C | Visible D |\n",
+    );
+    let deck = build(source, "", "Merged", &settings("three-line")).unwrap();
+    let tables = native_tables(&deck);
+    assert_eq!(tables.len(), 1);
+    let table = &tables[0];
+    let native = rows(table);
+    assert_eq!(native.iter().map(Vec::len).collect::<Vec<_>>(), [4, 4, 4]);
+    assert_eq!(child(table, "tblGrid").children().count(), 4);
+    let header = native[0][0];
+    assert_eq!(header.attributes["gridSpan"], "2");
+    assert_eq!(header.text(), "Header AHeader B");
+    assert_eq!(native[0][1].attributes["hMerge"], "1");
+
+    let origin = native[1][0];
+    assert_eq!(origin.attributes["rowSpan"], "2");
+    assert_eq!(origin.attributes["gridSpan"], "2");
+    assert_eq!(child(origin, "tcPr").attributes["anchor"], "b");
+    let paragraphs: Vec<_> = child(origin, "txBody").children().filter(|node| node.local() == "p").collect();
+    let expected = ["Cell anchor", "East text", "South text", "Diagonal text"];
+    assert_eq!(paragraphs.iter().map(|paragraph| paragraph.text()).collect::<Vec<_>>(), expected);
+    for paragraph in &paragraphs {
+        assert_eq!(child(paragraph, "pPr").attributes["algn"], "r");
+    }
+    assert_eq!(child(child(child(paragraphs[0], "r"), "rPr"), "latin").attributes["typeface"], "Arial");
+    assert_eq!(child(child(paragraphs[0], "r"), "rPr").attributes["b"], "1");
+    child(child(child(paragraphs[1], "r"), "rPr"), "hlinkClick");
+
+    for (cell, attrs) in [
+        (native[1][1], [("rowSpan", "2"), ("hMerge", "1")]),
+        (native[2][0], [("gridSpan", "2"), ("vMerge", "1")]),
+        (native[2][1], [("hMerge", "1"), ("vMerge", "1")]),
+    ] {
+        assert_eq!(cell.attributes.len(), attrs.len());
+        for (name, value) in attrs {
+            assert_eq!(cell.attributes[name], value);
+        }
+        assert!(cell.text().is_empty());
+    }
+    assert_cell(native[1][2], "l", "112233", [0, 0, 0, 0]);
+    assert_eq!(child(native[1][2], "tcPr").attributes["anchor"], "t");
+    assert_cell(native[1][3], "ctr", "112233", [0, 0, 0, 0]);
+    assert_eq!(child(native[1][3], "tcPr").attributes["anchor"], "ctr");
+    assert_eq!(child(child(origin, "tcPr"), "lnB").attributes["w"], "44450");
+    let body_heights: i64 = table.children().filter(|row| row.local() == "tr").skip(1)
+        .map(|row| row.attributes["h"].parse::<i64>().unwrap()).sum();
+    assert!(body_heights >= emu(4. * 25. + 16.));
+
+    let tables = preview_tables(&deck);
+    let visible: Vec<Vec<_>> = preview_rows(&tables[0]).map(|row| row.children().collect()).collect();
+    assert_eq!(visible.iter().map(Vec::len).collect::<Vec<_>>(), [3, 3, 2]);
+    assert_eq!(visible[0][0].attributes["colspan"], "2");
+    assert_eq!(visible[0][0].text(), header.text());
+    let origin = visible[1][0];
+    assert_eq!(origin.attributes["rowspan"], "2");
+    assert_eq!(origin.attributes["colspan"], "2");
+    assert_eq!(origin.children().map(XmlNode::text).collect::<Vec<_>>(), expected);
+    assert!(origin.attributes["style"].contains("vertical-align:bottom;"));
+    assert!(origin.attributes["style"].contains("text-align:right;"));
+    assert!(origin.attributes["style"].contains("border-bottom:3.5pt solid #112233;"));
+    assert!(visible[1][1].attributes["style"].contains("text-align:left;"));
+    assert!(visible[1][2].attributes["style"].contains("vertical-align:middle;"));
+    assert!(!preview_html(&deck).unwrap().contains("{colspan="));
+}
+
+#[test]
+fn page_break_keeps_connected_rows_and_repeats_merged_header() {
+    let mut source = "# Continuation\n\n| Lead {colspan=2} | Label | Value |\n| --- | --- | --- |\n".to_string();
+    for index in 0..7 {
+        source.push_str(&format!("| Before {index} | Regular | {index} |\n"));
+    }
+    source.push_str(concat!(
+        "| Span first {rowspan=2} | Other first | Extra first |\n",
+        "| Span second | Other second {rowspan=2} | Extra second |\n",
+        "| Remains | Other third | Extra third |\n",
+    ));
+    let deck = build(&source, "", "Continuation", &settings("grid")).unwrap();
+    let tables = native_tables(&deck);
+    assert_eq!(tables.len(), 2);
+    let first = rows(&tables[0]);
+    let second = rows(&tables[1]);
+    assert_eq!(first.len(), 8);
+    assert_eq!(second.len(), 4);
+    assert_eq!(first[0][0].text(), "LeadLabel");
+    assert_eq!(second[0][0].text(), "LeadLabel");
+    assert_eq!(second[0][0].attributes["gridSpan"], "2");
+    assert_eq!(second[1][0].text(), "Span firstSpan second");
+    assert_eq!(second[2][0].attributes["vMerge"], "1");
+    assert_eq!(second[2][1].text(), "Other secondOther third");
+    assert_eq!(second[3][1].attributes["vMerge"], "1");
+    let html = preview_tables(&deck);
+    assert_eq!(html.len(), tables.len());
+    assert_eq!(preview_rows(&html[1]).map(|row| row.children().count()).collect::<Vec<_>>(), [2, 3, 2, 2]);
+}
+
+#[test]
+fn a_merge_larger_than_a_slide_refuses_before_replacing_pptx() {
+    let mut tall = "# Oversized\n\n| A | B |\n| --- | --- |\n| Origin {rowspan=9} | First |\n".to_string();
+    for index in 1..9 {
+        tall.push_str(&format!("| Covered {index} | Visible {index} |\n"));
+    }
+    let wrapped = format!("# Oversized\n\n| A | B |\n| --- | --- |\n| {} {{colspan=2}} | Covered |\n", "a line of retained text ".repeat(160));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("existing.pptx");
+    std::fs::write(&path, b"original bytes").unwrap();
+    let options = json!({});
+    for source in [&tall, &wrapped] {
+        let unsupported = Some(crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED);
+        assert_eq!(preview(source, "", "Oversized", &options).err().as_deref(), unsupported);
+        assert_eq!(export(source, "", path.to_str().unwrap(), &options, "Oversized").err().as_deref(), unsupported);
+        assert_eq!(std::fs::read(&path).unwrap(), b"original bytes");
+    }
 }
