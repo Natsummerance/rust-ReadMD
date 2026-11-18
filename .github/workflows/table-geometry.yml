@@ -53,10 +53,13 @@ jobs:
         working-directory: ui-tests
         run: npx --no-install playwright install chromium
       - name: Edit, export, save, restart, undo and redo
-        run: node ui-tests/table-geometry-browser.cjs
+        # Chrome creates a Unix socket beneath TMPDIR. Keep its pathname under
+        # the sockaddr_un limit independently of the checkout directory length.
+        shell: bash
+        run: node ui-tests/table-geometry-browser.cjs "" "$RUNNER_TEMP/rt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: table-geometry-${{ runner.os }}
-          path: table-geometry-evidence/report.json
+          path: ${{ runner.temp }}/rt/report.json
           if-no-files-found: ignore
