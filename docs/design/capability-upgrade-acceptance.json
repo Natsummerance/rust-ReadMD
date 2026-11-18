@@ -7165,7 +7165,14 @@
         "tools/test/v006-table-clipboard.test.cjs",
         "tools/test/v006-table-clipboard-browser.cjs",
         "tools/test/v006-table-align.test.cjs",
-        "tools/test/v006-table-align-browser.cjs"
+        "tools/test/v006-table-align-browser.cjs",
+        "assets/js/editor/table-attributes.js",
+        "assets/js/editor/table-structure.js",
+        "assets/js/reader/table-layout.js",
+        "rust/readmd-kernel/src/table_geometry.rs",
+        "rust/readmd-kernel/src/docx_writer.rs",
+        "rust/readmd-kernel/src/pptx_export/table.rs",
+        "ui-tests/table-geometry-browser.cjs"
       ],
       "evidence": [
         {
@@ -7187,10 +7194,22 @@
           "scope": "顶层 GFM 当前列左／中／右对齐，正式 CSP headless 保存、撤销及新进程重开；不等于完整可视表格。",
           "recordedAt": "2026-10-27T10:24:42.530Z",
           "platform": "windows-x64"
+        },
+        {
+          "path": "docs/reviews/readmd-v007-table-geometry-2026-11-18.json",
+          "sha256": "6904483783007f9d10f983d1b02e6bd596c44eff86c538f02f82c778076be0f6",
+          "sourceDigest": "a01bdba2d3a5406f1775cf897a46ab5ac958f047985cce3cbe55960923170da5",
+          "kind": "integration",
+          "outcome": "partial",
+          "scope": "矩形合并、拆分、双轴对齐、富文本保留、保存及新进程撤销重做。Mac 原生宿主和 ibisOffice 另存重开，Windows、Linux 为真实内核与浏览器。",
+          "recordedAt": "2026-11-18T11:48:58Z",
+          "platform": "macos-arm64/windows-x64/linux-x64"
         }
       ],
       "remaining": [
-        "可视单元格、行列、排序、CSV/TSV及扩展属性保存重开完整实测"
+        "可视调整行高、列宽及 CSV/TSV 与格式化表格的组合验收",
+        "默认 Rust PDF 与 PNG 的合并格分页和科研三线表，跨页表头及边框检查",
+        "Windows、Linux 原生桌面交互及外部 Office 应用往返"
       ]
     },
     {
