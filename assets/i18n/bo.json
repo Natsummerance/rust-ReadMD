@@ -1228,6 +1228,8 @@
   "editor.superscript": "སྟེང་ཡི་གེ།",
   "editor.table": "རེའུ་མིག",
   "editor.table3x3": "3 × 3 རེའུ་མིག",
+  "editor.insertRow": "ཕྲེང་སྣོན།",
+  "editor.deleteRow": "ཕྲེང་སུབ།",
   "editor.tableCell": "སྦུགས་ཕྲན",
   "editor.tableDimensions": "{rows} × {cols} རེའུ་མིག",
   "editor.tableHeaderPrefix": "མགོ་བོ།",

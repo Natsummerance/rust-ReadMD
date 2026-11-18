@@ -1228,6 +1228,8 @@
   "editor.superscript": "Felső index",
   "editor.table": "Táblázat",
   "editor.table3x3": "3 × 3 táblázat",
+  "editor.insertRow": "Sor beszúrása alá",
+  "editor.deleteRow": "Sor törlése",
   "editor.tableCell": "Cella",
   "editor.tableDimensions": "{rows} × {cols} táblázat",
   "editor.tableHeaderPrefix": "Fejléc",

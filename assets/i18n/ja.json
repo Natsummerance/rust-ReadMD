@@ -1228,6 +1228,8 @@
   "editor.superscript": "上付き文字",
   "editor.table": "表",
   "editor.table3x3": "3×3テーブル",
+  "editor.insertRow": "下に行を挿入",
+  "editor.deleteRow": "行を削除",
   "editor.tableCell": "細胞",
   "editor.tableDimensions": "{rows} × {cols}表",
   "editor.tableHeaderPrefix": "ヘッダ",

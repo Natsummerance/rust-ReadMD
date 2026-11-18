@@ -1228,6 +1228,8 @@
   "editor.superscript": "Εκθέτης",
   "editor.table": "Πίνακας",
   "editor.table3x3": "Πίνακας 3 × 3",
+  "editor.insertRow": "Εισαγωγή γραμμής",
+  "editor.deleteRow": "Διαγραφή γραμμής",
   "editor.tableCell": "Κελί",
   "editor.tableDimensions": "Πίνακας {rows} × {cols}",
   "editor.tableHeaderPrefix": "Κεφαλίδα",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "yläindeksi",
   "editor.table": "Taulukko",
   "editor.table3x3": "3 × 3 pöytä",
+  "editor.insertRow": "Lisää rivi alle",
+  "editor.deleteRow": "Poista rivi",
   "editor.tableCell": "solu",
   "editor.tableDimensions": "{rows} × {cols} pöytä",
   "editor.tableHeaderPrefix": "Otsikko",

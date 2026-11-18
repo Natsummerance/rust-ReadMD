@@ -1228,6 +1228,8 @@
   "editor.superscript": "ตัวยก",
   "editor.table": "ตาราง",
   "editor.table3x3": "ตาราง 3 × 3",
+  "editor.insertRow": "แทรกแถวด้านล่าง",
+  "editor.deleteRow": "ลบแถว",
   "editor.tableCell": "เซลล์",
   "editor.tableDimensions": "ตาราง {rows} × {cols}",
   "editor.tableHeaderPrefix": "ส่วนหัว",

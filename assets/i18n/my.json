@@ -1228,6 +1228,8 @@
   "editor.superscript": "လုံးကြီးတင်",
   "editor.table": "ဇယား",
   "editor.table3x3": "3×3 စားပွဲ",
+  "editor.insertRow": "အောက်တွင် အတန်းထည့်ရန်",
+  "editor.deleteRow": "အတန်းဖျက်ရန်",
   "editor.tableCell": "ဆဲလ်",
   "editor.tableDimensions": "{rows} × {cols} ဇယား",
   "editor.tableHeaderPrefix": "ခေါင်းစီး",

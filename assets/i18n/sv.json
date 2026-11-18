@@ -1228,6 +1228,8 @@
   "editor.superscript": "exponent",
   "editor.table": "Tabell",
   "editor.table3x3": "3 × 3 bord",
+  "editor.insertRow": "Infoga rad nedanför",
+  "editor.deleteRow": "Ta bort rad",
   "editor.tableCell": "cell",
   "editor.tableDimensions": "{rows} × {cols} tabell",
   "editor.tableHeaderPrefix": "Rubrik",

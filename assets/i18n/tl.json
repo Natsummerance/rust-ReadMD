@@ -1228,6 +1228,8 @@
   "editor.superscript": "superscript",
   "editor.table": "Talahanayan",
   "editor.table3x3": "3 × 3 Talahanayan",
+  "editor.insertRow": "Magdagdag ng hilera sa ibaba",
+  "editor.deleteRow": "Burahin ang hilera",
   "editor.tableCell": "cell",
   "editor.tableDimensions": "{rows} × {cols} Talahanayan",
   "editor.tableHeaderPrefix": "Ulo ng Talahanayan",

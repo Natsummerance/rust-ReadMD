@@ -1228,6 +1228,8 @@
   "editor.superscript": "exposant",
   "editor.table": "Tableau",
   "editor.table3x3": "Tableau 3 × 3",
+  "editor.insertRow": "Insérer une ligne en dessous",
+  "editor.deleteRow": "Supprimer la ligne",
   "editor.tableCell": "cellule",
   "editor.tableDimensions": "Tableau {rows} × {cols}",
   "editor.tableHeaderPrefix": "En-tête",

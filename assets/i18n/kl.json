@@ -1228,6 +1228,8 @@
   "editor.superscript": "qulaani allassimasoq",
   "editor.table": "Tabeli",
   "editor.table3x3": "3 × 3-mik tabeli",
+  "editor.insertRow": "Tulleriimmik ilanngussigit",
+  "editor.deleteRow": "Tulleriik peeruk",
   "editor.tableCell": "uumassusillit sananeqaataasa minnersaat celli",
   "editor.tableDimensions": "{rows} × {cols} tabeli",
   "editor.tableHeaderPrefix": "Qulequtaq",

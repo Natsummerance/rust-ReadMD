@@ -1228,6 +1228,8 @@
   "editor.superscript": "អក្សរធំ",
   "editor.table": "តារាង",
   "editor.table3x3": "តារាង 3 × 3",
+  "editor.insertRow": "បញ្ចូលជួរដេកខាងក្រោម",
+  "editor.deleteRow": "លុបជួរដេក",
   "editor.tableCell": "ក្រឡា",
   "editor.tableDimensions": "តារាង {rows} × {cols}",
   "editor.tableHeaderPrefix": "បឋមកថា",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "כתב עילית",
   "editor.table": "טבלה",
   "editor.table3x3": "טבלה 3×3",
+  "editor.insertRow": "הוספת שורה מתחת",
+  "editor.deleteRow": "מחיקת שורה",
   "editor.tableCell": "תָא",
   "editor.tableDimensions": "טבלה {rows} × {cols}",
   "editor.tableHeaderPrefix": "כּוֹתֶרֶת",

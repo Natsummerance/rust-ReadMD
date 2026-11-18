@@ -1228,6 +1228,8 @@
   "editor.superscript": "overskrift",
   "editor.table": "Tabell",
   "editor.table3x3": "3 × 3 bord",
+  "editor.insertRow": "Sett inn rad under",
+  "editor.deleteRow": "Slett rad",
   "editor.tableCell": "celle",
   "editor.tableDimensions": "{rows} × {cols} tabell",
   "editor.tableHeaderPrefix": "Overskrift",

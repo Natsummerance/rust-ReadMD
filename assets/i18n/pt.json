@@ -1228,6 +1228,8 @@
   "editor.superscript": "sobrescrito",
   "editor.table": "Tabela",
   "editor.table3x3": "Mesa 3 × 3",
+  "editor.insertRow": "Inserir linha abaixo",
+  "editor.deleteRow": "Excluir linha",
   "editor.tableCell": "célula",
   "editor.tableDimensions": "Tabela {rows} × {cols}",
   "editor.tableHeaderPrefix": "Cabeçalho",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "Chỉ số trên",
   "editor.table": "Bảng",
   "editor.table3x3": "Bảng 3 × 3",
+  "editor.insertRow": "Chèn hàng bên dưới",
+  "editor.deleteRow": "Xóa hàng",
   "editor.tableCell": "Ô",
   "editor.tableDimensions": "Bảng {rows} × {cols}",
   "editor.tableHeaderPrefix": "Tiêu đề cột",

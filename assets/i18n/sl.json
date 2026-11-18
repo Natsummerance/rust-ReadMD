@@ -1228,6 +1228,8 @@
   "editor.superscript": "Nadpisano",
   "editor.table": "Tabela",
   "editor.table3x3": "Tabela 3 × 3",
+  "editor.insertRow": "Vstavi vrstico spodaj",
+  "editor.deleteRow": "Izbriši vrstico",
   "editor.tableCell": "Celica",
   "editor.tableDimensions": "Tabela {rows} × {cols}",
   "editor.tableHeaderPrefix": "Glava",

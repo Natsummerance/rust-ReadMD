@@ -1228,6 +1228,8 @@
   "editor.superscript": "সুপারস্ক্রিপ্ট",
   "editor.table": "টেবিল",
   "editor.table3x3": "৩ × ৩ টেবিল",
+  "editor.insertRow": "সারি যোগ করুন",
+  "editor.deleteRow": "সারি মুছুন",
   "editor.tableCell": "সেল",
   "editor.tableDimensions": "{rows} × {cols} টেবিল",
   "editor.tableHeaderPrefix": "হেডার",

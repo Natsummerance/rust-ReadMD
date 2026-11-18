@@ -1228,6 +1228,8 @@
   "editor.superscript": "ئۈستى بەلگە",
   "editor.table": "جەدۋەل",
   "editor.table3x3": "3 × 3 جەدۋەل",
+  "editor.insertRow": "ئاستىغا قۇر قوشۇش",
+  "editor.deleteRow": "قۇر ئۆچۈرۈش",
   "editor.tableCell": "كاتەكچە",
   "editor.tableDimensions": "{rows} × {cols} جەدۋەل",
   "editor.tableHeaderPrefix": "جەدۋەل بېشى",

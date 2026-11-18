@@ -1228,6 +1228,8 @@
   "editor.superscript": "superscript",
   "editor.table": "Tabel",
   "editor.table3x3": "masă 3 × 3",
+  "editor.insertRow": "Inserează un rând dedesubt",
+  "editor.deleteRow": "Șterge rândul",
   "editor.tableCell": "celulă",
   "editor.tableDimensions": "{rows} × {cols} masa",
   "editor.tableHeaderPrefix": "Antet",

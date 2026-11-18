@@ -1228,6 +1228,8 @@
   "editor.superscript": "superscript",
   "editor.table": "Tabel",
   "editor.table3x3": "3 × 3-tabel",
+  "editor.insertRow": "Rij eronder invoegen",
+  "editor.deleteRow": "Rij verwijderen",
   "editor.tableCell": "Cel",
   "editor.tableDimensions": "{rows} × {cols}-tabel",
   "editor.tableHeaderPrefix": "Koptekst",

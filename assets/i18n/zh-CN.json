@@ -1232,6 +1232,8 @@
   "editor.superscript": "上标",
   "editor.table": "表格",
   "editor.table3x3": "3 × 3 表格",
+  "editor.insertRow": "下方插行",
+  "editor.deleteRow": "删除此行",
   "editor.tableCell": "单元格",
   "editor.tableDimensions": "{rows} × {cols} 表格",
   "editor.tableHeaderPrefix": "表头",

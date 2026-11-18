@@ -24,6 +24,8 @@ function getExportPresetNames() {
 
 function getExportSections() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const tableHeaderBold = { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' };
+  const tableWidth = { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 };
   const sections = [
     /* --- EPUB 电子书专属参数 --- */
     { title: _t('export.secEpubMeta') || '', fmts: ['epub'], fields: [
@@ -128,7 +130,7 @@ function getExportSections() {
       { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
       { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
       { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
-      { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' },
+      tableHeaderBold,
       { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
       { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
       { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
@@ -136,7 +138,7 @@ function getExportSections() {
       { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
       { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
       { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
-      { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 },
+      tableWidth,
     ]},
     { title: _t('export.secCode') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
       { k: 'code.bg', label: _t('export.codeBg') || '', type: 'color' },
@@ -194,6 +196,7 @@ function getExportSections() {
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
       { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
       { k: 'pptxTitleFade', label: [_t('editor.headingWord'), _t('presentation.transitionFade')].join(' · '), type: 'checkbox', default: false },
+      tableWidth, tableHeaderBold,
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];

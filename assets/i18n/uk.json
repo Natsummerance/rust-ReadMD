@@ -1228,6 +1228,8 @@
   "editor.superscript": "Надрядковий знак",
   "editor.table": "Таблиця",
   "editor.table3x3": "Таблиця 3 × 3",
+  "editor.insertRow": "Вставити рядок нижче",
+  "editor.deleteRow": "Видалити рядок",
   "editor.tableCell": "Клітинка",
   "editor.tableDimensions": "Таблиця {rows} × {cols}",
   "editor.tableHeaderPrefix": "Заголовок",

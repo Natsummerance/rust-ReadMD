@@ -16525,7 +16525,7 @@ function cmTableCellContext(view) {
     if (!segments || !segments.length || segments.length > 16 || lines.length && segments.length !== lines[0].segments.length) return unsupported();
     lines.push({ line, segments });
   }
-  if (lines.length < 3 || (lines.length - 1) * lines[0].segments.length > 256 ||
+  if (lines.length < 2 || (lines.length - 1) * lines[0].segments.length > 256 ||
       !lines[1].segments.every(cell => /^\s*:?-+:?\s*$/.test(lines[1].line.text.slice(cell.from, cell.to)))) return unsupported();
   const rows = lines.filter((_, index) => index !== 1).map(({ line, segments }, row) => segments.map((segment, column) => {
     const raw = line.text.slice(segment.from, segment.to), leading = raw.match(/^[ \t]*/)[0].length;
@@ -16561,38 +16561,57 @@ function tableCellControls(view, context, modal, picker) {
   const input = document.createElement('input'); input.id = 'table-cell-input'; input.className = 'modal-input'; input.type = 'text'; input.maxLength = 4096;
   const label = document.createElement('label'); label.setAttribute('for', input.id);
   const actions = document.createElement('div'); actions.className = 'panel-feedback-row table-cell-editor-actions';
-  const moves = [[-1, 'pm.up', 'M12 19V5m-5 5 5-5 5 5'], [1, 'pm.down', 'M12 5v14m-5-5 5 5 5-5']].map(([step, key, icon]) => {
+  const rowActions = [
+    ['up', 'pm.up', 'M12 19V5m-5 5 5-5 5 5'],
+    ['down', 'pm.down', 'M12 5v14m-5-5 5 5 5-5'],
+    ['insert', 'editor.insertRow', 'M3 5h18v4H3z M12 12v8m-4-4h8'],
+    ['delete', 'editor.deleteRow', 'M3 5h18v4H3z M8 16h8'],
+  ].map(([action, key, icon]) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'tb-btn icon';
-    button.dataset.tableMove = step < 0 ? 'up' : 'down'; button.disabled = true;
+    button.dataset.tableMove = action; button.disabled = true;
     button.dataset.i18nTitle = key; button.dataset.i18nAria = key;
     button.title = t(key); button.setAttribute('aria-label', t(key));
     button.innerHTML = `<svg class="tb-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${icon}"/></svg>`;
-    button.addEventListener('click', () => void moveRow(step)); actions.append(button);
-    return { step, button };
+    button.addEventListener('click', () => void editRow(action)); actions.append(button);
+    return { action, button };
   });
   const apply = document.createElement('button'), cancel = document.createElement('button');
   for (const [button, key] of [[apply, 'publication.local.apply'], [cancel, 'common.cancel']]) { button.type = 'button'; button.className = 'tb-btn'; button.textContent = t(key); actions.append(button); }
   apply.id = 'table-cell-apply'; cancel.id = 'table-cell-cancel'; apply.disabled = true;
   const buttons = [];
-  function rowMove(step) {
-    const row = session.cell?.row, next = row + step;
-    if (!(row > 0 && next > 0 && next < context.rows.length)) return null;
-    const doc = context.editorDoc;
-    return window.ReadMDTransforms.tableRowSwap(doc.line(context.rows[row][0].line), doc.line(context.rows[next][0].line));
+  function rowEdit(action) {
+    if (!session.cell || (!input.disabled && input.value !== session.cell.value)) return null;
+    const {rows, editorDoc} = context;
+    const row = session.cell.row;
+    const line = editorDoc.line(rows[row][0].line);
+    if (action === 'insert') {
+      const after = row === 0 ? editorDoc.line(line.number + 1) : line;
+      const insert = '\n|' + ' |'.repeat(rows[0].length);
+      if (rows.length >= 32 || (rows.length + 1) * rows[0].length > 256 ||
+          context.to - context.from + insert.length > 65536) return null;
+      return { from: after.to, to: after.to, insert };
+    }
+    if (row === 0) return null;
+    if (action === 'delete') return { from: line.from - 1, to: line.to, insert: '' };
+    const adjacent = rows[row + (action === 'up' ? -1 : 1)];
+    if (!adjacent || adjacent === rows[0]) return null;
+    return window.ReadMDTransforms.tableRowSwap(line, editorDoc.line(adjacent[0].line));
   }
   function updateMoveButtons() {
-    for (const { button, step } of moves) button.disabled = session.busy || !rowMove(step);
+    for (const {button, action} of rowActions) button.disabled = session.busy || !rowEdit(action);
   }
-  async function moveRow(step) {
+  input.addEventListener('input', updateMoveButtons);
+  async function editRow(action) {
     if (!current() || session.busy) return;
-    const edit = rowMove(step);
+    const edit = rowEdit(action);
     if (!edit) return;
     session.busy = true; apply.disabled = true; updateMoveButtons();
     status.textContent = t('review.busy');
     try {
       const stamp = await ReadMDReview.captureManualRange(edit.from, edit.to, tab);
-      if (!current()) return;
-      // Reordering source would invalidate these anchors. Keep any review
+      if (!current() || stamp.editorDoc !== context.editorDoc ||
+          stamp.original !== context.editorDoc.sliceString(edit.from, edit.to)) throw Error('review_stale_generation');
+      // A structural edit would invalidate these anchors. Keep any review
       // touching the affected lines available for an explicit decision first.
       const changes = ReadMDReview.snapshot(tab).changes;
       if (changes.some(change => change.decision !== 'withdrawn' && (change.from === change.to
@@ -27405,6 +27424,8 @@ function getExportPresetNames() {
 
 function getExportSections() {
   const _t = (k, p) => window.i18n ? window.i18n.t(k, p) : k;
+  const tableHeaderBold = { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' };
+  const tableWidth = { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 };
   const sections = [
     /* --- EPUB 电子书专属参数 --- */
     { title: _t('export.secEpubMeta') || '', fmts: ['epub'], fields: [
@@ -27509,7 +27530,7 @@ function getExportSections() {
       { k: 'table.style', label: _t('export.tableStyle'), type: 'select', opts: [['grid', _t('export.tableGrid')], ['three-line', _t('export.tableThreeLine')]] },
       { k: 'table.headerBg', label: _t('export.tableHeaderBg') || '', type: 'color' },
       { k: 'table.headerColor', label: _t('export.tableHeaderColor') || '', type: 'color' },
-      { k: 'table.headerBold', label: _t('export.tableHeaderBold') || '', type: 'checkbox' },
+      tableHeaderBold,
       { k: 'table.borderColor', label: _t('export.tableBorderColor') || '', type: 'color' },
       { k: 'table.borderWidth', label: _t('export.tableBorderWidth') || '', type: 'number', min: 0, max: 3, step: 0.25 },
       { k: 'table.banded', label: _t('export.tableBanded') || '', type: 'checkbox' },
@@ -27517,7 +27538,7 @@ function getExportSections() {
       { k: 'table.cellSize', label: _t('export.tableCellSize') || '', type: 'number', min: 7, max: 16 },
       { k: 'table.cellPadding', label: _t('export.tableCellPadding') || '', type: 'number', min: 0, max: 20 },
       { k: 'table.align', label: _t('export.align') || '', type: 'select', opts: [['left', _t('export.alignLeft') || ''], ['center', _t('export.alignCenter') || ''], ['right', _t('export.alignRight') || ''], ['justify', _t('export.alignJustify') || '']] },
-      { k: 'table.widthPct', label: _t('export.tableWidthPct') || '', type: 'number', min: 50, max: 100 },
+      tableWidth,
     ]},
     { title: _t('export.secCode') || '', fmts: ['pdf', 'docx', 'html', 'epub'], fields: [
       { k: 'code.bg', label: _t('export.codeBg') || '', type: 'color' },
@@ -27575,6 +27596,7 @@ function getExportSections() {
       { k: 'theme', label: _t('export.slidesTheme') || '', type: 'select', opts: ['black', 'white', 'league', 'beige', 'night', 'serif', 'simple', 'solarized', 'blood', 'moon', 'sky'] },
       { k: 'transition', label: _t('export.slidesTransition') || '', type: 'select', opts: ['slide', 'fade', 'zoom', 'none'] },
       { k: 'pptxTitleFade', label: [_t('editor.headingWord'), _t('presentation.transitionFade')].join(' · '), type: 'checkbox', default: false },
+      tableWidth, tableHeaderBold,
       { k: 'slidesHint', label: _t('export.slidesHint') || '', type: 'note', full: true },
     ]},
   ];

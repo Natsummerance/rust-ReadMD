@@ -1228,6 +1228,8 @@
   "editor.superscript": "forscript",
   "editor.table": "Tábla",
   "editor.table3x3": "3 × 3 tábla",
+  "editor.insertRow": "Ionsáigh ró thíos",
+  "editor.deleteRow": "Scrios an ró",
   "editor.tableCell": "cill",
   "editor.tableDimensions": "tábla {rows} × {cols}",
   "editor.tableHeaderPrefix": "Ceanntásc",

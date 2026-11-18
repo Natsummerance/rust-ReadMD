@@ -1228,6 +1228,8 @@
   "editor.superscript": "ऊपर की ओर लिखा हुआ",
   "editor.table": "तालिका",
   "editor.table3x3": "3×3 टेबल",
+  "editor.insertRow": "नीचे पंक्ति जोड़ें",
+  "editor.deleteRow": "पंक्ति हटाएँ",
   "editor.tableCell": "कक्ष",
   "editor.tableDimensions": "{rows} × {cols} तालिका",
   "editor.tableHeaderPrefix": "हैडर",

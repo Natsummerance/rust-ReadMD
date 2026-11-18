@@ -1228,6 +1228,8 @@
   "editor.superscript": "مرتفع",
   "editor.table": "جدول",
   "editor.table3x3": "جدول 3 × 3",
+  "editor.insertRow": "إدراج صف",
+  "editor.deleteRow": "حذف الصف",
   "editor.tableCell": "خلية",
   "editor.tableDimensions": "جدول {rows} × {cols}",
   "editor.tableHeaderPrefix": "رأس الجدول",

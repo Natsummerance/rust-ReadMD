@@ -36,7 +36,14 @@ impl TableAlign {
     fn xml(self) -> &'static str {match self {Self::Left=>"l",Self::Center=>"ctr",Self::Right=>"r",Self::Justify=>"just"}}
 }
 #[derive(Clone, Debug)]
-struct TableStyle { three_line:bool, border_color:String, border_width:f64, default_align:TableAlign }
+struct TableStyle {
+    three_line: bool,
+    border_color: String,
+    border_width: f64,
+    default_align: TableAlign,
+    width_pct: f64,
+    header_bold: bool,
+}
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TableBorders { left:f64, right:f64, top:f64, bottom:f64 }
 impl TableStyle {
@@ -45,7 +52,9 @@ impl TableStyle {
         let three_line=crate::export_styles::three_line_table(&style);
         let border_color=style["table"]["borderColor"].as_str().unwrap_or("#c8cdd4").trim().trim_start_matches('#').to_ascii_uppercase();
         let width=style["table"]["borderWidth"].as_f64().unwrap_or(0.75);
-        Self{three_line,border_color,border_width:if three_line{width.clamp(0.25,3.)}else{width},default_align:TableAlign::option(style["table"]["align"].as_str().unwrap_or("left"))}
+        let width_pct = style["table"]["widthPct"].as_f64().unwrap_or(100.);
+        let header_bold = style["table"]["headerBold"].as_bool().unwrap_or(true);
+        Self{three_line,border_color,width_pct,header_bold,border_width:if three_line{width.clamp(0.25,3.)}else{width},default_align:TableAlign::option(style["table"]["align"].as_str().unwrap_or("left"))}
     }
     fn borders(&self, row:usize, rows:usize) -> TableBorders {
         let width=self.border_width;
@@ -346,19 +355,30 @@ impl Builder {
         let columns=header.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
         if columns==0{return Ok(());}if columns>16{return Err(BUDGET.into());}
         let aligns=(0..columns).map(|column|TableAlign::column(aligns.get(column).copied().unwrap_or(Align::None),self.table_style.default_align)).collect::<Vec<_>>();
-        let cell_width=WIDTH/columns as f64-20.;
-        let cell=|values:&[Vec<Inline>]| -> Result<Vec<Vec<Line>>> {
-            let mut output=Vec::new();for col in 0..columns{let mut runs=Vec::new();if let Some(values)=values.get(col){inline_runs(values,&Run::default(),&mut runs)?;}output.push(wrap(&runs,20.,cell_width)?);}Ok(output)
+        let width = WIDTH * self.table_style.width_pct / 100.;
+        let left = (W - width) / 2.;
+        let cell_width = width / columns as f64 - 20.;
+        let cell = |values: &[Vec<Inline>], bold: bool| -> Result<Vec<Vec<Line>>> {
+            let mut output = Vec::with_capacity(columns);
+            for col in 0..columns {
+                let mut runs = Vec::new();
+                if let Some(value) = values.get(col) {
+                    inline_runs(value, &Run { bold, ..Run::default() }, &mut runs)?;
+                }
+                output.push(wrap(&runs, 20., cell_width)?);
+            }
+            Ok(output)
         };
-        let header=cell(header)?;let header_height=header.iter().map(Vec::len).max().unwrap_or(1) as f64*25.+16.;
+        let header = cell(header, self.table_style.header_bold)?;
+        let header_height=header.iter().map(Vec::len).max().unwrap_or(1) as f64*25.+16.;
         if header_height>120.{return Err(BUDGET.into());}
         if BOTTOM-self.y<header_height+42. {self.continuation()?;}
         let mut table_rows=vec![header.clone()];let mut heights=vec![header_height];let mut used=header_height;
         for source in rows {
-            let cells=cell(source)?;let total=cells.iter().map(Vec::len).max().unwrap_or(1);let mut start=0;
+            let cells=cell(source, false)?;let total=cells.iter().map(Vec::len).max().unwrap_or(1);let mut start=0;
             while start<total {
                 if BOTTOM-self.y-used<42. {
-                    if table_rows.len()>1 {self.push(Shape::Table{rect:[LEFT,self.y,WIDTH,used],rows:std::mem::replace(&mut table_rows,vec![header.clone()]),heights:std::mem::replace(&mut heights,vec![header_height]),columns,aligns:aligns.clone(),style:self.table_style.clone()})?;}
+                    if table_rows.len()>1 {self.push(Shape::Table{rect:[left,self.y,width,used],rows:std::mem::replace(&mut table_rows,vec![header.clone()]),heights:std::mem::replace(&mut heights,vec![header_height]),columns,aligns:aligns.clone(),style:self.table_style.clone()})?;}
                     self.continuation()?;used=header_height;
                 }
                 let capacity=((BOTTOM-self.y-used-16.)/25.).floor().max(0.) as usize;
@@ -367,7 +387,7 @@ impl Builder {
                 table_rows.push(cells.iter().map(|lines|lines[start.min(lines.len())..end.min(lines.len())].to_vec()).collect());heights.push(height);used+=height;start=end;
             }
         }
-        if !table_rows.is_empty(){self.push(Shape::Table{rect:[LEFT,self.y,WIDTH,used],rows:table_rows,heights,columns,aligns,style:self.table_style.clone()})?;self.y+=used+18.;}Ok(())
+        if !table_rows.is_empty(){self.push(Shape::Table{rect:[left,self.y,width,used],rows:table_rows,heights,columns,aligns,style:self.table_style.clone()})?;self.y+=used+18.;}Ok(())
     }
     fn blocks(&mut self,blocks:&[Block],bullet:Option<String>,depth:usize) -> Result<()> {
         if depth>16{return Err(BUDGET.into());}
@@ -466,7 +486,7 @@ fn preview_html(deck:&Deck) -> Result<String> {
             Shape::Image{rect,media,alt}=>{let image=&deck.media[*media];slides.push_str(&format!("<img alt=\"{}\" style=\"{}\" src=\"data:image/{};base64,{}\">",escaped(alt),position(*rect),if image.svg.is_some(){"svg+xml"}else if image.extension=="jpg"{"jpeg"}else{&image.extension},base64::engine::general_purpose::STANDARD.encode(image.svg.as_ref().unwrap_or(&image.bytes))));},
             Shape::Table{rect,rows,heights,columns,aligns,style}=>{
                 slides.push_str(&format!("<table style=\"{}table-layout:fixed;border-collapse:collapse;font-size:20px;line-height:25px;\">",position(*rect)));
-                for (n,row) in rows.iter().enumerate(){slides.push_str(&format!("<tr style=\"height:{}px\">",heights[n]));for (column,cell) in row.iter().enumerate(){slides.push_str(&format!("<td style=\"width:{}px;padding:8px 10px;vertical-align:top;{}text-align:{};font-weight:{};box-sizing:border-box;\">",rect[2]/ *columns as f64,style.border_css(style.borders(n,rows.len())),aligns[column].css(),if n==0{"700"}else{"400"}));for line in cell{slides.push_str(&format!("<div style=\"white-space:pre\">{}</div>",line_html(line)));}slides.push_str("</td>");}slides.push_str("</tr>");}slides.push_str("</table>");
+                for (n,row) in rows.iter().enumerate(){slides.push_str(&format!("<tr style=\"height:{}px\">",heights[n]));for (column,cell) in row.iter().enumerate(){slides.push_str(&format!("<td style=\"width:{}px;padding:8px 10px;vertical-align:top;{}text-align:{};box-sizing:border-box;\">",rect[2]/ *columns as f64,style.border_css(style.borders(n,rows.len())),aligns[column].css()));for line in cell{slides.push_str(&format!("<div style=\"white-space:pre\">{}</div>",line_html(line)));}slides.push_str("</td>");}slides.push_str("</tr>");}slides.push_str("</table>");
             },
         }}
         slides.push_str("</section>");if slides.len()>LIMIT{return Err(BUDGET.into());}
@@ -517,8 +537,7 @@ fn shape_xml(shape:&Shape,id:usize,deck:&Deck,links:&BTreeMap<String,String>) ->
             let [x,y,w,h]=*rect;let mut body=format!("<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id=\"{id}\" name=\"Table {id}\"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"{}\" y=\"{}\"/><a:ext cx=\"{}\" cy=\"{}\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/table\"><a:tbl><a:tblPr firstRow=\"1\" bandRow=\"0\"/><a:tblGrid>",emu(x),emu(y),emu(w),emu(h));
             for _ in 0..*columns{body.push_str(&format!("<a:gridCol w=\"{}\"/>",emu(w/ *columns as f64)));}body.push_str("</a:tblGrid>");
             for (index,row) in rows.iter().enumerate(){body.push_str(&format!("<a:tr h=\"{}\">",emu(heights[index])));for (column,cell) in row.iter().enumerate(){
-                let lines=if index==0 {cell.iter().map(|line|line.iter().map(|run|Run{bold:true,..run.clone()}).collect()).collect::<Vec<_>>()}else{cell.clone()};
-                body.push_str(&format!("<a:tc><a:txBody>{}</a:txBody><a:tcPr marL=\"127000\" marR=\"127000\" marT=\"101600\" marB=\"101600\" anchor=\"t\">",aligned_text_body(&lines,20.,deck.foreground,None,aligns[column],links)));
+                body.push_str(&format!("<a:tc><a:txBody>{}</a:txBody><a:tcPr marL=\"127000\" marR=\"127000\" marT=\"101600\" marB=\"101600\" anchor=\"t\">",aligned_text_body(cell,20.,deck.foreground,None,aligns[column],links)));
                 body.push_str(&style.border_xml(style.borders(index,rows.len())));body.push_str("<a:noFill/></a:tcPr></a:tc>");
             }body.push_str("</a:tr>");}body.push_str("</a:tbl></a:graphicData></a:graphic></p:graphicFrame>");body
         },

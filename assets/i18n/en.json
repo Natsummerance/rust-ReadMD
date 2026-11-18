@@ -1232,6 +1232,8 @@
   "editor.superscript": "Superscript",
   "editor.table": "Table",
   "editor.table3x3": "3 × 3 Table",
+  "editor.insertRow": "Insert row below",
+  "editor.deleteRow": "Delete row",
   "editor.tableCell": "Cell",
   "editor.tableDimensions": "{rows} × {cols} Table",
   "editor.tableHeaderPrefix": "Header",

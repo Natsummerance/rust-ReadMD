@@ -99,3 +99,35 @@ fn style_sanitization_bounds_rules_and_zero_grid_width_stays_invisible(){
     let grid=build(SOURCE,"","Zero",&json!({"table":{"style":"grid","borderWidth":0}})).unwrap();let tables=native_tables(&grid);
     for row in rows(&tables[0]){for (cell,align) in row.iter().zip(["l","ctr","r"]){assert_cell(cell,align,"C8CDD4",[0,0,0,0]);}}
 }
+
+#[test]
+fn table_header_weight_and_width_match_preview_and_editable_grid() {
+    let source = "# Slide\n\n| Plain | **Authored** |\n| --- | --- |\n| Regular | **Strong** |\n";
+    for (width_pct, header_bold) in [(50, false), (75, true), (100, true)] {
+        let options = json!({"table":{"widthPct":width_pct,"headerBold":header_bold}});
+        let deck = build(source, "", "Slide", &options).unwrap();
+        let table = &native_tables(&deck)[0];
+        let preview = preview_html(&deck).unwrap();
+        let width = WIDTH * f64::from(width_pct) / 100.;
+        let left = (W - width) / 2.;
+        let grid = child(table, "tblGrid");
+        assert_eq!(grid.children().count(), 2);
+        for col in grid.children() {
+            assert_eq!(col.attributes["w"], emu(width / 2.).to_string());
+        }
+        assert!(preview.contains(&format!("left:{left}px;")));
+        assert!(preview.contains(&format!("width:{width}px;")));
+        for (row, expected) in rows(table).iter().zip([[header_bold, true], [false, true]]) {
+            for (cell, bold) in row.iter().zip(expected) {
+                let mut styles = Vec::new();
+                descendants(cell, "rPr", &mut styles);
+                assert_eq!(styles.len(), 1);
+                assert_eq!(styles[0].attributes["b"], if bold { "1" } else { "0" });
+                let text = cell.text();
+                let fragment = preview.split_once(&format!(">{text}</span>")).unwrap().0;
+                let run_style = fragment.rsplit_once("<span style=").unwrap().1;
+                assert!(run_style.contains(if bold { "font-weight:700" } else { "font-weight:400" }));
+            }
+        }
+    }
+}

@@ -1228,6 +1228,8 @@
   "editor.superscript": "superskrip",
   "editor.table": "Jadual",
   "editor.table3x3": "3 × 3 jadual",
+  "editor.insertRow": "Sisip baris di bawah",
+  "editor.deleteRow": "Padam baris",
   "editor.tableCell": "sel",
   "editor.tableDimensions": "{rows} × {cols} jadual",
   "editor.tableHeaderPrefix": "Pengepala",

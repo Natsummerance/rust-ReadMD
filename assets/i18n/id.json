@@ -1228,6 +1228,8 @@
   "editor.superscript": "Superskrip",
   "editor.table": "Tabel",
   "editor.table3x3": "Tabel 3 × 3",
+  "editor.insertRow": "Sisipkan baris di bawah",
+  "editor.deleteRow": "Hapus baris",
   "editor.tableCell": "Sel",
   "editor.tableDimensions": "Tabel {rows} × {cols}",
   "editor.tableHeaderPrefix": "Tajuk",

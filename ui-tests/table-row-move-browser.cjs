@@ -16,6 +16,8 @@ const source = `# 双表\n\n${table}\n\n${table}\n\n外部原文\n`;
 const tail = '待审正文';
 const pending = source.replace('外部原文', tail);
 const moved = `# 双表\n\n${table}\n\n${header}\n${lower}\n${upper}\n\n${tail}\n`;
+const afterInsert = moved.slice(0, moved.lastIndexOf(lower)) + '| | |\n' + moved.slice(moved.lastIndexOf(lower));
+const afterDelete = afterInsert.slice(0, afterInsert.lastIndexOf('\n' + upper)) + afterInsert.slice(afterInsert.lastIndexOf(upper) + upper.length);
 const physical = text => Buffer.from('\ufeff' + text.replaceAll('\n', '\r\n'));
 const report = { passed: false, nativeUiCertified: false, checks: [] };
 
@@ -40,6 +42,22 @@ async function exerciseEditor() {
     await page.locator('#table-cell-controls').waitFor();
   }
   try {
+    const single = path.join(owned.documents, '单行.md');
+    const oneRow = header + '\n' + upper;
+    fs.writeFileSync(single, physical(oneRow), { flag: 'wx' });
+    await page.evaluate(file => loadFile(file), single);
+    await page.locator('#btn-edit').click();
+    await until(() => visible(oneRow), 'single-row table opened');
+    await openTable(oneRow.indexOf(upper) + 2);
+    await page.locator('[data-table-move="delete"]').click();
+    await until(() => visible(header), 'last body row removed with delimiter intact');
+    await openTable(2);
+    await page.locator('[data-table-move="insert"]').click();
+    await until(() => visible(header + '\n| | |'), 'header-only table accepts a new row');
+    await page.locator('#edit-save').click();
+    await until(() => fs.readFileSync(single).equals(physical(header + '\n| | |')), 'single table saved');
+    await until(() => page.evaluate(() => !state.editing), 'single table save completed');
+    report.checks.push('Delete last body row and insert below header at end of file');
     await page.evaluate(file => loadFile(file), fixture);
     await page.locator('#btn-edit').click();
     await until(() => visible(source), 'editor opened original');
@@ -75,8 +93,20 @@ async function exerciseEditor() {
     const retained = staged.changes.find(change => change.id === outside.id);
     for (const key of ['from', 'to', 'original', 'replacement', 'decision', 'application']) assert.equal(retained[key], outside[key]);
     assert.deepEqual(fs.readFileSync(fixture), physical(source));
+    await openTable(moved.lastIndexOf(header) + 2);
+    const insert = page.locator('[data-table-move="insert"]'), remove = page.locator('[data-table-move="delete"]');
+    assert(await remove.isDisabled());
+    const input = page.locator('#table-cell-input');
+    await input.fill('尚未应用');
+    assert(await insert.isDisabled());
+    await input.fill('项目');
+    await insert.click();
+    await until(() => visible(afterInsert), 'insert a blank row under the second header');
+    await openTable(afterInsert.lastIndexOf(upper) + 2);
+    await remove.click();
+    await until(() => visible(afterDelete), 'delete exactly the selected rich body row');
     await page.locator('#edit-save').click();
-    await until(() => fs.readFileSync(fixture).equals(physical(moved)), 'save row move with BOM and CRLF');
+    await until(() => fs.readFileSync(fixture).equals(physical(afterDelete)), 'save structural edit with BOM and CRLF');
     await until(() => page.evaluate(() => !state.editing), 'save exits editor');
     report.checks.push('Move preserves exact markup, the duplicate table and the outside pending review');
     assert.deepEqual(owned.errors, []);
@@ -99,16 +129,32 @@ async function reopen(result) {
       await request('/api/file?p=' + encodeURIComponent(result.fixture));
       const reopened = await request('/api/review', { action: 'resume', path: result.fixture });
       assert.equal(reopened.found, true);
-      assert.equal(reopened.snapshot.content, moved);
+      assert.equal(reopened.snapshot.content, afterDelete);
       const history = (action, head) => request('/api/review', { action, document_id: head.document_id,
         generation: head.generation, review_revision: head.review_revision, call_id: randomUUID() });
-      const undone = await history('undo', reopened.snapshot);
+      const withRowBack = await history('undo', reopened.snapshot);
+    assert.equal(withRowBack.content, afterInsert);
+    const withoutBlank = await history('undo', withRowBack);
+    assert.equal(withoutBlank.content, moved);
+    const undone = await history('undo', withoutBlank);
       assert.equal(undone.content, pending);
       const redone = await history('redo', undone);
       assert.equal(redone.content, moved);
-      assert.deepEqual(redone.changes.find(change => change.id === result.retained.id), result.retained);
-      assert.deepEqual(fs.readFileSync(result.fixture), physical(moved));
-      report.checks.push('Fresh process restores the table and one undo/redo leaves the saved bytes and review intact');
+      const outside = redone.changes.find(change => change.id === result.retained.id);
+    for (const key of ['from','to','original','replacement','decision','application','taken_over']) {
+      assert.equal(outside[key], result.retained[key]);
+    }
+    assert(outside.version >= result.retained.version);
+      const inserted = await history('redo', redone);
+    assert.equal(inserted.content, afterInsert);
+    const deleted = await history('redo', inserted);
+    assert.equal(deleted.content, afterDelete);
+    const finalOutside = deleted.changes.find(change => change.id === outside.id);
+    assert.equal(finalOutside.from, afterDelete.indexOf(tail));
+    assert.equal(deleted.content.slice(finalOutside.from, finalOutside.to), tail);
+    assert.equal(finalOutside.decision, outside.decision);
+    assert.deepEqual(fs.readFileSync(result.fixture), physical(afterDelete));
+      report.checks.push('Fresh process restores the table and one undo/redo per structural edit leaves the saved bytes and review intact');
     } finally { await server.stop(); }
   } finally { fs.rmdirSync(temp); }
 }

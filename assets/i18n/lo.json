@@ -1228,6 +1228,8 @@
   "editor.superscript": "ຕົວຫຍໍ້",
   "editor.table": "ຕາຕະລາງ",
   "editor.table3x3": "ໂຕະ 3×3",
+  "editor.insertRow": "ແຊກແຖວດ້ານລຸ່ມ",
+  "editor.deleteRow": "ລຶບແຖວ",
   "editor.tableCell": "ເຊລ",
   "editor.tableDimensions": "ຕາຕະລາງ {rows} × {cols}",
   "editor.tableHeaderPrefix": "ສ່ວນຫົວ",

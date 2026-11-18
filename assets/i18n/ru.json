@@ -1228,6 +1228,8 @@
   "editor.superscript": "надстрочный индекс",
   "editor.table": "Таблица",
   "editor.table3x3": "Стол 3×3",
+  "editor.insertRow": "Вставить строку ниже",
+  "editor.deleteRow": "Удалить строку",
   "editor.tableCell": "клетка",
   "editor.tableDimensions": "Таблица {rows} × {cols}",
   "editor.tableHeaderPrefix": "Заголовок",

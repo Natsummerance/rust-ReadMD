@@ -1548,20 +1548,21 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
         let pbb = if h("pageBreakBefore").and_then(|v| v.as_bool()).unwrap_or(false) { "<w:pageBreakBefore/>" } else { "" };
         let keep_next = u8::from(h("keepNext").and_then(Value::as_bool).unwrap_or(true));
         let keep_lines = u8::from(h("keepLines").and_then(Value::as_bool).unwrap_or(true));
-        let entry=format!(
-            "<w:style w:type=\"paragraph\" w:styleId=\"Heading{i}\"><w:name w:val=\"heading {i}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/>\
+        let paragraph_style = |id: &str, name: &str, outline: usize| format!(
+            "<w:style w:type=\"paragraph\" w:styleId=\"{id}\"><w:name w:val=\"{name}\"/><w:basedOn w:val=\"Normal\"/><w:next w:val=\"Normal\"/><w:uiPriority w:val=\"9\"/><w:qFormat/>\
 <w:pPr><w:keepNext w:val=\"{keep_next}\"/><w:keepLines w:val=\"{keep_lines}\"/>{pbb}<w:spacing w:before=\"{before}\" w:after=\"{aft}\" w:line=\"276\" w:lineRule=\"auto\"/><w:jc w:val=\"{al}\"/><w:outlineLvl w:val=\"{}\"/></w:pPr>\
 <w:rPr>{}<w:sz w:val=\"{hp}\"/><w:szCs w:val=\"{hp}\"/><w:color w:val=\"{c}\"/></w:rPr></w:style>",
-            i - 1,
+            outline,
             if bold { "<w:b/><w:bCs/>" } else { "" }
         );
-        s.push_str(&entry);
+        s.push_str(&paragraph_style(&format!("Heading{i}"), &format!("heading {i}"), i - 1));
+        if i == 1 {
+            // Some consumers index the base heading even with outline level 9.
+            // Share H1 typography, with Normal as the base of the contents title.
+            s.push_str(&paragraph_style("TOCHeading", "TOC Heading", 9));
+        }
         if numbered_headings {
-            // Examples retain the same typography, without becoming a new
-            // chapter for STYLEREF/SEQ or entering the numbered outline.
-            s.push_str(&entry.replace(&format!("w:styleId=\"Heading{i}\""),&format!("w:styleId=\"ReadMDExampleHeading{i}\""))
-                .replace(&format!("w:val=\"heading {i}\""),&format!("w:val=\"ReadMD example heading {i}\""))
-                .replace(&format!("<w:outlineLvl w:val=\"{}\"/>",i-1),"<w:outlineLvl w:val=\"9\"/>"));
+            s.push_str(&paragraph_style(&format!("ReadMDExampleHeading{i}"), &format!("ReadMD example heading {i}"), 9));
         }
     }
     s.push_str(&format!(
@@ -1599,7 +1600,6 @@ fn styles_xml(st: &Value, language: Option<&str>, body_line: Option<crate::publi
         s.push_str(&format!("<w:style w:type=\"paragraph\" w:styleId=\"{note_style}Text\"><w:name w:val=\"{} text\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:spacing w:after=\"0\" w:line=\"{}\" w:lineRule=\"{}\"/></w:pPr><w:rPr><w:sz w:val=\"{note_hp}\"/><w:szCs w:val=\"{note_cs}\"/></w:rPr></w:style>",note_style.to_lowercase(),line.line,line.rule));
         s.push_str(&format!("<w:style w:type=\"character\" w:styleId=\"{note_style}Reference\"><w:name w:val=\"{} reference\"/><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr></w:style>",note_style.to_lowercase()));
     }
-    s.push_str("<w:style w:type=\"paragraph\" w:styleId=\"TOCHeading\"><w:name w:val=\"TOC Heading\"/><w:basedOn w:val=\"Heading1\"/><w:next w:val=\"Normal\"/><w:pPr><w:outlineLvl w:val=\"9\"/></w:pPr></w:style>");
     let (toc_width, _) = crate::export_styles::page_dimensions(st);
     let toc_tab = mm_twips((toc_width - num(st,&["page","marginLeft"],18.) - num(st,&["page","marginRight"],18.) - layout.gutter).max(20.));
     let toc_leader = crate::publication_layout::toc_leader(st);
@@ -2688,6 +2688,9 @@ mod tests {
             let document=part(&package,"word/document.xml");
             assert!(document.contains("TOC \\o \"1-6\""));
             let styles=part(&package,"word/styles.xml");
+            let title_style = styles.split_once(r#"w:styleId="TOCHeading""#).unwrap().1.split_once("</w:style>").unwrap().0;
+            assert!(title_style.contains(r#"<w:basedOn w:val="Normal"/>"#));
+            assert!(title_style.contains(r#"<w:outlineLvl w:val="9"/>"#));
             assert!(styles.contains("w:styleId=\"TOC6\""));
             assert_eq!(styles.matches(&format!("w:leader=\"{leader}\" w:pos=\"9071\"")).count(),6);
             assert!(!styles.contains("w:styleId=\"TOC7\""));

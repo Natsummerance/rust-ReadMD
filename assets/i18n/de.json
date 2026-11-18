@@ -1228,6 +1228,8 @@
   "editor.superscript": "hochgestellt",
   "editor.table": "Tabelle",
   "editor.table3x3": "3 × 3 Tisch",
+  "editor.insertRow": "Zeile einfügen",
+  "editor.deleteRow": "Zeile löschen",
   "editor.tableCell": "Zelle",
   "editor.tableDimensions": "{rows} × {cols}-Tabelle",
   "editor.tableHeaderPrefix": "Kopfzeile",

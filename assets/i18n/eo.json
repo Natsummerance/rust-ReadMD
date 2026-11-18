@@ -1228,6 +1228,8 @@
   "editor.superscript": "Supra indico",
   "editor.table": "Tabelo",
   "editor.table3x3": "3 × 3 Tabelo",
+  "editor.insertRow": "Enmeti vicon sube",
+  "editor.deleteRow": "Forigi vicon",
   "editor.tableCell": "Ĉelo",
   "editor.tableDimensions": "{rows} × {cols} Tabelo",
   "editor.tableHeaderPrefix": "Kaplinio",

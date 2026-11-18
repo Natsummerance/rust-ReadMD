@@ -1228,6 +1228,8 @@
   "editor.superscript": "Üst Simge",
   "editor.table": "Tablo",
   "editor.table3x3": "3 × 3 Tablo",
+  "editor.insertRow": "Alta satır ekle",
+  "editor.deleteRow": "Satırı sil",
   "editor.tableCell": "Hücre",
   "editor.tableDimensions": "{rows} × {cols} Tablo",
   "editor.tableHeaderPrefix": "Başlık",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "Apice",
   "editor.table": "Tabella",
   "editor.table3x3": "Tabella 3 × 3",
+  "editor.insertRow": "Inserisci riga sotto",
+  "editor.deleteRow": "Elimina riga",
   "editor.tableCell": "Cella",
   "editor.tableDimensions": "Tabella {rows} × {cols}",
   "editor.tableHeaderPrefix": "Intestazione",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "어깨 기호",
   "editor.table": "표",
   "editor.table3x3": "3×3 테이블",
+  "editor.insertRow": "아래에 행 삽입",
+  "editor.deleteRow": "행 삭제",
   "editor.tableCell": "셀",
   "editor.tableDimensions": "{rows} × {cols} 테이블",
   "editor.tableHeaderPrefix": "헤더",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "Дээд индекс",
   "editor.table": "Хүснэгт",
   "editor.table3x3": "3 × 3 Хүснэгт",
+  "editor.insertRow": "Доор мөр нэмэх",
+  "editor.deleteRow": "Мөр устгах",
   "editor.tableCell": "Нүд",
   "editor.tableDimensions": "{rows} × {cols} Хүснэгт",
   "editor.tableHeaderPrefix": "Толгой",

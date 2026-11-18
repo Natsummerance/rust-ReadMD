@@ -1228,6 +1228,8 @@
   "editor.superscript": "Bisono ya zulu",
   "editor.table": "Tablo",
   "editor.table3x3": "Tablo 3 × 3",
+  "editor.insertRow": "Yika mulongo na nsi",
+  "editor.deleteRow": "Katula mulongo",
   "editor.tableCell": "Selile",
   "editor.tableDimensions": "Tablo {rows} × {cols}",
   "editor.tableHeaderPrefix": "Ntu-diambu",

@@ -1228,6 +1228,8 @@
   "editor.superscript": "superscript",
   "editor.table": "Imbonerahamwe",
   "editor.table3x3": "Imbonerahamwe 3",
+  "editor.insertRow": "Ongeraho umurongo hasi",
+  "editor.deleteRow": "Siba umurongo",
   "editor.tableCell": "selire",
   "editor.tableDimensions": "{rows} × {cols} kumeza",
   "editor.tableHeaderPrefix": "Umutwe",
