@@ -2796,14 +2796,18 @@ fn export_pdf_with_lines(content:&str,base_dir:&str,out_path:&str,options:&Value
     lines:crate::publication_typography::LineContext)->Result<ExportResult,String>
 {
     crate::publication_profile::validate_pdf_engine(options).map_err(|error|error.code)?;
-    if crate::table_geometry::source_candidate(content) {
-        crate::table_geometry::validate_document(&crate::md_ast::parse(content), false).map_err(str::to_owned)?;
-    }
     // Direct native calls cannot bypass the source guard by naming another
     // engine in style options. This path always consumes Rust's table model.
-    if crate::md_ast::native_table_source_candidate(content) {
+    let enhanced_tables = crate::table_geometry::source_candidate(content);
+    let html_tables = crate::md_ast::native_table_source_candidate(content);
+    if enhanced_tables || html_tables {
         let source_document = crate::md_ast::parse(content);
-        crate::md_ast::native_table_document(&source_document).map_err(str::to_string)?;
+        if enhanced_tables {
+            crate::table_geometry::validate_rust_pdf_document(&source_document).map_err(str::to_owned)?;
+        }
+        if html_tables {
+            crate::md_ast::native_table_document(&source_document).map_err(str::to_string)?;
+        }
     }
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::RustPdf,content,options).map_err(str::to_string)?;
     crate::pdf_render::validate_caption_author_source(content,options)?;

@@ -42,3 +42,5 @@ assets/js/core/settings.js -text
 assets/css/panels.css -text
 tests/frontend/toolbar.test.mjs -text
 docs/reviews/readmd-v007-table-geometry-2026-11-18.json -text
+tests/fixtures/table-geometry/*.md -text
+docs/reviews/readmd-v007-pdf-table-geometry-2026-11-18.json -text

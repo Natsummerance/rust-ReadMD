@@ -9,7 +9,7 @@ const { ROOT } = require('./v006-table-clipboard-host.cjs');
 const sha = value => crypto.createHash('sha256').update(value).digest('hex');
 const callId = () => crypto.randomUUID();
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function startKernel(binary, profile, workspace) {
+async function startKernel(binary, profile, workspace, {requestTimeoutMs = 15000} = {}) {
   const socket = net.createServer();
   await new Promise((resolve, reject) => { socket.once('error', reject); socket.listen(0, '127.0.0.1', resolve); });
   const port = socket.address().port;
@@ -35,7 +35,7 @@ async function startKernel(binary, profile, workspace) {
         const page = await fetch(base, { signal: AbortSignal.timeout(1500) });
         const token = (await page.text()).match(/name="readmd-app-token"\s+content="([^"]+)"/)?.[1];
         if (page.ok && token) return { pid: child.pid, get exitCode() { return child.exitCode; }, stop, api: (route, request = {}) => fetch(base + route, { ...request,
-          headers: { ...request.headers, 'X-ReadMD-App-Token': token, 'X-ReadMD-Token': token }, signal: AbortSignal.timeout(15000) }) };
+          headers: { ...request.headers, 'X-ReadMD-App-Token': token, 'X-ReadMD-Token': token }, signal: AbortSignal.timeout(requestTimeoutMs) }) };
       } catch (_) { /* The owned server is still starting. */ }
       await delay(100);
     }

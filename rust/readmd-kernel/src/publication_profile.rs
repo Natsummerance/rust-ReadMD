@@ -175,15 +175,22 @@ pub(crate) fn validate_pdf_engine(options:&Value)->Result<()> {
 }
 pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<()> {
     let format = crate::image_export::layout_format(format);
-    if format.eq_ignore_ascii_case("pdf") {validate_pdf_engine(options)?;}
+    let pdf = format.eq_ignore_ascii_case("pdf");
+    if pdf { validate_pdf_engine(options)?; }
+    let engine = options.pointer("/pdf/engine").and_then(Value::as_str);
+    let rust_pdf = pdf && matches!(engine, None | Some("rust"));
     if crate::table_geometry::source_candidate(content) {
-        let supported = matches!(format.to_ascii_lowercase().as_str(), "docx" | "pptx" | "epub" | "html" | "typst")
-            || (format.eq_ignore_ascii_case("pdf") && options.pointer("/pdf/engine").and_then(Value::as_str) == Some("typst"));
-        crate::table_geometry::validate_document(&crate::md_ast::parse(content), supported)
-            .map_err(|code| error(code, "source.table"))?;
+        let document = crate::md_ast::parse(content);
+        let validation = if rust_pdf {
+            crate::table_geometry::validate_rust_pdf_document(&document)
+        } else {
+            let supported = matches!(format.to_ascii_lowercase().as_str(), "docx" | "pptx" | "epub" | "html" | "typst")
+                || (pdf && engine == Some("typst"));
+            crate::table_geometry::validate_document(&document, supported)
+        };
+        validation.map_err(|code| error(code, "source.table"))?;
     }
-    if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || format.eq_ignore_ascii_case("pdf") &&
-        options.pointer("/pdf/engine").and_then(Value::as_str).is_none_or(|engine| engine == "rust")) {
+    if crate::md_ast::native_table_source_candidate(content) && (format.eq_ignore_ascii_case("docx") || rust_pdf) {
         let document = crate::md_ast::parse(content);
         crate::md_ast::native_table_document(&document).map_err(|code| error(code, "source.table"))?;
     }
@@ -192,7 +199,7 @@ pub(crate) fn preflight(format: &str, content: &str, options: &Value) -> Result<
             else if format.eq_ignore_ascii_case("html") { crate::publication_note_policies::Consumer::Html }
             else { crate::publication_note_policies::Consumer::Other };
         if matches!(format.to_ascii_lowercase().as_str(),"tex"|"latex")
-            || format.eq_ignore_ascii_case("pdf")&&matches!(options.pointer("/pdf/engine").and_then(Value::as_str),Some("xelatex"|"pdflatex")) {
+            || pdf && matches!(engine, Some("xelatex" | "pdflatex")) {
             crate::publication_note_policies::validate_default_section_numbering(&crate::md_ast::parse(content),options).map_err(|e|error(e.code,e.path))?;
         }
         crate::publication_note_policies::validate_consumer(consumer, &crate::md_ast::parse(content), options)

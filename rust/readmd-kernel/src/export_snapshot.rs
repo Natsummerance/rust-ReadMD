@@ -1028,13 +1028,22 @@ fn remove_inputs(directory: &Path, resources: &[Resource]) -> Result<(), &'stati
     Ok(())
 }
 
-fn runtime_locks(format:&str,options:&Value)->Vec<String> {
-    let format = crate::image_export::layout_format(format);
-    let engine=if format=="pdf" {options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust")}else{"rust"};
-    let mut names=vec![format!("fonts-{}-universal.lock.json",crate::publication_fonts::VERSION)];
-    if engine=="typst"||format=="docx" {names.push(format!("typst-0.15.1-{}.lock.json",crate::capability_packs::platform()));}
-    if matches!(engine,"xelatex"|"pdflatex") {names.push(format!("latex-{}-{}.lock.json",crate::latex_compile::VERSION,crate::capability_packs::platform()));}
-    names
+fn uses_pdfium_raster(format: &str) -> bool {
+    crate::image_export::is_image(format) && cfg!(not(any(target_os = "macos", target_os = "windows")))
+}
+
+fn runtime_locks(format: &str, options: &Value) -> Vec<String> {
+    let layout = crate::image_export::layout_format(format);
+    let engine = if layout == "pdf" {
+        options.pointer("/pdf/engine").and_then(Value::as_str).unwrap_or("rust")
+    } else {
+        "rust"
+    };
+    let mut packs = vec!["fonts"];
+    if engine == "typst" || layout == "docx" { packs.push("typst"); }
+    if matches!(engine, "xelatex" | "pdflatex") { packs.push("latex"); }
+    if uses_pdfium_raster(format) { packs.push("pdfium"); }
+    packs.into_iter().filter_map(crate::capability_packs::resource_lock_filename).collect()
 }
 pub(crate) fn needs_fonts(format:&str,content:&str,options:&Value)->bool {
     crate::publication_fonts::required_for_export(crate::image_export::layout_format(format),content,options)
@@ -1049,7 +1058,7 @@ fn runtime_identity(data: &Path, assets: &Path, format: &str, options: &Value) -
     if !matches!(selected, "rust" | "typst" | "xelatex" | "pdflatex") { return Err(INVALID); }
     let mut engine = json!({"application":env!("CARGO_PKG_VERSION"),"format":format,"engine":selected,
         "platform":crate::capability_packs::platform(),"snapshot_schema":1});
-    if crate::image_export::is_image(format) && cfg!(not(any(target_os = "macos", target_os = "windows"))) {
+    if uses_pdfium_raster(format) {
         let _lease = crate::capability_packs::lease(data, assets, "pdfium").map_err(|_| "pdf_engine_unavailable")?;
         let (program, library) = crate::capability_packs::pdfium_resources(data, assets).map_err(|_| "pdf_engine_unavailable")?;
         engine["raster"] = json!({

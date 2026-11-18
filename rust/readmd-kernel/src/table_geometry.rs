@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::md_ast::{Align, Block, Document, Inline};
 
@@ -10,7 +10,7 @@ const UNSUPPORTED: &str = crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED;
 const MAX_COLSPAN: usize = 16;
 const MAX_ROWSPAN: usize = 32;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VerticalAlign {
     Top,
@@ -28,7 +28,8 @@ impl VerticalAlign {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CellAttributes {
     colspan: Option<usize>,
     rowspan: Option<usize>,
@@ -36,7 +37,8 @@ pub(crate) struct CellAttributes {
     valign: Option<VerticalAlign>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct CellPlacement {
     row: usize,
     column: usize,
@@ -44,7 +46,8 @@ struct CellPlacement {
 }
 
 /// Sparse declarations. Every authored cell stays in its original AST slot.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TableGeometry {
     placements: Vec<CellPlacement>,
     invalid: bool,
@@ -121,6 +124,16 @@ pub(crate) fn cell_suffix(source: &str) -> Option<CellSuffix<'_>> {
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CellGeometry {
+    pub origin_row: usize,
+    pub origin_col: usize,
+    pub rowspan: usize,
+    pub colspan: usize,
+    pub align: Option<Align>,
+    pub valign: Option<VerticalAlign>,
+}
+
 pub struct TableSlot<'a> {
     pub origin_row: usize,
     pub origin_col: usize,
@@ -160,18 +173,39 @@ impl TableGeometry {
         self.invalid = true;
     }
 
+    pub(crate) fn from_render_json(value: &serde_json::Value) -> Result<Self, &'static str> {
+        let placements = value.get("placements").and_then(serde_json::Value::as_array).ok_or(UNSUPPORTED)?;
+        if placements.iter().any(|cell| !cell.get("attributes").is_some_and(serde_json::Value::is_object)) {
+            return Err(UNSUPPORTED);
+        }
+        Self::deserialize(value).map_err(|_| UNSUPPORTED)
+    }
+
     fn owners(&self, columns: usize, rows: usize) -> Result<Owners, &'static str> {
         if self.invalid {
             return Err(UNSUPPORTED);
         }
         let mut owners = Owners::new();
+        let mut previous = None;
         for &placement in &self.placements {
             let CellPlacement { row, column, attributes } = placement;
             let rowspan = attributes.rowspan.unwrap_or(1);
             let colspan = attributes.colspan.unwrap_or(1);
-            if row + rowspan > rows || column + colspan > columns || (row == 0 && rowspan > 1) {
+            let position = (row, column);
+            if previous.is_some_and(|p| p >= position)
+                || attributes == CellAttributes::default()
+                || attributes.align == Some(Align::None)
+                || !(1..=MAX_ROWSPAN).contains(&rowspan)
+                || !(1..=MAX_COLSPAN).contains(&colspan)
+                || row >= rows
+                || column >= columns
+                || rowspan > rows - row
+                || colspan > columns - column
+                || (row == 0 && rowspan > 1)
+            {
                 return Err(UNSUPPORTED);
             }
+            previous = Some(position);
             if rowspan == 1 && colspan == 1 {
                 continue;
             }
@@ -186,41 +220,64 @@ impl TableGeometry {
         Ok(owners)
     }
 
-    pub fn layout<'a>(&self, header: &'a [Vec<Inline>], rows: &'a [Vec<Vec<Inline>>], aligns: &[Align]) -> crate::ApiResult<TableLayout<'a>> {
-        let columns = columns(header, rows);
-        let owners = self.owners(columns, rows.len() + 1).map_err(|code| crate::ApiError::new(422, code))?;
-        let get_row = |row: usize| if row == 0 { header } else { rows[row - 1].as_slice() };
+    fn grid_rows(
+        &self,
+        columns: usize,
+        rows: usize,
+    ) -> Result<impl Iterator<Item = Vec<CellGeometry>> + '_, &'static str> {
+        let owners = self.owners(columns, rows)?;
         let mut placements = self.placements.iter().copied().peekable();
-        let mut grid = Vec::with_capacity(rows.len() + 1);
-        for row in 0..=rows.len() {
-            let mut slots = Vec::with_capacity(columns);
-            for column in 0..columns {
+        Ok((0..rows).map(move |row| {
+            (0..columns).map(|column| {
                 let authored = placements.next_if(|cell| (cell.row, cell.column) == (row, column));
                 let placement = owners.get(&(row, column)).copied().or(authored).unwrap_or(CellPlacement {
                     row,
                     column,
                     attributes: CellAttributes::default(),
                 });
-                let rowspan = placement.attributes.rowspan.unwrap_or(1);
-                let colspan = placement.attributes.colspan.unwrap_or(1);
+                CellGeometry {
+                    origin_row: placement.row,
+                    origin_col: placement.column,
+                    rowspan: placement.attributes.rowspan.unwrap_or(1),
+                    colspan: placement.attributes.colspan.unwrap_or(1),
+                    align: placement.attributes.align,
+                    valign: placement.attributes.valign,
+                }
+            }).collect()
+        }))
+    }
+
+    /// Resolve the origins and spans for a rectangular grid including the header.
+    pub(crate) fn grid(&self, columns: usize, rows: usize) -> Result<Vec<Vec<CellGeometry>>, &'static str> {
+        Ok(self.grid_rows(columns, rows)?.collect())
+    }
+
+    pub fn layout<'a>(&self, header: &'a [Vec<Inline>], rows: &'a [Vec<Vec<Inline>>], aligns: &[Align]) -> crate::ApiResult<TableLayout<'a>> {
+        let columns = columns(header, rows);
+        let geometry = self.grid_rows(columns, rows.len() + 1).map_err(|code| crate::ApiError::new(422, code))?;
+        let get_row = |row: usize| if row == 0 { header } else { rows[row - 1].as_slice() };
+        let mut grid = Vec::with_capacity(rows.len() + 1);
+        for (row, cells) in geometry.enumerate() {
+            let mut slots = Vec::with_capacity(columns);
+            for (column, cell) in cells.into_iter().enumerate() {
                 let mut contents = Vec::new();
-                if (row, column) == (placement.row, placement.column) {
-                    for r in row..row + rowspan {
+                if (row, column) == (cell.origin_row, cell.origin_col) {
+                    for r in row..row + cell.rowspan {
                         let source_row = get_row(r);
-                        for cell in source_row.iter().skip(column).take(colspan) {
-                            if cell.iter().any(|value| !matches!(value, Inline::Text(text) if text.trim().is_empty())) {
-                                contents.push(cell.as_slice());
+                        for source_cell in source_row.iter().skip(column).take(cell.colspan) {
+                            if source_cell.iter().any(|value| !matches!(value, Inline::Text(text) if text.trim().is_empty())) {
+                                contents.push(source_cell.as_slice());
                             }
                         }
                     }
                 }
                 slots.push(TableSlot {
-                    origin_row: placement.row,
-                    origin_col: placement.column,
-                    rowspan,
-                    colspan,
-                    align: placement.attributes.align.unwrap_or_else(|| aligns.get(placement.column).copied().unwrap_or(Align::None)),
-                    valign: placement.attributes.valign,
+                    origin_row: cell.origin_row,
+                    origin_col: cell.origin_col,
+                    rowspan: cell.rowspan,
+                    colspan: cell.colspan,
+                    align: cell.align.unwrap_or_else(|| aligns.get(cell.origin_col).copied().unwrap_or(Align::None)),
+                    valign: cell.valign,
                     contents,
                 });
             }
@@ -230,34 +287,53 @@ impl TableGeometry {
     }
 }
 
-pub(crate) fn validate_document(doc: &Document, allow_enhanced: bool) -> Result<(), &'static str> {
-    fn validate_blocks(blocks: &[Block], allow_enhanced: bool) -> Result<(), &'static str> {
-        for block in blocks {
-            match block.unstyled() {
-                Block::Table { header, rows, geometry, .. } if geometry.is_enhanced() => {
-                    if !allow_enhanced {
-                        return Err(UNSUPPORTED);
-                    }
-                    geometry.owners(columns(header, rows), rows.len() + 1)?;
+#[derive(Clone, Copy)]
+enum GeometrySupport {
+    None,
+    All,
+    RustPdf,
+}
+
+fn validate_blocks(blocks: &[Block], support: GeometrySupport) -> Result<(), &'static str> {
+    for block in blocks {
+        match block.unstyled() {
+            Block::Table { header, rows, geometry, .. } if geometry.is_enhanced() => {
+                if matches!(support, GeometrySupport::None) {
+                    return Err(UNSUPPORTED);
                 }
-                Block::Quote(inner) | Block::FootnoteDef { blocks: inner, .. } => validate_blocks(inner, allow_enhanced)?,
-                Block::List { items, .. } => {
-                    for item in items {
-                        validate_blocks(&item.blocks, allow_enhanced)?;
-                    }
-                }
-                _ => (),
+                geometry.owners(columns(header, rows), rows.len() + 1)?;
             }
+            Block::Quote(inner) => {
+                // The Rust PDF quote flow has no nested table layout.
+                let support = if matches!(support, GeometrySupport::RustPdf) { GeometrySupport::None } else { support };
+                validate_blocks(inner, support)?;
+            }
+            Block::FootnoteDef { blocks: inner, .. } => validate_blocks(inner, support)?,
+            Block::List { items, .. } => {
+                for item in items {
+                    validate_blocks(&item.blocks, support)?;
+                }
+            }
+            _ => (),
         }
-        Ok(())
     }
-    validate_blocks(&doc.blocks, allow_enhanced)
+    Ok(())
+}
+
+pub(crate) fn validate_document(doc: &Document, allow_enhanced: bool) -> Result<(), &'static str> {
+    let support = if allow_enhanced { GeometrySupport::All } else { GeometrySupport::None };
+    validate_blocks(&doc.blocks, support)
+}
+
+pub(crate) fn validate_rust_pdf_document(doc: &Document) -> Result<(), &'static str> {
+    validate_blocks(&doc.blocks, GeometrySupport::RustPdf)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::md_ast::{inline_plain, parse};
+    use serde_json::json;
 
     #[test]
     fn source_cells_remain_distinct_while_layout_resolves_merged_content_and_alignment() {
@@ -324,5 +400,71 @@ mod tests {
         assert!(validate_document(&escaped_close, false).is_ok());
         let Block::Table { rows, .. } = &escaped_close.blocks[0] else { panic!("GFM table") };
         assert_eq!(inline_plain(&rows[0][0]), "escaped {align=left}");
+    }
+
+    #[test]
+    fn render_json_resolves_geometry_and_preserves_each_source_cell_for_inline_visitors() {
+        let doc = parse(concat!(
+            "| Header A | Header B | Header C |\n",
+            "| :--- | --- | ---: |\n",
+            "| **Owner** {rowspan=2 colspan=2 align=right valign=bottom} | [Covered link](https://example.test/) | Left {align=left} |\n",
+            "| $x^2$ | `cell code`[^note] | Footer {valign=middle} |\n\n",
+            "[^note]: Definition.\n",
+        ));
+        let style = crate::export_styles::sanitize(&json!({}));
+        let notes = crate::rust_pdf_notes::Projection::analyze(&doc, &style).unwrap().unwrap();
+        let rendered = crate::md_ast::to_rust_note_render_json(&doc.blocks, &notes, 0, &style).unwrap();
+        let table = &rendered[0];
+        assert_eq!(table["aligns"], json!(["left", null, "right"]));
+        assert_eq!(table["rows"][0][0], json!([{"t":"bold","v":[{"t":"text","v":"Owner"}]}]));
+        assert_eq!(table["rows"][0][1][0]["href"], "https://example.test/");
+        assert_eq!(table["rows"][1][0][0]["latex"], "x^2");
+        assert_eq!(table["rows"][1][1][0], json!({"t":"code","v":"cell code"}));
+        assert_eq!(table["rows"][1][1][1]["t"], "note-marker");
+
+        let geometry = TableGeometry::from_render_json(&table["tableGeometry"]).unwrap();
+        let grid = geometry.grid(3, 3).unwrap();
+        assert_eq!(grid[1][0], CellGeometry {
+            origin_row: 1, origin_col: 0, rowspan: 2, colspan: 2,
+            align: Some(Align::Right), valign: Some(VerticalAlign::Bottom),
+        });
+        assert_eq!(grid[2][1], grid[1][0]);
+        assert_eq!(grid[1][2].align, Some(Align::Left));
+        assert_eq!(grid[2][2].align, None);
+        assert_eq!(grid[2][2].valign, Some(VerticalAlign::Middle));
+    }
+
+    #[test]
+    fn render_geometry_rejects_invalid_placements_at_the_json_boundary() {
+        let valid = json!({
+            "invalid": false,
+            "placements": [{"row": 1, "column": 0, "attributes": {"rowspan": 2, "colspan": 2}}]
+        });
+        let check = |value: &serde_json::Value| TableGeometry::from_render_json(value).and_then(|geometry| geometry.grid(3, 3));
+        assert!(check(&valid).is_ok());
+        for (path, replacement) in [
+            ("/invalid", json!(true)),
+            ("/placements/0/row", json!(usize::MAX)),
+            ("/placements/0/row", json!(0)),
+            ("/placements/0/column", json!(2)),
+            ("/placements/0/attributes/rowspan", json!(0)),
+            ("/placements/0/attributes/rowspan", json!("2")),
+            ("/placements/0/attributes/colspan", json!(17)),
+            ("/placements/0/attributes", json!({"align": "none"})),
+            ("/placements/0/attributes", json!({"valign": "center"})),
+            ("/placements/0/attributes", json!([2, 2, null, null])),
+        ] {
+            let mut invalid = valid.clone();
+            *invalid.pointer_mut(path).unwrap() = replacement;
+            assert_eq!(check(&invalid), Err(UNSUPPORTED), "{invalid}");
+        }
+        for placement in [
+            json!({"row": 1, "column": 0, "attributes": {"align": "left"}}),
+            json!({"row": 2, "column": 1, "attributes": {"colspan": 2}}),
+        ] {
+            let mut invalid = valid.clone();
+            invalid["placements"].as_array_mut().unwrap().push(placement);
+            assert_eq!(check(&invalid), Err(UNSUPPORTED), "{invalid}");
+        }
     }
 }

@@ -51,6 +51,14 @@ struct Spec {
     version: &'static str,
     platform: &'static str,
 }
+impl Spec {
+    fn lock_filename(self) -> String {
+        format!("{}-{}-{}.lock.json", self.id, self.version, self.platform)
+    }
+}
+pub(crate) fn resource_lock_filename(id: &str) -> Option<String> {
+    spec(id).ok().map(Spec::lock_filename)
+}
 pub(crate) fn platform() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "windows-x64",
@@ -131,17 +139,14 @@ fn lock(app: &App) -> ApiResult<Value> {
     lock_for(&app.paths.assets_dir, spec(ID)?)
 }
 fn lock_for(assets: &Path, spec: Spec) -> ApiResult<Value> {
-    let file = assets.join(format!(
-        "capabilities/{}-{}-{}.lock.json",
-        spec.id, spec.version, spec.platform
-    ));
+    let file = assets.join("capabilities").join(spec.lock_filename());
     if fs::metadata(&file).map_err(|_| error())?.len()
         > crate::capability_archive::MAX_MANIFEST as u64
     {
         return Err(error());
     }
     let value: Value =
-        serde_json::from_slice(&fs::read(file).map_err(|_| error())?).map_err(|_| error())?;
+        serde_json::from_slice(&fs::read(&file).map_err(|_| error())?).map_err(|_| error())?;
     if !matches!(value["schema"].as_u64(), Some(1 | 2))
         || value["id"] != spec.id
         || value["version"] != spec.version
@@ -151,10 +156,7 @@ fn lock_for(assets: &Path, spec: Spec) -> ApiResult<Value> {
     }
     checked_files(&value)?;
     if value["schema"] == 1
-        && fs::metadata(assets.join(format!(
-            "capabilities/{}-{}-{}.lock.json",
-            spec.id, spec.version, spec.platform
-        )))
+        && fs::metadata(&file)
         .map_err(|_| error())?
         .len()
             > 65536

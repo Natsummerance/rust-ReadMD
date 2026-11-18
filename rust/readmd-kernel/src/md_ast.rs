@@ -13,7 +13,7 @@ use std::ops::Range;
 use crate::table_geometry::{self, TableGeometry};
 
 /// Column alignment of a GFM table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Align {
     None,
@@ -1570,6 +1570,7 @@ fn push_blocks_json(blocks: &[Block], level: usize, out: &mut Vec<Value>, contex
                     t["aligns"] = Value::Array(al);
                 }
                 if geometry.is_enhanced() {
+                    // Math and note visitors still see the original inline slots.
                     t["tableGeometry"] = json!(geometry);
                 }
                 out.push(t);

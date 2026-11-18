@@ -847,6 +847,10 @@ pub(crate) fn export_pdf_with_lines(
     let profile=crate::publication_profile::resolve_for_format("pdf",content,options).map_err(|e|e.code)?;
     let options=profile.values();
     crate::publication_profile::preflight("pdf",content,options).map_err(|e|e.code)?;
+    // This entry point defaults to XeLaTeX even when PDF export defaults to Rust.
+    if crate::table_geometry::source_candidate(content) {
+        crate::table_geometry::validate_document(&crate::md_ast::parse(content), false).map_err(str::to_owned)?;
+    }
     crate::publication_typography::validate_consumer(crate::publication_typography::Consumer::Tex, content, options).map_err(str::to_string)?;
     validate_options(options)?;
     let engine = options

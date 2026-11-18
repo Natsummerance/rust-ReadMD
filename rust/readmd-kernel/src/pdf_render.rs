@@ -33,7 +33,11 @@
 //!   only the glyph source differs.
 
 use crate::pdf_editor::{py_int, py_round, PdfError, PdfErrorKind};
+use crate::table_geometry::CellGeometry;
 use serde_json::Value;
+
+#[path = "pdf_render_table.rs"]
+mod publication_table;
 
 #[cfg(test)]
 #[path = "pdf_render_csl_display_tests.rs"]
@@ -2181,6 +2185,7 @@ pub enum Flowable {
     },
     /// `Table(data, colWidths=…, repeatRows=1, splitInRow=1)` + its `TableStyle`
     Table(TableFlow),
+    EnhancedTable(EnhancedTableFlow),
     /// `Image(src, width=…, height=…)`
     ImageBlock(InlineImage),
     /// `Preformatted(content, CodeFlow, maxLineLength=…)`
@@ -2212,7 +2217,7 @@ fn check_flow_errors(flow:&Flowable)->Result<(),PdfError>{
     match flow{
         Flowable::Error(error)=>return Err(error.clone()),
         Flowable::Paragraph{runs,..}=>check_run_errors(runs)?,
-        Flowable::Table(table)=>for row in &table.rows{for cell in row{check_run_errors(&cell.runs)?;}},
+        Flowable::Table(table)|Flowable::EnhancedTable(EnhancedTableFlow { table, .. })=>for row in &table.rows{for cell in row{check_run_errors(&cell.runs)?;}},
         Flowable::BibliographyEntry{first,runs,..}=>{check_run_errors(first)?;check_run_errors(runs)?;},
         Flowable::RichBibliographyEntry{rows:Err(error),..}=>return Err(error.clone()),_=>(),
     }Ok(())
@@ -2497,6 +2502,13 @@ pub struct TableFlow {
 pub struct TableCell {
     pub runs: Vec<Run>,
     pub st: PStyle,
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct EnhancedTableFlow {
+    table: TableFlow,
+    grid: Vec<Vec<CellGeometry>>,
 }
 
 /// `styles.page_dimensions(style)` (`styles.py:235-239`) in **mm**.
@@ -2888,8 +2900,12 @@ pub struct TextSpan {
     pub advance: f64,
 }
 
-fn enhanced_table_error(blocks: &Value) -> Option<PdfError> {
-    let mut pending = vec![blocks];
+fn nested_enhanced_table_error(blocks: &Value) -> Option<PdfError> {
+    let mut pending = Vec::new();
+    for block in blocks.as_array().into_iter().flatten() {
+        pending.extend(block.get("blocks"));
+        pending.extend(block.get("items"));
+    }
     while let Some(value) = pending.pop() {
         if value["type"] == "table" && value.get("tableGeometry").is_some() {
             return Some(PdfError::new(PdfErrorKind::Invalid, crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED));
@@ -2917,7 +2933,7 @@ pub fn build_story(
     warns: &mut Vec<String>,
     toc_pages: &[TocEntry],
 ) -> Vec<Flowable> {
-    if let Some(error) = enhanced_table_error(blocks) {
+    if let Some(error) = nested_enhanced_table_error(blocks) {
         return vec![Flowable::Error(error)];
     }
     let mut story: Vec<Flowable> = Vec::new();
@@ -3241,87 +3257,13 @@ pub fn build_story(
                 }
                 // `:346-395`
                 "table" => {
-                    let tb = style.get("table").cloned().unwrap_or(Value::Null);
-                    let cell_size = plain_float(tb.get("cellSize").unwrap_or(&Value::Null), 10.0);
-                    let mut data: Vec<Vec<Vec<Run>>> = Vec::new();
-                    let mut header: Vec<Vec<Run>> = Vec::new();
-                    if let Some(Value::Array(cols)) = blk.get("header") {
-                        for c in cols {
-                            header.push(inline_markup_at_size(c, style, tmpdir, resolve,cell_size));
-                        }
+                    let flow = publication_table::build_flow(blk, style, tmpdir, resolve, st, geom)
+                        .unwrap_or_else(Flowable::Error);
+                    let legacy = matches!(&flow, Flowable::Table(table) if !table.three_line);
+                    story.push(flow);
+                    if legacy {
+                        story.push(Flowable::Spacer(10.0));
                     }
-                    data.push(header);
-                    if let Some(Value::Array(rows)) = blk.get("rows") {
-                        for row in rows {
-                            let mut r: Vec<Vec<Run>> = Vec::new();
-                            if let Value::Array(cells) = row {
-                                for c in cells {
-                                    r.push(inline_markup_at_size(c, style, tmpdir, resolve,cell_size));
-                                }
-                            }
-                            data.push(r);
-                        }
-                    }
-                    let ncols = data.iter().map(|r| r.len()).max().unwrap_or(0).max(1);
-                    for r in data.iter_mut() {
-                        while r.len() < ncols {
-                            r.push(Vec::new());
-                        }
-                    }
-                    let table_w = geom.avail
-                        * plain_float(tb.get("widthPct").unwrap_or(&Value::Null), 100.0)
-                        / 100.0;
-                    let col_w = table_w / ncols as f64;
-                    let ty_color = hex_d(dig(style, &["typography", "color"]));
-                    let three_line = crate::export_styles::three_line_table(style);
-                    let header_color = if three_line {
-                        ty_color
-                    } else {
-                        hex_d(tb.get("headerColor").unwrap_or(&Value::Null))
-                    };
-                    let default_align = json_text(tb.get("align").unwrap_or(&Value::Null));
-                    let aligns: Vec<String> = match blk.get("aligns") {
-                        Some(Value::Array(a)) => a.iter().map(json_text).collect(),
-                        _ => Vec::new(),
-                    };
-                    let mut rows: Vec<Vec<TableCell>> = Vec::new();
-                    for (ri, row) in data.iter().enumerate() {
-                        let mut cells: Vec<TableCell> = Vec::new();
-                        for (ci, value) in row.iter().enumerate() {
-                            let alignment = aligns
-                                .get(ci)
-                                .cloned()
-                                .unwrap_or_else(|| default_align.clone());
-                            let mut cst = PStyle::child(&st.body, "TableCell");
-                            cst.size = cell_size;
-                            cst.leading = cell_size * 1.35;
-                            cst.first_line_indent = 0.0;
-                            cst.space_after = 0.0;
-                            cst.align = ta_of(&Value::String(alignment), TA_LEFT);
-                            cst.color = if ri == 0 { header_color } else { ty_color };
-                            let runs = retarget_runs(value, cst.size, cst.color);
-                            cells.push(TableCell { runs, st: cst });
-                        }
-                        rows.push(cells);
-                    }
-                    story.push(Flowable::Table(TableFlow {
-                        three_line,
-                        rows,
-                        col_w: vec![col_w; ncols],
-                        repeat_rows: 1,
-                        header_bg: hex_d(tb.get("headerBg").unwrap_or(&Value::Null)),
-                        border_w: plain_float(tb.get("borderWidth").unwrap_or(&Value::Null), 0.75),
-                        border_color: hex_d(tb.get("borderColor").unwrap_or(&Value::Null)),
-                        pad_top: plain_float(tb.get("cellPadding").unwrap_or(&Value::Null), 6.0),
-                        pad_bottom: plain_float(tb.get("cellPadding").unwrap_or(&Value::Null), 6.0),
-                        pad_left: 6.0,
-                        pad_right: 6.0,
-                        banded: bool_or(tb.get("banded").unwrap_or(&Value::Null), true),
-                        band_color: hex_d(tb.get("bandColor").unwrap_or(&Value::Null)),
-                        all_bg: None,
-                        line_before: None,
-                    }));
-                    story.push(Flowable::Spacer(10.0));
                 }
                 // `:396-407`
                 "code" => {
@@ -4655,6 +4597,7 @@ impl<'a> Sheet<'a> {
                 }
             }
             Flowable::Table(tf) => self.row_height(tf, 0),
+            Flowable::EnhancedTable(_) => 0.0, // The measured table supplies its first height.
             Flowable::BibliographyEntry { st, .. } => st.space_before + st.leading,
             Flowable::RichBibliographyEntry { rows, st } => st.space_before + rows.as_ref().ok().and_then(|rows| rows.first()).map(|row| row.height).unwrap_or(0.),
         }
@@ -4670,6 +4613,7 @@ pub fn paginate(
 ) -> Result<Vec<RenderedPage>,PdfError> {
     for flow in story{check_flow_errors(flow)?;check_flow_spacing_geometry(flow,geom)?;}
     let mut s = Sheet::new(geom, st, doc);
+    let mut next_table = None;
     s.track_ink=story.iter().any(|flow|matches!(flow,Flowable::Paragraph{st,..} if st.baseline_shift.is_some_and(|value|value.requested_pt()!=0.)));
     for (i, fl) in story.iter().enumerate() {
         if crate::speech::cancelled(){return Err(PdfError::new(PdfErrorKind::Invalid,"cancelled"));}
@@ -4683,14 +4627,31 @@ pub fn paginate(
                 anchor,
             } => {
                 let keep_min = if p.keep_with_next {
-                    story.get(i + 1).map(|n| s.first_height(n)).unwrap_or(0.0)
+                    if let Some(next) = story.get(i + 1) {
+                        next_table = publication_table::MeasuredTable::for_flow(next, geom)?;
+                        next_table
+                            .as_ref()
+                            .map_or_else(|| s.first_height(next), |table| table.first_height())
+                    } else {
+                        0.0
+                    }
                 } else {
                     0.0
                 };
                 if p.line_spacing.is_some() || p.baseline_shift.is_some_and(|v| v.requested_pt()!=0.) || p.decoration.is_some() {s.add_typed_paragraph(runs,p,keep_min,anchor.as_deref())?;}
                 else {s.add_paragraph(runs, p, keep_min, anchor.as_deref());}
             }
-            Flowable::Table(tf) => s.add_table(tf),
+            Flowable::Table(_) | Flowable::EnhancedTable(_) => {
+                let table = match next_table.take() {
+                    Some(table) => Some(table),
+                    None => publication_table::MeasuredTable::for_flow(fl, geom)?,
+                };
+                if let Some(table) = table {
+                    table.paint(&mut s)?;
+                } else if let Flowable::Table(table) = fl {
+                    s.add_table(table);
+                }
+            }
             Flowable::BibliographyEntry {
                 first,
                 runs,
@@ -4784,7 +4745,7 @@ pub(crate) fn build_with_lines(blocks:&Value,style:&Value,tmpdir:&str,
     resolve:&dyn Fn(&str)->Option<String>,warns:&mut Vec<String>,lines:crate::publication_typography::LineContext)
     ->Result<RenderedDoc,PdfError>
 {
-    if let Some(error) = enhanced_table_error(blocks) {
+    if let Some(error) = nested_enhanced_table_error(blocks) {
         return Err(error);
     }
     let note_destinations=crate::rust_pdf_notes::validated_destinations(blocks,style).map_err(|code|PdfError::new(PdfErrorKind::Invalid,code))?;
@@ -6467,6 +6428,73 @@ mod tests {
         let style = style_for(json!({}));
         let error = render_bytes(&blocks, &style, "", &no_image, &mut Vec::new()).unwrap_err();
         assert_eq!(error.message, crate::api_codes::PUBLICATION_TABLE_UNSUPPORTED);
+    }
+
+    fn short_three_line_pdf(source: &str) -> RenderedDoc {
+        let doc = crate::md_ast::parse(source);
+        let blocks = crate::md_ast::to_render_json(&doc.blocks);
+        let style = style_for(json!({
+            "page": {"size":"Custom","width":120,"height":80,"marginTop":10,"marginBottom":10},
+            "footer": {"pageNumbers":false},
+            "table": {"style":"three-line","cellSize":10,"cellPadding":6,"borderWidth":1}
+        }));
+        render(blocks.as_array().unwrap(), &style)
+    }
+
+    #[test]
+    fn rust_pdf_oversized_merged_group_uses_remaining_room_and_keeps_each_line() {
+        let phrases = |prefix, count| {
+            (0..count).map(|i| format!("{prefix}{i:02}gy")).collect::<Vec<_>>()
+        };
+        let left = phrases("Merged", 39);
+        let right = phrases("Adjacent", 17);
+        let source = format!(
+            "| HeaderA | HeaderB |\n| --- | --- |\n| Intro | Prior |\n| {} {{rowspan=2}} | {} {{valign=middle}} |\n| Covered | Ending |\n",
+            left.join("<br>"),
+            right.join("<br>"),
+        );
+        let doc = short_three_line_pdf(&source);
+        assert!(doc.pages.len() > 2);
+        assert!(doc.pages[0].text.contains("Intro\n"));
+        assert!(doc.pages[0].text.contains("Merged00gy\n"));
+        let mut merged = Vec::new();
+        let mut adjacent = Vec::new();
+        let mut end = 0;
+        for page in &doc.pages {
+            assert_eq!(page.text.matches("HeaderA").count(), 1);
+            assert_eq!(page.text.matches("HeaderB").count(), 1);
+            end += page.text.matches("Covered").count();
+            let rules = page.items.iter().filter_map(|item| match item {
+                DrawItem::Line { y1, y2, width, .. } if (y1 - y2).abs() < 1e-6 => Some((*y1, *width)),
+                _ => None,
+            }).collect::<Vec<_>>();
+            assert_eq!(rules.iter().map(|rule| rule.1).collect::<Vec<_>>(), [2.0, 1.0, 2.0]);
+            for item in &page.items {
+                let DrawItem::Text { text, y, .. } = item else { continue };
+                if text.starts_with("Header") { continue; }
+                assert!(y + 10.5 < rules[1].0 && y - 3.0 > rules[2].0, "{text} overlaps a rule");
+                if text.starts_with("Merged") { merged.push(text.as_str()); }
+                if text.starts_with("Adjacent") { adjacent.push(text.as_str()); }
+            }
+        }
+        assert_eq!(merged, left.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(adjacent, right.iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(end, 1);
+    }
+
+    #[test]
+    fn rust_pdf_moves_a_fitting_merged_group_as_one_unit() {
+        let doc = short_three_line_pdf(concat!(
+            "| HeaderA | HeaderB |\n| --- | --- |\n",
+            "| First | one |\n| Second | two |\n| Third | three |\n| Fourth | four |\n",
+            "| MergedStart {rowspan=2} | Begin |\n| MergedCovered | End |\n",
+        ));
+        assert_eq!(doc.pages.len(), 2);
+        assert!(doc.pages[0].text.contains("Fourth"));
+        assert!(!doc.pages[0].text.contains("MergedStart"));
+        for text in ["HeaderA", "MergedStart", "MergedCovered", "Begin", "End"] {
+            assert_eq!(doc.pages[1].text.matches(text).count(), 1, "{text}");
+        }
     }
 
     #[test]
