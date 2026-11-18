@@ -1,0 +1,253 @@
+{
+  "scope": "R019 · table track resizing and merged-range clipboard; development candidate",
+  "sourceCommit": "f8497c825fa34d13ff5c6c2f4786c5e8cbd560a9",
+  "bootSha256": "875ce891a6edad60f85ab74b368f8c4e8bf47a7eeb7cdb7407fc901e51cd80a7",
+  "fixture": "26 body rows, rectangular 2×2 merges, bold Markdown, CSV with a quoted comma, UTF-8 BOM and CRLF",
+  "initialFailures": [
+    "Existing grid had no resize separator.",
+    "A trusted Copy on the focused cell succeeded, but the global paste-to-new-document shortcut intercepted Cmd+V before the browser could deliver Paste. The table now receives a trusted event; the global shortcut is limited to contexts outside a modal.",
+    "The first native test expected Cmd+S to leave edit mode. Verified the prior save on disk, then exercised the Save button for the return-to-reader check."
+  ],
+  "editor": {
+    "widthPx": [
+      32,
+      1200
+    ],
+    "minimumHeightPx": [
+      20,
+      600
+    ],
+    "frontEndTestsPassed": 112,
+    "checks": [
+      "Escape cancels the drag without changing source or creating undo history",
+      "column drag affects only the intended header slot",
+      "row drag persists a minimum height as one edit",
+      "system copy and paste retains all four source cells, bold Markdown and rectangular merge",
+      "explicit CSV paste keeps quoted comma, merge and the separate copied rectangle",
+      "a paste bisecting another merge is refused atomically",
+      "system TSV paste replaces merged contents without changing sizing or the copied block",
+      "Copy CSV returns all four cells as plain text for external programs"
+    ],
+    "checksAfterReopen": {
+      "undo": 5,
+      "redo": 5
+    },
+    "refusedCases": [
+      "partial destination merge",
+      "target overflow",
+      "overlap with pending review",
+      "stale generation"
+    ]
+  },
+  "mac": {
+    "platform": "macos-arm64",
+    "headlessBrowserBinary": "cc4f2a4d508a429436b30954d321899f88c0512dc5e25fe30acd2a6e912afba8",
+    "nativeQaBinary": "3ef254fb9ff63c2cb5305fc9fafea68482654373ce948595ef50d528058c0808",
+    "nativeHost": "AppKit / WKWebView",
+    "nativeChecks": [
+      31,
+      40
+    ],
+    "nativeProcesses": 2,
+    "nativeClipboardTransport": "isolated synthetic ClipboardEvent with real WebKit DataTransfer",
+    "nativeResizeTransport": "accessible separator key handler with isolated synthetic KeyboardEvent",
+    "reader": {
+      "width": 160,
+      "height": 96,
+      "merges": 2
+    },
+    "savedFile": "9640197e4250990ce11b78f6279df3b58afa7188af62d6b26fd210924786565b",
+    "editedExport": {
+      "savedSourceSha256": "9640197e4250990ce11b78f6279df3b58afa7188af62d6b26fd210924786565b",
+      "outputs": {
+        "pdf": "11365bd46d6ff046d637705cbe38d336ce062da9e3de3c80191f9f020251f246",
+        "png": "3fd6d295c207bfe561057d8899c00c1af4c1da2584a2ba23eeca6af12c15116d",
+        "png-pages": "88645cb31a27b307b6428187087571b7124a8298926250f7bb0b830211585b5d"
+      },
+      "rejected": {
+        "pdf": "publication_layout_geometry",
+        "png": "publication_layout_geometry",
+        "png-pages": "publication_layout_geometry"
+      },
+      "measurements": {
+        "pages": 2,
+        "rows": 26,
+        "columnWidthPt": 120,
+        "rowHeightPt": 72,
+        "pngSegments": [
+          {
+            "page": "page-001.png",
+            "pagePixels": [
+              874,
+              1240
+            ],
+            "sourceRows": [
+              88,
+              1132
+            ],
+            "longPngRows": [
+              0,
+              1044
+            ]
+          },
+          {
+            "page": "page-002.png",
+            "pagePixels": [
+              874,
+              1240
+            ],
+            "sourceRows": [
+              88,
+              853
+            ],
+            "longPngRows": [
+              1044,
+              1809
+            ]
+          }
+        ]
+      }
+    },
+    "researchLongTable": {
+      "rows": 42,
+      "pages": 3,
+      "repeatedHeaders": 3
+    },
+    "office": {
+      "application": "ibisOffice",
+      "route": "DOCX to PDF using the installed macOS application export command",
+      "pages": 2,
+      "rows": 26,
+      "widthPtOnEachPage": [
+        119.99998495908748,
+        119.99998495908748
+      ],
+      "minRowHeightPtFromCenteredLabels": 72,
+      "docxSha256": "87cc8e2b5f562b0ccb3ff79fc897c810ae5dd56eb09fa922ec90122016de24bb",
+      "pdfSha256": "e96abf157237b4eb6b50dab4b2373737701f97bdbd8a011426f71ce823924658"
+    }
+  },
+  "ci": {
+    "head": "f8497c825fa34d13ff5c6c2f4786c5e8cbd560a9",
+    "run": "https://github.com/Natsummerance/rust-ReadMD/actions/runs/44311719187",
+    "jobs": [
+      {
+        "platform": "win32",
+        "artifacts": {
+          "table-tracks": 14431690209,
+          "table-geometry": 14430971633,
+          "pdf-geometry": 14430313817
+        },
+        "bootLineEndings": "CRLF",
+        "measurements": {
+          "pages": 2,
+          "rows": 26,
+          "columnWidthPt": 120,
+          "rowHeightPt": 72,
+          "pngSegments": [
+            {
+              "page": "page-001.png",
+              "pagePixels": [
+                1128,
+                1600
+              ],
+              "sourceRows": [
+                119,
+                1456
+              ],
+              "longPngRows": [
+                0,
+                1337
+              ]
+            },
+            {
+              "page": "page-002.png",
+              "pagePixels": [
+                1128,
+                1600
+              ],
+              "sourceRows": [
+                119,
+                1095
+              ],
+              "longPngRows": [
+                1337,
+                2313
+              ]
+            }
+          ]
+        },
+        "savedSourceSha256": "9640197e4250990ce11b78f6279df3b58afa7188af62d6b26fd210924786565b",
+        "bootSha256": "0fb095cdfeb21f1f53af427b467cb2b2af0121f2dd482053fa96e98d93e9a1f8",
+        "binarySha256": "335b07a969ac0f69425b49587a7b21792f815474bd8a8418c615a5232f4f10d3",
+        "history": {
+          "undo": 5,
+          "redo": 5
+        },
+        "rasterBackend": "Windows.Data.Pdf"
+      },
+      {
+        "platform": "linux",
+        "artifacts": {
+          "table-tracks": 14430861682,
+          "table-geometry": 14430059141,
+          "pdf-geometry": 14430593067
+        },
+        "bootLineEndings": "LF",
+        "measurements": {
+          "pages": 2,
+          "rows": 26,
+          "columnWidthPt": 120,
+          "rowHeightPt": 72,
+          "pngSegments": [
+            {
+              "page": "page-001.png",
+              "pagePixels": [
+                2200,
+                3122
+              ],
+              "sourceRows": [
+                248,
+                2826
+              ],
+              "longPngRows": [
+                0,
+                2578
+              ]
+            },
+            {
+              "page": "page-002.png",
+              "pagePixels": [
+                2200,
+                3122
+              ],
+              "sourceRows": [
+                248,
+                2122
+              ],
+              "longPngRows": [
+                2578,
+                4452
+              ]
+            }
+          ]
+        },
+        "savedSourceSha256": "9640197e4250990ce11b78f6279df3b58afa7188af62d6b26fd210924786565b",
+        "bootSha256": "875ce891a6edad60f85ab74b368f8c4e8bf47a7eeb7cdb7407fc901e51cd80a7",
+        "binarySha256": "ae1a018b3a3dc34202f477f239ecc2f1f9e886fe5fdb60c1427075f23f6a56a9",
+        "history": {
+          "undo": 5,
+          "redo": 5
+        },
+        "rasterBackend": "PDFium capability pack",
+        "pdfium": "7c6bf60c0d0b721abbb5502f769d61dc6c3b5351bae417e66db5c2e66873d2b7"
+      }
+    ]
+  },
+  "limits": [
+    "Windows and Linux used native Rust kernels, real Chromium, and platform PDF rasterizers; interactive native window and external Office round-trip remain open on those two platforms.",
+    "CSV/TSV carry plain values. ReadMD to ReadMD can additionally retain merge topology, formatting and track attributes using the structured clipboard.",
+    "Plain CSV was checked through the Copy CSV button and CSV MIME paste was exercised with a controlled ClipboardEvent.",
+    "PPTX, Typst and EPUB use automatic track sizes with a localized notice."
+  ]
+}
