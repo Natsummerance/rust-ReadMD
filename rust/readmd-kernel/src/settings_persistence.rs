@@ -130,12 +130,12 @@ fn publish(&self, current: &Value) -> io::Result<()> {
     // post-rename sync if the legacy replacement needs the std POSIX fallback.
     // Never copy into or truncate the destination after a failed replace.
     #[cfg(windows)]
-    let (staged_file, temporary) = temporary.into_parts();
+    let (staged_file, mut temporary) = temporary.into_parts();
     #[cfg(not(windows))]
     let temporary = temporary.into_temp_path();
     #[cfg(test)] tests::io_stage("replace");
     #[cfg(windows)]
-    native::replace(temporary.as_ref(), &self.target, &staged_file)?;
+    native::replace(&mut temporary, &self.target, &staged_file)?;
     #[cfg(not(windows))]
     native::replace(temporary.as_ref(), &self.target)?;
     #[cfg(test)] tests::fault(tests::Stage::BeforeDirectorySync)?;
@@ -367,8 +367,8 @@ mod native {
         Ok(information.nNumberOfLinks == 1 && file.metadata()?.file_attributes() & 0x400 == 0)
     }
     pub(super) fn unlock(_file: &fs::File) {}
-    pub(super) fn replace(from: &Path, to: &Path, staged_file: &fs::File) -> io::Result<()> {
-        crate::atomic_replace::replace(from, to, staged_file, || {
+    pub(super) fn replace(temporary: &mut tempfile::TempPath, to: &Path, staged_file: &fs::File) -> io::Result<()> {
+        crate::atomic_replace::replace(temporary, to, staged_file, || {
             #[cfg(test)] tests::io_stage("sync_published");
             #[cfg(test)] tests::fault(tests::Stage::BeforePublishedFileSync)?;
             Ok(())

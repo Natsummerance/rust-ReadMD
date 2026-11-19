@@ -94,6 +94,12 @@ fn worker_keeps_the_receipt_lease_and_replaces_a_record_held_by_a_progress_reade
     drop(reader);
     let stored = read_receipt(&dir, &batch.id).unwrap();
     assert_eq!(stored.items[0].result.status, "running");
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        assert_eq!(fs::metadata(dir.join(RECORD_FILE)).unwrap().file_attributes()
+            & windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_TEMPORARY.0, 0);
+    }
     assert_eq!(fs::read(input).unwrap(), b"Unchanged input");
 }
 

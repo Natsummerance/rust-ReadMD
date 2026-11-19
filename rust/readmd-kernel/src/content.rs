@@ -173,8 +173,8 @@ pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         {
             // A progress reader can still hold the replaced receipt. Retain
             // this exact staged handle for the checked post-rename sync.
-            let (staged_file, temporary) = tmp.into_parts();
-            crate::atomic_replace::replace(temporary.as_ref(), path, &staged_file, || Ok(()))?;
+            let (staged_file, mut temporary) = tmp.into_parts();
+            crate::atomic_replace::replace(&mut temporary, path, &staged_file, || Ok(()))?;
         }
         #[cfg(not(windows))]
         tmp.persist(path).map_err(|e| Error::from(e.error))?;
