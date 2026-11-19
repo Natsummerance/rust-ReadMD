@@ -12,27 +12,24 @@ const exists = rel => fs.existsSync(path.join(root, rel));
 
 test('platform matrix distinguishes native evidence from HarmonyOS source integration', () => {
   const matrix = JSON.parse(read('release/platform-matrix.json'));
-  const published = JSON.parse(read('website/release.json'));
+  const published = JSON.parse(read('website/published-release.json'));
   const ids = new Set(matrix.formal_support.map(item => item.id));
   for (const id of ['windows-x64', 'macos-x64', 'macos-arm64', 'linux-x64', 'linux-arm64']) {
     assert.ok(ids.has(id), id);
   }
   // This matrix records the published release's scoped evidence. A local
   // candidate version must not relabel those historical platform results.
-  assert.equal(matrix.release, published.stable);
+  assert.equal(matrix.release, published.version);
   assert.match(read('VERSION').trim(), /^\d+\.\d+\.\d+(?:-[\w.]+)?$/);
   assert.ok(matrix.experimental_support.some(p=>p.id==='harmonyos-arm64' && p.status==='source-integrated-sdk-device-unverified' && p.artifacts.length===0));
   assert.ok(matrix.formal_support.every(p=>p.status));
   assert.equal(matrix.evidence_policy.release_blocked_until_complete, false);
   assert.equal(matrix.evidence_policy.full_capability_certification_blocked_until_complete, true);
-  assert.deepEqual(matrix.evidence_policy.scoped_release, {
-    version: '0.0.6',
-    scope: 'docs/design/v006-release-closure-2026-10-30.md',
-    candidate_evidence_required: true,
-    native_evidence_not_inferred_from_build: true,
-    deferred_version: '0.0.7',
-    targets: ['windows-x64', 'linux-x64', 'macos-x64', 'macos-arm64'],
-  });
+  const scope = matrix.evidence_policy.scoped_release;
+  assert.equal(scope.version, published.version);
+  assert.equal(scope.candidate_evidence_required, true);
+  assert.equal(scope.native_evidence_not_inferred_from_build, true);
+  assert.deepEqual(scope.targets, ['windows-x64', 'linux-x64', 'macos-x64', 'macos-arm64']);
   assert.equal(matrix.evidence_policy.scoped_release.version, matrix.release);
   assert.ok(exists(matrix.evidence_policy.scoped_release.scope));
   assert.ok(matrix.formal_support.every(item => item.native_backend));

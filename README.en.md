@@ -43,7 +43,7 @@ ReadMD brings reading, editing, conversion and publishing into one local workflo
 - **Tables and publishing**: Rectangular merges, splitting, cell properties, row/column sizing and merged-region paste. PDF/DOCX/PPTX exports retain table layout within each format's supported scope.
 - **Saving and recovery**: Improved consecutive tab closing, encoding confirmation, Save As with images and history, withdrawal of pending edits, batch receipts and media task resumption.
 - **Shared review and drawing**: Resolve conflicting suggestions against the original, current and proposed text. Save drawings as SVG with reopening, undo and recovery.
-- **Developer tools and AI**: Multi-file OpenAPI references and updates share one local generator; source changes invalidate old previews. Chat cancellation, failure and private mode share consistent history rules.
+- **Developer tools and AI**: Multi-file OpenAPI references and updates share one local generator; source changes invalidate old previews. Chat cancellation, failure and private mode share consistent history rules. Final fixes cover cancellation under SSE downstream backpressure and the completeness of pinned Office dependency notices.
 
 See the [release notes](release/release_notes.md). Earlier versions remain in the [changelog](RELEASE_NOTES.md).
 
@@ -105,7 +105,7 @@ On macOS the usual path is `/Applications/ReadMD.app/Contents/MacOS/ReadMD`. On 
 
 A V0.0.7 release candidate completed **244 native checks in six groups on macOS ARM64**: closing and recovery, six export formats, cold launch/reopening from its packaged ZIP, and migration of an isolated V0.0.6 session. The archived production binary also completed the 46-language save-encoding flow with zero page exceptions. The [Mac report](docs/reviews/readmd-v007-macos-rc-2026-11-19.md) retains an initial WebKit cold-launch failure and successful same-package reruns. These checks have a defined scope; application interoperability and physical coverage on each system are recorded separately.
 
-The [release workflow](.github/workflows/release.yml) configures four desktop targets and integration packages, with shared quality checks and all builds required before publication. See the [platform matrix](release/platform-matrix.json) and [feature reports](docs/reviews).
+Release builds and shared quality gates passed for Windows x64, Linux x64 and macOS ARM64/Intel. The published ARM64 ZIP also completed normal cold launch and reopening with the test document unchanged. This final-package evidence is separate from the earlier 244-check candidate. See the [publication report](docs/reviews/readmd-v007-published-2026-11-19.md) and [platform matrix](release/platform-matrix.json).
 
 ```sh
 cargo build --locked --release --manifest-path rust/Cargo.toml -p readmd-kernel

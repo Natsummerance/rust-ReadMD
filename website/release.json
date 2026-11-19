@@ -1,7 +1,7 @@
 {
-  "stable": "0.0.6",
+  "stable": "0.0.7",
   "candidate": "0.0.5",
   "candidate_ref": "02737040e6dad02d1d73a963db999bded2fa8d78",
-  "published": "2026-10-31",
+  "published": "2026-11-19",
   "repository": "Natsummerance/rust-ReadMD"
 }

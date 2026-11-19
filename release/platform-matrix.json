@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "release": "0.0.6",
+  "release": "0.0.7",
   "formal_support": [
     {
       "id": "windows-x64",
@@ -11,27 +11,29 @@
         "portable"
       ],
       "native_backend": "WebView2",
-      "status": "native-tested"
+      "status": "ci-runtime-tested"
     },
     {
       "id": "macos-x64",
       "os": "macOS 13+",
       "arch": "x64",
       "artifacts": [
-        "zip"
+        "zip",
+        "dmg"
       ],
       "native_backend": "WKWebView",
-      "status": "pending-native-evidence"
+      "status": "ci-built"
     },
     {
       "id": "macos-arm64",
       "os": "macOS 13+",
       "arch": "ARM64",
       "artifacts": [
-        "zip"
+        "zip",
+        "dmg"
       ],
       "native_backend": "WKWebView",
-      "status": "pending-native-evidence"
+      "status": "ci-built-published-native-smoke-tested"
     },
     {
       "id": "linux-x64",
@@ -39,11 +41,10 @@
       "arch": "x64",
       "artifacts": [
         "deb",
-        "tar.gz",
-        "appimage-local-tooling"
+        "tar.gz"
       ],
       "native_backend": "GTK3 / WebKitGTK 4.1",
-      "status": "pending-native-evidence"
+      "status": "ci-runtime-tested"
     },
     {
       "id": "linux-arm64",
@@ -196,11 +197,11 @@
     "release_blocked_until_complete": false,
     "full_capability_certification_blocked_until_complete": true,
     "scoped_release": {
-      "version": "0.0.6",
-      "scope": "docs/design/v006-release-closure-2026-10-30.md",
+      "version": "0.0.7",
+      "scope": "docs/reviews/readmd-v007-published-2026-11-19.md",
       "candidate_evidence_required": true,
       "native_evidence_not_inferred_from_build": true,
-      "deferred_version": "0.0.7",
+      "deferred_version": null,
       "targets": [
         "windows-x64",
         "linux-x64",

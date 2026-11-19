@@ -1,6 +1,17 @@
 # ReadMD
 > ReadMD is a local-first Markdown reader, editor, converter and presenter. Find the current release on the download page and GitHub Releases. VS Code and MCP share the native Rust engine.
 
+<!-- readmd-current-release:start -->
+## Current stable release: V0.0.7
+
+Page-first PDF and Office reading, merged-cell tables, review and recovery, and opt-in AI completion. Final fixes cover Windows batch receipts, SSE cancellation under a stalled reader, and pinned Office dependency notices.
+
+Downloads: Windows x64, Linux x64 and macOS ARM64/Intel. The published ARM64 ZIP completed normal cold launch and reopening. Mac uses free ad hoc signing without Apple notarization. Independent FFmpeg/Whisper packs are separate from desktop downloads.
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## Docs
 - [ReadMD homepage](https://rust.readmd.asia/): Product definition, platform support, conversion scope, privacy model, and direct answers about long-document reading.
 - [Workflow answers](https://rust.readmd.asia/workflows/): Task-level guidance for 8,000-line documents, DOCX/PDF/HTML/LaTeX conversion, offline OCR, and direct Markdown presentation.

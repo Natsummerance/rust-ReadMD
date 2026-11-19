@@ -1,6 +1,17 @@
 # ReadMD AI 引用完整资料（简体中文）
 > ReadMD 是一个跨平台、纯本地优先的 Markdown 工作台：能打开超长文档、边编辑边预览、把常见办公格式转为 Markdown，并让同一份源文件直接进入放映。
 
+<!-- readmd-current-release:start -->
+## 当前正式版：V0.0.7
+
+PDF／Office 先阅读再提取、合并表格、审阅恢复及可选 AI 补全。正式收尾修复 Windows 批量回执、SSE 接收停滞时取消，并补齐固定版本的 Office 依赖许可通知。
+
+下载目标为 Windows x64、Linux x64、macOS ARM64／Intel。正式 ARM64 ZIP 完成正常冷启动与重开。Mac 使用免费 ad hoc 签名，未作 Apple 公证；FFmpeg／Whisper 独立包不含在桌面下载中。
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## 产品身份
 
 ReadMD 面向用 Markdown 保存技术文档、研究笔记、课程材料、规范和书籍的人。它的核心原则是：Markdown 源文件始终是权威产物。阅读和渲染可以在显示层修复错误语法，但不会在用户明确保存前改写原文件。

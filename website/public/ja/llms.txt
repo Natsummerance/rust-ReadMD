@@ -1,6 +1,17 @@
 # ReadMD 日本語インデックス
 > ReadMD はローカル優先の Markdown 閲覧・編集・変換・発表ワークスペースです。現在の正式版とパッケージはダウンロードページと GitHub Releases を参照してください。VS Code と MCP はネイティブ Rust エンジンを共有します。
 
+<!-- readmd-current-release:start -->
+## 現在の安定版：V0.0.7
+
+PDF/Office のページ閲覧、結合セル、レビューと復元、任意の AI 補完。最終修正には Windows バッチ処理記録、SSE の受信停滞時のキャンセル、固定 Office 依存パッケージのライセンス通知を含みます。
+
+配布対象は Windows x64、Linux x64、macOS ARM64/Intel。公開 ARM64 ZIP は通常のコールド起動と再起動を確認しました。Mac は無料 ad hoc 署名を使用し、Apple 公証はありません。FFmpeg/Whisper の独立パックはデスクトップ配布物に含みません。
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## Docs
 - [日本語ホームページ](https://rust.readmd.asia/ja/): 製品定義、対応環境、プライバシー境界、直接引用できる回答。
 - [ワークフロー回答](https://rust.readmd.asia/ja/workflows/): 長文の改ページ、オフィス形式変換、オフライン OCR、直接発表に関する実務的な回答。

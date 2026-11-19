@@ -21,7 +21,7 @@ export const aiCopies = [
     noScript: 'The example remains readable without JavaScript. Enable JavaScript to try its controls.',
     privacy: 'In ReadMD, autocomplete is opt-in. Choose your saved connection and model in AI settings. This illustration does not connect to either.',
     shared: 'One Rust engine, two editors', sharedCopy: 'The desktop app and VS Code share completion context limits and filtering. MCP exposes the same completion engine.',
-    platform: 'Platform support, with evidence', platformCopy: 'Builds and native acceptance are separate. Windows is tested locally; macOS, Linux and domestic Linux distributions still require their own native acceptance. HarmonyOS remains a source-integrated candidate.',
+    platform: 'Platform support, with evidence', platformCopy: 'Windows x64, Linux x64 and macOS ARM64/Intel release builds pass CI quality gates. The published ARM64 ZIP also has cold-launch and reopening evidence; the earlier 244-check local candidate remains a separate record. Platform interoperability follows the publication report. HarmonyOS remains a source-integrated candidate.',
     back: 'Back to ReadMD',
   },
   {
@@ -40,7 +40,7 @@ export const aiCopies = [
     noScript: '关闭 JavaScript 后仍可阅读示例；启用后可试用这些控件。',
     privacy: 'ReadMD 自动补全需主动开启。连接与模型沿用 AI 设置中的选择；本示意不会连接它们。',
     shared: '同一个 Rust 核心，两种编辑环境', sharedCopy: '桌面与 VS Code 共用补全上下文限制及输出过滤；MCP 也可调用相同补全引擎。',
-    platform: '平台支持，以验证为准', platformCopy: '构建产物与原生验收分开记录。Windows 已在本机实测；macOS、Linux 及国产 Linux 发行版仍需各自的原生验收。鸿蒙保持源码集成候选状态。',
+    platform: '平台支持，以验证为准', platformCopy: 'Windows x64、Linux x64、macOS ARM64／Intel 的发行构建通过 CI 门槛。正式 ARM64 ZIP 另有冷启动与重开证据，早期 244 项本机候选检查独立记录。各平台互操作范围见发布记录；鸿蒙保持源码集成候选状态。',
     back: '回到 ReadMD',
   },
   {
@@ -59,7 +59,7 @@ export const aiCopies = [
     noScript: '關閉 JavaScript 後仍可閱讀範例；啟用後可試用這些控制項。',
     privacy: 'ReadMD 自動補全需主動開啟。連線與模型沿用 AI 設定中的選擇；本示意不會連線至它們。',
     shared: '同一個 Rust 核心，兩種編輯環境', sharedCopy: '桌面與 VS Code 共用補全上下文限制及輸出過濾；MCP 也能呼叫相同補全引擎。',
-    platform: '平台支援，以驗證為準', platformCopy: '建置產物與原生驗收分開記錄。Windows 已在本機實測；macOS、Linux 與中國 Linux 發行版仍需各自的原生驗收。鴻蒙維持原始碼整合候選狀態。',
+    platform: '平台支援，以驗證為準', platformCopy: 'Windows x64、Linux x64、macOS ARM64／Intel 的發行建置通過 CI 門檻。正式 ARM64 ZIP 另有冷啟動與重開證據，早期 244 項本機候選版檢查獨立記錄。各平台互通範圍見發行記錄；鴻蒙維持原始碼整合候選狀態。',
     back: '回到 ReadMD',
   },
   {
@@ -78,7 +78,7 @@ export const aiCopies = [
     noScript: 'JavaScript が無効でも例文は読めます。操作を試すには JavaScript を有効にしてください。',
     privacy: 'ReadMD の自動補完は任意で有効にします。接続とモデルは AI 設定で選択します。この操作イメージはそれらに接続しません。',
     shared: '同じ Rust エンジンを二つのエディターで', sharedCopy: 'デスクトップと VS Code は補完のコンテキスト制限と出力フィルターを共有します。MCP も同じ補完エンジンを呼び出せます。',
-    platform: '検証に基づくプラットフォーム対応', platformCopy: 'ビルドとネイティブ環境での受け入れ確認は別です。Windows はローカルで確認済みですが、macOS、Linux、中国の Linux 環境はそれぞれ検証が必要です。HarmonyOS はソース統合済みの候補です。',
+    platform: '検証に基づくプラットフォーム対応', platformCopy: 'Windows x64、Linux x64、macOS ARM64/Intel のリリースビルドは CI 検査を通過しています。公開 ARM64 ZIP のコールド起動・再起動と、以前の候補版の 244 項目検査は別に記録します。環境ごとの互換性は公開検証記録を参照してください。HarmonyOS はソース統合済みの候補です。',
     back: 'ReadMD に戻る',
   },
 ];

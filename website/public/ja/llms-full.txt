@@ -1,6 +1,17 @@
 # ReadMD AI 引用完全リファレンス（日本語）
 > ReadMD はクロスプラットフォームでローカル処理を優先する Markdown ワークスペースです。長文を開き、プレビューを見ながら編集し、一般的なオフィス形式を変換し、同じソースファイルをそのまま発表できます。
 
+<!-- readmd-current-release:start -->
+## 現在の安定版：V0.0.7
+
+PDF/Office のページ閲覧、結合セル、レビューと復元、任意の AI 補完。最終修正には Windows バッチ処理記録、SSE の受信停滞時のキャンセル、固定 Office 依存パッケージのライセンス通知を含みます。
+
+配布対象は Windows x64、Linux x64、macOS ARM64/Intel。公開 ARM64 ZIP は通常のコールド起動と再起動を確認しました。Mac は無料 ad hoc 署名を使用し、Apple 公証はありません。FFmpeg/Whisper の独立パックはデスクトップ配布物に含みません。
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## 製品の位置づけ
 
 ReadMD は技術文書、研究ノート、講義資料、仕様書、書籍などを Markdown で管理する人向けです。中心原則は、Markdown ソースが常に正となることです。表示のための構文修復はあっても、利用者が明示的に保存しない限り元ファイルは上書きされません。

@@ -43,7 +43,7 @@ ReadMD 把阅读、编辑、格式转换与出版放在同一个本地工作流�
 - **表格与出版**：增加矩形合并、拆分、单元格属性、行列尺寸和合并区域粘贴；PDF／DOCX／PPTX 输出保留各自支持的表格布局。
 - **保存与恢复**：改进连续关闭标签、编码确认、图片与历史跨目录另存、待审修改撤回、批量转换回执及媒体任务续作。
 - **共享审阅与绘图**：冲突建议可对照原文、当前内容和建议手动合并；绘图保存为 SVG，支持重开、撤销和恢复。
-- **开发者与 AI**：多文件 OpenAPI 本地引用与更新复用同一生成服务；过期源文件会使旧预览失效。聊天取消、失败与隐私模式遵循统一的历史保存边界。
+- **开发者与 AI**：多文件 OpenAPI 本地引用与更新复用同一生成服务；过期源文件会使旧预览失效。聊天取消、失败与隐私模式遵循统一的历史保存边界。 发行收尾还覆盖 SSE 接收停滞时的取消，以及 Office 固定依赖许可通知的完整性。
 
 详见[本版说明](release/release_notes.md)；[历次更新](RELEASE_NOTES.md)保留旧版记录。
 
@@ -105,7 +105,7 @@ macOS 通常为 `/Applications/ReadMD.app/Contents/MacOS/ReadMD`；Windows 使�
 
 V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，包括关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级；另从归档中的生产二进制执行 46 语言的保存编码流程，页面异常为 0。[Mac 验证记录](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败及同包复测结果。这里的检查范围与跨应用兼容性、各系统实机覆盖分别记录。
 
-[发行 CI](.github/workflows/release.yml)配置四个桌面目标与配套集成包，并在发布前等待共享质量检查和全部构建。各平台证据见[平台矩阵](release/platform-matrix.json)，详细功能记录见 [docs/reviews](docs/reviews)。
+Windows x64、Linux x64、macOS ARM64／Intel 的发行构建和共享质量检查已通过。正式 ARM64 下载 ZIP 另完成正常系统冷启动与重开，原测试文档字节保持；本次正式包与早期 244 项候选检查分别记账。见[发布验证记录](docs/reviews/readmd-v007-published-2026-11-19.md)与[平台矩阵](release/platform-matrix.json)。
 
 ```sh
 cargo build --locked --release --manifest-path rust/Cargo.toml -p readmd-kernel

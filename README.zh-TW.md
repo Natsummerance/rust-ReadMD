@@ -43,7 +43,7 @@ ReadMD 將閱讀、編輯、格式轉換與出版放在同一個本機工作流�
 - **表格與出版**：新增矩形合併、分割、儲存格屬性、列高欄寬及合併區域貼上；PDF／DOCX／PPTX 輸出保留各自支援的表格版面。
 - **儲存與復原**：改善連續關閉分頁、編碼確認、圖片與歷史跨目錄另存、待審修改撤回、批次轉換回執及媒體工作續作。
 - **共享審閱與繪圖**：衝突建議可對照原文、目前內容與建議手動合併；繪圖儲存為 SVG，支援重開、復原及草稿恢復。
-- **開發者與 AI**：多檔 OpenAPI 本機引用與更新共用產生服務；來源變更會讓舊預覽失效。聊天取消、失敗及隱私模式採用一致的歷史儲存規則。
+- **開發者與 AI**：多檔 OpenAPI 本機引用與更新共用產生服務；來源變更會讓舊預覽失效。聊天取消、失敗及隱私模式採用一致的歷史儲存規則。 發行收尾亦涵蓋 SSE 接收停滯時的取消，以及 Office 固定相依套件授權通知的完整性。
 
 詳見[本版說明](release/release_notes.md)；[歷次更新](RELEASE_NOTES.md)保留舊版記錄。
 
@@ -105,7 +105,7 @@ macOS 通常為 `/Applications/ReadMD.app/Contents/MacOS/ReadMD`；Windows 使�
 
 V0.0.7 的 Mac 本機候選版在 ARM64 上完成六組共 **244 項原生檢查**，涵蓋關閉與復原、六格式匯出、候選版 ZIP 冷啟動／重開及 V0.0.6 隔離工作階段升級；另使用封存套件中的正式執行檔完成 46 語言的儲存編碼流程，頁面例外為 0。[Mac 驗證記錄](docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷啟動首敗與同包複測結果。這些檢查範圍與跨應用相容性、各系統實機覆蓋分別記錄。
 
-[發行 CI](.github/workflows/release.yml)設定四個桌面目標與配套整合套件，發行前等待共用品質檢查與全部建置。各平台證據見[平台矩陣](release/platform-matrix.json)，詳細功能記錄見 [docs/reviews](docs/reviews)。
+Windows x64、Linux x64、macOS ARM64／Intel 的發行建置與共用品質檢查已通過。正式 ARM64 下載 ZIP 另完成正常系統冷啟動與重開，原測試文件位元組保持；本次正式套件與早期 244 項候選版檢查分別記錄。見[發行驗證記錄](docs/reviews/readmd-v007-published-2026-11-19.md)與[平台矩陣](release/platform-matrix.json)。
 
 ```sh
 cargo build --locked --release --manifest-path rust/Cargo.toml -p readmd-kernel

@@ -13,6 +13,8 @@
 - **开发者与 AI**：多文件 OpenAPI 支持本地引用、源映射、生成和更新；依赖文件变化后拒绝旧预览。VS Code 增加 OpenAPI 审阅更新及默认关闭的行内 AI 补全。JSON 与流式聊天共用取消和历史提交规则，失败、取消和隐私聊天不保存部分历史。
 - **界面与语言**：修复语言切换、恢复按钮和编码确认提示；改善画布、原版阅读及表格在三种主题下的样式。46 语言的键、占位符和限定保存流程经过检查，部分新增工作流提示仍使用英文。
 
+- **发行收尾**：修复 Windows 旧进度回执读取时的新回执提交，保留重试中已完成的输出；SSE 流式聊天在接收端读取停滞时可取消所属写入与连接。Office 运行时按实际依赖闭包补齐并校验锁定版本的第三方许可通知。
+
 ## 下载与安装
 
 | 平台 | 文件 |
@@ -39,12 +41,12 @@ OCR、Typst、出版字体、代码运行时及音视频转写依实际平台能
 
 V0.0.7 的 Mac 本机候选在 ARM64 上完成六组共 **244 项原生检查**，涵盖关闭与恢复、六格式导出、候选 ZIP 冷启动／重开和 V0.0.6 隔离会话升级。归档内的生产二进制另通过 46 语言保存编码流程，页面异常为 0。[Mac 本机记录](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/docs/reviews/readmd-v007-macos-rc-2026-11-19.md)保留一次 WebKit 冷启动首败，以及未改包后成功的同包复测结果。
 
-发行 CI 配置 Windows x64、Linux x64、macOS ARM64／Intel 及 VSIX／MCP；正式发布需等待共享质量检查和全部构建。[平台矩阵](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/release/platform-matrix.json)与[功能验证目录](https://github.com/Natsummerance/rust-ReadMD/tree/V0.0.7/docs/reviews)分别记录构建、原生操作及跨应用证据。
+Windows x64、Linux x64、macOS Apple Silicon 和 Intel 的发行构建及质量门槛已通过，十份桌面／集成包与 SHA256SUMS.txt 的公开下载均已核对。正式 Apple Silicon ZIP 另完成正常系统冷启动与重开。[发行 CI](https://github.com/Natsummerance/rust-ReadMD/actions/runs/44559480050) · [发布验证记录](https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md)
 
 [使用指南](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.md) · [English guide](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/README.en.md) · [历史更新](https://github.com/Natsummerance/rust-ReadMD/blob/V0.0.7/RELEASE_NOTES.md) · [问题反馈](https://github.com/Natsummerance/rust-ReadMD/issues)
 
 ## English
 
-V0.0.7 adds page-first PDF reading, read-only DOCX/PPTX layout views, merged-cell table editing, safer closing and recovery, manual resolution of shared suggestions, SVG drawing, multi-file OpenAPI updates and opt-in VS Code inline AI completion. Desktop, VSIX and MCP configuration packages share version `0.0.7`.
+V0.0.7 adds page-first PDF reading, read-only DOCX/PPTX layout views, merged-cell table editing, safer closing and recovery, manual resolution of shared suggestions, SVG drawing, multi-file OpenAPI updates and opt-in VS Code inline AI completion. Desktop, VSIX and MCP configuration packages share version `0.0.7`. Windows batch progress, cancellation under SSE downstream backpressure, and pinned Office dependency notices are included in the final release.
 
 Downloads target Windows x64, Linux x64 and macOS Apple Silicon/Intel. Desktop bundles include matching Office and PDFium resources. Larger OCR, typesetting, font and media capabilities depend on platform packs; independent FFmpeg/Whisper packs are separate from these release assets. Mac packages use free ad hoc signing and are not Apple-notarized. The locally packaged macOS ARM64 candidate completed 244 native checks; build coverage and native/platform interoperability evidence are recorded separately in the links above.

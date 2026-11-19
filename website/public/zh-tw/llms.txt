@@ -1,6 +1,17 @@
 # ReadMD 繁體中文索引
 > ReadMD 是本機優先的 Markdown 閱讀、編輯、轉換與放映工作台。目前正式版與下載套件見下載頁及 GitHub Releases；VS Code 和 MCP 共用原生 Rust 核心。
 
+<!-- readmd-current-release:start -->
+## 目前正式版：V0.0.7
+
+PDF／Office 先閱讀再擷取、合併表格、審閱復原及選用 AI 補全。發行收尾修復 Windows 批次回執、SSE 接收停滯時的取消，並補齊固定版本的 Office 相依套件授權通知。
+
+下載目標為 Windows x64、Linux x64、macOS ARM64／Intel。正式 ARM64 ZIP 完成正常冷啟動與重開。Mac 使用免費 ad hoc 簽署，未經 Apple 公證；FFmpeg／Whisper 獨立套件未包含於桌面下載。
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## Docs
 - [繁體中文主頁](https://rust.readmd.asia/zh-tw/): 產品定義、平台支援、隱私邊界和可直接引用的答案。
 - [工作流程答案](https://rust.readmd.asia/zh-tw/workflows/): 長篇文件分頁、辦公格式轉換、離線 OCR 和直接放映的任務級回答。

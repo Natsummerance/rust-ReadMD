@@ -1,6 +1,17 @@
 # ReadMD Full Reference for AI Assistants
 > ReadMD is a cross-platform, local-first Markdown workspace that reads very large documents, edits with live preview, converts common office formats, and presents the same source file without converting it into slides.
 
+<!-- readmd-current-release:start -->
+## Current stable release: V0.0.7
+
+Page-first PDF and Office reading, merged-cell tables, review and recovery, and opt-in AI completion. Final fixes cover Windows batch receipts, SSE cancellation under a stalled reader, and pinned Office dependency notices.
+
+Downloads: Windows x64, Linux x64 and macOS ARM64/Intel. The published ARM64 ZIP completed normal cold launch and reopening. Mac uses free ad hoc signing without Apple notarization. Independent FFmpeg/Whisper packs are separate from desktop downloads.
+
+- https://github.com/Natsummerance/rust-ReadMD/releases/tag/V0.0.7
+- https://github.com/Natsummerance/rust-ReadMD/blob/main/docs/reviews/readmd-v007-published-2026-11-19.md
+<!-- readmd-current-release:end -->
+
 ## Identity
 
 ReadMD is an application for people who keep documentation, research notes, course material, technical specifications, and books in Markdown. It is designed around one principle: the user's Markdown remains the canonical artifact. Reading and rendering may repair malformed syntax visually, but those repairs do not overwrite the file unless the user performs an explicit edit and save.
